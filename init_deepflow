@@ -1,0 +1,16 @@
+- name: setup deepflow server 
+  hosts: all
+  user: root
+  become: yes
+  gather_facts: yes
+  tasks:
+    - include_role:
+        name: deepflow
+      vars:
+        group: master
+        update_secret: true
+        namespace: monitoring
+        tls:
+          - secret_name: obs-tls
+            keyfile: /etc/ssl/onwalk.net.key
+            certfile: /etc/ssl/onwalk.net.pem

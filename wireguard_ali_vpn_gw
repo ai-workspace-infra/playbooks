@@ -1,0 +1,29 @@
+- name: set wireguard nodes gateway
+  hosts: all
+  user: ubuntu
+  become: 'yes'
+  gather_facts: 'yes'
+  tasks:
+    - include_role:
+        name: wireguard-gw
+      vars:
+        group: ali-vpn-gateway
+        nameserver:
+          - 127.0.0.53
+        extra_resolv_config:
+          - "options timeout:2 attempts:3 rotate single-request-reopen"
+        gateway:
+          private_key: "sJHxddh8M1DRGLExZJ+QatGk2pkkUopj2M4p8r3t5Ek="
+          interface: eth0
+          tunnel: wg0
+          network: 10.255.0.2/32
+          listen_port: '51820'
+          persistent_keepalive: '60'
+          peers:
+            - name: aws_vpc
+              endpoint: "52.81.109.27:51820"
+              public_key: "nL2vjhMnBnGhWcW0frclcL/+Os17wSof6rMtxJrjmRo="
+              allowed_ips: "10.255.0.1/32,10.0.0.0/16"
+            - name: home-desktop
+              public_key: "ZzsemBUYKDu52AMQEJwQvIziwJ4Vomp7t4TEtCQ/ywI="
+              allowed_ips: 10.255.0.3/32

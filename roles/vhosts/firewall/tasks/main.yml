@@ -1,0 +1,98 @@
+---
+- name: Install UFW
+  apt:
+    name: ufw
+    state: present
+
+- name: Set default policies
+  ufw:
+    policy: "{{ item.policy }}"
+    direction: "{{ item.direction }}"
+  loop:
+    - { policy: 'deny', direction: 'incoming' }
+    - { policy: 'allow', direction: 'outgoing' }
+
+- name: Allow essential ports (SSH first!)
+  ufw:
+    port: "{{ item.port }}"
+    protocol: "{{ item.protocol }}"
+    rule: allow
+    comment: "{{ item.comment }}"
+  loop: "{{ essential_ports }}"
+
+- name: Allow necessary mail ports
+  ufw:
+    port: "{{ item.port }}"
+    protocol: "{{ item.protocol }}"
+    rule: allow
+    comment: "{{ item.comment }}"
+  loop: "{{ mail_ports }}"
+
+- name: Allow LMTP from private networks
+  ufw:
+    port: 24
+    protocol: tcp
+    rule: allow
+    from_ip: "{{ item }}"
+    comment: 'LMTP private'
+  loop: "{{ lmtp_private_networks }}"
+
+- name: Deny plaintext ports
+  ufw:
+    port: "{{ item.port }}"
+    protocol: "{{ item.protocol }}"
+    rule: deny
+    comment: "{{ item.comment }}"
+  loop: "{{ denied_ports }}"
+
+- name: Enable UFW
+  ufw:
+    state: enabled
+
+- name: Get UFW numbered status
+  command: ufw status numbered
+  register: ufw_numbered
+  changed_when: false
+
+- name: Get UFW status verbose
+  command: ufw status verbose
+  register: ufw_status
+  changed_when: false
+
+- name: Display UFW status
+  debug:
+    msg: |
+      🔥 UFW Firewall Status
+      ====================
+      {{ ufw_status.stdout }}
+
+- name: Display configured mail rules
+  debug:
+    msg: |
+      🔥 Mail Server Firewall Rules:
+      =============================
+
+      ESSENTIAL PORTS (Open - Applied First!):
+      {% for port in essential_ports %}
+        ✅ {{ port.port }}/{{ port.protocol }} - {{ port.comment }}
+      {% endfor %}
+
+      MAIL PORTS (Open):
+      {% for port in mail_ports %}
+        ✅ {{ port.port }}/{{ port.protocol }} - {{ port.comment }}
+      {% endfor %}
+
+      DENIED PORTS (Blocked):
+      {% for port in denied_ports %}
+        ❌ {{ port.port }}/{{ port.protocol }} - {{ port.comment }}
+      {% endfor %}
+
+      LMTP ACCESS (Private Networks):
+      {% for network in lmtp_private_networks %}
+        ✅ From {{ network }} to port 24/tcp - Local mail delivery
+      {% endfor %}
+
+      ⚠️  SECURITY NOTES:
+      - SSH port {{ ssh_port }} is open - ensure you use key-based authentication
+      - Default policy: deny all incoming, allow all outgoing
+      - Only open ports that are absolutely necessary

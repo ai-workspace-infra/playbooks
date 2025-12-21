@@ -1,0 +1,45 @@
+{
+  "distSpecVersion": "1.1.0",
+  "storage": {
+    "rootDirectory": "{{ zot_data_dir }}"
+  },
+  "http": {
+    "address": "{{ zot_http_address }}",
+    "port": "{{ zot_http_port }}"{% if zot_tls_cert_path and zot_tls_key_path %},
+    "tls": {
+      "cert": "{{ zot_tls_cert_path }}",
+      "key": "{{ zot_tls_key_path }}"
+    }{% endif %}{% if zot_auth_users | length > 0 %},
+    "auth": {
+      "htpasswd": {
+        "path": "{{ zot_htpasswd_path }}"
+      }
+    },
+    "accessControl": {
+      "repositories": {
+        "**": {
+          "policies": [
+            {
+              "users": ["*"],
+              "actions": ["read"]
+            },
+            {
+              "users": ["{{ zot_user }}"],
+              "actions": ["*"]
+            }
+          ]
+        }
+      }
+    }{% endif %}
+  },
+  "log": {
+    "level": "{{ zot_log_level }}",
+    "output": "{{ zot_log_dir }}/zot.log"
+  },
+  "extensions": {
+    "sync": {
+      "enable": {{ zot_sync_enabled | string | lower }},
+      "registries": {{ zot_sync_registries | to_json }}
+    }
+  }
+}

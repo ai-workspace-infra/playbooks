@@ -1,0 +1,31 @@
+---
+# Mail server firewall configuration
+
+# SSH port (always allow - most important!)
+# Note: SSH is allowed FIRST to ensure you don't lock yourself out
+# This should typically be customized to your actual SSH port (e.g., 2222)
+ssh_port: 22
+
+# Private networks allowed to access LMTP (port 24)
+lmtp_private_networks:
+  - 127.0.0.1
+  - 10.0.0.0/8
+
+# Essential ports to open (SSH first!)
+essential_ports:
+  - { port: "{{ ssh_port }}", protocol: 'tcp', comment: 'SSH (Secure Shell) - Critical!' }
+  - { port: 443, protocol: 'tcp', comment: 'HTTPS - Web SSL' }
+  - { port: 80, protocol: 'tcp', comment: 'HTTP - Web (optional)' }
+
+# Mail ports to open
+mail_ports:
+  - { port: 25, protocol: 'tcp', comment: 'SMTP MX inbound' }
+  - { port: 587, protocol: 'tcp', comment: 'SMTP Submission (AUTH)' }
+  - { port: 465, protocol: 'tcp', comment: 'SMTPS (optional)' }
+  - { port: 993, protocol: 'tcp', comment: 'IMAPS SSL' }
+
+# Plaintext ports to deny
+denied_ports:
+  - { port: 110, protocol: 'tcp', comment: 'Deny POP3 plaintext' }
+  - { port: 143, protocol: 'tcp', comment: 'Deny IMAP plaintext' }
+  - { port: 995, protocol: 'tcp', comment: 'Deny POP3S plaintext' }

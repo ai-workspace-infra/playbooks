@@ -1,0 +1,23 @@
+- name: Ensure SSH key pair exists on ops host
+  shell: |
+    test -f ~/.ssh/id_rsa || ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N '' -q
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ ops_host }}"
+  run_once: true
+  become: true
+  become_user: "{{ ssh_user }}"
+
+- name: Fetch ops host public key
+  slurp:
+    src: "~/.ssh/id_rsa.pub"
+  register: ops_pub_key
+  delegate_to: "{{ ops_host }}"
+  run_once: true
+  become: true
+  become_user: "{{ ssh_user }}"
+
+- name: Authorize ops host key on cluster hosts
+  ansible.builtin.authorized_key:
+    user: "{{ ssh_user }}"
+    key: "{{ ops_pub_key.content | b64decode }}"

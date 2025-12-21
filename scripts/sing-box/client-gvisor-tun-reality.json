@@ -1,0 +1,72 @@
+{
+  "log": {
+    "level": "debug"
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "direct_dns",
+        "address": "223.5.5.5",
+        "detour": "direct"
+      }
+    ]
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "sing-tun",
+      "mtu": 1500,
+      "stack": "gvisor",
+      "endpoint_independent_nat": true,
+      "address": ["172.19.0.1/30"],
+      "auto_route": true,
+      "strict_route": true
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "vless",
+      "tag": "proxy-out",
+      "server": "your.server.ip",         // 替换为你的服务端IP或域名
+      "server_port": 443,
+      "uuid": "your-uuid",                // 与服务端一致
+      "flow": "",
+      "tls": {
+        "enabled": true,
+        "server_name": "fake-sni.com",    // 可伪装的域名，如 bing.com
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "your-server-pubkey", // 服务端生成的 Reality 公钥
+          "short_id": "abcd"                   // 与服务端一致
+        }
+      }
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "rules": [
+      {
+        "geoip": ["cn"],
+        "outbound": "direct"
+      },
+      {
+        "ip_cidr": ["0.0.0.0/0"],
+        "outbound": "proxy-out"
+      },
+      {
+        "protocol": ["dns"],
+        "action": "hijack-dns"
+      }
+    ]
+  }
+}
+

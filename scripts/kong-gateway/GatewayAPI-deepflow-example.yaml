@@ -1,0 +1,44 @@
+kubectl create secret tls onwalk-tls --cert=/etc/ssl/onwalk.net.pem --key=/etc/ssl/onwalk.net.key -n deepflow
+echo "
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: deepflow-gateway
+  namespace: deepflow
+  annotations:
+    konghq.com/publish-service: kong/kong-gateway-proxy
+spec:
+  gatewayClassName: kong
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      hostname: "deepflow-demo.onwalk.net"  # 匹配的域名
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: onwalk-tls  # 引用存放证书的 Secret
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: deepflow-demo-route
+  namespace: deepflow
+spec:
+  parentRefs:
+    - name: deepflow-gateway
+      namespace: deepflow
+  hostnames:
+    - deepflow-demo.onwalk.net  # 匹配的域名
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /  # 匹配所有路径请求
+      backendRefs:
+        - name: front-end    # 目标服务名
+          port: 80           # 后端服务的端口
+" | kubectl apply -f -

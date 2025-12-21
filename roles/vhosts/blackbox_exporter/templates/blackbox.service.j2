@@ -1,0 +1,16 @@
+[Unit]
+Description=Prometheus Blackbox Exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User={{ blackbox_user }}
+Group={{ blackbox_user }}
+ExecStart={{ blackbox_bin }} \
+  --config.file={{ blackbox_conf_file }} \
+  --web.listen-address={{ blackbox_listen }}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

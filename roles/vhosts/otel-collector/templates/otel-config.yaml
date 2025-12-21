@@ -1,0 +1,74 @@
+{% set node_static_configs = otel_prometheus_node_static_configs | mandatory('otel_prometheus_node_static_configs must be provided') %}
+{% set process_static_configs = otel_prometheus_process_static_configs | mandatory('otel_prometheus_process_static_configs must be provided') %}
+
+receivers:
+  prometheus:
+    config:
+      global:
+        scrape_interval: 10s
+      scrape_configs:
+        - job_name: 'node-exporter'
+          static_configs:
+{% for static_config in node_static_configs %}
+            - targets: {{ static_config.targets | to_json }}
+              labels:
+{% for label_key, label_value in static_config.labels.items() %}
+                {{ label_key }}: '{{ label_value }}'
+{% endfor %}
+{% endfor %}
+        - job_name: 'process-exporter'
+          static_configs:
+{% for static_config in process_static_configs %}
+            - targets: {{ static_config.targets | to_json }}
+              labels:
+{% for label_key, label_value in static_config.labels.items() %}
+                {{ label_key }}: '{{ label_value }}'
+{% endfor %}
+{% endfor %}
+  journald:
+    directory: /var/log/journal
+  filelog/std:
+    include: [ /var/log/**log ]
+
+processors:
+  resourcedetection/system:
+    detectors: ["system"]
+    system:
+      hostname_sources: ["os"]
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 75
+    spike_limit_percentage: 15
+  batch:
+    send_batch_size: 10000
+    timeout: 10s
+
+extensions:
+  zpages: {}
+
+exporters:
+  otlphttp/openobserve:
+    endpoint: {{ otlp_endpoint | default('https://otel.svc.plus/api/default/') }}
+    headers:
+      Authorization: "{{ otlp_auth }}"
+  otlphttp/openobserve_journald:
+    endpoint: {{ otlp_endpoint | default('https://otel.svc.plus/api/default/') }}
+    headers:
+      Authorization: "{{ otlp_auth }}"
+      stream-name: journald
+
+service:
+  extensions: [zpages]
+  pipelines:
+    metrics:
+      receivers: [prometheus]
+      processors: [resourcedetection/system, memory_limiter, batch]
+      exporters: [otlphttp/openobserve]
+    logs:
+      receivers: [filelog/std]
+      processors: [resourcedetection/system, memory_limiter, batch]
+      exporters: [otlphttp/openobserve]
+    logs/journald:
+      receivers: [journald]
+      processors: [resourcedetection/system, memory_limiter, batch]
+      exporters: [otlphttp/openobserve_journald]

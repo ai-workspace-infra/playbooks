@@ -1,0 +1,16 @@
+- name: Sync upgrade package to remote using rsync
+  synchronize:
+    src: "{{ upgrade_zip_path }}"
+    dest: /tmp/
+    mode: push
+
+- name: Unzip upgrade package
+  unarchive:
+    src: "/tmp/{{ upgrade_zip_path | basename }}"
+    dest: /tmp/
+    remote_src: yes
+
+- name: Execute upgrade script
+  command: bash update_agent.sh --area {{ area }}
+  args:
+    chdir: /tmp/DeepFlow-Agent-Upgrade

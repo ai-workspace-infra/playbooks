@@ -1,0 +1,43 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: 'example-pulp-admin-password'
+stringData:
+  password: ''
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: settings
+data:
+  analytics: "False"
+  content_origin: '"https://artifact.onwalk.net"'
+  api_root: '"/"'
+  allowed_export_paths: '[ "/tmp" ]'
+  allowed_import_paths: '[ "/tmp" ]'
+---
+apiVersion: repo-manager.pulpproject.org/v1
+kind: Pulp
+metadata:
+  name: example-pulp
+spec:
+  custom_pulp_settings: settings
+  admin_password_secret: "example-pulp-admin-password"
+  api:
+    replicas: 1
+  content:
+    replicas: 1
+  worker:
+    replicas: 1
+  web:
+    replicas: 1
+  database:
+    postgres_storage_class: local-path
+  file_storage_access_mode: "ReadWriteOnce"
+  file_storage_size: "2Gi"
+  file_storage_storage_class: local-path
+  cache:
+    enabled: true
+    redis_storage_class: local-path
+  ingress_type: none

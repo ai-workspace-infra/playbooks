@@ -1,0 +1,55 @@
+---
+- name: Install GPG
+  apt:
+    name: gpg
+    state: present
+
+- name: Create APT keyrings directory
+  file:
+    path: /etc/apt/keyrings/
+    state: directory
+    mode: '0755'
+  become: yes
+
+- name: Add Grafana GPG key
+  shell: |
+    wget -q -O - {{ grafana_gpg_key_url }} | gpg --dearmor | sudo tee /etc/apt/keyrings/grafana.gpg > /dev/null
+  become: yes
+
+- name: Check if Grafana GPG key file is not empty
+  ansible.builtin.stat:
+    path: /etc/apt/keyrings/grafana.gpg
+  register: grafana_gpg_key_stat
+
+- name: Fail if Grafana GPG key file is empty
+  ansible.builtin.fail:
+    msg: "The Grafana GPG key file is empty or does not exist."
+  when: grafana_gpg_key_stat.stat.size == 0
+
+- name: Add Grafana APT source
+  shell: |
+    echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
+  become: yes
+
+- name: Update APT package list and install Grafana Alloy
+  apt:
+    name: alloy
+    state: present
+    update_cache: yes
+
+- name: Create Alloy configuration directory
+  file:
+    path: /etc/alloy
+    state: directory
+    mode: '0770'
+
+- name: Create Alloy configuration file
+  template:
+    src: templates/config.alloy.j2
+    dest: "/etc/alloy/config.alloy"
+
+- name: Reload and restart Alloy service
+  systemd:
+    name: alloy
+    state: restarted
+    daemon_reload: yes

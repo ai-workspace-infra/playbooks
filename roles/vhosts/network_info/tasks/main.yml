@@ -1,0 +1,15 @@
+- name: Gather network default gateway
+  ansible.builtin.shell: |
+    ip route | grep default | awk '{print $3}'
+  register: default_gateway
+
+- name: Gather network interface information and display details
+  ansible.builtin.debug:
+    msg: |
+      Interface: "{{ item }}"
+      Status: "{{ 'UP' if hostvars[inventory_hostname]['ansible_' + item].active else 'DOWN' }}"
+      IP Address: "{{ hostvars[inventory_hostname]['ansible_' + item].ipv4.address if hostvars[inventory_hostname]['ansible_' + item].ipv4 is defined else 'N/A' }}"
+      Netmask: "{{ hostvars[inventory_hostname]['ansible_' + item].ipv4.netmask if hostvars[inventory_hostname]['ansible_' + item].ipv4 is defined else 'N/A' }}"
+      Gateway: "{{ default_gateway.stdout }}"
+  loop: "{{ ansible_facts.interfaces }}"
+  when: "'ens' in item or 'cni' in item or '^eth' in item"

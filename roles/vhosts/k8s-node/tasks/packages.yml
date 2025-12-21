@@ -1,0 +1,60 @@
+- name: Install basic system prerequisites
+  apt:
+    name:
+      - socat
+      - vim
+      - jq
+      - bc
+      - libclang-dev
+      - npm
+      - clang
+      - libssl-dev
+      - llvm
+      - libudev1
+      - protobuf-compiler
+      - python3
+      - python3-pip
+      - python3-venv
+      - docker.io
+      - docker-compose
+      - build-essential
+      - nginx
+      - redis
+      - net-tools
+      - ffmpeg
+      - rsyslog
+      - libpq-dev
+      - snapd
+      - iputils-ping
+      - systemd-timesyncd
+    state: present
+
+- name: Set vim as default editor
+  alternatives:
+    name: editor
+    path: /usr/bin/vim
+    priority: 1
+
+- name: Get list of installed lambda packages
+  shell: dpkg --list | grep lambda | awk '{print $2}'
+  register: lambda_packages
+  changed_when: false
+
+- name: Check if lambda version file exists
+  stat:
+    path: /etc/lambda-version
+  register: lambda_version_file
+
+- name: Check if another lambda package file exists, backup
+  stat:
+    path: /etc/systemd/system/lambda-jupyter.service
+  register: lambda_file_backup
+
+- name: Remove lambda packages
+  apt:
+    name: "{{ lambda_packages.stdout_lines }}"
+    state: absent
+    purge: yes
+  when:
+    - lambda_version_file.stat.exists or lambda_file_backup.stat.exists
+    - lambda_packages.stdout_lines | length > 0

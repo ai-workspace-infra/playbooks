@@ -1,0 +1,16 @@
+---
+- hosts: localhost
+  gather_facts: no
+
+  # 动态加载 DNS 配置文件
+  vars_files:
+    - vars/dns_records_svc_plus.yaml     # ← 可以切换成不同环境
+
+  # 如果你想在命令行覆盖 AK/SK，则可以使用 --extra-vars
+  vars:
+    alicloud_access_key: "{{ aliyun_ak | default('') }}"
+    alicloud_secret_key: "{{ aliyun_sk | default('') }}"
+
+  roles:
+    - role: vhosts/alicloud_dns_sync
+

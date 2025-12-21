@@ -1,12 +1,11 @@
 enable_set_timezone: true       # 默认启用 Set timezone
 enable_set_hostname: true       # 默认启用 Set hostname
-enable_install_packages: true   # 默认不安装额外的软件包
 enable_all_hosts_update: false  # 默认不更新所有主机的条目
 
 rsyslog_log_rotation:           # 可选的日志管理配置
   enable: true                  # 启用 rsyslog 日志管理
   rotate_count: 4               # 默认保留的日志文件数量
-  rotate_frequency: weekly      # 默认每周轮换, 可选：daily, hourly
+  rotate_frequency: daily      # 默认每周轮换, 可选：daily, hourly
   max_log_size: 100M            # 默认日志文件最大大小
 
 journald_log_rotation:          # 启用 journald 日志管理
@@ -16,3 +15,51 @@ journald_log_rotation:          # 启用 journald 日志管理
   max_file_sec: 1month          # 默认日志文件保存的最大时长
   system_max_use: 1G            # 默认系统日志最大使用空间
   runtime_max_use: 500M         # 默认运行时日志最大使用空间
+
+# 总开关
+enable_common: true
+
+repo:
+  apt:
+    enabled: false              # 是否配置仓库/keys
+    enable_universe: false      # Ubuntu 是否启用 universe 仓库
+    auto_update_cache: true     # 是否在 repo_setup 后自动 apt update
+    key_dir: /etc/apt/keyrings  # keyring 目录
+    keyrings: []                # 自定义 keyring 定义（由调用方传入）
+    legacy_paths:               # 清理的遗留路径
+      - /etc/apt/sources.list.d/hashicorp.sources
+      - /usr/share/keyrings/hashicorp-archive-keyring.gpg
+    entries: []                 # 声明式仓库定义
+  yum:
+    enabled: false              # 预留 RPM 系列配置
+    entries: []
+    cleanup_paths: []
+
+packages:
+  apt:
+    enabled: true               # 是否安装软件包
+    base_dependencies:          # APT 前置依赖（避免未规范化源时更新）
+      - ca-certificates
+      - gnupg
+    list:                       # 要安装的软件包
+      - auditd
+      - uidmap
+      - fuse-overlayfs
+  yum:
+    enabled: true
+    list:
+      - audit
+      - uidmap
+      - fuse-overlayfs
+
+packages_cleanup:
+  enabled: false
+  ubuntu:
+    purge: true
+    list:
+      - snapd
+      - resolvconf
+      - popularity-contest
+      - apport
+      - whoopsie
+      - modemmanager

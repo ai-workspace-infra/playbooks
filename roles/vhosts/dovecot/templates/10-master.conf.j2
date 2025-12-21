@@ -1,0 +1,24 @@
+service imap-login {
+  inet_listener imap {
+    port = 143
+  }
+  inet_listener imaps {
+    port = 993
+    ssl = yes
+  }
+}
+
+service auth {
+  unix_listener auth-userdb {
+    mode = 0600
+    user = dovecot
+  }
+  unix_listener auth-chasquid-userdb {
+    mode = 0660
+    user = chasquid
+  }
+  unix_listener auth-chasquid-client {
+    mode = 0660
+    user = chasquid
+  }
+}

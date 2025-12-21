@@ -1,0 +1,15 @@
+- name: Enable nginx Ingress
+  script: files/setup-ingress.sh {{ ingress }}  {{ ingress_ip }}
+  when: inventory_hostname in groups[group] and ( ingress == 'nginx' )
+- name: Remove nginx ingress
+  shell: 'helm delete nginx -n ingress || true ; helm delete apisix -n ingress || true ;'
+  when: ( inventory_hostname in groups[group] ) and (ingress == 'disable' )
+  ignore_errors: yes
+
+- name: Setup DNS Provider
+  script: files/setup-dns-provider.sh {{ dns_ak }}  {{ dns_sk }} {{ domain }}
+  when: ( inventory_hostname in groups[group] ) and (external_dns == 'enable' )
+- name: Remove DNS Provider
+  shell: 'helm delete external-dns  -n external-dns'
+  when: ( inventory_hostname in groups[group] ) and (external_dns == 'disable' )
+  ignore_errors: yes

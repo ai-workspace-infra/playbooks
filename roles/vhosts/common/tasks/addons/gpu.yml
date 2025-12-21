@@ -1,0 +1,22 @@
+---
+- name: Addon(GPU) | add NVIDIA repositories
+  ansible.builtin.shell: |
+    add-apt-repository -y ppa:graphics-drivers
+    distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+    curl -s -L https://nvidia.github.io/libnvidia-container/gpgkey | apt-key add -
+    curl -s -L https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.list | tee /etc/apt/sources.list.d/nvidia-container-runtime.list
+    curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | apt-key add -
+    curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | tee /etc/apt/sources.list.d/nvidia-docker.list
+    apt-get update
+  become: true
+
+- name: Addon(GPU) | install NVIDIA driver and container runtime
+  ansible.builtin.apt:
+    name:
+      - nvidia-modprobe
+      - nvidia-driver-535
+      - nvidia-headless-535
+      - nvidia-container-toolkit
+    state: present
+    update_cache: yes
+  become: true

@@ -1,0 +1,8 @@
+---
+- name: Common(RedHat) | packages
+  ansible.builtin.include_tasks: packages.yml
+  vars:
+    package_config: "{{ packages.yum | default({}) }}"
+    package_manager: dnf
+  when: (packages.yum.enabled | default(false)) | bool
+  tags: [pkgs, baseline]

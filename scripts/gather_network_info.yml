@@ -1,0 +1,12 @@
+---
+- name: Gather and display specific network interface information based on dynamic filter
+  hosts: "{{ target_group }}"
+  user: ubuntu
+  become: yes
+  gather_facts: yes
+  tasks:
+    - include_role:
+        name: network_info
+      vars:
+        target_group: master
+        interface_filter: "^(ens|cni)"

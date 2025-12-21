@@ -1,0 +1,48 @@
+---
+- name: Normalize package config
+  ansible.builtin.set_fact:
+    normalized_package_list: "{{ package_config.list | default([], true) }}"
+    normalized_base_dependencies: "{{ package_config.base_dependencies | default([], true) }}"
+
+# 基础依赖（不在此处 update_cache，避免读取未规范化源）
+- name: Ensure base APT deps (no update now)
+  ansible.builtin.apt:
+    name: "{{ normalized_base_dependencies }}"
+    state: present
+    update_cache: false
+  when:
+    - package_manager == 'apt'
+    - normalized_base_dependencies | length > 0
+  become: true
+
+# 确保仓库缓存更新后再安装主包
+- name: Refresh apt cache before package install
+  ansible.builtin.apt:
+    update_cache: true
+  when:
+    - package_manager == 'apt'
+    - normalized_package_list | length > 0
+  become: true
+
+# 实际安装
+- name: Install packages via apt
+  ansible.builtin.apt:
+    name: "{{ normalized_package_list }}"
+    state: present
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  when:
+    - package_manager == 'apt'
+    - normalized_package_list | length > 0
+  become: true
+
+- name: Install packages via dnf
+  ansible.builtin.dnf:
+    name: "{{ normalized_package_list }}"
+    state: present
+  when:
+    - package_manager == 'dnf'
+    - normalized_package_list | length > 0
+  become: true
+

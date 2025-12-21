@@ -1,0 +1,46 @@
+- name: Install iptables-persistent
+  package:
+    name:
+      - iptables-persistent
+      - netfilter-persistent
+    state: present
+  when: is_primary | bool
+
+- name: Add forwarding rule
+  iptables:
+    chain: FORWARD
+    in_interface: wg0
+    jump: ACCEPT
+    state: present
+  when: is_primary | bool
+
+- name: Get network interface information
+  ansible.builtin.shell: |
+    ip -o link show | awk '$2 !~ /^(docker|cali|cilium|veth|vxlan|lo|wg)/ && $2 ~ /^en/ {gsub(/:/, "", $2); print $2}'
+  register: ethernet_interfaces
+  changed_when: false
+
+- name: Add NAT masquerade rules for ethernet interfaces
+  iptables:
+    table: nat
+    chain: POSTROUTING
+    out_interface: "{{ item }}"
+    jump: MASQUERADE
+    state: present
+  loop: "{{ ethernet_interfaces.stdout_lines }}"
+  when: is_primary | bool
+
+- name: Save iptables rules
+  shell: |
+    netfilter-persistent save
+    netfilter-persistent reload
+  when: is_primary | bool
+
+- name: Enable IP forwarding
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    state: present
+    sysctl_set: yes
+    reload: yes
+  when: is_primary | bool

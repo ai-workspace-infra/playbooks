@@ -1,0 +1,31 @@
+---
+# post-setup.yml
+
+- name: 检查容器是否运行并输出状态
+  command: docker ps -q -f name={{ item.name }}
+  register: container_status
+  loop:
+    - { name: "{{ keycloak_name }}" }
+    - { name: "{{ postgres_name }}" }
+    - { name: "{{ nginx_name }}" }
+  changed_when: false
+  failed_when: container_status.stdout == ""
+  loop_control:
+    loop_var: item
+
+- name: 显示容器状态
+  debug:
+    msg: |
+      Docker Compose 容器状态:
+      {% for item in [keycloak_name, postgres_name, nginx_name] %}
+        - {{ item }}: {% if container_status.results | selectattr('item.name', 'equalto', item) | map(attribute='stdout') | list | first %} 运行中 {% else %} 未运行 {% endif %}
+      {% endfor %}
+
+- name: 清理临时文件
+  file:
+    path: "/tmp/{{ item }}"
+    state: absent
+  with_items:
+    - docker-compose.yml
+    - nginx.conf
+  ignore_errors: yes

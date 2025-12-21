@@ -1,0 +1,56 @@
+server {
+  listen 443 ssl;
+  server_name {{ item.domain | join(' ') }};
+
+  ssl_certificate     {{ item.ssl_certificate }};
+  ssl_certificate_key {{ item.ssl_certificate_key }};
+  ssl_protocols       TLSv1.2 TLSv1.3;
+  ssl_ciphers         HIGH:!aNULL:!MD5;
+
+  root  {{ item.root | default(vhost_defaults.root) }};
+  index index.html;
+
+  # 建议：放行 ACME/健康检查等（避免被 dotfile 规则误伤）
+  location ^~ /.well-known/ { allow all; }
+
+  {% set autoindex_paths = item.autoindex_paths | default(vhost_defaults.autoindex_paths) %}
+
+  # 目录浏览（打开 autoindex）—可列出整个 {{ item.root | default(vhost_defaults.root) }}
+  {% if '/' in autoindex_paths %}
+  location / {
+    autoindex on;
+    autoindex_exact_size off;
+    autoindex_localtime on;
+    add_header Accept-Ranges bytes;
+    try_files $uri $uri/ =404;   # 保持原有 404 语义
+  }
+  {% elif autoindex_paths %}
+    {% for path in autoindex_paths %}
+  location {{ path }} {
+    autoindex on;
+    autoindex_exact_size off;
+    autoindex_localtime on;
+  }
+    {% endfor %}
+  {% endif %}
+
+  # 常见安装包直下读文件（大小写不敏感）
+  # 这里无需 try_files，命中即直接读文件；减少一次磁盘判断
+  location ~* \.(?:dmg|zip|tar\.gz|deb|rpm|exe|pkg|appimage|apk|ipa)$ {
+    expires 7d;
+    access_log off;
+    add_header Cache-Control "public";
+    add_header Accept-Ranges bytes;
+  }
+
+  # 隐藏 dotfiles（但不拦 /.well-known/，已在上面放行）
+  location ~ /\.(?!well-known/)[^/]+ {
+    deny all;
+  }
+}
+
+server {
+  listen 80;
+  server_name {{ item.domain | join(' ') }};
+  return 301 https://$host$request_uri;
+}

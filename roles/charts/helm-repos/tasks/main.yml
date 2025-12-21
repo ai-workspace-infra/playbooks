@@ -1,0 +1,9 @@
+- name: Enable community plugins and third-party helm charts
+  shell: |
+    helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard/ || true
+    helm repo add nvidia https://helm.ngc.nvidia.com/nvidia || true
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
+    helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/ || true
+    helm repo update
+  ignore_errors: yes
+  when: is_primary | bool

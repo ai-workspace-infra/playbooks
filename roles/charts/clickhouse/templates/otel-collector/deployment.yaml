@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: default
+  labels:
+    app: otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+      - name: otel-collector
+        image: ghcr.io/metrico/qryn-otel-collector:latest
+        volumeMounts:
+        - name: config
+          mountPath: /etc/otel
+          subPath: config.yaml
+        ports:
+        - containerPort: 3100
+        - containerPort: 3200
+        - containerPort: 8088
+        - containerPort: 5514
+        - containerPort: 24224
+        - containerPort: 4317
+        - containerPort: 4318
+        - containerPort: 14250
+        - containerPort: 14268
+        - containerPort: 9411
+        - containerPort: 11800
+        - containerPort: 12800
+        - containerPort: 8086
+      volumes:
+      - name: config
+        configMap:
+          name: otel-collector-config

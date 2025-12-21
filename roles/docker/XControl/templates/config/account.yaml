@@ -1,0 +1,63 @@
+mode: "{{ xcontrol_account_mode }}"
+
+log:
+  level: {{ xcontrol_account_log_level | to_nice_yaml(indent=0) | trim }}
+
+auth:
+  enable: {{ xcontrol_account_auth_enable | bool | lower }}
+  token:
+    publicToken: "{{ xcontrol_account_public_token }}"
+    refreshSecret: "{{ xcontrol_account_refresh_secret }}"
+    accessSecret: "{{ xcontrol_account_access_secret }}"
+    accessExpiry: "{{ xcontrol_account_access_expiry }}"
+    refreshExpiry: "{{ xcontrol_account_refresh_expiry }}"
+
+server:
+  addr: "{{ xcontrol_account_server_addr }}"
+  readTimeout: {{ xcontrol_account_read_timeout | to_nice_yaml(indent=0) | trim }}
+  writeTimeout: {{ xcontrol_account_write_timeout | to_nice_yaml(indent=0) | trim }}
+  publicUrl: "{{ xcontrol_account_public_url }}"
+  allowedOrigins:
+    - "https://{{ xcontrol_accounts_domain }}"
+    - "https://{{ xcontrol_rag_api_domain }}"
+    - "https://{{ xcontrol_homepage_alias_domain }}"
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
+    - "http://localhost:8080"
+    - "http://127.0.0.1:8080"
+  tls:
+    enabled: {{ xcontrol_account_tls_enabled | bool | lower }}
+    redirectHttp: {{ xcontrol_account_tls_redirect_http | bool | lower }}
+
+store:
+  driver: "{{ xcontrol_account_store_driver }}"
+  dsn: "postgres://{{ xcontrol_db_user }}:{{ xcontrol_db_password }}@{{ xcontrol_db_host }}:{{ xcontrol_db_port }}/{{ xcontrol_account_db_name }}?sslmode={{ xcontrol_account_db_sslmode }}"
+  maxOpenConns: {{ xcontrol_account_db_max_open_conns }}
+  maxIdleConns: {{ xcontrol_account_db_max_idle_conns }}
+
+session:
+  ttl: {{ xcontrol_account_session_ttl | to_nice_yaml(indent=0) | trim }}
+  cache: "{{ xcontrol_account_session_cache }}"
+
+smtp:
+  host: "{{ xcontrol_account_smtp_host }}"
+  port: {{ xcontrol_account_smtp_port }}
+  username: "{{ xcontrol_account_smtp_username }}"
+  password: "{{ xcontrol_account_smtp_password }}"
+  from: "{{ xcontrol_account_smtp_from }}"
+  timeout: {{ xcontrol_account_smtp_timeout | to_nice_yaml(indent=0) | trim }}
+  tls:
+    mode: "{{ xcontrol_account_smtp_tls_mode }}"
+    insecureSkipVerify: {{ xcontrol_account_smtp_tls_insecure_skip_verify | bool | lower }}
+
+xray:
+  sync:
+    enabled: {{ xcontrol_account_xray_sync_enabled | bool | lower }}
+    interval: {{ xcontrol_account_xray_sync_interval | to_nice_yaml(indent=0) | trim }}
+    outputPath: "{{ xcontrol_account_xray_output_path }}"
+    templatePath: "{{ xcontrol_account_xray_template_path }}"
+    validateCommand: {{ xcontrol_account_xray_validate_command | to_nice_yaml(indent=2) | trim }}
+    restartCommand: {{ xcontrol_account_xray_restart_command | to_nice_yaml(indent=2) | trim }}
+
+agent:
+  id: "{{ xcontrol_account_agent_id }}"

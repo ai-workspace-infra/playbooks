@@ -1,0 +1,33 @@
+- name: Reboot
+  reboot:
+    msg: "Rebooting..."
+    reboot_command: "reboot"
+    connect_timeout: 5
+    reboot_timeout: 900
+    pre_reboot_delay: 0
+    post_reboot_delay: 30
+    test_command: uptime
+  when: gpu_setup.changed or ipv6_disabled.changed
+  register: rebooted
+
+- name: Wait for system to be ready
+  wait_for_connection:
+    timeout: 600
+  when: rebooted.changed
+
+- name: Set hostname again just in case
+  systemd:
+    name: set-hostname
+    enabled: yes
+    state: restarted
+    daemon_reload: yes
+  when: rebooted.changed
+
+- name: Wait for microk8s to be ready
+  shell: microk8s status | grep -E "microk8s is running|acting as a node in a cluster"
+  register: result
+  until: result.rc == 0
+  retries: 30
+  delay: 10
+  ignore_errors: yes
+  when: rebooted.changed

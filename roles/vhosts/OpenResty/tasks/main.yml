@@ -1,0 +1,82 @@
+- name: Install prerequisites for OpenResty
+  apt:
+    name:
+      - curl
+      - gnupg
+      - apt-transport-https
+    state: present
+    update_cache: true
+
+- name: Import OpenResty GPG key
+  shell: |
+    curl -fsSL https://openresty.org/package/pubkey.gpg | \
+    gpg --dearmor -o /usr/share/keyrings/openresty.gpg
+  args:
+    creates: /usr/share/keyrings/openresty.gpg
+
+# yamllint disable rule:line-length
+- name: Add OpenResty apt repository
+  apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/openresty.gpg] http://openresty.org/package/ubuntu jammy main"
+    filename: openresty
+    state: present
+# yamllint enable rule:line-length
+
+- name: Install OpenResty
+  apt:
+    name: openresty
+    state: present
+    update_cache: true
+
+- name: Ensure sites-available directory exists
+  file:
+    path: /usr/local/openresty/nginx/conf/sites-available
+    state: directory
+
+- name: Deploy nginx configuration
+  template:
+    src: nginx.conf.j2
+    dest: /usr/local/openresty/nginx/conf/nginx.conf
+  notify: Restart OpenResty
+
+- name: Deploy vhost configurations
+  template:
+    # Use item.template if provided; otherwise select by vhost type
+    src: "{{ item.template | default(item.type ~ '.conf.j2') }}"
+    dest: "/usr/local/openresty/nginx/conf/sites-available/{{ item.name }}.conf"
+  loop: "{{ vhosts | default([]) }}"
+  notify: Restart OpenResty
+
+- name: Ensure artifact root directories exist
+  file:
+    path: "{{ item.root }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+  loop: "{{ vhosts | default([]) | selectattr('type', 'equalto', 'artifact') | selectattr('root', 'defined') | list }}"
+
+- name: Ensure homepage static root directories exist
+  file:
+    path: "{{ item.root | default('/data/update-server/dashboard') }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+  loop: "{{ vhosts | default([]) | selectattr('type', 'equalto', 'homepage-static') | list }}"
+
+- name: Enable and start OpenResty
+  systemd:
+    name: openresty
+    enabled: true
+    state: started
+
+- name: Verify OpenResty core API
+  shell: |
+    curl -fsS -X POST http://127.0.0.1/api/askai \
+      -H "Content-Type: application/json" \
+      -d '{"question":"你好"}'
+  register: openresty_verify
+  retries: 5
+  delay: 3
+  until: openresty_verify.rc == 0

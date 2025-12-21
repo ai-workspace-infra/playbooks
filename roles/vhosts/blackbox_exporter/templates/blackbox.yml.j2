@@ -1,0 +1,15 @@
+modules:
+  http_dl_download:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      follow_redirects: true
+      valid_status_codes: [200, 302]
+      headers:
+        Host: {{ dl_business_host }}
+      tls_config:
+        server_name: {{ dl_business_host }}
+        insecure_skip_verify: false
+      # fail_if_body_not_matches_regexp:
+      #   - "(?i)\\.zip|\\.tar\\.gz|manifest"

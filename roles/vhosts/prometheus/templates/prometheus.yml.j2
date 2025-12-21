@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: 'node'
+    file_sd_configs:
+      - files: ['{{ prometheus_file_sd_dir }}/nodes.json']
+{% if enable_remote_write %}
+
+remote_write:
+  - url: https://{{ metrics_domain }}{% if metrics_backend_kind == 'receiver' %}{{ receiver_path }}{% else %}{{ vm_write_path }}{% endif %}
+    queue_config:
+      max_samples_per_send: 10000
+      max_shards: 8
+      capacity: 100000
+{% endif %}
+{% if enable_remote_read and metrics_backend_kind == 'vm' %}
+
+remote_read:
+  - url: https://{{ metrics_domain }}{{ vm_read_path }}
+    read_recent: true
+{% endif %}

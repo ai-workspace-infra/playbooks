@@ -1,0 +1,187 @@
+services:
+
+  zitadel-external-tls:
+    extends:
+      service: zitadel-init
+    command: 'start-from-setup --masterkey "{{ zitadel_masterkey }}"'
+    environment:
+      ZITADEL_EXTERNALPORT: 443
+      ZITADEL_EXTERNALSECURE: true
+      ZITADEL_TLS_ENABLED: false
+    networks:
+      - app
+      - db
+    depends_on:
+      db:
+        condition: 'service_healthy'
+      zitadel-init:
+        condition: 'service_completed_successfully'
+
+  zitadel-enabled-tls:
+    extends:
+      service: zitadel-init
+    command: 'start-from-setup --masterkey "{{ zitadel_masterkey }}"'
+    environment:
+      ZITADEL_EXTERNALPORT: 443
+      ZITADEL_EXTERNALSECURE: true
+      ZITADEL_TLS_ENABLED: true
+      ZITADEL_TLS_CERTPATH: /etc/letsencrypt/live/{{ zitadel_domain }}/fullchain.pem
+      ZITADEL_TLS_KEYPATH: /etc/letsencrypt/live/{{ zitadel_domain }}/privkey.pem
+    volumes:
+      - "{{ zitadel_workspace }}/certbot/conf:/etc/letsencrypt"
+    networks:
+      - app
+      - db
+    depends_on:
+      zitadel-init:
+        condition: 'service_completed_successfully'
+      db:
+        condition: 'service_healthy'
+
+  zitadel-init:
+    image: '${ZITADEL_IMAGE:-ghcr.io/zitadel/zitadel:latest}'
+    command: 'init'
+    depends_on:
+      db:
+        condition: 'service_healthy'
+    environment:
+      # Using an external domain other than localhost proofs, that the proxy configuration works.
+      # If Zitadel can't resolve a requests original host to this domain,
+      # it will return a 404 Instance not found error.
+      ZITADEL_EXTERNALDOMAIN: {{ zitadel_domain }}
+      # In case something doesn't work as expected,
+      # it can be handy to be able to read the access logs.
+      ZITADEL_LOGSTORE_ACCESS_STDOUT_ENABLED: true
+      # For convenience, ZITADEL should not ask to change the initial admin users password.
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: false
+      # database configuration
+      ZITADEL_DATABASE_POSTGRES_HOST: db
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: zitadel_pw
+      # Set up a service account with IAM_LOGIN_CLIENT role and write the PAT to the file ./login-client.pat
+      ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /current-dir/login-client.pat
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_USERNAME: login-client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME: Automatically Initialized IAM Login Client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: '2029-01-01T00:00:00Z'
+      # The master key is used to
+    networks:
+      - db
+    healthcheck:
+      test: [ "CMD", "/app/zitadel", "ready" ]
+      interval: '10s'
+      timeout: '5s'
+      retries: 5
+      start_period: '10s'
+    volumes:
+      - "{{ zitadel_workspace }}:/current-dir:rw"
+
+  db:
+    restart: 'always'
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready" ]
+      interval: 5s
+      timeout: 60s
+      retries: 10
+      start_period: 5s
+    networks:
+      - db
+    volumes:
+      - 'data:/var/lib/postgresql/data:rw'
+
+  login-external-tls:
+    restart: 'unless-stopped'
+    image: 'ghcr.io/zitadel/zitadel-login:latest'
+    environment:
+      - ZITADEL_API_URL=http://zitadel-external-tls:8080
+      - NEXT_PUBLIC_BASE_PATH=/ui/v2/login
+      - ZITADEL_SERVICE_USER_TOKEN_FILE=/current-dir/login-client.pat
+      - CUSTOM_REQUEST_HEADERS=Host:{{ zitadel_domain }}
+    volumes:
+      - "{{ zitadel_workspace }}:/current-dir:ro"
+    networks:
+      - app
+    depends_on:
+      zitadel-external-tls:
+        condition: 'service_healthy'
+
+  login-enabled-tls:
+    restart: 'unless-stopped'
+    image: 'ghcr.io/zitadel/zitadel-login:latest'
+    environment:
+      - ZITADEL_API_URL=https://zitadel-enabled-tls:8080
+      - NEXT_PUBLIC_BASE_PATH=/ui/v2/login
+      - ZITADEL_SERVICE_USER_TOKEN_FILE=/current-dir/login-client.pat
+      - CUSTOM_REQUEST_HEADERS=Host:{{ zitadel_domain }}
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
+    volumes:
+      - "{{ zitadel_workspace }}:/current-dir:ro"
+    networks:
+      - app
+    depends_on:
+      zitadel-enabled-tls:
+        condition: 'service_healthy'
+
+  proxy-external-tls:
+    image: nginx:mainline-alpine
+    container_name: proxy-external-tls
+    restart: unless-stopped
+    volumes:
+      - "{{ zitadel_workspace }}/nginx/nginx.conf:/etc/nginx/nginx.conf"
+      - "{{ zitadel_workspace }}/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro"
+      - "{{ zitadel_workspace }}/certbot/conf:/etc/letsencrypt"
+      - "{{ zitadel_workspace }}/certbot/www:/var/www/certbot"
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - app
+    depends_on:
+      zitadel-external-tls:
+        condition: service_healthy
+
+  bootstrap-nginx:
+    profiles: ["bootstrap"]
+    image: nginx:mainline-alpine
+    container_name: bootstrap-nginx
+    volumes:
+      - "{{ zitadel_workspace }}/certbot/www:/var/www/certbot"
+      - "{{ zitadel_workspace }}/certbot/conf:/etc/letsencrypt"
+      - "{{ zitadel_workspace }}/nginx/nginx.conf:/etc/nginx/nginx.conf"
+      - "{{ zitadel_workspace }}/nginx/conf.d/bootstrap-nginx.conf:/etc/nginx/conf.d/bootstrap-nginx.conf"
+    ports:
+      - "80:80"       # 暂时只占用80
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 3s
+  certbot:
+    profiles: ["bootstrap"]
+    image: certbot/certbot
+    container_name: certbot
+    command: >
+      certonly --webroot
+      --webroot-path=/var/www/certbot
+      --email manbuzhe2009@qq.com
+      --agree-tos
+      --no-eff-email
+      --keep-until-expiring
+      --non-interactive
+      -d {{ zitadel_domain }}
+    volumes:
+      - "{{ zitadel_workspace }}/certbot/conf:/etc/letsencrypt"
+      - "{{ zitadel_workspace }}/certbot/www:/var/www/certbot"
+    networks:
+      - app
+
+networks:
+  app:
+  db:
+
+volumes:
+  data:

@@ -1,0 +1,103 @@
+- name: Configure file limits
+  blockinfile:
+    path: /etc/security/limits.conf
+    block: |
+      * soft nofile 40000
+      * hard nofile 40001
+
+- name: Configure PAM limits
+  lineinfile:
+    path: "{{ item }}"
+    line: "session required pam_limits.so"
+  with_items:
+    - /etc/pam.d/common-session
+    - /etc/pam.d/common-session-noninteractive
+
+- name: Set hostname
+  hostname:
+    name: "{{ inventory_hostname }}"
+    use: systemd
+
+- name: Update /etc/hostname
+  copy:
+    content: "{{ inventory_hostname }}"
+    dest: /etc/hostname
+
+- name: Ensure preserve_hostname is set to true
+  lineinfile:
+    path: /etc/cloud/cloud.cfg
+    regexp: '^preserve_hostname:'
+    line: 'preserve_hostname: true'
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create hostname script
+  copy:
+    dest: /usr/local/bin/set-hostname.sh
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      hostnamectl set-hostname "{{ inventory_hostname }}"
+      hostname "{{ inventory_hostname }}"
+      echo -n "{{ inventory_hostname }}" > /etc/hostname
+
+- name: Create systemd service
+  copy:
+    dest: /etc/systemd/system/set-hostname.service
+    content: |
+      [Unit]
+      Description=Set system hostname on boot
+      After=network.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/set-hostname.sh
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Enable and start hostname service
+  systemd:
+    name: set-hostname
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Configure and ensure time synchronization
+  block:
+    - name: Ensure timesyncd is installed and enabled
+      systemd:
+        name: systemd-timesyncd
+        state: started
+        enabled: yes
+
+    - name: Configure NTP servers
+      lineinfile:
+        path: /etc/systemd/timesyncd.conf
+        regexp: '^#?NTP='
+        line: 'NTP=pool.ntp.org'
+
+    - name: Force time synchronization
+      shell: |
+        timedatectl set-ntp true
+        systemctl restart systemd-timesyncd
+
+- name: Disable IPv6
+  block:
+    - name: Set sysctl parameters for IPv6
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+        sysctl_file: /etc/sysctl.d/99-disable-ipv6.conf
+        reload: yes
+      with_items:
+        - { key: "net.ipv6.conf.all.disable_ipv6", value: "1" }
+        - { key: "net.ipv6.conf.default.disable_ipv6", value: "1" }
+        - { key: "net.ipv6.conf.lo.disable_ipv6", value: "1" }
+      register: ipv6_disabled
+  become: yes
+  when: not ipv6_enabled | bool

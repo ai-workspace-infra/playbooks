@@ -1,0 +1,25 @@
+[Unit]
+Description=OpenObserve Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory={{ openobserve_working_dir }}
+ExecStart={{ openobserve_binary }}
+Restart=on-failure
+RestartSec=5
+
+Environment=ZO_ROOT_USER_EMAIL={{ openobserve_root_user_email }}
+Environment=ZO_ROOT_USER_PASSWORD={{ openobserve_root_user_password }}
+Environment=ZO_MEMORY_CACHE_MAX_SIZE={{ openobserve_memory_cache_max_size }}
+Environment=ZO_COMPACT_ENABLED={{ openobserve_compact_enabled | lower }}
+Environment=ZO_QUERY_PARALLELISM={{ openobserve_query_parallelism }}
+Environment=ZO_FEATURE_PER_THREAD_LOCK={{ openobserve_feature_per_thread_lock | lower }}
+
+# Optional: Increase file descriptor limit to avoid errors with many small files
+# LimitNOFILE=262144
+
+[Install]
+WantedBy=multi-user.target

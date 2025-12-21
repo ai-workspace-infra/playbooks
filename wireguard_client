@@ -1,0 +1,24 @@
+- name: Config wireguard for peer 
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - include_role:
+        name: wireguard-client
+      vars:
+        group: local
+        local:
+          private_key: ""
+          tunnel: wg0
+          network: 10.255.0.3/32
+          listen_port: '54321'
+          persistent_keepalive: '60'
+        peers:
+          - name: aws_vpc
+            endpoint: "52.80.191.64:51820"
+            public_key: ""
+            allowed_ips: "10.255.0.1/32,10.0.0.0/16"
+          - name: ali_vpc
+            endpoint: "8.130.97.92:51820"
+            public_key: ""
+            allowed_ips: "10.255.0.2/32,10.2.0.0/16"

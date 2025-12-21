@@ -1,0 +1,105 @@
+---
+- name: Ensure Zitadel directories exist
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ zitadel_workspace }}"
+    - "{{ zitadel_workspace }}/certbot"
+    - "{{ zitadel_workspace }}/certbot/conf"
+    - "{{ zitadel_workspace }}/certbot/www"
+    - "{{ zitadel_workspace }}/nginx"
+    - "{{ zitadel_workspace }}/nginx/conf.d"
+
+- name: Ensure Zitadel workspace ownership
+  become: true
+  ansible.builtin.file:
+    path: "{{ zitadel_workspace }}"
+    state: directory
+    recurse: true
+    owner: "1000"
+    group: "1000"
+    mode: "0755"
+
+- name: Template Zitadel configuration files
+  become: true
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ zitadel_workspace }}/{{ item.dest }}"
+    mode: "{{ item.mode | default('0644') }}"
+  loop:
+    - { src: 'docker-compose.yaml', dest: 'docker-compose.yaml' }
+    - { src: 'nginx/conf.d/default.conf', dest: 'nginx/conf.d/default.conf' }
+    - { src: 'nginx/conf.d/bootstrap-nginx.conf', dest: 'nginx/conf.d/bootstrap-nginx.conf' }
+
+- name: Copy Zitadel static files
+  become: true
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ zitadel_workspace }}/{{ item.dest }}"
+    mode: "{{ item.mode | default('0644') }}"
+  loop:
+    - { src: 'run.sh', dest: 'run.sh', mode: '0755' }
+    - { src: 'nginx/nginx.conf', dest: 'nginx/nginx.conf' }
+
+- name: Bootstrap NGINX (80-only for ACME)
+  become: true
+  command: docker compose --profile bootstrap -f {{ zitadel_workspace }}/docker-compose.yaml up -d bootstrap-nginx
+  args:
+    chdir: "{{ zitadel_workspace }}"
+
+- name: Run certbot initial ACME challenge
+  become: true
+  command: docker compose --profile bootstrap -f {{ zitadel_workspace }}/docker-compose.yaml run --rm certbot
+  args:
+    chdir: "{{ zitadel_workspace }}"
+
+- name: Destroy Bootstrap NGINX (80-only for ACME)
+  become: true
+  command: docker compose --profile bootstrap -f {{ zitadel_workspace }}/docker-compose.yaml down bootstrap-nginx
+  args:
+    chdir: "{{ zitadel_workspace }}"
+
+# -------------------------------------------------------------------
+# 1. 判断 Zitadel 是否已经初始化 
+#    (是否已经生成 login-client.pat 或其它初始化标记)
+# -------------------------------------------------------------------
+- name: Check if Zitadel initialized
+  stat:
+    path: "{{ zitadel_workspace }}/login-client.pat"
+  register: zitadel_initialized
+
+
+# -------------------------------------------------------------------
+# 2. 如果未初始化，先清理所有可能失败的残留容器、状态
+# -------------------------------------------------------------------
+- name: Zitadel containers and Zitadel postgres volume  (cleanup)
+  become: true
+  shell: |
+    docker compose -f {{ zitadel_workspace }}/docker-compose.yaml down || true
+    docker volume rm zitadel_data || true
+  args:
+    chdir: "{{ zitadel_workspace }}"
+  when: not zitadel_initialized.stat.exists
+
+# -------------------------------------------------------------------
+# 3. 执行第一次初始化（init + setup）
+# -------------------------------------------------------------------
+- name: Run Zitadel init (one-time)
+  become: true
+  shell: |
+    docker compose -f {{ zitadel_workspace }}/docker-compose.yaml run --rm zitadel-init || true
+  args:
+    chdir: "{{ zitadel_workspace }}"
+  when: not zitadel_initialized.stat.exists
+
+# -------------------------------------------------------------------
+# 4. 启动正式 Zitadel stack（start-only）
+# -------------------------------------------------------------------
+- name: Bring up Zitadel stack
+  become: true
+  command: docker compose -f {{ zitadel_workspace }}/docker-compose.yaml up -d
+  args:
+    chdir: "{{ zitadel_workspace }}"

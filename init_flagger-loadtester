@@ -1,0 +1,16 @@
+- name: setup flagger-loadtester server
+  hosts: all
+  user: root
+  become: yes
+  gather_facts: yes
+  tasks:
+    - include_role:
+        name: flagger-loadtester
+      vars:
+        group: master
+        update_secret: true
+        namespace: loadtester
+        tls:
+          - secret_name: obs-tls
+            keyfile: /etc/ssl/${DOMAIN}.key
+            certfile: /etc/ssl/${DOMAIN}.pem

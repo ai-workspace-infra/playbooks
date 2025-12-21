@@ -1,0 +1,40 @@
+---
+- name: 安装 Docker 和 Docker Compose
+  apt:
+    name:
+      - docker.io
+      - docker-compose
+    state: present
+    update_cache: yes
+
+- name: 启动并启用 Docker 服务
+  systemd:
+    name: docker
+    enabled: yes
+    state: started
+
+- name: 创建所需的目录结构 /etc/ssl
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items:
+    - /etc/ssl
+- name: 创建所需的目录结构 common config
+  file:
+    path: "/home/ubuntu/harbor/{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items:
+    - common/config/registryctl
+    - common/config/db
+    - common/config/jobservice
+    - common/config/registry
+    - common/config/portal
+    - common/config/core
+    - common/config/core/certificates
+    - common/config/log
+    - common/config/shared
+    - common/config/shared/trust-certificates
+    - common/config/nginx
+    - common/config/nginx/conf.d

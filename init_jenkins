@@ -1,0 +1,18 @@
+- name: setup jenkins server
+  hosts: all
+  user: root
+  become: yes
+  gather_facts: yes
+  tasks:
+    - include_role:
+        name: jenkins
+      vars:
+        group: master
+        domain: onwalk.net
+        namespace: jenkins
+        update_secret: true
+        db_namespace: database
+        tls:
+          - secret_name: jenkins-tls
+            keyfile: /etc/ssl/onwalk.net.key
+            certfile: /etc/ssl/onwalk.net.pem

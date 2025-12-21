@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homepage-nginx-config
+data:
+  nginx.conf: |
+    server {
+      listen 80;
+      server_name localhost;
+      root {{ .Values.storage.mountPath }};
+      index index.html;
+      # 关闭目录浏览
+      autoindex off;
+      # 静态文件缓存
+      location ~* \.(?:ico|css|js|gif|jpe?g|png|woff2?|eot|ttf|svg|otf|webp)$ {
+        expires 30d;
+        access_log off;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+      }
+      # 前端路由支持 (HTML5 history mode)
+      location / {
+        try_files $uri /index.html;
+      }
+      # 可选: 防止隐藏文件被访问
+      location ~ /\. {
+        deny all;
+      }
+    }
+

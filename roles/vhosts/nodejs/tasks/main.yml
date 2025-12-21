@@ -1,0 +1,115 @@
+---
+- name: Check Node.js version
+  command: node --version
+  register: node_version_check
+  changed_when: false
+  failed_when: false
+
+- name: Get Node.js version number
+  set_fact:
+    nodejs_installed_version: "{{ node_version_check.stdout | regex_replace('v', '') | default('') }}"
+  when: node_version_check.rc == 0
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install prerequisites
+  apt:
+    name:
+      - curl
+      - wget
+      - gnupg
+      - ca-certificates
+    state: present
+
+- name: Remove old NodeSource repository if exists
+  apt_repository:
+    repo: "{{ item }}"
+    state: absent
+  loop:
+    - deb https://deb.nodesource.com/node_{{ nodejs_version }}.x {{ ansible_distribution_release }} main
+    - deb-src https://deb.nodesource.com/node_{{ nodejs_version }}.x {{ ansible_distribution_release }} main
+  when: nodejs_installed_version is defined and nodejs_installed_version != nodejs_version
+
+- name: Add NodeSource repository
+  apt_repository:
+    repo: "deb https://deb.nodesource.com/node_{{ nodejs_version }}.x {{ ansible_distribution_release }} main"
+    state: present
+    filename: nodesource
+  when: nodejs_installed_version is not defined or nodejs_installed_version != nodejs_version
+
+- name: Add NodeSource GPG key
+  apt_key:
+    url: "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
+    state: present
+  when: nodejs_installed_version is not defined or nodejs_installed_version != nodejs_version
+
+- name: Install Node.js
+  apt:
+    name:
+      - "nodejs={{ nodejs_version }}-1nodesource1"
+    state: present
+    update_cache: yes
+  when: nodejs_installed_version is not defined or nodejs_installed_version != nodejs_version
+
+- name: Install npm globally
+  npm:
+    name: npm
+    state: latest
+    global: yes
+
+- name: Get current Yarn version
+  command: yarn --version
+  register: yarn_version_check
+  changed_when: false
+  failed_when: false
+  when: install_yarn | default(true)
+
+- name: Get Yarn GPG key
+  rpm_key:
+    state: present
+    key: https://dl.yarnpkg.com/debian/pubkey.gpg
+  when: install_yarn | default(true)
+  environment:
+    ansible_python_interpreter: /usr/bin/python3
+
+- name: Add Yarn repository
+  apt_repository:
+    repo: "deb https://dl.yarnpkg.com/debian/ stable main"
+    state: present
+    filename: yarn
+  when: install_yarn | default(true)
+
+- name: Install Yarn
+  apt:
+    name: yarn
+    state: present
+    update_cache: yes
+  when: install_yarn | default(true)
+
+- name: Set npm to use version tags by default
+  shell: npm config set save-exact true
+  args:
+    creates: /root/.npmrc
+
+- name: Create npm global directory
+  file:
+    path: "{{ npm_config_prefix }}"
+    state: directory
+    mode: '0755'
+
+- name: Add npm global bin to PATH
+  template:
+    src: npm_global.sh.j2
+    dest: /etc/profile.d/npm_global.sh
+    mode: '0644'
+  when: add_npm_to_path | default(true)
+
+- name: Verify installations
+  debug:
+    msg: |
+      Node.js version: {{ nodejs_installed_version | default('Not installed') }}
+      NPM version: {{ ansible_facts.packages.npm[0].version if ansible_facts.packages.npm is defined and ansible_facts.packages.npm else 'N/A' }}
+      Yarn version: {{ yarn_version_check.stdout if yarn_version_check.rc == 0 and install_yarn | default(true) else 'Not installed' }}

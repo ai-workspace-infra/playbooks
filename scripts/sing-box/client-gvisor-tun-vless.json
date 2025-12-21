@@ -1,0 +1,69 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "direct_dns",
+        "address": "223.5.5.5",
+        "detour": "direct"
+      }
+    ]
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "sing-tun",           // 虚拟网卡名，不会真实创建（gVisor 模式）
+      "mtu": 1500,
+      "stack": "gvisor",                      // 用户态 TCP/IP 栈
+      "endpoint_independent_nat": true,
+      "address": [
+        "172.19.0.1/30"
+      ],
+      "auto_route": true,
+      "strict_route": true
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "proxy-out",
+      "server": "your.domain.com",           // ✅ 你的 TLS 证书域名
+      "server_port": 443,
+      "uuid": "your-uuid",                   // ✅ 与服务端一致 UUID
+      "flow": "xtls-rprx-vision",            // ✅ 开启 XTLS-Vision 加速
+      "tls": {
+        "enabled": true,
+        "server_name": "your.domain.com",    // ✅ 与证书一致
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"            // 可选 uTLS 指纹伪装
+        }
+        // ❌ 无 Reality 字段
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "rules": [
+      {
+        "geoip": ["cn"],
+        "outbound": "direct"                 // 国内走直连
+      },
+      {
+        "ip_cidr": ["0.0.0.0/0"],
+        "outbound": "proxy-out"             // 其余走 VLESS XTLS 出口
+      },
+      {
+        "protocol": ["dns"],
+        "action": "hijack-dns"              // 劫持系统 DNS
+      }
+    ]
+  }
+}

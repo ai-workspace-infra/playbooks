@@ -1,0 +1,40 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: pulp-route
+  namespace: pulp
+spec:
+  hostnames:
+    - artifact.onwalk.net  # 用于访问 Pulp 服务的域名
+  parentRefs:
+    - name: example-gateway  # 引用 Kong Gateway 或其他 Ingress Gateway
+      namespace: kong  # Kong 所在的命名空间
+      group: gateway.networking.k8s.io
+      kind: Gateway  # 引用类型为 Gateway
+  rules:
+    # 路由匹配 /api 路径的请求到 Pulp API 服务
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api  # 匹配以 /api 开头的路径
+      backendRefs:
+        - name: example-pulp-api-svc  # Pulp API 服务名
+          port: 24817  # Pulp API 服务端口
+
+    # 路由匹配 /content 路径的请求到 Pulp 内容服务
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /content  # 匹配以 /content 开头的路径
+      backendRefs:
+        - name: example-pulp-content-svc  # Pulp 内容服务名
+          port: 24816  # Pulp 内容服务端口
+
+    # 路由匹配根路径 / 的请求到 Pulp Web 服务
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /  # 匹配以 / 开头的路径（根路径）
+      backendRefs:
+        - name: example-pulp-web-svc  # Pulp Web 服务名
+          port: 24880  # Pulp Web 服务端口

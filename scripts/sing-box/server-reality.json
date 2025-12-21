@@ -1,0 +1,38 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "inbounds": [
+    {
+      "type": "vless",
+      "tag": "vless-in",
+      "listen": "::",
+      "listen_port": 443,
+      "users": [
+        {
+          "uuid": "your-uuid",   // 与客户端一致
+          "flow": ""
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "fake-sni.com",  // 与客户端一致
+        "reality": {
+          "enabled": true,
+          "handshake": {
+            "server": "fake-sni.com",  // 伪装域名
+            "server_port": 443
+          },
+          "private_key": "your-private-key",  // Reality 私钥
+          "short_id": ["abcd"]                // 可为多个，但需与客户端匹配
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ]
+}

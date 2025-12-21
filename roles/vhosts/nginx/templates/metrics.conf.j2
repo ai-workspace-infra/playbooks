@@ -1,0 +1,43 @@
+upstream metrics_backend { server {{ vhosts_nginx_metrics_backend_addr }}; keepalive 32; }
+
+server {
+  listen 443 ssl http2;
+  server_name {{ vhosts_nginx_metrics_domain }};
+  ssl_certificate     {{ vhosts_nginx_ssl_certificate }};
+  ssl_certificate_key {{ vhosts_nginx_ssl_certificate_key }};
+
+  # Prometheus Web/API via subpath
+  location /prom/ {
+    proxy_set_header Host              $http_host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout  300;
+    proxy_send_timeout  300;
+    proxy_pass http://127.0.0.1:9090/;
+  }
+
+  # Ingest (VM write/read; Receiver write)
+  location = {{ vhosts_nginx_vm_write_path }} {
+    client_max_body_size 0; proxy_request_buffering off; proxy_buffering off; proxy_http_version 1.1;
+    proxy_set_header Host $http_host; proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 600; proxy_send_timeout 600;
+    proxy_pass http://metrics_backend$request_uri;
+  }
+  location = {{ vhosts_nginx_vm_read_path }} {
+    client_max_body_size 0; proxy_request_buffering off; proxy_buffering off; proxy_http_version 1.1;
+    proxy_set_header Host $http_host; proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 600; proxy_send_timeout 600;
+    proxy_pass http://metrics_backend$request_uri;
+  }
+  location = {{ vhosts_nginx_receiver_path }} {
+    client_max_body_size 0; proxy_request_buffering off; proxy_buffering off; proxy_http_version 1.1;
+    proxy_set_header Host $http_host; proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 600; proxy_send_timeout 600;
+    proxy_pass http://metrics_backend$request_uri;
+  }
+}
+server { listen 80; server_name {{ vhosts_nginx_metrics_domain }}; return 301 https://$host$request_uri; }

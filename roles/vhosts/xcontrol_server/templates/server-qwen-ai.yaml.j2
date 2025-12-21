@@ -1,0 +1,55 @@
+global:
+  #proxy: socks5://127.0.0.1:1080
+  redis:
+    addr: "127.0.0.1:6379"
+    password: ""
+  vectordb:
+    pgurl: "postgres://shenlan:password@127.0.0.1:5432/shenlan"
+  datasources:
+    - name: Xstream
+      repo: https://github.com/svc-design/Xstream
+      path: docs
+    - name: XControl
+      repo: https://github.com/svc-design/XControl
+      path: docs
+    - name: documents
+      repo: https://github.com/svc-design/documents
+      path: /
+
+sync:
+  repo:
+    proxy: socks5://127.0.0.1:1080
+
+models:
+  embedder:
+    provider: "openai"
+    models: "text-embedding-v4"
+    baseurl: "https://dashscope.aliyuncs.com/compatible-mode"
+    endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
+    token: "{{ xcontrol_server_embedder_token | default('') }}"
+  generator:
+    provider: "chutes"
+    models:
+      - 'unsloth/Llama-3.2-3B-Instruct'
+    baseurl: "https://llm.chutes.ai"
+    endpoint: "https://llm.chutes.ai/v1/chat/completions"
+    token: "{{ xcontrol_server_generator_token | default('') }}"
+
+embedding:
+  max_batch: 64
+  dimension: 1024
+  max_chars: 8000
+  rate_limit_tpm: 120000
+
+chunking:
+  embed_toc: true
+  max_tokens: 800
+  overlap_tokens: 80
+  prefer_heading_split: true
+  include_exts: [".md", ".mdx"]
+  ignore_dirs: [".git", "node_modules", "dist", "build"]
+
+api:
+  askai:
+    timeout: 100
+    retries: 3

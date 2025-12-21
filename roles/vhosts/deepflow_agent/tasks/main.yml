@@ -1,0 +1,49 @@
+- name: Copy agent package to /tmp on target
+  copy:
+    src: "{{ agent_base_dir }}/{{ agent_package_name }}"
+    dest: "/tmp/{{ agent_package_name }}"
+    mode: '0644'
+
+- name: Install agent package
+  become: true
+  shell: |
+    case "{{ agent_package_name }}" in
+      *.rpm)
+        rpm -Uvh --force /tmp/{{ agent_package_name }}
+        ;;
+      *.deb)
+        dpkg -i /tmp/{{ agent_package_name }}
+        ;;
+      *)
+        echo "Unsupported package format"
+        exit 1
+        ;;
+    esac
+  args:
+    executable: /bin/bash
+
+- name: Render config to /tmp
+  template:
+    src: deepflow-agent.yaml.j2
+    dest: "/tmp/deepflow-agent.yaml"
+    mode: '0644'
+
+- name: Move config to /etc
+  become: true
+  command: mv /tmp/deepflow-agent.yaml /etc/deepflow-agent.yaml
+
+- name: Restart deepflow-agent service
+  become: true
+  systemd:
+    name: deepflow-agent
+    state: restarted
+    enabled: true
+
+- name: Show service status
+  shell: systemctl is-active deepflow-agent
+  register: agent_status
+  changed_when: false
+
+- name: Report Agent status
+  debug:
+    msg: "DeepFlow Agent status on {{ inventory_hostname }}: {{ agent_status.stdout }}"

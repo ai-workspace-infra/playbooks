@@ -1,0 +1,45 @@
+- name: Install WireGuard Packages
+  shell: "mkdir -pv /etc/wireguard/ && \
+          apt update && \
+          apt install resolvconf wireguard-dkms wireguard-tools -y"
+  tags: wireguard
+
+- name: Check if IP forwarding is enabled
+  command: sysctl -n net.ipv4.ip_forward
+  register: ip_forwarding_status
+
+- name: Enable IP forwarding if not already enabled
+  block:
+    - name: Append IP forwarding configuration
+      lineinfile:
+        path: /etc/sysctl.conf
+        line: "net.ipv4.ip_forward = 1"
+        state: present
+      when: ip_forwarding_status.stdout != '1'
+
+    - name: Apply sysctl changes
+      command: sysctl -p
+  when: ip_forwarding_status.stdout != '1'
+
+- name: Configure WireGuard tunnel
+  template:
+    src: templates/wg0.conf.j2
+    dest: "/etc/wireguard/{{ gateway.public_config.tunnel }}.conf"
+    owner: root
+    group: root
+  notify: Restart WireGuard service  # 触发 handler
+  tags: wireguard
+
+- name: Stop WireGuard service if running
+  systemd:
+    name: wg-quick@{{ gateway.public_config.tunnel }}
+    state: stopped
+  ignore_errors: yes
+  tags: wireguard
+
+- name: Enable and start WireGuard service
+  systemd:
+    name: wg-quick@{{ gateway.public_config.tunnel }}
+    enabled: yes
+    state: started
+  tags: wireguard

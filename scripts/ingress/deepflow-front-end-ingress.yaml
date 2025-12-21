@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: deepflow-ingress
+  namespace: deepflow
+spec:
+  tls:
+  - hosts:
+    - deepflow.com
+    secretName: your-tls-secret
+  rules:
+  - host: deepflow.com
+    http:
+      paths:
+      - path: /v1/query/
+        pathType: Prefix
+        backend:
+          service:
+            name: deepflow-server
+            port:
+              number: 30416
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: front-end
+            port:
+              number: 80

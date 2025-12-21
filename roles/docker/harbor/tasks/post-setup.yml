@@ -1,0 +1,19 @@
+---
+# post-setup.yml
+
+- name: 检查容器是否运行并输出状态
+  command: docker ps -q -f name={{ item.name }}
+  register: container_status
+  loop:
+    - { name: "{{ core_container_name }}" }
+    - { name: "{{ proxy_container_name }}" }
+    - { name: "{{ redis_container_name }}" }
+    - { name: "{{ portal_container_name }}" }
+    - { name: "{{ registry_container_name }}" }
+    - { name: "{{ postgresql_container_name }}" }
+    - { name: "{{ jobservice_container_name }}" }
+    - { name: "{{ registryctl_container_name }}" }
+  changed_when: false
+  failed_when: container_status.stdout == ""
+  loop_control:
+    loop_var: item

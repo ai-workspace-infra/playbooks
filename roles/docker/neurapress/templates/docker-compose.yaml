@@ -1,0 +1,68 @@
+services:
+  app:
+    image: "{{ neurapress_image }}"
+    command: pnpm start
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    networks:
+      - app
+
+  nginx:
+    image: nginx:mainline-alpine
+    container_name: neurapress-nginx
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "{{ neurapress_workspace }}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro"
+      - "{{ neurapress_workspace }}/nginx/conf.d:/etc/nginx/conf.d:ro"
+      - "{{ neurapress_workspace }}/certbot/conf:/etc/letsencrypt"
+      - "{{ neurapress_workspace }}/certbot/www:/var/www/certbot"
+    networks:
+      - app
+
+  bootstrap-nginx:
+    profiles: ["bootstrap"]
+    image: nginx:mainline-alpine
+    container_name: bootstrap-nginx
+    volumes:
+      - "{{ neurapress_workspace }}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro"
+      - "{{ neurapress_workspace }}/nginx/conf.d/bootstrap-nginx.conf:/etc/nginx/conf.d/default.conf:ro"
+      - "{{ neurapress_workspace }}/certbot/conf:/etc/letsencrypt"
+      - "{{ neurapress_workspace }}/certbot/www:/var/www/certbot"
+    ports:
+      - "80:80"
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://{{ neurapress_domain }}"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 3s
+
+  certbot:
+    profiles: ["bootstrap"]
+    image: certbot/certbot
+    container_name: certbot
+    command: >
+      certonly --webroot
+      --webroot-path=/var/www/certbot
+      --email {{ neurapress_certbot_email }}
+      --agree-tos
+      --no-eff-email
+      --keep-until-expiring
+      --non-interactive
+      -d {{ neurapress_domain }}
+    volumes:
+      - "{{ neurapress_workspace }}/certbot/conf:/etc/letsencrypt"
+      - "{{ neurapress_workspace }}/certbot/www:/var/www/certbot"
+    networks:
+      - app
+
+networks:
+  app:

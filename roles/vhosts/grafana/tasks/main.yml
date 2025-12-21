@@ -1,0 +1,94 @@
+- name: Ensure Grafana APT key is present
+  ansible.builtin.get_url:
+    url: https://apt.grafana.com/gpg.key
+    dest: /etc/apt/keyrings/grafana.gpg
+    mode: '0644'
+  when: inventory_hostname in groups[group]
+
+- name: Add Grafana repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
+    filename: grafana
+  when: inventory_hostname in groups[group]
+
+- name: Install Grafana
+  ansible.builtin.apt:
+    name: grafana
+    state: present
+    update_cache: true
+  when: inventory_hostname in groups[group]
+
+- name: Clone GitOps dashboards repo
+  ansible.builtin.git:
+    repo: "{{ grafana_git_url }}"
+    dest: "{{ grafana_root_dir }}"
+    version: HEAD
+    depth: 1
+    update: true
+  when: inventory_hostname in groups[group]
+
+- name: Ensure Grafana provisioning directory exists
+  ansible.builtin.file:
+    path: /etc/grafana/provisioning/dashboards
+    state: directory
+    mode: '0755'
+  when: inventory_hostname in groups[group]
+
+- name: Configure Grafana dashboards provisioning
+  ansible.builtin.template:
+    src: dashboards.yaml.j2
+    dest: /etc/grafana/provisioning/dashboards/dashboards.yaml
+    owner: root
+    group: root
+    mode: '0644'
+  when: inventory_hostname in groups[group]
+
+- name: Ensure Grafana systemd override directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/grafana-server.service.d
+    state: directory
+    mode: '0755'
+  when: inventory_hostname in groups[group]
+
+- name: Inject Grafana environment overrides
+  ansible.builtin.template:
+    src: env.conf.j2
+    dest: /etc/systemd/system/grafana-server.service.d/env.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when: inventory_hostname in groups[group]
+
+- name: Configure Grafana ini
+  ansible.builtin.template:
+    src: grafana.ini.j2
+    dest: /etc/grafana/grafana.ini
+    owner: root
+    group: grafana
+    mode: '0640'
+  when: inventory_hostname in groups[group]
+
+- name: Install grafana dashboard pull timer
+  ansible.builtin.template:
+    src: grafana-dash-pull.timer.j2
+    dest: /etc/systemd/system/grafana-dash-pull.timer
+    mode: '0644'
+  when: inventory_hostname in groups[group]
+
+- name: Install grafana dashboard pull service
+  ansible.builtin.template:
+    src: grafana-dash-pull.service.j2
+    dest: /etc/systemd/system/grafana-dash-pull.service
+    mode: '0644'
+  when: inventory_hostname in groups[group]
+
+- name: Enable and start Grafana services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - grafana-server
+    - grafana-dash-pull.timer
+  when: inventory_hostname in groups[group]

@@ -1,0 +1,71 @@
+- name: Ensure process_exporter user exists
+  ansible.builtin.user:
+    name: process_exporter
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+  when: inventory_hostname in groups[group]
+
+- name: Download process-exporter archive
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/ncabatoff/process-exporter/releases/download/v{{
+      process_exporter_version | default('0.7.10') }}/process-exporter-{{
+      process_exporter_version | default('0.7.10') }}.linux-amd64.tar.gz
+    dest: /tmp/process-exporter.tar.gz
+    mode: "0644"
+  when: inventory_hostname in groups[group]
+
+- name: Extract process-exporter
+  ansible.builtin.unarchive:
+    src: /tmp/process-exporter.tar.gz
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/process-exporter-{{ process_exporter_version | default('0.7.10') }}.linux-amd64"
+  when: inventory_hostname in groups[group]
+
+- name: Install process-exporter binary
+  ansible.builtin.copy:
+    src: "/tmp/process-exporter-{{ process_exporter_version | default('0.7.10') }}.linux-amd64/process-exporter"
+    dest: /usr/local/bin/process-exporter
+    mode: '0755'
+    remote_src: true
+  when: inventory_hostname in groups[group]
+
+- name: Remove process-exporter archive
+  ansible.builtin.file:
+    path: /tmp/process-exporter.tar.gz
+    state: absent
+  when: inventory_hostname in groups[group]
+
+- name: Cleanup extracted process-exporter directory
+  ansible.builtin.file:
+    path: "/tmp/process-exporter-{{ process_exporter_version | default('0.7.10') }}.linux-amd64"
+    state: absent
+  when: inventory_hostname in groups[group]
+
+- name: Deploy process-exporter config
+  ansible.builtin.template:
+    src: process-exporter.yml
+    dest: /etc/process-exporter.yml
+    owner: process_exporter
+    group: process_exporter
+    mode: '0644'
+  when: inventory_hostname in groups[group]
+
+- name: Create process-exporter service
+  ansible.builtin.template:
+    src: process-exporter.service
+    dest: /etc/systemd/system/process-exporter.service
+    owner: root
+    group: root
+    mode: '0644'
+  when: inventory_hostname in groups[group]
+
+- name: Enable and start process-exporter
+  ansible.builtin.systemd:
+    name: process-exporter
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  when: inventory_hostname in groups[group]

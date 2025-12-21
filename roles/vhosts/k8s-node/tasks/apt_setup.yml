@@ -1,0 +1,65 @@
+- name: Update apt cache
+  apt:
+    update_cache: yes
+
+- name: Gather package facts
+  package_facts:
+    manager: auto
+
+- name: Stop and disable unattended upgrades
+  systemd:
+    name: unattended-upgrades
+    state: stopped
+    enabled: no
+  ignore_errors: true
+
+- name: Remove old containerd if exists
+  apt:
+    name: containerd.io
+    state: absent
+
+- name: Remove unwanted files in sources.list.d
+  find:
+    paths: /etc/apt/sources.list.d
+    patterns:
+      - "*"
+    excludes:
+      - "ubuntu.sources"
+      - "cuda-*.list"
+      - "deadsnakes.list"
+      - "docker.list"
+      - "nvidia-docker-container.list"
+    file_type: file
+  register: apt_files_to_remove
+
+- name: Delete found files
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  with_items: "{{ apt_files_to_remove.files }}"
+
+- name: Remove proxy configuration files
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_fileglob:
+    - "/etc/apt/apt.conf.d/*proxy*"
+
+- name: Remove proxy settings from apt.conf
+  lineinfile:
+    path: /etc/apt/apt.conf
+    regexp: "{{ item }}"
+    state: absent
+  with_items:
+    - 'Acquire::http::Proxy'
+    - 'Acquire::https::Proxy'
+  when: ansible_path_apt_conf.stat.exists is defined and ansible_path_apt_conf.stat.exists
+
+- name: Unset all snap proxy settings
+  command: snap unset system {{ item }}
+  loop:
+    - proxy.http
+    - proxy.https
+    - proxy.no-proxy
+  changed_when: true
+  ignore_errors: true

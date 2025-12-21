@@ -1,0 +1,166 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install required packages
+  apt:
+    name:
+      - chasquid
+      - swaks
+      - dovecot-core
+      - dovecot-imapd
+      - openssl
+    state: present
+
+- name: Create support user
+  user:
+    name: support
+    home: /home/support
+    shell: /usr/sbin/nologin
+    system: yes
+    createhome: yes
+
+- name: Add chasquid user to mail group
+  user:
+    name: chasquid
+    groups: mail
+    append: yes
+
+- name: Set capability on chasquid binary
+  command: setcap 'cap_net_bind_service=+ep' /usr/bin/chasquid
+  args:
+    creates: /usr/bin/chasquid
+
+- name: Disable chasquid socket services
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+  loop:
+    - chasquid.socket
+    - chasquid-smtp.socket
+    - chasquid-submission.socket
+    - chasquid-submission_tls.socket
+
+- name: Disable IPv6 globally
+  sysctl:
+    name: "{{ item.name }}"
+    value: 1
+    sysctl_file: /etc/sysctl.conf
+    state: present
+    reload: yes
+  loop:
+    - { name: 'net.ipv6.conf.all.disable_ipv6' }
+    - { name: 'net.ipv6.conf.default.disable_ipv6' }
+  notify: Reboot system
+
+- name: Create necessary directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: chasquid
+    group: chasquid
+  loop:
+    - "{{ CONFIG_DIR }}/domains/{{ DOMAIN }}/certs"
+    - "{{ DATA_DIR }}"
+    - "/var/mail"
+
+- name: Generate DKIM key
+  openssl_privatekey:
+    path: "{{ DKIM_KEY }}"
+    size: 1024
+    type: RSA
+  notify: Restart chasquid
+
+- name: Extract DKIM public key
+  command: "openssl rsa -in {{ DKIM_KEY }} -pubout"
+  register: dkim_pub_result
+  changed_when: false
+
+- name: Save DKIM public key
+  copy:
+    content: "{{ dkim_pub_result.stdout }}"
+    dest: "{{ DKIM_PUB }}"
+    mode: '0644'
+    owner: chasquid
+    group: chasquid
+  notify: Restart chasquid
+
+- name: Create chasquid configuration
+  template:
+    src: chasquid.conf.j2
+    dest: "{{ CONFIG_DIR }}/chasquid.conf"
+    mode: '0644'
+    owner: chasquid
+    group: chasquid
+  notify: Restart chasquid
+
+- name: Copy TLS certificates
+  copy:
+    src: "{{ CERT_PEM }}"
+    dest: "{{ CONFIG_DIR }}/domains/{{ DOMAIN }}/certs/fullchain.pem"
+    remote_src: yes
+    mode: '0640'
+    owner: root
+    group: chasquid
+  notify: Restart chasquid
+  ignore_errors: "{{ ignore_cert_missing | default(false) }}"
+
+- name: Copy TLS private key
+  copy:
+    src: "{{ CERT_KEY }}"
+    dest: "{{ CONFIG_DIR }}/domains/{{ DOMAIN }}/certs/key.pem"
+    remote_src: yes
+    mode: '0640'
+    owner: root
+    group: chasquid
+  notify: Restart chasquid
+  ignore_errors: "{{ ignore_cert_missing | default(false) }}"
+
+- name: Add chasquid user
+  command: "printf '%s\n%s\n' {{ USER_PASSWORD }} {{ USER_PASSWORD }} | chasquid-util user-add {{ USER }}@{{ DOMAIN }}"
+  args:
+    creates: "{{ CONFIG_DIR }}/users/{{ DOMAIN }}/{{ USER }}"
+  notify: Restart chasquid
+
+- name: Create custom chasquid systemd service file
+  template:
+    src: chasquid.service.j2
+    dest: /etc/systemd/system/chasquid.service
+    mode: '0644'
+    owner: root
+    group: root
+  notify:
+    - Reload systemd daemon
+    - Restart chasquid
+
+- name: Enable and start chasquid service
+  systemd:
+    name: chasquid
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Display DNS records information
+  debug:
+    msg: |
+      🔧 DNS records for {{ DOMAIN }} ({{ IP }})
+
+      A     smtp.{{ DOMAIN }}        {{ IP }}
+      MX    {{ DOMAIN }}             smtp.{{ DOMAIN }}
+      TXT   {{ DOMAIN }}             "v=spf1 include:smtp.{{ DOMAIN }} ~all"
+      TXT   default._domainkey.{{ DOMAIN }} "v=DKIM1; k=rsa; p=<Check {{ DKIM_PUB }} for the public key>"
+      TXT   _dmarc.{{ DOMAIN }}      "v=DMARC1; p=quarantine; rua=mailto:dmarc@{{ DOMAIN }}"
+
+- name: Test email sending with swaks
+  command: "swaks --server {{ SMTP_SERVER }} --port {{ SMTP_PORT }} --tls --auth PLAIN --auth-user {{ EMAIL_USER }} --auth-password {{ EMAIL_PASSWORD }} --from {{ EMAIL_FROM }} --to {{ EMAIL_TO }}"
+  register: swaks_result
+  changed_when: false
+  failed_when: false
+
+- name: Display test result
+  debug:
+    var: swaks_result

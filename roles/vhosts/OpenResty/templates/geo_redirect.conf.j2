@@ -1,0 +1,45 @@
+lua_package_path "/usr/local/openresty/lualib/?.lua;;";
+
+server {
+  listen 443 ssl http2;
+  server_name {{ item.name }};
+
+  ssl_certificate {{ item.ssl_certificate }};
+  ssl_certificate_key {{ item.ssl_certificate_key }};
+
+  location / {
+    access_by_lua_block {
+      local region = ngx.var.cookie_region
+      if region == "CN" then
+        return ngx.redirect("https://{{ item.cn_target }}" .. ngx.var.request_uri, 302)
+      elseif region == "GLOBAL" then
+        return ngx.redirect("https://{{ item.global_target }}" .. ngx.var.request_uri, 302)
+      end
+
+      local geoip = require("resty.maxminddb")
+      local reader, err = geoip.new("/usr/share/GeoIP/geoip.dat")
+      if not reader then
+        ngx.log(ngx.ERR, "failed to open MaxMind DB: ", err)
+        ngx.header["Set-Cookie"] = "region=GLOBAL; Path=/; Max-Age=3600"
+        return ngx.redirect("https://{{ item.global_target }}" .. ngx.var.request_uri, 302)
+      end
+
+      local res, err = reader:lookup(ngx.var.remote_addr)
+      if err then
+        ngx.log(ngx.ERR, "failed to lookup IP: ", err)
+        ngx.header["Set-Cookie"] = "region=GLOBAL; Path=/; Max-Age=3600"
+        return ngx.redirect("https://{{ item.global_target }}" .. ngx.var.request_uri, 302)
+      end
+
+      local country = res and res.country and res.country.iso_code or "XX"
+
+      if country == "CN" then
+        ngx.header["Set-Cookie"] = "region=CN; Path=/; Max-Age=3600"
+        return ngx.redirect("https://{{ item.cn_target }}" .. ngx.var.request_uri, 302)
+      else
+        ngx.header["Set-Cookie"] = "region=GLOBAL; Path=/; Max-Age=3600"
+        return ngx.redirect("https://{{ item.global_target }}" .. ngx.var.request_uri, 302)
+      end
+    }
+  }
+}

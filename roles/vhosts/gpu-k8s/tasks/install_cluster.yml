@@ -1,0 +1,129 @@
+- name: Determine latest sealos version when requested
+  uri:
+    url: https://api.github.com/repos/labring/sealos/releases/latest
+    return_content: yes
+  register: sealos_latest
+  when: sealos_version is not defined or sealos_version == 'latest'
+
+- name: Set sealos_version fact to latest release
+  set_fact:
+    sealos_version: "{{ sealos_latest.json.tag_name }}"
+  when:
+    - sealos_version is not defined or sealos_version == 'latest'
+    - sealos_latest is defined
+    - sealos_latest.json is defined
+
+- name: Resolve master and node IPs from hostnames when needed
+  set_fact:
+    master_ips: >-
+      {{ ((master_ips | default([])) | length > 0)
+         | ternary(master_ips,
+                   (masters | default([]) | map('extract', hostvars, 'ansible_host') | list)) }}
+    node_ips: >-
+      {{ ((node_ips | default([])) | length > 0)
+         | ternary(node_ips,
+                   (nodes | default([]) | map('extract', hostvars, 'ansible_host') | list)) }}
+  delegate_to: "{{ ops_host | default(masters | default(master_ips) | first) }}"
+  delegate_facts: true
+  run_once: true
+  become: false
+
+
+- name: Install sealos CLI
+  shell: |
+    VERSION={{ sealos_version }}
+    wget -q https://github.com/labring/sealos/releases/download/${VERSION}/sealos_${VERSION#v}_linux_amd64.tar.gz
+    tar -xzf sealos_${VERSION#v}_linux_amd64.tar.gz sealos
+    chmod +x sealos
+    mv sealos /usr/bin/sealos
+  args:
+    executable: /bin/bash
+  become: true
+  when: inventory_hostname == (ops_host | default(masters | default(master_ips) | first))
+
+- name: Install Helm
+  shell: |
+    curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    chmod 700 get_helm.sh
+    ./get_helm.sh
+    rm -f get_helm.sh
+  args:
+    executable: /bin/bash
+  become: true
+  when: inventory_hostname == (ops_host | default(masters | default(master_ips) | first)) and (ansible_facts['distribution'] == 'Ubuntu' or ansible_facts['distribution'] == 'Debian')
+
+- name: Install nerdctl
+  shell: |
+    wget -q https://github.com/containerd/nerdctl/releases/download/v2.0.2/nerdctl-2.0.2-linux-amd64.tar.gz
+    tar -C /usr/local -xzf nerdctl-2.0.2-linux-amd64.tar.gz
+  args:
+    executable: /bin/bash
+  become: true
+  when: inventory_hostname == (ops_host | default(masters | default(master_ips) | first))
+
+- name: Determine LabRing registry prefix
+  shell: "{{ role_path }}/files/get_labring_registry.sh"
+  register: labring_registry
+  changed_when: false
+  delegate_to: localhost
+  run_once: true
+  become: false
+  when: inventory_hostname == (ops_host | default(masters | default(master_ips) | first))
+
+- name: Validate master_ips and node_ips
+  assert:
+    that:
+      - master_ips | length > 0
+      - node_ips | length > 0
+    fail_msg: "Provide masters/nodes hostnames or master_ips/node_ips with at least one entry"
+  when: inventory_hostname == (ops_host | default(masters | default(master_ips) | first))
+
+- name: Verify passwordless SSH access to all cluster nodes
+  shell: >-
+    ssh -o BatchMode=yes -o StrictHostKeyChecking=no \
+    -i {{ ssh_private_key }} \
+    {{ ssh_user | default(ansible_ssh_user | default(ansible_user, true) | default('root')) }}@{{ item }} hostname
+  loop: "{{ master_ips + node_ips }}"
+  delegate_to: "{{ ops_host | default(masters | default(master_ips) | first) }}"
+  become: false
+  register: ssh_access
+  changed_when: false
+  run_once: true
+
+- name: Run sealos to create Kubernetes cluster
+  script: files/run_sealos.sh \
+    {{ labring_registry.stdout | trim }} \
+    {{ kubernetes_version }} \
+    {{ cilium_version }} \
+    {{ helm_version }} \
+    "{{ master_ips | join(',') }}" \
+    "{{ node_ips | join(',') }}" \
+    {{ ssh_user }} \
+    {{ ansible_user }} \
+    "{{ sealos_cmd_env | b64encode }}" \
+    "{{ kubeadm_init_cmd | b64encode }}"
+  args:
+    executable: /bin/bash
+  become: true
+  when: inventory_hostname == (ops_host | default(masters | default(master_ips) | first))
+
+- name: Show sealos CLI version
+  command: sealos version
+  register: sealos_cli_version
+  changed_when: false
+  become: true
+  when: inventory_hostname == (ops_host | default(masters | default(master_ips) | first))
+
+- name: Display Kubernetes cluster status
+  shell: kubectl get nodes -o wide
+  args:
+    executable: /bin/bash
+  register: k8s_status
+  changed_when: false
+  become: true
+  when: inventory_hostname == (ops_host | default(masters | default(master_ips) | first))
+
+- name: Print cluster nodes
+  debug:
+    msg: "{{ k8s_status.stdout }}"
+  when: k8s_status is defined and inventory_hostname == (ops_host | default(masters | default(master_ips) | first))

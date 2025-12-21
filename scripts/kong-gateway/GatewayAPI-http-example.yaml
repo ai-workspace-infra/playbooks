@@ -1,0 +1,81 @@
+kubectl create secret tls onwalk-tls --cert=/etc/ssl/onwalk.net.pem --key=/etc/ssl/onwalk.net.key
+echo "
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: default
+spec:
+  replicas: 1  # 可根据需要调整副本数
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:latest    # 使用最新的 Nginx 镜像
+          ports:
+            - containerPort: 80  # Nginx 默认的 HTTPS 端口
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-svc
+  namespace: default
+spec:
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 80        # 公开的服务端口
+      targetPort: 80  # 容器内部的端口
+  type: ClusterIP  # 可以根据需要选择 NodePort 或 LoadBalancer 类型
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: demo-gateway
+  namespace: default
+  annotations:
+    konghq.com/publish-service: kong/kong-gateway-proxy
+spec:
+  gatewayClassName: kong
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      hostname: "demo.onwalk.net"  # 匹配的域名
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: onwalk-tls  # 引用存放证书的 Secret
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: demo-route
+  namespace: default
+spec:
+  parentRefs:
+    - name: demo-gateway
+      namespace: default
+  hostnames:
+    - demo.onwalk.net  # 匹配的域名
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /  # 匹配所有路径请求
+      backendRefs:
+        - name: nginx-svc  # 目标服务名
+          port: 80        # 后端服务的端口
+" | kubectl apply -f -
+
+curl -ksv https://demo.onwalk.net/ --resolve demo.onwalk.net:443:172.30.0.10

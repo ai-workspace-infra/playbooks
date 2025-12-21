@@ -1,0 +1,54 @@
+server:
+  addr: "{{ xcontrol_rag_server_addr }}"
+  readTimeout: "{{ xcontrol_rag_read_timeout }}"
+  writeTimeout: "{{ xcontrol_rag_write_timeout }}"
+  publicUrl: "{{ xcontrol_rag_public_url }}"
+  allowedOrigins:
+  {% for origin in xcontrol_rag_allowed_origins %}
+    - "{{ origin }}"
+  {% endfor %}
+
+auth:
+  enable: {{ xcontrol_rag_auth_enable | bool }}
+  authUrl: "{{ xcontrol_rag_auth_url }}"
+  apiBaseUrl: "{{ xcontrol_rag_api_base_url }}"
+  publicToken: "{{ xcontrol_rag_public_token }}"
+
+global:
+  redis:
+    addr: "{{ xcontrol_rag_redis_addr }}"
+    password: "{{ xcontrol_rag_redis_password }}"
+  vectordb:
+    pgurl: "{{ xcontrol_rag_vectordb_pgurl }}"
+  datasources:
+  {% for datasource in xcontrol_rag_datasources %}
+    - name: "{{ datasource.name }}"
+      repo: "{{ datasource.repo }}"
+      path: "{{ datasource.path }}"
+  {% endfor %}
+
+sync:
+  repo:
+    proxy: "{{ xcontrol_rag_sync_repo_proxy }}"
+
+models:
+  embedder:
+    provider: "{{ xcontrol_rag_embedder_provider }}"
+    models:
+    {% for model in xcontrol_rag_embedder_models %}
+      - "{{ model }}"
+    {% endfor %}
+    baseurl: "{{ xcontrol_rag_embedder_baseurl }}"
+    endpoint: "{{ xcontrol_rag_embedder_endpoint }}"
+  generator:
+    provider: "{{ xcontrol_rag_generator_provider }}"
+    models:
+    {% for model in xcontrol_rag_generator_models %}
+      - "{{ model }}"
+    {% endfor %}
+    baseurl: "{{ xcontrol_rag_generator_baseurl }}"
+    endpoint: "{{ xcontrol_rag_generator_endpoint }}"
+
+embedding:
+  max_batch: {{ xcontrol_rag_embedding_max_batch }}
+  dimension: {{ xcontrol_rag_embedding_dimension }}

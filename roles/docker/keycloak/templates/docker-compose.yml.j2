@@ -1,0 +1,67 @@
+version: '3.7'
+
+services:
+  postgres:
+    container_name: {{ postgres_name }}  # 设置容器名称
+    image: {{ postgres_image }}
+    environment:
+      POSTGRES_DB: {{ postgres_db }}
+      POSTGRES_USER: {{ postgres_user }}
+      POSTGRES_PASSWORD: {{ postgres_password }}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - keycloak_network
+
+  keycloak:
+    image: {{ keycloak_image }}
+    container_name: {{ keycloak_name }}  # 设置容器名称
+    environment:
+      KEYCLOAK_PROXY_HEADERS: xforwarded
+      KEYCLOAK_ADMIN: {{ keycloak_admin }}
+      KEYCLOAK_ADMIN_PASSWORD: {{ keycloak_admin_password }}
+      KEYCLOAK_DATABASE_VENDOR: postgresql
+      KEYCLOAK_DATABASE_HOST: {{ postgres_name }}
+      KEYCLOAK_DATABASE_PORT: 5432
+      KEYCLOAK_DATABASE_USER: {{ postgres_user }}
+      KEYCLOAK_DATABASE_NAME: {{ postgres_db }}
+      KEYCLOAK_DATABASE_PASSWORD: {{ postgres_password }}
+      KEYCLOAK_HTTPS_KEY_STORE_FILE: /etc/ssl/keystore.jks
+      KEYCLOAK_HTTPS_KEY_STORE_PASSWORD: {{ keycloak_key_store.password }}  # 私钥保护密码
+      KEYCLOAK_HTTPS_TRUST_STORE_FILE: /etc/ssl/truststore.jks
+      KEYCLOAK_HTTPS_TRUST_STORE_PASSWORD: {{ keycloak_trust_store.password }}  # 证书信任库保护密码
+    ports:
+      - 8080:8080
+    volumes:
+      - {{ keycloak_key_store.file }}:/etc/ssl/keystore.jks
+      - {{ keycloak_trust_store.file }}:/etc/ssl/truststore.jks
+    restart: always
+    depends_on:
+      - postgres
+    networks:
+      - keycloak_network
+
+  nginx:
+    image: {{ nginx_image }}
+    container_name: {{ nginx_name }}  # 设置容器名称
+    depends_on:
+      - {{ keycloak_name }}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - {{ ssl_certificate.path }}{{ ssl_certificate.name }}:/etc/ssl/certs/{{ ssl_certificate.name }}
+      - {{ ssl_certificate_key.path }}{{ ssl_certificate_key.name }}:/etc/ssl/certs/{{ ssl_certificate_key.name }}
+      - {{ dhparam_path }}:/etc/nginx/ssl/dhparam.pem
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    restart: unless-stopped
+    networks:
+      - keycloak_network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  keycloak_network:
+    driver: bridge

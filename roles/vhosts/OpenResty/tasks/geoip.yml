@@ -1,0 +1,23 @@
+- name: Install GeoIP dependencies
+  apt:
+    name: luarocks
+    state: present
+    update_cache: true
+
+- name: Install lua-resty-maxminddb
+  command: "luarocks install lua-resty-maxminddb"
+  args:
+    creates: /usr/local/openresty/site/lualib/resty/maxminddb.lua
+
+- name: Ensure GeoIP database directory exists
+  file:
+    path: /usr/share/GeoIP
+    state: directory
+    mode: "0755"
+
+# yamllint disable rule:line-length
+- name: Download V2Fly GeoIP database
+  get_url:
+    url: https://github.com/v2fly/geoip/releases/latest/download/geoip.dat
+    dest: /usr/share/GeoIP/geoip.dat
+# yamllint enable rule:line-length

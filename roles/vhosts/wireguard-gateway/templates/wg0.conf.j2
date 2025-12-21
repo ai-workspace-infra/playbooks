@@ -1,0 +1,27 @@
+[Interface]
+PrivateKey = {{ gateway.private_key }}
+Address = {{ gateway.public_config.network }}
+ListenPort = {{ gateway.public_config.listen_port }}
+SaveConfig = false
+MTU = {{ gateway.public_config.mtu | default(1420) }}
+
+{% for rule in gateway.public_config.postup_rules %}
+PostUp = {{ rule }}
+{% endfor %}
+
+{% for rule in gateway.public_config.postdown_rules %}
+PostDown = {{ rule }}
+{% endfor %}
+
+{% for peer in gateway.public_config.peers %}
+[Peer]
+PublicKey = {{ peer.public_key }}
+AllowedIPs = {{ peer.allowed_ips }}
+{% if peer.endpoint is defined %}
+Endpoint = {{ peer.endpoint }}
+{% endif %}
+{% if peer.persistent_keepalive is defined %}
+PersistentKeepalive = {{ peer.persistent_keepalive }}
+{% endif %}
+{% endfor %}
+

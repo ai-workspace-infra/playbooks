@@ -1,0 +1,19 @@
+loki.write "grafanacloud" {
+  endpoint {
+    url = "{{ loki_endpoint_url }}"
+
+    basic_auth {
+      username = "{{ loki_basic_auth_username }}"
+      password = "{{ loki_basic_auth_password }}"
+    }
+  }
+}
+
+{% for source in loki_journal_sources %}
+loki.source.journal "{{ source.name }}"  {
+  format_as_json  = true
+  labels          = {job = "{{ source.name }}"}
+  matches         = "_SYSTEMD_UNIT={{ source.unit }}"
+  forward_to      = [loki.write.grafanacloud.receiver]
+}
+{% endfor %}

@@ -1,0 +1,11 @@
+---
+- name: Set branch protection using GitHub CLI
+  ansible.builtin.command: >-
+    gh api repos/{{ owner }}/{{ repo }}/branches/main/protection
+    --method PUT
+    -H "Accept: application/vnd.github+json"
+    --input .github/branch-protection-rules.json
+  args:
+    chdir: "{{ playbook_dir }}/.."
+  environment:
+    GITHUB_TOKEN: "{{ lookup('env', 'GITHUB_TOKEN') }}"

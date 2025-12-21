@@ -1,0 +1,33 @@
+---
+# 主任务：创建 Keycloak 服务，启动 Docker Compose 等
+
+- name: 执行 pre-setup 操作
+  include_tasks: "pre-setup.yml"
+
+- name: 执行 create_keystore.sh 脚本
+  script: files/create_keystore.sh
+  environment:
+    KEYSTORE_FILE: "{{ keycloak_key_store.file }}"
+    TRUSTSTORE_FILE: "{{ keycloak_trust_store.file }}"
+    KEYSTORE_PASSWORD: "{{ keycloak_key_store.password }}"
+    TRUSTSTORE_PASSWORD: "{{ keycloak_trust_store.password }}"
+    KEY_ALIAS: "{{ key_alias }}"
+    KEY_PASSWORD: "{{ key_password }}"
+    ROOT_CA_CERT: "{{ ca_certificate.file }}"
+
+- name: 渲染 nginx 配置文件
+  template:
+    src: "templates/nginx.conf.j2"
+    dest: "/tmp/nginx.conf"
+
+- name: 渲染 Docker Compose 配置文件
+  template:
+    src: "templates/docker-compose.yml.j2"
+    dest: "/tmp/docker-compose.yml"
+
+- name: 启动 Docker Compose 服务
+  become: true
+  command: docker-compose -f /tmp/docker-compose.yml up -d
+
+- name: 执行 post-setup 操作
+  include_tasks: "post-setup.yml"

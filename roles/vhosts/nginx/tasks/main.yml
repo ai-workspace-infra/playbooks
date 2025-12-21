@@ -1,0 +1,84 @@
+- name: Install nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+  when:
+    - ansible_facts['distribution'] == 'Ubuntu'
+    - ansible_facts['distribution_version'] is version('22.04', '>=')
+
+- name: Deploy cn-homepage redirect configuration
+  ansible.builtin.template:
+    src: cn-homepage-redirect.conf.j2
+    dest: /etc/nginx/sites-available/cn-homepage-redirect.conf
+    mode: '0644'
+  notify: Reload nginx
+
+- name: Enable cn-homepage redirect site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/cn-homepage-redirect.conf
+    dest: /etc/nginx/sites-enabled/cn-homepage-redirect.conf
+    state: link
+  notify: Reload nginx
+
+- name: Deploy cn-homepage site configuration
+  ansible.builtin.template:
+    src: cn-homepage-https.conf.j2
+    dest: /etc/nginx/sites-available/cn-homepage-https.conf
+    mode: '0644'
+  notify: Reload nginx
+
+- name: Enable cn-homepage site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/cn-homepage-https.conf
+    dest: /etc/nginx/sites-enabled/cn-homepage-https.conf
+    state: link
+  notify: Reload nginx
+
+- name: Deploy artifact site configuration
+  ansible.builtin.template:
+    src: artifact.conf.j2
+    dest: /etc/nginx/sites-available/artifact.conf
+    mode: '0644'
+  notify: Reload nginx
+
+- name: Enable artifact site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/artifact.conf
+    dest: /etc/nginx/sites-enabled/artifact.conf
+    state: link
+  notify: Reload nginx
+
+- name: Deploy metrics site configuration
+  ansible.builtin.template:
+    src: metrics.conf.j2
+    dest: /etc/nginx/sites-available/metrics.conf
+    mode: '0644'
+  notify: Reload nginx
+
+- name: Enable metrics site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/metrics.conf
+    dest: /etc/nginx/sites-enabled/metrics.conf
+    state: link
+  notify: Reload nginx
+
+- name: Deploy grafana site configuration
+  ansible.builtin.template:
+    src: grafana.conf.j2
+    dest: /etc/nginx/sites-available/grafana.conf
+    mode: '0644'
+  notify: Reload nginx
+
+- name: Enable grafana site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/grafana.conf
+    dest: /etc/nginx/sites-enabled/grafana.conf
+    state: link
+  notify: Reload nginx
+
+- name: Ensure nginx is running
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true

@@ -1,0 +1,76 @@
+---
+- name: Ensure XControl directories exist
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ xcontrol_workspace }}"
+    - "{{ xcontrol_workspace }}/certbot"
+    - "{{ xcontrol_workspace }}/certbot/conf"
+    - "{{ xcontrol_workspace }}/certbot/www"
+    - "{{ xcontrol_workspace }}/config"
+    - "{{ xcontrol_workspace }}/nginx"
+    - "{{ xcontrol_workspace }}/nginx/conf.d"
+
+- name: Ensure XControl workspace ownership
+  become: true
+  ansible.builtin.file:
+    path: "{{ xcontrol_workspace }}"
+    state: directory
+    recurse: true
+    owner: "1000"
+    group: "1000"
+    mode: "0755"
+
+- name: Template XControl configuration files
+  become: true
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ xcontrol_workspace }}/{{ item.dest }}"
+    mode: "{{ item.mode | default('0644') }}"
+  loop:
+    - { src: 'docker-compose.yaml', dest: 'docker-compose.yaml' }
+    - { src: 'config/account.yaml', dest: 'config/account.yaml' }
+    - { src: 'config/server.yaml', dest: 'config/server.yaml' }
+    - { src: 'nginx/conf.d/default.conf', dest: 'nginx/conf.d/default.conf' }
+    - { src: 'nginx/conf.d/bootstrap-nginx.conf', dest: 'nginx/conf.d/bootstrap-nginx.conf' }
+    - { src: 'nginx/conf.d/accounts.conf', dest: 'nginx/conf.d/accounts.conf' }
+    - { src: 'nginx/conf.d/homepage.conf', dest: 'nginx/conf.d/homepage.conf' }
+    - { src: 'nginx/conf.d/rag-server.conf', dest: 'nginx/conf.d/rag-server.conf' }
+    - { src: 'nginx/conf.d/artifact.conf', dest: 'nginx/conf.d/artifact.conf' }
+
+- name: Copy XControl static files
+  become: true
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ xcontrol_workspace }}/{{ item.dest }}"
+    mode: "{{ item.mode | default('0644') }}"
+  loop:
+    - { src: 'run.sh', dest: 'run.sh', mode: '0755' }
+    - { src: 'nginx/nginx.conf', dest: 'nginx/nginx.conf' }
+
+- name: Bootstrap NGINX (80-only for ACME)
+  become: true
+  command: docker compose --profile bootstrap -f {{ xcontrol_workspace }}/docker-compose.yaml up -d bootstrap-nginx
+  args:
+    chdir: "{{ xcontrol_workspace }}"
+
+- name: Run certbot initial ACME challenge
+  become: true
+  command: docker compose --profile bootstrap -f {{ xcontrol_workspace }}/docker-compose.yaml run --rm certbot
+  args:
+    chdir: "{{ xcontrol_workspace }}"
+
+- name: Destroy Bootstrap NGINX (80-only for ACME)
+  become: true
+  command: docker compose --profile bootstrap -f {{ xcontrol_workspace }}/docker-compose.yaml down bootstrap-nginx
+  args:
+    chdir: "{{ xcontrol_workspace }}"
+
+- name: Bring up XControl stack
+  become: true
+  command: docker compose -f {{ xcontrol_workspace }}/docker-compose.yaml up -d
+  args:
+    chdir: "{{ xcontrol_workspace }}"

@@ -1,0 +1,21 @@
+---
+- name: Common(Debian) | repo & keys
+  ansible.builtin.include_tasks: repo_setup.yml
+  vars:
+    repo_config: "{{ repo.apt | default({}) }}"
+  when: (repo.apt.enabled | default(false)) | bool
+  tags: [repo, baseline]
+
+- name: Common(Debian) | packages
+  ansible.builtin.include_tasks: packages.yml
+  vars:
+    package_config: "{{ packages.apt | default({}) }}"
+    package_manager: apt
+  when: (packages.apt.enabled | default(false)) | bool
+  tags: [pkgs, baseline]
+
+- name: Common(Debian) | cleanup optional packages
+  ansible.builtin.include_tasks: packages_cleanup.yml
+  when:
+    - (packages_cleanup.enabled | default(false)) | bool
+  tags: [pkgs, baseline, cleanup]

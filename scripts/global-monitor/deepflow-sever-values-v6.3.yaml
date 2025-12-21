@@ -1,0 +1,117 @@
+global:
+  ## 此文件中的字段会替换掉 values.yaml 中的默认值，如需修改 values.yaml，都需要在此修改
+  ## 需保证与 values.yaml 格式一致
+  ## Tips: grep redis_tag: values.yaml -A 16 -B1 >> values-custom.yaml
+  deepflowVersion: DeepFlow-6.3.36
+  imagePullSecrets:
+    - deepflow-registry-secret
+  image:
+    repository: global-images.onwalk.net/private/deepflow-v6.3
+    pullPolicy: Always
+  node_type: master
+  master_region_domain_prefix: ''
+  current_region_domain_prefix: 'master-'
+  s3StorageEnabled: false
+  ## 计费模式 license 授权模式 / voucher 按量计费
+  billing_method: license
+  ##
+  ## 【可选】用于部署ESXi环境中的采集器虚拟机，需先在页面创建采集器组及配置流量采集模式为虚拟镜像，再 `-uo trident` 升级 esxi 采集器。
+  tridentConfigmap:
+    ## 自定义采集器配置
+    customConfig:
+      vtap-group-id-request: "__FIX_ME__"
+      # controller-port: 20035
+
+
+## 各组件自定义参数
+## Example
+
+## server 和 clickhouse 副本数控制，server 副本数必须 >= clickhouse 数量。
+deepflow:
+  server:
+    replicas: 1
+    resources:
+      ## limit.memory 需配置为节点资源的 70% and > 2Gi，如 128G，则配置为 128x0.7~=90G。
+      limits:
+        memory: 5G 
+  clickhouse:
+    replicas: 1
+
+alarm:
+  alarmEmail: stats01@yunshan.net
+
+
+## df-web-metrics-explore
+dfWebMetricsExplore:
+  customConfig:
+    app_config_user.js: |-
+      window.APP_USER_CONFIG = {}
+
+## df-web-core
+dfWebCore:
+  customConfig:
+    app_config_user.js: |-
+      window.APP_USER_CONFIG = {}
+
+## 主从区域通信配置
+customResource:
+  clusterEndpointMasterToSlave:
+    ## 创建内建负载均衡器配置开关
+    enabled: false
+    slaveRegionList:
+      ## 此处从区域名称和部署从区域时的域名前缀一致
+      ## 从区域一
+      - name: slave1-
+        ## 访问从区域组件端口，如遇 nodePort 冲突，更换端口后可修改如下配置，如需新增组件访问，添加 service 名称及端口即可。
+        ports:
+          influxdb:
+            ## 集群内 server 暴露端口，无需更改
+            port: 20044
+            ## 从区域组件端口，如果各从区域 nodePort 端口不相同可修改 targetPort
+            targetPort: 20044
+          elasticsearch:
+            port: 20042
+            targetPort: 20042
+          deepflow-server:
+            port: 20416
+            targetPort: 30416
+        ## 从区域所有节点IP
+        ips:
+          - 1.1.1.1
+          - 2.2.2.2
+      ## 从区域二
+      - name: slave2-
+        ports:
+          influxdb:
+            ## 集群内 server 暴露端口，无需更改
+            port: 20044
+            ## 从区域组件端口，如果各从区域 nodePort 端口不相同可修改 targetPort
+            targetPort: 20044
+          elasticsearch:
+            port: 20042
+            targetPort: 20042
+          deepflow-server:
+            port: 20416
+            targetPort: 30416
+        ips:
+          - 3.3.3.3
+          - 4.4.4.4
+  ## 从区域访问主区域配置
+  clusterEndpointSlaveToMaster:
+    ## 主区域组件端口，如需新增组件访问，添加 service 名称及端口即可。
+    ## 填写主区域 server 所在节点 IP
+    master_controller_ips:
+      - __FIXME_MASTER_CONTROLLER1_IP__
+      - __FIXME_MASTER_CONTROLLER2_IP__
+      - __FIXME_MASTER_CONTROLLER3_IP__
+    ports:
+      talker:
+        port: 20013
+        targetPort: 20013
+      mysql:
+        port: 30130
+        targetPort: 30130
+      manager:
+        port: 20403
+        targetPort: 20403
+

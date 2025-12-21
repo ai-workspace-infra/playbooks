@@ -1,0 +1,21 @@
+- name: Ensure OpenObserve working directory exists
+  ansible.builtin.file:
+    path: "{{ openobserve_working_dir }}"
+    state: directory
+    mode: '0755'
+  when: inventory_hostname in groups[group]
+
+- name: Install OpenObserve systemd service
+  ansible.builtin.template:
+    src: openobserve.service.j2
+    dest: /etc/systemd/system/openobserve.service
+    mode: '0644'
+  when: inventory_hostname in groups[group]
+
+- name: Enable and start OpenObserve service
+  ansible.builtin.systemd:
+    name: openobserve
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  when: inventory_hostname in groups[group]

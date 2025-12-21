@@ -1,0 +1,33 @@
+- name: Install NVIDIA Container Toolkit
+  apt:
+    name: nvidia-container-toolkit
+    state: present
+  when: gpu_enabled | bool
+
+- name: Configure NVIDIA Container Toolkit
+  shell: |
+    nvidia-ctk runtime configure --runtime=docker --set-as-default
+    nvidia-ctk runtime configure --runtime=containerd --set-as-default
+    nvidia-ctk runtime configure --runtime=crio --set-as-default --config=/etc/crio/crio.conf.d/99-nvidia.conf
+  register: container_runtime
+  when: gpu_enabled | bool
+
+- name: Find all microk8s services
+  shell: systemctl list-units --full --all "snap.microk8s.*" --plain --no-legend | awk '{print $1}'
+  register: microk8s_services
+
+- name: Restart all microk8s services
+  systemd:
+    name: "{{ item }}"
+    state: restarted
+  loop: "{{ microk8s_services.stdout_lines }}"
+  when: container_runtime.changed
+
+- name: Fix containerd
+  shell: |
+    DISABLED=$(egrep 'disabled_plugins' /etc/containerd/config.toml | grep -v 'disabled_plugins = []')
+    if [ ! -z "$PKGS" ]; then
+      perl -pi -e 's/^\s*disabled_plugins\s*=.*/##disabled_plugins = []/g' /etc/containerd/config.toml
+      systemctl restart containerd
+    fi
+

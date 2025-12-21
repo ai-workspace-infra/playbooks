@@ -1,0 +1,38 @@
+---
+- name: Determine Homebrew prefix
+  ansible.builtin.set_fact:
+    nodejs_homebrew_prefix: "{{ '/opt/homebrew' if ansible_facts['architecture'] in ['arm64', 'aarch64'] else '/usr/local' }}"
+    nodejs_homebrew_formula: "node@{{ nodejs_major_version | default(22) }}"
+
+- name: Ensure unversioned Homebrew node formula is absent
+  community.general.homebrew:
+    name: node
+    state: absent
+
+- name: Ensure Homebrew {{ nodejs_homebrew_formula }} formula is installed
+  community.general.homebrew:
+    name: "{{ nodejs_homebrew_formula }}"
+    state: present
+
+- name: Ensure {{ nodejs_homebrew_formula }} is linked as the default node
+  ansible.builtin.command: "brew link --force --overwrite {{ nodejs_homebrew_formula }}"
+  register: nodejs_brew_link
+  changed_when: "'linking' in (nodejs_brew_link.stdout | lower)"
+  failed_when: nodejs_brew_link.rc != 0 and 'already linked' not in (nodejs_brew_link.stdout | lower) and 'already linked' not in (nodejs_brew_link.stderr | lower)
+  environment:
+    PATH: "{{ nodejs_homebrew_prefix }}/bin:/usr/local/bin:/usr/bin:/bin"
+
+- name: Prioritize {{ nodejs_homebrew_formula }} binaries in the default shell path
+  ansible.builtin.lineinfile:
+    path: "{{ ansible_env.HOME }}/.zshrc"
+    line: "export PATH=\"{{ nodejs_homebrew_prefix }}/opt/{{ nodejs_homebrew_formula }}/bin:$PATH\""
+    insertafter: EOF
+    create: true
+
+- name: Pin {{ nodejs_homebrew_formula }} to prevent automatic upgrades
+  ansible.builtin.command: "brew pin {{ nodejs_homebrew_formula }}"
+  register: nodejs_brew_pin
+  changed_when: "'pinned' in (nodejs_brew_pin.stdout | lower)"
+  failed_when: nodejs_brew_pin.rc != 0 and 'already pinned' not in (nodejs_brew_pin.stdout | lower) and 'already pinned' not in (nodejs_brew_pin.stderr | lower)
+  environment:
+    PATH: "{{ nodejs_homebrew_prefix }}/bin:/usr/local/bin:/usr/bin:/bin"

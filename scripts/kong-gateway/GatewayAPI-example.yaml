@@ -1,0 +1,81 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: example-gateway
+  namespace: kong
+  annotations:
+    konghq.com/publish-service: kong/kong-gateway-proxy
+spec:
+  gatewayClassName: kong
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      hostname: "*.onwalk.net"  # ⭐ 通配符域名，匹配所有子域
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: onwalk-tls  # 存放 *.onwalk.net 证书的 Secret
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ui-route
+  namespace: ai
+spec:
+  parentRefs:
+    - name: example-gateway
+      namespace: kong
+  hostnames:
+    - open-webui.onwalk.net
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: open-webui
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: keycloak-route
+  namespace: keycloak
+spec:
+  parentRefs:
+    - name: example-gateway
+      namespace: kong
+  hostnames:
+    - keycloak.onwalk.net
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: keycloak
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: argocd-route
+  namespace: argocd
+spec:
+  parentRefs:
+    - name: example-gateway
+      namespace: kong   # ⭐ 必须指定！
+  hostnames:
+    - argocd.onwalk.net  # ⭐ 注意要匹配实际访问域名
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: argocd-server
+          port: 80

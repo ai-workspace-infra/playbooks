@@ -1,0 +1,102 @@
+- name: Ensure zot group exists
+  ansible.builtin.group:
+    name: "{{ zot_group }}"
+  when: inventory_hostname in groups[group]
+
+- name: Ensure zot user exists
+  ansible.builtin.user:
+    name: "{{ zot_user }}"
+    group: "{{ zot_group }}"
+    create_home: false
+    shell: /usr/sbin/nologin
+  when: inventory_hostname in groups[group]
+
+- name: Ensure zot configuration directory exists
+  ansible.builtin.file:
+    path: "{{ zot_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: inventory_hostname in groups[group]
+
+- name: Ensure zot data directory exists
+  ansible.builtin.file:
+    path: "{{ zot_data_dir }}"
+    state: directory
+    owner: "{{ zot_user }}"
+    group: "{{ zot_group }}"
+    mode: '0755'
+  when: inventory_hostname in groups[group]
+
+- name: Ensure zot log directory exists
+  ansible.builtin.file:
+    path: "{{ zot_log_dir }}"
+    state: directory
+    owner: "{{ zot_user }}"
+    group: "{{ zot_group }}"
+    mode: '0755'
+  when: inventory_hostname in groups[group]
+
+- name: Download zot binary
+  ansible.builtin.get_url:
+    url: "{{ zot_binary_url }}"
+    dest: "{{ zot_binary_path }}"
+    mode: '0755'
+  when: inventory_hostname in groups[group]
+
+- name: Ensure htpasswd file exists
+  ansible.builtin.file:
+    path: "{{ zot_htpasswd_path }}"
+    state: touch
+    owner: "{{ zot_user }}"
+    group: "{{ zot_group }}"
+    mode: '0640'
+  when: (inventory_hostname in groups[group]) and (zot_auth_users | length > 0)
+
+- name: Configure local authentication users
+  community.general.htpasswd:
+    path: "{{ zot_htpasswd_path }}"
+    name: "{{ item.name }}"
+    password: "{{ item.password }}"
+    crypt_scheme: bcrypt
+    mode: '0640'
+    owner: "{{ zot_user }}"
+    group: "{{ zot_group }}"
+  loop: "{{ zot_auth_users }}"
+  when: (inventory_hostname in groups[group]) and (zot_auth_users | length > 0)
+
+- name: Install zot configuration
+  ansible.builtin.template:
+    src: config.json.j2
+    dest: "{{ zot_config_path }}"
+    mode: '0644'
+    owner: root
+    group: root
+  when: inventory_hostname in groups[group]
+
+- name: Install zot systemd service
+  ansible.builtin.template:
+    src: zot.service.j2
+    dest: "/etc/systemd/system/{{ zot_service_name }}.service"
+    mode: '0644'
+    owner: root
+    group: root
+  when: inventory_hostname in groups[group]
+
+- name: Verify zot configuration
+  ansible.builtin.command:
+    cmd: "{{ zot_binary_path }} verify {{ zot_config_path }}"
+  become: true
+  become_user: "{{ zot_user }}"
+  register: zot_verify_result
+  changed_when: false
+  when: (inventory_hostname in groups[group]) and zot_verify_config
+
+- name: Enable and start zot service
+  ansible.builtin.systemd:
+    name: "{{ zot_service_name }}"
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  when: inventory_hostname in groups[group]

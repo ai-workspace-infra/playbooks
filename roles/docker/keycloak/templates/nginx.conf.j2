@@ -1,0 +1,70 @@
+# global settings
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    # 全局配置
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    # 配置日志
+    access_log /dev/stdout;
+    error_log /dev/stderr;
+
+    # 设置 Content-Security-Policy 头部，允许 keycloak_domain 被嵌入
+    add_header Content-Security-Policy "frame-src 'self' https://{{ keycloak_domain }};";
+
+    # 配置反向代理缓冲区
+    client_body_buffer_size 16k;  # 客户端请求体缓冲区大小
+    proxy_buffer_size 128k;       # 设置反向代理请求的单个缓冲区大小
+    proxy_buffers 4 256k;         # 设置反向代理请求的缓冲区大小（4个 256KB）
+    proxy_max_temp_file_size 512m; # 设置最大临时文件大小
+
+    # 设置真实 IP 的来源
+    set_real_ip_from 0.0.0.0/0;
+    real_ip_header X-Real-IP;
+    real_ip_recursive on;
+
+    # server 配置
+    server {
+        listen 80;
+        server_name {{ keycloak_domain }};
+
+        # 强制 HTTP 请求重定向到 HTTPS
+        return 301 https://$host$request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+        server_name {{ keycloak_domain }};
+
+        # SSL 配置
+        ssl_certificate /etc/ssl/certs/{{ ssl_certificate.name }};
+        ssl_certificate_key /etc/ssl/certs/{{ ssl_certificate_key.name }};
+
+        # 日志设置
+        access_log /dev/stdout;
+        error_log /dev/stderr;
+
+        # 配置反向代理
+        location / {
+            proxy_pass http://{{ keycloak_name }}:8080;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Port 443;
+            proxy_set_header Cookie $http_cookie;
+            proxy_redirect off;
+        }
+
+        # SSL 强化
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES128-GCM-SHA256';
+        ssl_prefer_server_ciphers off;
+    }
+}
+

@@ -1,0 +1,49 @@
+- name: Import InfluxData GPG key (CentOS)
+  rpm_key:
+    state: present
+    key: https://repos.influxdata.com/influxdb.key
+  when: ansible_os_family == "RedHat"
+
+- name: Add Telegraf YUM repository (CentOS)
+  yum_repository:
+    name: influxdata
+    description: InfluxData Repository - Telegraf
+    baseurl: https://repos.influxdata.com/rhel/$releasever/$basearch/stable
+    gpgcheck: yes
+    gpgkey: https://repos.influxdata.com/influxdb.key
+  when: ansible_os_family == "RedHat"
+
+- name: Import InfluxData GPG key (Ubuntu)
+  apt_key:
+    url: https://repos.influxdata.com/influxdb.key
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Add Telegraf APT repository (Ubuntu)
+  apt_repository:
+    repo: deb https://repos.influxdata.com/ubuntu {{ ansible_distribution_release }} stable
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install Telegraf
+  package:
+    name: telegraf
+    state: present
+
+- name: Create Telegraf configuration directory
+  file:
+    path: /etc/telegraf/
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install telegraf.conf
+  template:
+    src: templates/telegraf.conf.j2
+    dest: /etc/telegraf/telegraf.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - restart telegraf

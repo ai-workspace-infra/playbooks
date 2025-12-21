@@ -1,0 +1,38 @@
+- name: set artifact cluster with vhosts
+  hosts: all
+  user: root
+  become: yes
+  gather_facts: yes
+  tasks:
+    - include_role:
+        name: k3s-reset
+      vars:
+        group: master
+        cluster_reset: 'enable'
+    - include_role:
+        name: k3s
+      vars:
+        group: master
+        cni: default
+        version: 'v1.27.2+k3s1'
+        pod_cidr: '10.10.0.0/16'
+        svc_cidr: '172.16.0.0/16'
+        enable_api_access: true
+    - include_role:
+        name: k3s-addon
+      vars:
+        group: master
+        ingress: disable
+        external_dns: disable
+        cert_issuance: vault
+    - include_role:
+        name: argo-server
+      vars:
+        group: master
+        namespace: argocd
+        domain: onwalk.net
+        update_secret: true  
+        tls:
+          - secret_name: argocd-server-tls
+            keyfile: /etc/ssl/onwalk.net.key
+            certfile: /etc/ssl/onwalk.net.pem

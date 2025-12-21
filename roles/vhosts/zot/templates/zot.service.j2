@@ -1,0 +1,17 @@
+[Unit]
+Description=OCI Distribution Registry (zot)
+Documentation=https://zotregistry.dev/
+After=network.target auditd.service local-fs.target
+
+[Service]
+Type=simple
+User={{ zot_user }}
+Group={{ zot_group }}
+ExecStart={{ zot_binary_path }} serve {{ zot_config_path }}
+Restart=on-failure
+LimitNOFILE={{ zot_service_limits.nofile }}
+MemoryHigh={{ zot_service_limits.memory_high }}
+MemoryMax={{ zot_service_limits.memory_max }}
+
+[Install]
+WantedBy=multi-user.target

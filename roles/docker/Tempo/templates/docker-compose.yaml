@@ -1,0 +1,41 @@
+services:
+  bootstrap-nginx:
+    profiles: ["bootstrap"]
+    image: nginx:mainline-alpine
+    container_name: bootstrap-nginx
+    volumes:
+      - "{{ zitadel_workspace }}/certbot/www:/var/www/certbot"
+      - "{{ zitadel_workspace }}/certbot/conf:/etc/letsencrypt"
+      - "{{ zitadel_workspace }}/nginx/nginx.conf:/etc/nginx/nginx.conf"
+      - "{{ zitadel_workspace }}/nginx/conf.d/bootstrap-nginx.conf:/etc/nginx/conf.d/bootstrap-nginx.conf"
+    ports:
+      - "80:80"       # 暂时只占用80
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 3s
+  certbot:
+    profiles: ["bootstrap"]
+    image: certbot/certbot
+    container_name: certbot
+    command: >
+      certonly --webroot
+      --webroot-path=/var/www/certbot
+      --email manbuzhe2009@qq.com
+      --agree-tos
+      --no-eff-email
+      --keep-until-expiring
+      --non-interactive
+      -d {{ zitadel_domain }}
+    volumes:
+      - "{{ zitadel_workspace }}/certbot/conf:/etc/letsencrypt"
+      - "{{ zitadel_workspace }}/certbot/www:/var/www/certbot"
+    networks:
+      - app
+
+networks:
+  app:

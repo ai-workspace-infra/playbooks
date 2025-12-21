@@ -1,0 +1,37 @@
+---
+# 主任务：创建 Keycloak 服务，启动 Docker Compose 等
+
+- name: 执行 pre-setup 操作
+  include_tasks: "pre-setup.yml"
+
+- name: 渲染 Docker Compose Common 配置文件
+  template:
+    src: "templates/{{ item }}"
+    dest: "/home/ubuntu/harbor/{{ item }}"
+  loop:
+    - common/config/portal/nginx.conf
+    - common/config/core/app.conf
+    - common/config/core/env
+    - common/config/jobservice/env
+    - common/config/jobservice/config.yml
+    - common/config/nginx/nginx.conf
+    - common/config/registry/root.crt
+    - common/config/registry/config.yml
+    - common/config/registry/passwd
+    - common/config/db/env
+    - common/config/log/logrotate.conf
+    - common/config/log/rsyslog_docker.conf
+    - common/config/registryctl/env
+    - common/config/registryctl/config.yml
+
+- name: 渲染 Docker Compose 配置文件
+  template:
+    src: "templates/docker-compose.yml.j2"
+    dest: "/home/ubuntu/harbor/docker-compose.yml"
+
+- name: 启动 Docker Compose 服务
+  become: true
+  command: docker-compose -f /home/ubuntu/harbor/docker-compose.yml up -d
+
+- name: 执行 post-setup 操作
+  include_tasks: "post-setup.yml"

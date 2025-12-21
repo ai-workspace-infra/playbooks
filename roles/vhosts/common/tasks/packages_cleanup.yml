@@ -1,0 +1,16 @@
+---
+- name: Cleanup | normalize config
+  ansible.builtin.set_fact:
+    cleanup_config: "{{ packages_cleanup[ansible_facts.distribution | lower] | default({}) }}"
+  tags: [pkgs, baseline, cleanup]
+
+- name: Cleanup | remove optional packages
+  ansible.builtin.apt:
+    name: "{{ cleanup_config.list | default([]) }}"
+    state: absent
+    purge: "{{ cleanup_config.purge | default(true) }}"
+  when:
+    - ansible_facts.distribution == "Ubuntu"
+    - (cleanup_config.list | default([])) | length > 0
+  tags: [pkgs, baseline, cleanup]
+  become: true

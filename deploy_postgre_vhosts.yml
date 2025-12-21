@@ -1,0 +1,162 @@
+- name: Setup postgres server
+  hosts: cn-homepage.svc.plus
+  become: true
+  vars:
+    group: cn-homepage.svc.plus
+    repo_setup: true
+    apt_keyrings: &postgresql_common_keyrings
+      - name: postgresql
+        content: |
+          -----BEGIN PGP PUBLIC KEY BLOCK-----
+          Version: Hockeypuck 2.2
+          Comment: Hostname:
+
+          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
+          =BkpO
+          -----END PGP PUBLIC KEY BLOCK-----
+    repos: &postgresql_common_repos
+      - name: postgresql
+        uri: "http://apt.postgresql.org/pub/repos/apt"
+        suite: "{{ ansible_distribution_release }}-pgdg"
+        components: ["main"]
+        enabled: true
+        cleanup:
+          - /etc/apt/sources.list.d/pgdg.list
+          - /etc/apt/sources.list.d/pgdg.sources
+    postgresql_use_official_repo: false
+  roles:
+    - roles/vhosts/common/
+    - roles/vhosts/postgres/
+
+- name: Setup postgres server
+  hosts: global-homepage.svc.plus
+  become: true
+  vars:
+    group: global-homepage.svc.plus
+    repo_setup: true
+    apt_keyrings: *postgresql_common_keyrings
+    repos: *postgresql_common_repos
+    postgresql_use_official_repo: false
+  roles:
+    - roles/vhosts/common/
+    - roles/vhosts/postgres/

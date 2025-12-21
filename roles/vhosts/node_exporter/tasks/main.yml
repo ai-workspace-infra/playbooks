@@ -1,0 +1,78 @@
+- name: Download node_exporter archive
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/prometheus/node_exporter/releases/download/v{{
+      node_exporter_version | default('1.8.2') }}/node_exporter-{{
+      node_exporter_version | default('1.8.2') }}.linux-amd64.tar.gz
+    dest: /tmp/node_exporter.tar.gz
+    mode: "0644"
+  when: inventory_hostname in groups[group]
+
+- name: Extract node_exporter
+  ansible.builtin.unarchive:
+    src: /tmp/node_exporter.tar.gz
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/node_exporter-{{ node_exporter_version | default('1.8.2') }}.linux-amd64"
+  when: inventory_hostname in groups[group]
+
+- name: Ensure metrics-agent directory exists
+  ansible.builtin.file:
+    path: /opt/metrics-agent
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: inventory_hostname in groups[group]
+
+- name: Install node_exporter binary
+  ansible.builtin.copy:
+    src: "/tmp/node_exporter-{{ node_exporter_version | default('1.8.2') }}.linux-amd64/node_exporter"
+    dest: /opt/metrics-agent/node_exporter
+    mode: '0755'
+    remote_src: true
+  when: inventory_hostname in groups[group]
+
+- name: Remove node_exporter archive
+  ansible.builtin.file:
+    path: /tmp/node_exporter.tar.gz
+    state: absent
+  when: inventory_hostname in groups[group]
+
+- name: Cleanup extracted directory
+  ansible.builtin.file:
+    path: "/tmp/node_exporter-{{ node_exporter_version | default('1.8.2') }}.linux-amd64"
+    state: absent
+  when: inventory_hostname in groups[group]
+
+- name: Ensure textfile collector directory exists
+  ansible.builtin.file:
+    path: /var/lib/node_exporter
+    state: directory
+    owner: nobody
+    group: nogroup
+    mode: '0755'
+  when: inventory_hostname in groups[group]
+
+- name: Remove old node_exporter service file
+  ansible.builtin.file:
+    path: /etc/systemd/system/node_exporter.service
+    state: absent
+  when: inventory_hostname in groups[group]
+
+- name: Create node_exporter service
+  ansible.builtin.template:
+    src: node-exporter.service
+    dest: /etc/systemd/system/node-exporter.service
+    owner: root
+    group: root
+    mode: '0644'
+  when: inventory_hostname in groups[group]
+
+- name: Enable and start node_exporter
+  ansible.builtin.systemd:
+    name: node-exporter
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  when: inventory_hostname in groups[group]

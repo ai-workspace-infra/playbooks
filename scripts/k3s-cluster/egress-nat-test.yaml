@@ -1,0 +1,46 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-pod
+  namespace: default
+  labels:
+    app: test-pod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: test-pod
+  template:
+    metadata:
+      labels:
+        app: test-pod
+    spec:
+      containers:
+      - name: curl
+        image: docker.io/curlimages/curl:latest
+        imagePullPolicy: IfNotPresent
+        command: ["sleep", "3600"]
+        securityContext:
+          capabilities:
+            add: ["ALL"]
+---
+apiVersion: cilium.io/v2
+kind: CiliumEgressGatewayPolicy
+metadata:
+  name: egress-aliyun
+spec:
+  selectors:
+  - podSelector:
+      matchLabels:
+        app: test-pod
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: default
+  destinationCIDRs:
+  - "0.0.0.0/0"
+  egressGateway:
+    nodeSelector:
+      matchLabels:
+        kubernetes.io/hostname: cn-hub.svc.plus
+    egressIP: 172.30.0.1

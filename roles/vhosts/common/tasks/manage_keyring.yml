@@ -1,0 +1,85 @@
+---
+# 输入变量：
+# - apt_keyring: 调用方定义的 keyring 字典
+# - keyring_dest: 计算后的二进制 keyring 路径
+# - keyring_ascii: 计算后的 ASCII key 路径（若需要）
+# - keyring_state: 目标 state（present/absent）
+
+- name: "Keyring | Remove when state=absent"
+  ansible.builtin.file:
+    path: "{{ keyring_dest }}"
+    state: absent
+  when: keyring_state == 'absent'
+  become: true
+
+- name: "Keyring | Ensure present"
+  when: keyring_state != 'absent'
+  become: true
+  block:
+    - name: "Keyring | Download ASCII key from url"
+      ansible.builtin.get_url:
+        url: "{{ apt_keyring.url }}"
+        dest: "{{ keyring_ascii }}"
+        mode: "{{ apt_keyring.asc_mode | default('0644') }}"
+      when: apt_keyring.url is defined
+      register: keyring_ascii_fetch
+
+    - name: "Keyring | Write ASCII key content"
+      ansible.builtin.copy:
+        content: "{{ apt_keyring.content }}"
+        dest: "{{ keyring_ascii }}"
+        mode: "{{ apt_keyring.asc_mode | default('0644') }}"
+      when: apt_keyring.content is defined
+      register: keyring_ascii_write
+
+    - name: "Keyring | Ensure ASCII key file ownership"
+      ansible.builtin.file:
+        path: "{{ keyring_ascii }}"
+        owner: root
+        group: root
+        mode: "{{ apt_keyring.asc_mode | default('0644') }}"
+        state: file
+      when: (apt_keyring.content is defined) or (apt_keyring.url is defined)
+
+    - name: "Keyring | Stat binary keyring"
+      ansible.builtin.stat:
+        path: "{{ keyring_dest }}"
+      register: keyring_dest_stat
+
+    - name: "Keyring | Dearmor ASCII key"
+      ansible.builtin.command:
+        cmd: "gpg --dearmor -o {{ keyring_dest }} {{ keyring_ascii }}"
+      when:
+        - apt_keyring.dearmor | default(true)
+        - (apt_keyring.content is defined) or (apt_keyring.url is defined)
+        - (keyring_ascii_write is defined and keyring_ascii_write.changed)
+          or (keyring_ascii_fetch is defined and keyring_ascii_fetch.changed)
+          or (not keyring_dest_stat.stat.exists)
+
+    - name: "Keyring | Download binary key"
+      ansible.builtin.get_url:
+        url: "{{ apt_keyring.binary_url }}"
+        dest: "{{ keyring_dest }}"
+        mode: "{{ apt_keyring.mode | default('0644') }}"
+      when: apt_keyring.binary_url is defined
+
+    - name: "Keyring | Write binary key content"
+      ansible.builtin.copy:
+        content: "{{ apt_keyring.binary_content }}"
+        dest: "{{ keyring_dest }}"
+        mode: "{{ apt_keyring.mode | default('0644') }}"
+      when: apt_keyring.binary_content is defined
+
+    - name: "Keyring | Refresh binary keyring stat"
+      ansible.builtin.stat:
+        path: "{{ keyring_dest }}"
+      register: keyring_dest_final
+
+    - name: "Keyring | Ensure binary keyring permission"
+      ansible.builtin.file:
+        path: "{{ keyring_dest }}"
+        owner: root
+        group: root
+        mode: "{{ apt_keyring.mode | default('0644') }}"
+        state: file
+      when: keyring_dest_final.stat.exists

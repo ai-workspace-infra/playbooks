@@ -1,0 +1,19 @@
+[Unit]
+Description=Prometheus Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User={{ prometheus_user }}
+Group={{ prometheus_group }}
+ExecStart={{ prometheus_dir }}/prometheus \
+  --config.file={{ prometheus_etc }}/prometheus.yml \
+  --storage.tsdb.path={{ prometheus_data }} \
+  --web.enable-lifecycle \
+  --web.external-url=https://{{ metrics_domain }}/prom/ \
+  --web.route-prefix=/
+Restart=always
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

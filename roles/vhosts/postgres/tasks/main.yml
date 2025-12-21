@@ -1,0 +1,120 @@
+- name: Ensure PostgreSQL repository prerequisites are installed
+  ansible.builtin.apt:
+    name: "{{ postgresql_package_dependencies | list }}"
+    state: present
+    update_cache: true
+  when:
+    - ansible_os_family == 'Debian'
+    - ansible_distribution == 'Ubuntu'
+    - ansible_distribution_version is version('22.04', '>=')
+    - postgresql_use_official_repo | bool
+
+- name: Download PostgreSQL repository signing key
+  ansible.builtin.get_url:
+    url: "{{ postgresql_repo_key_url }}"
+    dest: "{{ postgresql_repo_key_path }}"
+    mode: "0644"
+  when:
+    - ansible_os_family == 'Debian'
+    - ansible_distribution == 'Ubuntu'
+    - ansible_distribution_version is version('22.04', '>=')
+    - postgresql_use_official_repo | bool
+
+- name: Configure PostgreSQL apt repository
+  ansible.builtin.apt_repository:
+    repo: "{{ postgresql_repo }}"
+    filename: postgresql
+    state: present
+  register: postgresql_repo_config
+  when:
+    - ansible_os_family == 'Debian'
+    - ansible_distribution == 'Ubuntu'
+    - ansible_distribution_version is version('22.04', '>=')
+    - postgresql_use_official_repo | bool
+
+- name: Refresh apt cache if repository was added
+  ansible.builtin.apt:
+    update_cache: true
+  when:
+    - ansible_os_family == 'Debian'
+    - ansible_distribution == 'Ubuntu'
+    - ansible_distribution_version is version('22.04', '>=')
+    - postgresql_use_official_repo | bool
+    - postgresql_repo_config is defined
+    - postgresql_repo_config is changed
+
+- name: Set package list for PostgreSQL
+  ansible.builtin.set_fact:
+    postgresql_packages: "{{ (postgresql_packages_base + postgresql_extra_packages) | unique | list }}"
+
+- name: Install PostgreSQL packages
+  ansible.builtin.apt:
+    name: "{{ postgresql_packages | list }}"
+    state: present
+    update_cache: true
+  when:
+    - ansible_os_family == 'Debian'
+
+- name: Ensure PostgreSQL service is enabled and started
+  ansible.builtin.systemd:
+    name: "{{ postgresql_service_name }}"
+    enabled: true
+    state: started
+
+- name: Gather facts for PostgreSQL configuration files
+  ansible.builtin.stat:
+    path: "{{ postgresql_conf_path }}"
+  register: postgresql_conf_file
+
+- name: Configure listen_addresses in postgresql.conf
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_conf_path }}"
+    regexp: '^#?listen_addresses\s*='
+    line: "listen_addresses = '{{ postgresql_listen_addresses }}'"
+  when: postgresql_conf_file.stat.exists
+  notify: Restart PostgreSQL
+
+- name: Configure port in postgresql.conf
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_conf_path }}"
+    regexp: '^#?port\s*='
+    line: "port = {{ postgresql_port }}"
+  when: postgresql_conf_file.stat.exists
+  notify: Restart PostgreSQL
+
+- name: Configure password_encryption in postgresql.conf
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_conf_path }}"
+    regexp: '^#?password_encryption\s*='
+    line: "password_encryption = '{{ postgresql_password_encryption }}'"
+  when:
+    - postgresql_conf_file.stat.exists
+    - postgresql_password_encryption | length > 0
+  notify: Restart PostgreSQL
+
+- name: Ensure pg_hba.conf exists
+  ansible.builtin.stat:
+    path: "{{ postgresql_hba_path }}"
+  register: postgresql_hba_file
+
+- name: Configure pg_hba.conf access rules
+  ansible.builtin.blockinfile:
+    path: "{{ postgresql_hba_path }}"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK FOR POSTGRESQL ACCESS"
+    block: |-
+      {% for network in postgresql_allowed_hosts %}
+      host    all             all             {{ network }}        {{ postgresql_auth_method }}
+      {% endfor %}
+  when:
+    - postgresql_hba_file.stat.exists
+    - postgresql_allowed_hosts | length > 0
+  notify: Restart PostgreSQL
+
+- name: Remove managed pg_hba.conf block when no networks are defined
+  ansible.builtin.blockinfile:
+    path: "{{ postgresql_hba_path }}"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK FOR POSTGRESQL ACCESS"
+    state: absent
+  when:
+    - postgresql_hba_file.stat.exists
+    - postgresql_allowed_hosts | length == 0

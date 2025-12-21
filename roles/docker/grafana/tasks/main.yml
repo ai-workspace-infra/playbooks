@@ -1,0 +1,33 @@
+---
+- name: Ensure Grafana directories exist
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ grafana_workspace }}"
+    - "{{ grafana_workspace }}/data"
+    - "{{ grafana_workspace }}/provisioning"
+
+- name: Ensure Grafana data directory ownership
+  become: true
+  ansible.builtin.file:
+    path: "{{ grafana_workspace }}/data"
+    state: directory
+    owner: "472"
+    group: "472"
+    recurse: true
+
+- name: Template Grafana Docker Compose file
+  become: true
+  ansible.builtin.template:
+    src: docker-compose.yaml.j2
+    dest: "{{ grafana_workspace }}/docker-compose.yaml"
+    mode: "0644"
+
+- name: Launch Grafana with Docker Compose
+  become: true
+  ansible.builtin.command: docker compose -f {{ grafana_workspace }}/docker-compose.yaml up -d
+  args:
+    chdir: "{{ grafana_workspace }}"

@@ -1,0 +1,32 @@
+worker_processes  auto;
+user www-data;
+
+events {
+    worker_connections  1024;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    lua_package_path "/usr/local/openresty/lualib/?.lua;;";
+
+    sendfile        on;
+    keepalive_timeout  65;
+
+    # 开启 Gzip （可选）
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript application/xml+rss;
+
+    # 定义日志格式（可选）
+    log_format  main  '$remote_addr - $remote_user [$time_local] '
+                      '"$request" $status $body_bytes_sent '
+                      '"$http_referer" "$http_user_agent" '
+                      '$request_time';
+
+    # 全局访问日志
+    access_log  /usr/local/openresty/nginx/logs/access.log  main;
+    error_log   /usr/local/openresty/nginx/logs/error.log   warn;
+
+    # 引入 sites-available 下的配置
+    include /usr/local/openresty/nginx/conf/sites-available/*.conf;
+}

@@ -1,0 +1,25 @@
+settings:
+  VELERO_NAMESPACE: "velero"
+  VELERO_BUCKET: "k8s-resources-backup"
+  VELERO_REGION: "ap-northeast-1"
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+
+backup_config:
+  cluster_name: deepflow-demo-v6.3
+  nodes:
+    deepflow-demo: /var/lib/mysql/
+  namespaces:
+    - default
+    - deepflow
+    - microservice-demo
+  precmds: |
+      echo "🔻 Scale down MySQL before backup..."
+      kubectl scale deployment mysql-deployment -n deepflow --replicas=0
+      echo "⌛ Waiting for MySQL pods to terminate..."
+      while kubectl get pods -n deepflow -l app=mysql --no-headers 2>/dev/null | grep -q Running; do sleep 2; done
+  postcmds: |
+      echo "🚀 Scale up MySQL after backup..."
+      kubectl scale deployment mysql-deployment -n deepflow --replicas=1
+      echo "⏳ Waiting for MySQL deployment to be available..."
+      kubectl wait --for=condition=available deployment/mysql-deployment -n deepflow --timeout=60s

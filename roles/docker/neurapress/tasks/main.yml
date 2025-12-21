@@ -1,0 +1,69 @@
+---
+- name: Ensure Neurapress directories exist
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ neurapress_workspace }}"
+    - "{{ neurapress_workspace }}/certbot"
+    - "{{ neurapress_workspace }}/certbot/conf"
+    - "{{ neurapress_workspace }}/certbot/www"
+    - "{{ neurapress_workspace }}/nginx"
+    - "{{ neurapress_workspace }}/nginx/conf.d"
+
+- name: Ensure Neurapress workspace ownership
+  become: true
+  ansible.builtin.file:
+    path: "{{ neurapress_workspace }}"
+    state: directory
+    recurse: true
+    owner: "1000"
+    group: "1000"
+    mode: "0755"
+
+- name: Template Neurapress configuration files
+  become: true
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ neurapress_workspace }}/{{ item.dest }}"
+    mode: "{{ item.mode | default('0644') }}"
+  loop:
+    - { src: 'docker-compose.yaml', dest: 'docker-compose.yaml' }
+    - { src: 'nginx/conf.d/default.conf', dest: 'nginx/conf.d/default.conf' }
+    - { src: 'nginx/conf.d/bootstrap-nginx.conf', dest: 'nginx/conf.d/bootstrap-nginx.conf' }
+
+- name: Copy Neurapress static files
+  become: true
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ neurapress_workspace }}/{{ item.dest }}"
+    mode: "{{ item.mode | default('0644') }}"
+  loop:
+    - { src: 'run.sh', dest: 'run.sh', mode: '0755' }
+    - { src: 'nginx/nginx.conf', dest: 'nginx/nginx.conf' }
+
+- name: Bootstrap NGINX (80-only for ACME)
+  become: true
+  command: docker compose --profile bootstrap -f {{ neurapress_workspace }}/docker-compose.yaml up -d bootstrap-nginx
+  args:
+    chdir: "{{ neurapress_workspace }}"
+
+- name: Run certbot initial ACME challenge
+  become: true
+  command: docker compose --profile bootstrap -f {{ neurapress_workspace }}/docker-compose.yaml run --rm certbot
+  args:
+    chdir: "{{ neurapress_workspace }}"
+
+- name: Destroy Bootstrap NGINX (80-only for ACME)
+  become: true
+  command: docker compose --profile bootstrap -f {{ neurapress_workspace }}/docker-compose.yaml down bootstrap-nginx
+  args:
+    chdir: "{{ neurapress_workspace }}"
+
+- name: Bring up Neurapress stack
+  become: true
+  command: docker compose -f {{ neurapress_workspace }}/docker-compose.yaml up -d
+  args:
+    chdir: "{{ neurapress_workspace }}"

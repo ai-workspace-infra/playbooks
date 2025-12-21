@@ -1,0 +1,22 @@
+- name: Add NVIDIA repositories
+  shell: |
+    add-apt-repository -y ppa:graphics-drivers
+    curl -s -L https://nvidia.github.io/libnvidia-container/gpgkey | apt-key add -
+    curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | tee /etc/apt/sources.list.d/nvidia-container-runtime.list
+    curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | apt-key add -
+    curl -s -L https://nvidia.github.io/nvidia-docker/stable/ubuntu22.04/nvidia-docker.list | tee /etc/apt/sources.list.d/nvidia-docker.list
+    apt-get update
+  args:
+    executable: /bin/bash
+  become: true
+
+- name: Install NVIDIA driver and container runtime
+  apt:
+    name:
+      - nvidia-modprobe
+      - nvidia-driver-535
+      - nvidia-headless-535
+      - nvidia-container-toolkit
+    state: present
+    update_cache: yes
+  become: true

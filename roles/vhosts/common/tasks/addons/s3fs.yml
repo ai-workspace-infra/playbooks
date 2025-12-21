@@ -1,0 +1,98 @@
+---
+- name: "S3FS | 合并默认配置"
+  ansible.builtin.set_fact:
+    normalized_s3fs_config: "{{ {
+      'bucket': '',
+      'mount_point': '',
+      'access_key': '',
+      'secret_key': '',
+      'url': 'https://s3.amazonaws.com',
+      'region': 'us-east-1',
+      'passwd_file': '~/.passwd-s3fs',
+      'use_path_request_style': true,
+      'allow_other': true,
+      'nonempty': false
+    } | combine(s3fs_config | default({}), recursive=True) }}"
+
+- name: "S3FS | 检查 s3fs 配置"
+  ansible.builtin.fail:
+    msg: "S3FS 需要配置 s3fs_config.bucket 和 s3fs_config.mount_point"
+  when:
+    - normalized_s3fs_config.bucket | length == 0 or normalized_s3fs_config.mount_point | length == 0
+
+- name: "S3FS | 检查 AWS 凭证"
+  ansible.builtin.fail:
+    msg: "S3FS 需要配置 s3fs_config.access_key 和 s3fs_config.secret_key"
+  when:
+    - normalized_s3fs_config.access_key | length == 0 or normalized_s3fs_config.secret_key | length == 0
+
+- name: "S3FS | 安装 s3fs 软件包"
+  ansible.builtin.apt:
+    name: s3fs
+    state: present
+  become: true
+  when: ansible_facts.os_family == 'Debian'
+
+- name: "S3FS | 安装 s3fs 软件包 (CentOS/RHEL)"
+  ansible.builtin.yum:
+    name: s3fs-fuse
+    state: present
+  become: true
+  when: ansible_facts.os_family == 'RedHat'
+
+- name: "S3FS | 创建密码文件"
+  ansible.builtin.copy:
+    content: "{{ normalized_s3fs_config.access_key }}:{{ normalized_s3fs_config.secret_key }}"
+    dest: "{{ normalized_s3fs_config.passwd_file | expanduser }}"
+    mode: '0600'
+    owner: root
+    group: root
+  when: normalized_s3fs_config.access_key | length > 0 and normalized_s3fs_config.secret_key | length > 0
+
+- name: "S3FS | 创建挂载点目录"
+  ansible.builtin.file:
+    path: "{{ normalized_s3fs_config.mount_point }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: "S3FS | 检查是否已挂载"
+  ansible.builtin.shell: "mount | grep -q '{{ normalized_s3fs_config.mount_point }}' && echo 'mounted' || echo 'not mounted'"
+  register: s3fs_mount_check
+  changed_when: false
+  failed_when: false
+
+- name: "S3FS | 挂载 S3 存储桶"
+  ansible.builtin.command: >
+    s3fs {{ normalized_s3fs_config.bucket }} {{ normalized_s3fs_config.mount_point }}
+    -o passwd_file={{ normalized_s3fs_config.passwd_file | expanduser }}
+    {% if normalized_s3fs_config.allow_other %}-o allow_other{% endif %}
+    -o url={{ normalized_s3fs_config.url }}
+    {% if normalized_s3fs_config.use_path_request_style %}-o use_path_request_style{% endif %}
+  args:
+    creates: "{{ normalized_s3fs_config.mount_point }}/.s3fs_configured"
+  when: s3fs_mount_check.stdout == 'not mounted'
+
+- name: "S3FS | 创建挂载标记文件"
+  ansible.builtin.copy:
+    content: "S3FS mounted at {{ ansible_date_time.iso8601 }}"
+    dest: "{{ normalized_s3fs_config.mount_point }}/.s3fs_configured"
+    mode: '0644'
+    owner: root
+    group: root
+  when: s3fs_mount_check.stdout == 'not mounted'
+
+- name: "S3FS | 验证挂载"
+  ansible.builtin.shell: "mount | grep '{{ normalized_s3fs_config.mount_point }}'"
+  register: s3fs_verify_mount
+  changed_when: false
+  failed_when: true
+
+- name: "S3FS | 显示挂载信息"
+  ansible.builtin.debug:
+    msg: |
+      S3 存储桶已成功挂载！
+      存储桶: {{ normalized_s3fs_config.bucket }}
+      挂载点: {{ normalized_s3fs_config.mount_point }}
+      状态: {{ s3fs_verify_mount.stdout }}

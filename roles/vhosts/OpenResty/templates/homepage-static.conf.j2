@@ -1,0 +1,128 @@
+server {
+  listen 80;
+  server_name {{ item.domain | join(' ') }};
+  return 301 https://$host$request_uri;
+}
+
+server {
+  listen 443 ssl;
+  server_name {{ item.domain | join(' ') }};
+
+  ssl_certificate     {{ item.ssl_certificate }};
+  ssl_certificate_key {{ item.ssl_certificate_key }};
+  ssl_protocols       TLSv1.2 TLSv1.3;
+  ssl_ciphers         HIGH:!aNULL:!MD5;
+
+  # ====== 静态根目录（Next.js export 产物）======
+  root {{ item.root | default('/data/update-server/dashboard') }};
+  index index.html;
+
+  # （可选）放行 ACME/健康检查等
+  location ^~ /.well-known/ { allow all; }
+
+  # =======================
+  # API 反向代理（保持原样）
+  # =======================
+  location /api/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  # /api/askai 接口限流（保持原样）
+  location = /api/askai {
+    access_by_lua_block {
+      local redis = require "resty.redis"
+      local r = redis:new()
+      r:set_timeout(200)
+      local ok, err = r:connect("127.0.0.1", 6379)
+      if not ok then
+        ngx.log(ngx.ERR, "Redis connect error: ", err)
+        return ngx.exit(500)
+      end
+
+      local user = ngx.var.arg_user or ngx.var.remote_addr
+      local today = os.date("%Y%m%d")
+      local key = "limit:user:" .. user .. ":" .. today
+
+      local count, err = r:incr(key)
+      if count == 1 then r:expire(key, 86400) end
+      if count > 200 then
+        ngx.status = 429
+        ngx.header["Content-Type"] = "text/plain; charset=utf-8"
+        ngx.say("Too Many Requests: daily limit reached")
+        return ngx.exit(429)
+      end
+    }
+
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  # =======================
+  # 静态文件直出（替换原先的 Next.js 动态代理）
+  # =======================
+
+  # Next 导出的静态资源（hash 不变 -> 长缓存）
+  location ^~ /_next/static/ {
+    try_files $uri =404;
+    access_log off;
+    expires 1y;
+    add_header Cache-Control "public, immutable, max-age=31536000";
+  }
+
+  # 其他常见静态资源：中等缓存
+  location ~* \.(?:js|css|png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf)$ {
+    try_files $uri =404;
+    access_log off;
+    expires 7d;
+    add_header Cache-Control "public, max-age=604800";
+  }
+
+  # 主页与已导出的所有路由：按文件/目录匹配
+  # 未命中的交给 404.html（保持静态站语义）
+  location / {
+    try_files $uri $uri/ /index.html =404;
+  }
+
+  # 显式处理 404/500 路由目录（Next export 会生成 404/、500/ 与同名 .html）
+  location = /404.html { internal; }
+  error_page 404 /404.html;
+
+  # 如果有 /favicon.ico，则直接给文件
+  location = /favicon.ico {
+    try_files /favicon.ico =204;
+    access_log off;
+    expires 30d;
+    add_header Cache-Control "public, max-age=2592000";
+  }
+
+  # （可选）为某些目录开启目录索引
+{% for path in item.autoindex_paths | default([]) %}
+  location ^~ {{ path }} {
+    autoindex on;
+    autoindex_exact_size off;
+    autoindex_localtime on;
+    try_files $uri $uri/ =404;
+  }
+{% endfor %}
+
+  # 拒绝访问隐藏文件（如 .env）
+  location ~ /\. {
+    deny all;
+  }
+
+  # （可选）开启 gzip（如启用 ngx_brotli，也可再加 br）
+  gzip on;
+  gzip_comp_level 5;
+  gzip_min_length 1k;
+  gzip_types text/plain text/css application/javascript application/json application/xml image/svg+xml;
+  gzip_vary on;
+}

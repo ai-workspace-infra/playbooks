@@ -1,0 +1,37 @@
+---
+- name: Configure Node.js runtime for vhosts
+  hosts: all
+  gather_facts: true
+  become: yes
+  vars:
+    # Choose Node.js version
+    # Examples: "20.x" (LTS), "18.x", "22.x", or specific version like "20.11.0"
+    nodejs_version: "20.x"
+
+    # Install Yarn package manager (default: true)
+    # install_yarn: false
+
+    # Add npm global bin to PATH (default: true)
+    # add_npm_to_path: true
+
+    # Custom npm prefix
+    # npm_config_prefix: "/usr/local/lib/npm"
+
+    # Additional packages to install globally (optional)
+    # global_npm_packages:
+    #   - pm2
+    #   - typescript
+    #   - eslint
+    #   - @angular/cli
+
+  roles:
+    - role: vhosts/nodejs
+
+  post_tasks:
+    - name: Install additional global npm packages
+      npm:
+        name: "{{ item }}"
+        state: latest
+        global: yes
+      loop: "{{ global_npm_packages | default([]) }}"
+      when: global_npm_packages is defined and global_npm_packages | length > 0

@@ -1,0 +1,8 @@
+- name: Deploy PostgreSQL on vhosts
+  hosts: "{{ postgresql_target | default('postgresql') }}"
+  become: true
+  vars:
+    group: "{{ group | default(postgresql_target | default('postgresql')) }}"
+  roles:
+    - roles/vhosts/common/
+    - roles/vhosts/postgres/

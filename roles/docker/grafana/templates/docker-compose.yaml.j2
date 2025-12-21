@@ -1,0 +1,17 @@
+version: '3.9'
+services:
+  grafana:
+    image: "{{ grafana_image }}"
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: "{{ grafana_admin_user }}"
+      GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+      GF_SERVER_DOMAIN: "{{ grafana_domain }}"
+      GF_SERVER_ROOT_URL: "{{ grafana_protocol }}://{{ grafana_domain }}/"
+    ports:
+      - "{{ grafana_host_port }}:3000"
+    volumes:
+      - "{{ grafana_workspace }}/data:/var/lib/grafana"
+      - "{{ grafana_workspace }}/provisioning:/etc/grafana/provisioning"
+    user: "472:472"

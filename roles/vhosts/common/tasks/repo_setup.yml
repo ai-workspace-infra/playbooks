@@ -1,0 +1,115 @@
+---
+- name: Repo | normalize apt repo config
+  ansible.builtin.set_fact:
+    apt_repo: "{{ {
+      'key_dir': '/etc/apt/keyrings',
+      'enable_universe': false,
+      'auto_update_cache': true,
+      'cache_valid_time': 3600,
+      'bootstrap_packages': ['ca-certificates', 'gnupg'],
+      'legacy_paths': [],
+      'entries': []
+    } | combine(repo_config | default({}), recursive=True) }}"
+
+- name: Repo | ensure keyring dir
+  ansible.builtin.file:
+    path: "{{ apt_repo.key_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Repo | ensure bootstrap packages (for key download/dearmor)
+  ansible.builtin.apt:
+    name: "{{ apt_repo.bootstrap_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ apt_repo.cache_valid_time }}"
+  when: (apt_repo.bootstrap_packages | default([])) | length > 0
+  become: true
+
+- name: Repo | remove legacy repo/keyring paths
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ apt_repo.legacy_paths | default([]) }}"
+  become: true
+
+# Ubuntu 可选 universe（补齐 updates/security）
+- name: Repo | enable Ubuntu universe (optional)
+  become: true
+  when:
+    - ansible_facts.distribution == "Ubuntu"
+    - apt_repo.enable_universe | bool
+  block:
+    - name: Repo | universe main
+      ansible.builtin.apt_repository:
+        repo: "deb http://archive.ubuntu.com/ubuntu {{ ansible_distribution_release }} universe"
+        filename: "ubuntu-{{ ansible_distribution_release }}-universe"
+        state: present
+
+    - name: Repo | universe updates
+      ansible.builtin.apt_repository:
+        repo: "deb http://archive.ubuntu.com/ubuntu {{ ansible_distribution_release }}-updates universe"
+        filename: "ubuntu-{{ ansible_distribution_release }}-universe"
+        state: present
+
+    - name: Repo | universe security
+      ansible.builtin.apt_repository:
+        repo: "deb http://security.ubuntu.com/ubuntu {{ ansible_distribution_release }}-security universe"
+        filename: "ubuntu-{{ ansible_distribution_release }}-universe"
+        state: present
+
+# 声明式添加自定义仓库：key_url -> dearmor -> add repo
+- name: Repo | configure declared apt repositories
+  become: true
+  loop: "{{ apt_repo.entries | default([]) }}"
+  loop_control:
+    loop_var: repo
+    label: "{{ repo.name }}"
+  when: repo.enabled | default(false) | bool
+  block:
+    - name: Repo | fetch ASCII key (optional)
+      ansible.builtin.get_url:
+        url: "{{ repo.key_url }}"
+        dest: "{{ apt_repo.key_dir }}/{{ repo.name }}.asc"
+        mode: "0644"
+      when: repo.key_url is defined and (repo.key_url | length > 0)
+
+    - name: Repo | dearmor key (optional)
+      ansible.builtin.command:
+        cmd: "gpg --dearmor -o {{ apt_repo.key_dir }}/{{ repo.name }}.gpg {{ apt_repo.key_dir }}/{{ repo.name }}.asc"
+        creates: "{{ apt_repo.key_dir }}/{{ repo.name }}.gpg"
+      when: repo.key_url is defined and (repo.key_url | length > 0)
+
+    - name: Repo | ensure keyring permission
+      ansible.builtin.file:
+        path: "{{ repo.signed_by | default(apt_repo.key_dir ~ '/' ~ repo.name ~ '.gpg') }}"
+        owner: root
+        group: root
+        mode: "0644"
+        state: file
+      when: (repo.key_url is defined and (repo.key_url | length > 0)) or (repo.signed_by is defined)
+
+    - name: Repo | cleanup repo specific paths (optional)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ repo.cleanup | default([]) }}"
+      when: (repo.cleanup | default([])) | length > 0
+
+    - name: Repo | add apt repository (signed-by)
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [signed-by={{ repo.signed_by | default(apt_repo.key_dir ~ '/' ~ repo.name ~ '.gpg') }}]
+          {{ repo.uri }} {{ repo.suite }} {{ (repo.components | default(['main'])) | join(' ') }}
+        filename: "{{ repo.name }}"
+        state: present
+
+- name: Repo | update apt cache after repo setup (optional)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: "{{ apt_repo.cache_valid_time }}"
+  when: apt_repo.auto_update_cache | bool
+  become: true

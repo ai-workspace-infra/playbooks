@@ -1,0 +1,15 @@
+[Unit]
+Description=XControl Server (Qwen AI)
+After=network.target
+
+[Service]
+User={{ xcontrol_service_user }}
+Group={{ xcontrol_service_group }}
+ExecStart={{ xcontrol_binary_path }} --config {{ xcontrol_config_dir }}/{{ xcontrol_config_filename }}
+WorkingDirectory={{ xcontrol_config_dir }}
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

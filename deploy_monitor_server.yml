@@ -1,0 +1,72 @@
+- name: setup otel exporters
+  hosts: otel.svc.plus
+  become: true
+  vars:
+    group: web
+    otlp_endpoint: &otel_endpoint https://otel.svc.plus/api/default/
+    otlp_auth: &otel_auth "Basic cm9vdEBleGFtcGxlLmNvbTpRN01wRjZBTzZFelRjRjdJ"
+    otel_prometheus_node_static_configs: &otel_node_static_configs
+      - targets: ['172.31.2.33:9100']
+        labels:
+          vendor: aws
+          account: prod
+          group: core
+          name: tky-proxy.svc.plus
+          iid: '172.31.2.33'
+      - targets: ['167.179.72.223:9100']
+        labels:
+          vendor: aws
+          account: prod
+          group: web-system
+          name: global-homepage.svc.plus
+          iid: '167.179.72.223'
+      - targets: ['47.120.61.35:9100']
+        labels:
+          vendor: alicloud
+          account: prod
+          group: web-system
+          name: cn-homepage.svc.plus
+          iid: '47.120.61.35'
+    otel_prometheus_process_static_configs: &otel_process_static_configs
+      - targets: ['172.31.2.33:9256']
+        labels:
+          vendor: aws
+          account: prod
+          group: core
+          name: tky-proxy.svc.plus
+          iid: '172.31.2.33'
+      - targets: ['167.179.72.223:9256']
+        labels:
+          vendor: aws
+          account: prod
+          group: web-system
+          name: global-homepage.svc.plus
+          iid: '167.179.72.223'
+      - targets: ['47.120.61.35:9256']
+        labels:
+          vendor: alicloud
+          account: prod
+          group: web-system
+          name: cn-homepage.svc.plus
+          iid: '47.120.61.35'
+    exporters:
+      endpoint: *otel_endpoint
+  roles:
+    - roles/vhosts/otel-collector/
+
+- name: setup otel exporters
+  hosts: otel.svc.plus
+  become: true
+  vars:
+    group: web
+    otlp_endpoint: *otel_endpoint
+    otlp_auth: *otel_auth
+    otel_prometheus_node_static_configs: *otel_node_static_configs
+    otel_prometheus_process_static_configs: *otel_process_static_configs
+    exporters:
+      endpoint: *otel_endpoint
+  roles:
+    - roles/vhosts/node_exporter/
+    - roles/vhosts/process_exporter/
+    - roles/vhosts/grafana/
+    - roles/vhosts/openobserve/

@@ -1,0 +1,17 @@
+- name: Init wireguard env
+  shell: "sudo mkdir -pv /etc/wireguard/ && \
+          sudo touch /etc/wireguard/{{ local.tunnel }}.conf && \
+          sudo chown shenlan /etc/wireguard/ && \
+          brew install wireguard-tools"
+
+- name: Configure wireguard tunnel
+  template:
+    src: "templates/server.conf"
+    dest: "/etc/wireguard/{{ local.tunnel }}.conf"
+
+- name: Stop Wireguard interface
+  shell: sudo wg-quick down {{ local.tunnel }}
+  ignore_errors: yes
+
+- name: Start Wireguard interface
+  shell: sudo wg-quick up {{ local.tunnel }}

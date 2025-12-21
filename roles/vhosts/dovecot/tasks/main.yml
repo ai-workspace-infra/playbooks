@@ -1,0 +1,66 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install dovecot
+  apt:
+    name:
+      - dovecot-core
+      - dovecot-imapd
+    state: present
+
+- name: Add dovecot user to mail group
+  user:
+    name: dovecot
+    groups: mail
+    append: yes
+
+- name: Create dovecot configuration directories
+  file:
+    path: /etc/dovecot/conf.d
+    state: directory
+    mode: '0755'
+
+- name: Create main dovecot configuration
+  template:
+    src: dovecot.conf.j2
+    dest: /etc/dovecot/dovecot.conf
+    mode: '0644'
+  notify: Restart dovecot
+
+- name: Create 10-mail.conf
+  template:
+    src: 10-mail.conf.j2
+    dest: /etc/dovecot/conf.d/10-mail.conf
+    mode: '0644'
+  notify: Restart dovecot
+
+- name: Create 10-auth.conf
+  template:
+    src: 10-auth.conf.j2
+    dest: /etc/dovecot/conf.d/10-auth.conf
+    mode: '0644'
+  notify: Restart dovecot
+
+- name: Create 10-ssl.conf
+  template:
+    src: 10-ssl.conf.j2
+    dest: /etc/dovecot/conf.d/10-ssl.conf
+    mode: '0644'
+  notify: Restart dovecot
+
+- name: Create 10-master.conf
+  template:
+    src: 10-master.conf.j2
+    dest: /etc/dovecot/conf.d/10-master.conf
+    mode: '0644'
+  notify: Restart dovecot
+
+- name: Enable and start dovecot service
+  systemd:
+    name: dovecot
+    state: started
+    enabled: yes
+    daemon_reload: yes

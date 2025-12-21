@@ -1,0 +1,32 @@
+- name: Ensure XControl configuration directory exists
+  ansible.builtin.file:
+    path: "{{ xcontrol_config_dir }}"
+    state: directory
+    owner: "{{ xcontrol_service_user }}"
+    group: "{{ xcontrol_service_group }}"
+    mode: '0755'
+  when: inventory_hostname in groups[group]
+
+- name: Deploy XControl server configuration
+  ansible.builtin.template:
+    src: server-qwen-ai.yaml.j2
+    dest: "{{ xcontrol_config_dir }}/{{ xcontrol_config_filename }}"
+    owner: "{{ xcontrol_service_user }}"
+    group: "{{ xcontrol_service_group }}"
+    mode: '0644'
+  when: inventory_hostname in groups[group]
+
+- name: Install XControl server systemd service
+  ansible.builtin.template:
+    src: xcontrol-server.service.j2
+    dest: "/etc/systemd/system/{{ xcontrol_service_unit }}"
+    mode: '0644'
+  when: inventory_hostname in groups[group]
+
+- name: Enable and restart XControl server
+  ansible.builtin.systemd:
+    name: "{{ xcontrol_service_name }}"
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  when: inventory_hostname in groups[group]

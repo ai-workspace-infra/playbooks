@@ -1,0 +1,28 @@
+- name: Install nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+  when:
+    - ansible_facts['distribution'] == 'Ubuntu'
+    - ansible_facts['distribution_version'] is version('22.04', '>=')
+
+- name: Deploy nginx proxy configuration
+  ansible.builtin.template:
+    src: nginx-proxy.conf.j2
+    dest: /etc/nginx/sites-available/nginx-proxy.conf
+    mode: '0644'
+  notify: Reload nginx
+
+- name: Enable nginx proxy site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/nginx-proxy.conf
+    dest: /etc/nginx/sites-enabled/nginx-proxy.conf
+    state: link
+  notify: Reload nginx
+
+- name: Ensure nginx is running
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true

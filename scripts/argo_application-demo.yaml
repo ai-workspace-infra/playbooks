@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgresql
+  namespace: itsm-dev-db
+spec:
+  project: postgresql
+  destination:
+    namespace: itsm-dev-db
+    server: https://k3s.onwalk.net
+  source:
+    path: apps/postgresql
+    repoURL: https://github.com/svc-design/gitops.git
+    targetRevision: HEAD
+    plugin:
+      name: kustomized-helm
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
