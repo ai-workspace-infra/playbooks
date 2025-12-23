@@ -10,7 +10,12 @@
 
 - name: Determine repository architecture
   ansible.builtin.set_fact:
-    docker_repo_arch: "{{ 'amd64' if ansible_architecture == 'x86_64' else ansible_architecture }}"
+    docker_repo_arch: >-
+      {{
+        'amd64' if ansible_architecture == 'x86_64'
+        else 'arm64' if ansible_architecture in ['aarch64', 'arm64']
+        else ansible_architecture
+      }}
   when: ansible_distribution == 'Ubuntu'
 
 - name: Ensure platform is supported

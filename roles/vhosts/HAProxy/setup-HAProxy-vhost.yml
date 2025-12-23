@@ -1,0 +1,15 @@
+---
+- name: Provision HAProxy HTTPS vhost
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Install HAProxy and certbot
+      import_tasks: tasks/install.yml
+
+    - name: Issue and renew certificates
+      import_tasks: tasks/certbot.yml
+
+    - name: Configure HAProxy vhost
+      import_tasks: tasks/configure.yml
