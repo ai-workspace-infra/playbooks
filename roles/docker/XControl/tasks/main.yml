@@ -53,7 +53,9 @@
 
 - name: Bootstrap NGINX (80-only for ACME)
   become: true
-  command: docker compose --profile bootstrap -f {{ xcontrol_workspace }}/docker-compose.yaml up -d bootstrap-nginx
+  shell: 
+    docker compose --profile bootstrap -f {{ xcontrol_workspace }}/docker-compose.yaml up -d bootstrap-nginx
+    docker compose --profile bootstrap -f {{ xcontrol_workspace }}/docker-compose.yaml restart bootstrap-nginx || true
   args:
     chdir: "{{ xcontrol_workspace }}"
 

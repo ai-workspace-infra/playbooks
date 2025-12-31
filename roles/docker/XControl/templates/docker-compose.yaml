@@ -128,10 +128,11 @@ services:
     networks:
       - app
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health || exit 1"]
-      interval: 5s
-      timeout: 2s
-      retries: 10
+      test: ["CMD", "wget", "-qO-", "http://localhost"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   certbot:
     profiles: ["bootstrap"]
