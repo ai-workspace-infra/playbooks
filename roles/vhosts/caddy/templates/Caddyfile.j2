@@ -1,0 +1,86 @@
+{
+	# debug
+}
+
+############################
+# portal.onwalk.net
+# Next.js yarn dev
+############################
+{{ caddy_portal_domains | join(', ') }} {
+
+	# dev 阶段：禁止浏览器缓存
+	header {
+		Cache-Control "no-store"
+	}
+
+	# health check
+	@health {
+		path /health
+	}
+	handle @health {
+		respond 200
+	}
+
+	# 所有请求 → Next.js dev server
+	handle {
+		reverse_proxy {{ caddy_portal_proxy }} {
+			# WebSocket / HMR 必需
+			header_up Connection {>Connection}
+			header_up Upgrade {>Upgrade}
+
+			transport http {
+				read_timeout 0
+			}
+		}
+	}
+}
+
+############################
+# dl.onwalk.net
+# 静态下载站
+############################
+{{ caddy_download_domain }} {
+
+	root * {{ caddy_download_root }}
+
+	# 禁止访问 dotfiles
+	@dotfiles {
+		path_regexp hidden (^|/)\.
+	}
+	handle @dotfiles {
+		respond 403
+	}
+
+	# well-known 直出
+	@wellknown {
+		path /.well-known/*
+	}
+	handle @wellknown {
+		file_server
+	}
+
+	# JSON 文件（轻缓存）
+	@json {
+		path *.json
+	}
+	handle @json {
+		header {
+			Content-Type application/json
+			Cache-Control "public, max-age=60"
+		}
+		file_server
+	}
+
+	# 大文件（允许 Range）
+	@bigfiles {
+		path *.dmg *.zip *.tar.gz *.deb *.rpm *.exe *.pkg *.appimage *.apk *.ipa
+	}
+	handle @bigfiles {
+		file_server
+	}
+
+	# 默认：目录浏览
+	handle {
+		file_server browse
+	}
+}
