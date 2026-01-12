@@ -10,6 +10,23 @@
     nodejs_installed_version: "{{ node_version_check.stdout | regex_replace('v', '') | default('') }}"
   when: node_version_check.rc == 0
 
+- name: Normalize desired Node.js version
+  set_fact:
+    nodejs_desired_version: "{{ nodejs_version | regex_replace('^v', '') }}"
+
+- name: Determine Node.js repository major version
+  set_fact:
+    nodejs_repo_major: "{{ nodejs_desired_version.split('.')[0] }}"
+
+- name: Determine if exact Node.js version is requested
+  set_fact:
+    nodejs_exact_version_requested: "{{ nodejs_desired_version is match('^\\d+\\.\\d+\\.\\d+$') }}"
+
+- name: Get installed Node.js major version
+  set_fact:
+    nodejs_installed_major: "{{ nodejs_installed_version.split('.')[0] }}"
+  when: nodejs_installed_version is defined and nodejs_installed_version != ''
+
 - name: Update apt cache
   apt:
     update_cache: yes
@@ -29,30 +46,41 @@
     repo: "{{ item }}"
     state: absent
   loop:
-    - deb https://deb.nodesource.com/node_{{ nodejs_version }}.x {{ ansible_distribution_release }} main
-    - deb-src https://deb.nodesource.com/node_{{ nodejs_version }}.x {{ ansible_distribution_release }} main
-  when: nodejs_installed_version is defined and nodejs_installed_version != nodejs_version
+    - deb https://deb.nodesource.com/node_{{ nodejs_repo_major }}.x {{ ansible_distribution_release }} main
+    - deb-src https://deb.nodesource.com/node_{{ nodejs_repo_major }}.x {{ ansible_distribution_release }} main
+  when: nodejs_installed_major is defined and nodejs_installed_major != nodejs_repo_major
 
 - name: Add NodeSource repository
   apt_repository:
-    repo: "deb https://deb.nodesource.com/node_{{ nodejs_version }}.x {{ ansible_distribution_release }} main"
+    repo: "deb https://deb.nodesource.com/node_{{ nodejs_repo_major }}.x {{ ansible_distribution_release }} main"
     state: present
     filename: nodesource
-  when: nodejs_installed_version is not defined or nodejs_installed_version != nodejs_version
+  when: nodejs_installed_major is not defined or nodejs_installed_major != nodejs_repo_major
 
 - name: Add NodeSource GPG key
   apt_key:
     url: "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
     state: present
-  when: nodejs_installed_version is not defined or nodejs_installed_version != nodejs_version
+  when: nodejs_installed_major is not defined or nodejs_installed_major != nodejs_repo_major
 
-- name: Install Node.js
+- name: Install Node.js (latest in major series)
+  apt:
+    name: nodejs
+    state: latest
+    update_cache: yes
+  when:
+    - not nodejs_exact_version_requested
+    - nodejs_installed_major is not defined or nodejs_installed_major != nodejs_repo_major
+
+- name: Install Node.js (exact version)
   apt:
     name:
-      - "nodejs={{ nodejs_version }}-1nodesource1"
+      - "nodejs={{ nodejs_desired_version }}-1nodesource1"
     state: present
     update_cache: yes
-  when: nodejs_installed_version is not defined or nodejs_installed_version != nodejs_version
+  when:
+    - nodejs_exact_version_requested
+    - nodejs_installed_version is not defined or nodejs_installed_version != nodejs_desired_version
 
 - name: Install npm globally
   npm:
@@ -67,11 +95,18 @@
   failed_when: false
   when: install_yarn | default(true)
 
+- name: Normalize desired Yarn version
+  set_fact:
+    yarn_desired_version: "{{ yarn_version | default('') }}"
+  when: install_yarn | default(true)
+
 - name: Get Yarn GPG key
   rpm_key:
     state: present
     key: https://dl.yarnpkg.com/debian/pubkey.gpg
-  when: install_yarn | default(true)
+  when:
+    - install_yarn | default(true)
+    - yarn_desired_version | length == 0
   environment:
     ansible_python_interpreter: /usr/bin/python3
 
@@ -80,14 +115,32 @@
     repo: "deb https://dl.yarnpkg.com/debian/ stable main"
     state: present
     filename: yarn
-  when: install_yarn | default(true)
+  when:
+    - install_yarn | default(true)
+    - yarn_desired_version | length == 0
 
 - name: Install Yarn
   apt:
     name: yarn
     state: present
     update_cache: yes
-  when: install_yarn | default(true)
+  when:
+    - install_yarn | default(true)
+    - yarn_desired_version | length == 0
+
+- name: Enable Corepack
+  command: corepack enable
+  changed_when: false
+  when:
+    - install_yarn | default(true)
+    - yarn_desired_version | length > 0
+
+- name: Install Yarn via Corepack
+  command: "corepack prepare yarn@{{ yarn_desired_version }} --activate"
+  when:
+    - install_yarn | default(true)
+    - yarn_desired_version | length > 0
+    - yarn_version_check.stdout != yarn_desired_version
 
 - name: Set npm to use version tags by default
   shell: npm config set save-exact true
