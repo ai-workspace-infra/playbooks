@@ -1,0 +1,51 @@
+---
+- name: Ensure git is installed
+  ansible.builtin.apt:
+    name: git
+    state: present
+    update_cache: true
+
+- name: Ensure application directory exists
+  ansible.builtin.file:
+    path: "{{ nextjs_app_dir }}"
+    state: directory
+    owner: "{{ nextjs_service_user }}"
+    group: "{{ nextjs_service_group }}"
+    mode: '0755'
+
+- name: Clone Next.js repository
+  ansible.builtin.git:
+    repo: "{{ nextjs_repo_url }}"
+    dest: "{{ nextjs_app_dir }}"
+    version: "{{ nextjs_repo_version }}"
+    update: true
+  notify: Restart nextjs service
+
+- name: Install Next.js dependencies
+  ansible.builtin.command: yarn install
+  args:
+    chdir: "{{ nextjs_app_dir }}"
+  when: nextjs_install_deps | bool
+  notify: Restart nextjs service
+
+- name: Build Next.js application
+  ansible.builtin.command: yarn build
+  args:
+    chdir: "{{ nextjs_app_dir }}"
+  when: nextjs_build | bool
+  notify: Restart nextjs service
+
+- name: Install Next.js systemd service
+  ansible.builtin.template:
+    src: nextjs.service.j2
+    dest: "/etc/systemd/system/{{ nextjs_service_name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd daemon
+
+- name: Enable and start Next.js service
+  ansible.builtin.systemd:
+    name: "{{ nextjs_service_name }}"
+    enabled: true
+    state: started

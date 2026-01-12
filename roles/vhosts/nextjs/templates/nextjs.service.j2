@@ -1,0 +1,25 @@
+[Unit]
+Description={{ nextjs_service_description }}
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory={{ nextjs_app_dir }}
+
+Environment=NODE_ENV={{ nextjs_node_env }}
+Environment=PORT={{ nextjs_port }}
+
+ExecStart={{ nextjs_exec_start }}
+
+Restart={{ nextjs_restart_policy }}
+RestartSec={{ nextjs_restart_sec }}
+LimitNOFILE={{ nextjs_limit_nofile }}
+
+User={{ nextjs_service_user }}
+Group={{ nextjs_service_group }}
+
+NoNewPrivileges={{ nextjs_no_new_privileges | lower }}
+PrivateTmp={{ nextjs_private_tmp | lower }}
+
+[Install]
+WantedBy=multi-user.target

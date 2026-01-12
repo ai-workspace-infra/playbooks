@@ -1,0 +1,27 @@
+---
+nextjs_repo_url: "https://github.com/cloud-neutral/portal.onwalk.net.git"
+nextjs_repo_version: "main"
+nextjs_app_dir: "/var/www/dashboard"
+
+nextjs_run_mode: "dev" # dev or prod
+nextjs_node_env: "{{ 'production' if nextjs_run_mode == 'prod' else 'development' }}"
+nextjs_port: 3000
+
+nextjs_exec_start_dev: "yarn dev"
+nextjs_exec_start_prod: "yarn start"
+nextjs_exec_start: "{{ nextjs_exec_start_prod if nextjs_run_mode == 'prod' else nextjs_exec_start_dev }}"
+
+nextjs_service_name: "next"
+nextjs_service_description: "Next.js (XControl homepage - CN)"
+nextjs_service_user: "root"
+nextjs_service_group: "root"
+
+nextjs_restart_policy: "always"
+nextjs_restart_sec: 5
+nextjs_limit_nofile: 65535
+
+nextjs_no_new_privileges: true
+nextjs_private_tmp: true
+
+nextjs_install_deps: true
+nextjs_build: "{{ nextjs_run_mode == 'prod' }}"
