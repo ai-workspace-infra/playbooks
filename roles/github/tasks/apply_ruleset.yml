@@ -1,0 +1,26 @@
+---
+- name: Find existing ruleset ID
+  ansible.builtin.set_fact:
+    target_ruleset_id: "{{ (existing_rulesets | selectattr('name', 'equalto', ruleset.name) | first).id | default(None) }}"
+
+- name: Create Ruleset
+  ansible.builtin.command: >-
+    gh api orgs/{{ github_org_name }}/rulesets
+    --method POST
+    -H "Accept: application/vnd.github+json"
+    --input -
+  args:
+    stdin: "{{ ruleset | to_json }}"
+  when: target_ruleset_id is none
+  changed_when: true
+
+- name: Update Ruleset
+  ansible.builtin.command: >-
+    gh api orgs/{{ github_org_name }}/rulesets/{{ target_ruleset_id }}
+    --method PUT
+    -H "Accept: application/vnd.github+json"
+    --input -
+  args:
+    stdin: "{{ ruleset | to_json }}"
+  when: target_ruleset_id is not none
+  changed_when: true

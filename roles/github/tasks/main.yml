@@ -1,11 +1,20 @@
 ---
-- name: Set branch protection using GitHub CLI
+- name: List existing organization rulesets
   ansible.builtin.command: >-
-    gh api repos/{{ owner }}/{{ repo }}/branches/main/protection
-    --method PUT
+    gh api orgs/{{ github_org_name }}/rulesets
+    --method GET
     -H "Accept: application/vnd.github+json"
-    --input .github/branch-protection-rules.json
-  args:
-    chdir: "{{ playbook_dir }}/.."
+  register: existing_rulesets_response
+  changed_when: false
   environment:
     GITHUB_TOKEN: "{{ lookup('env', 'GITHUB_TOKEN') }}"
+
+- name: Parse existing rulesets
+  ansible.builtin.set_fact:
+    existing_rulesets: "{{ existing_rulesets_response.stdout | from_json }}"
+
+- name: Apply Rulesets
+  include_tasks: apply_ruleset.yml
+  loop: "{{ github_rulesets }}"
+  loop_control:
+    loop_var: ruleset

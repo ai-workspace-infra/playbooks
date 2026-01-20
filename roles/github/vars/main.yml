@@ -1,0 +1,50 @@
+---
+github_rulesets:
+  - name: "Global Main Protection"
+    target: "branch"
+    enforcement: "active"
+    conditions:
+      ref_name:
+        include:
+          - "refs/heads/main"
+        exclude: []
+      repository_name:
+        include:
+          - "~ALL"
+        exclude: []
+        protected: false
+    rules:
+      - type: deletion
+      - type: non_fast_forward
+      - type: pull_request
+        parameters:
+          required_approving_review_count: 1
+          dismiss_stale_reviews_on_push: true
+          require_code_owner_reviews: false
+          require_last_push_approval: false
+          required_review_thread_resolution: false
+
+  - name: "Global Release Protection"
+    target: "branch"
+    enforcement: "active"
+    conditions:
+      ref_name:
+        include:
+          - "refs/heads/release/*"
+        exclude: []
+      repository_name:
+        include:
+          - "~ALL"
+        exclude: []
+        protected: false
+    rules:
+      - type: deletion
+      - type: non_fast_forward
+      - type: required_linear_history
+      - type: pull_request
+        parameters:
+          required_approving_review_count: 1
+          dismiss_stale_reviews_on_push: true
+          require_code_owner_reviews: false
+          require_last_push_approval: false
+          required_review_thread_resolution: false
