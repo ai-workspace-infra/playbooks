@@ -13,7 +13,7 @@ spec:
   interval: 1m0s
   ref:
     branch: main
-  url: https://github.com/svc-design/gitops.git
+    url: https://github.com/x-evor/gitops.git
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
 kind: Kustomization

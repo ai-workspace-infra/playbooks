@@ -4,22 +4,48 @@
       - k3s_platform_git_url | length > 0
       - k3s_platform_git_branch | length > 0
       - k3s_platform_flux_root_path | length > 0
-    fail_msg: "k3s platform bootstrap requires git url, branch, root path, and deploy key."
+      - k3s_platform_git_auth_mode | lower in ['ssh', 'https-basic', 'https-bearer']
+    fail_msg: "k3s platform bootstrap requires git url, branch, root path, and a supported git auth mode."
 
-- name: Resolve flux git private key from content or path
+- name: Resolve flux git auth inputs
   ansible.builtin.set_fact:
+    k3s_platform_git_auth_mode_effective: "{{ k3s_platform_git_auth_mode | lower }}"
     k3s_platform_git_private_key_resolved: >-
       {{
         k3s_platform_git_private_key
-        if (k3s_platform_git_private_key | default('') | length > 0)
-        else lookup('ansible.builtin.file', k3s_platform_git_private_key_path) | trim
+        if (k3s_platform_git_auth_mode | lower == 'ssh' and k3s_platform_git_private_key | default('') | length > 0)
+        else (
+          lookup('ansible.builtin.file', k3s_platform_git_private_key_path) | trim
+          if (k3s_platform_git_auth_mode | lower == 'ssh')
+          else ''
+        )
       }}
+  no_log: true
 
-- name: Assert flux git private key is available
+- name: Assert SSH auth material is available
   ansible.builtin.assert:
     that:
       - k3s_platform_git_private_key_resolved | length > 0
-    fail_msg: "k3s platform bootstrap requires a git deploy key content or readable key path."
+    fail_msg: "SSH auth requires a git deploy key content or readable key path."
+  when:
+    - k3s_platform_git_auth_mode_effective == 'ssh'
+
+- name: Assert HTTPS basic auth material is available
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_git_http_username | default('') | length > 0
+      - k3s_platform_git_http_password | default('') | length > 0
+    fail_msg: "HTTPS basic auth requires username and password/token."
+  when:
+    - k3s_platform_git_auth_mode_effective == 'https-basic'
+
+- name: Assert HTTPS bearer auth material is available
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_git_bearer_token | default('') | length > 0
+    fail_msg: "HTTPS bearer auth requires a bearer token."
+  when:
+    - k3s_platform_git_auth_mode_effective == 'https-bearer'
 
 - name: Install bootstrap dependencies
   ansible.builtin.package:
@@ -53,12 +79,29 @@
 - name: Install k3s if missing
   ansible.builtin.shell: |
     set -euo pipefail
-    if command -v k3s >/dev/null 2>&1; then
+    if [ -x /usr/local/bin/k3s ] || [ -x /usr/bin/k3s ]; then
       exit 0
     fi
     curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="{{ k3s_platform_k3s_version }}" sh -
   args:
     executable: /bin/bash
+
+- name: Wait for k3s binary and unit file to appear
+  ansible.builtin.shell: |
+    set -euo pipefail
+    for _ in $(seq 1 30); do
+      if command -v k3s >/dev/null 2>&1 && [ -f /etc/systemd/system/k3s.service ]; then
+        exit 0
+      fi
+      sleep 2
+    done
+    exit 1
+  args:
+    executable: /bin/bash
+
+- name: Reload systemd after k3s install
+  ansible.builtin.systemd:
+    daemon_reload: true
 
 - name: Ensure k3s service is enabled and started
   ansible.builtin.systemd:
@@ -134,9 +177,150 @@
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
-    kubectl -n extsvc rollout status statefulset/{{ k3s_platform_vault_release_name }} --timeout=300s
+    kubectl -n extsvc wait --for=condition=Ready pod \
+      -l app.kubernetes.io/name={{ k3s_platform_vault_release_name }} \
+      --timeout=300s
   args:
     executable: /bin/bash
+  when:
+    - k3s_platform_vault_init_phase == 'pre_flux'
+    - k3s_platform_vault_bootstrap_mode == 'migrate'
+      or (k3s_platform_vault_status.initialized | default(false))
+
+- name: Discover Vault pod name
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n extsvc get pod \
+      -l app.kubernetes.io/name={{ k3s_platform_vault_release_name }} \
+      -o jsonpath='{.items[0].metadata.name}'
+  register: k3s_platform_vault_pod_name_result
+  changed_when: false
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_vault_init_phase == 'pre_flux'
+
+- name: Capture Vault status
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - extsvc
+      - exec
+      - "{{ k3s_platform_vault_pod_name_result.stdout }}"
+      - --
+      - /bin/vault
+      - status
+      - -format=json
+  register: k3s_platform_vault_status_result
+  changed_when: false
+  failed_when: false
+  when:
+    - k3s_platform_vault_init_phase == 'pre_flux'
+
+- name: Parse Vault status JSON
+  ansible.builtin.set_fact:
+    k3s_platform_vault_status: "{{ (k3s_platform_vault_status_result.stdout | default('{}')) | from_json }}"
+  when:
+    - k3s_platform_vault_init_phase == 'pre_flux'
+
+- name: Assert Vault bootstrap mode is valid
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_vault_bootstrap_mode in ['init', 'migrate']
+    fail_msg: "k3s_platform_vault_bootstrap_mode must be init or migrate."
+  when:
+    - k3s_platform_vault_init_phase == 'pre_flux'
+
+- name: Assert migrate mode has inputs when Vault is already initialized
+  ansible.builtin.assert:
+    that:
+      - (vault_root_token | default('')) | length > 0
+      - (vault_init_json | default('')) | length > 0
+    fail_msg: "Vault migrate mode requires vault_root_token and vault_init_json."
+  when:
+    - k3s_platform_vault_init_phase == 'pre_flux'
+    - k3s_platform_vault_bootstrap_mode == 'migrate'
+    - k3s_platform_vault_status.initialized | default(false)
+
+- name: Assert migrate mode targets an initialized Vault
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_vault_status.initialized | default(false)
+    fail_msg: "Vault migrate mode requires an already initialized Vault instance."
+  when:
+    - k3s_platform_vault_init_phase == 'pre_flux'
+    - k3s_platform_vault_bootstrap_mode == 'migrate'
+
+- name: Initialize Vault when requested and not yet initialized
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - extsvc
+      - exec
+      - "{{ k3s_platform_vault_pod_name_result.stdout }}"
+      - --
+      - /bin/vault
+      - operator
+      - init
+      - -format=json
+      - -key-shares=1
+      - -key-threshold=1
+  register: k3s_platform_vault_init_result
+  when:
+    - k3s_platform_vault_init_phase == 'pre_flux'
+    - k3s_platform_vault_bootstrap_mode == 'init'
+    - not (k3s_platform_vault_status.initialized | default(false))
+
+- name: Store Vault init JSON on disk
+  ansible.builtin.copy:
+    content: "{{ k3s_platform_vault_init_result.stdout }}"
+    dest: "{{ k3s_platform_vault_init_json_path }}"
+    mode: "0600"
+  when:
+    - k3s_platform_vault_init_phase == 'pre_flux'
+    - k3s_platform_vault_init_result is defined
+
+- name: Parse Vault init JSON
+  ansible.builtin.set_fact:
+    k3s_platform_vault_init_data: "{{ k3s_platform_vault_init_result.stdout | from_json }}"
+  when:
+    - k3s_platform_vault_init_phase == 'pre_flux'
+    - k3s_platform_vault_init_result is defined
+
+- name: Unseal Vault after init
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - extsvc
+      - exec
+      - "{{ k3s_platform_vault_pod_name_result.stdout }}"
+      - --
+      - /bin/vault
+      - operator
+      - unseal
+      - "{{ k3s_platform_vault_init_data.unseal_keys_b64[0] }}"
+  when:
+    - k3s_platform_vault_init_phase == 'pre_flux'
+    - k3s_platform_vault_init_result is defined
+
+- name: Emit Vault bootstrap outputs
+  ansible.builtin.debug:
+    msg:
+      mode: "{{ k3s_platform_vault_bootstrap_mode }}"
+      vault_initialized: "{{ k3s_platform_vault_status.initialized | default(false) }}"
+      vault_sealed: "{{ k3s_platform_vault_status.sealed | default(true) }}"
+      admin_username: "{{ k3s_platform_vault_admin_username }}"
+      init_json_path: "{{ k3s_platform_vault_init_json_path if k3s_platform_vault_init_result is defined else omit }}"
+      root_token: "{{ k3s_platform_vault_init_data.root_token if (k3s_platform_vault_init_result is defined and k3s_platform_vault_allow_sensitive_output) else omit }}"
+      init_json: "{{ k3s_platform_vault_init_result.stdout if (k3s_platform_vault_init_result is defined and k3s_platform_vault_allow_sensitive_output) else omit }}"
+  when:
+    - k3s_platform_vault_init_phase == 'pre_flux'
+    - k3s_platform_vault_bootstrap_mode == 'init'
+    - k3s_platform_vault_init_result is defined
 
 - name: Render flux bootstrap env file
   ansible.builtin.template:
@@ -149,26 +333,65 @@
     content: "{{ k3s_platform_git_private_key_resolved }}\n"
     dest: /tmp/flux-git-deploy.key
     mode: "0600"
+  no_log: true
+  when:
+    - k3s_platform_git_auth_mode_effective == 'ssh'
 
 - name: Write flux git public key file when provided
   ansible.builtin.copy:
     content: "{{ k3s_platform_git_public_key }}\n"
     dest: /tmp/flux-git-deploy.pub
     mode: "0644"
-  when: k3s_platform_git_public_key | length > 0
+  when:
+    - k3s_platform_git_public_key | length > 0
+    - k3s_platform_git_auth_mode_effective == 'ssh'
 
 - name: Create or update flux git auth secret
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
     . /tmp/flux-bootstrap.env
-    flux create secret git "${GIT_SOURCE_NAME}" \
-      --url="${GIT_URL}" \
-      --private-key-file=/tmp/flux-git-deploy.key \
-      --namespace="${FLUX_NAMESPACE}" \
-      --export | kubectl apply -f -
+    case "{{ k3s_platform_git_auth_mode_effective }}" in
+      ssh)
+        flux create secret git "${GIT_SOURCE_NAME}" \
+          --url="${GIT_URL}" \
+          --private-key-file=/tmp/flux-git-deploy.key \
+          --namespace="${FLUX_NAMESPACE}" \
+          --export | kubectl apply -f -
+        ;;
+      https-basic)
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: ${GIT_SOURCE_NAME}
+          namespace: ${FLUX_NAMESPACE}
+        type: Opaque
+        stringData:
+          username: {{ k3s_platform_git_http_username | to_json }}
+          password: {{ k3s_platform_git_http_password | to_json }}
+        EOF
+        ;;
+      https-bearer)
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: ${GIT_SOURCE_NAME}
+          namespace: ${FLUX_NAMESPACE}
+        type: Opaque
+        stringData:
+          bearerToken: {{ k3s_platform_git_bearer_token | to_json }}
+        EOF
+        ;;
+      *)
+        echo "Unsupported git auth mode: {{ k3s_platform_git_auth_mode_effective }}" >&2
+        exit 1
+        ;;
+    esac
   args:
     executable: /bin/bash
+  no_log: true
 
 - name: Create runtime bootstrap secret for Vault seeding
   ansible.builtin.shell: |
@@ -180,6 +403,7 @@
       --dry-run=client -o yaml | kubectl apply -f -
   args:
     executable: /bin/bash
+  no_log: true
   when:
     - (vault_root_token | default('')) | length > 0
     - (cloudflare_api_token | default('')) | length > 0
@@ -251,3 +475,152 @@
   args:
     executable: /bin/bash
   loop: "{{ k3s_platform_namespaces }}"
+
+- name: Wait for Vault server rollout after Flux bootstrap
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n extsvc wait --for=condition=Ready pod \
+      -l app.kubernetes.io/name={{ k3s_platform_vault_release_name }} \
+      --timeout=300s
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_vault_init_phase == 'post_flux'
+    - k3s_platform_vault_bootstrap_mode == 'migrate'
+      or (k3s_platform_vault_status.initialized | default(false))
+
+- name: Discover Vault pod name after Flux bootstrap
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n extsvc get pod \
+      -l app.kubernetes.io/name={{ k3s_platform_vault_release_name }} \
+      -o jsonpath='{.items[0].metadata.name}'
+  register: k3s_platform_vault_pod_name_result
+  changed_when: false
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_vault_init_phase == 'post_flux'
+
+- name: Capture Vault status after Flux bootstrap
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - extsvc
+      - exec
+      - "{{ k3s_platform_vault_pod_name_result.stdout }}"
+      - --
+      - /bin/vault
+      - status
+      - -format=json
+  register: k3s_platform_vault_status_result
+  changed_when: false
+  failed_when: false
+  when:
+    - k3s_platform_vault_init_phase == 'post_flux'
+
+- name: Parse Vault status JSON after Flux bootstrap
+  ansible.builtin.set_fact:
+    k3s_platform_vault_status: "{{ (k3s_platform_vault_status_result.stdout | default('{}')) | from_json }}"
+  when:
+    - k3s_platform_vault_init_phase == 'post_flux'
+
+- name: Assert Vault bootstrap mode is valid after Flux bootstrap
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_vault_bootstrap_mode in ['init', 'migrate']
+    fail_msg: "k3s_platform_vault_bootstrap_mode must be init or migrate."
+  when:
+    - k3s_platform_vault_init_phase == 'post_flux'
+
+- name: Assert migrate mode has inputs when Vault is already initialized after Flux bootstrap
+  ansible.builtin.assert:
+    that:
+      - (vault_root_token | default('')) | length > 0
+      - (vault_init_json | default('')) | length > 0
+    fail_msg: "Vault migrate mode requires vault_root_token and vault_init_json."
+  when:
+    - k3s_platform_vault_init_phase == 'post_flux'
+    - k3s_platform_vault_bootstrap_mode == 'migrate'
+    - k3s_platform_vault_status.initialized | default(false)
+
+- name: Assert migrate mode targets an initialized Vault after Flux bootstrap
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_vault_status.initialized | default(false)
+    fail_msg: "Vault migrate mode requires an already initialized Vault instance."
+  when:
+    - k3s_platform_vault_init_phase == 'post_flux'
+    - k3s_platform_vault_bootstrap_mode == 'migrate'
+
+- name: Initialize Vault when requested and not yet initialized after Flux bootstrap
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - extsvc
+      - exec
+      - "{{ k3s_platform_vault_pod_name_result.stdout }}"
+      - --
+      - /bin/vault
+      - operator
+      - init
+      - -format=json
+      - -key-shares=1
+      - -key-threshold=1
+  register: k3s_platform_vault_init_result
+  when:
+    - k3s_platform_vault_init_phase == 'post_flux'
+    - k3s_platform_vault_bootstrap_mode == 'init'
+    - not (k3s_platform_vault_status.initialized | default(false))
+
+- name: Store Vault init JSON on disk after Flux bootstrap
+  ansible.builtin.copy:
+    content: "{{ k3s_platform_vault_init_result.stdout }}"
+    dest: "{{ k3s_platform_vault_init_json_path }}"
+    mode: "0600"
+  when:
+    - k3s_platform_vault_init_phase == 'post_flux'
+    - k3s_platform_vault_init_result is defined
+
+- name: Parse Vault init JSON after Flux bootstrap
+  ansible.builtin.set_fact:
+    k3s_platform_vault_init_data: "{{ k3s_platform_vault_init_result.stdout | from_json }}"
+  when:
+    - k3s_platform_vault_init_phase == 'post_flux'
+    - k3s_platform_vault_init_result is defined
+
+- name: Unseal Vault after init and Flux bootstrap
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - extsvc
+      - exec
+      - "{{ k3s_platform_vault_pod_name_result.stdout }}"
+      - --
+      - /bin/vault
+      - operator
+      - unseal
+      - "{{ k3s_platform_vault_init_data.unseal_keys_b64[0] }}"
+  when:
+    - k3s_platform_vault_init_phase == 'post_flux'
+    - k3s_platform_vault_init_result is defined
+
+- name: Emit Vault bootstrap outputs after Flux bootstrap
+  ansible.builtin.debug:
+    msg:
+      mode: "{{ k3s_platform_vault_bootstrap_mode }}"
+      vault_initialized: "{{ k3s_platform_vault_status.initialized | default(false) }}"
+      vault_sealed: "{{ k3s_platform_vault_status.sealed | default(true) }}"
+      admin_username: "{{ k3s_platform_vault_admin_username }}"
+      init_json_path: "{{ k3s_platform_vault_init_json_path if k3s_platform_vault_init_result is defined else omit }}"
+      root_token: "{{ k3s_platform_vault_init_data.root_token if (k3s_platform_vault_init_result is defined and k3s_platform_vault_allow_sensitive_output) else omit }}"
+      init_json: "{{ k3s_platform_vault_init_result.stdout if (k3s_platform_vault_init_result is defined and k3s_platform_vault_allow_sensitive_output) else omit }}"
+  when:
+    - k3s_platform_vault_init_phase == 'post_flux'
+    - k3s_platform_vault_bootstrap_mode == 'init'
+    - k3s_platform_vault_init_result is defined

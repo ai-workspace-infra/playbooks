@@ -9,16 +9,21 @@ k3s_platform_tls_sans: []
 k3s_platform_kubeconfig_path: /etc/rancher/k3s/k3s.yaml
 k3s_platform_k3s_config_path: /etc/rancher/k3s/config.yaml
 k3s_platform_install_dir: /opt/rancher/k3s
+k3s_platform_deployment_mode: k3s_platform
 
 k3s_platform_git_branch: main
 k3s_platform_flux_namespace: flux-system
 k3s_platform_flux_source_name: platform-config
 k3s_platform_flux_root_path: ./infra/clusters/prod
-k3s_platform_git_url: "ssh://git@github.com/svc-design/gitops.git"
+k3s_platform_git_url: "https://github.com/x-evor/gitops.git"
+k3s_platform_git_auth_mode: https-basic
 
 k3s_platform_git_private_key: "{{ lookup('env', 'GITOPS_FLUX_DEPLOY_KEY') }}"
 k3s_platform_git_public_key: "{{ lookup('env', 'GITOPS_FLUX_DEPLOY_KEY_PUB') }}"
 k3s_platform_git_private_key_path: "{{ lookup('env', 'HOME') }}/.ssh/id_rsa"
+k3s_platform_git_http_username: "x-access-token"
+k3s_platform_git_http_password: "{{ lookup('env', 'GITOPS_FLUX_HTTP_PASSWORD') | default(lookup('env', 'GITOPS_FLUX_TOKEN'), true) }}"
+k3s_platform_git_bearer_token: "{{ lookup('env', 'GITOPS_FLUX_BEARER_TOKEN') }}"
 
 k3s_platform_namespaces:
   - flux-system
@@ -33,6 +38,13 @@ k3s_platform_bootstrap_namespaces:
   - extsvc
 k3s_platform_vault_release_name: vault
 k3s_platform_vault_chart_version: "0.28.0"
+k3s_platform_vault_bootstrap_mode: init
+k3s_platform_vault_init_phase: post_flux
+k3s_platform_vault_admin_username: admin
+k3s_platform_vault_init_json_path: /tmp/vault-init.json
+k3s_platform_vault_init_stdout_path: /tmp/vault-init.stdout
+k3s_platform_vault_init_stderr_path: /tmp/vault-init.stderr
+k3s_platform_vault_allow_sensitive_output: false
 
 k3s_platform_flux_env:
   GIT_URL: "{{ k3s_platform_git_url }}"
