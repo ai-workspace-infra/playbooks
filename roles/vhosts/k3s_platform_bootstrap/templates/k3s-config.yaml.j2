@@ -1,0 +1,16 @@
+write-kubeconfig-mode: "{{ k3s_platform_write_kubeconfig_mode }}"
+cluster-cidr: "{{ k3s_platform_cluster_cidr }}"
+service-cidr: "{{ k3s_platform_service_cidr }}"
+data-dir: "{{ k3s_platform_install_dir }}"
+cluster-init: true
+disable:
+{% for component in k3s_platform_disable_components %}
+  - "{{ component }}"
+{% endfor %}
+{% if k3s_platform_tls_sans | length > 0 %}
+tls-san:
+{% for san in k3s_platform_tls_sans %}
+  - "{{ san }}"
+{% endfor %}
+{% endif %}
+

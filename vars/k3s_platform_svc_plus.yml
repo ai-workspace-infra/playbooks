@@ -1,0 +1,16 @@
+k3s_platform_k3s_version: "v1.30.6+k3s1"
+k3s_platform_cluster_name: "svc-plus"
+k3s_platform_git_url: "ssh://git@github.com/svc-design/gitops.git"
+k3s_platform_git_branch: "main"
+k3s_platform_flux_namespace: "flux-system"
+k3s_platform_flux_source_name: "platform-config"
+k3s_platform_flux_root_path: "./infra/clusters/prod"
+k3s_platform_tls_sans:
+  - "{{ inventory_hostname }}"
+k3s_platform_git_private_key: "{{ lookup('env', 'GITOPS_FLUX_DEPLOY_KEY') }}"
+k3s_platform_git_public_key: "{{ lookup('env', 'GITOPS_FLUX_DEPLOY_KEY_PUB') }}"
+
+# Secret values must come from runtime environment variables, not git.
+cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_TOKEN') }}"
+cloudflare_zone_id: "{{ lookup('env', 'CLOUDFLARE_ZONE_ID') }}"
+vault_root_token: "{{ lookup('env', 'VAULT_ROOT_TOKEN') }}"

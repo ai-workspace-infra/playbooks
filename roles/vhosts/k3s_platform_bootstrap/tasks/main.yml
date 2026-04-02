@@ -1,0 +1,253 @@
+- name: Validate bootstrap inputs
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_git_url | length > 0
+      - k3s_platform_git_branch | length > 0
+      - k3s_platform_flux_root_path | length > 0
+    fail_msg: "k3s platform bootstrap requires git url, branch, root path, and deploy key."
+
+- name: Resolve flux git private key from content or path
+  ansible.builtin.set_fact:
+    k3s_platform_git_private_key_resolved: >-
+      {{
+        k3s_platform_git_private_key
+        if (k3s_platform_git_private_key | default('') | length > 0)
+        else lookup('ansible.builtin.file', k3s_platform_git_private_key_path) | trim
+      }}
+
+- name: Assert flux git private key is available
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_git_private_key_resolved | length > 0
+    fail_msg: "k3s platform bootstrap requires a git deploy key content or readable key path."
+
+- name: Install bootstrap dependencies
+  ansible.builtin.package:
+    name:
+      - curl
+      - git
+      - openssh-client
+      - ca-certificates
+      - python3-pip
+      - tar
+    state: present
+
+- name: Ensure k3s config directory exists
+  ansible.builtin.file:
+    path: "{{ k3s_platform_k3s_config_path | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Ensure install directory exists
+  ansible.builtin.file:
+    path: "{{ k3s_platform_install_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Render k3s config
+  ansible.builtin.template:
+    src: k3s-config.yaml.j2
+    dest: "{{ k3s_platform_k3s_config_path }}"
+    mode: "0644"
+
+- name: Install k3s if missing
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if command -v k3s >/dev/null 2>&1; then
+      exit 0
+    fi
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="{{ k3s_platform_k3s_version }}" sh -
+  args:
+    executable: /bin/bash
+
+- name: Ensure k3s service is enabled and started
+  ansible.builtin.systemd:
+    name: k3s
+    state: started
+    enabled: true
+
+- name: Install helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if command -v helm >/dev/null 2>&1; then
+      exit 0
+    fi
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  args:
+    executable: /bin/bash
+
+- name: Install flux cli
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if command -v flux >/dev/null 2>&1; then
+      exit 0
+    fi
+    curl -s https://fluxcd.io/install.sh | bash
+  args:
+    executable: /bin/bash
+
+- name: Ensure flux namespace exists
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl get namespace "{{ k3s_platform_flux_namespace }}" >/dev/null 2>&1 || kubectl create namespace "{{ k3s_platform_flux_namespace }}"
+  args:
+    executable: /bin/bash
+
+- name: Install flux controllers
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    flux install --namespace "{{ k3s_platform_flux_namespace }}"
+  args:
+    executable: /bin/bash
+
+- name: Ensure Vault bootstrap namespace exists
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl get namespace extsvc >/dev/null 2>&1 || kubectl create namespace extsvc
+  args:
+    executable: /bin/bash
+
+- name: Render Vault bootstrap values file
+  ansible.builtin.template:
+    src: vault-bootstrap-values.yaml.j2
+    dest: /tmp/vault-bootstrap-values.yaml
+    mode: "0600"
+
+- name: Bootstrap Vault server with Helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    helm repo add hashicorp https://helm.releases.hashicorp.com >/dev/null 2>&1 || true
+    helm repo update hashicorp >/dev/null
+    helm upgrade --install "{{ k3s_platform_vault_release_name }}" hashicorp/vault \
+      --namespace extsvc \
+      --create-namespace \
+      --version "{{ k3s_platform_vault_chart_version }}" \
+      -f /tmp/vault-bootstrap-values.yaml
+  args:
+    executable: /bin/bash
+
+- name: Wait for Vault server rollout
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n extsvc rollout status statefulset/{{ k3s_platform_vault_release_name }} --timeout=300s
+  args:
+    executable: /bin/bash
+
+- name: Render flux bootstrap env file
+  ansible.builtin.template:
+    src: flux-bootstrap.env.j2
+    dest: /tmp/flux-bootstrap.env
+    mode: "0600"
+
+- name: Write flux git private key file
+  ansible.builtin.copy:
+    content: "{{ k3s_platform_git_private_key_resolved }}\n"
+    dest: /tmp/flux-git-deploy.key
+    mode: "0600"
+
+- name: Write flux git public key file when provided
+  ansible.builtin.copy:
+    content: "{{ k3s_platform_git_public_key }}\n"
+    dest: /tmp/flux-git-deploy.pub
+    mode: "0644"
+  when: k3s_platform_git_public_key | length > 0
+
+- name: Create or update flux git auth secret
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    . /tmp/flux-bootstrap.env
+    flux create secret git "${GIT_SOURCE_NAME}" \
+      --url="${GIT_URL}" \
+      --private-key-file=/tmp/flux-git-deploy.key \
+      --namespace="${FLUX_NAMESPACE}" \
+      --export | kubectl apply -f -
+  args:
+    executable: /bin/bash
+
+- name: Create runtime bootstrap secret for Vault seeding
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n extsvc create secret generic vault-bootstrap \
+      --from-literal=rootToken="{{ vault_root_token | default('') }}" \
+      --from-literal=cloudflareApiToken="{{ cloudflare_api_token | default('') }}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  when:
+    - (vault_root_token | default('')) | length > 0
+    - (cloudflare_api_token | default('')) | length > 0
+
+- name: Apply root Flux source and kustomization
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    . /tmp/flux-bootstrap.env
+    cat <<EOF | kubectl apply -f -
+    apiVersion: source.toolkit.fluxcd.io/v1beta2
+    kind: GitRepository
+    metadata:
+      name: ${GIT_SOURCE_NAME}
+      namespace: ${FLUX_NAMESPACE}
+    spec:
+      interval: 1m0s
+      url: ${GIT_URL}
+      ref:
+        branch: ${GIT_BRANCH}
+      secretRef:
+        name: ${GIT_SOURCE_NAME}
+    ---
+    apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+    kind: Kustomization
+    metadata:
+      name: platform-root
+      namespace: ${FLUX_NAMESPACE}
+    spec:
+      interval: 5m0s
+      sourceRef:
+        kind: GitRepository
+        name: ${GIT_SOURCE_NAME}
+      path: ${FLUX_ROOT_PATH}
+      prune: true
+      wait: true
+      timeout: 5m0s
+    EOF
+  args:
+    executable: /bin/bash
+
+- name: Reconcile root Flux kustomization
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    flux reconcile source git "{{ k3s_platform_flux_source_name }}" \
+      --namespace "{{ k3s_platform_flux_namespace }}" \
+      --timeout=5m
+    flux reconcile kustomization platform-root \
+      --namespace "{{ k3s_platform_flux_namespace }}" \
+      --with-source \
+      --timeout=10m
+  args:
+    executable: /bin/bash
+
+- name: Verify flux resources
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n "{{ k3s_platform_flux_namespace }}" get gitrepositories,kustomizations
+  args:
+    executable: /bin/bash
+
+- name: Verify platform namespaces exist after Flux bootstrap
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl get namespace "{{ item }}"
+  args:
+    executable: /bin/bash
+  loop: "{{ k3s_platform_namespaces }}"
