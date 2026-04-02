@@ -1,9 +1,20 @@
 k3s_platform_k3s_version: "v1.30.6+k3s1"
 k3s_platform_cluster_name: "svc-plus"
 k3s_platform_deployment_mode: "k3s_platform"
+
+# Stage 2: Vault bootstrap integration.
+bootstrap_vault_url: "{{ lookup('env', 'VAULT_URL') | default('', true) }}"
+bootstrap_vault_namespace: "{{ lookup('env', 'VAULT_NAMESPACE') | default('', true) }}"
+bootstrap_vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('', true) }}"
+
+# Stage 3: FluxCD bootstrap Git repository access.
+bootstrap_gitops_repo: "{{ lookup('env', 'GITOPS_REPO') }}"
+bootstrap_gitops_auth_mode: "{{ lookup('env', 'GITOPS_AUTH_MODE') | default('public', true) }}"
+
+# Internal role mapping.
 k3s_platform_vault_init_phase: "{{ lookup('env', 'K3S_PLATFORM_VAULT_INIT_PHASE') | default('post_flux', true) }}"
-k3s_platform_git_url: "https://github.com/x-evor/gitops.git"
-k3s_platform_git_auth_mode: "{{ lookup('env', 'K3S_PLATFORM_GIT_AUTH_MODE') | default('https-basic', true) }}"
+k3s_platform_git_url: "{{ bootstrap_gitops_repo }}"
+k3s_platform_git_auth_mode: "{{ bootstrap_gitops_auth_mode }}"
 k3s_platform_git_branch: "main"
 k3s_platform_flux_namespace: "flux-system"
 k3s_platform_flux_source_name: "platform-config"
@@ -12,6 +23,9 @@ k3s_platform_tls_sans:
   - "{{ inventory_hostname }}"
 k3s_platform_vault_bootstrap_mode: "{{ lookup('env', 'K3S_PLATFORM_VAULT_BOOTSTRAP_MODE') | default('init', true) }}"
 k3s_platform_vault_allow_sensitive_output: "{{ lookup('env', 'K3S_PLATFORM_VAULT_ALLOW_SENSITIVE_OUTPUT') | default('false', true) | bool }}"
+k3s_platform_vault_server_url: "{{ bootstrap_vault_url }}"
+k3s_platform_vault_namespace: "{{ bootstrap_vault_namespace }}"
+k3s_platform_vault_token: "{{ bootstrap_vault_token }}"
 k3s_platform_git_private_key: "{{ lookup('env', 'GITOPS_FLUX_DEPLOY_KEY') }}"
 k3s_platform_git_public_key: "{{ lookup('env', 'GITOPS_FLUX_DEPLOY_KEY_PUB') }}"
 k3s_platform_git_http_username: "{{ lookup('env', 'GITOPS_FLUX_HTTP_USERNAME') | default('x-access-token', true) }}"
