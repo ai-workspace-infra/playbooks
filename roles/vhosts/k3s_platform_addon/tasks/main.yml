@@ -2,7 +2,32 @@
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
-    helm upgrade --install external-secrets external-secrets/external-secrets \
+    chart_dir="$(mktemp -d /tmp/external-secrets.XXXXXX)"
+    cleanup() {
+      rm -rf "$chart_dir"
+    }
+    trap cleanup EXIT
+
+    attempt=1
+    max_attempts=3
+    while true; do
+      rm -rf "$chart_dir"/*
+      if helm pull --repo "https://charts.external-secrets.io" \
+        --version "{{ k3s_platform_external_secrets_chart_version }}" \
+        --untar \
+        --untardir "$chart_dir" \
+        external-secrets; then
+        break
+      fi
+      if [ "$attempt" -ge "$max_attempts" ]; then
+        echo "failed to download external-secrets after $attempt attempts" >&2
+        exit 1
+      fi
+      sleep "$((attempt * 20))"
+      attempt=$((attempt + 1))
+    done
+
+    helm upgrade --install external-secrets "$chart_dir/external-secrets" \
       --namespace platform \
       --create-namespace \
       --version "{{ k3s_platform_external_secrets_chart_version }}" \
@@ -13,6 +38,21 @@
     executable: /bin/bash
   when:
     - k3s_platform_values.components.externalSecrets.enabled | default(true)
+
+- name: Ensure GHCR pull secret for PostgreSQL chart exists
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n database create secret docker-registry postgresql-ghcr-pull \
+      --docker-server="{{ k3s_platform_ghcr_registry }}" \
+      --docker-username="{{ k3s_platform_ghcr_username }}" \
+      --docker-password="{{ k3s_platform_ghcr_token }}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_ghcr_username | length > 0
+    - k3s_platform_ghcr_token | length > 0
 
 - name: Install reloader directly with Helm
   ansible.builtin.shell: |
@@ -33,7 +73,32 @@
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
-    helm upgrade --install "{{ k3s_platform_values.components.caddy.releaseName }}" caddy-ingress/caddy-ingress-controller \
+    chart_dir="$(mktemp -d /tmp/caddy-ingress-controller.XXXXXX)"
+    cleanup() {
+      rm -rf "$chart_dir"
+    }
+    trap cleanup EXIT
+
+    attempt=1
+    max_attempts=3
+    while true; do
+      rm -rf "$chart_dir"/*
+      if helm pull --repo "https://caddyserver.github.io/ingress/" \
+        --version "{{ k3s_platform_caddy_chart_version }}" \
+        --untar \
+        --untardir "$chart_dir" \
+        caddy-ingress-controller; then
+        break
+      fi
+      if [ "$attempt" -ge "$max_attempts" ]; then
+        echo "failed to download caddy-ingress-controller after $attempt attempts" >&2
+        exit 1
+      fi
+      sleep "$((attempt * 20))"
+      attempt=$((attempt + 1))
+    done
+
+    helm upgrade --install "{{ k3s_platform_values.components.caddy.releaseName }}" "$chart_dir/caddy-ingress-controller" \
       --namespace platform \
       --create-namespace \
       --version "{{ k3s_platform_caddy_chart_version }}" \
