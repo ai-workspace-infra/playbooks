@@ -9,7 +9,7 @@
     trap cleanup EXIT
 
     attempt=1
-    max_attempts=3
+    max_attempts=6
     while true; do
       rm -rf "$chart_dir"/*
       if helm pull --repo "https://charts.external-secrets.io" \
@@ -23,7 +23,7 @@
         echo "failed to download external-secrets after $attempt attempts" >&2
         exit 1
       fi
-      sleep "$((attempt * 20))"
+      sleep "$((attempt * 30))"
       attempt=$((attempt + 1))
     done
 
@@ -80,7 +80,7 @@
     trap cleanup EXIT
 
     attempt=1
-    max_attempts=3
+    max_attempts=6
     while true; do
       rm -rf "$chart_dir"/*
       if helm pull --repo "https://caddyserver.github.io/ingress/" \
@@ -94,7 +94,7 @@
         echo "failed to download caddy-ingress-controller after $attempt attempts" >&2
         exit 1
       fi
-      sleep "$((attempt * 20))"
+      sleep "$((attempt * 30))"
       attempt=$((attempt + 1))
     done
 
