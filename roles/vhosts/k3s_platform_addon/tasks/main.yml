@@ -1,0 +1,123 @@
+- name: Ensure platform namespace exists
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl get namespace platform >/dev/null 2>&1 || kubectl create namespace platform
+  args:
+    executable: /bin/bash
+
+- name: Ensure platform Helm repositories are configured
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if helm repo list | awk '{print $1}' | grep -qx '{{ item.name }}'; then
+      helm repo add --force-update '{{ item.name }}' '{{ item.url }}' >/dev/null
+    else
+      helm repo add '{{ item.name }}' '{{ item.url }}' >/dev/null
+    fi
+  args:
+    executable: /bin/bash
+  loop: "{{ k3s_platform_helm_repos }}"
+
+- name: Refresh platform Helm repositories
+  ansible.builtin.shell: |
+    set -euo pipefail
+    helm repo update >/dev/null
+  args:
+    executable: /bin/bash
+
+- name: Render direct Helm values for caddy
+  ansible.builtin.copy:
+    content: "{{ (k3s_platform_values.components.caddy['values'] | default({})) | to_nice_yaml(indent=2) }}"
+    dest: /tmp/platform-caddy-values.yaml
+    mode: "0600"
+
+- name: Render direct Helm values for apisix
+  ansible.builtin.copy:
+    content: "{{ (k3s_platform_values.components.apisix['values'] | default({})) | to_nice_yaml(indent=2) }}"
+    dest: /tmp/platform-apisix-values.yaml
+    mode: "0600"
+
+- name: Render direct Helm values for external-dns
+  ansible.builtin.copy:
+    content: "{{ (k3s_platform_values.components.externalDns['values'] | default({})) | to_nice_yaml(indent=2) }}"
+    dest: /tmp/platform-external-dns-values.yaml
+    mode: "0600"
+
+- name: Install external-secrets directly with Helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    helm upgrade --install external-secrets external-secrets/external-secrets \
+      --namespace platform \
+      --create-namespace \
+      --version "{{ k3s_platform_external_secrets_chart_version }}" \
+      --set installCRDs=true \
+      --wait \
+      --timeout 10m
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_values.components.externalSecrets.enabled | default(true)
+
+- name: Install reloader directly with Helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    helm upgrade --install reloader stakater/reloader \
+      --namespace platform \
+      --create-namespace \
+      --version "{{ k3s_platform_reloader_chart_version }}" \
+      --wait \
+      --timeout 10m
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_values.components.reloader.enabled | default(true)
+
+- name: Install caddy directly with Helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    helm upgrade --install "{{ k3s_platform_values.components.caddy.releaseName }}" caddy-ingress/caddy-ingress-controller \
+      --namespace platform \
+      --create-namespace \
+      --version "{{ k3s_platform_caddy_chart_version }}" \
+      -f /tmp/platform-caddy-values.yaml \
+      --wait \
+      --timeout 10m
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_values.components.caddy.enabled | default(false)
+
+- name: Install apisix directly with Helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    helm upgrade --install "{{ k3s_platform_values.components.apisix.releaseName }}" apisix/apisix \
+      --namespace platform \
+      --create-namespace \
+      --version "{{ k3s_platform_apisix_chart_version }}" \
+      -f /tmp/platform-apisix-values.yaml \
+      --wait \
+      --timeout 10m
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_values.components.apisix.enabled | default(false)
+
+- name: Install external-dns directly with Helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    helm upgrade --install "{{ k3s_platform_values.components.externalDns.releaseName }}" external-dns/external-dns \
+      --namespace platform \
+      --create-namespace \
+      --version "{{ k3s_platform_external_dns_chart_version }}" \
+      -f /tmp/platform-external-dns-values.yaml \
+      --wait \
+      --timeout 10m
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_values.components.externalDns.enabled | default(false)
