@@ -1,87 +1,4 @@
-k3s_platform_k3s_version: "v1.30.6+k3s1"
-k3s_platform_cluster_name: "svc-plus"
-k3s_platform_cluster_cidr: "10.42.0.0/16"
-k3s_platform_service_cidr: "10.43.0.0/16"
-k3s_platform_disable_components:
-  - traefik
-k3s_platform_write_kubeconfig_mode: "0644"
-k3s_platform_tls_sans: []
 k3s_platform_kubeconfig_path: /etc/rancher/k3s/k3s.yaml
-k3s_platform_k3s_config_path: /etc/rancher/k3s/config.yaml
-k3s_platform_install_dir: /opt/rancher/k3s
-k3s_platform_k3s_install_script_url: https://get.k3s.io
-k3s_platform_k3s_install_script_path: /tmp/k3s-install.sh
-k3s_platform_k3s_install_log_path: /var/log/k3s-install.log
-k3s_platform_k3s_install_timeout_seconds: 1800
-k3s_platform_deployment_mode: k3s_platform
-
-k3s_platform_git_branch: "main"
-k3s_platform_flux_namespace: "flux-system"
-k3s_platform_flux_source_name: "platform-config"
-k3s_platform_flux_root_path: "{{ lookup('env', 'K3S_PLATFORM_FLUX_ROOT_PATH') | default('./environments/clusters/prod', true) }}"
-k3s_platform_git_url: "{{ lookup('env', 'GITOPS_REPO') | default('https://github.com/x-evor/gitops.git', true) }}"
-k3s_platform_git_auth_mode: "{{ lookup('env', 'GITOPS_AUTH_MODE') | default('public', true) }}"
-
-k3s_platform_git_private_key: "{{ lookup('env', 'GITOPS_FLUX_DEPLOY_KEY') }}"
-k3s_platform_git_public_key: "{{ lookup('env', 'GITOPS_FLUX_DEPLOY_KEY_PUB') }}"
-k3s_platform_git_private_key_path: "{{ lookup('env', 'HOME') }}/.ssh/id_rsa"
-k3s_platform_git_http_username: "{{ lookup('env', 'GITOPS_FLUX_HTTP_USERNAME') | default('x-access-token', true) }}"
-k3s_platform_git_http_password: "{{ lookup('env', 'GITOPS_FLUX_HTTP_PASSWORD') | default(lookup('env', 'GITOPS_FLUX_TOKEN'), true) }}"
-k3s_platform_git_bearer_token: "{{ lookup('env', 'GITOPS_FLUX_BEARER_TOKEN') }}"
-
-k3s_platform_namespaces:
-  - flux-system
-  - platform
-  - database
-  - observability
-  - core-prod
-  - core-pre
-k3s_platform_bootstrap_namespaces:
-  - flux-system
-k3s_platform_manage_extsvc: false
-k3s_platform_vault_release_name: vault
-k3s_platform_vault_chart_version: "0.28.0"
-k3s_platform_vault_bootstrap_mode: "{{ lookup('env', 'K3S_PLATFORM_VAULT_BOOTSTRAP_MODE') | default('init', true) }}"
-k3s_platform_vault_init_phase: "{{ lookup('env', 'K3S_PLATFORM_VAULT_INIT_PHASE') | default('post_flux', true) }}"
-k3s_platform_vault_admin_username: admin
-k3s_platform_vault_init_json_path: /tmp/vault-init.json
-k3s_platform_vault_init_stdout_path: /tmp/vault-init.stdout
-k3s_platform_vault_init_stderr_path: /tmp/vault-init.stderr
-k3s_platform_vault_allow_sensitive_output: "{{ lookup('env', 'K3S_PLATFORM_VAULT_ALLOW_SENSITIVE_OUTPUT') | default('false', true) | bool }}"
-
-bootstrap_vault_url: "{{ lookup('env', 'VAULT_URL') | default('', true) }}"
-bootstrap_vault_namespace: "{{ lookup('env', 'VAULT_NAMESPACE') | default('', true) }}"
-bootstrap_vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('', true) }}"
-bootstrap_gitops_repo: "{{ k3s_platform_git_url }}"
-bootstrap_gitops_auth_mode: "{{ k3s_platform_git_auth_mode }}"
-k3s_platform_vault_server_url: "{{ bootstrap_vault_url }}"
-k3s_platform_vault_namespace: "{{ bootstrap_vault_namespace }}"
-k3s_platform_vault_token: "{{ bootstrap_vault_token }}"
-
-cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_TOKEN') | default(lookup('env', 'CLOUDFLARE_DNS_API_TOKEN'), true) }}"
-cloudflare_zone_id: "{{ lookup('env', 'CLOUDFLARE_ZONE_ID') | default('', true) }}"
-vault_root_token: "{{ lookup('env', 'VAULT_ROOT_TOKEN') | default('', true) }}"
-vault_init_json: "{{ lookup('env', 'VAULT_INIT_JSON') | default('', true) }}"
-
-k3s_platform_flux_env:
-  GIT_URL: "{{ k3s_platform_git_url }}"
-  GIT_BRANCH: "{{ k3s_platform_git_branch }}"
-  GIT_SOURCE_NAME: "{{ k3s_platform_flux_source_name }}"
-  FLUX_NAMESPACE: "{{ k3s_platform_flux_namespace }}"
-  FLUX_ROOT_PATH: "{{ k3s_platform_flux_root_path }}"
-
-k3s_platform_postgres_user: "{{ lookup('env', 'POSTGRES_USER') | default('postgres', true) }}"
-k3s_platform_postgres_password: "{{ lookup('env', 'POSTGRES_PASSWORD') | default('', true) }}"
-k3s_platform_internal_service_token: "{{ lookup('env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}"
-k3s_platform_ghcr_username: "{{ lookup('env', 'GHCR_USERNAME') | default('svc-design', true) }}"
-k3s_platform_ghcr_token: "{{ lookup('env', 'GHCR_TOKEN') | default('', true) }}"
-
-k3s_platform_helm_repos:
-  - { name: "external-secrets", url: "https://charts.external-secrets.io" }
-  - { name: "stakater", url: "https://stakater.github.io/stakater-charts" }
-  - { name: "caddy-ingress", url: "https://caddyserver.github.io/ingress/" }
-  - { name: "apisix", url: "https://charts.apiseven.com" }
-  - { name: "external-dns", url: "https://kubernetes-sigs.github.io/external-dns/" }
 
 k3s_platform_external_secrets_chart_version: "0.20.4"
 k3s_platform_reloader_chart_version: "1.3.0"
@@ -90,16 +7,11 @@ k3s_platform_apisix_chart_version: "2.13.0"
 k3s_platform_external_dns_chart_version: "1.20.0"
 
 k3s_platform_values:
-  namespaces:
-    platform: platform
-    vault: extsvc
   components:
     externalSecrets:
       enabled: true
-      releaseName: external-secrets
     reloader:
       enabled: true
-      releaseName: reloader
     caddy:
       enabled: true
       releaseName: caddy
@@ -174,32 +86,3 @@ k3s_platform_values:
               secretKeyRef:
                 name: cloudflare-api-token
                 key: api-token
-    sharedTlsSecretSync:
-      enabled: true
-      name: postgresql-vultr-tls-sync
-      sourceNamespace: platform
-      sourceSecretName: postgresql-vultr-tls
-      targetNamespace: database
-      targetSecretName: postgresql-vultr-tls
-      refreshSchedule: "*/5 * * * *"
-  apisixIngress:
-    enabled: true
-    name: apisix-gateway
-    namespace: platform
-    className: caddy
-    annotations:
-      external-dns.alpha.kubernetes.io/hostname: api.svc.plus,api-pre.svc.plus
-    tls:
-      secretName: apisix-gateway-tls
-      hosts:
-        - api.svc.plus
-        - api-pre.svc.plus
-    hosts:
-      - host: api.svc.plus
-        serviceName: apisix-gateway
-        servicePort: 80
-      - host: api-pre.svc.plus
-        serviceName: apisix-gateway
-        servicePort: 80
-  postgresqlTlsIngress:
-    enabled: false
