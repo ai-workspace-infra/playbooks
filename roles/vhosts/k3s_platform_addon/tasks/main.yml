@@ -130,7 +130,32 @@
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
-    helm upgrade --install "{{ k3s_platform_values.components.externalDns.releaseName }}" external-dns/external-dns \
+    chart_dir="$(mktemp -d /tmp/external-dns.XXXXXX)"
+    cleanup() {
+      rm -rf "$chart_dir"
+    }
+    trap cleanup EXIT
+
+    attempt=1
+    max_attempts=6
+    while true; do
+      rm -rf "$chart_dir"/*
+      if helm pull --repo "{{ k3s_platform_external_dns_chart_repo_url }}" \
+        --version "{{ k3s_platform_external_dns_chart_version }}" \
+        --untar \
+        --untardir "$chart_dir" \
+        external-dns; then
+        break
+      fi
+      if [ "$attempt" -ge "$max_attempts" ]; then
+        echo "failed to download external-dns after $attempt attempts" >&2
+        exit 1
+      fi
+      sleep "$((attempt * 30))"
+      attempt=$((attempt + 1))
+    done
+
+    helm upgrade --install "{{ k3s_platform_values.components.externalDns.releaseName }}" "$chart_dir/external-dns" \
       --namespace platform \
       --create-namespace \
       --version "{{ k3s_platform_external_dns_chart_version }}" \
