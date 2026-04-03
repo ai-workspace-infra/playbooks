@@ -4,19 +4,23 @@
       - k3s_platform_git_url | length > 0
       - k3s_platform_git_branch | length > 0
       - k3s_platform_flux_root_path | length > 0
-      - k3s_platform_git_auth_mode | lower in ['ssh', 'https-basic', 'https-bearer']
+      - k3s_platform_git_auth_mode | default('public') | lower in ['public', 'ssh', 'https-basic', 'https-bearer', '']
     fail_msg: "k3s platform bootstrap requires git url, branch, root path, and a supported git auth mode."
 
 - name: Resolve flux git auth inputs
   ansible.builtin.set_fact:
-    k3s_platform_git_auth_mode_effective: "{{ k3s_platform_git_auth_mode | lower }}"
+    k3s_platform_git_auth_mode_effective: "{{ (k3s_platform_git_auth_mode | default('public')) | lower | trim }}"
+  no_log: true
+
+- name: Resolve SSH git private key when needed
+  ansible.builtin.set_fact:
     k3s_platform_git_private_key_resolved: >-
       {{
         k3s_platform_git_private_key
-        if (k3s_platform_git_auth_mode | lower == 'ssh' and k3s_platform_git_private_key | default('') | length > 0)
+        if (k3s_platform_git_auth_mode_effective == 'ssh' and k3s_platform_git_private_key | default('') | length > 0)
         else (
           lookup('ansible.builtin.file', k3s_platform_git_private_key_path) | trim
-          if (k3s_platform_git_auth_mode | lower == 'ssh')
+          if (k3s_platform_git_auth_mode_effective == 'ssh')
           else ''
         )
       }}
@@ -47,6 +51,12 @@
   when:
     - k3s_platform_git_auth_mode_effective == 'https-bearer'
 
+- name: Normalize public git auth mode
+  ansible.builtin.set_fact:
+    k3s_platform_git_auth_mode_effective: public
+  when:
+    - k3s_platform_git_auth_mode_effective in ['', 'public', 'none']
+
 - name: Install bootstrap dependencies
   ansible.builtin.package:
     name:
@@ -76,25 +86,77 @@
     dest: "{{ k3s_platform_k3s_config_path }}"
     mode: "0644"
 
-- name: Install k3s if missing
+- name: Check whether k3s is already installed
   ansible.builtin.shell: |
     set -euo pipefail
-    if [ -x /usr/local/bin/k3s ] || [ -x /usr/bin/k3s ]; then
+    if { [ -x /usr/local/bin/k3s ] || [ -x /usr/bin/k3s ]; } && [ -f /etc/systemd/system/k3s.service ]; then
+      echo "installed"
       exit 0
     fi
-    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="{{ k3s_platform_k3s_version }}" sh -
+    echo "missing"
   args:
     executable: /bin/bash
+  register: k3s_platform_k3s_install_state
+  changed_when: false
+
+- name: Download k3s installer script
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if [ "{{ k3s_platform_k3s_install_state.stdout | default('missing') }}" = "installed" ]; then
+      exit 0
+    fi
+    echo "[k3s-bootstrap] downloading installer from {{ k3s_platform_k3s_install_script_url }}"
+    rm -f "{{ k3s_platform_k3s_install_script_path }}"
+    curl -fL \
+      --retry 5 \
+      --retry-all-errors \
+      --connect-timeout 15 \
+      --max-time 1800 \
+      -o "{{ k3s_platform_k3s_install_script_path }}" \
+      "{{ k3s_platform_k3s_install_script_url }}"
+    chmod 0755 "{{ k3s_platform_k3s_install_script_path }}"
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_k3s_install_state.stdout | default('missing') != 'installed'
+
+- name: Run k3s installer script
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if [ "{{ k3s_platform_k3s_install_state.stdout | default('missing') }}" = "installed" ]; then
+      exit 0
+    fi
+    echo "[k3s-bootstrap] starting installer at $(date -Is)"
+    bash -x "{{ k3s_platform_k3s_install_script_path }}" \
+      2>&1 | tee "{{ k3s_platform_k3s_install_log_path }}"
+    echo "[k3s-bootstrap] finished installer at $(date -Is)"
+  args:
+    executable: /bin/bash
+  async: "{{ k3s_platform_k3s_install_timeout_seconds }}"
+  poll: 15
+  when:
+    - k3s_platform_k3s_install_state.stdout | default('missing') != 'installed'
 
 - name: Wait for k3s binary and unit file to appear
   ansible.builtin.shell: |
     set -euo pipefail
-    for _ in $(seq 1 30); do
-      if command -v k3s >/dev/null 2>&1 && [ -f /etc/systemd/system/k3s.service ]; then
+    for attempt in $(seq 1 30); do
+      k3s_state="missing"
+      unit_state="missing"
+      if command -v k3s >/dev/null 2>&1; then
+        k3s_state="present"
+      fi
+      if [ -f /etc/systemd/system/k3s.service ]; then
+        unit_state="present"
+      fi
+      echo "[k3s-bootstrap] wait ${attempt}/30: k3s=${k3s_state}, unit=${unit_state}"
+      if [ "${k3s_state}" = "present" ] && [ "${unit_state}" = "present" ]; then
+        echo "[k3s-bootstrap] k3s binary and unit file detected"
         exit 0
       fi
       sleep 2
     done
+    echo "[k3s-bootstrap] timed out waiting for k3s binary and unit file" >&2
     exit 1
   args:
     executable: /bin/bash
@@ -145,6 +207,30 @@
   args:
     executable: /bin/bash
 
+- name: Wait for flux controllers to become ready
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/source-controller --timeout=300s
+    kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/kustomize-controller --timeout=300s
+    kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/helm-controller --timeout=300s
+    kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/notification-controller --timeout=300s
+  args:
+    executable: /bin/bash
+
+- name: Wait for Kubernetes API to become ready for bootstrap resources
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl get --raw=/readyz >/dev/null
+  args:
+    executable: /bin/bash
+  register: k3s_platform_apiserver_ready
+  changed_when: false
+  retries: 24
+  delay: 5
+  until: k3s_platform_apiserver_ready.rc == 0
+
 - name: Ensure Vault bootstrap namespace exists
   ansible.builtin.shell: |
     set -euo pipefail
@@ -152,12 +238,291 @@
     kubectl get namespace extsvc >/dev/null 2>&1 || kubectl create namespace extsvc
   args:
     executable: /bin/bash
+  when:
+    - k3s_platform_manage_extsvc | bool
+
+- name: Ensure platform namespace exists for bootstrap secrets
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl get namespace platform >/dev/null 2>&1 || kubectl create namespace platform
+  args:
+    executable: /bin/bash
+
+- name: Ensure core namespaces exist for bootstrap secrets
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    for namespace in database core-pre core-prod; do
+      kubectl get namespace "${namespace}" >/dev/null 2>&1 || kubectl create namespace "${namespace}"
+    done
+  args:
+    executable: /bin/bash
+
+- name: Create runtime bootstrap configmap for platform inputs
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n platform create configmap platform-bootstrap-env \
+      --from-literal=GITOPS_REPO="{{ bootstrap_gitops_repo | default('') }}" \
+      --from-literal=VAULT_URL="{{ bootstrap_vault_url | default('') }}" \
+      --from-literal=CLOUDFLARE_ZONE_ID="{{ cloudflare_zone_id | default('') }}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  when:
+    - (bootstrap_gitops_repo | default('')) | length > 0
+    - (bootstrap_vault_url | default('')) | length > 0
+    - (cloudflare_zone_id | default('')) | length > 0
+
+- name: Create runtime bootstrap secret for platform inputs
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n platform create secret generic platform-bootstrap-secrets \
+      --from-literal=VAULT_TOKEN="{{ bootstrap_vault_token | default('') }}" \
+      --from-literal=VAULT_ROOT_TOKEN="{{ vault_root_token | default('') }}" \
+      --from-literal=CLOUDFLARE_DNS_API_TOKEN="{{ lookup('env', 'CLOUDFLARE_DNS_API_TOKEN') | default('', true) }}" \
+      --from-literal=CLOUDFLARE_API_TOKEN="{{ cloudflare_api_token | default('') }}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  no_log: true
+  when:
+    - (bootstrap_vault_token | default('')) | length > 0
+    - (vault_root_token | default('')) | length > 0
+    - (lookup('env', 'CLOUDFLARE_DNS_API_TOKEN') | default('', true)) | length > 0
+    - (cloudflare_api_token | default('')) | length > 0
+
+- name: Create runtime bootstrap secret for Vault seeding
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n extsvc create secret generic vault-bootstrap \
+      --from-literal=rootToken="{{ vault_root_token | default('') }}" \
+      --from-literal=cloudflareApiToken="{{ cloudflare_api_token | default('') }}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  no_log: true
+  when:
+    - k3s_platform_manage_extsvc | bool
+    - (vault_root_token | default('')) | length > 0
+    - (cloudflare_api_token | default('')) | length > 0
+
+- name: Create runtime bootstrap secret for ExternalDNS seeding
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n platform create secret generic cloudflare-api-token \
+      --from-literal=api-token="{{ cloudflare_api_token | default('') }}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  no_log: true
+  when:
+    - (cloudflare_api_token | default('')) | length > 0
+
+- name: Render direct Helm values for caddy
+  ansible.builtin.copy:
+    content: "{{ (k3s_platform_values.components.caddy['values'] | default({})) | to_nice_yaml(indent=2) }}"
+    dest: /tmp/platform-caddy-values.yaml
+    mode: "0600"
+
+- name: Render direct Helm values for apisix
+  ansible.builtin.copy:
+    content: "{{ (k3s_platform_values.components.apisix['values'] | default({})) | to_nice_yaml(indent=2) }}"
+    dest: /tmp/platform-apisix-values.yaml
+    mode: "0600"
+
+- name: Render direct Helm values for external-dns
+  ansible.builtin.copy:
+    content: "{{ (k3s_platform_values.components.externalDns['values'] | default({})) | to_nice_yaml(indent=2) }}"
+    dest: /tmp/platform-external-dns-values.yaml
+    mode: "0600"
+
+- name: Render native APISIX ingress manifest
+  ansible.builtin.template:
+    src: apisix-ingress.yaml.j2
+    dest: /tmp/platform-apisix-ingress.yaml
+    mode: "0600"
+  when:
+    - k3s_platform_values.apisixIngress.enabled | default(false)
+
+- name: Render native shared TLS sync manifest
+  ansible.builtin.template:
+    src: shared-tls-secret-sync.yaml.j2
+    dest: /tmp/platform-shared-tls-secret-sync.yaml
+    mode: "0600"
+  when:
+    - k3s_platform_values.components.sharedTlsSecretSync.enabled | default(false)
+
+- name: Render native PostgreSQL TLS ingress manifest
+  ansible.builtin.template:
+    src: postgresql-tls-ingress.yaml.j2
+    dest: /tmp/platform-postgresql-tls-ingress.yaml
+    mode: "0600"
+  when:
+    - k3s_platform_values.postgresqlTlsIngress.enabled | default(false)
+
+- name: Ensure platform Helm repositories are configured
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if helm repo list | awk '{print $1}' | grep -qx '{{ item.name }}'; then
+      helm repo add --force-update '{{ item.name }}' '{{ item.url }}' >/dev/null
+    else
+      helm repo add '{{ item.name }}' '{{ item.url }}' >/dev/null
+    fi
+  args:
+    executable: /bin/bash
+  loop: "{{ k3s_platform_helm_repos }}"
+
+- name: Refresh platform Helm repositories
+  ansible.builtin.shell: |
+    set -euo pipefail
+    helm repo update >/dev/null
+  args:
+    executable: /bin/bash
+
+- name: Remove legacy Flux-managed platform release objects
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n platform delete helmrelease external-secrets k3s-platform caddy apisix external-dns reloader --ignore-not-found=true
+    kubectl -n platform delete ocirepository k3s-platform-chart --ignore-not-found=true
+    kubectl -n platform delete configmap k3s-platform-values --ignore-not-found=true
+  args:
+    executable: /bin/bash
+
+- name: Install external-secrets directly with Helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    helm upgrade --install external-secrets external-secrets/external-secrets \
+      --namespace platform \
+      --create-namespace \
+      --version "{{ k3s_platform_external_secrets_chart_version }}" \
+      --set installCRDs=true \
+      --wait \
+      --timeout 10m
+  args:
+    executable: /bin/bash
+
+- name: Install reloader directly with Helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    helm upgrade --install reloader stakater/reloader \
+      --namespace platform \
+      --create-namespace \
+      --version "{{ k3s_platform_reloader_chart_version }}" \
+      --wait \
+      --timeout 10m
+  args:
+    executable: /bin/bash
+
+- name: Install caddy directly with Helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    helm upgrade --install "{{ k3s_platform_values.components.caddy.releaseName }}" caddy-ingress/caddy-ingress-controller \
+      --namespace platform \
+      --create-namespace \
+      --version "{{ k3s_platform_caddy_chart_version }}" \
+      -f /tmp/platform-caddy-values.yaml \
+      --wait \
+      --timeout 10m
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_values.components.caddy.enabled | default(false)
+
+- name: Install apisix directly with Helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    helm upgrade --install "{{ k3s_platform_values.components.apisix.releaseName }}" apisix/apisix \
+      --namespace platform \
+      --create-namespace \
+      --version "{{ k3s_platform_apisix_chart_version }}" \
+      -f /tmp/platform-apisix-values.yaml \
+      --wait \
+      --timeout 10m
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_values.components.apisix.enabled | default(false)
+
+- name: Install external-dns directly with Helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    helm upgrade --install "{{ k3s_platform_values.components.externalDns.releaseName }}" external-dns/external-dns \
+      --namespace platform \
+      --create-namespace \
+      --version "{{ k3s_platform_external_dns_chart_version }}" \
+      -f /tmp/platform-external-dns-values.yaml \
+      --wait \
+      --timeout 10m
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_values.components.externalDns.enabled | default(false)
+
+- name: Apply native APISIX ingress manifest
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl apply -f /tmp/platform-apisix-ingress.yaml
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_values.apisixIngress.enabled | default(false)
+
+- name: Apply native shared TLS sync manifest
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl apply -f /tmp/platform-shared-tls-secret-sync.yaml
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_values.components.sharedTlsSecretSync.enabled | default(false)
+
+- name: Apply native PostgreSQL TLS ingress manifest
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl apply -f /tmp/platform-postgresql-tls-ingress.yaml
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_values.postgresqlTlsIngress.enabled | default(false)
+
+- name: Wait for direct platform Helm deployments to become available
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n platform wait deployment \
+      -l {{ item.selector }} \
+      --for=condition=Available \
+      --timeout=300s
+  args:
+    executable: /bin/bash
+  loop:
+    - { name: "external-secrets", selector: "app.kubernetes.io/instance=external-secrets" }
+    - { name: "reloader", selector: "release=reloader" }
+    - { name: "caddy", selector: "app.kubernetes.io/instance=caddy" }
+    - { name: "apisix", selector: "app.kubernetes.io/instance=apisix" }
+    - { name: "external-dns", selector: "app.kubernetes.io/instance=external-dns" }
 
 - name: Render Vault bootstrap values file
   ansible.builtin.template:
     src: vault-bootstrap-values.yaml.j2
     dest: /tmp/vault-bootstrap-values.yaml
     mode: "0600"
+  when:
+    - k3s_platform_manage_extsvc | bool
 
 - name: Bootstrap Vault server with Helm
   ansible.builtin.shell: |
@@ -172,6 +537,8 @@
       -f /tmp/vault-bootstrap-values.yaml
   args:
     executable: /bin/bash
+  when:
+    - k3s_platform_manage_extsvc | bool
 
 - name: Wait for Vault server rollout
   ansible.builtin.shell: |
@@ -183,9 +550,8 @@
   args:
     executable: /bin/bash
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'pre_flux'
-    - k3s_platform_vault_bootstrap_mode == 'migrate'
-      or (k3s_platform_vault_status.initialized | default(false))
 
 - name: Discover Vault pod name
   ansible.builtin.shell: |
@@ -199,6 +565,7 @@
   args:
     executable: /bin/bash
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'pre_flux'
 
 - name: Capture Vault status
@@ -217,12 +584,21 @@
   changed_when: false
   failed_when: false
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'pre_flux'
 
 - name: Parse Vault status JSON
   ansible.builtin.set_fact:
-    k3s_platform_vault_status: "{{ (k3s_platform_vault_status_result.stdout | default('{}')) | from_json }}"
+    k3s_platform_vault_status: >-
+      {{
+        (
+          k3s_platform_vault_status_result.stdout
+          if (k3s_platform_vault_status_result.stdout | default('') | trim | length) > 0
+          else '{}'
+        ) | from_json
+      }}
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'pre_flux'
 
 - name: Assert Vault bootstrap mode is valid
@@ -231,6 +607,7 @@
       - k3s_platform_vault_bootstrap_mode in ['init', 'migrate']
     fail_msg: "k3s_platform_vault_bootstrap_mode must be init or migrate."
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'pre_flux'
 
 - name: Assert migrate mode has inputs when Vault is already initialized
@@ -240,6 +617,7 @@
       - (vault_init_json | default('')) | length > 0
     fail_msg: "Vault migrate mode requires vault_root_token and vault_init_json."
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'pre_flux'
     - k3s_platform_vault_bootstrap_mode == 'migrate'
     - k3s_platform_vault_status.initialized | default(false)
@@ -250,6 +628,7 @@
       - k3s_platform_vault_status.initialized | default(false)
     fail_msg: "Vault migrate mode requires an already initialized Vault instance."
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'pre_flux'
     - k3s_platform_vault_bootstrap_mode == 'migrate'
 
@@ -270,6 +649,7 @@
       - -key-threshold=1
   register: k3s_platform_vault_init_result
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'pre_flux'
     - k3s_platform_vault_bootstrap_mode == 'init'
     - not (k3s_platform_vault_status.initialized | default(false))
@@ -280,6 +660,7 @@
     dest: "{{ k3s_platform_vault_init_json_path }}"
     mode: "0600"
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'pre_flux'
     - k3s_platform_vault_init_result is defined
 
@@ -287,6 +668,7 @@
   ansible.builtin.set_fact:
     k3s_platform_vault_init_data: "{{ k3s_platform_vault_init_result.stdout | from_json }}"
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'pre_flux'
     - k3s_platform_vault_init_result is defined
 
@@ -304,6 +686,23 @@
       - unseal
       - "{{ k3s_platform_vault_init_data.unseal_keys_b64[0] }}"
   when:
+    - k3s_platform_manage_extsvc | bool
+    - k3s_platform_vault_init_phase == 'pre_flux'
+    - k3s_platform_vault_init_result is defined
+
+- name: Sync Vault bootstrap secret with generated root token
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n extsvc create secret generic vault-bootstrap \
+      --from-literal=rootToken="{{ k3s_platform_vault_init_data.root_token }}" \
+      --from-literal=cloudflareApiToken="{{ cloudflare_api_token | default('') }}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  no_log: true
+  when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'pre_flux'
     - k3s_platform_vault_init_result is defined
 
@@ -318,6 +717,7 @@
       root_token: "{{ k3s_platform_vault_init_data.root_token if (k3s_platform_vault_init_result is defined and k3s_platform_vault_allow_sensitive_output) else omit }}"
       init_json: "{{ k3s_platform_vault_init_result.stdout if (k3s_platform_vault_init_result is defined and k3s_platform_vault_allow_sensitive_output) else omit }}"
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'pre_flux'
     - k3s_platform_vault_bootstrap_mode == 'init'
     - k3s_platform_vault_init_result is defined
@@ -346,75 +746,95 @@
     - k3s_platform_git_public_key | length > 0
     - k3s_platform_git_auth_mode_effective == 'ssh'
 
-- name: Create or update flux git auth secret
-  ansible.builtin.shell: |
-    set -euo pipefail
-    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
-    . /tmp/flux-bootstrap.env
-    case "{{ k3s_platform_git_auth_mode_effective }}" in
-      ssh)
-        flux create secret git "${GIT_SOURCE_NAME}" \
-          --url="${GIT_URL}" \
-          --private-key-file=/tmp/flux-git-deploy.key \
-          --namespace="${FLUX_NAMESPACE}" \
-          --export | kubectl apply -f -
-        ;;
-      https-basic)
-        cat <<EOF | kubectl apply -f -
-        apiVersion: v1
-        kind: Secret
-        metadata:
-          name: ${GIT_SOURCE_NAME}
-          namespace: ${FLUX_NAMESPACE}
-        type: Opaque
-        stringData:
-          username: {{ k3s_platform_git_http_username | to_json }}
-          password: {{ k3s_platform_git_http_password | to_json }}
-        EOF
-        ;;
-      https-bearer)
-        cat <<EOF | kubectl apply -f -
-        apiVersion: v1
-        kind: Secret
-        metadata:
-          name: ${GIT_SOURCE_NAME}
-          namespace: ${FLUX_NAMESPACE}
-        type: Opaque
-        stringData:
-          bearerToken: {{ k3s_platform_git_bearer_token | to_json }}
-        EOF
-        ;;
-      *)
-        echo "Unsupported git auth mode: {{ k3s_platform_git_auth_mode_effective }}" >&2
-        exit 1
-        ;;
-    esac
-  args:
-    executable: /bin/bash
-  no_log: true
+- name: Remove flux git auth secret for public repositories
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - "{{ k3s_platform_flux_namespace }}"
+      - delete
+      - secret
+      - "{{ k3s_platform_flux_source_name }}"
+      - --ignore-not-found
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  when:
+    - k3s_platform_git_auth_mode_effective in ['public', 'none', '']
 
-- name: Create runtime bootstrap secret for Vault seeding
+- name: Create or update flux git auth secret with SSH
   ansible.builtin.shell: |
     set -euo pipefail
-    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
-    kubectl -n extsvc create secret generic vault-bootstrap \
-      --from-literal=rootToken="{{ vault_root_token | default('') }}" \
-      --from-literal=cloudflareApiToken="{{ cloudflare_api_token | default('') }}" \
-      --dry-run=client -o yaml | kubectl apply -f -
+    . /tmp/flux-bootstrap.env
+    flux create secret git "${GIT_SOURCE_NAME}" \
+      --url="${GIT_URL}" \
+      --private-key-file=/tmp/flux-git-deploy.key \
+      --namespace="${FLUX_NAMESPACE}" \
+      --export | kubectl apply -f -
   args:
     executable: /bin/bash
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
   no_log: true
   when:
-    - (vault_root_token | default('')) | length > 0
-    - (cloudflare_api_token | default('')) | length > 0
+    - k3s_platform_git_auth_mode_effective == 'ssh'
+
+- name: Create or update flux git auth secret with HTTPS basic auth
+  ansible.builtin.shell: |
+    set -euo pipefail
+    . /tmp/flux-bootstrap.env
+    cat <<EOF | kubectl apply -f -
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: ${GIT_SOURCE_NAME}
+      namespace: ${FLUX_NAMESPACE}
+    type: Opaque
+    stringData:
+      username: {{ k3s_platform_git_http_username | to_json }}
+      password: {{ k3s_platform_git_http_password | to_json }}
+    EOF
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  no_log: true
+  when:
+    - k3s_platform_git_auth_mode_effective == 'https-basic'
+
+- name: Create or update flux git auth secret with HTTPS bearer token
+  ansible.builtin.shell: |
+    set -euo pipefail
+    . /tmp/flux-bootstrap.env
+    cat <<EOF | kubectl apply -f -
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: ${GIT_SOURCE_NAME}
+      namespace: ${FLUX_NAMESPACE}
+    type: Opaque
+    stringData:
+      bearerToken: {{ k3s_platform_git_bearer_token | to_json }}
+    EOF
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  no_log: true
+  when:
+    - k3s_platform_git_auth_mode_effective == 'https-bearer'
 
 - name: Apply root Flux source and kustomization
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
     . /tmp/flux-bootstrap.env
+    if [ "{{ k3s_platform_git_auth_mode_effective }}" = "public" ] || [ "{{ k3s_platform_git_auth_mode_effective }}" = "none" ] || [ -z "{{ k3s_platform_git_auth_mode_effective }}" ]; then
+      SECRET_REF_BLOCK=""
+    else
+      SECRET_REF_BLOCK="      secretRef:\n        name: ${GIT_SOURCE_NAME}\n"
+    fi
     cat <<EOF | kubectl apply -f -
-    apiVersion: source.toolkit.fluxcd.io/v1beta2
+    apiVersion: source.toolkit.fluxcd.io/v1
     kind: GitRepository
     metadata:
       name: ${GIT_SOURCE_NAME}
@@ -424,10 +844,9 @@
       url: ${GIT_URL}
       ref:
         branch: ${GIT_BRANCH}
-      secretRef:
-        name: ${GIT_SOURCE_NAME}
+    ${SECRET_REF_BLOCK}
     ---
-    apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
     metadata:
       name: platform-root
@@ -458,6 +877,9 @@
       --timeout=10m
   args:
     executable: /bin/bash
+  async: 1200
+  poll: 0
+  changed_when: true
 
 - name: Verify flux resources
   ansible.builtin.shell: |
@@ -486,9 +908,8 @@
   args:
     executable: /bin/bash
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'post_flux'
-    - k3s_platform_vault_bootstrap_mode == 'migrate'
-      or (k3s_platform_vault_status.initialized | default(false))
 
 - name: Discover Vault pod name after Flux bootstrap
   ansible.builtin.shell: |
@@ -502,6 +923,7 @@
   args:
     executable: /bin/bash
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'post_flux'
 
 - name: Capture Vault status after Flux bootstrap
@@ -520,12 +942,21 @@
   changed_when: false
   failed_when: false
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'post_flux'
 
 - name: Parse Vault status JSON after Flux bootstrap
   ansible.builtin.set_fact:
-    k3s_platform_vault_status: "{{ (k3s_platform_vault_status_result.stdout | default('{}')) | from_json }}"
+    k3s_platform_vault_status: >-
+      {{
+        (
+          k3s_platform_vault_status_result.stdout
+          if (k3s_platform_vault_status_result.stdout | default('') | trim | length) > 0
+          else '{}'
+        ) | from_json
+      }}
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'post_flux'
 
 - name: Assert Vault bootstrap mode is valid after Flux bootstrap
@@ -534,6 +965,7 @@
       - k3s_platform_vault_bootstrap_mode in ['init', 'migrate']
     fail_msg: "k3s_platform_vault_bootstrap_mode must be init or migrate."
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'post_flux'
 
 - name: Assert migrate mode has inputs when Vault is already initialized after Flux bootstrap
@@ -543,6 +975,7 @@
       - (vault_init_json | default('')) | length > 0
     fail_msg: "Vault migrate mode requires vault_root_token and vault_init_json."
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'post_flux'
     - k3s_platform_vault_bootstrap_mode == 'migrate'
     - k3s_platform_vault_status.initialized | default(false)
@@ -553,6 +986,7 @@
       - k3s_platform_vault_status.initialized | default(false)
     fail_msg: "Vault migrate mode requires an already initialized Vault instance."
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'post_flux'
     - k3s_platform_vault_bootstrap_mode == 'migrate'
 
@@ -573,6 +1007,7 @@
       - -key-threshold=1
   register: k3s_platform_vault_init_result
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'post_flux'
     - k3s_platform_vault_bootstrap_mode == 'init'
     - not (k3s_platform_vault_status.initialized | default(false))
@@ -583,6 +1018,7 @@
     dest: "{{ k3s_platform_vault_init_json_path }}"
     mode: "0600"
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'post_flux'
     - k3s_platform_vault_init_result is defined
 
@@ -590,6 +1026,7 @@
   ansible.builtin.set_fact:
     k3s_platform_vault_init_data: "{{ k3s_platform_vault_init_result.stdout | from_json }}"
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'post_flux'
     - k3s_platform_vault_init_result is defined
 
@@ -607,6 +1044,23 @@
       - unseal
       - "{{ k3s_platform_vault_init_data.unseal_keys_b64[0] }}"
   when:
+    - k3s_platform_manage_extsvc | bool
+    - k3s_platform_vault_init_phase == 'post_flux'
+    - k3s_platform_vault_init_result is defined
+
+- name: Sync Vault bootstrap secret with generated root token after Flux bootstrap
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n extsvc create secret generic vault-bootstrap \
+      --from-literal=rootToken="{{ k3s_platform_vault_init_data.root_token }}" \
+      --from-literal=cloudflareApiToken="{{ cloudflare_api_token | default('') }}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  no_log: true
+  when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'post_flux'
     - k3s_platform_vault_init_result is defined
 
@@ -621,6 +1075,7 @@
       root_token: "{{ k3s_platform_vault_init_data.root_token if (k3s_platform_vault_init_result is defined and k3s_platform_vault_allow_sensitive_output) else omit }}"
       init_json: "{{ k3s_platform_vault_init_result.stdout if (k3s_platform_vault_init_result is defined and k3s_platform_vault_allow_sensitive_output) else omit }}"
   when:
+    - k3s_platform_manage_extsvc | bool
     - k3s_platform_vault_init_phase == 'post_flux'
     - k3s_platform_vault_bootstrap_mode == 'init'
     - k3s_platform_vault_init_result is defined

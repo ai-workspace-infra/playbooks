@@ -4,7 +4,7 @@ kubectl create namespace gitops-system || true
 helm upgrade --install fluxcd stable/flux2 --version 2.12.1 -n gitops-system -f fluxcd-values.yaml
 
 cat > cluster-config.yaml << EOF
-apiVersion: source.toolkit.fluxcd.io/v1beta2
+apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
   name: stable
@@ -15,7 +15,7 @@ spec:
     branch: main
     url: https://github.com/x-evor/gitops.git
 ---
-apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: cluster

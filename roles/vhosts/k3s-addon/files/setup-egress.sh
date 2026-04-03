@@ -2,6 +2,8 @@
 ip=$1
 namespace=$2
 
+node_name=${3:-"ha-proxy-jp.svc.plus"}
+
 cat > /tmp/egress.yaml << EOF
 apiVersion: cilium.io/v2
 kind: CiliumEgressGatewayPolicy
@@ -18,7 +20,7 @@ spec:
   egressGateway:
     nodeSelector:
       matchLabels:
-        node.kubernetes.io/name: tky-connector.onwalk.net
+        node.kubernetes.io/name: $node_name
     egressIP: $ip
 EOF
 kubectl apply -f /tmp/egress.yaml

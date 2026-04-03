@@ -1,19 +1,96 @@
-loki.write "grafanacloud" {
+// VictoriaLogs配置
+loki.write "victorialogs" {
   endpoint {
-    url = "{{ loki_endpoint_url }}"
+    url = "http://10.146.0.6:9428/loki/api/v1/push"
 
-    basic_auth {
-      username = "{{ loki_basic_auth_username }}"
-      password = "{{ loki_basic_auth_password }}"
+    headers = {
+      "X-Scope-OrgID" = "default"
     }
   }
 }
 
+// VictoriaMetrics配置 (Prometheus remote_write)
+prometheus.remote_write "victoriametrics" {
+  endpoint {
+    url = "http://10.146.0.6:8428/api/v1/write"
+
+    queue_config {
+      max_samples_per_send = 1000
+      max_shards = 200
+      capacity = 2500
+    }
+  }
+}
+
+// VictoriaTraces配置 (Jaeger)
+jaeger "victoriatraces" {
+  endpoint = "http://10.146.0.6:10428"
+}
+
+// 本地Prometheus配置用于指标收集
+prometheus.scrape "local" {
+  targets = [
+    {
+      job          = "alloy"
+      instance     = "localhost"
+      metrics_path = "/metrics"
+      scheme       = "http"
+    }
+  ]
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+}
+
+// 系统指标收集
+prometheus.scrape "node" {
+  targets = [
+    {
+      job          = "node"
+      instance     = "localhost"
+      metrics_path = "/metrics"
+      scheme       = "http"
+    }
+  ]
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+}
+
+// 本地Loki日志收集
+loki.source.file "system_logs" {
+  targets = [
+    {
+      job      = "system"
+      instance = "localhost"
+      labels   = {job = "system"}
+      path     = "/var/log/*.log"
+    }
+  ]
+  forward_to = [loki.write.victorialogs.receiver]
+}
+
+// journal日志收集
 {% for source in loki_journal_sources %}
 loki.source.journal "{{ source.name }}"  {
   format_as_json  = true
   labels          = {job = "{{ source.name }}"}
   matches         = "_SYSTEMD_UNIT={{ source.unit }}"
-  forward_to      = [loki.write.grafanacloud.receiver]
+  forward_to      = [loki.write.victorialogs.receiver]
 }
 {% endfor %}
+
+// 保留原有的loki配置作为备选
+loki.write "grafanacloud" {
+  endpoint {
+    url = "{{ loki_endpoint_url | default("http://10.146.0.6:9428/loki/api/v1/push") }}"
+
+    basic_auth {
+      username = "{{ loki_basic_auth_username | default("") }}"
+      password = "{{ loki_basic_auth_password | default("") }}"
+    }
+  }
+}
+
+// 追踪数据发送到VictoriaTraces
+tracing "victoriatraces" {
+  receivers = [jaeger.victoriatraces.receiver]
+  processors = []
+  exporters = []
+}

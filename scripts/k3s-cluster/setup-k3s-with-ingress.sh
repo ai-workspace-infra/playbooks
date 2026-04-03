@@ -187,7 +187,7 @@ data:
 EOF
 
   cat > cluster-config.yaml << EOF
-apiVersion: source.toolkit.fluxcd.io/v1beta2
+apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
   name: stable
@@ -198,7 +198,7 @@ spec:
     branch: main
   url: https://github.com/x-evor/gitops.git
 ---
-apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: cluster

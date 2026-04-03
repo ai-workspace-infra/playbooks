@@ -1,0 +1,33 @@
+{% set ingress = k3s_platform_values.apisixIngress %}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ ingress.name }}
+  namespace: {{ ingress.namespace }}
+{% if ingress.annotations is defined and ingress.annotations %}
+  annotations:
+{% for key, value in ingress.annotations.items() %}
+    {{ key }}: {{ value | to_json }}
+{% endfor %}
+{% endif %}
+spec:
+  ingressClassName: {{ ingress.className }}
+  tls:
+    - hosts:
+{% for host in ingress.tls.hosts %}
+        - {{ host }}
+{% endfor %}
+      secretName: {{ ingress.tls.secretName }}
+  rules:
+{% for host in ingress.hosts %}
+    - host: {{ host.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ host.serviceName }}
+                port:
+                  number: {{ host.servicePort }}
+{% endfor %}

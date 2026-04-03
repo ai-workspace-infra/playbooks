@@ -1,0 +1,38 @@
+{% set ingress = k3s_platform_values.postgresqlTlsIngress %}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ ingress.serviceName }}
+  namespace: {{ ingress.namespace }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ ingress.servicePort }}
+      targetPort: {{ ingress.servicePort }}
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: {{ ingress.serviceName }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ ingress.name }}
+  namespace: {{ ingress.namespace }}
+spec:
+  ingressClassName: {{ ingress.className }}
+  tls:
+    - hosts:
+        - {{ ingress.host }}
+      secretName: {{ ingress.secretName }}
+  rules:
+    - host: {{ ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ ingress.serviceName }}
+                port:
+                  number: {{ ingress.servicePort }}
