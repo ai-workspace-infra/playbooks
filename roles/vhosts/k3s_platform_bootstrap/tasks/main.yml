@@ -230,3 +230,170 @@
   retries: 24
   delay: 5
   until: k3s_platform_apiserver_ready.rc == 0
+
+- name: Render flux bootstrap env file
+  ansible.builtin.template:
+    src: flux-bootstrap.env.j2
+    dest: /tmp/flux-bootstrap.env
+    mode: "0600"
+
+- name: Write flux git private key file
+  ansible.builtin.copy:
+    content: "{{ k3s_platform_git_private_key_resolved }}\n"
+    dest: /tmp/flux-git-deploy.key
+    mode: "0600"
+  no_log: true
+  when:
+    - k3s_platform_git_auth_mode_effective == 'ssh'
+
+- name: Write flux git public key file when provided
+  ansible.builtin.copy:
+    content: "{{ k3s_platform_git_public_key }}\n"
+    dest: /tmp/flux-git-deploy.pub
+    mode: "0644"
+  when:
+    - k3s_platform_git_public_key | length > 0
+    - k3s_platform_git_auth_mode_effective == 'ssh'
+
+- name: Remove flux git auth secret for public repositories
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - "{{ k3s_platform_flux_namespace }}"
+      - delete
+      - secret
+      - "{{ k3s_platform_flux_source_name }}"
+      - --ignore-not-found
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  when:
+    - k3s_platform_git_auth_mode_effective in ['public', 'none', '']
+
+- name: Create or update flux git auth secret with SSH
+  ansible.builtin.shell: |
+    set -euo pipefail
+    . /tmp/flux-bootstrap.env
+    flux create secret git "${GIT_SOURCE_NAME}" \
+      --url="${GIT_URL}" \
+      --private-key-file=/tmp/flux-git-deploy.key \
+      --namespace="${FLUX_NAMESPACE}" \
+      --export | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  no_log: true
+  when:
+    - k3s_platform_git_auth_mode_effective == 'ssh'
+
+- name: Create or update flux git auth secret with HTTPS basic auth
+  ansible.builtin.shell: |
+    set -euo pipefail
+    . /tmp/flux-bootstrap.env
+    cat <<EOF | kubectl apply -f -
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: ${GIT_SOURCE_NAME}
+      namespace: ${FLUX_NAMESPACE}
+    type: Opaque
+    stringData:
+      username: {{ k3s_platform_git_http_username | to_json }}
+      password: {{ k3s_platform_git_http_password | to_json }}
+    EOF
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  no_log: true
+  when:
+    - k3s_platform_git_auth_mode_effective == 'https-basic'
+
+- name: Create or update flux git auth secret with HTTPS bearer token
+  ansible.builtin.shell: |
+    set -euo pipefail
+    . /tmp/flux-bootstrap.env
+    cat <<EOF | kubectl apply -f -
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: ${GIT_SOURCE_NAME}
+      namespace: ${FLUX_NAMESPACE}
+    type: Opaque
+    stringData:
+      bearerToken: {{ k3s_platform_git_bearer_token | to_json }}
+    EOF
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  no_log: true
+  when:
+    - k3s_platform_git_auth_mode_effective == 'https-bearer'
+
+- name: Apply root Flux source and kustomization
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    . /tmp/flux-bootstrap.env
+    if [ "{{ k3s_platform_git_auth_mode_effective }}" = "public" ] || [ "{{ k3s_platform_git_auth_mode_effective }}" = "none" ] || [ -z "{{ k3s_platform_git_auth_mode_effective }}" ]; then
+      SECRET_REF_BLOCK=""
+    else
+      SECRET_REF_BLOCK="      secretRef:\n        name: ${GIT_SOURCE_NAME}\n"
+    fi
+    cat <<EOF | kubectl apply -f -
+    apiVersion: source.toolkit.fluxcd.io/v1
+    kind: GitRepository
+    metadata:
+      name: ${GIT_SOURCE_NAME}
+      namespace: ${FLUX_NAMESPACE}
+    spec:
+      interval: 1m0s
+      url: ${GIT_URL}
+      ref:
+        branch: ${GIT_BRANCH}
+    ${SECRET_REF_BLOCK}
+    ---
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: platform-root
+      namespace: ${FLUX_NAMESPACE}
+    spec:
+      interval: 5m0s
+      sourceRef:
+        kind: GitRepository
+        name: ${GIT_SOURCE_NAME}
+      path: ${FLUX_ROOT_PATH}
+      prune: true
+      wait: true
+      timeout: 5m0s
+    EOF
+  args:
+    executable: /bin/bash
+
+- name: Reconcile root Flux kustomization
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    flux reconcile source git "{{ k3s_platform_flux_source_name }}" \
+      --namespace "{{ k3s_platform_flux_namespace }}" \
+      --timeout=5m
+    flux reconcile kustomization platform-root \
+      --namespace "{{ k3s_platform_flux_namespace }}" \
+      --with-source \
+      --timeout=10m
+  args:
+    executable: /bin/bash
+  async: 1200
+  poll: 0
+  changed_when: true
+
+- name: Verify flux resources
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n "{{ k3s_platform_flux_namespace }}" get gitrepositories,kustomizations
+  args:
+    executable: /bin/bash
