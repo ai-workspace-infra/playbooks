@@ -32,7 +32,9 @@
       --create-namespace \
       --version "{{ k3s_platform_external_dns_chart_version }}" \
       -f /tmp/platform-external-dns-values.yaml \
-      --wait \
       --timeout 10m
+
+    kubectl -n platform rollout status deployment/"{{ k3s_platform_values.components.externalDns.releaseName }}" \
+      --timeout=90s
   args:
     executable: /bin/bash
