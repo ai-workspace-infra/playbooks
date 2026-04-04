@@ -129,6 +129,26 @@
   when:
     - k3s_platform_values.components.externalDns.enabled | default(false)
 
+- name: Ensure Cloudflare API token secret exists for external-dns
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n platform create secret generic cloudflare-api-token \
+      --from-literal=api-token="{{ k3s_platform_cloudflare_api_token }}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_values.components.externalDns.enabled | default(false)
+    - k3s_platform_cloudflare_api_token | length > 0
+
+- name: Fail when external-dns is enabled but Cloudflare token is missing
+  ansible.builtin.fail:
+    msg: "CLOUDFLARE_API_TOKEN is required when external-dns is enabled"
+  when:
+    - k3s_platform_values.components.externalDns.enabled | default(false)
+    - k3s_platform_cloudflare_api_token | length == 0
+
 - name: Install reloader directly with Helm
   ansible.builtin.shell: |
     set -euo pipefail
