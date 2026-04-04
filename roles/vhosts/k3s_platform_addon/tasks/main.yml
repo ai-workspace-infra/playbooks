@@ -93,6 +93,30 @@
     - k3s_platform_ghcr_username | length > 0
     - k3s_platform_ghcr_token | length > 0
 
+- name: Render platform caddy values
+  ansible.builtin.template:
+    src: platform-caddy-values.yaml.j2
+    dest: /tmp/platform-caddy-values.yaml
+    mode: "0600"
+  when:
+    - k3s_platform_values.components.caddy.enabled | default(false)
+
+- name: Render platform apisix values
+  ansible.builtin.template:
+    src: platform-apisix-values.yaml.j2
+    dest: /tmp/platform-apisix-values.yaml
+    mode: "0600"
+  when:
+    - k3s_platform_values.components.apisix.enabled | default(false)
+
+- name: Render platform external-dns values
+  ansible.builtin.template:
+    src: platform-external-dns-values.yaml.j2
+    dest: /tmp/platform-external-dns-values.yaml
+    mode: "0600"
+  when:
+    - k3s_platform_values.components.externalDns.enabled | default(false)
+
 - name: Install reloader directly with Helm
   ansible.builtin.shell: |
     set -euo pipefail
