@@ -8,7 +8,7 @@
   register: acp_opencode_ss
   changed_when: false
 
-- name: Validate OpenCode local HTTP endpoint
+- name: Validate OpenCode local HTML endpoint
   ansible.builtin.uri:
     url: "http://{{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}/"
     method: GET
@@ -16,9 +16,40 @@
     status_code: 200
   register: acp_opencode_http
 
+- name: Validate local OpenCode ACP bridge HTTP endpoint
+  ansible.builtin.uri:
+    url: "http://{{ acp_opencode_bridge_listen_host }}:{{ acp_opencode_bridge_listen_port }}/acp/rpc"
+    method: POST
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: 1
+      method: acp.capabilities
+      params: {}
+    return_content: true
+    status_code: 200
+  register: acp_opencode_bridge_http
+
+- name: Validate local OpenCode ACP bridge CORS preflight
+  ansible.builtin.uri:
+    url: "http://{{ acp_opencode_bridge_listen_host }}:{{ acp_opencode_bridge_listen_port }}/acp/rpc"
+    method: OPTIONS
+    headers:
+      Origin: "{{ acp_opencode_bridge_allowed_origins[0] }}"
+      Access-Control-Request-Method: POST
+    return_content: true
+    status_code: 204
+  register: acp_opencode_bridge_preflight
+
 - name: Show OpenCode ACP status
   ansible.builtin.command: systemctl status "{{ acp_opencode_service_name }}" --no-pager
   register: acp_opencode_status
+  changed_when: false
+  failed_when: false
+
+- name: Show OpenCode ACP bridge status
+  ansible.builtin.command: systemctl status "{{ acp_opencode_bridge_service_name }}" --no-pager
+  register: acp_opencode_bridge_status
   changed_when: false
   failed_when: false
 
@@ -26,8 +57,12 @@
   ansible.builtin.debug:
     msg:
       - "OpenCode domain: {{ acp_opencode_domain }}"
-      - "Listener: {{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}"
+      - "OpenCode UI listener: {{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}"
+      - "ACP bridge listener: {{ acp_opencode_bridge_listen_host }}:{{ acp_opencode_bridge_listen_port }}"
       - "Service: {{ acp_opencode_status.stdout | default('N/A') }}"
+      - "Bridge service: {{ acp_opencode_bridge_status.stdout | default('N/A') }}"
       - "Socket: {{ acp_opencode_ss.stdout | default('N/A') }}"
-      - "HTTP content-type: {{ acp_opencode_http.content_type | default('N/A') }}"
-      - "HTTP body marker present: {{ acp_opencode_expected_body_marker in (acp_opencode_http.content | default('')) }}"
+      - "HTML content-type: {{ acp_opencode_http.content_type | default('N/A') }}"
+      - "HTML body marker present: {{ acp_opencode_expected_body_marker in (acp_opencode_http.content | default('')) }}"
+      - "Bridge capabilities HTTP: {{ acp_opencode_bridge_http.content | default('N/A') }}"
+      - "Bridge preflight allow-origin: {{ acp_opencode_bridge_preflight.access_control_allow_origin | default('N/A') }}"

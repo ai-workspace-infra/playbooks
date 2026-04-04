@@ -1,4 +1,32 @@
 ---
+- name: Ensure local OpenCode ACP build directory exists
+  ansible.builtin.file:
+    path: "{{ acp_opencode_bridge_local_build_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  become: false
+
+- name: Build XWorkmate Go ACP server locally for OpenCode
+  ansible.builtin.command:
+    cmd: go build -o "{{ acp_opencode_bridge_local_binary_path }}" .
+    chdir: "{{ acp_opencode_bridge_local_source_dir }}"
+  environment:
+    GOOS: "{{ acp_opencode_bridge_build_goos }}"
+    GOARCH: "{{ acp_opencode_bridge_build_goarch }}"
+    CGO_ENABLED: "0"
+  delegate_to: localhost
+  become: false
+
+- name: Upload XWorkmate Go ACP server binary for OpenCode
+  ansible.builtin.copy:
+    src: "{{ acp_opencode_bridge_local_binary_path }}"
+    dest: "{{ acp_opencode_bridge_binary_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart opencode acp bridge
+
 - name: Deploy Caddy main file
   ansible.builtin.template:
     src: Caddyfile.j2
@@ -26,6 +54,15 @@
     mode: "0644"
   notify: Restart opencode acp
 
+- name: Deploy OpenCode ACP bridge service
+  ansible.builtin.template:
+    src: acp-bridge.service.j2
+    dest: "/etc/systemd/system/{{ acp_opencode_bridge_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart opencode acp bridge
+
 - name: Reload systemd manager configuration
   ansible.builtin.systemd:
     daemon_reload: true
@@ -39,5 +76,11 @@
 - name: Ensure OpenCode ACP service is enabled and running
   ansible.builtin.systemd:
     name: "{{ acp_opencode_service_name }}"
+    enabled: true
+    state: started
+
+- name: Ensure OpenCode ACP bridge service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ acp_opencode_bridge_service_name }}"
     enabled: true
     state: started

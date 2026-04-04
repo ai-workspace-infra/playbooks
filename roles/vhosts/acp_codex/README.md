@@ -10,7 +10,7 @@ Installs:
 Exposes:
 
 - raw Codex upstream: `codex app-server --listen ws://127.0.0.1:9001`
-- public ACP Web server: `127.0.0.1:9010` via `xworkmate-go-core serve`
+- public ACP Web server: `127.0.0.1:9010` via `acp-bridge`
 - public HTTPS endpoint: `https://acp-server-codex.svc.plus`
 
 Notes:

@@ -1,0 +1,24 @@
+[Unit]
+Description=XWorkmate OpenCode ACP bridge server
+After=network-online.target {{ acp_opencode_service_name }}.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ acp_opencode_service_user }}
+Group={{ acp_opencode_service_group }}
+WorkingDirectory={{ acp_opencode_workdir }}
+Environment=HOME={{ acp_opencode_home }}
+Environment=TERM=xterm-256color
+Environment=ACP_LISTEN_ADDR={{ acp_opencode_bridge_listen_host }}:{{ acp_opencode_bridge_listen_port }}
+Environment=ACP_ALLOWED_ORIGINS={{ acp_opencode_bridge_allowed_origins | join(',') }}
+Environment=ACP_CODEX_BIN={{ acp_opencode_bridge_disabled_binary_path }}
+Environment=ACP_CLAUDE_BIN={{ acp_opencode_bridge_disabled_binary_path }}
+Environment=ACP_GEMINI_BIN={{ acp_opencode_bridge_disabled_binary_path }}
+Environment=ACP_OPENCODE_BIN={{ acp_opencode_bridge_opencode_binary_path }}
+ExecStart={{ acp_opencode_bridge_binary_path }} serve --listen {{ acp_opencode_bridge_listen_host }}:{{ acp_opencode_bridge_listen_port }}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

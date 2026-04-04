@@ -27,6 +27,28 @@
     mode: "0755"
   notify: Restart codex acp bridge
 
+- name: Check legacy Codex ACP bridge systemd unit
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ acp_codex_bridge_legacy_service_name }}.service"
+  register: acp_codex_bridge_legacy_unit
+
+- name: Stop and disable legacy Codex ACP bridge service
+  ansible.builtin.systemd:
+    name: "{{ acp_codex_bridge_legacy_service_name }}"
+    enabled: false
+    state: stopped
+  when:
+    - acp_codex_bridge_legacy_service_name != acp_codex_bridge_service_name
+    - acp_codex_bridge_legacy_unit.stat.exists
+
+- name: Remove legacy Codex ACP bridge systemd unit
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ acp_codex_bridge_legacy_service_name }}.service"
+    state: absent
+  when:
+    - acp_codex_bridge_legacy_service_name != acp_codex_bridge_service_name
+    - acp_codex_bridge_legacy_unit.stat.exists
+
 - name: Deploy Caddy main file
   ansible.builtin.template:
     src: Caddyfile.j2
@@ -56,7 +78,7 @@
 
 - name: Deploy XWorkmate Codex ACP bridge service
   ansible.builtin.template:
-    src: xworkmate-codex-acp-bridge.service.j2
+    src: acp-bridge.service.j2
     dest: "/etc/systemd/system/{{ acp_codex_bridge_service_name }}.service"
     owner: root
     group: root

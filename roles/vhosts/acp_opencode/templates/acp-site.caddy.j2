@@ -1,3 +1,10 @@
 {{ acp_opencode_domain }} {
-  reverse_proxy {{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}
+  @acp path /acp /acp/*
+  handle @acp {
+    reverse_proxy {{ acp_opencode_bridge_listen_host }}:{{ acp_opencode_bridge_listen_port }}
+  }
+
+  handle {
+    reverse_proxy {{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}
+  }
 }
