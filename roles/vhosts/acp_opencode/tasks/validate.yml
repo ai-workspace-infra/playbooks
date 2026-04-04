@@ -8,6 +8,14 @@
   register: acp_opencode_ss
   changed_when: false
 
+- name: Validate OpenCode local HTTP endpoint
+  ansible.builtin.uri:
+    url: "http://{{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}/"
+    method: GET
+    return_content: true
+    status_code: 200
+  register: acp_opencode_http
+
 - name: Show OpenCode ACP status
   ansible.builtin.command: systemctl status "{{ acp_opencode_service_name }}" --no-pager
   register: acp_opencode_status
@@ -21,3 +29,5 @@
       - "Listener: {{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}"
       - "Service: {{ acp_opencode_status.stdout | default('N/A') }}"
       - "Socket: {{ acp_opencode_ss.stdout | default('N/A') }}"
+      - "HTTP content-type: {{ acp_opencode_http.content_type | default('N/A') }}"
+      - "HTTP body marker present: {{ acp_opencode_expected_body_marker in (acp_opencode_http.content | default('')) }}"

@@ -8,9 +8,40 @@
   register: acp_codex_ss
   changed_when: false
 
+- name: Validate local Codex ACP bridge HTTP endpoint
+  ansible.builtin.uri:
+    url: "http://{{ acp_codex_bridge_listen_host }}:{{ acp_codex_bridge_listen_port }}/acp/rpc"
+    method: POST
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: 1
+      method: acp.capabilities
+      params: {}
+    return_content: true
+    status_code: 200
+  register: acp_codex_bridge_http
+
+- name: Validate local Codex ACP bridge CORS preflight
+  ansible.builtin.uri:
+    url: "http://{{ acp_codex_bridge_listen_host }}:{{ acp_codex_bridge_listen_port }}/acp/rpc"
+    method: OPTIONS
+    headers:
+      Origin: "{{ acp_codex_bridge_allowed_origins[0] }}"
+      Access-Control-Request-Method: POST
+    return_content: true
+    status_code: 204
+  register: acp_codex_bridge_preflight
+
 - name: Show Codex ACP status
   ansible.builtin.command: systemctl status "{{ acp_codex_service_name }}" --no-pager
   register: acp_codex_status
+  changed_when: false
+  failed_when: false
+
+- name: Show Codex ACP bridge status
+  ansible.builtin.command: systemctl status "{{ acp_codex_bridge_service_name }}" --no-pager
+  register: acp_codex_bridge_status
   changed_when: false
   failed_when: false
 
@@ -18,6 +49,10 @@
   ansible.builtin.debug:
     msg:
       - "Codex domain: {{ acp_codex_domain }}"
-      - "Listener: {{ acp_codex_listen_host }}:{{ acp_codex_listen_port }}"
+      - "Upstream listener: {{ acp_codex_listen_host }}:{{ acp_codex_listen_port }}"
+      - "Public ACP listener: {{ acp_codex_bridge_listen_host }}:{{ acp_codex_bridge_listen_port }}"
       - "Service: {{ acp_codex_status.stdout | default('N/A') }}"
+      - "Bridge service: {{ acp_codex_bridge_status.stdout | default('N/A') }}"
       - "Socket: {{ acp_codex_ss.stdout | default('N/A') }}"
+      - "Bridge capabilities HTTP: {{ acp_codex_bridge_http.content | default('N/A') }}"
+      - "Bridge preflight allow-origin: {{ acp_codex_bridge_preflight.access_control_allow_origin | default('N/A') }}"

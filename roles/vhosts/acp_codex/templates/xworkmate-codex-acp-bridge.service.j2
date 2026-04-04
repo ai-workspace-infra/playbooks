@@ -1,0 +1,20 @@
+[Unit]
+Description=XWorkmate Codex ACP bridge server
+After=network-online.target {{ acp_codex_service_name }}.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory={{ acp_codex_workdir }}
+Environment=HOME={{ acp_codex_workdir }}
+Environment=TERM=xterm-256color
+Environment=ACP_LISTEN_ADDR={{ acp_codex_bridge_listen_host }}:{{ acp_codex_bridge_listen_port }}
+Environment=ACP_ALLOWED_ORIGINS={{ acp_codex_bridge_allowed_origins | join(',') }}
+ExecStart={{ acp_codex_bridge_binary_path }} serve --listen {{ acp_codex_bridge_listen_host }}:{{ acp_codex_bridge_listen_port }}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

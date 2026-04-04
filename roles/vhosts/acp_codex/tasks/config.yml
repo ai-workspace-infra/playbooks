@@ -1,4 +1,32 @@
 ---
+- name: Ensure local Codex ACP build directory exists
+  ansible.builtin.file:
+    path: "{{ acp_codex_bridge_local_build_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  become: false
+
+- name: Build XWorkmate Go ACP server locally
+  ansible.builtin.command:
+    cmd: go build -o "{{ acp_codex_bridge_local_binary_path }}" .
+    chdir: "{{ acp_codex_bridge_local_source_dir }}"
+  environment:
+    GOOS: "{{ acp_codex_bridge_build_goos }}"
+    GOARCH: "{{ acp_codex_bridge_build_goarch }}"
+    CGO_ENABLED: "0"
+  delegate_to: localhost
+  become: false
+
+- name: Upload XWorkmate Go ACP server binary
+  ansible.builtin.copy:
+    src: "{{ acp_codex_bridge_local_binary_path }}"
+    dest: "{{ acp_codex_bridge_binary_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart codex acp bridge
+
 - name: Deploy Caddy main file
   ansible.builtin.template:
     src: Caddyfile.j2
@@ -26,6 +54,15 @@
     mode: "0644"
   notify: Restart codex app server
 
+- name: Deploy XWorkmate Codex ACP bridge service
+  ansible.builtin.template:
+    src: xworkmate-codex-acp-bridge.service.j2
+    dest: "/etc/systemd/system/{{ acp_codex_bridge_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart codex acp bridge
+
 - name: Reload systemd manager configuration
   ansible.builtin.systemd:
     daemon_reload: true
@@ -39,5 +76,11 @@
 - name: Ensure Codex ACP service is enabled and running
   ansible.builtin.systemd:
     name: "{{ acp_codex_service_name }}"
+    enabled: true
+    state: started
+
+- name: Ensure XWorkmate Codex ACP bridge service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ acp_codex_bridge_service_name }}"
     enabled: true
     state: started

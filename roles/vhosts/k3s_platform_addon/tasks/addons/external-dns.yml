@@ -17,6 +17,21 @@
       external-dns
 
     release_name="{{ k3s_platform_values.components.externalDns.releaseName }}"
+    release_secret_prefix="sh.helm.release.v1.${release_name}.v"
+
+    clear_stuck_release_state() {
+      kubectl -n platform get secret -o name \
+        | grep "^secret/${release_secret_prefix}" \
+        | xargs -r kubectl -n platform delete
+    }
+
+    if helm status "$release_name" -n platform >/tmp/external-dns-status.log 2>&1; then
+      if grep -q "STATUS: pending-install" /tmp/external-dns-status.log || \
+         grep -q "another operation (install/upgrade/rollback) is in progress" /tmp/external-dns-status.log; then
+        clear_stuck_release_state
+      fi
+    fi
+
     if ! helm upgrade --install "$release_name" "$chart_dir/external-dns" \
       --namespace platform \
       --create-namespace \
@@ -25,7 +40,7 @@
       --timeout 10m; then
       if helm status "$release_name" -n platform >/tmp/external-dns-status.log 2>&1; then
         if grep -q "another operation (install/upgrade/rollback) is in progress" /tmp/external-dns-status.log; then
-          helm uninstall "$release_name" -n platform --wait --timeout 5m || true
+          clear_stuck_release_state
           helm upgrade --install "$release_name" "$chart_dir/external-dns" \
             --namespace platform \
             --create-namespace \
