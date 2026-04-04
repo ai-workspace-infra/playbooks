@@ -1,0 +1,54 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+  become: true
+
+- name: Install minimal desktop packages
+  ansible.builtin.apt:
+    name: "{{ xfce_packages }}"
+    state: present
+    install_recommends: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+
+- name: Check whether the xrdp service account exists
+  ansible.builtin.command: getent passwd xrdp
+  register: xfce_xrdp_account
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Ensure xrdp user can read the TLS certificate group
+  ansible.builtin.user:
+    name: xrdp
+    groups: ssl-cert
+    append: true
+  become: true
+  when: xfce_xrdp_account.rc == 0
+
+- name: Enable and start XRDP services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop: "{{ xfce_xrdp_services }}"
+  become: true
+
+- name: Check whether UFW is installed
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: xfce_ufw_binary
+  become: true
+
+- name: Allow XRDP through UFW
+  ansible.builtin.command: "ufw allow {{ xfce_rdp_port }}/tcp"
+  register: xfce_ufw_allow
+  changed_when: "'Skipping adding existing rule' not in xfce_ufw_allow.stdout"
+  failed_when: false
+  become: true
+  when:
+    - xfce_enable_ufw | bool
+    - xfce_ufw_binary.stat.exists | default(false)

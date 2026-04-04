@@ -1,0 +1,43 @@
+---
+- name: Ensure the desktop user exists
+  ansible.builtin.user:
+    name: "{{ xfce_user }}"
+    shell: "{{ xfce_user_shell }}"
+    create_home: true
+    state: present
+  become: true
+  when: xfce_manage_user | bool
+
+- name: Ensure the desktop user can sudo
+  ansible.builtin.user:
+    name: "{{ xfce_user }}"
+    groups: "{{ xfce_user_groups }}"
+    append: true
+    state: present
+  become: true
+  when:
+    - xfce_manage_user | bool
+    - xfce_user_groups | length > 0
+
+- name: Ensure XFCE session file is present
+  ansible.builtin.template:
+    src: xsession.j2
+    dest: "{{ xfce_xsession_file }}"
+    owner: "{{ xfce_user }}"
+    group: "{{ xfce_user }}"
+    mode: "0644"
+  become: true
+  when: xfce_manage_user | bool
+  notify:
+    - Restart xrdp
+    - Restart xrdp sesman
+
+- name: Ensure XFCE config directory exists
+  ansible.builtin.file:
+    path: "{{ xfce_xfconf_dir }}"
+    state: directory
+    owner: "{{ xfce_user }}"
+    group: "{{ xfce_user }}"
+    mode: "0755"
+  become: true
+  when: xfce_manage_user | bool

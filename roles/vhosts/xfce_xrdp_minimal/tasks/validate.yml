@@ -1,0 +1,33 @@
+---
+- name: Check XRDP service status
+  ansible.builtin.command: systemctl status xrdp --no-pager --full
+  register: xfce_xrdp_status
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Show XRDP service status
+  ansible.builtin.debug:
+    var: xfce_xrdp_status.stdout_lines
+
+- name: Check memory usage
+  ansible.builtin.command: free -m
+  register: xfce_memory_usage
+  changed_when: false
+  failed_when: false
+
+- name: Show memory usage
+  ansible.builtin.debug:
+    var: xfce_memory_usage.stdout_lines
+
+- name: Check current session type if available
+  ansible.builtin.shell: 'printf "%s\n" "${XDG_SESSION_TYPE:-unknown}"'
+  args:
+    executable: /bin/bash
+  register: xfce_session_type
+  changed_when: false
+  failed_when: false
+
+- name: Show session type hint
+  ansible.builtin.debug:
+    msg: "XDG_SESSION_TYPE={{ xfce_session_type.stdout | default('unknown') }} (expected x11 inside the RDP session)"

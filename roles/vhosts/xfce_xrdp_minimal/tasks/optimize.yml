@@ -1,0 +1,25 @@
+---
+- name: Ensure XFCE compositor and animation settings are persisted
+  ansible.builtin.copy:
+    dest: "{{ xfce_xfwm4_config }}"
+    owner: "{{ xfce_user }}"
+    group: "{{ xfce_user }}"
+    mode: "0644"
+    content: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="xfwm4" version="1.0">
+      {% if xfce_disable_compositor | bool %}
+        <property name="general" type="empty">
+          <property name="use_compositing" type="bool" value="false"/>
+      {% if xfce_disable_animations | bool %}
+          <property name="enable_animations" type="bool" value="false"/>
+      {% endif %}
+        </property>
+      {% elif xfce_disable_animations | bool %}
+        <property name="general" type="empty">
+          <property name="enable_animations" type="bool" value="false"/>
+        </property>
+      {% endif %}
+      </channel>
+  become: true
+  when: xfce_manage_user | bool
