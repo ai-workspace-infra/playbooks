@@ -20,6 +20,11 @@ Recommended path for a new platform project:
 
 `common -> k3s_platform_bootstrap -> k3s_platform_addon -> GitOps`
 
+### Edge And Certificate System
+
+The full certificate control-plane contract is documented in
+[cert-manager-arch.md](./cert-manager-arch.md).
+
 Responsibilities:
 
 - `common`
@@ -36,6 +41,8 @@ Responsibilities:
 - `k3s_platform_addon`
   - install platform-side shared components into Kubernetes
   - examples: `cert-manager`, `external-secrets`, `reloader`, `caddy`, `apisix`, `external-dns`
+  - certificate control plane, DNS automation, and external secret sync all belong in this layer
+  - see [cert-manager-arch.md](./cert-manager-arch.md) for the full edge and certificate contract
 - `GitOps`
   - own dynamic platform configuration
   - own workload manifests
@@ -206,6 +213,7 @@ When adding new capabilities:
 - k3s installation and Flux bootstrap belong in `k3s_platform_bootstrap`
 - platform shared addons belong in `k3s_platform_addon`
   - TLS issuers and namespace-local certificate lifecycle should also live there
+  - the complete edge and certificate contract lives in [cert-manager-arch.md](./cert-manager-arch.md)
 - server and agent lifecycle actions belong in `k3s-cluster-server` or `k3s-cluster-agent`
 - dynamic service configuration belongs in GitOps
 - reset and cleanup behavior belongs in `k3s-reset`
@@ -214,6 +222,8 @@ GitOps certificate rule of thumb:
 
 - use `cert-manager` to own the `Certificate` in the namespace that consumes it
 - avoid cross-namespace Secret sync jobs when the same certificate can be declared directly in each namespace
+- use `Caddy` only as the ingress / HTTP-01 routing surface for those certificates
+- use `external-dns` only for DNS record updates
 - keep `external-secrets` for Vault-sourced app credentials, cloud API keys, and image pull secrets
 
 Do not add new functionality to:
