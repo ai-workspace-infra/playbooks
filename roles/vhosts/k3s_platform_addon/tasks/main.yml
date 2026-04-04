@@ -1,3 +1,42 @@
+- name: Install cert-manager directly with Helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    chart_dir="$(mktemp -d /tmp/cert-manager.XXXXXX)"
+    cleanup() {
+      rm -rf "$chart_dir"
+    }
+    trap cleanup EXIT
+
+    attempt=1
+    max_attempts=6
+    while true; do
+      rm -rf "$chart_dir"/*
+      if helm pull oci://quay.io/jetstack/charts/cert-manager \
+        --version "{{ k3s_platform_cert_manager_chart_version }}" \
+        --untar \
+        --untardir "$chart_dir"; then
+        break
+      fi
+      if [ "$attempt" -ge "$max_attempts" ]; then
+        echo "failed to download cert-manager after $attempt attempts" >&2
+        exit 1
+      fi
+      sleep "$((attempt * 30))"
+      attempt=$((attempt + 1))
+    done
+
+    helm upgrade --install "{{ k3s_platform_values.components.certManager.releaseName }}" "$chart_dir/cert-manager" \
+      --namespace cert-manager \
+      --create-namespace \
+      --set crds.enabled=true \
+      --wait \
+      --timeout 10m
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_platform_values.components.certManager.enabled | default(true)
+
 - name: Install external-secrets directly with Helm
   ansible.builtin.shell: |
     set -euo pipefail
