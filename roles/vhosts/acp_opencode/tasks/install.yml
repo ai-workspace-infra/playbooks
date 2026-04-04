@@ -1,0 +1,34 @@
+---
+- name: Install OpenCode ACP packages
+  ansible.builtin.apt:
+    name: "{{ acp_opencode_packages }}"
+    state: present
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+
+- name: Ensure Caddy conf directory exists
+  ansible.builtin.file:
+    path: "{{ acp_opencode_caddy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Open HTTP and HTTPS ports when UFW is enabled
+  ansible.builtin.command: ufw allow 80/tcp
+  register: acp_opencode_ufw_80
+  changed_when: "'Rule added' in acp_opencode_ufw_80.stdout"
+  failed_when: acp_opencode_ufw_80.rc != 0
+  when:
+    - acp_opencode_enable_ufw | bool
+
+- name: Open HTTPS port when UFW is enabled
+  ansible.builtin.command: ufw allow 443/tcp
+  register: acp_opencode_ufw_443
+  changed_when: "'Rule added' in acp_opencode_ufw_443.stdout"
+  failed_when: acp_opencode_ufw_443.rc != 0
+  when:
+    - acp_opencode_enable_ufw | bool

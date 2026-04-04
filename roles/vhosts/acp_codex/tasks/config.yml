@@ -1,0 +1,43 @@
+---
+- name: Deploy Caddy main file
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ acp_codex_caddyfile_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
+- name: Deploy Codex ACP Caddy site
+  ansible.builtin.template:
+    src: acp-site.caddy.j2
+    dest: "{{ acp_codex_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
+- name: Deploy Codex ACP systemd service
+  ansible.builtin.template:
+    src: codex-app-server.service.j2
+    dest: "/etc/systemd/system/{{ acp_codex_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart codex app server
+
+- name: Reload systemd manager configuration
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Ensure Caddy is enabled and running
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: true
+    state: started
+
+- name: Ensure Codex ACP service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ acp_codex_service_name }}"
+    enabled: true
+    state: started

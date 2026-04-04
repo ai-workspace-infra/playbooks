@@ -1,0 +1,19 @@
+[Unit]
+Description=Codex app server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ acp_codex_service_user }}
+Group={{ acp_codex_service_group }}
+WorkingDirectory={{ acp_codex_workdir }}
+Environment=HOME={{ acp_codex_workdir }}
+Environment=TERM=xterm-256color
+Environment=NODE_NO_WARNINGS=1
+ExecStart=/usr/bin/codex app-server --listen ws://{{ acp_codex_listen_host }}:{{ acp_codex_listen_port }}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,23 @@
+---
+- name: Validate Caddy configuration
+  ansible.builtin.command: caddy validate --config "{{ acp_opencode_caddyfile_path }}"
+  changed_when: false
+
+- name: Check OpenCode ACP listener
+  ansible.builtin.command: ss -ltnp
+  register: acp_opencode_ss
+  changed_when: false
+
+- name: Show OpenCode ACP status
+  ansible.builtin.command: systemctl status "{{ acp_opencode_service_name }}" --no-pager
+  register: acp_opencode_status
+  changed_when: false
+  failed_when: false
+
+- name: Show OpenCode ACP validation summary
+  ansible.builtin.debug:
+    msg:
+      - "OpenCode domain: {{ acp_opencode_domain }}"
+      - "Listener: {{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}"
+      - "Service: {{ acp_opencode_status.stdout | default('N/A') }}"
+      - "Socket: {{ acp_opencode_ss.stdout | default('N/A') }}"

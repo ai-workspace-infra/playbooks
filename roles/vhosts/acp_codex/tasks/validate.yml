@@ -1,0 +1,23 @@
+---
+- name: Validate Caddy configuration
+  ansible.builtin.command: caddy validate --config "{{ acp_codex_caddyfile_path }}"
+  changed_when: false
+
+- name: Check Codex app server listener
+  ansible.builtin.command: ss -ltnp
+  register: acp_codex_ss
+  changed_when: false
+
+- name: Show Codex ACP status
+  ansible.builtin.command: systemctl status "{{ acp_codex_service_name }}" --no-pager
+  register: acp_codex_status
+  changed_when: false
+  failed_when: false
+
+- name: Show Codex ACP validation summary
+  ansible.builtin.debug:
+    msg:
+      - "Codex domain: {{ acp_codex_domain }}"
+      - "Listener: {{ acp_codex_listen_host }}:{{ acp_codex_listen_port }}"
+      - "Service: {{ acp_codex_status.stdout | default('N/A') }}"
+      - "Socket: {{ acp_codex_ss.stdout | default('N/A') }}"

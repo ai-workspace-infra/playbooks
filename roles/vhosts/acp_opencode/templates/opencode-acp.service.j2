@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenCode ACP server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ acp_opencode_service_user }}
+Group={{ acp_opencode_service_group }}
+WorkingDirectory={{ acp_opencode_workdir }}
+Environment=HOME={{ acp_opencode_home }}
+Environment=TERM=xterm-256color
+ExecStart=/usr/bin/opencode serve --hostname {{ acp_opencode_listen_host }} --port {{ acp_opencode_listen_port }} --print-logs
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
