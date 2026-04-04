@@ -81,6 +81,10 @@
 
     kubectl -n platform rollout status deployment/external-secrets \
       --timeout=90s
+    kubectl -n platform rollout status deployment/external-secrets-cert-controller \
+      --timeout=90s
+    kubectl -n platform rollout status deployment/external-secrets-webhook \
+      --timeout=90s
   args:
     executable: /bin/bash
   when:
@@ -156,6 +160,9 @@
       --version "{{ k3s_platform_caddy_chart_version }}" \
       -f /tmp/platform-caddy-values.yaml \
       --timeout 10m
+
+    kubectl -n platform rollout status deployment/caddy-caddy-ingress-controller \
+      --timeout=90s
   args:
     executable: /bin/bash
   when:
@@ -173,6 +180,9 @@
       --version "{{ k3s_platform_apisix_chart_version }}" \
       -f /tmp/platform-apisix-values.yaml \
       --timeout 10m
+
+    kubectl -n platform rollout status deployment/apisix \
+      --timeout=90s
   args:
     executable: /bin/bash
   when:
