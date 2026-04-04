@@ -2,6 +2,8 @@ k3s_platform_kubeconfig_path: /etc/rancher/k3s/k3s.yaml
 k3s_platform_ghcr_registry: ghcr.io
 k3s_platform_ghcr_username: "{{ lookup('env', 'GHCR_USERNAME') }}"
 k3s_platform_ghcr_token: "{{ lookup('env', 'GHCR_TOKEN') }}"
+# Default ACME email for Caddy; pipeline input.env can override via CADDY_ACME_EMAIL.
+k3s_platform_caddy_acme_email: "{{ lookup('env', 'CADDY_ACME_EMAIL') | default('manbuzhe2009@qq.com', true) }}"
 
 k3s_platform_external_secrets_chart_version: "0.20.4"
 k3s_platform_reloader_chart_version: "1.3.0"
@@ -28,6 +30,7 @@ k3s_platform_values:
           default: false
         service:
           type: LoadBalancer
+        email: "{{ k3s_platform_caddy_acme_email }}"
     apisix:
       enabled: true
       releaseName: apisix
