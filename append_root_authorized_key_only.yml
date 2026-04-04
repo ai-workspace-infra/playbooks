@@ -1,0 +1,50 @@
+---
+- name: Append local SSH public key to root authorized_keys only
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    root_authorized_keys_path: /root/.ssh/authorized_keys
+    local_public_key_path: "{{ lookup('env', 'HOME') }}/.ssh/id_rsa.pub"
+    ansible_user: "{{ lookup('env', 'BOOTSTRAP_ROOT_USER') | default('root', true) }}"
+    ansible_password: "{{ lookup('env', 'BOOTSTRAP_ROOT_PASSWORD') | default(omit, true) }}"
+    ansible_become_password: "{{ lookup('env', 'BOOTSTRAP_BECOME_PASSWORD') | default(omit, true) }}"
+
+  tasks:
+    - name: Read local SSH public key
+      ansible.builtin.set_fact:
+        local_ssh_public_key: "{{ lookup('ansible.builtin.file', local_public_key_path) | trim }}"
+
+    - name: Assert local SSH public key exists
+      ansible.builtin.assert:
+        that:
+          - local_ssh_public_key | length > 0
+        fail_msg: "local_public_key_path must point to a readable SSH public key."
+
+    - name: Ensure root SSH directory exists
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        mode: "0700"
+        owner: root
+        group: root
+
+    - name: Append local public key for root
+      ansible.posix.authorized_key:
+        user: root
+        key: "{{ local_ssh_public_key }}"
+        state: present
+        manage_dir: false
+
+    - name: Read root authorized_keys
+      ansible.builtin.slurp:
+        src: "{{ root_authorized_keys_path }}"
+      register: root_authorized_keys
+      changed_when: false
+
+    - name: Assert public key was installed
+      ansible.builtin.assert:
+        that:
+          - local_ssh_public_key in (root_authorized_keys.content | b64decode)
+        fail_msg: "Local public key was not installed into /root/.ssh/authorized_keys"
