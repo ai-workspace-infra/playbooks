@@ -8,8 +8,10 @@
     mode: "0644"
     marker: "# {mark} ANSIBLE MANAGED FILE LIMITS"
     block: |
-      * soft nofile {{ common_security_limits.nofile_soft | default(40000) }}
-      * hard nofile {{ common_security_limits.nofile_hard | default(40001) }}
+      * soft nofile {{ common_security_limits.nofile_soft | default(1048576) }}
+      * hard nofile {{ common_security_limits.nofile_hard | default(1048576) }}
+      root soft nofile {{ common_security_limits.root_nofile_soft | default(common_security_limits.nofile_soft | default(1048576)) }}
+      root hard nofile {{ common_security_limits.root_nofile_hard | default(common_security_limits.nofile_hard | default(1048576)) }}
   become: true
 
 - name: Limits | enable pam_limits on Debian family
