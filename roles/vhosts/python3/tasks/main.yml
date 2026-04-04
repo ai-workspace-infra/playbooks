@@ -1,0 +1,26 @@
+---
+- name: Ensure Python 3 toolchain is installed
+  ansible.builtin.apt:
+    name: "{{ python3_packages }}"
+    state: present
+    install_recommends: "{{ python3_install_recommends }}"
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+  when:
+    - ansible_facts.os_family == "Debian"
+
+- name: Verify Python 3 installation
+  ansible.builtin.command: python3 --version
+  register: python3_version_check
+  changed_when: false
+  when:
+    - ansible_facts.os_family == "Debian"
+
+- name: Show Python 3 version
+  ansible.builtin.debug:
+    msg: "{{ python3_version_check.stdout }}"
+  when:
+    - ansible_facts.os_family == "Debian"

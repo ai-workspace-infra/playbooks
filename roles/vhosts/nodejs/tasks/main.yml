@@ -78,11 +78,11 @@
     update_cache: yes
   when: nodejs_needs_install | default(true)
 
-- name: Install npm globally
-  npm:
-    name: npm
-    state: latest
-    global: yes
+- name: Verify npm is available
+  command: npm --version
+  register: npm_version_check
+  changed_when: false
+  failed_when: false
 
 - name: Get current Yarn version
   command: yarn --version
@@ -159,5 +159,5 @@
   debug:
     msg: |
       Node.js version: {{ nodejs_installed_version | default('Not installed') }}
-      NPM version: {{ ansible_facts.packages.npm[0].version if ansible_facts.packages.npm is defined and ansible_facts.packages.npm else 'N/A' }}
+      NPM version: {{ npm_version_check.stdout if npm_version_check.rc == 0 else 'N/A' }}
       Yarn version: {{ yarn_version_check.stdout if yarn_version_check.rc == 0 and install_yarn | default(true) else 'Not installed' }}
