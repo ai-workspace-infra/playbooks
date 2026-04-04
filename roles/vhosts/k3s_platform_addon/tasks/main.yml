@@ -30,8 +30,14 @@
       --namespace cert-manager \
       --create-namespace \
       --set crds.enabled=true \
-      --wait \
       --timeout 10m
+
+    kubectl -n cert-manager wait \
+      --for=condition=Available \
+      deployment/cert-manager \
+      deployment/cert-manager-webhook \
+      deployment/cert-manager-cainjector \
+      --timeout=90s
   args:
     executable: /bin/bash
   when:
@@ -71,8 +77,10 @@
       --create-namespace \
       --version "{{ k3s_platform_external_secrets_chart_version }}" \
       --set installCRDs=true \
-      --wait \
       --timeout 10m
+
+    kubectl -n platform rollout status deployment/external-secrets \
+      --timeout=90s
   args:
     executable: /bin/bash
   when:
@@ -127,8 +135,10 @@
       --namespace platform \
       --create-namespace \
       --version "{{ k3s_platform_reloader_chart_version }}" \
-      --wait \
       --timeout 10m
+
+    kubectl -n platform rollout status deployment/reloader \
+      --timeout=90s
   args:
     executable: /bin/bash
   when:
