@@ -1,0 +1,72 @@
+---
+- name: Validate Caddy configuration for unified ACP vhost
+  ansible.builtin.command: caddy validate --config "{{ acp_vhosts_caddyfile_path }}"
+  changed_when: false
+
+- name: Show unified ACP Caddy fragment
+  ansible.builtin.command:
+    argv:
+      - cat
+      - "{{ acp_vhosts_caddy_fragment_path }}"
+  register: acp_vhosts_fragment
+  changed_when: false
+
+- name: Validate unified ACP Caddy fragment includes Codex path route
+  ansible.builtin.assert:
+    that:
+      - "'handle_path /codex*' in acp_vhosts_fragment.stdout"
+    fail_msg: "Unified ACP Caddy fragment is missing the /codex path route."
+    success_msg: "Unified ACP Caddy fragment includes the /codex path route."
+
+- name: Validate unified ACP Caddy fragment includes OpenCode path route
+  ansible.builtin.assert:
+    that:
+      - "'handle_path /opencode*' in acp_vhosts_fragment.stdout"
+    fail_msg: "Unified ACP Caddy fragment is missing the /opencode path route."
+    success_msg: "Unified ACP Caddy fragment includes the /opencode path route."
+
+- name: Validate unified Codex ACP HTTP route redirects to HTTPS
+  ansible.builtin.uri:
+    url: "http://127.0.0.1/codex/acp/rpc"
+    method: POST
+    headers:
+      Host: "{{ acp_vhosts_domain }}"
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: 1
+      method: acp.capabilities
+      params: {}
+    return_content: false
+    follow_redirects: none
+    status_code: 308
+  register: acp_vhosts_codex_redirect
+
+- name: Validate unified OpenCode ACP HTTP route redirects to HTTPS
+  ansible.builtin.uri:
+    url: "http://127.0.0.1/opencode/acp/rpc"
+    method: POST
+    headers:
+      Host: "{{ acp_vhosts_domain }}"
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: 1
+      method: acp.capabilities
+      params: {}
+    return_content: false
+    follow_redirects: none
+    status_code: 308
+  register: acp_vhosts_opencode_redirect
+  changed_when: false
+
+- name: Show unified ACP vhost validation summary
+  ansible.builtin.debug:
+    msg:
+      - "Unified domain: {{ acp_vhosts_domain }}"
+      - "Codex route: /codex -> {{ acp_vhosts_codex_upstream_host }}:{{ acp_vhosts_codex_upstream_port }}"
+      - "OpenCode route: /opencode -> {{ acp_vhosts_opencode_upstream_host }}:{{ acp_vhosts_opencode_upstream_port }}"
+      - "Deployed fragment: {{ acp_vhosts_fragment.stdout | default('N/A') }}"
+      - "Codex redirect location: {{ acp_vhosts_codex_redirect.location | default('N/A') }}"
+      - "OpenCode redirect location: {{ acp_vhosts_opencode_redirect.location | default('N/A') }}"
+      - "TLS validation is expected to require public DNS + certificate issuance for {{ acp_vhosts_domain }}"

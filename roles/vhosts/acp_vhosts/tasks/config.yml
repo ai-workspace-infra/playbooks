@@ -1,0 +1,23 @@
+---
+- name: Ensure Caddy fragment directory exists for unified ACP vhost
+  ansible.builtin.file:
+    path: "{{ acp_vhosts_caddy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy unified ACP Caddy site
+  ansible.builtin.template:
+    src: acp-site.caddy.j2
+    dest: "{{ acp_vhosts_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
+- name: Ensure Caddy is enabled and running for unified ACP vhost
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: true
+    state: started

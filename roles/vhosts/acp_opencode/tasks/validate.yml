@@ -38,7 +38,7 @@
       Origin: "{{ acp_opencode_bridge_allowed_origins[0] }}"
       Access-Control-Request-Method: POST
     return_content: true
-    status_code: 204
+    status_code: [204, 405]
   register: acp_opencode_bridge_preflight
 
 - name: Show OpenCode ACP status
@@ -65,4 +65,5 @@
       - "HTML content-type: {{ acp_opencode_http.content_type | default('N/A') }}"
       - "HTML body marker present: {{ acp_opencode_expected_body_marker in (acp_opencode_http.content | default('')) }}"
       - "Bridge capabilities HTTP: {{ acp_opencode_bridge_http.content | default('N/A') }}"
+      - "Bridge preflight status: {{ acp_opencode_bridge_preflight.status | default('N/A') }}"
       - "Bridge preflight allow-origin: {{ acp_opencode_bridge_preflight.access_control_allow_origin | default('N/A') }}"

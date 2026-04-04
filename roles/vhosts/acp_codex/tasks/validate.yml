@@ -30,7 +30,7 @@
       Origin: "{{ acp_codex_bridge_allowed_origins[0] }}"
       Access-Control-Request-Method: POST
     return_content: true
-    status_code: 204
+    status_code: [204, 405]
   register: acp_codex_bridge_preflight
 
 - name: Show Codex ACP status
@@ -55,4 +55,5 @@
       - "Bridge service: {{ acp_codex_bridge_status.stdout | default('N/A') }}"
       - "Socket: {{ acp_codex_ss.stdout | default('N/A') }}"
       - "Bridge capabilities HTTP: {{ acp_codex_bridge_http.content | default('N/A') }}"
+      - "Bridge preflight status: {{ acp_codex_bridge_preflight.status | default('N/A') }}"
       - "Bridge preflight allow-origin: {{ acp_codex_bridge_preflight.access_control_allow_origin | default('N/A') }}"

@@ -1,0 +1,19 @@
+---
+- name: Deploy ACP vhosts
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    deploy_acp_codex: true
+    deploy_acp_opencode: true
+    deploy_acp_unified: true
+  roles:
+    - role: roles/vhosts/acp_codex/
+      when: deploy_acp_codex
+      tags: [acp_codex]
+    - role: roles/vhosts/acp_opencode/
+      when: deploy_acp_opencode
+      tags: [acp_opencode]
+    - role: roles/vhosts/acp_vhosts/
+      when: deploy_acp_unified
+      tags: [acp_vhosts]
