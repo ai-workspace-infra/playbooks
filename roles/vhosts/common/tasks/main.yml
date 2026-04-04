@@ -32,6 +32,12 @@
   ansible.builtin.script: files/secure_ssh.sh
   become: true
 
+- name: Base | file limits
+  ansible.builtin.import_tasks: limits.yml
+  when:
+    - common_security_limits.enabled | default(true) | bool
+  tags: [limits, baseline]
+
 # ===== Common baseline (OS split) =====
 - name: Common | Debian family baseline
   ansible.builtin.import_tasks: common_debian.yml

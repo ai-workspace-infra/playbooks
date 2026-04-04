@@ -1,0 +1,28 @@
+---
+- name: Limits | manage /etc/security/limits.conf
+  ansible.builtin.blockinfile:
+    path: /etc/security/limits.conf
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    marker: "# {mark} ANSIBLE MANAGED FILE LIMITS"
+    block: |
+      * soft nofile {{ common_security_limits.nofile_soft | default(40000) }}
+      * hard nofile {{ common_security_limits.nofile_hard | default(40001) }}
+  become: true
+
+- name: Limits | enable pam_limits on Debian family
+  ansible.builtin.lineinfile:
+    path: "{{ item }}"
+    regexp: '^session\s+required\s+pam_limits\.so$'
+    line: "session required pam_limits.so"
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ common_security_limits.pam_files | default([]) }}"
+  become: true
+  when:
+    - ansible_facts.os_family == "Debian"
+    - common_security_limits.pam_enable | default(true) | bool

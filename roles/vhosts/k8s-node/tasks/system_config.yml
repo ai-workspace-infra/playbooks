@@ -1,18 +1,3 @@
-- name: Configure file limits
-  blockinfile:
-    path: /etc/security/limits.conf
-    block: |
-      * soft nofile 40000
-      * hard nofile 40001
-
-- name: Configure PAM limits
-  lineinfile:
-    path: "{{ item }}"
-    line: "session required pam_limits.so"
-  with_items:
-    - /etc/pam.d/common-session
-    - /etc/pam.d/common-session-noninteractive
-
 - name: Set hostname
   hostname:
     name: "{{ inventory_hostname }}"
