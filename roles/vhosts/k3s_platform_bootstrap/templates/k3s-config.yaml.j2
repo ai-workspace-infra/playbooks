@@ -7,10 +7,15 @@ disable:
 {% for component in k3s_platform_disable_components %}
   - "{{ component }}"
 {% endfor %}
+{% if k3s_platform_kube_apiserver_args | default([]) | length > 0 %}
+kube-apiserver-arg:
+{% for arg in k3s_platform_kube_apiserver_args %}
+  - "{{ arg }}"
+{% endfor %}
+{% endif %}
 {% if k3s_platform_tls_sans | length > 0 %}
 tls-san:
 {% for san in k3s_platform_tls_sans %}
   - "{{ san }}"
 {% endfor %}
 {% endif %}
-
