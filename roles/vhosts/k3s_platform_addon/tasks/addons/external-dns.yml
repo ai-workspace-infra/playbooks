@@ -1,4 +1,4 @@
-- name: Addon | external-dns install chart with retry
+- name: Addon | external-dns install chart
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
@@ -8,48 +8,20 @@
     }
     trap cleanup EXIT
 
-    attempt=1
-    max_attempts=6
-    while true; do
-      rm -rf "$chart_dir"/*
-      helm repo add external-dns "{{ k3s_platform_external_dns_chart_repo_url }}" >/dev/null 2>&1 || true
-      helm repo update external-dns >/dev/null 2>&1 || true
-      if helm pull --repo "{{ k3s_platform_external_dns_chart_repo_url }}" \
-        --version "{{ k3s_platform_external_dns_chart_version }}" \
-        --untar \
-        --untardir "$chart_dir" \
-        external-dns; then
-        break
-      fi
-      if [ "$attempt" -ge "$max_attempts" ]; then
-        echo "failed to download external-dns after $attempt attempts" >&2
-        exit 1
-      fi
-      sleep "$((attempt * 30))"
-      attempt=$((attempt + 1))
-    done
+    helm repo add external-dns "{{ k3s_platform_external_dns_chart_repo_url }}" >/dev/null 2>&1 || true
+    helm repo update external-dns >/dev/null 2>&1 || true
+    helm pull --repo "{{ k3s_platform_external_dns_chart_repo_url }}" \
+      --version "{{ k3s_platform_external_dns_chart_version }}" \
+      --untar \
+      --untardir "$chart_dir" \
+      external-dns
 
-    attempt=1
-    max_attempts=6
-    while true; do
-      if helm upgrade --install "{{ k3s_platform_values.components.externalDns.releaseName }}" "$chart_dir/external-dns" \
-        --namespace platform \
-        --create-namespace \
-        --version "{{ k3s_platform_external_dns_chart_version }}" \
-        -f /tmp/platform-external-dns-values.yaml \
-        --timeout 10m; then
-        break
-      fi
-      if [ "$attempt" -ge "$max_attempts" ]; then
-        echo "failed to install external-dns after $attempt attempts" >&2
-        exit 1
-      fi
-      if helm status "{{ k3s_platform_values.components.externalDns.releaseName }}" -n platform >/tmp/external-dns-status.log 2>&1; then
-        cat /tmp/external-dns-status.log >&2
-      fi
-      sleep "$((attempt * 30))"
-      attempt=$((attempt + 1))
-    done
+    helm upgrade --install "{{ k3s_platform_values.components.externalDns.releaseName }}" "$chart_dir/external-dns" \
+      --namespace platform \
+      --create-namespace \
+      --version "{{ k3s_platform_external_dns_chart_version }}" \
+      -f /tmp/platform-external-dns-values.yaml \
+      --timeout 10m
 
     kubectl -n platform rollout status deployment/"{{ k3s_platform_values.components.externalDns.releaseName }}" \
       --timeout=90s
