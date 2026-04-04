@@ -97,6 +97,8 @@
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    helm repo add stakater https://stakater.github.io/stakater-charts >/dev/null 2>&1 || true
+    helm repo update stakater >/dev/null
     helm upgrade --install reloader stakater/reloader \
       --namespace platform \
       --create-namespace \
