@@ -138,32 +138,9 @@
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
-    chart_dir="$(mktemp -d /tmp/caddy-ingress-controller.XXXXXX)"
-    cleanup() {
-      rm -rf "$chart_dir"
-    }
-    trap cleanup EXIT
-
-    attempt=1
-    max_attempts=6
-    while true; do
-      rm -rf "$chart_dir"/*
-      if helm pull --repo "https://caddyserver.github.io/ingress/" \
-        --version "{{ k3s_platform_caddy_chart_version }}" \
-        --untar \
-        --untardir "$chart_dir" \
-        caddy-ingress-controller; then
-        break
-      fi
-      if [ "$attempt" -ge "$max_attempts" ]; then
-        echo "failed to download caddy-ingress-controller after $attempt attempts" >&2
-        exit 1
-      fi
-      sleep "$((attempt * 30))"
-      attempt=$((attempt + 1))
-    done
-
-    helm upgrade --install "{{ k3s_platform_values.components.caddy.releaseName }}" "$chart_dir/caddy-ingress-controller" \
+    helm repo add caddyserver https://caddyserver.github.io/ingress/ >/dev/null 2>&1 || true
+    helm repo update caddyserver >/dev/null
+    helm upgrade --install "{{ k3s_platform_values.components.caddy.releaseName }}" caddyserver/caddy-ingress-controller \
       --namespace platform \
       --create-namespace \
       --version "{{ k3s_platform_caddy_chart_version }}" \
