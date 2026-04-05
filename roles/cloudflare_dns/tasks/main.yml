@@ -61,12 +61,16 @@
     - name: Set Cloudflare zone id
       ansible.builtin.set_fact:
         cloudflare_dns_zone_id: "{{ cloudflare_dns_zone_lookup.json.result[0].id }}"
-      when: cloudflare_dns_zone_lookup is defined
+      when:
+        - cloudflare_dns_zone_lookup is defined
+        - cloudflare_dns_zone_id | default('', true) | length == 0
 
     - name: Show zone permissions for current token
       ansible.builtin.debug:
         msg: "Cloudflare token permissions for {{ cloudflare_dns_zone_name }}: {{ cloudflare_dns_zone_lookup.json.result[0].permissions | default([]) }}"
-      when: cloudflare_dns_zone_lookup is defined
+      when:
+        - cloudflare_dns_zone_lookup is defined
+        - cloudflare_dns_zone_lookup.json is defined
 
     - name: Fail early when token does not have DNS edit permission
       ansible.builtin.assert:
@@ -77,7 +81,9 @@
           CLOUDFLARE_API_TOKEN is valid but lacks DNS edit permission for {{ cloudflare_dns_zone_name }}.
           Current permissions: {{ cloudflare_dns_zone_lookup.json.result[0].permissions | default([]) }}.
           Required: Zone read + DNS edit on the svc.plus zone.
-      when: cloudflare_dns_zone_lookup is defined
+      when:
+        - cloudflare_dns_zone_lookup is defined
+        - cloudflare_dns_zone_lookup.json is defined
 
     - name: Query existing DNS records
       ansible.builtin.uri:

@@ -27,6 +27,18 @@
     mode: "0755"
   notify: Restart opencode acp bridge
 
+- name: Ensure OpenCode runtime directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ acp_opencode_service_user }}"
+    group: "{{ acp_opencode_service_group }}"
+    mode: "0755"
+  loop:
+    - "{{ acp_opencode_home }}"
+    - "{{ acp_opencode_home }}/.local"
+    - "{{ acp_opencode_workdir }}"
+
 - name: Deploy Caddy main file
   ansible.builtin.template:
     src: Caddyfile.j2

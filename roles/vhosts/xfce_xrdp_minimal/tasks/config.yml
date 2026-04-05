@@ -5,7 +5,27 @@
     shell: "{{ xfce_user_shell }}"
     create_home: true
     state: present
+    password_lock: false
   become: true
+  when: xfce_manage_user | bool
+
+- name: Fail when the desktop user password is not provided
+  ansible.builtin.assert:
+    that:
+      - xfce_user_password_plaintext | length > 0
+    fail_msg: >-
+      xfce_user_password_plaintext must be set so XRDP can authenticate the
+      desktop user.
+  when: xfce_manage_user | bool
+
+- name: Set desktop user password for XRDP login
+  ansible.builtin.user:
+    name: "{{ xfce_user }}"
+    password: "{{ xfce_user_password_plaintext | password_hash('sha512') }}"
+    update_password: always
+    password_lock: false
+  become: true
+  no_log: true
   when: xfce_manage_user | bool
 
 - name: Ensure the desktop user can sudo

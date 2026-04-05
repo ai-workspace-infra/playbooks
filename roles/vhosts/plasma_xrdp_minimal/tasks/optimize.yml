@@ -1,0 +1,10 @@
+---
+- name: Ensure Plasma session settings are persisted
+  ansible.builtin.file:
+    path: "{{ plasma_user_home }}/.config"
+    state: directory
+    owner: "{{ plasma_user }}"
+    group: "{{ plasma_user }}"
+    mode: "0755"
+  become: true
+  when: plasma_manage_user | bool

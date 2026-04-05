@@ -1,0 +1,10 @@
+---
+- name: Ensure GNOME session settings are persisted
+  ansible.builtin.file:
+    path: "{{ gnome_user_home }}/.config"
+    state: directory
+    owner: "{{ gnome_user }}"
+    group: "{{ gnome_user }}"
+    mode: "0755"
+  become: true
+  when: gnome_manage_user | bool

@@ -12,6 +12,7 @@ Minimal XFCE4 + XRDP role for constrained Ubuntu/Debian VPS hosts.
 - Enables `xrdp` and `xrdp-sesman`
 - Disables compositor and animations to reduce resource usage
 - Optionally opens TCP `3389` with UFW if UFW is present
+- Creates or updates the desktop user and ensures it has a usable local password for XRDP login
 
 ## Variables
 
@@ -22,6 +23,7 @@ Minimal XFCE4 + XRDP role for constrained Ubuntu/Debian VPS hosts.
 - `xfce_disable_compositor`: default `true`
 - `xfce_disable_animations`: default `true`
 - `xfce_user_groups`: supplemental groups for the desktop user, default `["sudo"]`
+- `xfce_user_password_plaintext`: required password for the desktop user so XRDP can authenticate
 
 ## Example playbook
 
@@ -40,6 +42,7 @@ Run these on the server after connecting through RDP:
 systemctl status xrdp --no-pager --full
 echo "$XDG_SESSION_TYPE"
 free -m
+passwd -S ubuntu
 ```
 
 Expected:
@@ -47,3 +50,4 @@ Expected:
 - `xrdp` is active
 - `XDG_SESSION_TYPE=x11`
 - memory stays under the host budget
+- `ubuntu` is not locked and can authenticate with the password you provided

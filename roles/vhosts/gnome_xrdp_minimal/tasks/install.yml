@@ -1,0 +1,99 @@
+---
+- name: Select GNOME package list for this platform
+  ansible.builtin.set_fact:
+    gnome_selected_packages: >-
+      {{
+        gnome_packages_debian if ansible_os_family == 'Debian'
+        else gnome_packages_fedora if ansible_os_family == 'RedHat'
+        else gnome_packages_opensuse if ansible_os_family == 'Suse'
+        else []
+      }}
+
+- name: Fail on unsupported platform
+  ansible.builtin.assert:
+    that:
+      - gnome_selected_packages | length > 0
+    fail_msg: "gnome_xrdp_minimal supports Debian, Ubuntu, Fedora, and OpenSuse only."
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+  when: ansible_os_family == 'Debian'
+  become: true
+
+- name: Install minimal desktop packages
+  ansible.builtin.apt:
+    name: "{{ gnome_selected_packages }}"
+    state: present
+    install_recommends: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  when: ansible_os_family == 'Debian'
+  become: true
+
+- name: Update DNF cache
+  ansible.builtin.dnf:
+    update_cache: true
+  when: ansible_os_family == 'RedHat'
+  become: true
+
+- name: Install GNOME packages on Fedora
+  ansible.builtin.dnf:
+    name: "{{ gnome_selected_packages }}"
+    state: present
+  when: ansible_os_family == 'RedHat'
+  become: true
+
+- name: Refresh Zypper cache
+  ansible.builtin.command: zypper --non-interactive refresh
+  changed_when: false
+  when: ansible_os_family == 'Suse'
+  become: true
+
+- name: Install GNOME packages on OpenSuse
+  ansible.builtin.zypper:
+    name: "{{ gnome_selected_packages }}"
+    state: present
+    type: package
+  when: ansible_os_family == 'Suse'
+  become: true
+
+- name: Check whether the xrdp service account exists
+  ansible.builtin.command: getent passwd xrdp
+  register: gnome_xrdp_account
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Ensure xrdp user can read the TLS certificate group
+  ansible.builtin.user:
+    name: xrdp
+    groups: ssl-cert
+    append: true
+  become: true
+  when: gnome_xrdp_account.rc == 0
+
+- name: Enable and start XRDP services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop: "{{ gnome_xrdp_services }}"
+  become: true
+
+- name: Check whether UFW is installed
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: gnome_ufw_binary
+  become: true
+
+- name: Allow XRDP through UFW
+  ansible.builtin.command: "ufw allow {{ gnome_rdp_port }}/tcp"
+  register: gnome_ufw_allow
+  changed_when: "'Skipping adding existing rule' not in gnome_ufw_allow.stdout"
+  failed_when: false
+  become: true
+  when:
+    - gnome_enable_ufw | bool
+    - gnome_ufw_binary.stat.exists | default(false)
