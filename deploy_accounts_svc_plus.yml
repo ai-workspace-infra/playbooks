@@ -1,8 +1,16 @@
 - name: Deploy managed accounts.svc.plus service
-  hosts: accounts
+  hosts: "{{ accounts_service_hosts | default('accounts') }}"
   gather_facts: false
   become: true
   vars:
-    accounts_service_image_tag: "{{ lookup('ansible.builtin.env', 'ACCOUNTS_IMAGE_TAG') | default('70c6a3f8', true) }}"
+    accounts_service_image_repo: >-
+      {{ lookup('ansible.builtin.env', 'ACCOUNTS_IMAGE_REPO')
+         | default('ghcr.io/x-evor/accounts', true) }}
+    accounts_service_image_tag: >-
+      {{ lookup('ansible.builtin.env', 'ACCOUNTS_IMAGE_TAG')
+         | default('70c6a3f8', true) }}
+    accounts_service_pull_image: >-
+      {{ lookup('ansible.builtin.env', 'ACCOUNTS_PULL_IMAGE')
+         | default(false, true) | bool }}
   roles:
     - roles/vhosts/accounts_service

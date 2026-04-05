@@ -1,0 +1,83 @@
+---
+postgresql_service_base_dir: /opt/cloud-neutral/postgresql.svc.plus/managed
+postgresql_service_shared_network: cn-toolkit-shared
+postgresql_service_postgres_network: docker_postgres_network
+
+postgresql_service_postgres_compose_dir: "{{ postgresql_service_base_dir }}/postgres"
+postgresql_service_postgres_compose_file: "{{ postgresql_service_postgres_compose_dir }}/docker-compose.yml"
+postgresql_service_postgres_env_file: "{{ postgresql_service_postgres_compose_dir }}/env/postgres.env"
+postgresql_service_postgres_config_file: "{{ postgresql_service_postgres_compose_dir }}/config/postgresql.conf"
+postgresql_service_postgres_legacy_env_file: /opt/cloud-neutral/postgresql.svc.plus/deploy/docker/.env
+postgresql_service_postgres_init_scripts_dir: /opt/cloud-neutral/postgresql.svc.plus/deploy/docker/init-scripts
+postgresql_service_postgres_data_path: /data
+postgresql_service_postgres_container_name: postgresql-svc-plus
+postgresql_service_postgres_image_repo: postgres-extensions
+postgresql_service_postgres_image_tag: "17"
+postgresql_service_postgres_major: "17"
+postgresql_service_postgres_pull_image: false
+postgresql_service_postgres_port: 5432
+postgresql_service_postgres_health_user: postgres
+postgresql_service_postgres_wait_retries: 30
+postgresql_service_postgres_wait_delay: 2
+
+postgresql_service_postgres_env_defaults:
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: ""
+  POSTGRES_DB: postgres
+  PG_LOCAL_PORT: "5432"
+  PG_MAJOR: "{{ postgresql_service_postgres_major }}"
+  PG_DATA_PATH: /data
+
+postgresql_service_postgres_conf:
+  listen_addresses: "*"
+  port: 5432
+  max_connections: 100
+  superuser_reserved_connections: 3
+  shared_buffers: 256MB
+  effective_cache_size: 1GB
+  maintenance_work_mem: 64MB
+  work_mem: 16MB
+  wal_buffers: 16MB
+  min_wal_size: 1GB
+  max_wal_size: 4GB
+  checkpoint_completion_target: 0.9
+  wal_compression: "on"
+  random_page_cost: 1.1
+  effective_io_concurrency: 200
+  default_statistics_target: 100
+  log_destination: stderr
+  logging_collector: "on"
+  log_directory: log
+  log_filename: postgresql-%Y-%m-%d_%H%M%S.log
+  log_rotation_age: 1d
+  log_rotation_size: 100MB
+  log_line_prefix: "%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h "
+  log_timezone: UTC
+  log_checkpoints: "on"
+  log_connections: "on"
+  log_disconnections: "on"
+  log_duration: "off"
+  log_lock_waits: "on"
+  log_statement: none
+  log_temp_files: 0
+  log_min_duration_statement: 1000
+  datestyle: iso, mdy
+  timezone: UTC
+  lc_messages: en_US.utf8
+  lc_monetary: en_US.utf8
+  lc_numeric: en_US.utf8
+  lc_time: en_US.utf8
+  default_text_search_config: pg_catalog.english
+
+postgresql_service_stunnel_compose_dir: "{{ postgresql_service_base_dir }}/stunnel"
+postgresql_service_stunnel_compose_file: "{{ postgresql_service_stunnel_compose_dir }}/docker-compose.yml"
+postgresql_service_stunnel_config_file: "{{ postgresql_service_stunnel_compose_dir }}/conf/stunnel.conf"
+postgresql_service_stunnel_container_name: cn-toolkit-stunnel-server
+postgresql_service_stunnel_image_repo: ghcr.io/x-evor/stunnel-server
+postgresql_service_stunnel_image_tag: "2330d36"
+postgresql_service_stunnel_pull_image: false
+postgresql_service_stunnel_accept_port: 5433
+postgresql_service_stunnel_service_name: postgres-tls-server
+postgresql_service_stunnel_verify_level: 0
+postgresql_service_stunnel_cert_file: /opt/cloud-neutral/stunnel-server/certs/server-cert.pem
+postgresql_service_stunnel_key_file: /opt/cloud-neutral/stunnel-server/certs/server-key.pem

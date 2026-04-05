@@ -1,0 +1,25 @@
+services:
+  stunnel:
+    image: {{ postgresql_service_stunnel_image_repo }}:{{ postgresql_service_stunnel_image_tag }}
+    container_name: {{ postgresql_service_stunnel_container_name }}
+    user: root
+    restart: unless-stopped
+    ports:
+      - "{{ postgresql_service_stunnel_accept_port }}:{{ postgresql_service_stunnel_accept_port }}"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - {{ postgresql_service_stunnel_config_file }}:/etc/stunnel/stunnel.conf:ro
+      - {{ postgresql_service_stunnel_cert_file }}:/etc/stunnel/certs/server-cert.pem:ro
+      - {{ postgresql_service_stunnel_key_file }}:/etc/stunnel/certs/server-key.pem:ro
+    networks:
+      - shared_stunnel
+      - postgres_network
+
+networks:
+  shared_stunnel:
+    external: true
+    name: {{ postgresql_service_shared_network }}
+  postgres_network:
+    external: true
+    name: {{ postgresql_service_postgres_network }}

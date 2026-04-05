@@ -1,0 +1,25 @@
+- name: Deploy managed postgresql.svc.plus service
+  hosts: "{{ postgresql_service_hosts | default('postgresql') }}"
+  gather_facts: false
+  become: true
+  vars:
+    postgresql_service_postgres_image_repo: >-
+      {{ lookup('ansible.builtin.env', 'POSTGRESQL_POSTGRES_IMAGE_REPO')
+         | default('postgres-extensions', true) }}
+    postgresql_service_postgres_image_tag: >-
+      {{ lookup('ansible.builtin.env', 'POSTGRESQL_POSTGRES_IMAGE_TAG')
+         | default('17', true) }}
+    postgresql_service_postgres_pull_image: >-
+      {{ lookup('ansible.builtin.env', 'POSTGRESQL_POSTGRES_PULL_IMAGE')
+         | default(false, true) | bool }}
+    postgresql_service_stunnel_image_repo: >-
+      {{ lookup('ansible.builtin.env', 'POSTGRESQL_STUNNEL_IMAGE_REPO')
+         | default('ghcr.io/x-evor/stunnel-server', true) }}
+    postgresql_service_stunnel_image_tag: >-
+      {{ lookup('ansible.builtin.env', 'POSTGRESQL_STUNNEL_IMAGE_TAG')
+         | default('2330d36', true) }}
+    postgresql_service_stunnel_pull_image: >-
+      {{ lookup('ansible.builtin.env', 'POSTGRESQL_STUNNEL_PULL_IMAGE')
+         | default(false, true) | bool }}
+  roles:
+    - roles/vhosts/postgresql_service

@@ -1,0 +1,198 @@
+---
+- name: Ensure postgresql service base directory exists
+  ansible.builtin.file:
+    path: "{{ postgresql_service_base_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure managed postgresql directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ postgresql_service_postgres_compose_dir }}"
+    - "{{ postgresql_service_postgres_compose_dir }}/env"
+    - "{{ postgresql_service_postgres_compose_dir }}/config"
+    - "{{ postgresql_service_stunnel_compose_dir }}"
+    - "{{ postgresql_service_stunnel_compose_dir }}/conf"
+    - "{{ postgresql_service_postgres_data_path }}"
+    - "{{ postgresql_service_postgres_init_scripts_dir }}"
+
+- name: Ensure shared Docker network exists for postgresql service
+  ansible.builtin.command: docker network inspect "{{ postgresql_service_shared_network }}"
+  changed_when: false
+
+- name: Ensure postgres Docker network exists for postgresql service
+  ansible.builtin.command: docker network inspect "{{ postgresql_service_postgres_network }}"
+  register: postgresql_service_postgres_network_inspect
+  changed_when: false
+  failed_when: false
+
+- name: Create postgres Docker network when missing
+  ansible.builtin.command: docker network create "{{ postgresql_service_postgres_network }}"
+  when: postgresql_service_postgres_network_inspect.rc != 0
+
+- name: Check for managed postgres env file
+  ansible.builtin.stat:
+    path: "{{ postgresql_service_postgres_env_file }}"
+  register: postgresql_service_postgres_env_stat
+
+- name: Check for legacy postgres env file
+  ansible.builtin.stat:
+    path: "{{ postgresql_service_postgres_legacy_env_file }}"
+  register: postgresql_service_postgres_legacy_env_stat
+
+- name: Seed managed postgres env file from legacy deployment
+  ansible.builtin.copy:
+    src: "{{ postgresql_service_postgres_legacy_env_file }}"
+    dest: "{{ postgresql_service_postgres_env_file }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - not postgresql_service_postgres_env_stat.stat.exists
+    - postgresql_service_postgres_legacy_env_stat.stat.exists
+
+- name: Render managed postgres env file from defaults
+  ansible.builtin.template:
+    src: postgres.env.j2
+    dest: "{{ postgresql_service_postgres_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - not postgresql_service_postgres_env_stat.stat.exists
+    - not postgresql_service_postgres_legacy_env_stat.stat.exists
+
+- name: Ensure managed postgres data path is present in env file
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_service_postgres_env_file }}"
+    regexp: '^PG_DATA_PATH='
+    line: "PG_DATA_PATH={{ postgresql_service_postgres_data_path }}"
+    state: present
+
+- name: Ensure managed postgres local port is present in env file
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_service_postgres_env_file }}"
+    regexp: '^PG_LOCAL_PORT='
+    line: "PG_LOCAL_PORT={{ postgresql_service_postgres_port }}"
+    state: present
+
+- name: Ensure managed postgres major tag is present in env file
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_service_postgres_env_file }}"
+    regexp: '^PG_MAJOR='
+    line: "PG_MAJOR={{ postgresql_service_postgres_major }}"
+    state: present
+
+- name: Render managed postgresql.conf
+  ansible.builtin.template:
+    src: postgresql.conf.j2
+    dest: "{{ postgresql_service_postgres_config_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Render managed postgres compose file
+  ansible.builtin.template:
+    src: postgres-compose.yml.j2
+    dest: "{{ postgresql_service_postgres_compose_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Check stunnel certificate file
+  ansible.builtin.stat:
+    path: "{{ postgresql_service_stunnel_cert_file }}"
+  register: postgresql_service_stunnel_cert_stat
+
+- name: Check stunnel key file
+  ansible.builtin.stat:
+    path: "{{ postgresql_service_stunnel_key_file }}"
+  register: postgresql_service_stunnel_key_stat
+
+- name: Fail when stunnel certificate files are missing
+  ansible.builtin.fail:
+    msg: >-
+      stunnel certificate material is missing. Expected
+      {{ postgresql_service_stunnel_cert_file }} and {{ postgresql_service_stunnel_key_file }}.
+  when:
+    - not postgresql_service_stunnel_cert_stat.stat.exists or not postgresql_service_stunnel_key_stat.stat.exists
+
+- name: Render managed stunnel config
+  ansible.builtin.template:
+    src: stunnel.conf.j2
+    dest: "{{ postgresql_service_stunnel_config_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Render managed stunnel compose file
+  ansible.builtin.template:
+    src: stunnel-compose.yml.j2
+    dest: "{{ postgresql_service_stunnel_compose_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Pull postgres image when enabled
+  ansible.builtin.command: docker compose -f "{{ postgresql_service_postgres_compose_file }}" pull postgres
+  args:
+    chdir: "{{ postgresql_service_postgres_compose_dir }}"
+  when: postgresql_service_postgres_pull_image | bool
+
+- name: Remove existing postgres container before managed recreate
+  ansible.builtin.shell: |
+    set -euo pipefail
+    ids="$(docker ps -aq --filter name=^/{{ postgresql_service_postgres_container_name }}$)"
+    if [ -n "${ids}" ]; then
+      docker rm -f ${ids}
+    fi
+  args:
+    executable: /bin/bash
+  register: postgresql_service_postgres_cleanup
+  changed_when: postgresql_service_postgres_cleanup.stdout | trim != ""
+
+- name: Start managed postgres compose target
+  ansible.builtin.command: docker compose -f "{{ postgresql_service_postgres_compose_file }}" up -d --force-recreate --remove-orphans
+  args:
+    chdir: "{{ postgresql_service_postgres_compose_dir }}"
+
+- name: Wait for postgres container health
+  ansible.builtin.command: >-
+    docker inspect --format={{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}unknown{{ '{{' }}end{{ '}}' }}
+    {{ postgresql_service_postgres_container_name }}
+  register: postgresql_service_postgres_health
+  changed_when: false
+  retries: "{{ postgresql_service_postgres_wait_retries }}"
+  delay: "{{ postgresql_service_postgres_wait_delay }}"
+  until: postgresql_service_postgres_health.stdout | trim == 'healthy'
+
+- name: Pull stunnel image when enabled
+  ansible.builtin.command: docker compose -f "{{ postgresql_service_stunnel_compose_file }}" pull stunnel
+  args:
+    chdir: "{{ postgresql_service_stunnel_compose_dir }}"
+  when: postgresql_service_stunnel_pull_image | bool
+
+- name: Remove existing stunnel container before managed recreate
+  ansible.builtin.shell: |
+    set -euo pipefail
+    ids="$(docker ps -aq --filter name=^/{{ postgresql_service_stunnel_container_name }}$)"
+    if [ -n "${ids}" ]; then
+      docker rm -f ${ids}
+    fi
+  args:
+    executable: /bin/bash
+  register: postgresql_service_stunnel_cleanup
+  changed_when: postgresql_service_stunnel_cleanup.stdout | trim != ""
+
+- name: Start managed stunnel compose target
+  ansible.builtin.command: docker compose -f "{{ postgresql_service_stunnel_compose_file }}" up -d --force-recreate --remove-orphans
+  args:
+    chdir: "{{ postgresql_service_stunnel_compose_dir }}"

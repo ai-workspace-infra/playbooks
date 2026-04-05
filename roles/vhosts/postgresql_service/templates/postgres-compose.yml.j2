@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: {{ postgresql_service_postgres_image_repo }}:{{ postgresql_service_postgres_image_tag }}
+    container_name: {{ postgresql_service_postgres_container_name }}
+    restart: unless-stopped
+    env_file:
+      - {{ postgresql_service_postgres_env_file }}
+    ports:
+      - "127.0.0.1:{{ postgresql_service_postgres_port }}:5432"
+    volumes:
+      - {{ postgresql_service_postgres_data_path }}:/var/lib/postgresql/data
+      - {{ postgresql_service_postgres_init_scripts_dir }}:/docker-entrypoint-initdb.d:ro
+      - {{ postgresql_service_postgres_config_file }}:/etc/postgresql/postgresql.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-{{ postgresql_service_postgres_health_user }}} -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - postgres_network
+
+networks:
+  postgres_network:
+    external: true
+    name: {{ postgresql_service_postgres_network }}
