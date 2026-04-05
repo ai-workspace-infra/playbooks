@@ -1,0 +1,25 @@
+services:
+  app:
+    image: "{{ accounts_service_image_repo }}:{{ accounts_service_image_tag }}"
+    container_name: {{ accounts_service_target.container_name }}
+    restart: unless-stopped
+    env_file:
+      - ./env/app.env
+    environment:
+      PORT: "{{ accounts_service_container_port }}"
+    volumes:
+      - ./config/account.yaml:/etc/xcontrol/account.template.yaml:ro
+    ports:
+      - "127.0.0.1:{{ accounts_service_target.host_port }}:{{ accounts_service_container_port }}"
+    dns:
+{% for dns_server in accounts_service_dns_servers %}
+      - "{{ dns_server }}"
+{% endfor %}
+    networks:
+      - default
+      - shared_stunnel
+
+networks:
+  shared_stunnel:
+    external: true
+    name: "{{ accounts_service_shared_network }}"

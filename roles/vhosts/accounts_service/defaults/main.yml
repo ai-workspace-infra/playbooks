@@ -1,0 +1,54 @@
+---
+accounts_service_image_repo: ghcr.io/x-evor/accounts
+accounts_service_image_tag: latest
+accounts_service_pull_image: true
+accounts_service_container_port: 8080
+accounts_service_base_dir: /opt/cloud-neutral/accounts/managed
+accounts_service_shared_network: cn-toolkit-shared
+accounts_service_dns_servers:
+  - 1.1.1.1
+  - 8.8.8.8
+accounts_service_caddyfile_path: /etc/caddy/Caddyfile
+accounts_service_caddy_conf_dir: /etc/caddy/conf.d
+accounts_service_caddy_fragment_path: /etc/caddy/conf.d/accounts-contabo-e700175.caddy
+accounts_service_caddy_sites:
+  - server_names:
+      - accounts.svc.plus
+      - accounts-contabo-e700175.svc.plus
+    default_forwarded_host: svc.plus
+    upstream: 127.0.0.1:18081
+accounts_service_env_defaults:
+  DB_HOST: stunnel-client
+  DB_NAME: account
+  DB_PASSWORD: ""
+  DB_PORT: "15432"
+  DB_USER: svcplus_vps
+  INTERNAL_SERVICE_TOKEN: ""
+  POSTGRES_PASSWORD: ""
+  POSTGRES_USER: svcplus_vps
+  SMTP_FROM: XControl Account <noreply@svc.plus>
+  SMTP_HOST: smtp.qq.com
+  SMTP_PASSWORD: ""
+  SMTP_PORT: "587"
+  SMTP_USERNAME: ""
+  XWORKMATE_VAULT_ADDR: https://vault.svc.plus
+  XWORKMATE_VAULT_MOUNT: kv
+  XWORKMATE_VAULT_NAMESPACE: ""
+  XWORKMATE_VAULT_TOKEN: ""
+accounts_service_targets:
+  - name: prod
+    compose_dir: "{{ accounts_service_base_dir }}/prod"
+    compose_file: "{{ accounts_service_base_dir }}/prod/docker-compose.yml"
+    env_file: "{{ accounts_service_base_dir }}/prod/env/app.env"
+    config_file: "{{ accounts_service_base_dir }}/prod/config/account.yaml"
+    legacy_env_file: /opt/cloud-neutral/accounts/accounts-51945b5-contabo/env/app.env
+    container_name: accounts-managed-prod-contabo
+    host_port: 18081
+  - name: preview
+    compose_dir: "{{ accounts_service_base_dir }}/preview"
+    compose_file: "{{ accounts_service_base_dir }}/preview/docker-compose.yml"
+    env_file: "{{ accounts_service_base_dir }}/preview/env/app.env"
+    config_file: "{{ accounts_service_base_dir }}/preview/config/account.yaml"
+    legacy_env_file: /opt/cloud-neutral/accounts/accounts-preview-51945b5-contabo/env/app.env
+    container_name: accounts-managed-preview-contabo
+    host_port: 28081

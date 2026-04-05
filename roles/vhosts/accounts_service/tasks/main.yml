@@ -1,0 +1,45 @@
+---
+- name: Ensure accounts service base directory exists
+  ansible.builtin.file:
+    path: "{{ accounts_service_base_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure Caddy fragment directory exists for accounts service
+  ansible.builtin.file:
+    path: "{{ accounts_service_caddy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy managed accounts Caddy fragment
+  ansible.builtin.template:
+    src: accounts-site.caddy.j2
+    dest: "{{ accounts_service_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
+- name: Ensure Caddy is enabled and running for accounts service
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: true
+    state: started
+
+- name: Ensure shared Docker network exists for accounts service
+  ansible.builtin.command: docker network inspect "{{ accounts_service_shared_network }}"
+  changed_when: false
+
+- name: Deploy managed accounts compose targets
+  ansible.builtin.include_tasks: target.yml
+  loop: "{{ accounts_service_targets }}"
+  loop_control:
+    loop_var: accounts_service_target
+
+- name: Validate Caddy configuration for accounts service
+  ansible.builtin.command: caddy validate --config "{{ accounts_service_caddyfile_path }}"
+  changed_when: false

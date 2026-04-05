@@ -1,0 +1,113 @@
+mode: "server-agent"
+
+log:
+  level: info
+
+auth:
+  enable: true
+  token:
+    publicToken: "${AUTH_TOKEN_PUBLIC_TOKEN:-xcontrol-public-token-2024}"
+    refreshSecret: "${AUTH_TOKEN_REFRESH_SECRET:-xcontrol-refresh-secret-2024}"
+    accessSecret: "${AUTH_TOKEN_ACCESS_SECRET:-xcontrol-access-secret-2024}"
+    accessExpiry: "1h"
+    refreshExpiry: "168h"
+  oauth:
+    redirectUrl: "${OAUTH_REDIRECT_URL}"
+    frontendUrl: "${OAUTH_FRONTEND_URL:-https://console.svc.plus}"
+    github:
+      clientId: "${GITHUB_CLIENT_ID}"
+      clientSecret: "${GITHUB_CLIENT_SECRET}"
+    google:
+      clientId: "${GOOGLE_CLIENT_ID}"
+      clientSecret: "${GOOGLE_CLIENT_SECRET}"
+
+server:
+  addr: ":8080"
+  readTimeout: 15s
+  writeTimeout: 15s
+  publicUrl: "https://accounts.svc.plus"
+  allowedOrigins:
+    - "https://dev.svc.plus"
+    - "https://dev-homepage.svc.plus"
+    - "https://www.svc.plus"
+    - "https://global-homepage.svc.plus"
+    - "https://accounts.svc.plus"
+    - "https://console.svc.plus"
+    - "https://localhost:8443"
+    - "http://localhost:8080"
+    - "http://127.0.0.1:8080"
+    - "http://localhost:3001"
+    - "http://127.0.0.1:3001"
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
+  tls:
+    enabled: false
+    certFile: ""
+    keyFile: ""
+    caFile: ""
+    clientCAFile: ""
+    redirectHttp: false
+
+store:
+  driver: "postgres"
+  dsn: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable"
+  maxOpenConns: 30
+  maxIdleConns: 10
+
+session:
+  ttl: 24h
+  cache: "redis"
+  redis:
+    addr: "127.0.0.1:6379"
+    password: ""
+
+smtp:
+  host: "${SMTP_HOST}"
+  port: ${SMTP_PORT}
+  username: "${SMTP_USERNAME}"
+  password: "${SMTP_PASSWORD}"
+  from: "${SMTP_FROM}"
+  replyTo: ""
+  timeout: 10s
+  tls:
+    mode: "auto"
+    insecureSkipVerify: false
+
+xray:
+  sync:
+    enabled: false
+    interval: 5m
+    outputPath: "/usr/local/etc/xray/config.json"
+    templatePath: "account/config/xray.config.template.json"
+    validateCommand: []
+    restartCommand:
+      - "systemctl"
+      - "restart"
+      - "xray.service"
+
+reviewAccount:
+  enabled: true
+  email: "review@svc.plus"
+  name: "Review"
+  password: "Review123!"
+  groups:
+    - "User"
+    - "Beta"
+    - "Review"
+    - "ReadOnly Role"
+  permissions:
+    - "admin.settings.read"
+    - "admin.users.metrics.read"
+    - "admin.users.list.read"
+    - "admin.agents.status.read"
+    - "admin.blacklist.read"
+
+agent:
+  id: "account-primary"
+  controllerUrl: "http://127.0.0.1:8080"
+  apiToken: "replace-with-agent-token"
+  httpTimeout: 15s
+  statusInterval: 1m
+  syncInterval: 5m
+  tls:
+    insecureSkipVerify: false

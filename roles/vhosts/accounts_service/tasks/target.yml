@@ -1,0 +1,101 @@
+---
+- name: Ensure compose directories exist for {{ accounts_service_target.name }}
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ accounts_service_target.compose_dir }}"
+    - "{{ accounts_service_target.compose_dir }}/env"
+    - "{{ accounts_service_target.compose_dir }}/config"
+
+- name: Check for managed env file for {{ accounts_service_target.name }}
+  ansible.builtin.stat:
+    path: "{{ accounts_service_target.env_file }}"
+  register: accounts_service_target_managed_env_stat
+
+- name: Check for legacy env file for {{ accounts_service_target.name }}
+  ansible.builtin.stat:
+    path: "{{ accounts_service_target.legacy_env_file }}"
+  register: accounts_service_target_legacy_env_stat
+
+- name: Seed managed env file from legacy deployment for {{ accounts_service_target.name }}
+  ansible.builtin.copy:
+    src: "{{ accounts_service_target.legacy_env_file }}"
+    dest: "{{ accounts_service_target.env_file }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - not accounts_service_target_managed_env_stat.stat.exists
+    - accounts_service_target_legacy_env_stat.stat.exists
+
+- name: Render managed env file from defaults for {{ accounts_service_target.name }}
+  ansible.builtin.template:
+    src: app.env.j2
+    dest: "{{ accounts_service_target.env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - not accounts_service_target_managed_env_stat.stat.exists
+    - not accounts_service_target_legacy_env_stat.stat.exists
+
+- name: Ensure managed CONFIG_TEMPLATE is present for {{ accounts_service_target.name }}
+  ansible.builtin.lineinfile:
+    path: "{{ accounts_service_target.env_file }}"
+    regexp: '^CONFIG_TEMPLATE='
+    line: 'CONFIG_TEMPLATE=/etc/xcontrol/account.template.yaml'
+    state: present
+    insertafter: '^CONFIG_PATH='
+
+- name: Ensure managed CONFIG_PATH is present for {{ accounts_service_target.name }}
+  ansible.builtin.lineinfile:
+    path: "{{ accounts_service_target.env_file }}"
+    regexp: '^CONFIG_PATH='
+    line: 'CONFIG_PATH=/etc/xcontrol/account.yaml'
+    state: present
+    insertbefore: BOF
+
+- name: Render managed account config for {{ accounts_service_target.name }}
+  ansible.builtin.template:
+    src: account.yaml.j2
+    dest: "{{ accounts_service_target.config_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Render compose file for {{ accounts_service_target.name }}
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ accounts_service_target.compose_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Pull image for {{ accounts_service_target.name }}
+  ansible.builtin.command: docker compose -f "{{ accounts_service_target.compose_file }}" pull app
+  args:
+    chdir: "{{ accounts_service_target.compose_dir }}"
+  when: accounts_service_pull_image | bool
+
+- name: Remove any container currently bound to {{ accounts_service_target.host_port }}
+  ansible.builtin.shell: |
+    set -euo pipefail
+    ids="$(docker ps --filter publish={{ accounts_service_target.host_port }} -q)"
+    if [ -z "${ids}" ]; then
+      exit 0
+    fi
+    docker rm -f ${ids}
+  args:
+    executable: /bin/bash
+  register: accounts_service_target_port_cleanup
+  changed_when: accounts_service_target_port_cleanup.stdout | trim != ""
+
+- name: Start managed compose target for {{ accounts_service_target.name }}
+  ansible.builtin.command: docker compose -f "{{ accounts_service_target.compose_file }}" up -d --force-recreate --remove-orphans
+  args:
+    chdir: "{{ accounts_service_target.compose_dir }}"

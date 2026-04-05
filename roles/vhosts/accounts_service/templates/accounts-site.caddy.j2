@@ -1,0 +1,14 @@
+{% for site in accounts_service_caddy_sites %}
+{{ site.server_names | join(', ') }} {
+  encode zstd gzip
+  map {http.request.header.X-Forwarded-Host} {accounts_forwarded_host} {
+    "" {{ site.default_forwarded_host | default("") }}
+    default {http.request.header.X-Forwarded-Host}
+  }
+  reverse_proxy {{ site.upstream }} {
+    # Preserve caller-provided tenant host (for example console.svc.plus -> accounts proxy).
+    # When the request comes directly to accounts.svc.plus, fall back to the managed shared host.
+    header_up X-Forwarded-Host {accounts_forwarded_host}
+  }
+}
+{% endfor %}

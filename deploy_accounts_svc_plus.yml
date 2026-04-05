@@ -1,0 +1,8 @@
+- name: Deploy managed accounts.svc.plus service
+  hosts: accounts
+  gather_facts: false
+  become: true
+  vars:
+    accounts_service_image_tag: "{{ lookup('ansible.builtin.env', 'ACCOUNTS_IMAGE_TAG') | default('70c6a3f8', true) }}"
+  roles:
+    - roles/vhosts/accounts_service
