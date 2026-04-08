@@ -60,10 +60,26 @@
   register: acp_vhosts_opencode_redirect
   changed_when: false
 
+- name: Check deprecated standalone ACP Caddy fragments
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ acp_vhosts_obsolete_caddy_fragment_paths }}"
+  register: acp_vhosts_obsolete_fragments
+
+- name: Assert deprecated standalone ACP Caddy fragments are absent
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists
+    fail_msg: "Deprecated standalone ACP Caddy fragment still exists: {{ item.item }}"
+    success_msg: "Deprecated standalone ACP Caddy fragment removed: {{ item.item }}"
+  loop: "{{ acp_vhosts_obsolete_fragments.results }}"
+
 - name: Show unified ACP vhost validation summary
   ansible.builtin.debug:
     msg:
       - "Unified domain: {{ acp_vhosts_domain }}"
+      - "Codex public base URL: https://{{ acp_vhosts_domain }}/codex"
+      - "OpenCode public base URL: https://{{ acp_vhosts_domain }}/opencode"
       - "Codex route: /codex -> {{ acp_vhosts_codex_upstream_host }}:{{ acp_vhosts_codex_upstream_port }}"
       - "OpenCode route: /opencode -> {{ acp_vhosts_opencode_upstream_host }}:{{ acp_vhosts_opencode_upstream_port }}"
       - "Deployed fragment: {{ acp_vhosts_fragment.stdout | default('N/A') }}"

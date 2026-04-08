@@ -27,41 +27,35 @@
     mode: "0755"
   notify: Restart codex acp bridge
 
-- name: Check legacy Codex ACP bridge systemd unit
-  ansible.builtin.stat:
-    path: "/etc/systemd/system/{{ acp_codex_bridge_legacy_service_name }}.service"
-  register: acp_codex_bridge_legacy_unit
-
-- name: Stop and disable legacy Codex ACP bridge service
+- name: Stop and disable legacy Codex ACP bridge services
   ansible.builtin.systemd:
-    name: "{{ acp_codex_bridge_legacy_service_name }}"
+    name: "{{ item }}"
     enabled: false
     state: stopped
+  loop: "{{ acp_codex_bridge_legacy_service_names }}"
   when:
-    - acp_codex_bridge_legacy_service_name != acp_codex_bridge_service_name
-    - acp_codex_bridge_legacy_unit.stat.exists
+    - item != acp_codex_bridge_service_name
+  failed_when: false
 
-- name: Remove legacy Codex ACP bridge systemd unit
+- name: Remove legacy Codex ACP bridge systemd units
   ansible.builtin.file:
-    path: "/etc/systemd/system/{{ acp_codex_bridge_legacy_service_name }}.service"
+    path: "/etc/systemd/system/{{ item }}.service"
     state: absent
+  loop: "{{ acp_codex_bridge_legacy_service_names }}"
   when:
-    - acp_codex_bridge_legacy_service_name != acp_codex_bridge_service_name
-    - acp_codex_bridge_legacy_unit.stat.exists
+    - item != acp_codex_bridge_service_name
+
+- name: Remove deprecated standalone Codex Caddy fragments
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ acp_codex_obsolete_caddy_fragment_paths }}"
+  notify: Reload caddy
 
 - name: Deploy Caddy main file
   ansible.builtin.template:
     src: Caddyfile.j2
     dest: "{{ acp_codex_caddyfile_path }}"
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Reload caddy
-
-- name: Deploy Codex ACP Caddy site
-  ansible.builtin.template:
-    src: acp-site.caddy.j2
-    dest: "{{ acp_codex_caddy_fragment_path }}"
     owner: root
     group: root
     mode: "0644"

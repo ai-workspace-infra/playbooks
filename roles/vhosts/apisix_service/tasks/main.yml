@@ -1,0 +1,185 @@
+---
+- name: Check docker CLI is present on the target node
+  ansible.builtin.command: docker --version
+  changed_when: false
+
+- name: Check docker compose plugin is present on the target node
+  ansible.builtin.command: docker compose version
+  changed_when: false
+
+- name: Check caddy CLI is present on the target node
+  ansible.builtin.command: caddy version
+  changed_when: false
+
+- name: Check managed APISIX source tree
+  ansible.builtin.stat:
+    path: "{{ apisix_service_root }}"
+  register: apisix_service_root_stat
+
+- name: Check managed APISIX conf directory
+  ansible.builtin.stat:
+    path: "{{ apisix_service_conf_dir }}"
+  register: apisix_service_conf_dir_stat
+
+- name: Check managed APISIX docs directory
+  ansible.builtin.stat:
+    path: "{{ apisix_service_docs_dir }}"
+  register: apisix_service_docs_dir_stat
+
+- name: Check managed APISIX scripts directory
+  ansible.builtin.stat:
+    path: "{{ apisix_service_scripts_dir }}"
+  register: apisix_service_scripts_dir_stat
+
+- name: Check managed APISIX Caddy fragment directory
+  ansible.builtin.stat:
+    path: "{{ apisix_service_caddy_conf_dir }}"
+  register: apisix_service_caddy_conf_dir_stat
+
+- name: Check managed APISIX env file
+  ansible.builtin.stat:
+    path: "{{ apisix_service_env_file }}"
+  register: apisix_service_env_file_stat
+
+- name: Validate APISIX live configuration prerequisites
+  ansible.builtin.assert:
+    that:
+      - apisix_service_env_file_stat.stat.exists
+      - apisix_service_public_host | length > 0
+      - apisix_service_http_port | int > 0
+    fail_msg: >-
+      api.svc.plus requires a preseeded .env plus a valid public host and HTTP port.
+
+- name: Determine whether managed APISIX files can be written in this run
+  ansible.builtin.set_fact:
+    apisix_service_source_tree_writable: "{{ (not ansible_check_mode) or apisix_service_root_stat.stat.exists }}"
+    apisix_service_conf_writable: "{{ (not ansible_check_mode) or apisix_service_conf_dir_stat.stat.exists }}"
+    apisix_service_docs_writable: "{{ (not ansible_check_mode) or apisix_service_docs_dir_stat.stat.exists }}"
+    apisix_service_scripts_writable: "{{ (not ansible_check_mode) or apisix_service_scripts_dir_stat.stat.exists }}"
+    apisix_service_caddy_writable: "{{ (not ansible_check_mode) or apisix_service_caddy_conf_dir_stat.stat.exists }}"
+
+- name: Ensure managed APISIX directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ apisix_service_root }}"
+    - "{{ apisix_service_conf_dir }}"
+    - "{{ apisix_service_docs_dir }}"
+    - "{{ apisix_service_scripts_dir }}"
+    - "{{ apisix_service_caddy_conf_dir }}"
+
+- name: Copy managed APISIX source tree files
+  ansible.builtin.copy:
+    src: "{{ apisix_service_example_root }}/{{ item }}"
+    dest: "{{ apisix_service_root }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ apisix_service_source_tree_files }}"
+  when: apisix_service_source_tree_writable
+
+- name: Copy managed APISIX config files
+  ansible.builtin.copy:
+    src: "{{ role_path }}/files/{{ item }}"
+    dest: "{{ apisix_service_root }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ apisix_service_conf_files }}"
+  when: apisix_service_conf_writable
+
+- name: Copy managed APISIX docs
+  ansible.builtin.copy:
+    src: "{{ apisix_service_example_root }}/{{ item }}"
+    dest: "{{ apisix_service_root }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ apisix_service_doc_files }}"
+  when: apisix_service_docs_writable
+
+- name: Copy managed APISIX helper scripts
+  ansible.builtin.copy:
+    src: "{{ role_path }}/files/{{ item }}"
+    dest: "{{ apisix_service_root }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ apisix_service_script_files }}"
+  when: apisix_service_scripts_writable
+
+- name: Deploy managed APISIX Caddy fragment
+  ansible.builtin.copy:
+    src: "{{ apisix_service_example_root }}/Caddyfile"
+    dest: "{{ apisix_service_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+  when: apisix_service_caddy_writable
+
+- name: Validate APISIX env contract
+  ansible.builtin.shell: |
+    set -euo pipefail
+    for key in \
+      APISIX_HTTP_PORT \
+      API_PUBLIC_HOST \
+      OLLAMA_API_KEY \
+      OLLAMA_CHAT_ENDPOINT \
+      OLLAMA_CHAT_MODEL \
+      OLLAMA_MINIMAX_MODEL \
+      OLLAMA_KIMI_MODEL \
+      NVIDIA_API_KEY \
+      NVIDIA_CHAT_ENDPOINT \
+      NVIDIA_CHAT_MODEL \
+      KIMI_API_KEY \
+      KIMI_CHAT_ENDPOINT \
+      KIMI_CHAT_MODEL \
+      MINIMAX_API_KEY \
+      MINIMAX_CHAT_ENDPOINT \
+      MINIMAX_CHAT_MODEL \
+      EMBEDDINGS_API_KEY \
+      EMBEDDINGS_ENDPOINT \
+      EMBEDDINGS_MODEL \
+      AI_GATEWAY_ACCESS_TOKEN
+    do
+      grep -q "^${key}=" "{{ apisix_service_env_file }}"
+    done
+  changed_when: false
+  when: apisix_service_validate_env | bool
+
+- name: Validate Caddy configuration for APISIX
+  ansible.builtin.command: caddy validate --config /etc/caddy/Caddyfile
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Pull and start APISIX release
+  ansible.builtin.shell: |
+    set -euo pipefail
+    docker compose -f "{{ apisix_service_compose_file }}" pull
+    docker compose -f "{{ apisix_service_compose_file }}" up -d --remove-orphans
+  args:
+    executable: /bin/bash
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Wait for APISIX loopback port
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ apisix_service_http_port }}"
+    timeout: 60
+  when: not ansible_check_mode
+
+- name: Reload Caddy after APISIX update
+  ansible.builtin.command: systemctl reload caddy
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Run APISIX health check
+  ansible.builtin.command: "{{ apisix_service_scripts_dir }}/healthcheck.sh"
+  changed_when: false
+  when: not ansible_check_mode

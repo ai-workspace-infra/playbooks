@@ -48,13 +48,11 @@
     mode: "0644"
   notify: Reload caddy
 
-- name: Deploy OpenCode ACP Caddy site
-  ansible.builtin.template:
-    src: acp-site.caddy.j2
-    dest: "{{ acp_opencode_caddy_fragment_path }}"
-    owner: root
-    group: root
-    mode: "0644"
+- name: Remove deprecated standalone OpenCode Caddy fragments
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ acp_opencode_obsolete_caddy_fragment_paths }}"
   notify: Reload caddy
 
 - name: Deploy OpenCode ACP systemd service

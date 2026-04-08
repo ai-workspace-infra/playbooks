@@ -1,0 +1,273 @@
+consumers:
+  - username: ai-gateway-client
+    plugins:
+      key-auth:
+        key: "Bearer ${{AI_GATEWAY_ACCESS_TOKEN:=replace-me}}"
+
+routes:
+  - id: chat-z-ai-glm5
+    name: chat-z-ai-glm5
+    priority: 100
+    hosts:
+      - "${{API_PUBLIC_HOST:=api.svc.plus}}"
+    uri: /v1/chat/completions
+    methods:
+      - POST
+    vars:
+      - - post_arg.model
+        - ==
+        - z-ai/glm5
+    plugins:
+      key-auth:
+        header: Authorization
+        hide_credentials: true
+      ai-proxy-multi:
+        fallback_strategy:
+          - http_429
+          - http_5xx
+          - rate_limiting
+        instances:
+          - name: ollama-primary
+            provider: openai-compatible
+            weight: 0
+            priority: 30
+            auth:
+              header:
+                Authorization: "Bearer ${{OLLAMA_API_KEY}}"
+            options:
+              model: "${{OLLAMA_CHAT_MODEL:=glm-5:cloud}}"
+            override:
+              endpoint: "${{OLLAMA_CHAT_ENDPOINT}}"
+          - name: nvidia-fallback
+            provider: openai-compatible
+            weight: 0
+            priority: 20
+            auth:
+              header:
+                Authorization: "Bearer ${{NVIDIA_API_KEY}}"
+            options:
+              model: "${{NVIDIA_CHAT_MODEL:=z-ai/glm5}}"
+            override:
+              endpoint: "${{NVIDIA_CHAT_ENDPOINT}}"
+        logging:
+          summaries: true
+    upstream:
+      type: roundrobin
+      nodes:
+        "127.0.0.1:1": 1
+
+  - id: chat-moonshotai-kimi-k2-5
+    name: chat-moonshotai-kimi-k2-5
+    priority: 100
+    hosts:
+      - "${{API_PUBLIC_HOST:=api.svc.plus}}"
+    uri: /v1/chat/completions
+    methods:
+      - POST
+    vars:
+      - - post_arg.model
+        - ==
+        - moonshotai/kimi-k2.5
+    plugins:
+      key-auth:
+        header: Authorization
+        hide_credentials: true
+      ai-proxy:
+        provider: openai-compatible
+        auth:
+          header:
+            Authorization: "Bearer ${{OLLAMA_API_KEY}}"
+        options:
+          model: "${{OLLAMA_KIMI_MODEL:=kimi-k2.5:cloud}}"
+        override:
+          endpoint: "${{OLLAMA_CHAT_ENDPOINT}}"
+        logging:
+          summaries: true
+    upstream:
+      type: roundrobin
+      nodes:
+        "127.0.0.1:1": 1
+
+  - id: chat-minimaxai-minimax-m2-5
+    name: chat-minimaxai-minimax-m2-5
+    priority: 100
+    hosts:
+      - "${{API_PUBLIC_HOST:=api.svc.plus}}"
+    uri: /v1/chat/completions
+    methods:
+      - POST
+    vars:
+      - - post_arg.model
+        - ==
+        - minimaxai/minimax-m2.5
+    plugins:
+      key-auth:
+        header: Authorization
+        hide_credentials: true
+      ai-proxy:
+        provider: openai-compatible
+        auth:
+          header:
+            Authorization: "Bearer ${{OLLAMA_API_KEY}}"
+        options:
+          model: "${{OLLAMA_MINIMAX_MODEL:=minimax-m2.5:cloud}}"
+        override:
+          endpoint: "${{OLLAMA_CHAT_ENDPOINT}}"
+        logging:
+          summaries: true
+    upstream:
+      type: roundrobin
+      nodes:
+        "127.0.0.1:1": 1
+
+  - id: chat-unsupported-model
+    name: chat-unsupported-model
+    priority: 1
+    hosts:
+      - "${{API_PUBLIC_HOST:=api.svc.plus}}"
+    uri: /v1/chat/completions
+    methods:
+      - POST
+    plugins:
+      key-auth:
+        header: Authorization
+        hide_credentials: true
+      serverless-pre-function:
+        phase: access
+        functions:
+          - |
+            return function()
+              local core = require("apisix.core")
+              return core.response.exit(400, {
+                error = {
+                  message = "Unsupported chat model. Use z-ai/glm5, moonshotai/kimi-k2.5, or minimaxai/minimax-m2.5.",
+                  type = "invalid_request_error",
+                  param = "model",
+                  code = "model_not_found"
+                }
+              })
+            end
+    upstream:
+      type: roundrobin
+      nodes:
+        "127.0.0.1:1": 1
+
+  - id: embeddings-text-embedding-3-small
+    name: embeddings-text-embedding-3-small
+    priority: 100
+    hosts:
+      - "${{API_PUBLIC_HOST:=api.svc.plus}}"
+    uri: /v1/embeddings
+    methods:
+      - POST
+    vars:
+      - - post_arg.model
+        - ==
+        - text-embedding-3-small
+    plugins:
+      key-auth:
+        header: Authorization
+        hide_credentials: true
+      ai-proxy:
+        provider: openai-compatible
+        auth:
+          header:
+            Authorization: "Bearer ${{EMBEDDINGS_API_KEY}}"
+        options:
+          model: "${{EMBEDDINGS_MODEL:=text-embedding-3-small}}"
+        override:
+          endpoint: "${{EMBEDDINGS_ENDPOINT}}"
+        logging:
+          summaries: true
+    upstream:
+      type: roundrobin
+      nodes:
+        "127.0.0.1:1": 1
+
+  - id: embeddings-unsupported-model
+    name: embeddings-unsupported-model
+    priority: 1
+    hosts:
+      - "${{API_PUBLIC_HOST:=api.svc.plus}}"
+    uri: /v1/embeddings
+    methods:
+      - POST
+    plugins:
+      key-auth:
+        header: Authorization
+        hide_credentials: true
+      serverless-pre-function:
+        phase: access
+        functions:
+          - |
+            return function()
+              local core = require("apisix.core")
+              return core.response.exit(400, {
+                error = {
+                  message = "Unsupported embedding model. Use text-embedding-3-small.",
+                  type = "invalid_request_error",
+                  param = "model",
+                  code = "model_not_found"
+                }
+              })
+            end
+    upstream:
+      type: roundrobin
+      nodes:
+        "127.0.0.1:1": 1
+
+  - id: models-catalog
+    name: models-catalog
+    priority: 100
+    hosts:
+      - "${{API_PUBLIC_HOST:=api.svc.plus}}"
+    uri: /v1/models
+    methods:
+      - GET
+    plugins:
+      key-auth:
+        header: Authorization
+        hide_credentials: true
+      serverless-pre-function:
+        phase: access
+        functions:
+          - |
+            return function()
+              local core = require("apisix.core")
+              return core.response.exit(200, {
+                object = "list",
+                data = {
+                  {
+                    id = "z-ai/glm5",
+                    object = "model",
+                    owned_by = "svc-ai-gateway",
+                    root = "z-ai/glm5"
+                  },
+                  {
+                    id = "moonshotai/kimi-k2.5",
+                    object = "model",
+                    owned_by = "svc-ai-gateway",
+                    root = "moonshotai/kimi-k2.5"
+                  },
+                  {
+                    id = "minimaxai/minimax-m2.5",
+                    object = "model",
+                    owned_by = "svc-ai-gateway",
+                    root = "minimaxai/minimax-m2.5"
+                  },
+                  {
+                    id = "text-embedding-3-small",
+                    object = "model",
+                    owned_by = "svc-ai-gateway",
+                    root = "text-embedding-3-small"
+                  }
+                }
+              }, {
+                ["Content-Type"] = "application/json"
+              })
+            end
+    upstream:
+      type: roundrobin
+      nodes:
+        "127.0.0.1:1": 1
+#END

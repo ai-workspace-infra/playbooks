@@ -1,0 +1,65 @@
+---
+- name: Install ACP bridge server prerequisites
+  ansible.builtin.package:
+    name: "{{ acp_bridge_server_packages }}"
+    state: present
+
+- name: Ensure local ACP bridge build directory exists
+  ansible.builtin.file:
+    path: "{{ acp_bridge_server_local_build_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  become: false
+
+- name: Build XWorkmate ACP bridge server locally
+  ansible.builtin.command:
+    cmd: go build -o "{{ acp_bridge_server_local_binary_path }}" .
+    chdir: "{{ acp_bridge_server_local_source_dir }}"
+  environment:
+    GOOS: "{{ acp_bridge_server_build_goos }}"
+    GOARCH: "{{ acp_bridge_server_build_goarch }}"
+    CGO_ENABLED: "0"
+  delegate_to: localhost
+  become: false
+
+- name: Upload XWorkmate ACP bridge server binary
+  ansible.builtin.copy:
+    src: "{{ acp_bridge_server_local_binary_path }}"
+    dest: "{{ acp_bridge_server_binary_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart acp bridge server
+
+- name: Deploy ACP bridge Caddy fragment
+  ansible.builtin.template:
+    src: acp-bridge-server.caddy.j2
+    dest: "{{ acp_bridge_server_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
+- name: Remove deprecated standalone ACP bridge Caddy fragments
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ acp_bridge_server_obsolete_caddy_fragment_paths }}"
+  notify: Reload caddy
+
+- name: Deploy ACP bridge systemd service
+  ansible.builtin.template:
+    src: acp-bridge-server.service.j2
+    dest: "/etc/systemd/system/{{ acp_bridge_server_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart acp bridge server
+
+- name: Ensure ACP bridge server is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ acp_bridge_server_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
