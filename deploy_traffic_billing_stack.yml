@@ -1,0 +1,54 @@
+- import_playbook: deploy_xray_exporter.yml
+  vars:
+    xray_exporter_hosts: >-
+      {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
+         | default(lookup('ansible.builtin.env', 'XRAY_EXPORTER_HOSTS')
+         | default('xray_exporter', true), true) }}
+    stack_services: >-
+      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
+         | default('xray-exporter,billing-service,accounts,console,agent', true) }}
+  when: "'xray-exporter' in (stack_services.split(',') | map('trim') | list)"
+
+- import_playbook: deploy_billing_service.yml
+  vars:
+    billing_service_hosts: >-
+      {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
+         | default(lookup('ansible.builtin.env', 'BILLING_SERVICE_HOSTS')
+         | default('billing_service', true), true) }}
+    stack_services: >-
+      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
+         | default('xray-exporter,billing-service,accounts,console,agent', true) }}
+  when: "'billing-service' in (stack_services.split(',') | map('trim') | list)"
+
+- import_playbook: deploy_accounts_svc_plus.yml
+  vars:
+    accounts_service_hosts: >-
+      {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
+         | default(lookup('ansible.builtin.env', 'ACCOUNTS_SERVICE_HOSTS')
+         | default('accounts', true), true) }}
+    stack_services: >-
+      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
+         | default('xray-exporter,billing-service,accounts,console,agent', true) }}
+  when: "'accounts' in (stack_services.split(',') | map('trim') | list)"
+
+- import_playbook: deploy_console_svc_plus.yml
+  vars:
+    console_service_hosts: >-
+      {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
+         | default(lookup('ansible.builtin.env', 'CONSOLE_SERVICE_HOSTS')
+         | default('console', true), true) }}
+    stack_services: >-
+      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
+         | default('xray-exporter,billing-service,accounts,console,agent', true) }}
+  when: "'console' in (stack_services.split(',') | map('trim') | list)"
+
+- import_playbook: deploy_agent_svc_plus.yml
+  vars:
+    agent_service_hosts: >-
+      {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
+         | default(lookup('ansible.builtin.env', 'AGENT_SERVICE_HOSTS')
+         | default('agent_svc_plus', true), true) }}
+    stack_services: >-
+      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
+         | default('xray-exporter,billing-service,accounts,console,agent', true) }}
+  when: "'agent' in (stack_services.split(',') | map('trim') | list)"

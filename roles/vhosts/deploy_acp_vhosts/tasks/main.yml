@@ -82,14 +82,38 @@
     group: root
     mode: "0755"
 
-- name: Deploy ACP Caddy main file
-  ansible.builtin.copy:
-    content: "import {{ xworkmate_bridge_caddy_conf_dir }}/*.caddy\n"
-    dest: "{{ xworkmate_bridge_caddyfile_path }}"
+- name: Inspect Caddy main file attributes
+  ansible.builtin.command:
+    cmd: lsattr "{{ xworkmate_bridge_caddyfile_path }}"
+  register: xworkmate_bridge_caddyfile_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from Caddy main file when present
+  ansible.builtin.command:
+    cmd: chattr -i "{{ xworkmate_bridge_caddyfile_path }}"
+  when:
+    - "'i' in (xworkmate_bridge_caddyfile_attrs.stdout | default(''))"
+  changed_when: true
+
+- name: Ensure ACP Caddy import is present in main file
+  ansible.builtin.lineinfile:
+    path: "{{ xworkmate_bridge_caddyfile_path }}"
+    line: "import {{ xworkmate_bridge_caddy_conf_dir }}/*.caddy"
+    insertafter: EOF
+    create: true
     owner: root
     group: root
     mode: "0644"
+    state: present
   notify: Reload caddy
+
+- name: Restore immutable flag on Caddy main file when it was originally present
+  ansible.builtin.command:
+    cmd: chattr +i "{{ xworkmate_bridge_caddyfile_path }}"
+  when:
+    - "'i' in (xworkmate_bridge_caddyfile_attrs.stdout | default(''))"
+  changed_when: true
 
 - name: Deploy unified ACP Caddy site
   ansible.builtin.template:
