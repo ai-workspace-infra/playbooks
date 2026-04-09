@@ -1,0 +1,115 @@
+---
+- name: Install xworkmate-bridge prerequisites
+  ansible.builtin.package:
+    name: "{{ xworkmate_bridge_packages }}"
+    state: present
+
+- name: Ensure local xworkmate-bridge build directory exists
+  ansible.builtin.file:
+    path: "{{ xworkmate_bridge_local_build_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  become: false
+
+- name: Build xworkmate-bridge locally
+  ansible.builtin.command:
+    cmd: go build -o "{{ xworkmate_bridge_local_binary_path }}" .
+    chdir: "{{ xworkmate_bridge_local_source_dir }}"
+  environment:
+    GOOS: "{{ xworkmate_bridge_build_goos }}"
+    GOARCH: "{{ xworkmate_bridge_build_goarch }}"
+    CGO_ENABLED: "0"
+    GO111MODULE: "on"
+  delegate_to: localhost
+  become: false
+
+- name: Upload xworkmate-bridge binary
+  ansible.builtin.copy:
+    src: "{{ xworkmate_bridge_local_binary_path }}"
+    dest: "{{ xworkmate_bridge_binary_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart xworkmate bridge
+
+- name: Include Codex ACP provider role
+  ansible.builtin.import_role:
+    name: roles/vhosts/acp_codex
+  vars:
+    acp_codex_manage_caddy: false
+  when:
+    - deploy_acp_codex | bool
+
+- name: Include OpenCode ACP provider role
+  ansible.builtin.import_role:
+    name: roles/vhosts/acp_opencode
+  vars:
+    acp_opencode_manage_caddy: false
+  when:
+    - deploy_acp_opencode | bool
+
+- name: Include Gemini ACP provider role
+  ansible.builtin.import_role:
+    name: roles/vhosts/acp_gemini
+  when:
+    - deploy_acp_gemini | bool
+
+- name: Ensure Caddy fragment directory exists for ACP ingress
+  ansible.builtin.file:
+    path: "{{ xworkmate_bridge_caddy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy ACP Caddy main file
+  ansible.builtin.copy:
+    content: "import {{ xworkmate_bridge_caddy_conf_dir }}/*.caddy\n"
+    dest: "{{ xworkmate_bridge_caddyfile_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
+- name: Deploy unified ACP Caddy site
+  ansible.builtin.template:
+    src: acp-site.caddy.j2
+    dest: "{{ xworkmate_bridge_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
+- name: Remove deprecated ACP Caddy fragments
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
+  notify: Reload caddy
+
+- name: Deploy xworkmate-bridge systemd service
+  ansible.builtin.template:
+    src: xworkmate-bridge.service.j2
+    dest: "/etc/systemd/system/{{ xworkmate_bridge_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart xworkmate bridge
+
+- name: Ensure xworkmate-bridge is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ xworkmate_bridge_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Ensure Caddy is enabled and running for ACP ingress
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: true
+    state: started
+
+- name: Include ACP ingress validation tasks
+  ansible.builtin.import_tasks: validate.yml
+  tags: [deploy_acp_vhosts, deploy_acp_vhosts_validate]

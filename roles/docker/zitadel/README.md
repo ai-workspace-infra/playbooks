@@ -1,19 +1,16 @@
 # Zitadel Docker role
 
-This role provisions a Zitadel stack with Postgres, optional TLS termination, login frontend, Nginx proxy, and Certbot assets. Templates from `templates/` and static assets from `files/` are rendered into `{{ zitadel_workspace }}` and the Docker Compose stack is started.
+This role provisions a Zitadel stack with Postgres and the login frontend, then exposes both services on localhost-only ports so the host Caddy instance can terminate TLS and reverse proxy traffic for `{{ zitadel_domain }}`.
+
+The previous embedded `nginx/certbot` deployment mode now lives in the separate legacy role `docker/zitadel_legacy`.
 
 ## Layout
 ```
 files/
-├── certbot/
-│   ├── conf/
-│   └── www/
-├── docker-compose.yaml
-├── nginx/
-│   ├── conf.d/
-│   │   └── default.conf
-│   └── nginx.conf
 └── run.sh
+templates/
+├── docker-compose.yaml
+└── zitadel-site.caddy.j2
 ```
 
 ## Defaults
@@ -21,6 +18,12 @@ files/
 - `zitadel_workspace`: `{{ zitadel_deploy_dir }}`
 - `zitadel_domain`: `auth.svc.plus`
 - `zitadel_masterkey`: `MasterkeyNeedsToHave32Characters`
+- `zitadel_api_bind_host`: `127.0.0.1`
+- `zitadel_api_port`: `19080`
+- `zitadel_login_bind_host`: `127.0.0.1`
+- `zitadel_login_port`: `19081`
+- `zitadel_caddy_conf_dir`: `/etc/caddy/conf.d`
+- `zitadel_caddy_fragment_path`: `/etc/caddy/conf.d/zitadel.caddy`
 
 ## RUN
 

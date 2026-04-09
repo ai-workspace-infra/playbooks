@@ -1,6 +1,5 @@
 services:
-
-  zitadel-external-tls:
+  zitadel:
     extends:
       service: zitadel-init
     command: 'start-from-setup --masterkey "{{ zitadel_masterkey }}"'
@@ -11,32 +10,13 @@ services:
     networks:
       - app
       - db
+    ports:
+      - "{{ zitadel_api_bind_host }}:{{ zitadel_api_port }}:8080"
     depends_on:
       db:
         condition: 'service_healthy'
       zitadel-init:
         condition: 'service_completed_successfully'
-
-  zitadel-enabled-tls:
-    extends:
-      service: zitadel-init
-    command: 'start-from-setup --masterkey "{{ zitadel_masterkey }}"'
-    environment:
-      ZITADEL_EXTERNALPORT: 443
-      ZITADEL_EXTERNALSECURE: true
-      ZITADEL_TLS_ENABLED: true
-      ZITADEL_TLS_CERTPATH: /etc/letsencrypt/live/{{ zitadel_domain }}/fullchain.pem
-      ZITADEL_TLS_KEYPATH: /etc/letsencrypt/live/{{ zitadel_domain }}/privkey.pem
-    volumes:
-      - "{{ zitadel_workspace }}/certbot/conf:/etc/letsencrypt"
-    networks:
-      - app
-      - db
-    depends_on:
-      zitadel-init:
-        condition: 'service_completed_successfully'
-      db:
-        condition: 'service_healthy'
 
   zitadel-init:
     image: '${ZITADEL_IMAGE:-ghcr.io/zitadel/zitadel:latest}'
@@ -91,10 +71,11 @@ services:
       - 'data:/var/lib/postgresql/data:rw'
 
   login-external-tls:
+    container_name: login-external-tls
     restart: 'unless-stopped'
     image: 'ghcr.io/zitadel/zitadel-login:latest'
     environment:
-      - ZITADEL_API_URL=http://zitadel-external-tls:8080
+      - ZITADEL_API_URL=http://zitadel:8080
       - NEXT_PUBLIC_BASE_PATH=/ui/v2/login
       - ZITADEL_SERVICE_USER_TOKEN_FILE=/current-dir/login-client.pat
       - CUSTOM_REQUEST_HEADERS=Host:{{ zitadel_domain }}
@@ -102,82 +83,11 @@ services:
       - "{{ zitadel_workspace }}:/current-dir:ro"
     networks:
       - app
-    depends_on:
-      zitadel-external-tls:
-        condition: 'service_healthy'
-
-  login-enabled-tls:
-    restart: 'unless-stopped'
-    image: 'ghcr.io/zitadel/zitadel-login:latest'
-    environment:
-      - ZITADEL_API_URL=https://zitadel-enabled-tls:8080
-      - NEXT_PUBLIC_BASE_PATH=/ui/v2/login
-      - ZITADEL_SERVICE_USER_TOKEN_FILE=/current-dir/login-client.pat
-      - CUSTOM_REQUEST_HEADERS=Host:{{ zitadel_domain }}
-      - NODE_TLS_REJECT_UNAUTHORIZED=0
-    volumes:
-      - "{{ zitadel_workspace }}:/current-dir:ro"
-    networks:
-      - app
-    depends_on:
-      zitadel-enabled-tls:
-        condition: 'service_healthy'
-
-  proxy-external-tls:
-    image: nginx:mainline-alpine
-    container_name: proxy-external-tls
-    restart: unless-stopped
-    volumes:
-      - "{{ zitadel_workspace }}/nginx/nginx.conf:/etc/nginx/nginx.conf"
-      - "{{ zitadel_workspace }}/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro"
-      - "{{ zitadel_workspace }}/certbot/conf:/etc/letsencrypt"
-      - "{{ zitadel_workspace }}/certbot/www:/var/www/certbot"
     ports:
-      - "80:80"
-      - "443:443"
-    networks:
-      - app
+      - "{{ zitadel_login_bind_host }}:{{ zitadel_login_port }}:3000"
     depends_on:
-      zitadel-external-tls:
-        condition: service_healthy
-
-  bootstrap-nginx:
-    profiles: ["bootstrap"]
-    image: nginx:mainline-alpine
-    container_name: bootstrap-nginx
-    volumes:
-      - "{{ zitadel_workspace }}/certbot/www:/var/www/certbot"
-      - "{{ zitadel_workspace }}/certbot/conf:/etc/letsencrypt"
-      - "{{ zitadel_workspace }}/nginx/nginx.conf:/etc/nginx/nginx.conf"
-      - "{{ zitadel_workspace }}/nginx/conf.d/bootstrap-nginx.conf:/etc/nginx/conf.d/bootstrap-nginx.conf"
-    ports:
-      - "80:80"       # 暂时只占用80
-    networks:
-      - app
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost"]
-      interval: 3s
-      timeout: 2s
-      retries: 10
-      start_period: 3s
-  certbot:
-    profiles: ["bootstrap"]
-    image: certbot/certbot
-    container_name: certbot
-    command: >
-      certonly --webroot
-      --webroot-path=/var/www/certbot
-      --email manbuzhe2009@qq.com
-      --agree-tos
-      --no-eff-email
-      --keep-until-expiring
-      --non-interactive
-      -d {{ zitadel_domain }}
-    volumes:
-      - "{{ zitadel_workspace }}/certbot/conf:/etc/letsencrypt"
-      - "{{ zitadel_workspace }}/certbot/www:/var/www/certbot"
-    networks:
-      - app
+      zitadel:
+        condition: 'service_healthy'
 
 networks:
   app:

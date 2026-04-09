@@ -1,0 +1,56 @@
+services:
+  frontend-assets:
+    image: ${FRONTEND_IMAGE:?set FRONTEND_IMAGE in .env.runtime}
+    restart: "no"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        rm -rf /assets/_next /assets/chunks /assets/public
+        mkdir -p /assets /assets/public
+        cp -R /app/dashboard/static/. /assets/
+        cp -R /app/dashboard/public/. /assets/public
+    volumes:
+      - frontend_static:/assets
+
+  dashboard:
+    image: ${FRONTEND_IMAGE:?set FRONTEND_IMAGE in .env.runtime}
+    restart: unless-stopped
+    env_file:
+      - .env.runtime
+    environment:
+      NODE_ENV: production
+      PORT: {{ console_service_port | quote }}
+    volumes:
+      - frontend_static:/app/dashboard/.next/static:ro
+    networks:
+      - frontend
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - dashboard
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PRIMARY_DOMAIN: ${PRIMARY_DOMAIN:?set PRIMARY_DOMAIN in .env.runtime}
+      SECONDARY_DOMAIN: ${SECONDARY_DOMAIN:?set SECONDARY_DOMAIN in .env.runtime}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - frontend_static:/srv:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - frontend
+
+networks:
+  frontend:
+    driver: bridge
+
+volumes:
+  frontend_static:
+  caddy_data:
+  caddy_config:

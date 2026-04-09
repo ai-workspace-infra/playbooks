@@ -1,0 +1,25 @@
+[Unit]
+Description=XWorkmate Gemini ACP adapter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ acp_gemini_service_user }}
+Group={{ acp_gemini_service_group }}
+WorkingDirectory={{ acp_gemini_workdir }}
+Environment=HOME={{ acp_gemini_home }}
+Environment=TERM=xterm-256color
+Environment=GEMINI_ADAPTER_LISTEN_ADDR={{ acp_gemini_listen_host }}:{{ acp_gemini_listen_port }}
+Environment=GEMINI_ADAPTER_BIN={{ acp_gemini_binary_path }}
+Environment=GEMINI_ADAPTER_ARGS={{ acp_gemini_args }}
+Environment=GEMINI_ADAPTER_ALLOWED_ORIGINS={{ acp_gemini_allowed_origins | join(',') }}
+{% for key, value in acp_gemini_environment | dictsort %}
+Environment={{ key }}={{ value }}
+{% endfor %}
+ExecStart={{ acp_gemini_bridge_binary_path }} gemini-acp-adapter --listen {{ acp_gemini_listen_host }}:{{ acp_gemini_listen_port }} --gemini-bin {{ acp_gemini_binary_path }} --gemini-args "{{ acp_gemini_args }}"
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

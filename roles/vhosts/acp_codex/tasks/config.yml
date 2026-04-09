@@ -60,6 +60,8 @@
     group: root
     mode: "0644"
   notify: Reload caddy
+  when:
+    - acp_codex_manage_caddy | bool
 
 - name: Deploy Codex ACP systemd service
   ansible.builtin.template:
@@ -88,6 +90,8 @@
     name: caddy
     enabled: true
     state: started
+  when:
+    - acp_codex_manage_caddy | bool
 
 - name: Ensure Codex ACP service is enabled and running
   ansible.builtin.systemd:

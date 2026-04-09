@@ -1,0 +1,123 @@
+---
+- name: Map Go architecture
+  ansible.builtin.set_fact:
+    agent_svc_plus_go_arch: >-
+      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
+
+- name: Ensure agent build prerequisites are installed
+  ansible.builtin.apt:
+    name:
+      - git
+      - curl
+      - ca-certificates
+      - tar
+    state: present
+    update_cache: true
+
+- name: Check installed Go version
+  ansible.builtin.command: "{{ agent_svc_plus_go_bin }} version"
+  register: agent_svc_plus_go_version_check
+  changed_when: false
+  failed_when: false
+
+- name: Download Go toolchain archive
+  ansible.builtin.get_url:
+    url: "https://go.dev/dl/go{{ agent_svc_plus_go_version }}.linux-{{ agent_svc_plus_go_arch }}.tar.gz"
+    dest: "/tmp/go{{ agent_svc_plus_go_version }}.linux-{{ agent_svc_plus_go_arch }}.tar.gz"
+    mode: "0644"
+  when: agent_svc_plus_go_version_check.rc != 0 or ('go' ~ agent_svc_plus_go_version) not in agent_svc_plus_go_version_check.stdout
+
+- name: Remove previous Go installation
+  ansible.builtin.file:
+    path: "{{ agent_svc_plus_go_root }}"
+    state: absent
+  when: agent_svc_plus_go_version_check.rc != 0 or ('go' ~ agent_svc_plus_go_version) not in agent_svc_plus_go_version_check.stdout
+
+- name: Install Go toolchain
+  ansible.builtin.unarchive:
+    src: "/tmp/go{{ agent_svc_plus_go_version }}.linux-{{ agent_svc_plus_go_arch }}.tar.gz"
+    dest: "/usr/local"
+    remote_src: true
+  when: agent_svc_plus_go_version_check.rc != 0 or ('go' ~ agent_svc_plus_go_version) not in agent_svc_plus_go_version_check.stdout
+
+- name: Create agent directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ agent_svc_plus_user }}"
+    group: "{{ agent_svc_plus_group }}"
+    mode: "0755"
+  loop:
+    - "{{ agent_svc_plus_app_dir }}"
+    - "{{ agent_svc_plus_config_dir }}"
+    - "{{ agent_svc_plus_data_dir }}"
+    - "{{ xray_template_dir }}"
+
+- name: Clone agent.svc.plus repository
+  ansible.builtin.git:
+    repo: "{{ agent_svc_plus_repo_url }}"
+    dest: "{{ agent_svc_plus_app_dir }}"
+    version: "{{ agent_svc_plus_repo_version }}"
+    update: true
+  notify: Restart agent-svc-plus
+
+- name: Build agent.svc.plus binary
+  ansible.builtin.command: >-
+    {{ agent_svc_plus_go_bin }} build -o {{ agent_svc_plus_binary_path }} {{ agent_svc_plus_build_target }}
+  args:
+    chdir: "{{ agent_svc_plus_app_dir }}"
+  environment:
+    GOROOT: "{{ agent_svc_plus_go_root }}"
+    PATH: "{{ agent_svc_plus_go_root }}/bin:{{ ansible_env.PATH }}"
+    GOTOOLCHAIN: local
+  notify: Restart agent-svc-plus
+
+- name: Ensure agent binary permissions
+  ansible.builtin.file:
+    path: "{{ agent_svc_plus_binary_path }}"
+    owner: "{{ agent_svc_plus_user }}"
+    group: "{{ agent_svc_plus_group }}"
+    mode: "0755"
+
+- name: Deploy agent configuration
+  ansible.builtin.template:
+    src: agent-config.yaml.j2
+    dest: "{{ agent_svc_plus_config_path }}"
+    owner: "{{ agent_svc_plus_user }}"
+    group: "{{ agent_svc_plus_group }}"
+    mode: "0600"
+  notify: Restart agent-svc-plus
+
+- name: Deploy XHTTP template
+  ansible.builtin.template:
+    src: xray.xhttp.template.json.j2
+    dest: "{{ xray_template_dir }}/xray.xhttp.template.json"
+    owner: "{{ agent_svc_plus_user }}"
+    group: "{{ agent_svc_plus_group }}"
+    mode: "0644"
+  when: xray_enabled | bool
+
+- name: Deploy TCP template
+  ansible.builtin.template:
+    src: xray.tcp.template.json.j2
+    dest: "{{ xray_template_dir }}/xray.tcp.template.json"
+    owner: "{{ agent_svc_plus_user }}"
+    group: "{{ agent_svc_plus_group }}"
+    mode: "0644"
+  when: xray_enabled | bool
+
+- name: Install agent systemd service
+  ansible.builtin.template:
+    src: agent-svc-plus.service.j2
+    dest: "/etc/systemd/system/{{ agent_svc_plus_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart agent-svc-plus
+
+- name: Enable and start agent-svc-plus
+  ansible.builtin.systemd:
+    name: "{{ agent_svc_plus_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true

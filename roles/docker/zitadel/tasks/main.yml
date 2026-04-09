@@ -7,11 +7,6 @@
     mode: "0755"
   loop:
     - "{{ zitadel_workspace }}"
-    - "{{ zitadel_workspace }}/certbot"
-    - "{{ zitadel_workspace }}/certbot/conf"
-    - "{{ zitadel_workspace }}/certbot/www"
-    - "{{ zitadel_workspace }}/nginx"
-    - "{{ zitadel_workspace }}/nginx/conf.d"
 
 - name: Ensure Zitadel workspace ownership
   become: true
@@ -31,8 +26,6 @@
     mode: "{{ item.mode | default('0644') }}"
   loop:
     - { src: 'docker-compose.yaml', dest: 'docker-compose.yaml' }
-    - { src: 'nginx/conf.d/default.conf', dest: 'nginx/conf.d/default.conf' }
-    - { src: 'nginx/conf.d/bootstrap-nginx.conf', dest: 'nginx/conf.d/bootstrap-nginx.conf' }
 
 - name: Copy Zitadel static files
   become: true
@@ -42,25 +35,42 @@
     mode: "{{ item.mode | default('0644') }}"
   loop:
     - { src: 'run.sh', dest: 'run.sh', mode: '0755' }
-    - { src: 'nginx/nginx.conf', dest: 'nginx/nginx.conf' }
 
-- name: Bootstrap NGINX (80-only for ACME)
+- name: Check caddy CLI is present on the target node
   become: true
-  command: docker compose --profile bootstrap -f {{ zitadel_workspace }}/docker-compose.yaml up -d bootstrap-nginx
-  args:
-    chdir: "{{ zitadel_workspace }}"
+  ansible.builtin.command: caddy version
+  changed_when: false
 
-- name: Run certbot initial ACME challenge
+- name: Ensure Caddy fragment directory exists for Zitadel
   become: true
-  command: docker compose --profile bootstrap -f {{ zitadel_workspace }}/docker-compose.yaml run --rm certbot
-  args:
-    chdir: "{{ zitadel_workspace }}"
+  ansible.builtin.file:
+    path: "{{ zitadel_caddy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
 
-- name: Destroy Bootstrap NGINX (80-only for ACME)
+- name: Deploy Zitadel Caddy site fragment
   become: true
-  command: docker compose --profile bootstrap -f {{ zitadel_workspace }}/docker-compose.yaml down bootstrap-nginx
-  args:
-    chdir: "{{ zitadel_workspace }}"
+  ansible.builtin.template:
+    src: zitadel-site.caddy.j2
+    dest: "{{ zitadel_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
+- name: Ensure Caddy is enabled and running for Zitadel
+  become: true
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: true
+    state: started
+
+- name: Validate Caddy configuration for Zitadel
+  become: true
+  ansible.builtin.command: caddy validate --config "{{ zitadel_caddyfile_path }}"
+  changed_when: false
 
 # -------------------------------------------------------------------
 # 1. 判断 Zitadel 是否已经初始化 
@@ -100,6 +110,6 @@
 # -------------------------------------------------------------------
 - name: Bring up Zitadel stack
   become: true
-  command: docker compose -f {{ zitadel_workspace }}/docker-compose.yaml up -d
+  command: docker compose -f {{ zitadel_workspace }}/docker-compose.yaml up -d --remove-orphans
   args:
     chdir: "{{ zitadel_workspace }}"

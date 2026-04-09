@@ -1,0 +1,24 @@
+{{ zitadel_domain }} {
+  encode zstd gzip
+
+  @login {
+    path /ui/v2/login*
+  }
+
+  handle @login {
+    reverse_proxy {{ zitadel_login_bind_host }}:{{ zitadel_login_port }} {
+      header_up Host {host}
+      header_up X-Forwarded-Proto https
+    }
+  }
+
+  handle {
+    reverse_proxy {{ zitadel_api_bind_host }}:{{ zitadel_api_port }} {
+      transport http {
+        versions h2c 2
+      }
+      header_up Host {host}
+      header_up X-Forwarded-Proto https
+    }
+  }
+}

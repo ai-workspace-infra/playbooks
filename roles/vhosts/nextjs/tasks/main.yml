@@ -1,7 +1,9 @@
 ---
 - name: Ensure git is installed
   ansible.builtin.apt:
-    name: git
+    name:
+      - git
+      - rsync
     state: present
     update_cache: true
 
@@ -19,6 +21,28 @@
     dest: "{{ nextjs_app_dir }}"
     version: "{{ nextjs_repo_version }}"
     update: true
+  notify: Restart nextjs service
+
+- name: Copy Next.js environment file from source
+  ansible.builtin.copy:
+    src: "{{ nextjs_env_src }}"
+    dest: "{{ nextjs_env_file_path }}"
+    owner: "{{ nextjs_service_user }}"
+    group: "{{ nextjs_service_group }}"
+    mode: "0600"
+  when: nextjs_env_src | length > 0
+  notify: Restart nextjs service
+
+- name: Render inline Next.js environment file
+  ansible.builtin.copy:
+    content: "{{ nextjs_env_content }}"
+    dest: "{{ nextjs_env_file_path }}"
+    owner: "{{ nextjs_service_user }}"
+    group: "{{ nextjs_service_group }}"
+    mode: "0600"
+  when:
+    - nextjs_env_src | length == 0
+    - nextjs_env_content | length > 0
   notify: Restart nextjs service
 
 - name: Install Next.js dependencies

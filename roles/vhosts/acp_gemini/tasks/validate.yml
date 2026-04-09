@@ -1,0 +1,36 @@
+---
+- name: Check Gemini ACP adapter listener
+  ansible.builtin.command: ss -ltnp
+  register: acp_gemini_ss
+  changed_when: false
+
+- name: Validate local Gemini ACP adapter HTTP endpoint
+  ansible.builtin.uri:
+    url: "http://{{ acp_gemini_listen_host }}:{{ acp_gemini_listen_port }}/acp/rpc"
+    method: POST
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: 1
+      method: acp.capabilities
+      params: {}
+    return_content: true
+    status_code: 200
+  register: acp_gemini_bridge_http
+
+- name: Show Gemini ACP adapter status
+  ansible.builtin.command: systemctl status "{{ acp_gemini_service_name }}" --no-pager
+  register: acp_gemini_status
+  changed_when: false
+  failed_when: false
+
+- name: Show Gemini ACP validation summary
+  ansible.builtin.debug:
+    msg:
+      - "Gemini public base URL: {{ acp_gemini_public_base_url }}"
+      - "Preferred WebSocket endpoint: {{ acp_gemini_public_base_url }}/acp"
+      - "Compatibility HTTP RPC endpoint: {{ acp_gemini_public_base_url }}/acp/rpc"
+      - "Gemini adapter listener: {{ acp_gemini_listen_host }}:{{ acp_gemini_listen_port }}"
+      - "Service: {{ acp_gemini_status.stdout | default('N/A') }}"
+      - "Socket: {{ acp_gemini_ss.stdout | default('N/A') }}"
+      - "Bridge capabilities HTTP: {{ acp_gemini_bridge_http.content | default('N/A') }}"

@@ -1,0 +1,41 @@
+- name: Deploy xray-exporter service
+  hosts: "{{ xray_exporter_hosts | default('xray_exporter') }}"
+  gather_facts: true
+  become: true
+  vars:
+    xray_exporter_source_dir: >-
+      {{ lookup('ansible.builtin.env', 'XRAY_EXPORTER_SOURCE_DIR')
+         | default(playbook_dir ~ '/../xray-exporter', true) }}
+    xray_exporter_node_id: >-
+      {{ lookup('ansible.builtin.env', 'EXPORTER_NODE_ID')
+         | default('node-xhttp.svc.plus', true) }}
+    xray_exporter_env_name: >-
+      {{ lookup('ansible.builtin.env', 'EXPORTER_ENV')
+         | default('prod', true) }}
+    xray_exporter_stats_url: >-
+      {{ lookup('ansible.builtin.env', 'XRAY_STATS_URL')
+         | default('http://127.0.0.1:49227/debug/vars', true) }}
+    xray_exporter_stats_token: >-
+      {{ lookup('ansible.builtin.env', 'XRAY_STATS_TOKEN')
+         | default('', true) }}
+    xray_exporter_accounts_base_url: >-
+      {{ lookup('ansible.builtin.env', 'ACCOUNTS_BASE_URL')
+         | default('https://accounts.svc.plus', true) }}
+    xray_exporter_internal_service_token: >-
+      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
+         | default('', true) }}
+    xray_exporter_listen_addr: >-
+      {{ lookup('ansible.builtin.env', 'XRAY_EXPORTER_LISTEN_ADDR')
+         | default('127.0.0.1:8080', true) }}
+    xray_exporter_scrape_interval: >-
+      {{ lookup('ansible.builtin.env', 'SCRAPE_INTERVAL')
+         | default('1m', true) }}
+  pre_tasks:
+    - name: Validate INTERNAL_SERVICE_TOKEN is present
+      ansible.builtin.assert:
+        that:
+          - xray_exporter_internal_service_token | length > 0
+        fail_msg: "INTERNAL_SERVICE_TOKEN must be exported before running this playbook."
+        success_msg: "INTERNAL_SERVICE_TOKEN found"
+  roles:
+    - roles/vhosts/xray-exporter

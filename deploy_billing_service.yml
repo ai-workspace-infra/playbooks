@@ -1,0 +1,44 @@
+- name: Deploy billing-service
+  hosts: "{{ billing_service_hosts | default('billing_service') }}"
+  gather_facts: true
+  become: true
+  vars:
+    billing_service_source_dir: >-
+      {{ lookup('ansible.builtin.env', 'BILLING_SERVICE_SOURCE_DIR')
+         | default(playbook_dir ~ '/../billing-service', true) }}
+    billing_service_exporter_base_url: >-
+      {{ lookup('ansible.builtin.env', 'EXPORTER_BASE_URL')
+         | default('http://127.0.0.1:8080', true) }}
+    billing_service_database_url: >-
+      {{ lookup('ansible.builtin.env', 'DATABASE_URL')
+         | default('', true) }}
+    billing_service_listen_addr: >-
+      {{ lookup('ansible.builtin.env', 'BILLING_SERVICE_LISTEN_ADDR')
+         | default('127.0.0.1:8081', true) }}
+    billing_service_collect_interval: >-
+      {{ lookup('ansible.builtin.env', 'COLLECT_INTERVAL')
+         | default('1m', true) }}
+    billing_service_default_region: >-
+      {{ lookup('ansible.builtin.env', 'DEFAULT_REGION')
+         | default('', true) }}
+    billing_service_source_revision: >-
+      {{ lookup('ansible.builtin.env', 'SOURCE_REVISION')
+         | default('billing-service-v1', true) }}
+    billing_service_price_per_byte: >-
+      {{ lookup('ansible.builtin.env', 'PRICE_PER_BYTE')
+         | default('0', true) }}
+    billing_service_initial_included_quota_bytes: >-
+      {{ lookup('ansible.builtin.env', 'INITIAL_INCLUDED_QUOTA_BYTES')
+         | default('0', true) }}
+    billing_service_initial_balance: >-
+      {{ lookup('ansible.builtin.env', 'INITIAL_BALANCE')
+         | default('0', true) }}
+  pre_tasks:
+    - name: Validate DATABASE_URL is present
+      ansible.builtin.assert:
+        that:
+          - billing_service_database_url | length > 0
+        fail_msg: "DATABASE_URL must be exported before running this playbook."
+        success_msg: "DATABASE_URL found"
+  roles:
+    - roles/vhosts/billing-service

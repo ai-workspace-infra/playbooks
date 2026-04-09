@@ -1,0 +1,83 @@
+- name: Deploy managed agent.svc.plus service
+  hosts: "{{ agent_service_hosts | default('agent_svc_plus') }}"
+  gather_facts: true
+  become: true
+  vars:
+    agent_svc_plus_repo_url: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_REPO_URL')
+         | default('https://github.com/x-evor/agent.svc.plus.git', true) }}
+    agent_svc_plus_repo_version: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_REPO_VERSION')
+         | default('main', true) }}
+    agent_svc_plus_app_dir: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_APP_DIR')
+         | default('/opt/agent.svc.plus', true) }}
+    agent_svc_plus_go_version: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_GO_VERSION')
+         | default('1.25.1', true) }}
+    agent_id: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_ID')
+         | default('node-xhttp.svc.plus', true) }}
+    agent_controller_url: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_CONTROLLER_URL')
+         | default('https://accounts.svc.plus', true) }}
+    agent_api_token: >-
+      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
+         | default('', true) }}
+    agent_billing_enabled: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_BILLING_ENABLED')
+         | default(true, true) | bool }}
+    agent_billing_base_url: >-
+      {{ lookup('ansible.builtin.env', 'BILLING_SERVICE_BASE_URL')
+         | default('http://127.0.0.1:8081', true) }}
+    agent_billing_http_timeout: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_BILLING_HTTP_TIMEOUT')
+         | default('15s', true) }}
+    agent_billing_collect_interval: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_BILLING_COLLECT_INTERVAL')
+         | default('1m', true) }}
+    agent_billing_reconcile_interval: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_BILLING_RECONCILE_INTERVAL')
+         | default('5m', true) }}
+    xray_enabled: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_XRAY_ENABLED')
+         | default(true, true) | bool }}
+    xray_uuid: >-
+      {{ lookup('ansible.builtin.env', 'XRAY_UUID')
+         | default('00000000-0000-0000-0000-000000000000', true) }}
+  pre_tasks:
+    - name: Validate INTERNAL_SERVICE_TOKEN is present
+      ansible.builtin.assert:
+        that:
+          - agent_api_token | length > 0
+        fail_msg: "INTERNAL_SERVICE_TOKEN must be exported before running this playbook."
+        success_msg: "INTERNAL_SERVICE_TOKEN found"
+
+    - name: Gather service facts
+      ansible.builtin.service_facts:
+
+    - name: Assert host is bootstrapped with setup-proxy.sh services
+      ansible.builtin.assert:
+        that:
+          - "'xray.service' in ansible_facts.services"
+          - "'xray-tcp.service' in ansible_facts.services"
+          - "'caddy.service' in ansible_facts.services"
+        fail_msg: "Target host must already be bootstrapped by setup-proxy.sh (missing xray.service, xray-tcp.service, or caddy.service)."
+        success_msg: "Target host already has the setup-proxy.sh service layout."
+
+    - name: Assert setup-proxy.sh config paths exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/caddy/Caddyfile
+        - /usr/local/etc/xray/templates
+      register: agent_bootstrap_paths
+
+    - name: Validate setup-proxy.sh config paths are present
+      ansible.builtin.assert:
+        that:
+          - agent_bootstrap_paths.results | map(attribute='stat.exists') | min
+        fail_msg: "Target host is missing /etc/caddy/Caddyfile or /usr/local/etc/xray/templates. Run setup-proxy.sh first."
+        success_msg: "setup-proxy.sh config paths exist."
+  roles:
+    - roles/vhosts/agent-svc-plus

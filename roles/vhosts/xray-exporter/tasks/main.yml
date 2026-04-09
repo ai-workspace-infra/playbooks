@@ -1,0 +1,102 @@
+---
+- name: Map Go architecture
+  ansible.builtin.set_fact:
+    xray_exporter_go_arch: >-
+      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
+
+- name: Ensure xray-exporter build prerequisites are installed
+  ansible.builtin.apt:
+    name:
+      - curl
+      - ca-certificates
+      - tar
+      - rsync
+    state: present
+    update_cache: true
+
+- name: Check installed Go version
+  ansible.builtin.command: "{{ xray_exporter_go_bin }} version"
+  register: xray_exporter_go_version_check
+  changed_when: false
+  failed_when: false
+
+- name: Download Go toolchain archive
+  ansible.builtin.get_url:
+    url: "https://go.dev/dl/go{{ xray_exporter_go_version }}.linux-{{ xray_exporter_go_arch }}.tar.gz"
+    dest: "/tmp/go{{ xray_exporter_go_version }}.linux-{{ xray_exporter_go_arch }}.tar.gz"
+    mode: "0644"
+  when: xray_exporter_go_version_check.rc != 0 or ('go' ~ xray_exporter_go_version) not in xray_exporter_go_version_check.stdout
+
+- name: Remove previous Go installation
+  ansible.builtin.file:
+    path: "{{ xray_exporter_go_root }}"
+    state: absent
+  when: xray_exporter_go_version_check.rc != 0 or ('go' ~ xray_exporter_go_version) not in xray_exporter_go_version_check.stdout
+
+- name: Install Go toolchain
+  ansible.builtin.unarchive:
+    src: "/tmp/go{{ xray_exporter_go_version }}.linux-{{ xray_exporter_go_arch }}.tar.gz"
+    dest: "/usr/local"
+    remote_src: true
+  when: xray_exporter_go_version_check.rc != 0 or ('go' ~ xray_exporter_go_version) not in xray_exporter_go_version_check.stdout
+
+- name: Create xray-exporter directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ xray_exporter_user }}"
+    group: "{{ xray_exporter_group }}"
+    mode: "0755"
+  loop:
+    - "{{ xray_exporter_app_dir }}"
+    - "{{ xray_exporter_env_dir }}"
+
+- name: Sync xray-exporter source tree
+  ansible.posix.synchronize:
+    src: "{{ xray_exporter_source_dir }}/"
+    dest: "{{ xray_exporter_app_dir }}/"
+    delete: true
+  notify: Restart xray-exporter
+
+- name: Build xray-exporter binary
+  ansible.builtin.command: >-
+    {{ xray_exporter_go_bin }} build -buildvcs=false -o {{ xray_exporter_binary_path }} ./cmd/xray-exporter
+  args:
+    chdir: "{{ xray_exporter_app_dir }}"
+  environment:
+    GOROOT: "{{ xray_exporter_go_root }}"
+    PATH: "{{ xray_exporter_go_root }}/bin:{{ ansible_env.PATH }}"
+    GOTOOLCHAIN: local
+  notify: Restart xray-exporter
+
+- name: Ensure xray-exporter binary permissions
+  ansible.builtin.file:
+    path: "{{ xray_exporter_binary_path }}"
+    owner: "{{ xray_exporter_user }}"
+    group: "{{ xray_exporter_group }}"
+    mode: "0755"
+
+- name: Deploy xray-exporter environment file
+  ansible.builtin.template:
+    src: xray-exporter.env.j2
+    dest: "{{ xray_exporter_env_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart xray-exporter
+
+- name: Install xray-exporter systemd service
+  ansible.builtin.template:
+    src: xray-exporter.service.j2
+    dest: "/etc/systemd/system/{{ xray_exporter_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart xray-exporter
+
+- name: Enable and start xray-exporter
+  ansible.builtin.systemd:
+    name: "{{ xray_exporter_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true

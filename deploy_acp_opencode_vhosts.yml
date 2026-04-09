@@ -1,6 +1,12 @@
 ---
-- import_playbook: deploy_acp_vhosts.yml
-  vars:
-    deploy_acp_codex: false
-    deploy_acp_opencode: true
-    deploy_acp_unified: false
+- name: Deploy ACP OpenCode vhosts
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - role: roles/vhosts/deploy_acp_vhosts/
+      vars:
+        deploy_acp_codex: false
+        deploy_acp_opencode: true
+        deploy_acp_gemini: false
+      tags: [deploy_acp_vhosts, acp_opencode]

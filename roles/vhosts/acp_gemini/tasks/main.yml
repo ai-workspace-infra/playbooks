@@ -1,0 +1,16 @@
+---
+- name: Install Gemini ACP prerequisites
+  ansible.builtin.import_tasks: install.yml
+  tags: [acp_gemini, acp_gemini_install]
+
+- name: Configure Gemini ACP adapter
+  ansible.builtin.import_tasks: config.yml
+  tags: [acp_gemini, acp_gemini_config]
+
+- name: Flush Gemini ACP handlers before validation
+  ansible.builtin.meta: flush_handlers
+  tags: [acp_gemini, acp_gemini_config, acp_gemini_validate]
+
+- name: Validate Gemini ACP readiness
+  ansible.builtin.import_tasks: validate.yml
+  tags: [acp_gemini, acp_gemini_validate]

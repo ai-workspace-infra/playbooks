@@ -1,0 +1,108 @@
+---
+- name: Ensure console service base directory exists
+  ansible.builtin.file:
+    path: "{{ console_service_base_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Assert console deploy uses prebuilt registry image
+  ansible.builtin.assert:
+    that:
+      - console_service_frontend_image | trim | length > 0
+      - "'/' in (console_service_frontend_image | trim)"
+      - "':' in (console_service_frontend_image | trim)"
+    fail_msg: >-
+      CONSOLE deploy requires a prebuilt image reference via FRONTEND_IMAGE.
+      This playbook only supports pull-only Docker Compose deployment on the target host
+      and must never build images remotely.
+
+- name: Log into container registry for console service
+  ansible.builtin.shell: |
+    set -euo pipefail
+    printf '%s' '{{ console_service_registry_password }}' | docker login {{ console_service_registry }} -u '{{ console_service_registry_username }}' --password-stdin
+  args:
+    executable: /bin/bash
+  no_log: true
+  when:
+    - console_service_registry_username | length > 0
+    - console_service_registry_password | length > 0
+
+- name: Render console compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ console_service_compose_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Render console Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ console_service_caddyfile }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Render console runtime env file
+  ansible.builtin.template:
+    src: env.runtime.j2
+    dest: "{{ console_service_runtime_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Validate console compose file
+  ansible.builtin.command: >-
+    docker compose
+    --project-name {{ console_service_project_name }}
+    -f {{ console_service_compose_file }}
+    --env-file {{ console_service_runtime_env_file }}
+    config
+  args:
+    chdir: "{{ console_service_base_dir }}"
+  changed_when: false
+
+- name: Pull console service images
+  ansible.builtin.command: >-
+    docker compose
+    --project-name {{ console_service_project_name }}
+    -f {{ console_service_compose_file }}
+    --env-file {{ console_service_runtime_env_file }}
+    pull dashboard caddy
+  args:
+    chdir: "{{ console_service_base_dir }}"
+  when: console_service_pull_images | bool
+
+- name: Refresh console static assets volume
+  ansible.builtin.command: >-
+    docker compose
+    --project-name {{ console_service_project_name }}
+    -f {{ console_service_compose_file }}
+    --env-file {{ console_service_runtime_env_file }}
+    run --rm frontend-assets
+  args:
+    chdir: "{{ console_service_base_dir }}"
+
+- name: Start console dashboard and caddy containers
+  ansible.builtin.command: >-
+    docker compose
+    --project-name {{ console_service_project_name }}
+    -f {{ console_service_compose_file }}
+    --env-file {{ console_service_runtime_env_file }}
+    up -d --remove-orphans dashboard caddy
+  args:
+    chdir: "{{ console_service_base_dir }}"
+
+- name: Show console compose status
+  ansible.builtin.command: >-
+    docker compose
+    --project-name {{ console_service_project_name }}
+    -f {{ console_service_compose_file }}
+    --env-file {{ console_service_runtime_env_file }}
+    ps
+  args:
+    chdir: "{{ console_service_base_dir }}"
+  changed_when: false

@@ -47,6 +47,8 @@
     group: root
     mode: "0644"
   notify: Reload caddy
+  when:
+    - acp_opencode_manage_caddy | bool
 
 - name: Remove deprecated standalone OpenCode Caddy fragments
   ansible.builtin.file:
@@ -82,6 +84,8 @@
     name: caddy
     enabled: true
     state: started
+  when:
+    - acp_opencode_manage_caddy | bool
 
 - name: Ensure OpenCode ACP service is enabled and running
   ansible.builtin.systemd:

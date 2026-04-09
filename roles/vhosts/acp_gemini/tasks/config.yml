@@ -1,0 +1,48 @@
+---
+- name: Ensure local Gemini ACP build directory exists
+  ansible.builtin.file:
+    path: "{{ acp_gemini_bridge_local_build_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  become: false
+
+- name: Build XWorkmate Go ACP adapter locally for Gemini
+  ansible.builtin.command:
+    cmd: go build -o "{{ acp_gemini_bridge_local_binary_path }}" .
+    chdir: "{{ acp_gemini_bridge_local_source_dir }}"
+  environment:
+    GOOS: "{{ acp_gemini_bridge_build_goos }}"
+    GOARCH: "{{ acp_gemini_bridge_build_goarch }}"
+    CGO_ENABLED: "0"
+    GO111MODULE: "on"
+  delegate_to: localhost
+  become: false
+
+- name: Upload XWorkmate Go ACP adapter binary for Gemini
+  ansible.builtin.copy:
+    src: "{{ acp_gemini_bridge_local_binary_path }}"
+    dest: "{{ acp_gemini_bridge_binary_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart gemini acp adapter
+
+- name: Deploy Gemini ACP adapter service
+  ansible.builtin.template:
+    src: gemini-acp-adapter.service.j2
+    dest: "/etc/systemd/system/{{ acp_gemini_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart gemini acp adapter
+
+- name: Reload systemd manager configuration for Gemini ACP
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Ensure Gemini ACP adapter service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ acp_gemini_service_name }}"
+    enabled: true
+    state: started
