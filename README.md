@@ -21,20 +21,25 @@ cd /Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks
 export INTERNAL_SERVICE_TOKEN=...
 export DATABASE_URL=postgres://...
 export FRONTEND_IMAGE=ghcr.io/x-evor/dashboard:latest
+export STACK_TARGET_HOST=jp_xhttp_contabo_host
+export console_service_sync_dns=true
 ansible-playbook -i inventory.ini deploy_traffic_billing_stack.yml
 ```
 
+`STACK_ENV_FILE=./.env` is optional. Use it when you want the aggregate playbook to read a local `.env` file; GitHub Actions or other CI runners can skip it and pass values with `-e` instead.
+
 ### Deploy to one target host directly
 
-Use `STACK_TARGET_HOST` to override all service host groups with one inventory host.
+Use `STACK_TARGET_HOST` to override the stack host groups when you want all services to target the same inventory host. For console-only runs, use Ansible's `-l jp_xhttp_contabo_host` limit instead of a separate host variable, and keep `console_service_sync_dns=true` if you want DNS reconciliation.
 
 ```bash
 cd /Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks
-export STACK_TARGET_HOST=jp-xhttp-contabo.svc.plus
+export STACK_TARGET_HOST=jp_xhttp_contabo_host
 export INTERNAL_SERVICE_TOKEN=...
 export DATABASE_URL=postgres://...
 export FRONTEND_IMAGE=ghcr.io/x-evor/dashboard:latest
-ansible-playbook -i inventory.ini deploy_traffic_billing_stack.yml
+export console_service_sync_dns=true
+ansible-playbook -i inventory.ini -l jp_xhttp_contabo_host deploy_traffic_billing_stack.yml
 ```
 
 ### Deploy only selected services
@@ -53,7 +58,7 @@ export STACK_TARGET_HOST=jp-xhttp-contabo.svc.plus
 export STACK_SERVICES=xray-exporter,billing-service,agent
 export INTERNAL_SERVICE_TOKEN=...
 export DATABASE_URL=postgres://...
-ansible-playbook -i inventory.ini deploy_traffic_billing_stack.yml
+ansible-playbook -i inventory.ini -l jp_xhttp_contabo_host deploy_traffic_billing_stack.yml
 ```
 
 ### Notes
@@ -66,17 +71,13 @@ ansible-playbook -i inventory.ini deploy_traffic_billing_stack.yml
 
 ### Deploy console to a specific host and sync DNS
 
-`deploy_console_svc_plus.yml` now accepts two useful overrides:
-
-- `console_service_target_host`: inventory host to deploy to, for example `jp_xhttp_contabo_host`
-- `console_service_sync_dns=true`: rebuild and reconcile DNS records for that target host after deployment
+`deploy_console_svc_plus.yml` now accepts `console_service_sync_dns=true` to rebuild and reconcile DNS records after deployment. For host selection, use Ansible's `-l jp_xhttp_contabo_host` limit.
 
 Example:
 
 ```bash
 cd /Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks
 ansible-playbook -i inventory.ini deploy_console_svc_plus.yml \
-  -e console_service_target_host=jp_xhttp_contabo_host \
   -e console_service_sync_dns=true \
   -e FRONTEND_IMAGE=ghcr.io/x-evor/dashboard:latest
 ```

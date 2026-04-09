@@ -31,3 +31,14 @@
 - name: Show session type hint
   ansible.builtin.debug:
     msg: "XDG_SESSION_TYPE={{ xfce_session_type.stdout | default('unknown') }} (expected x11 inside the RDP session)"
+
+- name: Check Chromium wrapper presence
+  ansible.builtin.stat:
+    path: "{{ xfce_chromium_wrapper_path }}"
+  register: xfce_chromium_wrapper_stat
+  when: xfce_manage_chromium | bool
+
+- name: Show Chromium wrapper status
+  ansible.builtin.debug:
+    msg: "Chromium wrapper installed={{ xfce_chromium_wrapper_stat.stat.exists | default(false) }} path={{ xfce_chromium_wrapper_path }}"
+  when: xfce_manage_chromium | bool

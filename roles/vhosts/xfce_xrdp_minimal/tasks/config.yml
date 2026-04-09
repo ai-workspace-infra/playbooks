@@ -52,6 +52,94 @@
     - Restart xrdp
     - Restart xrdp sesman
 
+- name: Ensure Chromium data directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ xfce_user }}"
+    group: "{{ xfce_user }}"
+    mode: "0700"
+  loop:
+    - "{{ xfce_chromium_profile_dir }}"
+    - "{{ xfce_chromium_common_dir }}"
+    - "{{ xfce_chromium_config_dir }}"
+    - "{{ xfce_chromium_data_dir }}"
+  become: true
+  when:
+    - xfce_manage_user | bool
+    - xfce_manage_chromium | bool
+
+- name: Ensure Chromium wrapper is installed
+  ansible.builtin.copy:
+    dest: "{{ xfce_chromium_wrapper_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      set -eu
+      if [ "${XDG_SESSION_TYPE:-}" = x11 ] && [ -n "${DISPLAY:-}" ]; then
+        profile_dir="${CHROME_USER_DATA_DIR:-{{ xfce_chromium_profile_dir }}}"
+        common_dir="${CHROME_USER_COMMON_DIR:-{{ xfce_chromium_common_dir }}}"
+        config_dir="${XDG_CONFIG_HOME:-{{ xfce_chromium_config_dir }}}"
+        install -d -m 700 "$profile_dir" "$common_dir" "$config_dir"
+        export HOME="${HOME:-{{ xfce_user_home }}}"
+        export XDG_CONFIG_HOME="$config_dir"
+        export XDG_DATA_HOME="{{ xfce_chromium_data_dir }}"
+        export SNAP_USER_DATA="$profile_dir"
+        export SNAP_USER_COMMON="$common_dir"
+        export CHROME_CONFIG_HOME="$config_dir"
+        export CHROME_USER_DATA_DIR="$profile_dir"
+        exec /snap/bin/chromium --user-data-dir="$profile_dir" --disable-breakpad "$@"
+      fi
+      exec /snap/bin/chromium "$@"
+  become: true
+  when:
+    - xfce_manage_user | bool
+    - xfce_manage_chromium | bool
+
+- name: Ensure Chromium desktop launcher uses the wrapper
+  ansible.builtin.template:
+    src: chromium-browser.desktop.j2
+    dest: "{{ xfce_chromium_desktop_file }}"
+    owner: "{{ xfce_user }}"
+    group: "{{ xfce_user }}"
+    mode: "0644"
+  become: true
+  when:
+    - xfce_manage_user | bool
+    - xfce_manage_chromium | bool
+
+- name: Ensure Chromium is the default web browser for the desktop user
+  ansible.builtin.copy:
+    dest: "{{ xfce_user_home }}/.config/mimeapps.list"
+    owner: "{{ xfce_user }}"
+    group: "{{ xfce_user }}"
+    mode: "0644"
+    content: |
+      [Default Applications]
+      x-scheme-handler/http=chromium-browser.desktop
+      x-scheme-handler/https=chromium-browser.desktop
+      x-scheme-handler/about=chromium-browser.desktop
+      x-scheme-handler/unknown=chromium-browser.desktop
+      text/html=chromium-browser.desktop
+  become: true
+  when:
+    - xfce_manage_user | bool
+    - xfce_manage_chromium | bool
+
+- name: Remove Chromium profile leftovers from shared snap path
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ xfce_user_home }}/snap/chromium/3396"
+    - "{{ xfce_user_home }}/snap/chromium/common/chromium"
+  become: true
+  when:
+    - xfce_manage_user | bool
+    - xfce_manage_chromium | bool
+
 - name: Ensure XFCE config directory exists
   ansible.builtin.file:
     path: "{{ xfce_xfconf_dir }}"

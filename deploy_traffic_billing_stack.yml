@@ -1,9 +1,16 @@
 - import_playbook: deploy_xray_exporter.yml
   vars:
+    stack_env_file: >-
+      {{ lookup('ansible.builtin.env', 'STACK_ENV_FILE')
+         | default(playbook_dir ~ '/.env', true) }}
     xray_exporter_hosts: >-
       {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
          | default(lookup('ansible.builtin.env', 'XRAY_EXPORTER_HOSTS')
          | default('xray_exporter', true), true) }}
+    xray_exporter_internal_service_token: >-
+      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
+         | default(lookup('ansible.builtin.ini', 'INTERNAL_SERVICE_TOKEN type=properties file=' ~ stack_env_file, errors='ignore')
+         | default('', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
          | default('xray-exporter,billing-service,accounts,console,agent', true) }}
@@ -11,10 +18,21 @@
 
 - import_playbook: deploy_billing_service.yml
   vars:
+    stack_env_file: >-
+      {{ lookup('ansible.builtin.env', 'STACK_ENV_FILE')
+         | default(playbook_dir ~ '/.env', true) }}
     billing_service_hosts: >-
       {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
          | default(lookup('ansible.builtin.env', 'BILLING_SERVICE_HOSTS')
          | default('billing_service', true), true) }}
+    billing_service_database_url: >-
+      {{ lookup('ansible.builtin.env', 'DATABASE_URL')
+         | default(lookup('ansible.builtin.ini', 'DATABASE_URL type=properties file=' ~ stack_env_file, errors='ignore')
+         | default('', true), true) }}
+    billing_service_exporter_base_url: >-
+      {{ lookup('ansible.builtin.env', 'EXPORTER_BASE_URL')
+         | default(lookup('ansible.builtin.ini', 'EXPORTER_BASE_URL type=properties file=' ~ stack_env_file, errors='ignore')
+         | default('http://127.0.0.1:8080', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
          | default('xray-exporter,billing-service,accounts,console,agent', true) }}
@@ -22,10 +40,21 @@
 
 - import_playbook: deploy_accounts_svc_plus.yml
   vars:
+    stack_env_file: >-
+      {{ lookup('ansible.builtin.env', 'STACK_ENV_FILE')
+         | default(playbook_dir ~ '/.env', true) }}
     accounts_service_hosts: >-
       {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
          | default(lookup('ansible.builtin.env', 'ACCOUNTS_SERVICE_HOSTS')
          | default('accounts', true), true) }}
+    accounts_service_image_repo: >-
+      {{ lookup('ansible.builtin.env', 'ACCOUNTS_IMAGE_REPO')
+         | default(lookup('ansible.builtin.ini', 'ACCOUNTS_IMAGE_REPO type=properties file=' ~ stack_env_file, errors='ignore')
+         | default('ghcr.io/x-evor/accounts', true), true) }}
+    accounts_service_image_tag: >-
+      {{ lookup('ansible.builtin.env', 'ACCOUNTS_IMAGE_TAG')
+         | default(lookup('ansible.builtin.ini', 'ACCOUNTS_IMAGE_TAG type=properties file=' ~ stack_env_file, errors='ignore')
+         | default('latest', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
          | default('xray-exporter,billing-service,accounts,console,agent', true) }}
@@ -33,10 +62,29 @@
 
 - import_playbook: deploy_console_svc_plus.yml
   vars:
+    stack_env_file: >-
+      {{ lookup('ansible.builtin.env', 'STACK_ENV_FILE')
+         | default(playbook_dir ~ '/.env', true) }}
     console_service_hosts: >-
       {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
          | default(lookup('ansible.builtin.env', 'CONSOLE_SERVICE_HOSTS')
          | default('console', true), true) }}
+    console_service_sync_dns: >-
+      {{ lookup('ansible.builtin.env', 'console_service_sync_dns')
+         | default(lookup('ansible.builtin.env', 'CONSOLE_SERVICE_SYNC_DNS')
+         | default(false, true), true) | bool }}
+    console_service_frontend_image: >-
+      {{ lookup('ansible.builtin.env', 'FRONTEND_IMAGE')
+         | default(lookup('ansible.builtin.ini', 'FRONTEND_IMAGE type=properties file=' ~ stack_env_file, errors='ignore')
+         | default('', true), true) }}
+    console_service_registry_username: >-
+      {{ lookup('ansible.builtin.env', 'GHCR_USERNAME')
+         | default(lookup('ansible.builtin.ini', 'GHCR_USERNAME type=properties file=' ~ stack_env_file, errors='ignore')
+         | default('', true), true) }}
+    console_service_registry_password: >-
+      {{ lookup('ansible.builtin.env', 'GHCR_PASSWORD')
+         | default(lookup('ansible.builtin.ini', 'GHCR_PASSWORD type=properties file=' ~ stack_env_file, errors='ignore')
+         | default('', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
          | default('xray-exporter,billing-service,accounts,console,agent', true) }}
@@ -44,10 +92,21 @@
 
 - import_playbook: deploy_agent_svc_plus.yml
   vars:
+    stack_env_file: >-
+      {{ lookup('ansible.builtin.env', 'STACK_ENV_FILE')
+         | default(playbook_dir ~ '/.env', true) }}
     agent_service_hosts: >-
       {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
          | default(lookup('ansible.builtin.env', 'AGENT_SERVICE_HOSTS')
          | default('agent_svc_plus', true), true) }}
+    agent_api_token: >-
+      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
+         | default(lookup('ansible.builtin.ini', 'INTERNAL_SERVICE_TOKEN type=properties file=' ~ stack_env_file, errors='ignore')
+         | default('', true), true) }}
+    agent_billing_base_url: >-
+      {{ lookup('ansible.builtin.env', 'BILLING_SERVICE_BASE_URL')
+         | default(lookup('ansible.builtin.ini', 'BILLING_SERVICE_BASE_URL type=properties file=' ~ stack_env_file, errors='ignore')
+         | default('http://127.0.0.1:8081', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
          | default('xray-exporter,billing-service,accounts,console,agent', true) }}

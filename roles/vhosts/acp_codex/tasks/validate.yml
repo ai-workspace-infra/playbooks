@@ -12,6 +12,7 @@
   ansible.builtin.uri:
     url: "http://{{ acp_codex_bridge_listen_host }}:{{ acp_codex_bridge_listen_port }}/acp/rpc"
     method: POST
+    headers: "{{ ({'Authorization': 'Bearer ' ~ (acp_codex_auth_token | trim)} if acp_codex_auth_token | trim | length > 0 else {}) }}"
     body_format: json
     body:
       jsonrpc: "2.0"
@@ -19,7 +20,7 @@
       method: acp.capabilities
       params: {}
     return_content: true
-    status_code: [200, 401]
+    status_code: "{{ [200] if acp_codex_auth_token | trim | length > 0 else [200, 401] }}"
   register: acp_codex_bridge_http
 
 - name: Validate local Codex ACP bridge CORS preflight
