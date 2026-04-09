@@ -34,6 +34,22 @@
     mode: "0755"
   notify: Restart xworkmate bridge
 
+- name: Deploy xworkmate-bridge systemd service
+  ansible.builtin.template:
+    src: xworkmate-bridge.service.j2
+    dest: "/etc/systemd/system/{{ xworkmate_bridge_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart xworkmate bridge
+
+- name: Ensure xworkmate-bridge is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ xworkmate_bridge_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
 - name: Include Codex ACP provider role
   ansible.builtin.import_role:
     name: roles/vhosts/acp_codex
@@ -88,22 +104,6 @@
     state: absent
   loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
   notify: Reload caddy
-
-- name: Deploy xworkmate-bridge systemd service
-  ansible.builtin.template:
-    src: xworkmate-bridge.service.j2
-    dest: "/etc/systemd/system/{{ xworkmate_bridge_service_name }}.service"
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Restart xworkmate bridge
-
-- name: Ensure xworkmate-bridge is enabled and running
-  ansible.builtin.systemd:
-    name: "{{ xworkmate_bridge_service_name }}"
-    enabled: true
-    state: started
-    daemon_reload: true
 
 - name: Ensure Caddy is enabled and running for ACP ingress
   ansible.builtin.systemd:

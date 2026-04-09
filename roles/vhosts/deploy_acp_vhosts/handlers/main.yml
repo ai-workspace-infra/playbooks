@@ -4,8 +4,12 @@
     name: "{{ xworkmate_bridge_service_name }}"
     state: restarted
     daemon_reload: true
+  when:
+    - not ansible_check_mode
 
 - name: Reload caddy
   ansible.builtin.systemd:
     name: caddy
     state: reloaded
+  when:
+    - not ansible_check_mode
