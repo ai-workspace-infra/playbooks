@@ -4,6 +4,36 @@
     update_cache: true
   become: true
 
+- name: Purge snapd and snap-managed Chromium leftovers
+  ansible.builtin.apt:
+    name: snapd
+    state: absent
+    purge: true
+    autoremove: true
+  become: true
+
+- name: Remove snap filesystem and user leftovers
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /snap
+    - /var/snap
+    - /var/lib/snapd
+    - /home/ubuntu/snap
+    - /home/ubuntu/.cache/gio-modules
+  become: true
+
+- name: Ensure xdg-utils is present for browser handoff
+  ansible.builtin.apt:
+    name: xdg-utils
+    state: present
+    install_recommends: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+
 - name: Install minimal desktop packages
   ansible.builtin.apt:
     name: "{{ xfce_packages }}"
@@ -14,20 +44,43 @@
     APT_LISTCHANGES_FRONTEND: none
   become: true
 
-- name: Check whether the xrdp service account exists
-  ansible.builtin.command: getent passwd xrdp
-  register: xfce_xrdp_account
-  changed_when: false
-  failed_when: false
+- name: Ensure the desktop user exists and is unlocked
+  ansible.builtin.user:
+    name: "{{ xfce_user }}"
+    shell: "{{ xfce_user_shell }}"
+    create_home: true
+    state: present
+    password_lock: false
+  become: true
+  when: xfce_manage_user | bool
+
+- name: Set desktop user password for XRDP login
+  ansible.builtin.user:
+    name: "{{ xfce_user }}"
+    password: "{{ xfce_user_password_plaintext | password_hash('sha512') }}"
+    update_password: always
+    password_lock: false
+  become: true
+  no_log: true
+  when:
+    - xfce_manage_user | bool
+    - xfce_user_password_plaintext | length > 0
+
+- name: Check whether XRDP service units are available
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /lib/systemd/system/xrdp.service
+    - /lib/systemd/system/xrdp-sesman.service
+  register: xfce_xrdp_unit_files
   become: true
 
-- name: Ensure xrdp user can read the TLS certificate group
-  ansible.builtin.user:
-    name: xrdp
-    groups: ssl-cert
-    append: true
+- name: Reload systemd when XRDP units have just been installed
+  ansible.builtin.command: systemctl daemon-reload
+  changed_when: false
   become: true
-  when: xfce_xrdp_account.rc == 0
+  when:
+    - xfce_xrdp_unit_files.results | selectattr('stat.exists', 'equalto', true) | list | length == 2
 
 - name: Enable and start XRDP services
   ansible.builtin.service:
@@ -36,19 +89,14 @@
     state: started
   loop: "{{ xfce_xrdp_services }}"
   become: true
+  when:
+    - xfce_xrdp_unit_files.results | selectattr('stat.exists', 'equalto', true) | list | length == 2
 
-- name: Check whether UFW is installed
-  ansible.builtin.stat:
-    path: /usr/sbin/ufw
-  register: xfce_ufw_binary
-  become: true
-
-- name: Allow XRDP through UFW
-  ansible.builtin.command: "ufw allow {{ xfce_rdp_port }}/tcp"
-  register: xfce_ufw_allow
-  changed_when: "'Skipping adding existing rule' not in xfce_ufw_allow.stdout"
-  failed_when: false
+- name: Fail when XRDP service units are missing
+  ansible.builtin.fail:
+    msg: >-
+      XRDP service units are missing after package installation.
+      Check whether xrdp and xorgxrdp are installed correctly.
   become: true
   when:
-    - xfce_enable_ufw | bool
-    - xfce_ufw_binary.stat.exists | default(false)
+    - xfce_xrdp_unit_files.results | selectattr('stat.exists', 'equalto', true) | list | length != 2
