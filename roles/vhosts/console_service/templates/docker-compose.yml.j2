@@ -22,27 +22,10 @@ services:
     environment:
       NODE_ENV: production
       PORT: {{ console_service_port | quote }}
+    ports:
+      - "127.0.0.1:{{ console_service_port }}:{{ console_service_port }}"
     volumes:
       - frontend_static:/app/dashboard/.next/static:ro
-    networks:
-      - frontend
-
-  caddy:
-    image: caddy:2.10-alpine
-    restart: unless-stopped
-    depends_on:
-      - dashboard
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      PRIMARY_DOMAIN: ${PRIMARY_DOMAIN:?set PRIMARY_DOMAIN in .env.runtime}
-      SECONDARY_DOMAIN: ${SECONDARY_DOMAIN:?set SECONDARY_DOMAIN in .env.runtime}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - frontend_static:/srv:ro
-      - caddy_data:/data
-      - caddy_config:/config
     networks:
       - frontend
 
@@ -52,5 +35,3 @@ networks:
 
 volumes:
   frontend_static:
-  caddy_data:
-  caddy_config:

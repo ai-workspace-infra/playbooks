@@ -1,8 +1,16 @@
 ---
+- name: Detect UFW binary
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: firewall_ufw_binary
+
 - name: Install UFW
   apt:
     name: ufw
     state: present
+  when:
+    - firewall_manage_ufw | bool
+    - firewall_ufw_binary.stat.exists | default(false)
 
 - name: Set default policies
   ufw:
@@ -11,6 +19,9 @@
   loop:
     - { policy: 'deny', direction: 'incoming' }
     - { policy: 'allow', direction: 'outgoing' }
+  when:
+    - firewall_manage_ufw | bool
+    - firewall_ufw_binary.stat.exists | default(false)
 
 - name: Allow essential ports (SSH first!)
   ufw:
@@ -19,6 +30,9 @@
     rule: allow
     comment: "{{ item.comment }}"
   loop: "{{ essential_ports }}"
+  when:
+    - firewall_manage_ufw | bool
+    - firewall_ufw_binary.stat.exists | default(false)
 
 - name: Allow necessary mail ports
   ufw:
@@ -27,6 +41,9 @@
     rule: allow
     comment: "{{ item.comment }}"
   loop: "{{ mail_ports }}"
+  when:
+    - firewall_manage_ufw | bool
+    - firewall_ufw_binary.stat.exists | default(false)
 
 - name: Allow LMTP from private networks
   ufw:
@@ -36,6 +53,9 @@
     from_ip: "{{ item }}"
     comment: 'LMTP private'
   loop: "{{ lmtp_private_networks }}"
+  when:
+    - firewall_manage_ufw | bool
+    - firewall_ufw_binary.stat.exists | default(false)
 
 - name: Deny plaintext ports
   ufw:
@@ -44,20 +64,32 @@
     rule: deny
     comment: "{{ item.comment }}"
   loop: "{{ denied_ports }}"
+  when:
+    - firewall_manage_ufw | bool
+    - firewall_ufw_binary.stat.exists | default(false)
 
 - name: Enable UFW
   ufw:
     state: enabled
+  when:
+    - firewall_manage_ufw | bool
+    - firewall_ufw_binary.stat.exists | default(false)
 
 - name: Get UFW numbered status
   command: ufw status numbered
   register: ufw_numbered
   changed_when: false
+  when:
+    - firewall_manage_ufw | bool
+    - firewall_ufw_binary.stat.exists | default(false)
 
 - name: Get UFW status verbose
   command: ufw status verbose
   register: ufw_status
   changed_when: false
+  when:
+    - firewall_manage_ufw | bool
+    - firewall_ufw_binary.stat.exists | default(false)
 
 - name: Display UFW status
   debug:
@@ -65,6 +97,9 @@
       🔥 UFW Firewall Status
       ====================
       {{ ufw_status.stdout }}
+  when:
+    - firewall_manage_ufw | bool
+    - firewall_ufw_binary.stat.exists | default(false)
 
 - name: Display configured mail rules
   debug:
@@ -96,3 +131,15 @@
       - SSH port {{ ssh_port }} is open - ensure you use key-based authentication
       - Default policy: deny all incoming, allow all outgoing
       - Only open ports that are absolutely necessary
+  when:
+    - firewall_manage_ufw | bool
+    - firewall_ufw_binary.stat.exists | default(false)
+
+- name: Explain why UFW tasks were skipped
+  ansible.builtin.debug:
+    msg: >-
+      Skipping UFW management on {{ inventory_hostname }} because
+      firewall_manage_ufw={{ firewall_manage_ufw | bool }}
+      and ufw_present={{ firewall_ufw_binary.stat.exists | default(false) }}.
+  when:
+    - not (firewall_manage_ufw | bool and (firewall_ufw_binary.stat.exists | default(false)))

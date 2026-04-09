@@ -1,13 +1,24 @@
 ---
 console_service_base_dir: "{{ lookup('ansible.builtin.env', 'CONSOLE_BASE_DIR') | default('/opt/console-svc-plus', true) }}"
 console_service_compose_file: "{{ console_service_base_dir }}/docker-compose.yml"
-console_service_caddyfile: "{{ console_service_base_dir }}/Caddyfile"
 console_service_runtime_env_file: "{{ console_service_base_dir }}/.env.runtime"
 console_service_project_name: "{{ lookup('ansible.builtin.env', 'CONSOLE_PROJECT_NAME') | default('console-svc-plus', true) }}"
+console_service_server_name: console
+console_service_release_id: "{{ lookup('env', 'RELEASE_ID') | default(lookup('pipe', 'git -C ' ~ playbook_dir ~ ' rev-parse --short HEAD'), true) }}"
+console_service_hostname: "{{ inventory_hostname | default(ansible_facts['hostname']) | default('unknown-host', true) }}"
+console_service_domain: "{{ lookup('ansible.builtin.env', 'CONSOLE_DOMAIN') | default('console.svc.plus', true) }}"
+console_service_domain_slug: "{{ console_service_domain | replace('.', '-') }}"
+console_service_caddy_conf_dir: /etc/caddy/conf.d
+console_service_caddy_fragment_name: "{{ console_service_server_name }}-{{ console_service_release_id }}-{{ console_service_hostname }}-{{ console_service_domain_slug }}.caddy"
+console_service_caddy_fragment_path: "{{ console_service_caddy_conf_dir }}/{{ console_service_caddy_fragment_name }}"
+console_service_obsolete_caddy_fragment_patterns:
+  - /etc/caddy/conf.d/console.caddy
+  - /etc/caddy/conf.d/console-svc-plus.caddy
+  - /etc/caddy/conf.d/console-*.caddy
 
 console_service_image_repo: "{{ lookup('ansible.builtin.env', 'CONSOLE_IMAGE_REPO') | default('ghcr.io/x-evor/dashboard', true) }}"
 console_service_image_tag: "{{ lookup('ansible.builtin.env', 'CONSOLE_IMAGE_TAG') | default('latest', true) }}"
-console_service_frontend_image: "{{ lookup('ansible.builtin.env', 'FRONTEND_IMAGE') | default('', true) }}"
+console_service_frontend_image: "{{ lookup('ansible.builtin.vars', 'FRONTEND_IMAGE', default=lookup('ansible.builtin.env', 'FRONTEND_IMAGE') | default('', true)) }}"
 
 console_service_registry: "{{ lookup('ansible.builtin.env', 'CONSOLE_REGISTRY') | default('ghcr.io', true) }}"
 console_service_registry_username: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') | default('', true) }}"
@@ -65,3 +76,4 @@ console_service_next_public_stripe_price_xcloudflow_paygo: "{{ lookup('ansible.b
 console_service_next_public_stripe_price_xcloudflow_subscription: "{{ lookup('ansible.builtin.env', 'NEXT_PUBLIC_STRIPE_PRICE_XCLOUDFLOW_SUBSCRIPTION') | default('', true) }}"
 
 console_service_pull_images: true
+console_service_manage_caddy: true

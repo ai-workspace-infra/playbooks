@@ -37,14 +37,6 @@
     group: root
     mode: "0644"
 
-- name: Render console Caddyfile
-  ansible.builtin.template:
-    src: Caddyfile.j2
-    dest: "{{ console_service_caddyfile }}"
-    owner: root
-    group: root
-    mode: "0644"
-
 - name: Render console runtime env file
   ansible.builtin.template:
     src: env.runtime.j2
@@ -71,7 +63,7 @@
     --project-name {{ console_service_project_name }}
     -f {{ console_service_compose_file }}
     --env-file {{ console_service_runtime_env_file }}
-    pull dashboard caddy
+    pull dashboard frontend-assets
   args:
     chdir: "{{ console_service_base_dir }}"
   when: console_service_pull_images | bool
@@ -86,15 +78,63 @@
   args:
     chdir: "{{ console_service_base_dir }}"
 
-- name: Start console dashboard and caddy containers
+- name: Start console dashboard container
   ansible.builtin.command: >-
     docker compose
     --project-name {{ console_service_project_name }}
     -f {{ console_service_compose_file }}
     --env-file {{ console_service_runtime_env_file }}
-    up -d --remove-orphans dashboard caddy
+    up -d --remove-orphans dashboard
   args:
     chdir: "{{ console_service_base_dir }}"
+
+- name: Ensure Caddy fragment directory exists
+  ansible.builtin.file:
+    path: "{{ console_service_caddy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: console_service_manage_caddy | bool
+
+- name: Render console Caddy fragment
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ console_service_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: console_service_manage_caddy | bool
+
+- name: Remove obsolete console Caddy fragments
+  ansible.builtin.shell: |
+    set -euo pipefail
+    shopt -s nullglob
+    current="{{ console_service_caddy_fragment_path }}"
+    for candidate in {{ console_service_caddy_conf_dir }}/console*.caddy {{ console_service_caddy_conf_dir }}/console*.caddy.bak*; do
+      if [ "$candidate" != "$current" ]; then
+        rm -f "$candidate"
+      fi
+    done
+  args:
+    executable: /bin/bash
+  changed_when: true
+  when: console_service_manage_caddy | bool
+
+- name: Validate Caddy config after updating console fragment
+  ansible.builtin.command: caddy validate --config /etc/caddy/Caddyfile
+  changed_when: false
+  when:
+    - console_service_manage_caddy | bool
+    - not ansible_check_mode
+
+- name: Reload Caddy after updating console fragment
+  ansible.builtin.service:
+    name: caddy
+    state: reloaded
+  when:
+    - console_service_manage_caddy | bool
+    - not ansible_check_mode
 
 - name: Show console compose status
   ansible.builtin.command: >-

@@ -17,6 +17,11 @@
     group: root
     mode: "0755"
 
+- name: Detect UFW binary for Codex ACP
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: acp_codex_ufw_binary
+
 - name: Open HTTP and HTTPS ports when UFW is enabled
   ansible.builtin.command: ufw allow 80/tcp
   register: acp_codex_ufw_80
@@ -24,6 +29,7 @@
   failed_when: acp_codex_ufw_80.rc != 0
   when:
     - acp_codex_enable_ufw | bool
+    - acp_codex_ufw_binary.stat.exists | default(false)
 
 - name: Open HTTPS port when UFW is enabled
   ansible.builtin.command: ufw allow 443/tcp
@@ -32,3 +38,4 @@
   failed_when: acp_codex_ufw_443.rc != 0
   when:
     - acp_codex_enable_ufw | bool
+    - acp_codex_ufw_binary.stat.exists | default(false)
