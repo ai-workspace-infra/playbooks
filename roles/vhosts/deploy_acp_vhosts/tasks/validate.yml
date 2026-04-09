@@ -87,6 +87,8 @@
   loop: "{{ xworkmate_bridge_obsolete_fragments.results }}"
   loop_control:
     label: "{{ item.stat.path }}"
+  when:
+    - not ansible_check_mode
 
 - name: Show xworkmate-bridge service status
   ansible.builtin.command: systemctl status "{{ xworkmate_bridge_service_name }}" --no-pager
