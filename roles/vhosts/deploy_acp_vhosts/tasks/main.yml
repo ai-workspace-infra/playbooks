@@ -49,6 +49,8 @@
     enabled: true
     state: started
     daemon_reload: true
+  when:
+    - not ansible_check_mode
 
 - name: Include Codex ACP provider role
   ansible.builtin.import_role:
@@ -110,7 +112,11 @@
     name: caddy
     enabled: true
     state: started
+  when:
+    - not ansible_check_mode
 
 - name: Include ACP ingress validation tasks
   ansible.builtin.import_tasks: validate.yml
   tags: [deploy_acp_vhosts, deploy_acp_vhosts_validate]
+  when:
+    - not ansible_check_mode
