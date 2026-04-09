@@ -21,6 +21,11 @@ acp_codex_bridge_allowed_origins:
   - https://xworkmate.svc.plus
   - http://localhost:*
   - http://127.0.0.1:*
+acp_codex_environment:
+  CODEX_HOME: "{{ acp_codex_workdir }}/.codex"
+  OPENAI_API_KEY: "{{ lookup('ansible.builtin.env', 'OPENAI_API_KEY') | default('', true) }}"
+  OPENAI_BASE_URL: "{{ lookup('ansible.builtin.env', 'OPENAI_BASE_URL') | default('', true) }}"
+  OPENAI_BASE_API_URL: "{{ lookup('ansible.builtin.env', 'OPENAI_BASE_API_URL') | default('', true) }}"
 acp_codex_auth_token: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}"
 acp_codex_public_base_url: https://acp-server.svc.plus/codex
 acp_codex_caddyfile_path: /etc/caddy/Caddyfile

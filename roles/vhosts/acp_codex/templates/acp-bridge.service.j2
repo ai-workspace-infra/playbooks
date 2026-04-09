@@ -15,6 +15,11 @@ Environment=ACP_ALLOWED_ORIGINS={{ acp_codex_bridge_allowed_origins | join(',') 
 {% if acp_codex_auth_token | trim | length > 0 %}
 Environment=ACP_AUTH_TOKEN={{ acp_codex_auth_token }}
 {% endif %}
+{% for key, value in acp_codex_environment | dictsort %}
+{% if value | string | trim | length > 0 %}
+Environment={{ key }}={{ value }}
+{% endif %}
+{% endfor %}
 ExecStart={{ acp_codex_bridge_binary_path }} serve --listen {{ acp_codex_bridge_listen_host }}:{{ acp_codex_bridge_listen_port }}
 Restart=always
 RestartSec=2

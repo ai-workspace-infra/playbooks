@@ -11,6 +11,11 @@ WorkingDirectory={{ acp_codex_workdir }}
 Environment=HOME={{ acp_codex_workdir }}
 Environment=TERM=xterm-256color
 Environment=NODE_NO_WARNINGS=1
+{% for key, value in acp_codex_environment | dictsort %}
+{% if value | string | trim | length > 0 %}
+Environment={{ key }}={{ value }}
+{% endif %}
+{% endfor %}
 ExecStart=/usr/bin/codex app-server --listen ws://{{ acp_codex_listen_host }}:{{ acp_codex_listen_port }}
 Restart=always
 RestartSec=2
