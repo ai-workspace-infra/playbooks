@@ -3,6 +3,34 @@
   ansible.builtin.include_vars:
     file: "{{ role_path }}/../../vars/cloudflare_svc_plus_dns.yml"
 
+- name: Build svc.plus DNS records from inventory
+  ansible.builtin.set_fact:
+    cloudflare_dns_records: >-
+      {%- set records = [] -%}
+      {%- set source_specs = cloudflare_dns_source_hosts | default(cloudflare_dns_default_source_hosts, true) -%}
+      {%- set expanded_hosts = [] -%}
+      {%- for spec in source_specs -%}
+      {%-   for host in query('inventory_hostnames', spec) -%}
+      {%-     if host not in expanded_hosts -%}
+      {%-       set _ = expanded_hosts.append(host) -%}
+      {%-     endif -%}
+      {%-   endfor -%}
+      {%- endfor -%}
+      {%- for host in expanded_hosts -%}
+      {%- set host_data = hostvars[host] -%}
+      {%- set service_domains = (host_data.service_domains | default('') | split(',')) | map('trim') | reject('equalto', '') | list -%}
+      {%- for service_domain in service_domains -%}
+      {%-   set _ = records.append({
+            'type': 'A',
+            'name': service_domain,
+            'content': host_data.ansible_host,
+            'ttl': 1,
+            'proxied': false
+          }) -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {{ records | to_json | from_yaml }}
+
 - name: Reconcile svc.plus DNS via shared Cloudflare role
   ansible.builtin.include_role:
     name: cloudflare_dns

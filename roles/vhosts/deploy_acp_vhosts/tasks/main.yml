@@ -43,6 +43,12 @@
     mode: "0644"
   notify: Restart xworkmate bridge
 
+- name: Stop stray standalone xworkmate-bridge process on target port
+  ansible.builtin.shell: |
+    pkill -f '^{{ xworkmate_bridge_binary_path }} serve --listen {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}$' || true
+  changed_when: true
+  failed_when: false
+
 - name: Ensure xworkmate-bridge is enabled and running
   ansible.builtin.systemd:
     name: "{{ xworkmate_bridge_service_name }}"
