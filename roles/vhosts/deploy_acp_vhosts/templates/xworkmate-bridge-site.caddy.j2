@@ -1,0 +1,12 @@
+{{ xworkmate_bridge_service_domain }} {
+  encode zstd gzip
+
+  @root path /
+  handle @root {
+    respond "xworkmate-bridge is running" 200
+  }
+
+  handle {
+    reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}
+  }
+}

@@ -72,6 +72,17 @@
   when:
     - deploy_acp_gemini | bool
 
+- name: Check xworkmate-bridge public domain root
+  ansible.builtin.uri:
+    url: "http://127.0.0.1/"
+    method: GET
+    headers:
+      Host: "{{ xworkmate_bridge_service_domain }}"
+    follow_redirects: none
+    status_code: [200, 301, 302, 307, 308]
+  changed_when: false
+  register: xworkmate_bridge_service_root
+
 - name: Check deprecated ACP fragments are absent
   ansible.builtin.stat:
     path: "{{ item }}"
@@ -105,6 +116,7 @@
       - "Codex public base URL: https://{{ xworkmate_bridge_domain }}/codex"
       - "OpenCode public base URL: https://{{ xworkmate_bridge_domain }}/opencode"
       - "Gemini public base URL: https://{{ xworkmate_bridge_domain }}/gemini"
+      - "Bridge service public base URL: {{ xworkmate_bridge_service_public_base_url }}"
       - "Bridge service: {{ xworkmate_bridge_status.stdout | default('N/A') }}"
       - "Codex route: /codex -> {{ xworkmate_bridge_codex_upstream_host }}:{{ xworkmate_bridge_codex_upstream_port }}"
       - "OpenCode route: /opencode -> {{ xworkmate_bridge_opencode_upstream_host }}:{{ xworkmate_bridge_opencode_upstream_port }}"

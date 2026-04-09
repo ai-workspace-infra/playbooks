@@ -130,6 +130,15 @@
     mode: "0644"
   notify: Reload caddy
 
+- name: Deploy xworkmate-bridge public Caddy site
+  ansible.builtin.template:
+    src: xworkmate-bridge-site.caddy.j2
+    dest: "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
 - name: Remove deprecated ACP Caddy fragments
   ansible.builtin.file:
     path: "{{ item }}"
