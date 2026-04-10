@@ -12,43 +12,43 @@
   delegate_to: localhost
   become: false
 
-- name: Check whether prebuilt xworkmate-bridge artifact exists
+- name: Check whether required xworkmate-bridge artifact exists
   ansible.builtin.stat:
     path: "{{ xworkmate_bridge_artifact_path }}"
   register: xworkmate_bridge_artifact_stat
   delegate_to: localhost
   become: false
-  when:
-    - xworkmate_bridge_artifact_path | trim | length > 0
 
-- name: Prefer downloaded xworkmate-bridge artifact
+- name: Assert xworkmate-bridge artifact path is provided
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_artifact_path | trim | length > 0
+    fail_msg: >-
+      xworkmate_bridge_artifact_path is required. deploy_xworkmate_bridge_vhosts.yml
+      must receive the build job artifact and must not fall back to go build.
+    success_msg: "xworkmate_bridge_artifact_path provided."
+  delegate_to: localhost
+  become: false
+
+- name: Assert required xworkmate-bridge artifact exists
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_artifact_stat.stat.exists | default(false)
+      - xworkmate_bridge_artifact_stat.stat.isreg | default(false)
+    fail_msg: >-
+      Required xworkmate-bridge artifact not found at {{ xworkmate_bridge_artifact_path }}.
+      Build job output must be downloaded before deploy runs.
+    success_msg: "Downloaded xworkmate-bridge artifact found."
+  delegate_to: localhost
+  become: false
+
+- name: Copy downloaded xworkmate-bridge artifact into deploy staging path
   ansible.builtin.copy:
     src: "{{ xworkmate_bridge_artifact_path }}"
     dest: "{{ xworkmate_bridge_local_binary_path }}"
     mode: "0755"
   delegate_to: localhost
   become: false
-  when:
-    - xworkmate_bridge_artifact_path | trim | length > 0
-    - xworkmate_bridge_artifact_stat.stat.exists | default(false)
-
-- name: Build xworkmate-bridge locally
-  ansible.builtin.command:
-    cmd: go build -o "{{ xworkmate_bridge_local_binary_path }}" .
-    chdir: "{{ xworkmate_bridge_local_source_dir }}"
-  environment:
-    GOOS: "{{ xworkmate_bridge_build_goos }}"
-    GOARCH: "{{ xworkmate_bridge_build_goarch }}"
-    CGO_ENABLED: "0"
-    GO111MODULE: "on"
-  delegate_to: localhost
-  become: false
-  check_mode: false
-  when:
-    - not (
-        xworkmate_bridge_artifact_path | trim | length > 0 and
-        xworkmate_bridge_artifact_stat.stat.exists | default(false)
-      )
 
 - name: Upload xworkmate-bridge binary
   ansible.builtin.copy:
