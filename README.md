@@ -4,7 +4,7 @@
 
 The traffic billing stack now has a single aggregate playbook:
 
-`deploy_traffic_billing_stack.yml`
+`deploy_svc_plus_core_services_stack.yml`
 
 It orchestrates these existing playbooks in dependency order:
 
@@ -13,6 +13,7 @@ It orchestrates these existing playbooks in dependency order:
 3. `deploy_accounts_svc_plus.yml`
 4. `deploy_console_svc_plus.yml`
 5. `deploy_agent_svc_plus.yml`
+6. `deploy_xworkmate_bridge_vhosts.yml`
 
 ### Full stack deploy
 
@@ -23,7 +24,7 @@ export DATABASE_URL=postgres://...
 export FRONTEND_IMAGE=ghcr.io/x-evor/dashboard:latest
 export STACK_TARGET_HOST=jp_xhttp_contabo_host
 export console_service_sync_dns=true
-ansible-playbook -i inventory.ini deploy_traffic_billing_stack.yml
+ansible-playbook -i inventory.ini deploy_svc_plus_core_services_stack.yml
 ```
 
 `STACK_ENV_FILE=./.env` is optional. Use it when you want the aggregate playbook to read a local `.env` file; GitHub Actions or other CI runners can skip it and pass values with `-e` instead.
@@ -39,7 +40,7 @@ export INTERNAL_SERVICE_TOKEN=...
 export DATABASE_URL=postgres://...
 export FRONTEND_IMAGE=ghcr.io/x-evor/dashboard:latest
 export console_service_sync_dns=true
-ansible-playbook -i inventory.ini -l jp_xhttp_contabo_host deploy_traffic_billing_stack.yml
+ansible-playbook -i inventory.ini -l jp_xhttp_contabo_host deploy_svc_plus_core_services_stack.yml
 ```
 
 ### Deploy only selected services
@@ -51,14 +52,15 @@ Use `STACK_SERVICES` with a comma-separated list:
 - `accounts`
 - `console`
 - `agent`
+- `xworkmate-bridge`
 
 ```bash
 cd /Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks
 export STACK_TARGET_HOST=jp-xhttp-contabo.svc.plus
-export STACK_SERVICES=xray-exporter,billing-service,agent
+export STACK_SERVICES=xray-exporter,billing-service,agent,xworkmate-bridge
 export INTERNAL_SERVICE_TOKEN=...
 export DATABASE_URL=postgres://...
-ansible-playbook -i inventory.ini -l jp_xhttp_contabo_host deploy_traffic_billing_stack.yml
+ansible-playbook -i inventory.ini -l jp_xhttp_contabo_host deploy_svc_plus_core_services_stack.yml
 ```
 
 ### Notes
@@ -68,6 +70,7 @@ ansible-playbook -i inventory.ini -l jp_xhttp_contabo_host deploy_traffic_billin
 - `console` now writes a Caddy fragment named like `<server-name>-<release_id>-<hostname>-<domain>.caddy` instead of managing the Caddy service container itself.
 - `billing-service` requires `DATABASE_URL`.
 - `xray-exporter` and `agent` require `INTERNAL_SERVICE_TOKEN`.
+- `xworkmate-bridge` accepts `XWORKMATE_BRIDGE_HOSTS`, and also follows `STACK_TARGET_HOST` when you want to deploy the whole stack to one host.
 
 ### Deploy console to a specific host and sync DNS
 

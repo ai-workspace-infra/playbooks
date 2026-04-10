@@ -57,6 +57,8 @@ Behavior after deployment:
 - requests with `Authorization: Bearer $INTERNAL_SERVICE_TOKEN` are accepted
 - this playbook only defines and validates the shared ingress token path
 - provider-specific authentication and ACP method compatibility are intentionally left to the individual runtimes
+- the Codex runtime user is a role variable and defaults to `ubuntu`, so it can be changed from inventory if needed
+- Gemini adapter is now also aligned to `ubuntu` home paths so it can reuse `/home/ubuntu/.gemini/oauth_creds.json`
 
 ## Public Endpoints
 

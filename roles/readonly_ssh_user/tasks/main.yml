@@ -1,0 +1,114 @@
+---
+- name: Assert readonly SSH user profile is supported
+  ansible.builtin.assert:
+    that:
+      - readonly_ssh_user_profile in ['readonly', 'audit']
+    fail_msg: "readonly_ssh_user_profile must be one of: readonly, audit"
+
+- name: Assert readonly SSH user has at least one login method
+  ansible.builtin.assert:
+    that:
+      - readonly_ssh_user_authorized_keys | length > 0 or (readonly_ssh_user_password_hash | length > 0 and not readonly_ssh_user_lock_password)
+    fail_msg: >-
+      Set readonly_ssh_user_authorized_keys for SSH key login, or provide an
+      unlocked readonly_ssh_user_password_hash if you intentionally want password login.
+
+- name: Set role comment based on selected profile when default is unchanged
+  ansible.builtin.set_fact:
+    readonly_ssh_user_effective_comment: >-
+      {{
+        'Audit SSH user'
+        if readonly_ssh_user_profile == 'audit'
+        else 'Read-only SSH user'
+      }}
+
+- name: Compute effective sudo command whitelist
+  ansible.builtin.set_fact:
+    readonly_ssh_user_effective_sudo_commands: "{{ readonly_ssh_user_sudo_commands }}"
+
+- name: Ensure readonly SSH user exists
+  ansible.builtin.user:
+    name: "{{ readonly_ssh_user_name }}"
+    comment: >-
+      {{
+        readonly_ssh_user_comment
+        if readonly_ssh_user_comment != 'Read-only SSH user'
+        else readonly_ssh_user_effective_comment
+      }}
+    shell: "{{ readonly_ssh_user_shell }}"
+    home: "{{ readonly_ssh_user_home }}"
+    create_home: "{{ readonly_ssh_user_create_home }}"
+    password: "{{ readonly_ssh_user_password_hash if readonly_ssh_user_password_hash | length > 0 else omit }}"
+    password_lock: "{{ readonly_ssh_user_lock_password }}"
+    groups: "{{ readonly_ssh_user_groups }}"
+    append: "{{ readonly_ssh_user_append_groups }}"
+    state: "{{ readonly_ssh_user_state }}"
+
+- name: Ensure SSH directory exists for readonly user
+  ansible.builtin.file:
+    path: "{{ readonly_ssh_user_home }}/.ssh"
+    state: directory
+    owner: "{{ readonly_ssh_user_name }}"
+    group: "{{ readonly_ssh_user_name }}"
+    mode: "0700"
+  when: readonly_ssh_user_authorized_keys | length > 0
+
+- name: Install authorized keys for readonly user
+  ansible.posix.authorized_key:
+    user: "{{ readonly_ssh_user_name }}"
+    key: "{{ item }}"
+    state: present
+    manage_dir: false
+  loop: "{{ readonly_ssh_user_authorized_keys }}"
+  when: readonly_ssh_user_authorized_keys | length > 0
+
+- name: Remove readonly user from privileged groups
+  ansible.builtin.command: "gpasswd -d {{ readonly_ssh_user_name }} {{ item }}"
+  register: readonly_user_group_removal
+  failed_when: readonly_user_group_removal.rc not in [0, 3]
+  changed_when: readonly_user_group_removal.rc == 0
+  loop: "{{ readonly_ssh_user_restricted_groups }}"
+
+- name: Ensure sshd drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ readonly_ssh_user_sshd_dropin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: readonly_ssh_user_manage_sshd
+
+- name: Configure readonly user SSH restrictions
+  ansible.builtin.copy:
+    dest: "{{ readonly_ssh_user_sshd_dropin_dir }}/{{ readonly_ssh_user_sshd_dropin_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Match User {{ readonly_ssh_user_name }}
+          PasswordAuthentication {{ 'yes' if readonly_ssh_user_password_authentication else 'no' }}
+          PubkeyAuthentication {{ 'yes' if readonly_ssh_user_pubkey_authentication else 'no' }}
+          KbdInteractiveAuthentication no
+          ChallengeResponseAuthentication no
+          PermitEmptyPasswords no
+          AllowTcpForwarding {{ 'yes' if readonly_ssh_user_allow_tcp_forwarding else 'no' }}
+          X11Forwarding {{ 'yes' if readonly_ssh_user_x11_forwarding else 'no' }}
+          PermitTunnel {{ 'yes' if readonly_ssh_user_permit_tunnel else 'no' }}
+          PermitTTY {{ 'yes' if readonly_ssh_user_permit_tty else 'no' }}
+          AllowAgentForwarding {{ 'yes' if readonly_ssh_user_allow_agent_forwarding else 'no' }}
+      {% if readonly_ssh_user_force_command | length > 0 %}
+          ForceCommand {{ readonly_ssh_user_force_command }}
+      {% endif %}
+  notify: reload sshd
+  when: readonly_ssh_user_manage_sshd
+
+- name: Configure readonly sudo command whitelist
+  ansible.builtin.copy:
+    dest: "{{ readonly_ssh_user_sudoers_file }}"
+    owner: root
+    group: root
+    mode: "0440"
+    content: |
+      {{ readonly_ssh_user_name }} ALL=(root) {{ 'NOPASSWD:' if readonly_ssh_user_sudo_nopasswd else '' }} {{ readonly_ssh_user_effective_sudo_commands | join(', ') }}
+  notify: validate sudoers
+  when: readonly_ssh_user_manage_sudoers

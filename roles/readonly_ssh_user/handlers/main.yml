@@ -1,0 +1,33 @@
+---
+- name: Validate sshd configuration syntax
+  ansible.builtin.command: sshd -t
+  changed_when: false
+  when: not ansible_check_mode
+  listen: reload sshd
+
+- name: Collect service facts for ssh reload
+  ansible.builtin.service_facts:
+  changed_when: false
+  listen: reload sshd
+
+- name: Select SSH service name for readonly user role
+  ansible.builtin.set_fact:
+    readonly_ssh_service_name: >-
+      {{
+        readonly_ssh_service_name_override
+        if readonly_ssh_service_name_override | length > 0
+        else ('ssh' if 'ssh.service' in ansible_facts.services else 'sshd')
+      }}
+  listen: reload sshd
+
+- name: Reload SSH service
+  ansible.builtin.service:
+    name: "{{ readonly_ssh_service_name }}"
+    state: reloaded
+  listen: reload sshd
+
+- name: Validate sudoers syntax
+  ansible.builtin.command: "visudo -cf {{ readonly_ssh_user_sudoers_file }}"
+  changed_when: false
+  when: not ansible_check_mode
+  listen: validate sudoers

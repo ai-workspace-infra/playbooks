@@ -1,0 +1,111 @@
+---
+readonly_ssh_user_profile: readonly
+readonly_ssh_user_name: readonly
+readonly_ssh_user_comment: "Read-only SSH user"
+readonly_ssh_user_shell: /bin/bash
+readonly_ssh_user_home: "/home/{{ readonly_ssh_user_name }}"
+readonly_ssh_user_create_home: true
+readonly_ssh_user_password_hash: ""
+readonly_ssh_user_lock_password: true
+readonly_ssh_user_authorized_keys: []
+readonly_ssh_user_append_groups: false
+readonly_ssh_user_groups: []
+readonly_ssh_user_restricted_groups:
+  - sudo
+  - wheel
+  - adm
+  - docker
+  - lxd
+  - libvirt
+  - root
+readonly_ssh_user_state: present
+readonly_ssh_user_manage_sshd: true
+readonly_ssh_user_sshd_dropin_dir: /etc/ssh/sshd_config.d
+readonly_ssh_user_sshd_dropin_file: "99-{{ readonly_ssh_user_name }}-readonly.conf"
+readonly_ssh_user_allow_tcp_forwarding: false
+readonly_ssh_user_x11_forwarding: false
+readonly_ssh_user_permit_tunnel: false
+readonly_ssh_user_permit_tty: true
+readonly_ssh_user_allow_agent_forwarding: false
+readonly_ssh_user_password_authentication: false
+readonly_ssh_user_pubkey_authentication: true
+readonly_ssh_user_force_command: ""
+readonly_ssh_service_name_override: ""
+readonly_ssh_user_manage_sudoers: false
+readonly_ssh_user_sudo_nopasswd: true
+readonly_ssh_user_sudoers_file: "/etc/sudoers.d/{{ readonly_ssh_user_name }}-readonly"
+readonly_ssh_user_sudo_commands_readonly:
+  - /usr/bin/cat *
+  - /usr/bin/head *
+  - /usr/bin/tail *
+  - /usr/bin/grep *
+  - /usr/bin/find *
+  - /usr/bin/ls *
+  - /usr/bin/stat *
+  - /usr/bin/du *
+  - /usr/bin/df *
+  - /usr/bin/ps *
+  - /usr/bin/ss *
+  - /usr/bin/free
+  - /usr/bin/uptime
+  - /usr/bin/id
+  - /usr/bin/uname -a
+  - /usr/bin/hostnamectl status
+  - /usr/bin/systemctl status *
+  - /usr/bin/systemctl show *
+  - /usr/bin/journalctl *
+readonly_ssh_user_sudo_commands_audit:
+  - /usr/bin/cat *
+  - /usr/bin/head *
+  - /usr/bin/tail *
+  - /usr/bin/grep *
+  - /usr/bin/egrep *
+  - /usr/bin/fgrep *
+  - /usr/bin/find *
+  - /usr/bin/ls *
+  - /usr/bin/stat *
+  - /usr/bin/namei *
+  - /usr/bin/file *
+  - /usr/bin/du *
+  - /usr/bin/df *
+  - /usr/bin/ps *
+  - /usr/bin/ss *
+  - /usr/bin/free
+  - /usr/bin/uptime
+  - /usr/bin/id
+  - /usr/bin/uname -a
+  - /usr/bin/hostnamectl status
+  - /usr/bin/systemctl status *
+  - /usr/bin/systemctl show *
+  - /usr/bin/systemctl list-units *
+  - /usr/bin/systemctl list-unit-files *
+  - /usr/bin/systemctl cat *
+  - /usr/bin/journalctl *
+  - /usr/bin/loginctl *
+  - /usr/bin/env
+  - /usr/bin/printenv
+  - /usr/bin/whoami
+  - /usr/bin/w
+  - /usr/bin/who
+  - /usr/bin/last *
+  - /usr/bin/lastlog *
+  - /usr/bin/passwd -S *
+  - /usr/bin/getent *
+  - /usr/bin/crontab -l *
+  - /usr/sbin/ufw status
+  - /usr/sbin/ip addr *
+  - /usr/sbin/ip route *
+  - /usr/sbin/ip rule *
+  - /usr/sbin/iptables -S *
+  - /usr/sbin/ip6tables -S *
+  - /usr/sbin/nginx -T
+  - /usr/sbin/apachectl -S
+  - /usr/bin/docker ps *
+  - /usr/bin/docker images *
+  - /usr/bin/docker inspect *
+readonly_ssh_user_sudo_commands: >-
+  {{
+    readonly_ssh_user_sudo_commands_audit
+    if readonly_ssh_user_profile == 'audit'
+    else readonly_ssh_user_sudo_commands_readonly
+  }}

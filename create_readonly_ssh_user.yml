@@ -1,0 +1,25 @@
+---
+- name: Create a readonly SSH user on selected hosts
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    ansible_user: "{{ lookup('env', 'BOOTSTRAP_ROOT_USER') | default('root', true) }}"
+    ansible_password: "{{ lookup('env', 'BOOTSTRAP_ROOT_PASSWORD') | default(omit, true) }}"
+    ansible_become_password: "{{ lookup('env', 'BOOTSTRAP_BECOME_PASSWORD') | default(omit, true) }}"
+
+    readonly_ssh_user_name: "{{ lookup('env', 'READONLY_SSH_USER_NAME') | default('readonly', true) }}"
+    readonly_ssh_user_profile: "{{ lookup('env', 'READONLY_SSH_USER_PROFILE') | default('readonly', true) }}"
+    readonly_ssh_user_password_hash: "{{ lookup('env', 'READONLY_SSH_USER_PASSWORD_HASH') | default('', true) }}"
+    readonly_ssh_user_lock_password: "{{ lookup('env', 'READONLY_SSH_LOCK_PASSWORD') | default('true', true) | bool }}"
+    readonly_ssh_user_manage_sudoers: "{{ lookup('env', 'READONLY_SSH_ENABLE_SUDO') | default('false', true) | bool }}"
+    readonly_ssh_user_authorized_keys: >-
+      {{
+        [lookup('env', 'READONLY_SSH_USER_PUBLIC_KEY')]
+        if lookup('env', 'READONLY_SSH_USER_PUBLIC_KEY') | default('', true) | length > 0
+        else []
+      }}
+
+  roles:
+    - role: readonly_ssh_user

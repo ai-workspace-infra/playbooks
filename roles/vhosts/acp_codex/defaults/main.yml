@@ -1,8 +1,11 @@
 ---
 acp_codex_service_name: codex-app-server
-acp_codex_service_user: root
-acp_codex_service_group: root
-acp_codex_workdir: /root
+acp_codex_runtime_user: ubuntu
+acp_codex_runtime_group: "{{ acp_codex_runtime_user }}"
+acp_codex_runtime_home: "/home/{{ acp_codex_runtime_user }}"
+acp_codex_service_user: "{{ acp_codex_runtime_user }}"
+acp_codex_service_group: "{{ acp_codex_runtime_group }}"
+acp_codex_workdir: "{{ acp_codex_runtime_home }}"
 acp_codex_listen_host: 127.0.0.1
 acp_codex_listen_port: 9001
 acp_codex_bridge_service_name: acp-bridge-codex
@@ -22,7 +25,7 @@ acp_codex_bridge_allowed_origins:
   - http://localhost:*
   - http://127.0.0.1:*
 acp_codex_environment:
-  CODEX_HOME: "{{ acp_codex_workdir }}/.codex"
+  CODEX_HOME: "{{ acp_codex_runtime_home }}/.codex"
   OPENAI_API_KEY: "{{ lookup('ansible.builtin.env', 'OPENAI_API_KEY') | default('', true) }}"
   OPENAI_BASE_URL: "{{ lookup('ansible.builtin.env', 'OPENAI_BASE_URL') | default('', true) }}"
   OPENAI_BASE_API_URL: "{{ lookup('ansible.builtin.env', 'OPENAI_BASE_API_URL') | default('', true) }}"

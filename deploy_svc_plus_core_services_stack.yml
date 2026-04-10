@@ -13,7 +13,7 @@
          | default('', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
-         | default('xray-exporter,billing-service,accounts,console,agent', true) }}
+         | default('xray-exporter,billing-service,accounts,console,agent,xworkmate-bridge', true) }}
   when: "'xray-exporter' in (stack_services.split(',') | map('trim') | list)"
 
 - import_playbook: deploy_billing_service.yml
@@ -35,7 +35,7 @@
          | default('http://127.0.0.1:8080', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
-         | default('xray-exporter,billing-service,accounts,console,agent', true) }}
+         | default('xray-exporter,billing-service,accounts,console,agent,xworkmate-bridge', true) }}
   when: "'billing-service' in (stack_services.split(',') | map('trim') | list)"
 
 - import_playbook: deploy_accounts_svc_plus.yml
@@ -57,7 +57,7 @@
          | default('latest', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
-         | default('xray-exporter,billing-service,accounts,console,agent', true) }}
+         | default('xray-exporter,billing-service,accounts,console,agent,xworkmate-bridge', true) }}
   when: "'accounts' in (stack_services.split(',') | map('trim') | list)"
 
 - import_playbook: deploy_console_svc_plus.yml
@@ -87,7 +87,7 @@
          | default('', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
-         | default('xray-exporter,billing-service,accounts,console,agent', true) }}
+         | default('xray-exporter,billing-service,accounts,console,agent,xworkmate-bridge', true) }}
   when: "'console' in (stack_services.split(',') | map('trim') | list)"
 
 - import_playbook: deploy_agent_svc_plus.yml
@@ -109,5 +109,16 @@
          | default('http://127.0.0.1:8081', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
-         | default('xray-exporter,billing-service,accounts,console,agent', true) }}
+         | default('xray-exporter,billing-service,accounts,console,agent,xworkmate-bridge', true) }}
   when: "'agent' in (stack_services.split(',') | map('trim') | list)"
+
+- import_playbook: deploy_xworkmate_bridge_vhosts.yml
+  vars:
+    xworkmate_bridge_hosts: >-
+      {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
+         | default(lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_HOSTS')
+         | default('all', true), true) }}
+    stack_services: >-
+      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
+         | default('xray-exporter,billing-service,accounts,console,agent,xworkmate-bridge', true) }}
+  when: "'xworkmate-bridge' in (stack_services.split(',') | map('trim') | list)"
