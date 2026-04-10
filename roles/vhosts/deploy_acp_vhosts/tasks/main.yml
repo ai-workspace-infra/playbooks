@@ -12,6 +12,26 @@
   delegate_to: localhost
   become: false
 
+- name: Check whether prebuilt xworkmate-bridge artifact exists
+  ansible.builtin.stat:
+    path: "{{ xworkmate_bridge_artifact_path }}"
+  register: xworkmate_bridge_artifact_stat
+  delegate_to: localhost
+  become: false
+  when:
+    - xworkmate_bridge_artifact_path | trim | length > 0
+
+- name: Prefer downloaded xworkmate-bridge artifact
+  ansible.builtin.copy:
+    src: "{{ xworkmate_bridge_artifact_path }}"
+    dest: "{{ xworkmate_bridge_local_binary_path }}"
+    mode: "0755"
+  delegate_to: localhost
+  become: false
+  when:
+    - xworkmate_bridge_artifact_path | trim | length > 0
+    - xworkmate_bridge_artifact_stat.stat.exists | default(false)
+
 - name: Build xworkmate-bridge locally
   ansible.builtin.command:
     cmd: go build -o "{{ xworkmate_bridge_local_binary_path }}" .
@@ -24,6 +44,11 @@
   delegate_to: localhost
   become: false
   check_mode: false
+  when:
+    - not (
+        xworkmate_bridge_artifact_path | trim | length > 0 and
+        xworkmate_bridge_artifact_stat.stat.exists | default(false)
+      )
 
 - name: Upload xworkmate-bridge binary
   ansible.builtin.copy:
