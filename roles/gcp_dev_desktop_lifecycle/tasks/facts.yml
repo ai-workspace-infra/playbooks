@@ -1,0 +1,50 @@
+- name: Normalize GCP desktop resource names
+  ansible.builtin.set_fact:
+    gcp_project_id: "{{ gcp_project_id | default(lookup('env', 'GCP_PROJECT_ID')) }}"
+    gcp_zone: "{{ zone | default(gcp_zone | default('asia-northeast1-a')) }}"
+    gcp_network: "{{ gcp_network | default('devdesktop-' ~ cloud_vm_owner_slug) }}"
+    gcp_subnet: "{{ gcp_subnet | default('devdesktop-' ~ cloud_vm_owner_slug ~ '-subnet') }}"
+    gcp_firewall_rule: "{{ gcp_firewall_rule | default('allow-' ~ cloud_vm_profile_slug) }}"
+    gcp_vm_name: "{{ gcp_vm_name | default('vm-' ~ cloud_vm_profile_slug) }}"
+    gcp_labels: "{{ tags | default({}) }}"
+    cloud_vm_platform: "gcp"
+
+- name: Derive GCP region from zone
+  ansible.builtin.set_fact:
+    gcp_region: "{{ gcp_zone.rsplit('-', 1)[0] }}"
+
+- name: Assert GCP project id is available when requested
+  ansible.builtin.assert:
+    that:
+      - gcp_project_id | length > 0
+    fail_msg: "GCP_PROJECT_ID or gcp_project_id is required for GCP operations."
+  when: not ansible_check_mode
+
+- name: Select GCP image defaults by OS family
+  ansible.builtin.set_fact:
+    gcp_image_project: >-
+      {{
+        image_project
+        | default(
+            gcp_image_project
+            | default(
+            {
+              'windows': 'windows-cloud',
+              'fedora-gnome': 'fedora-cloud',
+              'debian-kde': 'debian-cloud'
+            }[os_family]
+            )
+          )
+      }}
+    gcp_image_family: >-
+      {{
+        image_family
+        | default(
+            {
+              'windows': 'windows-11',
+              'fedora-gnome': 'fedora-cloud-43',
+              'debian-kde': 'debian-13'
+            }[os_family]
+          )
+      }}
+    gcp_windows_password: "{{ gcp_windows_password | default(lookup('env', 'GCP_WINDOWS_ADMIN_PASSWORD')) }}"

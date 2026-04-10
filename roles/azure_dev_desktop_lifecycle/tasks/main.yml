@@ -1,0 +1,16 @@
+- name: Gather Azure lifecycle facts
+  ansible.builtin.include_tasks: facts.yml
+
+- name: Run Azure create flow
+  ansible.builtin.include_tasks: create.yml
+  when: cloud_lifecycle_action == "create"
+
+- name: Run Azure destroy flow
+  ansible.builtin.include_tasks: destroy.yml
+  when: cloud_lifecycle_action == "destroy"
+
+- name: Run Azure cleanup flow
+  ansible.builtin.include_tasks: destroy.yml
+  vars:
+    azure_cleanup_mode: true
+  when: cloud_lifecycle_action == "cleanup"

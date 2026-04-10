@@ -1,0 +1,40 @@
+- name: Ensure common Linux packages are installed
+  ansible.builtin.package:
+    name:
+      - git
+      - curl
+      - wget
+      - unzip
+      - tar
+      - jq
+      - ca-certificates
+    state: present
+
+- name: Ensure admin user exists on Linux
+  ansible.builtin.user:
+    name: "{{ admin_username }}"
+    shell: "{{ cloud_dev_desktop_user_shell }}"
+    create_home: true
+    state: present
+
+- name: Ensure admin SSH directory exists on Linux
+  ansible.builtin.file:
+    path: "/home/{{ admin_username }}/.ssh"
+    state: directory
+    owner: "{{ admin_username }}"
+    group: "{{ admin_username }}"
+    mode: "0700"
+
+- name: Authorize additional SSH public keys for admin user
+  ansible.posix.authorized_key:
+    user: "{{ admin_username }}"
+    key: "{{ item }}"
+    state: present
+  loop: "{{ cloud_dev_desktop_extra_authorized_keys | default([]) }}"
+  when: (cloud_dev_desktop_extra_authorized_keys | default([])) | length > 0
+
+- name: Ensure workspace root exists
+  ansible.builtin.file:
+    path: "{{ cloud_dev_desktop_workspace_root }}"
+    state: directory
+    mode: "0755"

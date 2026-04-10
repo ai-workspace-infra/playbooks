@@ -1,0 +1,101 @@
+- name: Install Azure CLI on Debian family
+  ansible.builtin.shell: |
+    set -euo pipefail
+    curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+  args:
+    executable: /bin/bash
+  when:
+    - cloud_cli_prereqs_install_azure_cli | bool
+    - ansible_os_family == "Debian"
+    - not ansible_check_mode
+
+- name: Install Azure CLI dependencies on RedHat family
+  ansible.builtin.package:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg2
+    state: present
+  when:
+    - cloud_cli_prereqs_install_azure_cli | bool
+    - ansible_os_family == "RedHat"
+
+- name: Add Azure CLI yum repository on RedHat family
+  ansible.builtin.copy:
+    dest: /etc/yum.repos.d/azure-cli.repo
+    mode: "0644"
+    content: |
+      [azure-cli]
+      name=Azure CLI
+      baseurl=https://packages.microsoft.com/yumrepos/azure-cli
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://packages.microsoft.com/keys/microsoft.asc
+  when:
+    - cloud_cli_prereqs_install_azure_cli | bool
+    - ansible_os_family == "RedHat"
+
+- name: Install Azure CLI on RedHat family
+  ansible.builtin.package:
+    name: azure-cli
+    state: present
+  when:
+    - cloud_cli_prereqs_install_azure_cli | bool
+    - ansible_os_family == "RedHat"
+
+- name: Select Google Cloud CLI archive for Linux
+  ansible.builtin.set_fact:
+    cloud_cli_prereqs_gcloud_archive_name: >-
+      {{
+        cloud_cli_prereqs_gcloud_archive_map[ansible_architecture]
+        | default('google-cloud-cli-linux-x86_64.tar.gz')
+      }}
+  when: cloud_cli_prereqs_install_gcloud_cli | bool
+
+- name: Build Google Cloud CLI download URL for Linux
+  ansible.builtin.set_fact:
+    cloud_cli_prereqs_gcloud_url: >-
+      https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/{{ cloud_cli_prereqs_gcloud_archive_name }}
+  when: cloud_cli_prereqs_install_gcloud_cli | bool
+
+- name: Download Google Cloud CLI archive on Linux
+  ansible.builtin.get_url:
+    url: "{{ cloud_cli_prereqs_gcloud_url }}"
+    dest: "/tmp/{{ cloud_cli_prereqs_gcloud_archive_name }}"
+    mode: "0644"
+  when:
+    - cloud_cli_prereqs_install_gcloud_cli | bool
+    - not ansible_check_mode
+
+- name: Extract Google Cloud CLI on Linux
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ cloud_cli_prereqs_gcloud_archive_name }}"
+    dest: "{{ cloud_cli_prereqs_gcloud_install_root }}"
+    remote_src: true
+    creates: "{{ cloud_cli_prereqs_gcloud_install_root }}/google-cloud-sdk/bin/gcloud"
+  when:
+    - cloud_cli_prereqs_install_gcloud_cli | bool
+    - not ansible_check_mode
+
+- name: Ensure gcloud symlink exists on Linux
+  ansible.builtin.file:
+    src: "{{ cloud_cli_prereqs_gcloud_install_root }}/google-cloud-sdk/bin/gcloud"
+    dest: /usr/local/bin/gcloud
+    state: link
+  when:
+    - cloud_cli_prereqs_install_gcloud_cli | bool
+    - not ansible_check_mode
+
+- name: Verify Azure CLI on Linux
+  ansible.builtin.command: az version
+  changed_when: false
+  when:
+    - cloud_cli_prereqs_install_azure_cli | bool
+    - not ansible_check_mode
+
+- name: Verify Google Cloud CLI on Linux
+  ansible.builtin.command: gcloud version
+  changed_when: false
+  when:
+    - cloud_cli_prereqs_install_gcloud_cli | bool
+    - not ansible_check_mode

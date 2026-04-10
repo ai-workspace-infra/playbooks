@@ -1,0 +1,84 @@
+- name: Detect winget on Windows
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "SilentlyContinue"
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+      Write-Output "present"
+      exit 0
+    }
+    Write-Output "missing"
+    exit 0
+  changed_when: false
+  register: cloud_cli_prereqs_winget_check
+
+- name: Detect Chocolatey on Windows
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "SilentlyContinue"
+    if (Get-Command choco -ErrorAction SilentlyContinue) {
+      Write-Output "present"
+      exit 0
+    }
+    Write-Output "missing"
+    exit 0
+  changed_when: false
+  register: cloud_cli_prereqs_choco_check
+
+- name: Install Chocolatey fallback on Windows
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "Stop"
+    Set-ExecutionPolicy Bypass -Scope Process -Force
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+    Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+  changed_when: true
+  when:
+    - "'present' not in cloud_cli_prereqs_winget_check.stdout"
+    - "'present' not in cloud_cli_prereqs_choco_check.stdout"
+
+- name: Install Azure CLI on Windows with winget
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "Stop"
+    winget install --id Microsoft.AzureCLI --exact --accept-package-agreements --accept-source-agreements --silent
+  changed_when: true
+  when:
+    - cloud_cli_prereqs_install_azure_cli | bool
+    - "'present' in cloud_cli_prereqs_winget_check.stdout"
+
+- name: Install Azure CLI on Windows with Chocolatey
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "Stop"
+    choco install azure-cli -y --no-progress
+  changed_when: true
+  when:
+    - cloud_cli_prereqs_install_azure_cli | bool
+    - "'present' not in cloud_cli_prereqs_winget_check.stdout"
+
+- name: Install Google Cloud CLI on Windows with winget
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "Stop"
+    winget install --id Google.CloudSDK --exact --accept-package-agreements --accept-source-agreements --silent
+  changed_when: true
+  when:
+    - cloud_cli_prereqs_install_gcloud_cli | bool
+    - "'present' in cloud_cli_prereqs_winget_check.stdout"
+
+- name: Install Google Cloud CLI on Windows with Chocolatey
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "Stop"
+    choco install gcloudsdk -y --no-progress
+  changed_when: true
+  when:
+    - cloud_cli_prereqs_install_gcloud_cli | bool
+    - "'present' not in cloud_cli_prereqs_winget_check.stdout"
+
+- name: Verify Azure CLI on Windows
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "Stop"
+    Get-Command az | Out-Null
+  changed_when: false
+  when: cloud_cli_prereqs_install_azure_cli | bool
+
+- name: Verify Google Cloud CLI on Windows
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "Stop"
+    Get-Command gcloud | Out-Null
+  changed_when: false
+  when: cloud_cli_prereqs_install_gcloud_cli | bool

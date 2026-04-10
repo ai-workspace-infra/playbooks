@@ -8,7 +8,7 @@
          | default(playbook_dir ~ '/../xray-exporter', true) }}
     xray_exporter_node_id: >-
       {{ lookup('ansible.builtin.env', 'EXPORTER_NODE_ID')
-         | default('node-xhttp.svc.plus', true) }}
+         | default(xray_exporter_node_id_custom | default(inventory_hostname, true), true) }}
     xray_exporter_env_name: >-
       {{ lookup('ansible.builtin.env', 'EXPORTER_ENV')
          | default('prod', true) }}

@@ -1,0 +1,232 @@
+- name: Preview Azure create request
+  ansible.builtin.debug:
+    msg:
+      - "azure_resource_group={{ azure_resource_group }}"
+      - "azure_vm_name={{ azure_vm_name }}"
+      - "azure_computer_name={{ azure_computer_name }}"
+      - "azure_location={{ azure_location }}"
+      - "allowed_cidrs={{ allowed_cidrs | join(',') }}"
+      - "allowed_tcp_ports={{ allowed_tcp_ports | join(',') }}"
+      - "state_file={{ cloud_vm_state_file }}"
+
+- name: Ensure Azure resource group exists
+  ansible.builtin.command:
+    argv:
+      - az
+      - group
+      - create
+      - --subscription
+      - "{{ azure_subscription_id }}"
+      - --name
+      - "{{ azure_resource_group }}"
+      - --location
+      - "{{ azure_location }}"
+      - --tags
+      - "{{ tags | dict2items | map('join', '=') | join(' ') }}"
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Ensure Azure virtual network exists
+  ansible.builtin.command:
+    argv:
+      - az
+      - network
+      - vnet
+      - create
+      - --subscription
+      - "{{ azure_subscription_id }}"
+      - --resource-group
+      - "{{ azure_resource_group }}"
+      - --name
+      - "{{ azure_virtual_network }}"
+      - --address-prefixes
+      - "{{ azure_vnet_cidr | default('10.42.0.0/16') }}"
+      - --subnet-name
+      - "{{ azure_subnet }}"
+      - --subnet-prefixes
+      - "{{ azure_subnet_cidr | default('10.42.1.0/24') }}"
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Ensure Azure network security group exists
+  ansible.builtin.command:
+    argv:
+      - az
+      - network
+      - nsg
+      - create
+      - --subscription
+      - "{{ azure_subscription_id }}"
+      - --resource-group
+      - "{{ azure_resource_group }}"
+      - --name
+      - "{{ azure_network_security_group }}"
+      - --location
+      - "{{ azure_location }}"
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Create Azure allowlist rules
+  ansible.builtin.command:
+    argv:
+      - az
+      - network
+      - nsg
+      - rule
+      - create
+      - --subscription
+      - "{{ azure_subscription_id }}"
+      - --resource-group
+      - "{{ azure_resource_group }}"
+      - --nsg-name
+      - "{{ azure_network_security_group }}"
+      - --name
+      - "allow-tcp-{{ port }}-{{ '%03d' | format((index | int) + ((port_index | int) * 100) + 100) }}"
+      - --priority
+      - "{{ '%d' | format((index | int) + ((port_index | int) * 100) + 100) }}"
+      - --access
+      - Allow
+      - --protocol
+      - Tcp
+      - --direction
+      - Inbound
+      - --source-address-prefixes
+      - "{{ cidr }}"
+      - --source-port-ranges
+      - "*"
+      - --destination-port-ranges
+      - "{{ port | string }}"
+  loop: "{{ allowed_cidrs | product(allowed_tcp_ports) | list }}"
+  loop_control:
+    label: "{{ item.0 }} -> {{ item.1 }}"
+    index_var: combo_index
+  changed_when: true
+  when: not ansible_check_mode
+  vars:
+    cidr: "{{ item.0 }}"
+    port: "{{ item.1 }}"
+    index: "{{ combo_index % (allowed_cidrs | length) }}"
+    port_index: "{{ combo_index // (allowed_cidrs | length) }}"
+
+- name: Build Azure VM create command
+  ansible.builtin.set_fact:
+    azure_vm_create_command: >-
+      az vm create
+      --subscription {{ azure_subscription_id | quote }}
+      --resource-group {{ azure_resource_group | quote }}
+      --name {{ azure_vm_name | quote }}
+      --computer-name {{ azure_computer_name | quote }}
+      --image {{ (azure_image_publisher ~ ':' ~ azure_image_offer ~ ':' ~ azure_image_sku ~ ':' ~ azure_image_version) | quote }}
+      --size {{ vm_size | quote }}
+      --admin-username {{ admin_username | quote }}
+      --vnet-name {{ azure_virtual_network | quote }}
+      --subnet {{ azure_subnet | quote }}
+      --nsg {{ azure_network_security_group | quote }}
+      --public-ip-sku Standard
+      --public-ip-address {{ azure_public_ip_name | quote }}
+      --storage-sku Premium_LRS
+      --os-disk-size-gb {{ disk_gb | int }}
+      --tags {{ tags | dict2items | map('join', '=') | join(' ') | quote }}
+      {% if os_family == 'windows' %}
+      --admin-password {{ azure_admin_password | quote }}
+      {% else %}
+      --ssh-key-values {{ ssh_public_key_path | quote }}
+      {% endif %}
+
+- name: Create Azure VM
+  ansible.builtin.shell: "{{ azure_vm_create_command }}"
+  args:
+    executable: /bin/bash
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Fetch Azure VM networking facts
+  ansible.builtin.command:
+    argv:
+      - az
+      - vm
+      - show
+      - --subscription
+      - "{{ azure_subscription_id }}"
+      - --resource-group
+      - "{{ azure_resource_group }}"
+      - --name
+      - "{{ azure_vm_name }}"
+      - --show-details
+      - --query
+      - "{publicIp:publicIps,privateIp:privateIps}"
+      - -o
+      - json
+  register: azure_vm_network_json
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Set Azure VM connection facts
+  ansible.builtin.set_fact:
+    cloud_vm_public_ip: "{{ (azure_vm_network_json.stdout | from_json).publicIp | default('127.0.0.1') }}"
+    cloud_vm_private_ip: "{{ (azure_vm_network_json.stdout | from_json).privateIp | default('127.0.0.1') }}"
+    cloud_vm_admin_user: "{{ admin_username }}"
+  when: not ansible_check_mode
+
+- name: Set Azure dry-run connection facts
+  ansible.builtin.set_fact:
+    cloud_vm_public_ip: "{{ cloud_vm_public_ip | default('198.51.100.10') }}"
+    cloud_vm_private_ip: "{{ cloud_vm_private_ip | default('10.42.1.10') }}"
+    cloud_vm_admin_user: "{{ admin_username }}"
+  when: ansible_check_mode
+
+- name: Prepare Azure Windows VM for initial WinRM bootstrap
+  ansible.builtin.command:
+    argv:
+      - az
+      - vm
+      - run-command
+      - invoke
+      - --subscription
+      - "{{ azure_subscription_id }}"
+      - --resource-group
+      - "{{ azure_resource_group }}"
+      - --name
+      - "{{ azure_vm_name }}"
+      - --command-id
+      - RunPowerShellScript
+      - --scripts
+      - |
+        $ProgressPreference = 'SilentlyContinue'
+        $profiles = Get-NetConnectionProfile
+        foreach ($profile in $profiles) {
+          if ($profile.NetworkCategory -ne 'Private') {
+            Set-NetConnectionProfile -InterfaceIndex $profile.InterfaceIndex -NetworkCategory Private
+          }
+        }
+        winrm quickconfig -quiet
+        Enable-PSRemoting -Force
+        Set-Service -Name WinRM -StartupType Automatic
+        Start-Service -Name WinRM
+        Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $true
+        Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $true
+        netsh advfirewall firewall add rule name="Allow WinRM 5985" dir=in action=allow protocol=TCP localport=5985 | Out-Null
+        Get-Service -Name WinRM | Select-Object Status, StartType, Name
+  register: azure_windows_winrm_prep
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - os_family == "windows"
+
+- name: Show Azure Windows WinRM prep output
+  ansible.builtin.debug:
+    var: azure_windows_winrm_prep.stdout
+  when:
+    - not ansible_check_mode
+    - os_family == "windows"
+
+- name: Wait for Azure Windows WinRM endpoint
+  ansible.builtin.wait_for:
+    host: "{{ cloud_vm_public_ip }}"
+    port: 5985
+    delay: 10
+    timeout: 300
+    state: started
+  when:
+    - not ansible_check_mode
+    - os_family == "windows"

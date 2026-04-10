@@ -1,0 +1,13 @@
+- name: Persist cloud desktop profile metadata
+  ansible.builtin.copy:
+    dest: "{{ cloud_dev_desktop_workspace_root }}/profile.env"
+    mode: "0644"
+    content: |
+      PROFILE_NAME={{ profile_name }}
+      PROVIDER={{ provider }}
+      OS_FAMILY={{ os_family }}
+      OWNER={{ owner }}
+      PURPOSE={{ purpose }}
+      CREATED_AT={{ vars.get('cloud_vm_created_at', '') }}
+      EXPIRES_AT={{ vars.get('cloud_vm_expires_at', '') }}
+      TTL_HOURS={{ ttl_hours }}

@@ -1,0 +1,149 @@
+- name: Preview GCP create request
+  ansible.builtin.debug:
+    msg:
+      - "gcp_project_id={{ gcp_project_id }}"
+      - "gcp_zone={{ gcp_zone }}"
+      - "gcp_vm_name={{ gcp_vm_name }}"
+      - "allowed_cidrs={{ allowed_cidrs | join(',') }}"
+      - "allowed_tcp_ports={{ allowed_tcp_ports | join(',') }}"
+
+- name: Ensure GCP network exists
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - networks
+      - create
+      - "{{ gcp_network }}"
+      - --project
+      - "{{ gcp_project_id }}"
+      - --subnet-mode
+      - custom
+  changed_when: true
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Ensure GCP subnet exists
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - networks
+      - subnets
+      - create
+      - "{{ gcp_subnet }}"
+      - --project
+      - "{{ gcp_project_id }}"
+      - --network
+      - "{{ gcp_network }}"
+      - --region
+      - "{{ gcp_region }}"
+      - --range
+      - "{{ gcp_subnet_cidr | default('10.52.1.0/24') }}"
+  changed_when: true
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Ensure GCP firewall rules exist
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - firewall-rules
+      - create
+      - "{{ gcp_firewall_rule }}-{{ port }}-{{ index }}"
+      - --project
+      - "{{ gcp_project_id }}"
+      - --network
+      - "{{ gcp_network }}"
+      - --allow
+      - "tcp:{{ port }}"
+      - --source-ranges
+      - "{{ cidr }}"
+      - --target-tags
+      - "{{ cloud_vm_profile_slug }}"
+  loop: "{{ allowed_cidrs | product(allowed_tcp_ports) | list }}"
+  loop_control:
+    label: "{{ item.0 }} -> {{ item.1 }}"
+    index_var: index
+  changed_when: true
+  failed_when: false
+  when: not ansible_check_mode
+  vars:
+    cidr: "{{ item.0 }}"
+    port: "{{ item.1 }}"
+
+- name: Build GCP create command
+  ansible.builtin.set_fact:
+    gcp_vm_create_command: >-
+      gcloud compute instances create {{ gcp_vm_name | quote }}
+      --project={{ gcp_project_id | quote }}
+      --zone={{ gcp_zone | quote }}
+      --machine-type={{ vm_size | quote }}
+      --boot-disk-size={{ (disk_gb | string) ~ 'GB' | quote }}
+      --network={{ gcp_network | quote }}
+      --subnet={{ gcp_subnet | quote }}
+      --tags={{ cloud_vm_profile_slug | quote }}
+      --labels={{ gcp_labels | dict2items | map('join', '=') | join(',') | quote }}
+      --image-family={{ gcp_image_family | quote }}
+      --image-project={{ gcp_image_project | quote }}
+      {% if os_family != 'windows' %}
+      --metadata=ssh-keys='{{ admin_username }}:{{ lookup("file", ssh_public_key_path) | trim }}'
+      {% endif %}
+
+- name: Create GCP VM
+  ansible.builtin.shell: "{{ gcp_vm_create_command }}"
+  args:
+    executable: /bin/bash
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Reset GCP Windows password when needed
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - reset-windows-password
+      - "{{ gcp_vm_name }}"
+      - --project
+      - "{{ gcp_project_id }}"
+      - --zone
+      - "{{ gcp_zone }}"
+      - --user
+      - "{{ admin_username }}"
+      - --quiet
+  changed_when: true
+  when:
+    - os_family == "windows"
+    - not ansible_check_mode
+
+- name: Fetch GCP VM networking facts
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - instances
+      - describe
+      - "{{ gcp_vm_name }}"
+      - --project
+      - "{{ gcp_project_id }}"
+      - --zone
+      - "{{ gcp_zone }}"
+      - --format=json
+  register: gcp_vm_json
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Set GCP VM connection facts
+  ansible.builtin.set_fact:
+    cloud_vm_public_ip: "{{ ((gcp_vm_json.stdout | from_json).networkInterfaces[0].accessConfigs | default([]) | first).natIP | default('198.51.100.11') }}"
+    cloud_vm_private_ip: "{{ (gcp_vm_json.stdout | from_json).networkInterfaces[0].networkIP | default('10.52.1.10') }}"
+    cloud_vm_admin_user: "{{ admin_username }}"
+  when: not ansible_check_mode
+
+- name: Set GCP dry-run connection facts
+  ansible.builtin.set_fact:
+    cloud_vm_public_ip: "{{ cloud_vm_public_ip | default('198.51.100.11') }}"
+    cloud_vm_private_ip: "{{ cloud_vm_private_ip | default('10.52.1.10') }}"
+    cloud_vm_admin_user: "{{ admin_username }}"
+  when: ansible_check_mode

@@ -1,0 +1,96 @@
+- name: Preview Azure destroy/cleanup request
+  ansible.builtin.debug:
+    msg:
+      - "azure_resource_group={{ azure_resource_group | default('n/a') }}"
+      - "azure_vm_name={{ azure_vm_name | default(profile_name | default('n/a')) }}"
+      - "azure_cleanup_mode={{ azure_cleanup_mode | default(false) }}"
+      - "cloud_vm_destroy_mode={{ cloud_vm_destroy_mode | default('destroy') }}"
+
+- name: Build Azure cleanup query
+  ansible.builtin.set_fact:
+    azure_cleanup_query: "[?tags.toolkit_scope=='cloud-dev-desktop' && tags.managed_by=='ansible'].[resourceGroup,name]"
+  when: azure_cleanup_mode | default(false)
+
+- name: List Azure expired VMs
+  ansible.builtin.command:
+    argv:
+      - az
+      - vm
+      - list
+      - --subscription
+      - "{{ azure_subscription_id }}"
+      - --show-details
+      - --query
+      - "{{ azure_cleanup_query }}"
+      - -o
+      - json
+  register: azure_expired_vm_list
+  changed_when: false
+  when:
+    - azure_cleanup_mode | default(false)
+    - not ansible_check_mode
+
+- name: Park Azure VM in lowest-consumption mode
+  ansible.builtin.command:
+    argv:
+      - az
+      - vm
+      - deallocate
+      - --subscription
+      - "{{ azure_subscription_id }}"
+      - --resource-group
+      - "{{ azure_resource_group }}"
+      - --name
+      - "{{ azure_vm_name }}"
+  changed_when: true
+  when:
+    - not azure_cleanup_mode | default(false)
+    - (cloud_vm_destroy_mode | default('destroy')) == 'park'
+    - not ansible_check_mode
+
+- name: Delete Azure VM directly
+  ansible.builtin.command:
+    argv:
+      - az
+      - vm
+      - delete
+      - --subscription
+      - "{{ azure_subscription_id }}"
+      - --resource-group
+      - "{{ azure_resource_group }}"
+      - --name
+      - "{{ azure_vm_name }}"
+      - --yes
+  changed_when: true
+  when:
+    - not azure_cleanup_mode | default(false)
+    - (cloud_vm_destroy_mode | default('destroy')) == 'destroy'
+    - not ansible_check_mode
+
+- name: Delete Azure expired VMs
+  ansible.builtin.command:
+    argv:
+      - az
+      - vm
+      - delete
+      - --subscription
+      - "{{ azure_subscription_id }}"
+      - --resource-group
+      - "{{ item[0] }}"
+      - --name
+      - "{{ item[1] }}"
+      - --yes
+  loop: "{{ (azure_expired_vm_list.stdout | default('[]')) | from_json }}"
+  changed_when: true
+  when:
+    - azure_cleanup_mode | default(false)
+    - not ansible_check_mode
+
+- name: Remove Azure state file after destroy
+  ansible.builtin.file:
+    path: "{{ cloud_vm_state_file }}"
+    state: absent
+  when:
+    - cloud_vm_state_file is defined
+    - not azure_cleanup_mode | default(false)
+    - (cloud_vm_destroy_mode | default('destroy')) == 'destroy'

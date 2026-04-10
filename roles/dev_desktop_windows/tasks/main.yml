@@ -1,0 +1,13 @@
+- name: Install Azure CLI and Google Cloud CLI on Windows
+  ansible.builtin.import_role:
+    name: cloud_cli_prereqs
+
+- name: Install Windows desktop toolchain
+  ansible.builtin.import_tasks: tools.yml
+
+- name: Configure Windows SSH client for peer Linux desktops
+  ansible.builtin.import_tasks: ssh_client.yml
+  when: windows_ssh_private_key_b64 is defined and windows_ssh_config_b64 is defined
+
+- name: Configure Windows remote desktop access
+  ansible.builtin.import_tasks: remote_access.yml

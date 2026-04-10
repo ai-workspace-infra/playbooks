@@ -1,0 +1,17 @@
+- name: Install KDE desktop packages on Debian family
+  ansible.builtin.apt:
+    name:
+      - plasma-desktop
+      - sddm
+      - xrdp
+      - dbus-x11
+    state: present
+    update_cache: true
+
+- name: Ensure SDDM is enabled
+  ansible.builtin.service:
+    name: sddm
+    state: started
+    enabled: true
+  when: not ansible_check_mode
+

@@ -1,0 +1,289 @@
+- name: Normalize cloud dev desktop request
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  roles:
+    - role: cloud_vm_request_validate
+
+- name: Create cloud dev desktop infrastructure
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  roles:
+    - role: "{{ (provider == 'azure') | ternary('azure_dev_desktop_lifecycle', 'gcp_dev_desktop_lifecycle') }}"
+      vars:
+        cloud_lifecycle_action: create
+    - role: cloud_vm_inventory_emit
+
+- name: Bootstrap remote cloud dev desktop
+  hosts: cloud_desktop
+  gather_facts: true
+  become: "{{ os_family != 'windows' }}"
+  roles:
+    - role: dev_desktop_common
+      when: os_family != "windows"
+    - role: dev_desktop_windows
+      when: os_family == "windows"
+    - role: dev_desktop_fedora_gnome
+      when: os_family == "fedora-gnome"
+    - role: dev_desktop_debian_kde
+      when: os_family == "debian-kde"
+
+- name: Verify remote cloud dev desktop
+  hosts: cloud_desktop
+  gather_facts: true
+  become: "{{ os_family != 'windows' }}"
+  tasks:
+    - name: Verify common Linux workspace marker
+      ansible.builtin.stat:
+        path: /opt/cloud-dev-desktop/profile.env
+      register: common_profile_marker
+      when: os_family != "windows"
+
+    - name: Assert Linux profile marker exists
+      ansible.builtin.assert:
+        that:
+          - common_profile_marker.stat.exists
+        fail_msg: "Missing /opt/cloud-dev-desktop/profile.env marker on Linux host."
+      when: os_family != "windows"
+
+    - name: Verify Fedora GNOME desktop packages
+      ansible.builtin.command: rpm -q gnome-shell gtk3-devel gtk4-devel glib2-devel clang cmake ninja-build
+      changed_when: false
+      when: os_family == "fedora-gnome"
+
+    - name: Verify Debian KDE desktop packages
+      ansible.builtin.shell: |
+        set -euo pipefail
+        dpkg-query -W plasma-desktop clang cmake ninja-build >/dev/null
+        if dpkg-query -W qt6-base-dev >/dev/null 2>&1; then
+          exit 0
+        fi
+        dpkg-query -W qtbase5-dev >/dev/null
+      args:
+        executable: /bin/bash
+      changed_when: false
+      when: os_family == "debian-kde"
+
+    - name: Verify Node.js 22+ on Linux
+      ansible.builtin.shell: |
+        set -euo pipefail
+        test "$(node --version | sed 's/^v//' | cut -d. -f1)" -ge 22
+      args:
+        executable: /bin/bash
+      become_user: "{{ admin_username }}"
+      changed_when: false
+      when: os_family != "windows"
+
+    - name: Verify Go toolchain on Linux
+      ansible.builtin.command: /usr/local/go/bin/go version
+      become_user: "{{ admin_username }}"
+      changed_when: false
+      when: os_family != "windows"
+
+    - name: Verify Codex CLI on Linux
+      ansible.builtin.command: codex --version
+      become_user: "{{ admin_username }}"
+      changed_when: false
+      when:
+        - os_family != "windows"
+        - toolchains.codex | bool
+
+    - name: Verify Flutter is installed on Linux
+      ansible.builtin.shell: |
+        set -euo pipefail
+        test -x {{ cloud_dev_desktop_flutter_install_root | default('/opt/flutter') }}/bin/flutter
+        {{ cloud_dev_desktop_flutter_install_root | default('/opt/flutter') }}/bin/flutter --version
+      args:
+        executable: /bin/bash
+      become_user: "{{ admin_username }}"
+      environment:
+        HOME: "/home/{{ admin_username }}"
+        PUB_CACHE: "/home/{{ admin_username }}/.pub-cache"
+      changed_when: false
+      when:
+        - os_family != "windows"
+        - toolchains.flutter | bool
+
+    - name: Verify Codex CLI on Windows
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = "Stop"
+        $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+        $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+        $npmUserBin = if ($env:APPDATA) { Join-Path $env:APPDATA 'npm' } else { '' }
+        $extraPaths = @(
+          $npmUserBin,
+          'C:\Program Files\nodejs',
+          'C:\tools\flutter\bin',
+          'C:\Program Files\Microsoft VS Code\bin',
+          'C:\ProgramData\chocolatey\bin'
+        ) | Where-Object { $_ }
+        $env:Path = (($machinePath, $userPath, ($extraPaths -join ';')) -join ';')
+        $codexCmd = Join-Path $env:APPDATA 'npm\codex.cmd'
+        if (-not (Test-Path $codexCmd)) {
+          throw "Missing Codex CLI launcher at $codexCmd"
+        }
+        $codexCmdLine = '"' + $codexCmd + '" --version'
+        cmd.exe /d /c $codexCmdLine | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+          throw "Codex CLI version probe failed with exit code $LASTEXITCODE"
+        }
+      changed_when: false
+      when: os_family == "windows"
+
+    - name: Verify Node.js 22+ on Windows
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = "Stop"
+        $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+        $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+        $npmUserBin = if ($env:APPDATA) { Join-Path $env:APPDATA 'npm' } else { '' }
+        $extraPaths = @(
+          $npmUserBin,
+          'C:\Program Files\nodejs',
+          'C:\tools\flutter\bin',
+          'C:\Program Files\Microsoft VS Code\bin',
+          'C:\ProgramData\chocolatey\bin'
+        ) | Where-Object { $_ }
+        $env:Path = (($machinePath, $userPath, ($extraPaths -join ';')) -join ';')
+        $nodeMajor = [int]((node --version).Trim().TrimStart('v').Split('.')[0])
+        if ($nodeMajor -lt 22) {
+          throw "Node.js 22+ is required, found $(node --version)"
+        }
+      changed_when: false
+      when: os_family == "windows"
+
+    - name: Verify Flutter on Windows
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = "Stop"
+        $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+        $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+        $npmUserBin = if ($env:APPDATA) { Join-Path $env:APPDATA 'npm' } else { '' }
+        $extraPaths = @(
+          $npmUserBin,
+          'C:\Program Files\nodejs',
+          'C:\tools\flutter\bin',
+          'C:\Program Files\Microsoft VS Code\bin',
+          'C:\ProgramData\chocolatey\bin'
+        ) | Where-Object { $_ }
+        $env:Path = (($machinePath, $userPath, ($extraPaths -join ';')) -join ';')
+        flutter --version | Out-Null
+      changed_when: false
+      when:
+        - os_family == "windows"
+        - toolchains.flutter | bool
+
+    - name: Verify VS Code on Windows
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = "Stop"
+        $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+        $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+        $npmUserBin = if ($env:APPDATA) { Join-Path $env:APPDATA 'npm' } else { '' }
+        $extraPaths = @(
+          $npmUserBin,
+          'C:\Program Files\nodejs',
+          'C:\tools\flutter\bin',
+          'C:\Program Files\Microsoft VS Code\bin',
+          'C:\ProgramData\chocolatey\bin'
+        ) | Where-Object { $_ }
+        $env:Path = (($machinePath, $userPath, ($extraPaths -join ';')) -join ';')
+        Get-Command code | Out-Null
+      changed_when: false
+      when:
+        - os_family == "windows"
+        - toolchains.vscode | bool
+
+    - name: Verify Git on Windows
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = "Stop"
+        $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+        $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+        $npmUserBin = if ($env:APPDATA) { Join-Path $env:APPDATA 'npm' } else { '' }
+        $extraPaths = @(
+          $npmUserBin,
+          'C:\Program Files\Git\cmd',
+          'C:\Program Files\nodejs',
+          'C:\tools\flutter\bin',
+          'C:\Program Files\Microsoft VS Code\bin',
+          'C:\ProgramData\chocolatey\bin'
+        ) | Where-Object { $_ }
+        $env:Path = (($machinePath, $userPath, ($extraPaths -join ';')) -join ';')
+        git --version | Out-Null
+      changed_when: false
+      when: os_family == "windows"
+
+    - name: Verify Android Studio on Windows
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = "Stop"
+        if (-not (Test-Path 'C:\Program Files\Android\Android Studio\bin\studio64.exe')) {
+          throw 'Missing Android Studio executable at C:\Program Files\Android\Android Studio\bin\studio64.exe'
+        }
+      changed_when: false
+      when:
+        - os_family == "windows"
+        - toolchains.android_studio | bool
+
+    - name: Verify Visual Studio desktop C++ toolchain on Windows
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = "Stop"
+        $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+        if (-not (Test-Path $vswhere)) {
+          throw "Missing vswhere at $vswhere"
+        }
+        $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        if (-not $installPath) {
+          throw 'Visual Studio Build Tools with Desktop C++ workload is not installed'
+        }
+      changed_when: false
+      when: os_family == "windows"
+
+    - name: Verify Android SDK and emulator on Windows
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = "Stop"
+        $androidSdkRoot = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+        $requiredPaths = @(
+          (Join-Path $androidSdkRoot 'platform-tools\adb.exe'),
+          (Join-Path $androidSdkRoot 'emulator\emulator.exe'),
+          (Join-Path $androidSdkRoot 'cmdline-tools\latest\bin\sdkmanager.bat')
+        )
+        foreach ($required in $requiredPaths) {
+          if (-not (Test-Path $required)) {
+            throw "Missing Android SDK component: $required"
+          }
+        }
+      changed_when: false
+      when:
+        - os_family == "windows"
+        - toolchains.android_studio | bool
+
+    - name: Verify Windows Android virtualization features
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = "Stop"
+        $featureNames = @(
+          'Microsoft-Hyper-V-All',
+          'HypervisorPlatform',
+          'VirtualMachinePlatform'
+        )
+        foreach ($featureName in $featureNames) {
+          $feature = Get-WindowsOptionalFeature -Online -FeatureName $featureName
+          if ($feature.State -ne 'Enabled') {
+            throw "Windows optional feature $featureName is not enabled"
+          }
+        }
+        & (Join-Path $env:LOCALAPPDATA 'Android\Sdk\emulator\emulator-check.exe') accel | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+          throw "Android emulator acceleration probe failed with exit code $LASTEXITCODE"
+        }
+      changed_when: false
+      when:
+        - os_family == "windows"
+        - toolchains.android_studio | bool
+
+    - name: Verify Windows SSHD service
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = "Stop"
+        $sshd = Get-Service sshd
+        if ($sshd.Status -ne 'Running') {
+          throw "SSHD service is not running"
+        }
+      changed_when: false
+      when: os_family == "windows"

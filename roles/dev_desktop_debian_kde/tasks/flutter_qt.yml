@@ -1,0 +1,90 @@
+- name: Install Debian/Ubuntu Flutter Qt dependencies with Qt 6
+  block:
+    - name: Install Debian/Ubuntu Flutter Qt 6 dependencies
+      ansible.builtin.apt:
+        name:
+          - build-essential
+          - clang
+          - lld
+          - cmake
+          - ninja-build
+          - pkg-config
+          - libgtk-3-dev
+          - libsecret-1-dev
+          - xvfb
+          - qt6-base-dev
+          - qt6-base-dev-tools
+          - qt6-tools-dev-tools
+          - libgl1-mesa-dev
+          - unzip
+        state: present
+        update_cache: true
+  rescue:
+    - name: Install Debian/Ubuntu Flutter Qt 5 fallback dependencies
+      ansible.builtin.apt:
+        name:
+          - build-essential
+          - clang
+          - lld
+          - cmake
+          - ninja-build
+          - pkg-config
+          - libgtk-3-dev
+          - libsecret-1-dev
+          - xvfb
+          - qtbase5-dev
+          - qtchooser
+          - qt5-qmake
+          - libgl1-mesa-dev
+          - unzip
+        state: present
+        update_cache: true
+
+- name: Probe installed Flutter SDK on Debian family
+  ansible.builtin.command: "{{ cloud_dev_desktop_flutter_install_root }}/bin/flutter --version"
+  register: debian_flutter_version_probe
+  changed_when: false
+  failed_when: false
+
+- name: Remove stale Flutter SDK on Debian family
+  ansible.builtin.file:
+    path: "{{ cloud_dev_desktop_flutter_install_root }}"
+    state: absent
+  when:
+    - not ansible_check_mode
+    - debian_flutter_version_probe.rc == 0
+    - ("Flutter " ~ cloud_dev_desktop_flutter_version ~ " ") not in debian_flutter_version_probe.stdout
+
+- name: Install Flutter SDK on Debian family
+  ansible.builtin.unarchive:
+    src: "{{ flutter_sdk_url | default(cloud_dev_desktop_flutter_linux_sdk_url) }}"
+    dest: /opt
+    remote_src: true
+    creates: "{{ cloud_dev_desktop_flutter_install_root }}/bin/flutter"
+
+- name: Ensure Debian/Ubuntu Flutter SDK is writable by the desktop user
+  ansible.builtin.file:
+    path: "{{ cloud_dev_desktop_flutter_install_root }}"
+    state: directory
+    owner: "{{ admin_username }}"
+    group: "{{ admin_username }}"
+    recurse: true
+  when: not ansible_check_mode
+
+- name: Enable Flutter Linux desktop on Debian family
+  ansible.builtin.command: "{{ cloud_dev_desktop_flutter_install_root }}/bin/flutter config --enable-linux-desktop"
+  become_user: "{{ admin_username }}"
+  environment:
+    HOME: "/home/{{ admin_username }}"
+    PUB_CACHE: "/home/{{ admin_username }}/.pub-cache"
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Verify Flutter doctor on Debian family
+  ansible.builtin.command: "{{ cloud_dev_desktop_flutter_install_root }}/bin/flutter doctor -v"
+  become_user: "{{ admin_username }}"
+  environment:
+    HOME: "/home/{{ admin_username }}"
+    PUB_CACHE: "/home/{{ admin_username }}/.pub-cache"
+  changed_when: false
+  when: not ansible_check_mode

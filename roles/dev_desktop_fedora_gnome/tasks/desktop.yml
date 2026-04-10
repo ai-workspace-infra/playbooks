@@ -1,0 +1,15 @@
+- name: Install Fedora GNOME desktop packages
+  ansible.builtin.dnf:
+    name:
+      - "@workstation-product-environment"
+      - gnome-remote-desktop
+      - gdm
+    state: present
+
+- name: Ensure GDM is enabled
+  ansible.builtin.service:
+    name: gdm
+    state: started
+    enabled: true
+  when: not ansible_check_mode
+

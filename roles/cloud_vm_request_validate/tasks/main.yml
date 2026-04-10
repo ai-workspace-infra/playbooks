@@ -1,0 +1,119 @@
+- name: Ensure request validation mode is set
+  ansible.builtin.set_fact:
+    cloud_vm_request_validation_mode: "{{ cloud_vm_request_validation_mode | default('standard') }}"
+
+- name: Capture provider defaults
+  ansible.builtin.set_fact:
+    cloud_dev_desktop_required_common_keys:
+      - provider
+      - profile_name
+      - os_family
+      - admin_username
+      - allowed_cidrs
+      - ttl_hours
+      - owner
+      - purpose
+
+- name: Assert provider is supported
+  ansible.builtin.assert:
+    that:
+      - provider is defined
+      - provider in ['azure', 'gcp']
+    fail_msg: "provider must be one of: azure, gcp"
+
+- name: Assert os_family is supported
+  ansible.builtin.assert:
+    that:
+      - os_family is defined
+      - os_family in ['windows', 'fedora-gnome', 'debian-kde']
+    fail_msg: "os_family must be one of: windows, fedora-gnome, debian-kde"
+  when: cloud_vm_request_validation_mode != "cleanup"
+
+- name: Assert required common fields are present
+  ansible.builtin.assert:
+    that: "{{ cloud_dev_desktop_required_common_keys | map('extract', vars) | list is not none }}"
+    fail_msg: "cloud dev desktop request is missing one or more required keys."
+  when: cloud_vm_request_validation_mode != "cleanup"
+
+- name: Assert allowed CIDRs were supplied
+  ansible.builtin.assert:
+    that:
+      - allowed_cidrs is sequence
+      - allowed_cidrs | length > 0
+    fail_msg: "allowed_cidrs must be a non-empty list."
+  when: cloud_vm_request_validation_mode != "cleanup"
+
+- name: Assert provider-specific location fields exist for standard mode
+  ansible.builtin.assert:
+    that:
+      - "(provider == 'azure' and region is defined) or (provider == 'gcp' and zone is defined)"
+    fail_msg: "azure requests need region; gcp requests need zone."
+  when: cloud_vm_request_validation_mode != "cleanup"
+
+- name: Normalize toolchain defaults
+  ansible.builtin.set_fact:
+    toolchains: "{{ {'codex': true, 'android_studio': false, 'vscode': true, 'flutter': false, 'dart': false} | combine(toolchains | default({}), recursive=True) }}"
+
+- name: Normalize SSH public key default
+  ansible.builtin.set_fact:
+    ssh_public_key_path: "{{ ssh_public_key_path | default('~/.ssh/id_rsa.pub') }}"
+  when:
+    - cloud_vm_request_validation_mode != "cleanup"
+    - os_family != "windows"
+
+- name: Normalize allowed TCP ports
+  ansible.builtin.set_fact:
+    allowed_tcp_ports: >-
+      {{
+        allowed_tcp_ports
+        | default(
+            (os_family == 'windows')
+            | ternary([22, 3389, 5985], [22, 3389])
+          )
+      }}
+  when: cloud_vm_request_validation_mode != "cleanup"
+
+- name: Normalize desktop access defaults
+  ansible.builtin.set_fact:
+    desktop_access: "{{ {'protocol': (os_family == 'windows') | ternary('rdp', 'native'), 'port': (os_family == 'windows') | ternary(3389, 22)} | combine(desktop_access | default({}), recursive=True) }}"
+  when: cloud_vm_request_validation_mode != "cleanup"
+
+- name: Derive cloud desktop timestamps and names
+  ansible.builtin.set_fact:
+    cloud_vm_profile_slug: "{{ (profile_name | default('cleanup')) | lower | regex_replace('[^a-z0-9]+', '-') | regex_replace('(^-|-$)', '') }}"
+    cloud_vm_owner_slug: "{{ (owner | default('cleanup')) | lower | regex_replace('[^a-z0-9]+', '-') | regex_replace('(^-|-$)', '') }}"
+    cloud_vm_state_root: "{{ cloud_vm_state_root | default(playbook_dir ~ '/../.cloud-dev-desktop-state') }}"
+    cloud_vm_created_at: "{{ ansible_date_time.iso8601 }}"
+    cloud_vm_expires_at: "{{ lookup('pipe', 'python3 -c \"from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc)+timedelta(hours=' ~ (ttl_hours | int) ~ ')).isoformat())\"') }}"
+  when:
+    - ttl_hours is defined
+    - cloud_vm_request_validation_mode != "cleanup"
+
+- name: Derive cloud desktop cleanup names
+  ansible.builtin.set_fact:
+    cloud_vm_profile_slug: "{{ (profile_name | default('cleanup')) | lower | regex_replace('[^a-z0-9]+', '-') | regex_replace('(^-|-$)', '') }}"
+    cloud_vm_owner_slug: "{{ (owner | default('cleanup')) | lower | regex_replace('[^a-z0-9]+', '-') | regex_replace('(^-|-$)', '') }}"
+  when: cloud_vm_request_validation_mode == "cleanup"
+
+- name: Derive cloud desktop state file path
+  ansible.builtin.set_fact:
+    cloud_vm_state_file: "{{ cloud_vm_state_file | default(cloud_vm_state_root ~ '/' ~ provider ~ '-' ~ cloud_vm_profile_slug ~ '.json') }}"
+  when: cloud_vm_request_validation_mode != "cleanup"
+
+- name: Build default tags and labels
+  ansible.builtin.set_fact:
+    cloud_vm_default_tags:
+      managed_by: ansible
+      toolkit_scope: cloud-dev-desktop
+      provider: "{{ provider }}"
+      profile_name: "{{ profile_name }}"
+      owner: "{{ owner }}"
+      purpose: "{{ purpose }}"
+      os_family: "{{ os_family }}"
+      expires_at: "{{ cloud_vm_expires_at | default('') }}"
+  when: cloud_vm_request_validation_mode != "cleanup"
+
+- name: Normalize tags and labels
+  ansible.builtin.set_fact:
+    tags: "{{ cloud_vm_default_tags | combine(tags | default({}), recursive=True) }}"
+  when: cloud_vm_request_validation_mode != "cleanup"

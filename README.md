@@ -1,5 +1,14 @@
 # playbooks
 
+## Cloud Dev Desktop
+
+The cloud dev desktop flow lives here as two playbooks:
+
+1. `bootstrap_cloud_dev_desktop.yml`
+2. `destroy_cloud_dev_desktop.yml`
+
+`bootstrap_cloud_dev_desktop.yml` now includes the create/bootstrap/verify sequence in one entry point. The control-plane repo calls these playbooks from `../playbooks`.
+
 ## Traffic Billing Stack
 
 The traffic billing stack now has a single aggregate playbook:
@@ -8,12 +17,14 @@ The traffic billing stack now has a single aggregate playbook:
 
 It orchestrates these existing playbooks in dependency order:
 
-1. `deploy_xray_exporter.yml`
-2. `deploy_billing_service.yml`
-3. `deploy_accounts_svc_plus.yml`
-4. `deploy_console_svc_plus.yml`
-5. `deploy_agent_svc_plus.yml`
-6. `deploy_xworkmate_bridge_vhosts.yml`
+1. `deploy_billing_service.yml`
+2. `deploy_xworkmate_bridge_vhosts.yml`
+3. `deploy_xray_exporter.yml`
+4. `deploy_agent_svc_plus.yml`
+5. `deploy_accounts_svc_plus.yml`
+6. `deploy_stunnel-client.yml`
+7. `deploy_apisix.yml`
+8. `deploy_console_svc_plus.yml`
 
 ### Full stack deploy
 
@@ -47,12 +58,14 @@ ansible-playbook -i inventory.ini -l jp_xhttp_contabo_host deploy_svc_plus_core_
 
 Use `STACK_SERVICES` with a comma-separated list:
 
-- `xray-exporter`
 - `billing-service`
-- `accounts`
-- `console`
-- `agent`
 - `xworkmate-bridge`
+- `xray-exporter`
+- `agent`
+- `accounts`
+- `stunnel-client`
+- `apisix`
+- `console`
 
 ```bash
 cd /Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks

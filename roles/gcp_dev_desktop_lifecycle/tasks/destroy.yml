@@ -1,0 +1,91 @@
+- name: Preview GCP destroy/cleanup request
+  ansible.builtin.debug:
+    msg:
+      - "gcp_project_id={{ gcp_project_id | default('n/a') }}"
+      - "gcp_vm_name={{ gcp_vm_name | default(profile_name | default('n/a')) }}"
+      - "gcp_cleanup_mode={{ gcp_cleanup_mode | default(false) }}"
+      - "cloud_vm_destroy_mode={{ cloud_vm_destroy_mode | default('destroy') }}"
+
+- name: List GCP managed instances
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - instances
+      - list
+      - --project
+      - "{{ gcp_project_id }}"
+      - --filter
+      - "labels.toolkit_scope=cloud-dev-desktop AND labels.managed_by=ansible"
+      - --format=value(name,zone.basename())
+  register: gcp_managed_instances
+  changed_when: false
+  when:
+    - gcp_cleanup_mode | default(false)
+    - not ansible_check_mode
+
+- name: Park GCP VM in lowest-consumption mode
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - instances
+      - stop
+      - "{{ gcp_vm_name }}"
+      - --project
+      - "{{ gcp_project_id }}"
+      - --zone
+      - "{{ gcp_zone }}"
+      - --quiet
+  changed_when: true
+  when:
+    - not gcp_cleanup_mode | default(false)
+    - (cloud_vm_destroy_mode | default('destroy')) == 'park'
+    - not ansible_check_mode
+
+- name: Delete GCP VM directly
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - instances
+      - delete
+      - "{{ gcp_vm_name }}"
+      - --project
+      - "{{ gcp_project_id }}"
+      - --zone
+      - "{{ gcp_zone }}"
+      - --quiet
+  changed_when: true
+  when:
+    - not gcp_cleanup_mode | default(false)
+    - (cloud_vm_destroy_mode | default('destroy')) == 'destroy'
+    - not ansible_check_mode
+
+- name: Delete GCP managed instances
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - compute
+      - instances
+      - delete
+      - "{{ item.split()[0] }}"
+      - --project
+      - "{{ gcp_project_id }}"
+      - --zone
+      - "{{ item.split()[1] }}"
+      - --quiet
+  loop: "{{ gcp_managed_instances.stdout_lines | default([]) }}"
+  changed_when: true
+  when:
+    - gcp_cleanup_mode | default(false)
+    - not ansible_check_mode
+
+- name: Remove GCP state file after destroy
+  ansible.builtin.file:
+    path: "{{ cloud_vm_state_file }}"
+    state: absent
+  when:
+    - cloud_vm_state_file is defined
+    - not gcp_cleanup_mode | default(false)
+    - (cloud_vm_destroy_mode | default('destroy')) == 'destroy'

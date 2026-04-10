@@ -1,0 +1,45 @@
+- name: Enable Windows remote desktop
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "Stop"
+    $sshdCapability = Get-WindowsCapability -Online | Where-Object Name -like 'OpenSSH.Server*'
+    if ($sshdCapability.State -ne 'Installed') {
+      Add-WindowsCapability -Online -Name $sshdCapability.Name | Out-Null
+    }
+    Set-Service -Name sshd -StartupType Automatic
+    if ((Get-Service sshd).Status -ne 'Running') {
+      Start-Service sshd
+    }
+    if (-not (Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue)) {
+      New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 | Out-Null
+    }
+    else {
+      Enable-NetFirewallRule -Name 'OpenSSH-Server-In-TCP'
+    }
+    Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 0
+    Enable-NetFirewallRule -DisplayGroup 'Remote Desktop'
+    $profiles = Get-NetConnectionProfile
+    foreach ($profile in $profiles) {
+      if ($profile.NetworkCategory -ne 'Private') {
+        Set-NetConnectionProfile -InterfaceIndex $profile.InterfaceIndex -NetworkCategory Private
+      }
+    }
+    winrm quickconfig -q
+    Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $true
+    Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $true
+  changed_when: true
+
+- name: Authorize administrator SSH public keys on Windows
+  ansible.windows.win_shell: |
+    $ErrorActionPreference = "Stop"
+    $authorizedKeysPath = 'C:\ProgramData\ssh\administrators_authorized_keys'
+    New-Item -ItemType Directory -Force -Path 'C:\ProgramData\ssh' | Out-Null
+    $authorizedKeys = @'
+    {{ (cloud_dev_desktop_extra_authorized_keys | default([])) | join('\r\n') }}
+    '@
+    $authorizedKeys = $authorizedKeys.Trim()
+    Set-Content -Path $authorizedKeysPath -Encoding ascii -Value $authorizedKeys
+    icacls $authorizedKeysPath /inheritance:r | Out-Null
+    icacls $authorizedKeysPath /grant 'Administrators:F' | Out-Null
+    icacls $authorizedKeysPath /grant 'SYSTEM:F' | Out-Null
+  changed_when: true
+  when: (cloud_dev_desktop_extra_authorized_keys | default([])) | length > 0

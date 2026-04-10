@@ -1,0 +1,14 @@
+- name: Install macOS cloud CLIs
+  ansible.builtin.include_tasks: macos.yml
+  when: ansible_system == "Darwin"
+
+- name: Install Windows cloud CLIs
+  ansible.builtin.include_tasks: windows.yml
+  when: ansible_os_family == "Windows"
+
+- name: Install Linux cloud CLIs
+  ansible.builtin.include_tasks: linux.yml
+  when:
+    - ansible_system == "Linux"
+    - ansible_os_family != "Windows"
+

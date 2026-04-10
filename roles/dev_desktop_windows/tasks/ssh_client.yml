@@ -1,0 +1,28 @@
+- name: Ensure OpenSSH client is installed on Windows
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "Stop"
+    $capability = Get-WindowsCapability -Online -Name OpenSSH.Client*
+    if ($capability.State -ne 'Installed') {
+      Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0 | Out-Null
+    }
+  changed_when: true
+
+- name: Materialize Windows SSH key and config for peer Linux desktops
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "Stop"
+    $sshDir = Join-Path $env:USERPROFILE '.ssh'
+    $keyPath = Join-Path $sshDir '{{ windows_ssh_identity_filename | default("cloud-dev-desktop-fleet") }}'
+    $pubPath = "${keyPath}.pub"
+    $configPath = Join-Path $sshDir 'config'
+
+    New-Item -ItemType Directory -Path $sshDir -Force | Out-Null
+
+    [System.IO.File]::WriteAllBytes($keyPath, [System.Convert]::FromBase64String('{{ windows_ssh_private_key_b64 }}'))
+    [System.IO.File]::WriteAllBytes($pubPath, [System.Convert]::FromBase64String('{{ windows_ssh_public_key_b64 }}'))
+    [System.IO.File]::WriteAllText($configPath, [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{{ windows_ssh_config_b64 }}')), [System.Text.Encoding]::ASCII)
+
+    icacls $sshDir /inheritance:r /grant:r "${env:USERNAME}:(OI)(CI)F" | Out-Null
+    icacls $keyPath /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
+    icacls $pubPath /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
+    icacls $configPath /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
+  changed_when: true

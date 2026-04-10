@@ -1,0 +1,249 @@
+- name: Install Chocolatey
+  ansible.builtin.raw: |
+    Set-ExecutionPolicy Bypass -Scope Process -Force
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+      Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+    }
+  changed_when: true
+
+- name: Install Windows toolchain packages
+  ansible.windows.win_shell: |
+    $ErrorActionPreference = "Stop"
+    $packages = @()
+    $packages += 'git'
+    if ({{ toolchains.vscode | bool | ternary('$true', '$false') }}) { $packages += 'vscode' }
+    if ({{ toolchains.android_studio | bool | ternary('$true', '$false') }}) { $packages += 'androidstudio' }
+    if ({{ toolchains.codex | bool | ternary('$true', '$false') }}) {
+      $packages += 'vcredist140'
+      $packages += 'nodejs-lts'
+    }
+    if ({{ toolchains.flutter | bool | ternary('$true', '$false') }}) {
+      $packages += @({{ cloud_dev_desktop_windows_visualstudio_packages | map('to_json') | join(', ') }})
+    }
+    if (({{ toolchains.dart | bool | ternary('$true', '$false') }}) -and (-not {{ toolchains.flutter | bool | ternary('$true', '$false') }})) {
+      $packages += 'dart-sdk'
+    }
+    foreach ($pkg in ($packages | Select-Object -Unique)) {
+      choco install $pkg -y --no-progress
+    }
+  changed_when: true
+
+- name: Install Codex CLI globally on Windows
+  ansible.windows.win_shell: |
+    $ErrorActionPreference = "Stop"
+    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $npmUserBin = if ($env:APPDATA) { Join-Path $env:APPDATA 'npm' } else { '' }
+    $extraPaths = @(
+      $npmUserBin,
+      'C:\Program Files\nodejs',
+      'C:\ProgramData\chocolatey\bin'
+    ) | Where-Object { $_ }
+    $env:Path = (($machinePath, $userPath, ($extraPaths -join ';')) -join ';')
+    npm install -g @openai/codex
+  changed_when: true
+  when: toolchains.codex | bool
+
+- name: Enable Windows virtualization features required for Android emulators
+  ansible.windows.win_optional_feature:
+    name: "{{ cloud_dev_desktop_windows_android_optional_features }}"
+    state: present
+    include_parent: true
+  register: windows_android_virtualization_features
+  when: toolchains.android_studio | bool
+
+- name: Reboot Windows after enabling Android virtualization features
+  ansible.windows.win_reboot:
+    reboot_timeout: 3600
+    connect_timeout: 30
+    post_reboot_delay: 60
+  when:
+    - toolchains.android_studio | bool
+    - windows_android_virtualization_features.reboot_required | default(false)
+
+- name: Install Android SDK command-line tools on Windows
+  ansible.windows.win_shell: |
+    $ErrorActionPreference = "Stop"
+    $androidSdkRoot = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+    $cmdlineToolsRoot = Join-Path $androidSdkRoot 'cmdline-tools'
+    $cmdlineToolsLatest = Join-Path $cmdlineToolsRoot 'latest'
+    $cmdlineToolsBin = Join-Path $cmdlineToolsLatest 'bin'
+    $javaHome = 'C:\Program Files\Android\Android Studio\jbr'
+    New-Item -ItemType Directory -Force -Path $androidSdkRoot, $cmdlineToolsRoot | Out-Null
+    if (-not (Test-Path (Join-Path $cmdlineToolsBin 'sdkmanager.bat'))) {
+      $zipPath = Join-Path $env:TEMP 'android-commandlinetools.zip'
+      $extractDir = Join-Path $env:TEMP 'android-commandlinetools'
+      if (Test-Path $extractDir) {
+        Remove-Item -Recurse -Force $extractDir
+      }
+      Invoke-WebRequest -UseBasicParsing -Uri '{{ cloud_dev_desktop_windows_android_cmdline_tools_url }}' -OutFile $zipPath
+      Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force
+      if (Test-Path $cmdlineToolsLatest) {
+        Remove-Item -Recurse -Force $cmdlineToolsLatest
+      }
+      Move-Item -Path (Join-Path $extractDir 'cmdline-tools') -Destination $cmdlineToolsLatest
+    }
+    if (Test-Path $javaHome) {
+      [Environment]::SetEnvironmentVariable('JAVA_HOME', $javaHome, 'User')
+      $env:JAVA_HOME = $javaHome
+    }
+    [Environment]::SetEnvironmentVariable('ANDROID_HOME', $androidSdkRoot, 'User')
+    [Environment]::SetEnvironmentVariable('ANDROID_SDK_ROOT', $androidSdkRoot, 'User')
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $androidPathEntries = @(
+      $androidSdkRoot,
+      (Join-Path $androidSdkRoot 'platform-tools'),
+      (Join-Path $androidSdkRoot 'emulator'),
+      $cmdlineToolsBin
+    )
+    if ($env:JAVA_HOME) {
+      $androidPathEntries += (Join-Path $env:JAVA_HOME 'bin')
+    }
+    $userPathParts = @($userPath -split ';') | Where-Object { $_ }
+    foreach ($entry in $androidPathEntries) {
+      if (-not ($userPathParts -contains $entry)) {
+        $userPathParts += $entry
+      }
+    }
+    $newUserPath = ($userPathParts | Select-Object -Unique) -join ';'
+    [Environment]::SetEnvironmentVariable('Path', $newUserPath, 'User')
+    $env:ANDROID_HOME = $androidSdkRoot
+    $env:ANDROID_SDK_ROOT = $androidSdkRoot
+    $env:Path = ([Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + $newUserPath + ';C:\ProgramData\chocolatey\bin')
+    $sdkmanager = Join-Path $cmdlineToolsBin 'sdkmanager.bat'
+    $sdkPackages = @(
+      'platform-tools',
+      'platforms;android-{{ cloud_dev_desktop_windows_android_sdk_api_level }}',
+      'build-tools;{{ cloud_dev_desktop_windows_android_build_tools_version }}',
+      'emulator',
+      '{{ cloud_dev_desktop_windows_android_system_image }}'
+    )
+    1..32 | ForEach-Object { 'y' } | & $sdkmanager --sdk_root="$androidSdkRoot" --licenses | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      throw "Android SDK license acceptance failed with exit code $LASTEXITCODE"
+    }
+    & $sdkmanager --sdk_root="$androidSdkRoot" @sdkPackages
+    if ($LASTEXITCODE -ne 0) {
+      throw "Android SDK package installation failed with exit code $LASTEXITCODE"
+    }
+    $avdmanager = Join-Path $cmdlineToolsBin 'avdmanager.bat'
+    $avdName = '{{ cloud_dev_desktop_windows_android_avd_name }}'
+    $avdPath = Join-Path $env:USERPROFILE ".android\avd\$avdName.avd"
+    if (-not (Test-Path $avdPath)) {
+      'no' | & $avdmanager create avd --force -n $avdName -k '{{ cloud_dev_desktop_windows_android_system_image }}' | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        throw "Android AVD creation failed with exit code $LASTEXITCODE"
+      }
+    }
+  changed_when: true
+  when: toolchains.android_studio | bool
+
+- name: Probe installed Flutter SDK on Windows
+  ansible.windows.win_shell: |
+    $ErrorActionPreference = "Stop"
+    $flutterBat = Join-Path '{{ cloud_dev_desktop_windows_flutter_install_root }}' 'bin\flutter.bat'
+    if (Test-Path $flutterBat) {
+      & $flutterBat --version
+    }
+  register: windows_flutter_version_probe
+  changed_when: false
+  failed_when: false
+  when: toolchains.flutter | bool
+
+- name: Install Flutter SDK on Windows
+  ansible.windows.win_shell: |
+    $ErrorActionPreference = "Stop"
+    $flutterRoot = '{{ cloud_dev_desktop_windows_flutter_install_root }}'
+    $installRoot = Split-Path -Parent $flutterRoot
+    $zipPath = Join-Path $env:TEMP 'flutter-windows-sdk.zip'
+    New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
+    if (Test-Path $flutterRoot) {
+      Remove-Item -Recurse -Force $flutterRoot
+    }
+    Invoke-WebRequest -UseBasicParsing -Uri '{{ cloud_dev_desktop_windows_flutter_sdk_url }}' -OutFile $zipPath
+    Expand-Archive -LiteralPath $zipPath -DestinationPath $installRoot -Force
+    if (-not (Test-Path (Join-Path $flutterRoot 'bin\flutter.bat'))) {
+      throw "Flutter SDK install failed: missing $(Join-Path $flutterRoot 'bin\flutter.bat')"
+    }
+  changed_when: true
+  when:
+    - toolchains.flutter | bool
+    - windows_flutter_version_probe.rc != 0 or ("Flutter " ~ cloud_dev_desktop_windows_flutter_version ~ " ") not in windows_flutter_version_probe.stdout
+
+- name: Configure Flutter on Windows
+  ansible.windows.win_shell: |
+    $ErrorActionPreference = "Stop"
+    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $npmUserBin = if ($env:APPDATA) { Join-Path $env:APPDATA 'npm' } else { '' }
+    $extraPaths = @(
+      $npmUserBin,
+      'C:\Program Files\nodejs',
+      '{{ cloud_dev_desktop_windows_flutter_install_root }}\bin',
+      'C:\Program Files\Microsoft VS Code\bin',
+      'C:\ProgramData\chocolatey\bin'
+    ) | Where-Object { $_ }
+    $env:Path = (($machinePath, $userPath, ($extraPaths -join ';')) -join ';')
+    if ({{ toolchains.android_studio | bool | ternary('$true', '$false') }}) {
+      flutter config --android-sdk (Join-Path $env:LOCALAPPDATA 'Android\Sdk')
+    }
+    flutter config --enable-windows-desktop
+    flutter doctor
+  changed_when: true
+  when: toolchains.flutter | bool
+
+- name: Verify Windows desktop toolchain versions
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "Stop"
+    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $npmUserBin = if ($env:APPDATA) { Join-Path $env:APPDATA 'npm' } else { '' }
+    $extraPaths = @(
+      $npmUserBin,
+      'C:\Program Files\nodejs',
+      '{{ cloud_dev_desktop_windows_flutter_install_root }}\bin',
+      'C:\Program Files\Microsoft VS Code\bin',
+      'C:\ProgramData\chocolatey\bin'
+    ) | Where-Object { $_ }
+    $env:Path = (($machinePath, $userPath, ($extraPaths -join ';')) -join ';')
+    $nodeMajor = [int]((node --version).Trim().TrimStart('v').Split('.')[0])
+    if ($nodeMajor -lt 22) {
+      throw "Node.js 22+ is required, found $(node --version)"
+    }
+    if ({{ toolchains.codex | bool | ternary('$true', '$false') }}) {
+      $codexCmd = Join-Path $env:APPDATA 'npm\codex.cmd'
+      if (-not (Test-Path $codexCmd)) {
+        throw "Missing Codex CLI launcher at $codexCmd"
+      }
+      $codexCmdLine = '"' + $codexCmd + '" --version'
+      cmd.exe /d /c $codexCmdLine | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        throw "Codex CLI version probe failed with exit code $LASTEXITCODE"
+      }
+    }
+    if ({{ toolchains.vscode | bool | ternary('$true', '$false') }}) {
+      Get-Command code | Out-Null
+    }
+    if ({{ toolchains.android_studio | bool | ternary('$true', '$false') }}) {
+      if (-not (Test-Path 'C:\Program Files\Android\Android Studio\bin\studio64.exe')) {
+        throw 'Missing Android Studio executable at C:\Program Files\Android\Android Studio\bin\studio64.exe'
+      }
+    }
+    if ({{ toolchains.flutter | bool | ternary('$true', '$false') }}) {
+      flutter --version | Out-Null
+    }
+  changed_when: false
+
+- name: Create Windows desktop metadata directory
+  ansible.builtin.raw: |
+    $ErrorActionPreference = "Stop"
+    New-Item -ItemType Directory -Force -Path 'C:\cloud-dev-desktop' | Out-Null
+    @"
+    PROFILE_NAME={{ profile_name }}
+    PROVIDER={{ provider }}
+    OWNER={{ owner }}
+    PURPOSE={{ purpose }}
+    EXPIRES_AT={{ vars.get('cloud_vm_expires_at', '') }}
+    "@ | Set-Content -Encoding ASCII 'C:\cloud-dev-desktop\profile.env'
+  changed_when: true

@@ -1,0 +1,13 @@
+- name: Ensure Homebrew is installed on macOS
+  ansible.builtin.command: brew --version
+  changed_when: false
+
+- name: Install Azure CLI on macOS
+  ansible.builtin.command: brew install azure-cli
+  changed_when: true
+  when: cloud_cli_prereqs_install_azure_cli | bool
+
+- name: Install Google Cloud CLI on macOS
+  ansible.builtin.command: brew install --cask google-cloud-sdk
+  changed_when: true
+  when: cloud_cli_prereqs_install_gcloud_cli | bool

@@ -1,20 +1,60 @@
-- import_playbook: deploy_xray_exporter.yml
+- name: Load stack environment values from local .env file
+  hosts: all
+  gather_facts: false
   vars:
     stack_env_file: >-
       {{ lookup('ansible.builtin.env', 'STACK_ENV_FILE')
          | default(playbook_dir ~ '/.env', true) }}
-    xray_exporter_hosts: >-
-      {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
-         | default(lookup('ansible.builtin.env', 'XRAY_EXPORTER_HOSTS')
-         | default('xray_exporter', true), true) }}
-    xray_exporter_internal_service_token: >-
-      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
-         | default(lookup('ansible.builtin.ini', 'INTERNAL_SERVICE_TOKEN type=properties file=' ~ stack_env_file, errors='ignore')
-         | default('', true), true) }}
-    stack_services: >-
-      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
-         | default('xray-exporter,billing-service,accounts,console,agent,xworkmate-bridge', true) }}
-  when: "'xray-exporter' in (stack_services.split(',') | map('trim') | list)"
+  tasks:
+    - name: Parse stack .env file into a dictionary
+      run_once: true
+      delegate_to: localhost
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import json
+            import os
+            import re
+            import shlex
+            import sys
+
+            path = sys.argv[1]
+            data = {}
+
+            if os.path.exists(path):
+                with open(path, encoding="utf-8", errors="ignore") as handle:
+                    for raw_line in handle:
+                        line = raw_line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        match = re.match(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
+                        if not match:
+                            continue
+                        key, value = match.groups()
+                        value = value.strip()
+                        if value:
+                            try:
+                                parts = shlex.split(value, comments=False, posix=True)
+                                value = parts[0] if parts else ""
+                            except ValueError:
+                                if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                                    value = value[1:-1]
+                        data[key] = value
+
+            print(json.dumps(data))
+          - "{{ stack_env_file }}"
+      register: stack_env_parse_result
+      changed_when: false
+      check_mode: false
+
+    - name: Store parsed stack environment values
+      run_once: true
+      delegate_to: localhost
+      delegate_facts: true
+      ansible.builtin.set_fact:
+        stack_env_map: "{{ stack_env_parse_result.stdout | default('{}', true) | from_json }}"
 
 - import_playbook: deploy_billing_service.yml
   vars:
@@ -26,17 +66,90 @@
          | default(lookup('ansible.builtin.env', 'BILLING_SERVICE_HOSTS')
          | default('billing_service', true), true) }}
     billing_service_database_url: >-
-      {{ lookup('ansible.builtin.env', 'DATABASE_URL')
-         | default(lookup('ansible.builtin.ini', 'DATABASE_URL type=properties file=' ~ stack_env_file, errors='ignore')
-         | default('', true), true) }}
+      {{
+        lookup('ansible.builtin.env', 'DATABASE_URL')
+        | default(hostvars['localhost'].stack_env_map.DATABASE_URL
+        | default('', true), true)
+        or (
+          'postgres://%s:%s@%s:%s/%s?sslmode=disable'
+          | format(
+              lookup('ansible.builtin.env', 'POSTGRES_USER')
+              | default(hostvars['localhost'].stack_env_map.POSTGRES_USER
+              | default('svcplus_vps', true), true),
+              lookup('ansible.builtin.env', 'POSTGRES_PASSWORD')
+              | default(hostvars['localhost'].stack_env_map.POSTGRES_PASSWORD
+              | default('', true), true),
+              lookup('ansible.builtin.env', 'BILLING_DB_HOST')
+              | default(hostvars['localhost'].stack_env_map.BILLING_DB_HOST
+              | default('stunnel-client', true), true),
+              lookup('ansible.builtin.env', 'BILLING_DB_PORT')
+              | default(hostvars['localhost'].stack_env_map.BILLING_DB_PORT
+              | default('15432', true), true),
+              lookup('ansible.builtin.env', 'BILLING_DB_NAME')
+              | default(hostvars['localhost'].stack_env_map.BILLING_DB_NAME
+              | default('account', true), true)
+            )
+        )
+      }}
     billing_service_exporter_base_url: >-
       {{ lookup('ansible.builtin.env', 'EXPORTER_BASE_URL')
-         | default(lookup('ansible.builtin.ini', 'EXPORTER_BASE_URL type=properties file=' ~ stack_env_file, errors='ignore')
+         | default(hostvars['localhost'].stack_env_map.EXPORTER_BASE_URL
          | default('http://127.0.0.1:8080', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
-         | default('xray-exporter,billing-service,accounts,console,agent,xworkmate-bridge', true) }}
+         | default('billing-service,xworkmate-bridge,xray-exporter,agent,accounts,stunnel-client,apisix,console', true) }}
   when: "'billing-service' in (stack_services.split(',') | map('trim') | list)"
+
+- import_playbook: deploy_xworkmate_bridge_vhosts.yml
+  vars:
+    xworkmate_bridge_hosts: >-
+      {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
+         | default(lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_HOSTS')
+         | default('all', true), true) }}
+    stack_services: >-
+      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
+         | default('billing-service,xworkmate-bridge,xray-exporter,agent,accounts,stunnel-client,apisix,console', true) }}
+  when: "'xworkmate-bridge' in (stack_services.split(',') | map('trim') | list)"
+
+- import_playbook: deploy_xray_exporter.yml
+  vars:
+    stack_env_file: >-
+      {{ lookup('ansible.builtin.env', 'STACK_ENV_FILE')
+         | default(playbook_dir ~ '/.env', true) }}
+    xray_exporter_hosts: >-
+      {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
+         | default(lookup('ansible.builtin.env', 'XRAY_EXPORTER_HOSTS')
+         | default('xray_exporter', true), true) }}
+    xray_exporter_internal_service_token: >-
+      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
+         | default(hostvars['localhost'].stack_env_map.INTERNAL_SERVICE_TOKEN
+         | default('', true), true) }}
+    stack_services: >-
+      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
+         | default('billing-service,xworkmate-bridge,xray-exporter,agent,accounts,stunnel-client,apisix,console', true) }}
+  when: "'xray-exporter' in (stack_services.split(',') | map('trim') | list)"
+
+- import_playbook: deploy_agent_svc_plus.yml
+  vars:
+    stack_env_file: >-
+      {{ lookup('ansible.builtin.env', 'STACK_ENV_FILE')
+         | default(playbook_dir ~ '/.env', true) }}
+    agent_service_hosts: >-
+      {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
+         | default(lookup('ansible.builtin.env', 'AGENT_SERVICE_HOSTS')
+         | default('agent_svc_plus', true), true) }}
+    agent_api_token: >-
+      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
+         | default(hostvars['localhost'].stack_env_map.INTERNAL_SERVICE_TOKEN
+         | default('', true), true) }}
+    agent_billing_base_url: >-
+      {{ lookup('ansible.builtin.env', 'BILLING_SERVICE_BASE_URL')
+         | default(hostvars['localhost'].stack_env_map.BILLING_SERVICE_BASE_URL
+         | default('http://127.0.0.1:8081', true), true) }}
+    stack_services: >-
+      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
+         | default('billing-service,xworkmate-bridge,xray-exporter,agent,accounts,stunnel-client,apisix,console', true) }}
+  when: "'agent' in (stack_services.split(',') | map('trim') | list)"
 
 - import_playbook: deploy_accounts_svc_plus.yml
   vars:
@@ -49,16 +162,30 @@
          | default('accounts', true), true) }}
     accounts_service_image_repo: >-
       {{ lookup('ansible.builtin.env', 'ACCOUNTS_IMAGE_REPO')
-         | default(lookup('ansible.builtin.ini', 'ACCOUNTS_IMAGE_REPO type=properties file=' ~ stack_env_file, errors='ignore')
+         | default(hostvars['localhost'].stack_env_map.ACCOUNTS_IMAGE_REPO
          | default('ghcr.io/x-evor/accounts', true), true) }}
     accounts_service_image_tag: >-
       {{ lookup('ansible.builtin.env', 'ACCOUNTS_IMAGE_TAG')
-         | default(lookup('ansible.builtin.ini', 'ACCOUNTS_IMAGE_TAG type=properties file=' ~ stack_env_file, errors='ignore')
+         | default(hostvars['localhost'].stack_env_map.ACCOUNTS_IMAGE_TAG
          | default('latest', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
-         | default('xray-exporter,billing-service,accounts,console,agent,xworkmate-bridge', true) }}
+         | default('billing-service,xworkmate-bridge,xray-exporter,agent,accounts,stunnel-client,apisix,console', true) }}
   when: "'accounts' in (stack_services.split(',') | map('trim') | list)"
+
+- import_playbook: deploy_stunnel-client.yml
+  vars:
+    stack_services: >-
+      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
+         | default('billing-service,xworkmate-bridge,xray-exporter,agent,accounts,stunnel-client,apisix,console', true) }}
+  when: "'stunnel-client' in (stack_services.split(',') | map('trim') | list)"
+
+- import_playbook: deploy_apisix.yml
+  vars:
+    stack_services: >-
+      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
+         | default('billing-service,xworkmate-bridge,xray-exporter,agent,accounts,stunnel-client,apisix,console', true) }}
+  when: "'apisix' in (stack_services.split(',') | map('trim') | list)"
 
 - import_playbook: deploy_console_svc_plus.yml
   vars:
@@ -75,50 +202,17 @@
          | default(false, true), true) | bool }}
     console_service_frontend_image: >-
       {{ lookup('ansible.builtin.env', 'FRONTEND_IMAGE')
-         | default(lookup('ansible.builtin.ini', 'FRONTEND_IMAGE type=properties file=' ~ stack_env_file, errors='ignore')
+         | default(hostvars['localhost'].stack_env_map.FRONTEND_IMAGE
          | default('', true), true) }}
     console_service_registry_username: >-
       {{ lookup('ansible.builtin.env', 'GHCR_USERNAME')
-         | default(lookup('ansible.builtin.ini', 'GHCR_USERNAME type=properties file=' ~ stack_env_file, errors='ignore')
+         | default(hostvars['localhost'].stack_env_map.GHCR_USERNAME
          | default('', true), true) }}
     console_service_registry_password: >-
       {{ lookup('ansible.builtin.env', 'GHCR_PASSWORD')
-         | default(lookup('ansible.builtin.ini', 'GHCR_PASSWORD type=properties file=' ~ stack_env_file, errors='ignore')
+         | default(hostvars['localhost'].stack_env_map.GHCR_PASSWORD
          | default('', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
-         | default('xray-exporter,billing-service,accounts,console,agent,xworkmate-bridge', true) }}
+         | default('billing-service,xworkmate-bridge,xray-exporter,agent,accounts,stunnel-client,apisix,console', true) }}
   when: "'console' in (stack_services.split(',') | map('trim') | list)"
-
-- import_playbook: deploy_agent_svc_plus.yml
-  vars:
-    stack_env_file: >-
-      {{ lookup('ansible.builtin.env', 'STACK_ENV_FILE')
-         | default(playbook_dir ~ '/.env', true) }}
-    agent_service_hosts: >-
-      {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
-         | default(lookup('ansible.builtin.env', 'AGENT_SERVICE_HOSTS')
-         | default('agent_svc_plus', true), true) }}
-    agent_api_token: >-
-      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
-         | default(lookup('ansible.builtin.ini', 'INTERNAL_SERVICE_TOKEN type=properties file=' ~ stack_env_file, errors='ignore')
-         | default('', true), true) }}
-    agent_billing_base_url: >-
-      {{ lookup('ansible.builtin.env', 'BILLING_SERVICE_BASE_URL')
-         | default(lookup('ansible.builtin.ini', 'BILLING_SERVICE_BASE_URL type=properties file=' ~ stack_env_file, errors='ignore')
-         | default('http://127.0.0.1:8081', true), true) }}
-    stack_services: >-
-      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
-         | default('xray-exporter,billing-service,accounts,console,agent,xworkmate-bridge', true) }}
-  when: "'agent' in (stack_services.split(',') | map('trim') | list)"
-
-- import_playbook: deploy_xworkmate_bridge_vhosts.yml
-  vars:
-    xworkmate_bridge_hosts: >-
-      {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
-         | default(lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_HOSTS')
-         | default('all', true), true) }}
-    stack_services: >-
-      {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
-         | default('xray-exporter,billing-service,accounts,console,agent,xworkmate-bridge', true) }}
-  when: "'xworkmate-bridge' in (stack_services.split(',') | map('trim') | list)"

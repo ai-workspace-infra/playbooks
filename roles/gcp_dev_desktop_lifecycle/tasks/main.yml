@@ -1,0 +1,16 @@
+- name: Gather GCP lifecycle facts
+  ansible.builtin.include_tasks: facts.yml
+
+- name: Run GCP create flow
+  ansible.builtin.include_tasks: create.yml
+  when: cloud_lifecycle_action == "create"
+
+- name: Run GCP destroy flow
+  ansible.builtin.include_tasks: destroy.yml
+  when: cloud_lifecycle_action == "destroy"
+
+- name: Run GCP cleanup flow
+  ansible.builtin.include_tasks: destroy.yml
+  vars:
+    gcp_cleanup_mode: true
+  when: cloud_lifecycle_action == "cleanup"

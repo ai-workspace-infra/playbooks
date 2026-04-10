@@ -1,0 +1,35 @@
+- name: Ensure cloud desktop state directory exists
+  ansible.builtin.file:
+    path: "{{ cloud_vm_state_root }}"
+    state: directory
+    mode: "0700"
+  when: cloud_vm_state_root is defined
+
+- name: Persist cloud desktop state file
+  ansible.builtin.copy:
+    dest: "{{ cloud_vm_state_file }}"
+    mode: "0600"
+    content: |
+      {
+        "provider": {{ provider | to_json }},
+        "profile_name": {{ profile_name | to_json }},
+        "os_family": {{ os_family | to_json }},
+        "admin_username": {{ cloud_vm_admin_user | default(admin_username) | to_json }},
+        "public_ip": {{ cloud_vm_public_ip | default('') | to_json }},
+        "private_ip": {{ cloud_vm_private_ip | default('') | to_json }},
+        "platform": {{ cloud_vm_platform | default(os_family) | to_json }},
+        "desktop_access": {{ desktop_access | default({}) | to_json }},
+        "tags": {{ tags | default({}) | to_json }},
+        "created_at": {{ cloud_vm_created_at | default('') | to_json }},
+        "expires_at": {{ cloud_vm_expires_at | default('') | to_json }}
+      }
+  when:
+    - cloud_vm_state_file is defined
+    - cloud_vm_public_ip is defined
+    - not ansible_check_mode
+
+- name: Show resulting cloud desktop state path
+  ansible.builtin.debug:
+    msg:
+      - "cloud_vm_state_file={{ cloud_vm_state_file | default('unset') }}"
+      - "cloud_vm_public_ip={{ cloud_vm_public_ip | default('pending') }}"

@@ -1,0 +1,64 @@
+- name: Normalize Azure desktop resource names
+  ansible.builtin.set_fact:
+    azure_subscription_id: "{{ azure_subscription_id | default(lookup('env', 'AZURE_SUBSCRIPTION_ID')) }}"
+    azure_resource_group: "{{ azure_resource_group | default('rg-devdesktop-' ~ cloud_vm_owner_slug) }}"
+    azure_location: "{{ region | default(azure_location | default('japaneast')) }}"
+    azure_network_security_group: "{{ azure_network_security_group | default('nsg-' ~ cloud_vm_profile_slug) }}"
+    azure_virtual_network: "{{ azure_virtual_network | default('vnet-devdesktop-' ~ cloud_vm_owner_slug) }}"
+    azure_subnet: "{{ azure_subnet | default('snet-devdesktop') }}"
+    azure_public_ip_name: "{{ azure_public_ip_name | default('pip-' ~ cloud_vm_profile_slug) }}"
+    azure_nic_name: "{{ azure_nic_name | default('nic-' ~ cloud_vm_profile_slug) }}"
+    azure_vm_name: "{{ azure_vm_name | default('vm-' ~ cloud_vm_profile_slug) }}"
+    azure_computer_name: >-
+      {{
+        azure_computer_name
+        | default(
+            ('vm' ~ (cloud_vm_profile_slug | regex_replace('[^A-Za-z0-9]', '')))[:15]
+          )
+      }}
+
+- name: Assert Azure subscription is available when requested
+  ansible.builtin.assert:
+    that:
+      - azure_subscription_id | length > 0
+    fail_msg: "AZURE_SUBSCRIPTION_ID or azure_subscription_id is required for Azure operations."
+  when: not ansible_check_mode
+
+- name: Select Azure image defaults by OS family
+  ansible.builtin.set_fact:
+    azure_image_publisher: >-
+      {{
+        azure_image_publisher
+        | default(
+            {
+              'windows': 'MicrosoftWindowsDesktop',
+              'fedora-gnome': 'Fedora',
+              'debian-kde': 'Debian'
+            }[os_family]
+          )
+      }}
+    azure_image_offer: >-
+      {{
+        image_offer
+        | default(
+            {
+              'windows': 'windows-11',
+              'fedora-gnome': 'fedora-x86_64',
+              'debian-kde': 'debian-13'
+            }[os_family]
+          )
+      }}
+    azure_image_sku: >-
+      {{
+        image_sku
+        | default(
+            {
+              'windows': 'win11-24h2-pro',
+              'fedora-gnome': '43-gen2',
+              'debian-kde': '13-gen2'
+            }[os_family]
+          )
+      }}
+    azure_image_version: "{{ image_version | default('latest') }}"
+    azure_admin_password: "{{ azure_admin_password | default(lookup('env', 'AZURE_WINDOWS_ADMIN_PASSWORD')) }}"
+    cloud_vm_platform: "azure"

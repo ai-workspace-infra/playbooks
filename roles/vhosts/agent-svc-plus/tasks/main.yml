@@ -3,6 +3,15 @@
   ansible.builtin.set_fact:
     agent_svc_plus_go_arch: >-
       {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
+    agent_svc_plus_release_arch: >-
+      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
+  when: agent_svc_plus_build_on_target | bool
+
+- name: Map release artifact architecture when build is disabled
+  ansible.builtin.set_fact:
+    agent_svc_plus_release_arch: >-
+      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
+  when: not (agent_svc_plus_build_on_target | bool)
 
 - name: Ensure agent build prerequisites are installed
   ansible.builtin.apt:
@@ -13,32 +22,40 @@
       - tar
     state: present
     update_cache: true
+  when: agent_svc_plus_build_on_target | bool
 
 - name: Check installed Go version
   ansible.builtin.command: "{{ agent_svc_plus_go_bin }} version"
   register: agent_svc_plus_go_version_check
   changed_when: false
   failed_when: false
+  when: agent_svc_plus_build_on_target | bool
 
 - name: Download Go toolchain archive
   ansible.builtin.get_url:
     url: "https://go.dev/dl/go{{ agent_svc_plus_go_version }}.linux-{{ agent_svc_plus_go_arch }}.tar.gz"
     dest: "/tmp/go{{ agent_svc_plus_go_version }}.linux-{{ agent_svc_plus_go_arch }}.tar.gz"
     mode: "0644"
-  when: agent_svc_plus_go_version_check.rc != 0 or ('go' ~ agent_svc_plus_go_version) not in agent_svc_plus_go_version_check.stdout
+  when:
+    - agent_svc_plus_build_on_target | bool
+    - agent_svc_plus_go_version_check.rc != 0 or ('go' ~ agent_svc_plus_go_version) not in agent_svc_plus_go_version_check.stdout
 
 - name: Remove previous Go installation
   ansible.builtin.file:
     path: "{{ agent_svc_plus_go_root }}"
     state: absent
-  when: agent_svc_plus_go_version_check.rc != 0 or ('go' ~ agent_svc_plus_go_version) not in agent_svc_plus_go_version_check.stdout
+  when:
+    - agent_svc_plus_build_on_target | bool
+    - agent_svc_plus_go_version_check.rc != 0 or ('go' ~ agent_svc_plus_go_version) not in agent_svc_plus_go_version_check.stdout
 
 - name: Install Go toolchain
   ansible.builtin.unarchive:
     src: "/tmp/go{{ agent_svc_plus_go_version }}.linux-{{ agent_svc_plus_go_arch }}.tar.gz"
     dest: "/usr/local"
     remote_src: true
-  when: agent_svc_plus_go_version_check.rc != 0 or ('go' ~ agent_svc_plus_go_version) not in agent_svc_plus_go_version_check.stdout
+  when:
+    - agent_svc_plus_build_on_target | bool
+    - agent_svc_plus_go_version_check.rc != 0 or ('go' ~ agent_svc_plus_go_version) not in agent_svc_plus_go_version_check.stdout
 
 - name: Create agent directories
   ansible.builtin.file:
@@ -60,6 +77,7 @@
     version: "{{ agent_svc_plus_repo_version }}"
     update: true
   notify: Restart agent-svc-plus
+  when: agent_svc_plus_manage_source_checkout | bool
 
 - name: Build agent.svc.plus binary
   ansible.builtin.command: >-
@@ -71,6 +89,50 @@
     PATH: "{{ agent_svc_plus_go_root }}/bin:{{ ansible_env.PATH }}"
     GOTOOLCHAIN: local
   notify: Restart agent-svc-plus
+  when: agent_svc_plus_build_on_target | bool
+
+- name: Deploy prebuilt agent binary from control machine
+  ansible.builtin.copy:
+    src: "{{ agent_svc_plus_binary_src }}"
+    dest: "{{ agent_svc_plus_binary_path }}"
+    owner: "{{ agent_svc_plus_user }}"
+    group: "{{ agent_svc_plus_group }}"
+    mode: "0755"
+  notify: Restart agent-svc-plus
+  when:
+    - not (agent_svc_plus_build_on_target | bool)
+    - agent_svc_plus_binary_src | length > 0
+
+- name: Download prebuilt agent binary from GitHub Release
+  ansible.builtin.get_url:
+    url: "{{ agent_svc_plus_release_asset_url }}"
+    dest: "{{ agent_svc_plus_binary_path }}"
+    owner: "{{ agent_svc_plus_user }}"
+    group: "{{ agent_svc_plus_group }}"
+    mode: "0755"
+  notify: Restart agent-svc-plus
+  when:
+    - not (agent_svc_plus_build_on_target | bool)
+    - agent_svc_plus_binary_src | length == 0
+    - agent_svc_plus_release_tag | length > 0
+
+- name: Check existing agent binary on target host
+  ansible.builtin.stat:
+    path: "{{ agent_svc_plus_binary_path }}"
+  register: agent_svc_plus_binary_stat
+
+- name: Assert target host already has agent binary when build is disabled
+  ansible.builtin.assert:
+    that:
+      - agent_svc_plus_binary_stat.stat.exists
+      - not agent_svc_plus_binary_stat.stat.isdir
+    fail_msg: >-
+      {{ agent_svc_plus_binary_path }} does not exist on the target host.
+      This role is configured to avoid clone/build on target. Provide
+      agent_svc_plus_binary_src, or set agent_svc_plus_release_tag so the role
+      can download {{ agent_svc_plus_release_asset_name }}, or enable
+      agent_svc_plus_build_on_target.
+  when: not (agent_svc_plus_build_on_target | bool)
 
 - name: Ensure agent binary permissions
   ansible.builtin.file:

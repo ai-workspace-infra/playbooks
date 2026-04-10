@@ -1,0 +1,87 @@
+- name: Install Linux filesystem growth helpers on Debian family
+  ansible.builtin.package:
+    name:
+      - cloud-guest-utils
+      - gdisk
+      - btrfs-progs
+      - xfsprogs
+      - e2fsprogs
+    state: present
+  when:
+    - os_family != "windows"
+    - ansible_os_family == "Debian"
+    - not ansible_check_mode
+
+- name: Install Linux filesystem growth helpers on RedHat family
+  ansible.builtin.package:
+    name:
+      - cloud-utils-growpart
+      - gdisk
+      - btrfs-progs
+      - xfsprogs
+      - e2fsprogs
+    state: present
+  when:
+    - os_family != "windows"
+    - ansible_os_family == "RedHat"
+    - not ansible_check_mode
+
+- name: Expand Linux root partition and filesystem when the image layout is undersized
+  ansible.builtin.shell: |
+    set -euo pipefail
+
+    root_source="$(findmnt -no SOURCE /)"
+    root_block_device="${root_source%%[*}"
+    root_fstype="$(findmnt -no FSTYPE /)"
+
+    if [[ -z "${root_block_device}" || "${root_block_device}" != /dev/* ]]; then
+      exit 0
+    fi
+
+    root_pkname="$(lsblk -no PKNAME "${root_block_device}")"
+    root_partnum="$(basename "${root_block_device}" | sed -E 's/^.*[^0-9]([0-9]+)$/\1/')"
+
+    if [[ -z "${root_pkname}" || -z "${root_partnum}" ]]; then
+      exit 0
+    fi
+
+    disk_device="/dev/${root_pkname}"
+    root_device="/dev/$(basename "${root_block_device}")"
+
+    disk_size_bytes="$(blockdev --getsize64 "${disk_device}")"
+    part_size_bytes="$(blockdev --getsize64 "${root_device}")"
+    slack_bytes="$((disk_size_bytes - part_size_bytes))"
+
+    # Skip resize when the partition already occupies nearly the full boot disk.
+    if (( slack_bytes < 536870912 )); then
+      exit 0
+    fi
+
+    sgdisk -e "${disk_device}" >/dev/null 2>&1 || true
+    growpart_output="$(growpart "${disk_device}" "${root_partnum}" 2>&1 || true)"
+    if [[ -n "${growpart_output}" ]]; then
+      echo "${growpart_output}"
+    fi
+    if grep -q 'NOCHANGE:' <<<"${growpart_output}"; then
+      exit 0
+    fi
+
+    case "${root_fstype}" in
+      btrfs)
+        btrfs filesystem resize max /
+        ;;
+      ext2|ext3|ext4)
+        resize2fs "${root_device}"
+        ;;
+      xfs)
+        xfs_growfs /
+        ;;
+      *)
+        exit 0
+        ;;
+    esac
+  args:
+    executable: /bin/bash
+  when:
+    - os_family != "windows"
+    - not ansible_check_mode

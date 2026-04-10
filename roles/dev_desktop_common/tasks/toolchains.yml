@@ -1,0 +1,124 @@
+- name: Detect current Linux Node.js version
+  ansible.builtin.command: node --version
+  register: cloud_dev_desktop_node_version
+  changed_when: false
+  failed_when: false
+
+- name: Determine whether Linux Node.js 22+ installation is required
+  ansible.builtin.set_fact:
+    cloud_dev_desktop_node_major_installed: "{{ (cloud_dev_desktop_node_version.stdout | default('v0.0.0') | regex_replace('^v([0-9]+).*$','\\1')) | int }}"
+    cloud_dev_desktop_needs_node_install: "{{ ((cloud_dev_desktop_node_version.stdout | default('v0.0.0') | regex_replace('^v([0-9]+).*$','\\1')) | int) < (cloud_dev_desktop_node_major | int) }}"
+
+- name: Install Node.js 22.x from NodeSource on Debian family
+  ansible.builtin.shell: |
+    set -euo pipefail
+    curl -fsSL "https://deb.nodesource.com/setup_{{ cloud_dev_desktop_node_major }}.x" | bash -
+    apt-get install -y nodejs
+  args:
+    executable: /bin/bash
+  when:
+    - ansible_os_family == "Debian"
+    - cloud_dev_desktop_needs_node_install
+    - not ansible_check_mode
+
+- name: Install Node.js 22.x from NodeSource on Fedora family
+  ansible.builtin.shell: |
+    set -euo pipefail
+    curl -fsSL "https://rpm.nodesource.com/setup_{{ cloud_dev_desktop_node_major }}.x" | bash -
+    dnf install -y nodejs
+  args:
+    executable: /bin/bash
+  when:
+    - ansible_os_family == "RedHat"
+    - cloud_dev_desktop_needs_node_install
+    - not ansible_check_mode
+
+- name: Detect current Linux Go toolchain
+  ansible.builtin.command: /usr/local/go/bin/go version
+  register: cloud_dev_desktop_go_version
+  changed_when: false
+  failed_when: false
+
+- name: Fetch latest stable Go release index
+  ansible.builtin.uri:
+    url: "{{ cloud_dev_desktop_go_release_index_url }}"
+    return_content: true
+  register: cloud_dev_desktop_go_release_index
+  when: not ansible_check_mode
+
+- name: Select latest stable Go archive for linux amd64
+  ansible.builtin.set_fact:
+    cloud_dev_desktop_go_release: "{{ (cloud_dev_desktop_go_release_index.json | selectattr('stable', 'equalto', true) | list | first) }}"
+    cloud_dev_desktop_go_archive: >-
+      {{
+        (
+          (cloud_dev_desktop_go_release_index.json | selectattr('stable', 'equalto', true) | list | first).files
+          | selectattr('os', 'equalto', 'linux')
+          | selectattr('arch', 'equalto', 'amd64')
+          | selectattr('kind', 'equalto', 'archive')
+          | list
+          | first
+        )
+      }}
+  when: not ansible_check_mode
+
+- name: Determine whether Linux Go installation is required
+  ansible.builtin.set_fact:
+    cloud_dev_desktop_go_needs_install: "{{ (cloud_dev_desktop_go_release.version | default('')) not in (cloud_dev_desktop_go_version.stdout | default('')) }}"
+  when: not ansible_check_mode
+
+- name: Remove outdated Go toolchain
+  ansible.builtin.file:
+    path: /usr/local/go
+    state: absent
+  when:
+    - not ansible_check_mode
+    - cloud_dev_desktop_go_needs_install | default(false)
+
+- name: Install latest stable Go toolchain
+  ansible.builtin.unarchive:
+    src: "https://go.dev/dl/{{ cloud_dev_desktop_go_archive.filename }}"
+    dest: /usr/local
+    remote_src: true
+  when:
+    - not ansible_check_mode
+    - cloud_dev_desktop_go_needs_install | default(false)
+
+- name: Install Codex CLI globally on Linux
+  ansible.builtin.command:
+    cmd: npm install -g @openai/codex
+  when:
+    - toolchains.codex | bool
+    - not ansible_check_mode
+
+- name: Persist common Linux toolchain PATH
+  ansible.builtin.copy:
+    dest: "{{ cloud_dev_desktop_toolchain_profile_path }}"
+    mode: "0644"
+    content: |
+      export PATH="/opt/flutter/bin:/usr/local/go/bin:$PATH"
+
+- name: Verify Linux Node.js version
+  ansible.builtin.command: node --version
+  register: cloud_dev_desktop_node_verify
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Assert Linux Node.js major version is 22 or newer
+  ansible.builtin.assert:
+    that:
+      - (cloud_dev_desktop_node_verify.stdout | regex_replace('^v([0-9]+).*$','\\1') | int) >= (cloud_dev_desktop_node_major | int)
+    fail_msg: "Node.js 22+ is required on Linux cloud desktops."
+  when: not ansible_check_mode
+
+- name: Verify Linux Go toolchain
+  ansible.builtin.command: /usr/local/go/bin/go version
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Verify Linux Codex CLI
+  ansible.builtin.command: codex --version
+  changed_when: false
+  when:
+    - toolchains.codex | bool
+    - not ansible_check_mode

@@ -9,6 +9,19 @@
     agent_svc_plus_repo_version: >-
       {{ lookup('ansible.builtin.env', 'AGENT_REPO_VERSION')
          | default('main', true) }}
+    agent_svc_plus_release_tag: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_RELEASE_TAG')
+         | default(
+             (lookup('ansible.builtin.env', 'AGENT_REPO_VERSION')
+             | default('main', true))
+             if ((lookup('ansible.builtin.env', 'AGENT_REPO_VERSION')
+             | default('main', true)) is match('^v.+'))
+             else '',
+             true
+           ) }}
+    agent_svc_plus_binary_src: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_BINARY_SRC')
+         | default('', true) }}
     agent_svc_plus_app_dir: >-
       {{ lookup('ansible.builtin.env', 'AGENT_APP_DIR')
          | default('/opt/agent.svc.plus', true) }}
