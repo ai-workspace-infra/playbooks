@@ -1,0 +1,33 @@
+- name: Validate extended services target host for svc.plus
+  hosts: "{{ extended_services_hosts | default('jp_xhttp_contabo_host') }}"
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Gather service facts
+      ansible.builtin.service_facts:
+
+    - name: Confirm the host already exposes the shared svc.plus runtime
+      ansible.builtin.assert:
+        that:
+          - "'caddy.service' in ansible_facts.services"
+        fail_msg: "Target host must already provide the shared svc.plus runtime (missing caddy.service)."
+        success_msg: "Target host already provides the shared svc.plus runtime."
+
+    - name: Check caddy configuration path
+      ansible.builtin.stat:
+        path: /etc/caddy/Caddyfile
+      register: extended_services_caddyfile
+
+    - name: Validate caddy configuration path exists
+      ansible.builtin.assert:
+        that:
+          - extended_services_caddyfile.stat.exists
+        fail_msg: "Target host is missing /etc/caddy/Caddyfile."
+        success_msg: "Target host has /etc/caddy/Caddyfile."
+
+    - name: Show extended-services dry-run scope
+      ansible.builtin.debug:
+        msg:
+          - "Extended services dry-run entrypoint is wired correctly."
+          - "Target host: {{ inventory_hostname }}"
+          - "This playbook currently validates the shared runtime prerequisites used by svc.plus extended services."

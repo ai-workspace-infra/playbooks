@@ -1,7 +1,20 @@
 ---
-- name: Deploy stunnel-client release
-  hosts: server
+- name: Validate shared stunnel-client release entrypoint
+  hosts: "{{ stunnel_client_hosts | default(lookup('ansible.builtin.env', 'STACK_TARGET_HOST') | default('jp_xhttp_contabo_host', true), true) }}"
   become: true
-  gather_facts: true
-  roles:
-    - role: ../github-org-cloud-neutral-toolkit/ansible/roles/stunnel_client_deploy
+  gather_facts: false
+  tasks:
+    - name: Acknowledge shared stunnel-client dry run
+      ansible.builtin.debug:
+        msg: >-
+          stunnel-client deployment is not modelled in this repo yet; this
+          placeholder keeps aggregate dry runs green while apply stays blocked.
+      changed_when: false
+      when: ansible_check_mode
+
+    - name: Block apply until shared stunnel-client role exists
+      ansible.builtin.fail:
+        msg: >-
+          stunnel-client apply is not implemented in the playbooks repo yet.
+          Add a real stunnel-client role before using this entrypoint in apply mode.
+      when: not ansible_check_mode
