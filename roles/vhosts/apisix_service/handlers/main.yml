@@ -1,0 +1,9 @@
+---
+- name: Reload caddy
+  ansible.builtin.command: systemctl reload caddy
+  changed_when: true
+
+- name: Restart APISIX
+  ansible.builtin.command:
+    cmd: docker compose -f "{{ apisix_service_compose_file }}" restart apisix
+  changed_when: true
