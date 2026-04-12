@@ -30,6 +30,17 @@
     enabled: true
     state: started
 
+- name: Log into container registry for accounts service
+  ansible.builtin.shell: |
+    set -euo pipefail
+    printf '%s' '{{ accounts_service_registry_password }}' | docker login {{ accounts_service_registry_server }} -u '{{ accounts_service_registry_username }}' --password-stdin
+  args:
+    executable: /bin/bash
+  no_log: true
+  when:
+    - accounts_service_registry_username | length > 0
+    - accounts_service_registry_password | length > 0
+
 - name: Ensure shared Docker network exists for accounts service
   ansible.builtin.command: docker network inspect "{{ accounts_service_shared_network }}"
   changed_when: false

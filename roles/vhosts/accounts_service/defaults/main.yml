@@ -2,6 +2,9 @@
 accounts_service_image_ref: "{{ accounts_service_image_repo }}:{{ accounts_service_image_tag }}"
 accounts_service_image_repo: ghcr.io/x-evor/accounts
 accounts_service_image_tag: latest
+accounts_service_registry_server: "{{ lookup('ansible.builtin.env', 'GHCR_REGISTRY') | default('ghcr.io', true) }}"
+accounts_service_registry_username: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') | default('', true) }}"
+accounts_service_registry_password: "{{ lookup('ansible.builtin.env', 'GHCR_PASSWORD') | default(lookup('ansible.builtin.env', 'GHCR_TOKEN') | default('', true), true) }}"
 accounts_service_pull_image: true
 accounts_service_container_port: 8080
 accounts_service_base_dir: /opt/cloud-neutral/accounts/managed
