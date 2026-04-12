@@ -9,6 +9,11 @@
     billing_service_exporter_base_url: >-
       {{ lookup('ansible.builtin.env', 'EXPORTER_BASE_URL')
          | default('http://127.0.0.1:8080', true) }}
+    billing_service_exporter_sources_json: >-
+      {{ lookup('ansible.builtin.env', 'EXPORTER_SOURCES_JSON')
+         | default('', true) }}
+    billing_service_internal_service_token: >-
+      {{ lookup('ansible.builtin.vars', 'INTERNAL_SERVICE_TOKEN', default=lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true)) }}
     billing_service_database_url: >-
       {{ lookup('ansible.builtin.env', 'DATABASE_URL')
          | default('', true) }}
@@ -40,5 +45,11 @@
           - billing_service_database_url | length > 0
         fail_msg: "DATABASE_URL must be exported before running this playbook."
         success_msg: "DATABASE_URL found"
+    - name: Validate INTERNAL_SERVICE_TOKEN is present
+      ansible.builtin.assert:
+        that:
+          - billing_service_internal_service_token | length > 0
+        fail_msg: "INTERNAL_SERVICE_TOKEN must be exported before running this playbook."
+        success_msg: "INTERNAL_SERVICE_TOKEN found"
   roles:
     - roles/vhosts/billing-service
