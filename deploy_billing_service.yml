@@ -3,9 +3,12 @@
   gather_facts: true
   become: true
   vars:
-    billing_service_source_dir: >-
-      {{ lookup('ansible.builtin.env', 'BILLING_SERVICE_SOURCE_DIR')
-         | default(playbook_dir ~ '/../billing-service', true) }}
+    billing_service_binary_artifact: >-
+      {{ lookup('ansible.builtin.env', 'BILLING_SERVICE_BINARY_ARTIFACT')
+         | default('', true) }}
+    billing_service_image_ref: >-
+      {{ lookup('ansible.builtin.env', 'BILLING_SERVICE_IMAGE_REF')
+         | default('', true) }}
     billing_service_exporter_base_url: >-
       {{ lookup('ansible.builtin.env', 'EXPORTER_BASE_URL')
          | default('http://127.0.0.1:8080', true) }}
@@ -39,6 +42,35 @@
       {{ lookup('ansible.builtin.env', 'INITIAL_BALANCE')
          | default('0', true) }}
   pre_tasks:
+    - name: Validate BILLING_SERVICE_BINARY_ARTIFACT is present
+      ansible.builtin.assert:
+        that:
+          - billing_service_binary_artifact | length > 0
+        fail_msg: "BILLING_SERVICE_BINARY_ARTIFACT must be exported before running this playbook."
+        success_msg: "BILLING_SERVICE_BINARY_ARTIFACT found"
+    - name: Validate BILLING_SERVICE_BINARY_ARTIFACT exists
+      ansible.builtin.stat:
+        path: "{{ billing_service_binary_artifact }}"
+      register: billing_service_binary_artifact_stat
+      delegate_to: localhost
+      become: false
+      run_once: true
+    - name: Assert BILLING_SERVICE_BINARY_ARTIFACT exists on controller
+      ansible.builtin.assert:
+        that:
+          - billing_service_binary_artifact_stat.stat.exists
+          - billing_service_binary_artifact_stat.stat.isreg
+        fail_msg: "BILLING_SERVICE_BINARY_ARTIFACT must point to an existing binary artifact."
+        success_msg: "BILLING_SERVICE_BINARY_ARTIFACT exists"
+      delegate_to: localhost
+      become: false
+      run_once: true
+    - name: Validate BILLING_SERVICE_IMAGE_REF is present
+      ansible.builtin.assert:
+        that:
+          - billing_service_image_ref | length > 0
+        fail_msg: "BILLING_SERVICE_IMAGE_REF must be exported before running this playbook."
+        success_msg: "BILLING_SERVICE_IMAGE_REF found"
     - name: Validate DATABASE_URL is present
       ansible.builtin.assert:
         that:

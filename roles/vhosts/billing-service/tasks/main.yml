@@ -1,45 +1,3 @@
----
-- name: Map Go architecture
-  ansible.builtin.set_fact:
-    billing_service_go_arch: >-
-      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
-
-- name: Ensure billing-service build prerequisites are installed
-  ansible.builtin.apt:
-    name:
-      - curl
-      - ca-certificates
-      - tar
-      - rsync
-    state: present
-    update_cache: true
-
-- name: Check installed Go version
-  ansible.builtin.command: "{{ billing_service_go_bin }} version"
-  register: billing_service_go_version_check
-  changed_when: false
-  failed_when: false
-
-- name: Download Go toolchain archive
-  ansible.builtin.get_url:
-    url: "https://go.dev/dl/go{{ billing_service_go_version }}.linux-{{ billing_service_go_arch }}.tar.gz"
-    dest: "/tmp/go{{ billing_service_go_version }}.linux-{{ billing_service_go_arch }}.tar.gz"
-    mode: "0644"
-  when: billing_service_go_version_check.rc != 0 or ('go' ~ billing_service_go_version) not in billing_service_go_version_check.stdout
-
-- name: Remove previous Go installation
-  ansible.builtin.file:
-    path: "{{ billing_service_go_root }}"
-    state: absent
-  when: billing_service_go_version_check.rc != 0 or ('go' ~ billing_service_go_version) not in billing_service_go_version_check.stdout
-
-- name: Install Go toolchain
-  ansible.builtin.unarchive:
-    src: "/tmp/go{{ billing_service_go_version }}.linux-{{ billing_service_go_arch }}.tar.gz"
-    dest: "/usr/local"
-    remote_src: true
-  when: billing_service_go_version_check.rc != 0 or ('go' ~ billing_service_go_version) not in billing_service_go_version_check.stdout
-
 - name: Create billing-service directories
   ansible.builtin.file:
     path: "{{ item }}"
@@ -51,22 +9,13 @@
     - "{{ billing_service_app_dir }}"
     - "{{ billing_service_env_dir }}"
 
-- name: Sync billing-service source tree
-  ansible.posix.synchronize:
-    src: "{{ billing_service_source_dir }}/"
-    dest: "{{ billing_service_app_dir }}/"
-    delete: true
-  notify: Restart billing-service
-
-- name: Build billing-service binary
-  ansible.builtin.command: >-
-    {{ billing_service_go_bin }} build -buildvcs=false -o {{ billing_service_binary_path }} ./cmd/billing-service
-  args:
-    chdir: "{{ billing_service_app_dir }}"
-  environment:
-    GOROOT: "{{ billing_service_go_root }}"
-    PATH: "{{ billing_service_go_root }}/bin:{{ ansible_env.PATH }}"
-    GOTOOLCHAIN: local
+- name: Deploy billing-service binary artifact
+  ansible.builtin.copy:
+    src: "{{ billing_service_binary_artifact }}"
+    dest: "{{ billing_service_binary_path }}"
+    owner: "{{ billing_service_user }}"
+    group: "{{ billing_service_group }}"
+    mode: "0755"
   notify: Restart billing-service
 
 - name: Ensure billing-service binary permissions
