@@ -4,6 +4,7 @@
 
 import /etc/caddy/conf.d/*.caddy
 
+{% if caddy_portal_domains | default([], true) | length > 0 and caddy_portal_proxy | default('', true) | length > 0 %}
 ############################
 # portal.onwalk.net
 # Next.js yarn dev
@@ -36,7 +37,9 @@ import /etc/caddy/conf.d/*.caddy
 		}
 	}
 }
+{% endif %}
 
+{% if caddy_download_domain | default('', true) | length > 0 and caddy_download_root | default('', true) | length > 0 %}
 ############################
 # dl.onwalk.net
 # 静态下载站
@@ -86,3 +89,4 @@ import /etc/caddy/conf.d/*.caddy
 		file_server browse
 	}
 }
+{% endif %}
