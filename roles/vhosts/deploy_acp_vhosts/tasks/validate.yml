@@ -83,6 +83,26 @@
   changed_when: false
   register: xworkmate_bridge_service_root
 
+- name: Check xworkmate-bridge public domain ping
+  ansible.builtin.uri:
+    url: "http://127.0.0.1/api/ping"
+    method: GET
+    headers:
+      Host: "{{ xworkmate_bridge_service_domain }}"
+    follow_redirects: none
+    status_code: [200]
+    return_content: true
+  changed_when: false
+  register: xworkmate_bridge_service_ping
+
+- name: Assert xworkmate-bridge ping reports deployed image ref
+  ansible.builtin.assert:
+    that:
+      - "(xworkmate_bridge_service_ping.content | from_json).status == 'ok'"
+      - "(xworkmate_bridge_service_ping.content | from_json).image == service_compose_image"
+    fail_msg: >-
+      xworkmate-bridge /api/ping does not report the deployed image ref.
+
 - name: Check deprecated ACP fragments are absent
   ansible.builtin.stat:
     path: "{{ item }}"
@@ -103,8 +123,12 @@
   when:
     - not ansible_check_mode
 
-- name: Show xworkmate-bridge service status
-  ansible.builtin.command: systemctl status "{{ xworkmate_bridge_service_name }}" --no-pager
+- name: Show xworkmate-bridge compose status
+  ansible.builtin.command: >-
+    docker compose
+    --project-name {{ xworkmate_bridge_project_name }}
+    -f {{ xworkmate_bridge_compose_file }}
+    ps
   register: xworkmate_bridge_status
   changed_when: false
   failed_when: false
@@ -117,7 +141,9 @@
       - "OpenCode public base URL: https://{{ xworkmate_bridge_domain }}/opencode"
       - "Gemini public base URL: https://{{ xworkmate_bridge_domain }}/gemini"
       - "Bridge service public base URL: {{ xworkmate_bridge_service_public_base_url }}"
+      - "Bridge image ref: {{ service_compose_image }}"
       - "Bridge service: {{ xworkmate_bridge_status.stdout | default('N/A') }}"
+      - "Bridge ping: {{ xworkmate_bridge_service_ping.content | default('N/A') }}"
       - "Codex route: /codex -> {{ xworkmate_bridge_codex_upstream_host }}:{{ xworkmate_bridge_codex_upstream_port }}"
       - "OpenCode route: /opencode -> {{ xworkmate_bridge_opencode_upstream_host }}:{{ xworkmate_bridge_opencode_upstream_port }}"
       - "Gemini route: /gemini -> {{ xworkmate_bridge_gemini_upstream_host }}:{{ xworkmate_bridge_gemini_upstream_port }}"
