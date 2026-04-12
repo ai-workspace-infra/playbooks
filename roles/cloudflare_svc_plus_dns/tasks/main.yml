@@ -8,6 +8,7 @@
     cloudflare_dns_records: >-
       {%- set records = [] -%}
       {%- set source_specs = cloudflare_dns_source_hosts | default(cloudflare_dns_default_source_hosts, true) -%}
+      {%- set static_records = cloudflare_dns_static_records | default([], true) -%}
       {%- set expanded_hosts = [] -%}
       {%- for spec in source_specs -%}
       {%-   for host in query('inventory_hostnames', spec) -%}
@@ -28,6 +29,9 @@
             'proxied': false
           }) -%}
       {%- endfor -%}
+      {%- endfor -%}
+      {%- for static_record in static_records -%}
+      {%-   set _ = records.append(static_record) -%}
       {%- endfor -%}
       {{ records | to_json | from_yaml }}
 
