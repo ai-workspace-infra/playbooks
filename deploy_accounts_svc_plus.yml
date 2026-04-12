@@ -3,6 +3,16 @@
   gather_facts: false
   become: true
   vars:
+    accounts_service_image_ref: >-
+      {{
+        (lookup('ansible.builtin.env', 'ACCOUNTS_IMAGE_REF') | default('', true) | trim)
+        or
+        (
+          (lookup('ansible.builtin.env', 'ACCOUNTS_IMAGE_REPO') | default('ghcr.io/x-evor/accounts', true))
+          ~ ':'
+          ~ (lookup('ansible.builtin.env', 'ACCOUNTS_IMAGE_TAG') | default('latest', true))
+        )
+      }}
     accounts_service_image_repo: >-
       {{ lookup('ansible.builtin.env', 'ACCOUNTS_IMAGE_REPO')
          | default('ghcr.io/x-evor/accounts', true) }}

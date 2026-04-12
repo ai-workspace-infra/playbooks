@@ -23,6 +23,12 @@
          | default('https://accounts.svc.plus', true) }}
     xray_exporter_internal_service_token: >-
       {{ lookup('ansible.builtin.vars', 'INTERNAL_SERVICE_TOKEN', default=lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true)) }}
+    xray_exporter_snapshot_store_path: >-
+      {{ lookup('ansible.builtin.env', 'SNAPSHOT_STORE_PATH')
+         | default('/var/lib/xray-exporter/snapshots.db', true) }}
+    xray_exporter_snapshot_retention: >-
+      {{ lookup('ansible.builtin.env', 'SNAPSHOT_RETENTION')
+         | default('72h', true) }}
     xray_exporter_listen_addr: >-
       {{ lookup('ansible.builtin.env', 'XRAY_EXPORTER_LISTEN_ADDR')
          | default('127.0.0.1:8080', true) }}

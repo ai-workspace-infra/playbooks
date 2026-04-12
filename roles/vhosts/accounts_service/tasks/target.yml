@@ -60,6 +60,14 @@
     state: present
     insertbefore: BOF
 
+- name: Ensure managed IMAGE is present for {{ accounts_service_target.name }}
+  ansible.builtin.lineinfile:
+    path: "{{ accounts_service_target.env_file }}"
+    regexp: '^IMAGE='
+    line: 'IMAGE={{ accounts_service_image_ref }}'
+    state: present
+    insertafter: '^CONFIG_TEMPLATE='
+
 - name: Render managed account config for {{ accounts_service_target.name }}
   ansible.builtin.template:
     src: account.yaml.j2
