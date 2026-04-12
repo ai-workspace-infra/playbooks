@@ -1,11 +1,12 @@
 services:
   app:
-    image: "{{ accounts_service_image_repo }}:{{ accounts_service_image_tag }}"
+    image: "{{ accounts_service_image_ref }}"
     container_name: {{ accounts_service_target.container_name }}
     restart: unless-stopped
     env_file:
       - ./env/app.env
     environment:
+      IMAGE: "{{ accounts_service_image_ref }}"
       PORT: "{{ accounts_service_container_port }}"
     volumes:
       - ./config/account.yaml:/etc/xcontrol/account.template.yaml:ro
