@@ -1,0 +1,35 @@
+---
+docs_service_base_dir: "{{ lookup('ansible.builtin.env', 'DOCS_BASE_DIR') | default('/opt/docs-svc-plus', true) }}"
+docs_service_compose_file: "{{ docs_service_base_dir }}/docker-compose.yml"
+docs_service_runtime_env_file: "{{ docs_service_base_dir }}/.env.runtime"
+docs_service_project_name: "{{ lookup('ansible.builtin.env', 'DOCS_PROJECT_NAME') | default('docs-svc-plus', true) }}"
+docs_service_server_name: docs
+docs_service_release_id: "{{ lookup('env', 'RELEASE_ID') | default(lookup('pipe', 'git -C ' ~ playbook_dir ~ ' rev-parse --short HEAD'), true) }}"
+docs_service_hostname: "{{ inventory_hostname | default(ansible_facts['hostname']) | default('unknown-host', true) }}"
+docs_service_canonical_domain: "{{ lookup('ansible.builtin.env', 'DOCS_CANONICAL_DOMAIN') | default('docs.svc.plus', true) }}"
+docs_service_served_domains: "{{ lookup('ansible.builtin.env', 'DOCS_SERVED_DOMAINS') | default(docs_service_canonical_domain, true) }}"
+docs_service_domain_slug: "{{ docs_service_canonical_domain | replace('.', '-') }}"
+docs_service_caddy_conf_dir: /etc/caddy/conf.d
+docs_service_caddy_fragment_name: "{{ docs_service_server_name }}-{{ docs_service_release_id }}-{{ docs_service_hostname }}-{{ docs_service_domain_slug }}.caddy"
+docs_service_caddy_fragment_path: "{{ docs_service_caddy_conf_dir }}/{{ docs_service_caddy_fragment_name }}"
+docs_service_manage_caddy: true
+
+docs_service_image_ref: "{{ docs_service_image_repo }}:{{ docs_service_image_tag }}"
+docs_service_image_repo: ghcr.io/x-evor/docs
+docs_service_image_tag: latest
+docs_service_pull_image: true
+docs_service_registry: "{{ lookup('ansible.builtin.env', 'DOCS_REGISTRY') | default('ghcr.io', true) }}"
+docs_service_registry_username: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') | default('', true) }}"
+docs_service_registry_password: "{{ lookup('ansible.builtin.env', 'GHCR_PASSWORD') | default(lookup('ansible.builtin.env', 'GHCR_TOKEN') | default('', true), true) }}"
+
+docs_service_container_port: "8084"
+docs_service_host_port: "18086"
+docs_service_runtime_port: "{{ docs_service_container_port }}"
+
+docs_service_knowledge_repo_path_host: "{{ lookup('ansible.builtin.env', 'DOCS_KNOWLEDGE_REPO_PATH_HOST') | default('', true) }}"
+docs_service_knowledge_repo_path_container: /knowledge
+
+docs_service_internal_service_token: "{{ lookup('ansible.builtin.env', 'DOCS_INTERNAL_SERVICE_TOKEN') | default(lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true), true) }}"
+docs_service_reload_interval: "{{ lookup('ansible.builtin.env', 'DOCS_RELOAD_INTERVAL') | default('5m', true) }}"
+
+docs_service_healthcheck_url: "http://127.0.0.1:{{ docs_service_host_port }}/healthz"

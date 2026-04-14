@@ -1,0 +1,185 @@
+---
+- name: Ensure docs service base directory exists
+  ansible.builtin.file:
+    path: "{{ docs_service_base_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Assert docs deploy uses prebuilt registry image
+  ansible.builtin.assert:
+    that:
+      - docs_service_image_ref | trim | length > 0
+      - "'/' in (docs_service_image_ref | trim)"
+      - "':' in (docs_service_image_ref | trim)"
+    fail_msg: >-
+      DOCS deploy requires a prebuilt image reference via DOCS_IMAGE_REF or
+      DOCS_IMAGE_REPO + DOCS_IMAGE_TAG. This role never builds images on the
+      target host.
+
+- name: Assert docs knowledge repo path is configured
+  ansible.builtin.assert:
+    that:
+      - docs_service_knowledge_repo_path_host | trim | length > 0
+    fail_msg: >-
+      DOCS_KNOWLEDGE_REPO_PATH_HOST must be exported before running this playbook.
+
+- name: Assert docs internal service token is configured
+  ansible.builtin.assert:
+    that:
+      - docs_service_internal_service_token | trim | length > 0
+    fail_msg: >-
+      DOCS_INTERNAL_SERVICE_TOKEN or INTERNAL_SERVICE_TOKEN must be exported
+      before running this playbook.
+
+- name: Check docs knowledge repo path exists on target host
+  ansible.builtin.stat:
+    path: "{{ docs_service_knowledge_repo_path_host }}"
+  register: docs_service_knowledge_repo_stat
+
+- name: Assert docs knowledge repo path exists on target host
+  ansible.builtin.assert:
+    that:
+      - docs_service_knowledge_repo_stat.stat.exists
+      - docs_service_knowledge_repo_stat.stat.isdir
+    fail_msg: >-
+      The configured docs knowledge repo path {{ docs_service_knowledge_repo_path_host }}
+      does not exist or is not a directory on the target host.
+
+- name: Log into container registry for docs service
+  ansible.builtin.shell: |
+    set -euo pipefail
+    printf '%s' '{{ docs_service_registry_password }}' | docker login {{ docs_service_registry }} -u '{{ docs_service_registry_username }}' --password-stdin
+  args:
+    executable: /bin/bash
+  no_log: true
+  when:
+    - docs_service_registry_username | length > 0
+    - docs_service_registry_password | length > 0
+
+- name: Render docs compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ docs_service_compose_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Render docs runtime env file
+  ansible.builtin.template:
+    src: env.runtime.j2
+    dest: "{{ docs_service_runtime_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Validate docs compose file
+  ansible.builtin.command: >-
+    docker compose
+    --project-name {{ docs_service_project_name }}
+    -f {{ docs_service_compose_file }}
+    --env-file {{ docs_service_runtime_env_file }}
+    config
+  args:
+    chdir: "{{ docs_service_base_dir }}"
+  changed_when: false
+
+- name: Pull docs service image
+  ansible.builtin.command: >-
+    docker compose
+    --project-name {{ docs_service_project_name }}
+    -f {{ docs_service_compose_file }}
+    --env-file {{ docs_service_runtime_env_file }}
+    pull docs
+  args:
+    chdir: "{{ docs_service_base_dir }}"
+  when: docs_service_pull_image | bool
+
+- name: Start docs container
+  ansible.builtin.command: >-
+    docker compose
+    --project-name {{ docs_service_project_name }}
+    -f {{ docs_service_compose_file }}
+    --env-file {{ docs_service_runtime_env_file }}
+    up -d --remove-orphans docs
+  args:
+    chdir: "{{ docs_service_base_dir }}"
+
+- name: Ensure Caddy fragment directory exists
+  ansible.builtin.file:
+    path: "{{ docs_service_caddy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: docs_service_manage_caddy | bool
+
+- name: Render docs Caddy fragment
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ docs_service_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: docs_service_manage_caddy | bool
+
+- name: Remove obsolete docs Caddy fragments
+  ansible.builtin.shell: |
+    set -euo pipefail
+    shopt -s nullglob
+    current="{{ docs_service_caddy_fragment_path }}"
+    changed=0
+    for candidate in {{ docs_service_caddy_conf_dir }}/docs*.caddy {{ docs_service_caddy_conf_dir }}/docs*.caddy.bak*; do
+      if [ "$candidate" != "$current" ]; then
+        rm -f "$candidate"
+        changed=1
+      fi
+    done
+    if [ "$changed" -eq 1 ]; then
+      echo changed
+    fi
+  args:
+    executable: /bin/bash
+  register: docs_service_caddy_cleanup
+  changed_when: docs_service_caddy_cleanup.stdout | trim != ""
+  when: docs_service_manage_caddy | bool
+
+- name: Validate Caddy config after updating docs fragment
+  ansible.builtin.command: caddy validate --config /etc/caddy/Caddyfile
+  changed_when: false
+  when:
+    - docs_service_manage_caddy | bool
+    - not ansible_check_mode
+
+- name: Reload Caddy after updating docs fragment
+  ansible.builtin.service:
+    name: caddy
+    state: reloaded
+  when:
+    - docs_service_manage_caddy | bool
+    - not ansible_check_mode
+
+- name: Check docs health endpoint
+  ansible.builtin.uri:
+    url: "{{ docs_service_healthcheck_url }}"
+    method: GET
+    status_code: 200
+  register: docs_service_healthcheck
+  retries: 10
+  delay: 3
+  until: docs_service_healthcheck.status == 200
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Show docs compose status
+  ansible.builtin.command: >-
+    docker compose
+    --project-name {{ docs_service_project_name }}
+    -f {{ docs_service_compose_file }}
+    --env-file {{ docs_service_runtime_env_file }}
+    ps
+  args:
+    chdir: "{{ docs_service_base_dir }}"
+  changed_when: false

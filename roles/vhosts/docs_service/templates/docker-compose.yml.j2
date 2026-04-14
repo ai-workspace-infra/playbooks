@@ -1,0 +1,10 @@
+services:
+  docs:
+    image: ${IMAGE:?set IMAGE in .env.runtime}
+    restart: unless-stopped
+    env_file:
+      - .env.runtime
+    ports:
+      - "127.0.0.1:{{ docs_service_host_port }}:{{ docs_service_container_port }}"
+    volumes:
+      - "{{ docs_service_knowledge_repo_path_host }}:{{ docs_service_knowledge_repo_path_container }}"

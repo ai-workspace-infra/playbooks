@@ -1,0 +1,58 @@
+- name: Deploy managed docs.svc.plus service
+  hosts: "{{ docs_service_target_host | default(docs_service_hosts | default('docs')) }}"
+  gather_facts: true
+  become: true
+  vars:
+    docs_service_image_ref: >-
+      {{
+        (lookup('ansible.builtin.env', 'DOCS_IMAGE_REF') | default('', true) | trim)
+        or
+        (
+          (lookup('ansible.builtin.env', 'DOCS_IMAGE_REPO') | default('ghcr.io/x-evor/docs', true))
+          ~ ':'
+          ~ (lookup('ansible.builtin.env', 'DOCS_IMAGE_TAG') | default('latest', true))
+        )
+      }}
+    docs_service_image_repo: >-
+      {{ lookup('ansible.builtin.env', 'DOCS_IMAGE_REPO')
+         | default('ghcr.io/x-evor/docs', true) }}
+    docs_service_image_tag: >-
+      {{ lookup('ansible.builtin.env', 'DOCS_IMAGE_TAG')
+         | default('latest', true) }}
+    docs_service_pull_image: >-
+      {{ lookup('ansible.builtin.env', 'DOCS_PULL_IMAGE')
+         | default(true, true) | bool }}
+    docs_service_knowledge_repo_path_host: >-
+      {{ lookup('ansible.builtin.env', 'DOCS_KNOWLEDGE_REPO_PATH_HOST')
+         | default('', true) }}
+    docs_service_internal_service_token: >-
+      {{
+        lookup('ansible.builtin.env', 'DOCS_INTERNAL_SERVICE_TOKEN')
+        | default(lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true), true)
+      }}
+    docs_service_reload_interval: >-
+      {{ lookup('ansible.builtin.env', 'DOCS_RELOAD_INTERVAL')
+         | default('5m', true) }}
+    docs_service_container_port: >-
+      {{ lookup('ansible.builtin.env', 'DOCS_SERVICE_PORT')
+         | default('8084', true) }}
+    docs_service_host_port: >-
+      {{ lookup('ansible.builtin.env', 'DOCS_HOST_PORT')
+         | default('18086', true) }}
+  roles:
+    - roles/vhosts/docker
+    - roles/vhosts/caddy
+    - roles/vhosts/docs_service
+
+- name: Sync docs DNS records when requested
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Reconcile Cloudflare DNS for docs target host
+      when: docs_service_sync_dns | default(false)
+      ansible.builtin.include_role:
+        name: cloudflare_svc_plus_dns
+      vars:
+        cloudflare_dns_source_hosts:
+          - "{{ docs_service_target_host | default(docs_service_hosts | default('docs')) }}"
