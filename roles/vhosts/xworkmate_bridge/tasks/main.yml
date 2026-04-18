@@ -1,0 +1,17 @@
+---
+- name: Ensure xworkmate-bridge base directory exists
+  ansible.builtin.file:
+    path: "{{ xworkmate_bridge_base_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy xworkmate-bridge runtime configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ xworkmate_bridge_base_dir }}/config.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload bridge
