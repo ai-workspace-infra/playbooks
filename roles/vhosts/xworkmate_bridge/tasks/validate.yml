@@ -11,10 +11,9 @@
 
 - name: Check Codex route through unified ACP ingress
   ansible.builtin.uri:
-    url: "http://127.0.0.1/codex"
+    url: "https://{{ xworkmate_bridge_domain }}/acp-server/codex"
     method: GET
     headers:
-      Host: "{{ xworkmate_bridge_domain }}"
       Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
     follow_redirects: none
     status_code: [200, 301, 302, 307, 308, 401, 403, 404, 502]
@@ -25,10 +24,9 @@
 
 - name: Check OpenCode route through unified ACP ingress
   ansible.builtin.uri:
-    url: "http://127.0.0.1/opencode"
+    url: "https://{{ xworkmate_bridge_domain }}/acp-server/opencode"
     method: GET
     headers:
-      Host: "{{ xworkmate_bridge_domain }}"
       Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
     follow_redirects: none
     status_code: [200, 301, 302, 307, 308, 401, 403, 404, 502]
@@ -39,10 +37,9 @@
 
 - name: Check Gemini route through unified ACP ingress
   ansible.builtin.uri:
-    url: "http://127.0.0.1/gemini"
+    url: "https://{{ xworkmate_bridge_domain }}/acp-server/gemini"
     method: GET
     headers:
-      Host: "{{ xworkmate_bridge_domain }}"
       Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
     follow_redirects: none
     status_code: [200, 301, 302, 307, 308, 401, 403, 404, 502]
@@ -53,10 +50,9 @@
 
 - name: Check xworkmate-bridge public domain root
   ansible.builtin.uri:
-    url: "http://127.0.0.1/"
+    url: "https://{{ xworkmate_bridge_service_domain }}/"
     method: GET
     headers:
-      Host: "{{ xworkmate_bridge_service_domain }}"
       Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
     follow_redirects: none
     status_code: [200, 301, 302, 307, 308]
