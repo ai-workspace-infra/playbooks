@@ -39,6 +39,7 @@
     method: GET
     headers:
       Host: "{{ xworkmate_bridge_domain }}"
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(BRIDGE_AUTH_TOKEN | default('')) }}"
     follow_redirects: none
     status_code: [200, 301, 302, 307, 308, 401, 403, 404, 502]
   changed_when: false
@@ -52,6 +53,7 @@
     method: GET
     headers:
       Host: "{{ xworkmate_bridge_domain }}"
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(BRIDGE_AUTH_TOKEN | default('')) }}"
     follow_redirects: none
     status_code: [200, 301, 302, 307, 308, 401, 403, 404, 502]
   changed_when: false
@@ -65,6 +67,7 @@
     method: GET
     headers:
       Host: "{{ xworkmate_bridge_domain }}"
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(BRIDGE_AUTH_TOKEN | default('')) }}"
     follow_redirects: none
     status_code: [200, 301, 302, 307, 308, 401, 403, 404, 502]
   changed_when: false
@@ -78,6 +81,7 @@
     method: GET
     headers:
       Host: "{{ xworkmate_bridge_service_domain }}"
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(BRIDGE_AUTH_TOKEN | default('')) }}"
     follow_redirects: none
     status_code: [200, 301, 302, 307, 308]
   changed_when: false
@@ -87,6 +91,8 @@
   ansible.builtin.uri:
     url: "https://{{ xworkmate_bridge_service_domain }}/api/ping"
     method: GET
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(BRIDGE_AUTH_TOKEN | default('')) }}"
     status_code: [200]
     return_content: true
   changed_when: false
