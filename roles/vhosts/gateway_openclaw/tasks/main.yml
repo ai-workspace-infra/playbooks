@@ -1,0 +1,65 @@
+---
+- name: Ensure Caddy fragment directory exists
+  ansible.builtin.file:
+    path: "{{ xworkmate_bridge_caddy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Inspect Caddy main file attributes
+  ansible.builtin.command:
+    cmd: lsattr "{{ xworkmate_bridge_caddyfile_path }}"
+  register: xworkmate_bridge_caddyfile_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from Caddy main file when present
+  ansible.builtin.command:
+    cmd: chattr -i "{{ xworkmate_bridge_caddyfile_path }}"
+  when:
+    - "'i' in (xworkmate_bridge_caddyfile_attrs.stdout | default(''))"
+  changed_when: true
+
+- name: Ensure ACP Caddy import is present in main file
+  ansible.builtin.lineinfile:
+    path: "{{ xworkmate_bridge_caddyfile_path }}"
+    line: "import {{ xworkmate_bridge_caddy_conf_dir }}/*.caddy"
+    insertafter: EOF
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    state: present
+  notify: Reload caddy
+
+- name: Restore immutable flag on Caddy main file
+  ansible.builtin.command:
+    cmd: chattr +i "{{ xworkmate_bridge_caddyfile_path }}"
+  when:
+    - "'i' in (xworkmate_bridge_caddyfile_attrs.stdout | default(''))"
+  changed_when: true
+
+- name: Deploy xworkmate-bridge public Caddy site
+  ansible.builtin.template:
+    src: xworkmate-bridge-site.caddy.j2
+    dest: "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
+- name: Remove deprecated ACP Caddy fragments
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
+  notify: Reload caddy
+
+- name: Ensure Caddy is enabled and running
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: true
+    state: started
+  when:
+    - not ansible_check_mode

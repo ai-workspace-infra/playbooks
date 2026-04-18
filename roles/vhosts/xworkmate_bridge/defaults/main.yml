@@ -1,10 +1,33 @@
 ---
+xworkmate_bridge_service_name: xworkmate-bridge
+# 引用全局 Secret
+xworkmate_bridge_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true), true) }}"
+xworkmate_bridge_listen_host: 127.0.0.1
+xworkmate_bridge_listen_port: 8787
+xworkmate_bridge_container_port: 8787
+xworkmate_bridge_container_name: xworkmate-bridge-managed
 xworkmate_bridge_base_dir: /opt/cloud-neutral/xworkmate-bridge
-xworkmate_bridge_domain: xworkmate-bridge.svc.plus
-xworkmate_bridge_listen_addr: 127.0.0.1:8787
+xworkmate_bridge_compose_file: "{{ xworkmate_bridge_base_dir }}/docker-compose.yml"
+xworkmate_bridge_project_name: xworkmate-bridge
+service_compose_image: "{{ lookup('ansible.builtin.env', 'SERVICE_COMPOSE_IMAGE') | default('', true) }}"
+service_compose_registry_server: "{{ lookup('ansible.builtin.env', 'GHCR_REGISTRY') | default('ghcr.io', true) }}"
+service_compose_registry_username: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') | default('', true) }}"
+service_compose_registry_password: "{{ lookup('ansible.builtin.env', 'GHCR_PASSWORD') | default(lookup('ansible.builtin.env', 'GHCR_TOKEN') | default('', true), true) }}"
+xworkmate_bridge_container_env:
+  ACP_AUTH_TOKEN: "{{ xworkmate_bridge_auth_token }}"
+  INTERNAL_SERVICE_TOKEN: "{{ xworkmate_bridge_auth_token }}"
+  IMAGE: "{{ service_compose_image }}"
 
-# Provider Endpoints
-xworkmate_bridge_openclaw_url: "https://xworkmate-bridge.svc.plus/gateway/openclaw/"
-xworkmate_bridge_codex_rpc_url: "https://xworkmate-bridge.svc.plus/acp-server/codex/acp/rpc"
-xworkmate_bridge_opencode_rpc_url: "https://xworkmate-bridge.svc.plus/acp-server/opencode/acp/rpc"
-xworkmate_bridge_gemini_rpc_url: "https://xworkmate-bridge.svc.plus/acp-server/gemini/acp/rpc"
+# ACP Deployment Flags
+deploy_acp_codex: true
+deploy_acp_opencode: true
+deploy_acp_gemini: true
+
+# 统一域名：全部指向 xworkmate-bridge.svc.plus
+xworkmate_bridge_domain: xworkmate-bridge.svc.plus
+xworkmate_bridge_public_base_url: https://xworkmate-bridge.svc.plus
+xworkmate_bridge_service_domain: xworkmate-bridge.svc.plus
+xworkmate_bridge_service_public_base_url: https://xworkmate-bridge.svc.plus
+
+xworkmate_bridge_packages:
+  - caddy
