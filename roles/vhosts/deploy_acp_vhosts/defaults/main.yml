@@ -4,7 +4,7 @@ deploy_acp_opencode: true
 deploy_acp_gemini: true
 
 xworkmate_bridge_service_name: xworkmate-bridge
-# 引用全局 Secret: 优先使用专用 BRIDGE_AUTH_TOKEN，回退到 INTERNAL_SERVICE_TOKEN
+# 引用全局 Secret
 xworkmate_bridge_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true), true) }}"
 xworkmate_bridge_listen_host: 127.0.0.1
 xworkmate_bridge_listen_port: 8787
@@ -22,14 +22,17 @@ xworkmate_bridge_container_env:
   INTERNAL_SERVICE_TOKEN: "{{ xworkmate_bridge_auth_token }}"
   IMAGE: "{{ service_compose_image }}"
 
-xworkmate_bridge_domain: acp-server.svc.plus
-xworkmate_bridge_public_base_url: https://acp-server.svc.plus
+# 统一域名：全部指向 xworkmate-bridge.svc.plus
+xworkmate_bridge_domain: xworkmate-bridge.svc.plus
+xworkmate_bridge_public_base_url: https://xworkmate-bridge.svc.plus
 xworkmate_bridge_service_domain: xworkmate-bridge.svc.plus
 xworkmate_bridge_service_public_base_url: https://xworkmate-bridge.svc.plus
 xworkmate_bridge_caddyfile_path: /etc/caddy/Caddyfile
 xworkmate_bridge_caddy_conf_dir: /etc/caddy/conf.d
 xworkmate_bridge_caddy_fragment_path: /etc/caddy/conf.d/acp-server.caddy
 xworkmate_bridge_service_caddy_fragment_path: /etc/caddy/conf.d/xworkmate-bridge.caddy
+
+# Upstream 配置
 xworkmate_bridge_codex_upstream_host: 127.0.0.1
 xworkmate_bridge_codex_upstream_port: 9010
 xworkmate_bridge_opencode_upstream_host: 127.0.0.1
@@ -38,6 +41,7 @@ xworkmate_bridge_gemini_upstream_host: 127.0.0.1
 xworkmate_bridge_gemini_upstream_port: 8791
 xworkmate_bridge_openclaw_upstream_host: 127.0.0.1
 xworkmate_bridge_openclaw_upstream_port: 18789
+
 xworkmate_bridge_obsolete_caddy_fragment_paths:
   - /etc/caddy/conf.d/acp-server.caddy
   - /etc/caddy/conf.d/acp-server-codex.caddy

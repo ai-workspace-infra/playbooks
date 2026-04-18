@@ -65,34 +65,34 @@ Behavior after deployment:
 Base domains:
 
 - `https://xworkmate-bridge.svc.plus/`
-- `https://acp-server.svc.plus/codex`
-- `https://acp-server.svc.plus/opencode`
-- `https://acp-server.svc.plus/gemini`
+- `https://xworkmate-bridge.svc.plus/codex`
+- `https://xworkmate-bridge.svc.plus/opencode`
+- `https://xworkmate-bridge.svc.plus/gemini`
 
 Correct ACP RPC endpoints:
 
-- Codex HTTP RPC: `https://acp-server.svc.plus/codex/acp/rpc`
-- Codex WebSocket: `wss://acp-server.svc.plus/codex/acp`
-- OpenCode HTTP RPC: `https://acp-server.svc.plus/opencode/acp/rpc`
-- OpenCode WebSocket: `wss://acp-server.svc.plus/opencode/acp`
-- Gemini HTTP RPC: `https://acp-server.svc.plus/gemini/acp/rpc`
-- Gemini WebSocket: `wss://acp-server.svc.plus/gemini/acp`
+- Codex HTTP RPC: `https://xworkmate-bridge.svc.plus/codex/acp/rpc`
+- Codex WebSocket: `wss://xworkmate-bridge.svc.plus/codex/acp`
+- OpenCode HTTP RPC: `https://xworkmate-bridge.svc.plus/opencode/acp/rpc`
+- OpenCode WebSocket: `wss://xworkmate-bridge.svc.plus/opencode/acp`
+- Gemini HTTP RPC: `https://xworkmate-bridge.svc.plus/gemini/acp/rpc`
+- Gemini WebSocket: `wss://xworkmate-bridge.svc.plus/gemini/acp`
 
 Note:
 
-- `https://acp-server.svc.plus/gemini` is not the RPC endpoint and should not be used as the ACP health check target.
+- `https://xworkmate-bridge.svc.plus/gemini` is not the RPC endpoint and should not be used as the ACP health check target.
 
 ## Post-Deploy Verification
 
 Without token:
 
-- `https://acp-server.svc.plus/codex/acp` -> `401`
+- `https://xworkmate-bridge.svc.plus/codex/acp` -> `401`
 
 With `Authorization: Bearer $INTERNAL_SERVICE_TOKEN`:
 
-- `https://acp-server.svc.plus/codex/acp/rpc` -> `200`
-- `https://acp-server.svc.plus/opencode/acp/rpc` -> `200`
-- `https://acp-server.svc.plus/gemini/acp/rpc` -> `200`
+- `https://xworkmate-bridge.svc.plus/codex/acp/rpc` -> `200`
+- `https://xworkmate-bridge.svc.plus/opencode/acp/rpc` -> `200`
+- `https://xworkmate-bridge.svc.plus/gemini/acp/rpc` -> `200`
 
 Bridge public root:
 

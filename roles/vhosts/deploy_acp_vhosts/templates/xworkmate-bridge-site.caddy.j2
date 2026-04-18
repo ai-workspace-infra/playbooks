@@ -6,7 +6,46 @@
     respond "xworkmate-bridge is running" 200
   }
 
+  # 统一鉴权拦截 (Bearer Token)
+  @unauthorized {
+    not header Authorization "Bearer {{ xworkmate_bridge_auth_token }}"
+  }
+  handle @unauthorized {
+    respond "Unauthorized" 401
+  }
+
+  # Codex Provider
+  handle_path /acp-server/codex* {
+    reverse_proxy {{ xworkmate_bridge_codex_upstream_host }}:{{ xworkmate_bridge_codex_upstream_port }} {
+      flush_interval -1
+    }
+  }
+
+  # OpenCode Provider
+  handle_path /acp-server/opencode* {
+    reverse_proxy {{ xworkmate_bridge_opencode_upstream_host }}:{{ xworkmate_bridge_opencode_upstream_port }} {
+      flush_interval -1
+    }
+  }
+
+  # Gemini Adapter
+  handle_path /acp-server/gemini* {
+    reverse_proxy {{ xworkmate_bridge_gemini_upstream_host }}:{{ xworkmate_bridge_gemini_upstream_port }} {
+      flush_interval -1
+    }
+  }
+
+  # OpenClaw Gateway (支持 WebSocket)
+  handle_path /gateway/openclaw* {
+    reverse_proxy {{ xworkmate_bridge_openclaw_upstream_host }}:{{ xworkmate_bridge_openclaw_upstream_port }} {
+      flush_interval -1
+    }
+  }
+
+  # 默认回退到 Managed Bridge Core
   handle {
-    reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}
+    reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }} {
+      flush_interval -1
+    }
   }
 }

@@ -9,3 +9,10 @@ services:
 {% endfor %}
     ports:
       - "127.0.0.1:{{ xworkmate_bridge_listen_port }}:{{ xworkmate_bridge_container_port }}"
+    volumes:
+      - /var/log/xworkmate-bridge:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"

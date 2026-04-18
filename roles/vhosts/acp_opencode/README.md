@@ -1,6 +1,6 @@
 # acp_opencode
 
-OpenCode service plus ACP bridge behind the unified `acp-server.svc.plus` ingress.
+OpenCode service plus ACP bridge behind the unified `xworkmate-bridge.svc.plus` ingress.
 
 Installs:
 
@@ -10,9 +10,9 @@ Exposes:
 
 - `opencode serve --hostname 127.0.0.1 --port 38992 --print-logs`
 - `xworkmate-go-core serve --listen 127.0.0.1:3910`
-- `https://acp-server.svc.plus/opencode`
-- `wss://acp-server.svc.plus/opencode/acp`
-- `https://acp-server.svc.plus/opencode/acp/rpc`
+- `https://xworkmate-bridge.svc.plus/opencode`
+- `wss://xworkmate-bridge.svc.plus/opencode/acp`
+- `https://xworkmate-bridge.svc.plus/opencode/acp/rpc`
 
 Notes:
 

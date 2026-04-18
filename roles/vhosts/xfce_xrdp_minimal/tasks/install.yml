@@ -66,6 +66,25 @@
     - xfce_manage_user | bool
     - xfce_user_password_plaintext | length > 0
 
+- name: Add xrdp user to ssl-cert group to allow reading SSL keys
+  ansible.builtin.user:
+    name: xrdp
+    groups: ssl-cert
+    append: true
+  become: true
+  notify:
+    - Restart xrdp
+    - Restart xrdp sesman
+
+- name: Configure .xsession for the desktop user
+  ansible.builtin.template:
+    src: xsession.j2
+    dest: "{{ xfce_user_home }}/.xsession"
+    owner: "{{ xfce_user }}"
+    group: "{{ xfce_user }}"
+    mode: '0644'
+  become: true
+
 - name: Check whether XRDP service units are available
   ansible.builtin.stat:
     path: "{{ item }}"
