@@ -3,35 +3,11 @@
   ansible.builtin.command: caddy validate --config "{{ xworkmate_bridge_caddyfile_path }}"
   changed_when: false
 
-- name: Read deployed ACP Caddy fragment
+- name: Read deployed xworkmate-bridge Caddy fragment
   ansible.builtin.command:
-    cmd: cat "{{ xworkmate_bridge_caddy_fragment_path }}"
+    cmd: cat "{{ xworkmate_bridge_service_caddy_fragment_path }}"
   changed_when: false
   register: xworkmate_bridge_fragment
-
-- name: Assert Codex route exists in deployed ACP fragment
-  ansible.builtin.assert:
-    that:
-      - "'handle_path /codex*' in xworkmate_bridge_fragment.stdout"
-    fail_msg: "Missing /codex route in {{ xworkmate_bridge_caddy_fragment_path }}"
-  when:
-    - deploy_acp_codex | bool
-
-- name: Assert OpenCode route exists in deployed ACP fragment
-  ansible.builtin.assert:
-    that:
-      - "'handle_path /opencode*' in xworkmate_bridge_fragment.stdout"
-    fail_msg: "Missing /opencode route in {{ xworkmate_bridge_caddy_fragment_path }}"
-  when:
-    - deploy_acp_opencode | bool
-
-- name: Assert Gemini route exists in deployed ACP fragment
-  ansible.builtin.assert:
-    that:
-      - "'handle_path /gemini*' in xworkmate_bridge_fragment.stdout"
-    fail_msg: "Missing /gemini route in {{ xworkmate_bridge_caddy_fragment_path }}"
-  when:
-    - deploy_acp_gemini | bool
 
 - name: Check Codex route through unified ACP ingress
   ansible.builtin.uri:
