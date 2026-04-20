@@ -53,6 +53,21 @@
   become: true
 
 - name: Deploy Hermes ACP adapter service
+  ansible.builtin.command:
+    cmd: lsattr "/etc/systemd/system/{{ acp_hermes_service_name }}.service"
+  register: acp_hermes_service_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from Hermes ACP systemd service when present
+  ansible.builtin.command:
+    cmd: chattr -i "/etc/systemd/system/{{ acp_hermes_service_name }}.service"
+  when:
+    - "'i' in (acp_hermes_service_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
+
+- name: Deploy Hermes ACP adapter service
   ansible.builtin.template:
     src: hermes-acp-adapter.service.j2
     dest: "/etc/systemd/system/{{ acp_hermes_service_name }}.service"
@@ -60,6 +75,14 @@
     group: root
     mode: "0644"
   notify: Restart acp hermes
+
+- name: Restore immutable flag on Hermes ACP systemd service
+  ansible.builtin.command:
+    cmd: chattr +i "/etc/systemd/system/{{ acp_hermes_service_name }}.service"
+  when:
+    - "'i' in (acp_hermes_service_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
 
 - name: Reload systemd manager configuration for Hermes ACP
   ansible.builtin.systemd:

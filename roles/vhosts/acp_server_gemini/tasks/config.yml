@@ -53,6 +53,21 @@
   become: true
 
 - name: Deploy Gemini ACP adapter service
+  ansible.builtin.command:
+    cmd: lsattr "/etc/systemd/system/{{ acp_gemini_service_name }}.service"
+  register: acp_gemini_service_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from Gemini ACP systemd service when present
+  ansible.builtin.command:
+    cmd: chattr -i "/etc/systemd/system/{{ acp_gemini_service_name }}.service"
+  when:
+    - "'i' in (acp_gemini_service_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
+
+- name: Deploy Gemini ACP adapter service
   ansible.builtin.template:
     src: gemini-acp-adapter.service.j2
     dest: "/etc/systemd/system/{{ acp_gemini_service_name }}.service"
@@ -60,6 +75,14 @@
     group: root
     mode: "0644"
   notify: Restart acp gemini
+
+- name: Restore immutable flag on Gemini ACP systemd service
+  ansible.builtin.command:
+    cmd: chattr +i "/etc/systemd/system/{{ acp_gemini_service_name }}.service"
+  when:
+    - "'i' in (acp_gemini_service_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
 
 - name: Reload systemd manager configuration for Gemini ACP
   ansible.builtin.systemd:

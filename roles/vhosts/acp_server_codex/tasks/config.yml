@@ -69,6 +69,21 @@
     - acp_codex_manage_caddy | bool
 
 - name: Deploy Codex ACP systemd service
+  ansible.builtin.command:
+    cmd: lsattr "/etc/systemd/system/{{ acp_codex_service_name }}.service"
+  register: acp_codex_service_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from Codex ACP systemd service when present
+  ansible.builtin.command:
+    cmd: chattr -i "/etc/systemd/system/{{ acp_codex_service_name }}.service"
+  when:
+    - "'i' in (acp_codex_service_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
+
+- name: Deploy Codex ACP systemd service
   ansible.builtin.template:
     src: codex-app-server.service.j2
     dest: "/etc/systemd/system/{{ acp_codex_service_name }}.service"
@@ -76,6 +91,14 @@
     group: root
     mode: "0644"
   notify: Restart acp codex
+
+- name: Restore immutable flag on Codex ACP systemd service
+  ansible.builtin.command:
+    cmd: chattr +i "/etc/systemd/system/{{ acp_codex_service_name }}.service"
+  when:
+    - "'i' in (acp_codex_service_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
 
 - name: Reload systemd manager configuration
   ansible.builtin.systemd:

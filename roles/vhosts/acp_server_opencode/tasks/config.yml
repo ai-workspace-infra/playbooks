@@ -81,6 +81,21 @@
   notify: Reload caddy
 
 - name: Deploy OpenCode ACP systemd service
+  ansible.builtin.command:
+    cmd: lsattr "/etc/systemd/system/{{ acp_opencode_service_name }}.service"
+  register: acp_opencode_service_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from OpenCode ACP systemd service when present
+  ansible.builtin.command:
+    cmd: chattr -i "/etc/systemd/system/{{ acp_opencode_service_name }}.service"
+  when:
+    - "'i' in (acp_opencode_service_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
+
+- name: Deploy OpenCode ACP systemd service
   ansible.builtin.template:
     src: opencode-acp.service.j2
     dest: "/etc/systemd/system/{{ acp_opencode_service_name }}.service"
@@ -88,6 +103,14 @@
     group: root
     mode: "0644"
   notify: Restart acp opencode
+
+- name: Restore immutable flag on OpenCode ACP systemd service
+  ansible.builtin.command:
+    cmd: chattr +i "/etc/systemd/system/{{ acp_opencode_service_name }}.service"
+  when:
+    - "'i' in (acp_opencode_service_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
 
 - name: Reload systemd manager configuration
   ansible.builtin.systemd:
