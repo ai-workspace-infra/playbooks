@@ -20,6 +20,21 @@
   become: false
   check_mode: false
 
+- name: Inspect Hermes bridge binary attributes
+  ansible.builtin.command:
+    cmd: lsattr "{{ acp_hermes_bridge_binary_path }}"
+  register: acp_hermes_bridge_binary_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from Hermes bridge binary when present
+  ansible.builtin.command:
+    cmd: chattr -i "{{ acp_hermes_bridge_binary_path }}"
+  when:
+    - "'i' in (acp_hermes_bridge_binary_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
+
 - name: Upload XWorkmate Go ACP adapter binary for Hermes
   ansible.builtin.copy:
     src: "{{ acp_hermes_bridge_local_binary_path }}"
@@ -28,6 +43,14 @@
     group: "{{ acp_hermes_service_group }}"
     mode: "0755"
   notify: Restart acp hermes
+
+- name: Restore immutable flag on Hermes bridge binary
+  ansible.builtin.command:
+    cmd: chattr +i "{{ acp_hermes_bridge_binary_path }}"
+  when:
+    - "'i' in (acp_hermes_bridge_binary_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
 
 - name: Deploy Hermes ACP adapter service
   ansible.builtin.template:

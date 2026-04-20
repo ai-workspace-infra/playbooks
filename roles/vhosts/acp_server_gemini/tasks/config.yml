@@ -20,6 +20,21 @@
   become: false
   check_mode: false
 
+- name: Inspect Gemini bridge binary attributes
+  ansible.builtin.command:
+    cmd: lsattr "{{ acp_gemini_bridge_binary_path }}"
+  register: acp_gemini_bridge_binary_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from Gemini bridge binary when present
+  ansible.builtin.command:
+    cmd: chattr -i "{{ acp_gemini_bridge_binary_path }}"
+  when:
+    - "'i' in (acp_gemini_bridge_binary_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
+
 - name: Upload XWorkmate Go ACP adapter binary for Gemini
   ansible.builtin.copy:
     src: "{{ acp_gemini_bridge_local_binary_path }}"
@@ -28,6 +43,14 @@
     group: "{{ acp_gemini_service_group }}"
     mode: "0755"
   notify: Restart acp gemini
+
+- name: Restore immutable flag on Gemini bridge binary
+  ansible.builtin.command:
+    cmd: chattr +i "{{ acp_gemini_bridge_binary_path }}"
+  when:
+    - "'i' in (acp_gemini_bridge_binary_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
 
 - name: Deploy Gemini ACP adapter service
   ansible.builtin.template:

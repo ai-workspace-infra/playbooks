@@ -19,6 +19,21 @@
   become: false
   check_mode: false
 
+- name: Inspect Codex bridge binary attributes
+  ansible.builtin.command:
+    cmd: lsattr "{{ acp_codex_bridge_binary_path }}"
+  register: acp_codex_bridge_binary_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from Codex bridge binary when present
+  ansible.builtin.command:
+    cmd: chattr -i "{{ acp_codex_bridge_binary_path }}"
+  when:
+    - "'i' in (acp_codex_bridge_binary_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
+
 - name: Upload XWorkmate Go ACP server binary
   ansible.builtin.copy:
     src: "{{ acp_codex_bridge_local_binary_path }}"
@@ -26,6 +41,14 @@
     owner: root
     group: root
     mode: "0755"
+
+- name: Restore immutable flag on Codex bridge binary
+  ansible.builtin.command:
+    cmd: chattr +i "{{ acp_codex_bridge_binary_path }}"
+  when:
+    - "'i' in (acp_codex_bridge_binary_attrs.stdout | default(''))"
+  changed_when: true
+  become: true
 
 - name: Remove deprecated standalone Codex Caddy fragments
   ansible.builtin.file:
