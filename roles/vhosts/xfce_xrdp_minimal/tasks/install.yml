@@ -44,28 +44,6 @@
     APT_LISTCHANGES_FRONTEND: none
   become: true
 
-- name: Ensure the desktop user exists and is unlocked
-  ansible.builtin.user:
-    name: "{{ xfce_user }}"
-    shell: "{{ xfce_user_shell }}"
-    create_home: true
-    state: present
-    password_lock: false
-  become: true
-  when: xfce_manage_user | bool
-
-- name: Set desktop user password for XRDP login
-  ansible.builtin.user:
-    name: "{{ xfce_user }}"
-    password: "{{ xfce_user_password_plaintext | password_hash('sha512') }}"
-    update_password: always
-    password_lock: false
-  become: true
-  no_log: true
-  when:
-    - xfce_manage_user | bool
-    - xfce_user_password_plaintext | length > 0
-
 - name: Add xrdp user to ssl-cert group to allow reading SSL keys
   ansible.builtin.user:
     name: xrdp
@@ -75,15 +53,6 @@
   notify:
     - Restart xrdp
     - Restart xrdp sesman
-
-- name: Configure .xsession for the desktop user
-  ansible.builtin.template:
-    src: xsession.j2
-    dest: "{{ xfce_user_home }}/.xsession"
-    owner: "{{ xfce_user }}"
-    group: "{{ xfce_user }}"
-    mode: '0644'
-  become: true
 
 - name: Check whether XRDP service units are available
   ansible.builtin.stat:
