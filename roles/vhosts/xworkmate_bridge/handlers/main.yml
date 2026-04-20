@@ -1,5 +1,11 @@
 ---
 - name: Reload bridge
-  ansible.builtin.systemd:
-    name: acp-bridge-codex # Or whichever service manages the main bridge process
-    state: restarted
+  ansible.builtin.command: >-
+    docker compose
+    --project-name {{ xworkmate_bridge_project_name }}
+    -f {{ xworkmate_bridge_compose_file }}
+    restart bridge
+  args:
+    chdir: "{{ xworkmate_bridge_base_dir }}"
+  when:
+    - not ansible_check_mode

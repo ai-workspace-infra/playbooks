@@ -12,6 +12,7 @@ The active implementation currently lives in:
 - [`roles/vhosts/acp_codex`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_codex)
 - [`roles/vhosts/acp_opencode`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_opencode)
 - [`roles/vhosts/acp_gemini`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_gemini)
+- [`roles/vhosts/acp_server_hermes`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_server_hermes)
 
 This README is the umbrella operations note for that deployed stack.
 
@@ -68,6 +69,7 @@ Base domains:
 - `https://xworkmate-bridge.svc.plus/codex`
 - `https://xworkmate-bridge.svc.plus/opencode`
 - `https://xworkmate-bridge.svc.plus/gemini`
+- `https://xworkmate-bridge.svc.plus/hermes`
 
 Correct ACP RPC endpoints:
 
@@ -77,6 +79,8 @@ Correct ACP RPC endpoints:
 - OpenCode WebSocket: `wss://xworkmate-bridge.svc.plus/opencode/acp`
 - Gemini HTTP RPC: `https://xworkmate-bridge.svc.plus/gemini/acp/rpc`
 - Gemini WebSocket: `wss://xworkmate-bridge.svc.plus/gemini/acp`
+- Hermes HTTP RPC: `https://xworkmate-bridge.svc.plus/hermes/acp/rpc`
+- Hermes WebSocket: `wss://xworkmate-bridge.svc.plus/hermes/acp`
 
 Note:
 
@@ -93,6 +97,7 @@ With `Authorization: Bearer $INTERNAL_SERVICE_TOKEN`:
 - `https://xworkmate-bridge.svc.plus/codex/acp/rpc` -> `200`
 - `https://xworkmate-bridge.svc.plus/opencode/acp/rpc` -> `200`
 - `https://xworkmate-bridge.svc.plus/gemini/acp/rpc` -> `200`
+- `https://xworkmate-bridge.svc.plus/hermes/acp/rpc` -> `200`
 
 Bridge public root:
 

@@ -10,7 +10,7 @@ Installs:
 Exposes:
 
 - raw Codex upstream: `codex app-server --listen ws://127.0.0.1:9001`
-- public ACP bridge: `127.0.0.1:9010` via `acp-bridge-codex`
+- public ACP bridge: `127.0.0.1:9001` via `acp-bridge-codex`
 - public base URL: `https://xworkmate-bridge.svc.plus/codex`
 
 Notes:

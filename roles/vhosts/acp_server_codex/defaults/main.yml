@@ -1,5 +1,5 @@
 ---
-acp_codex_service_name: codex-app-server
+acp_codex_service_name: acp-codex
 acp_codex_runtime_user: ubuntu
 acp_codex_runtime_group: "{{ acp_codex_runtime_user }}"
 acp_codex_runtime_home: "/home/{{ acp_codex_runtime_user }}"
@@ -8,35 +8,27 @@ acp_codex_service_group: "{{ acp_codex_runtime_group }}"
 acp_codex_workdir: "{{ acp_codex_runtime_home }}"
 acp_codex_listen_host: 127.0.0.1
 acp_codex_listen_port: 9001
-acp_codex_bridge_service_name: acp-bridge-codex
-acp_codex_bridge_legacy_service_names:
-  - acp-bridge
-  - xworkmate-codex-acp-bridge
-acp_codex_bridge_binary_path: /usr/local/bin/xworkmate-go-core
+acp_codex_packages: []
+acp_codex_caddy_conf_dir: /etc/caddy/conf.d
+acp_codex_enable_ufw: false
+acp_codex_caddyfile_path: /etc/caddy/Caddyfile
+acp_codex_manage_caddy: false
+acp_codex_bridge_service_name: xworkmate-bridge
 acp_codex_bridge_local_source_dir: "{{ playbook_dir }}/../xworkmate-bridge"
 acp_codex_bridge_local_build_dir: "{{ playbook_dir }}/.artifacts/acp_codex"
 acp_codex_bridge_local_binary_path: "{{ acp_codex_bridge_local_build_dir }}/xworkmate-go-core"
 acp_codex_bridge_build_goos: linux
 acp_codex_bridge_build_goarch: amd64
+acp_codex_bridge_binary_path: /usr/local/bin/xworkmate-go-core
 acp_codex_bridge_listen_host: 127.0.0.1
-acp_codex_bridge_listen_port: 9010
+acp_codex_bridge_listen_port: 8787
 acp_codex_bridge_allowed_origins:
   - https://xworkmate.svc.plus
   - http://localhost:*
   - http://127.0.0.1:*
-acp_codex_environment:
-  CODEX_HOME: "{{ acp_codex_runtime_home }}/.codex"
-  OPENAI_API_KEY: "{{ lookup('ansible.builtin.env', 'OPENAI_API_KEY') | default('', true) }}"
-  OPENAI_BASE_URL: "{{ lookup('ansible.builtin.env', 'OPENAI_BASE_URL') | default('', true) }}"
-  OPENAI_BASE_API_URL: "{{ lookup('ansible.builtin.env', 'OPENAI_BASE_API_URL') | default('', true) }}"
-acp_codex_auth_token: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}"
 acp_codex_public_base_url: https://xworkmate-bridge.svc.plus/codex
-acp_codex_caddyfile_path: /etc/caddy/Caddyfile
-acp_codex_caddy_conf_dir: /etc/caddy/conf.d
-acp_codex_manage_caddy: true
+acp_codex_auth_token: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}"
+acp_codex_environment: {}
 acp_codex_obsolete_caddy_fragment_paths:
   - /etc/caddy/conf.d/acp-server-codex.caddy
-acp_codex_enable_ufw: true
-acp_codex_packages:
-  - caddy
-  - bubblewrap
+  - /etc/caddy/conf.d/acp-server.caddy

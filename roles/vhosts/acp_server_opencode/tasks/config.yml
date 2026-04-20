@@ -26,7 +26,6 @@
     owner: root
     group: root
     mode: "0755"
-  notify: Restart opencode acp bridge
 
 - name: Ensure OpenCode runtime directories exist
   ansible.builtin.file:
@@ -65,16 +64,7 @@
     owner: root
     group: root
     mode: "0644"
-  notify: Restart opencode acp
-
-- name: Deploy OpenCode ACP bridge service
-  ansible.builtin.template:
-    src: acp-bridge.service.j2
-    dest: "/etc/systemd/system/{{ acp_opencode_bridge_service_name }}.service"
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Restart opencode acp bridge
+  notify: Restart acp opencode
 
 - name: Reload systemd manager configuration
   ansible.builtin.systemd:
@@ -91,14 +81,6 @@
 - name: Ensure OpenCode ACP service is enabled and running
   ansible.builtin.systemd:
     name: "{{ acp_opencode_service_name }}"
-    enabled: true
-    state: started
-  when:
-    - not ansible_check_mode
-
-- name: Ensure OpenCode ACP bridge service is enabled and running
-  ansible.builtin.systemd:
-    name: "{{ acp_opencode_bridge_service_name }}"
     enabled: true
     state: started
   when:

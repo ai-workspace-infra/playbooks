@@ -1,0 +1,37 @@
+---
+- name: Check Hermes ACP adapter listener
+  ansible.builtin.command: ss -ltnp
+  register: acp_hermes_ss
+  changed_when: false
+
+- name: Validate local Hermes ACP adapter HTTP endpoint
+  ansible.builtin.uri:
+    url: "http://{{ acp_hermes_listen_host }}:{{ acp_hermes_listen_port }}/acp/rpc"
+    method: POST
+    headers: "{{ ({'Authorization': 'Bearer ' ~ (acp_hermes_auth_token | trim)} if acp_hermes_auth_token | trim | length > 0 else {}) }}"
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: 1
+      method: acp.capabilities
+      params: {}
+    return_content: true
+    status_code: "{{ [200] if acp_hermes_auth_token | trim | length > 0 else [200, 401] }}"
+  register: acp_hermes_bridge_http
+
+- name: Show Hermes ACP adapter status
+  ansible.builtin.command: systemctl status "{{ acp_hermes_service_name }}" --no-pager
+  register: acp_hermes_status
+  changed_when: false
+  failed_when: false
+
+- name: Show Hermes ACP validation summary
+  ansible.builtin.debug:
+    msg:
+      - "Hermes public base URL: {{ acp_hermes_public_base_url }}"
+      - "Preferred WebSocket endpoint: {{ acp_hermes_public_base_url }}/acp"
+      - "Compatibility HTTP RPC endpoint: {{ acp_hermes_public_base_url }}/acp/rpc"
+      - "Hermes adapter listener: {{ acp_hermes_listen_host }}:{{ acp_hermes_listen_port }}"
+      - "Service: {{ acp_hermes_status.stdout | default('N/A') }}"
+      - "Socket: {{ acp_hermes_ss.stdout | default('N/A') }}"
+      - "Bridge capabilities HTTP: {{ acp_hermes_bridge_http.content | default('N/A') }}"

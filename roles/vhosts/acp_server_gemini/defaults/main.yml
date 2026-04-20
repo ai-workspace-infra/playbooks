@@ -1,23 +1,26 @@
 ---
-acp_gemini_service_name: acp-gemini-adapter
+acp_gemini_service_name: acp-gemini
 acp_gemini_service_user: ubuntu
-acp_gemini_service_group: "{{ acp_gemini_service_user }}"
-acp_gemini_home: "/home/{{ acp_gemini_service_user }}"
-acp_gemini_workdir: "{{ acp_gemini_home }}"
-acp_gemini_xdg_config_home: "{{ acp_gemini_home }}/.config"
-acp_gemini_xdg_state_home: "{{ acp_gemini_home }}/.local/state"
-acp_gemini_config_dir: "{{ acp_gemini_home }}/.gemini"
+acp_gemini_service_group: ubuntu
+acp_gemini_home: /home/ubuntu
+acp_gemini_workdir: /home/ubuntu/.gemini
+acp_gemini_xdg_config_home: /home/ubuntu/.config
+acp_gemini_xdg_state_home: /home/ubuntu/.local/state
+acp_gemini_config_dir: /home/ubuntu/.gemini
 acp_gemini_binary_path: /usr/bin/gemini
 acp_gemini_args: --experimental-acp
-
-acp_gemini_bridge_binary_path: /usr/local/bin/xworkmate-go-core
 acp_gemini_bridge_local_source_dir: "{{ playbook_dir }}/../xworkmate-bridge"
 acp_gemini_bridge_local_build_dir: "{{ playbook_dir }}/.artifacts/acp_gemini"
 acp_gemini_bridge_local_binary_path: "{{ acp_gemini_bridge_local_build_dir }}/xworkmate-go-core"
 acp_gemini_bridge_build_goos: linux
 acp_gemini_bridge_build_goarch: amd64
+acp_gemini_bridge_binary_path: /usr/local/bin/xworkmate-go-core
 acp_gemini_listen_host: 127.0.0.1
 acp_gemini_listen_port: 8791
+acp_gemini_packages: []
+acp_gemini_caddy_conf_dir: /etc/caddy/conf.d
+acp_gemini_enable_ufw: false
+acp_gemini_caddyfile_path: /etc/caddy/Caddyfile
 acp_gemini_allowed_origins:
   - https://xworkmate.svc.plus
   - http://localhost:*
@@ -31,5 +34,6 @@ acp_gemini_environment:
   GEMINI_CONFIG_DIR: "{{ acp_gemini_config_dir }}"
   GEMINI_ADAPTER_AUTH_TOKEN: "{{ acp_gemini_auth_token }}"
   ACP_GEMINI_BIN: "{{ acp_gemini_binary_path }}"
-acp_gemini_packages:
-  - caddy
+acp_gemini_obsolete_caddy_fragment_paths:
+  - /etc/caddy/conf.d/acp-server-gemini.caddy
+  - /etc/caddy/conf.d/acp-server.caddy

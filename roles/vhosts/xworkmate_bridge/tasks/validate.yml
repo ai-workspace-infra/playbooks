@@ -48,6 +48,17 @@
   when:
     - deploy_acp_gemini | bool
 
+- name: Check Hermes route through unified ACP ingress
+  ansible.builtin.uri:
+    url: "https://{{ xworkmate_bridge_domain }}/acp-server/hermes"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
+    follow_redirects: none
+    status_code: [200, 301, 302, 307, 308, 401, 403, 404, 502]
+  changed_when: false
+  register: xworkmate_bridge_hermes_redirect
+
 - name: Check xworkmate-bridge public domain root
   ansible.builtin.uri:
     url: "https://{{ xworkmate_bridge_service_domain }}/"
@@ -116,9 +127,11 @@
       - "Codex public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/codex"
       - "OpenCode public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/opencode"
       - "Gemini public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/gemini"
+      - "Hermes public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/hermes"
       - "Bridge image ref: {{ service_compose_image }}"
       - "Bridge service status: {{ xworkmate_bridge_status.stdout | default('N/A') }}"
       - "Codex route: /acp-server/codex -> {{ xworkmate_bridge_codex_upstream_host }}:{{ xworkmate_bridge_codex_upstream_port }}"
       - "OpenCode route: /acp-server/opencode -> {{ xworkmate_bridge_opencode_upstream_host }}:{{ xworkmate_bridge_opencode_upstream_port }}"
       - "Gemini route: /acp-server/gemini -> {{ xworkmate_bridge_gemini_upstream_host }}:{{ xworkmate_bridge_gemini_upstream_port }}"
+      - "Hermes route: /acp-server/hermes -> {{ xworkmate_bridge_gemini_upstream_host }}:{{ xworkmate_bridge_gemini_upstream_port }}"
       - "OpenClaw route: /gateway/openclaw -> {{ xworkmate_bridge_openclaw_upstream_host }}:{{ xworkmate_bridge_openclaw_upstream_port }}"

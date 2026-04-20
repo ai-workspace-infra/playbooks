@@ -1,52 +1,47 @@
-{{ xworkmate_bridge_service_domain }} {
-  encode zstd gzip
-
-  @root path /
-  handle @root {
-    respond "xworkmate-bridge is running" 200
-  }
-
-  # 统一鉴权拦截 (Bearer Token)
-  @unauthorized {
-    not path / /api/ping
-    not header Authorization "Bearer {{ xworkmate_bridge_auth_token }}"
-  }
-  handle @unauthorized {
-    respond "Unauthorized" 401
-  }
-
-  # Codex Provider
-  handle_path /acp-server/codex* {
-    reverse_proxy {{ xworkmate_bridge_codex_upstream_host }}:{{ xworkmate_bridge_codex_upstream_port }} {
-      flush_interval -1
+{{ xworkmate_bridge_domain }} {
+    # 1. Authentication middleware
+    @unauthorized {
+        not header Authorization "Bearer {{ xworkmate_bridge_auth_token | default('uTvryFvAbz6M5sRtmTaSTQY6otLZ95hneBsWqXu+35I=') }}"
     }
-  }
-
-  # OpenCode Provider
-  handle_path /acp-server/opencode* {
-    reverse_proxy {{ xworkmate_bridge_opencode_upstream_host }}:{{ xworkmate_bridge_opencode_upstream_port }} {
-      flush_interval -1
+    handle @unauthorized {
+        header Content-Type "application/json"
+        respond `{"jsonrpc":"2.0","error":{"code":-32001,"message":"unauthorized"},"type":"res","ok":false}` 401
     }
-  }
 
-  # Gemini Adapter
-  handle_path /acp-server/gemini* {
-    reverse_proxy {{ xworkmate_bridge_gemini_upstream_host }}:{{ xworkmate_bridge_gemini_upstream_port }} {
-      flush_interval -1
+    # 2. Root status endpoint
+    handle_path / {
+        reverse_proxy 127.0.0.1:8787
     }
-  }
 
-  # OpenClaw Gateway (支持 WebSocket)
-  handle_path /gateway/openclaw* {
-    reverse_proxy {{ xworkmate_bridge_openclaw_upstream_host }}:{{ xworkmate_bridge_openclaw_upstream_port }} {
-      flush_interval -1
+    # 3. Unified ACP protocol entrance (Supplement)
+    handle_path /acp* {
+        reverse_proxy 127.0.0.1:8787
     }
-  }
 
-  # 默认回退到 Managed Bridge Core
-  handle {
-    reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }} {
-      flush_interval -1
+    # 4. ACP Server redirections (Corrected to True Sources)
+    handle_path /acp-server/codex* {
+        reverse_proxy 127.0.0.1:9001
     }
-  }
+    handle_path /acp-server/opencode* {
+        reverse_proxy 127.0.0.1:38992
+    }
+    handle_path /acp-server/gemini* {
+        reverse_proxy 127.0.0.1:8791
+    }
+    handle_path /acp-server/hermes* {
+        reverse_proxy 127.0.0.1:3920
+    }
+    # 5. Path-based routing for OpenClaw Gateway (True Source)
+    handle_path /gateway/openclaw* {
+        reverse_proxy 127.0.0.1:18789
+    }
+
+    # 6. API endpoints
+    handle_path /api* {
+        reverse_proxy 127.0.0.1:8787
+    }
+
+    log {
+        output file /var/log/caddy/xworkmate-bridge.log
+    }
 }

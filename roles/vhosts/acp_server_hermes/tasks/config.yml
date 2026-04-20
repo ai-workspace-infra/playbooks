@@ -1,0 +1,51 @@
+---
+- name: Ensure local Hermes ACP build directory exists
+  ansible.builtin.file:
+    path: "{{ acp_hermes_bridge_local_build_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  become: false
+
+- name: Build XWorkmate Go ACP adapter locally for Hermes
+  ansible.builtin.command:
+    cmd: go build -o "{{ acp_hermes_bridge_local_binary_path }}" .
+    chdir: "{{ acp_hermes_bridge_local_source_dir }}"
+  environment:
+    GOOS: "{{ acp_hermes_bridge_build_goos }}"
+    GOARCH: "{{ acp_hermes_bridge_build_goarch }}"
+    CGO_ENABLED: "0"
+    GO111MODULE: "on"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+
+- name: Upload XWorkmate Go ACP adapter binary for Hermes
+  ansible.builtin.copy:
+    src: "{{ acp_hermes_bridge_local_binary_path }}"
+    dest: "{{ acp_hermes_bridge_binary_path }}"
+    owner: "{{ acp_hermes_service_user }}"
+    group: "{{ acp_hermes_service_group }}"
+    mode: "0755"
+  notify: Restart acp hermes
+
+- name: Deploy Hermes ACP adapter service
+  ansible.builtin.template:
+    src: hermes-acp-adapter.service.j2
+    dest: "/etc/systemd/system/{{ acp_hermes_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart acp hermes
+
+- name: Reload systemd manager configuration for Hermes ACP
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Ensure Hermes ACP adapter service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ acp_hermes_service_name }}"
+    enabled: true
+    state: started
+  when:
+    - not ansible_check_mode

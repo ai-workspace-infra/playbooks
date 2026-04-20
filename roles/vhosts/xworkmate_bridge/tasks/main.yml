@@ -61,21 +61,6 @@
     chdir: "{{ xworkmate_bridge_base_dir }}"
   changed_when: false
 
-- name: Stop legacy xworkmate-bridge systemd service
-  ansible.builtin.systemd:
-    name: "{{ xworkmate_bridge_service_name }}"
-    enabled: false
-    state: stopped
-    daemon_reload: true
-  failed_when: false
-  when:
-    - not ansible_check_mode
-
-- name: Remove legacy xworkmate-bridge systemd unit
-  ansible.builtin.file:
-    path: "/etc/systemd/system/{{ xworkmate_bridge_service_name }}.service"
-    state: absent
-
 - name: Pull xworkmate-bridge image
   ansible.builtin.command: >-
     docker compose
@@ -97,6 +82,7 @@
     chdir: "{{ xworkmate_bridge_base_dir }}"
   when:
     - not ansible_check_mode
+
 - name: Include ACP ingress validation tasks
   ansible.builtin.import_tasks: validate.yml
   tags: [xworkmate_bridge, xworkmate_bridge_validate]

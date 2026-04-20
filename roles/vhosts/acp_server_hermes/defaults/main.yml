@@ -1,0 +1,32 @@
+---
+acp_hermes_service_name: acp-hermes
+acp_hermes_bridge_local_source_dir: "{{ playbook_dir }}/../xworkmate-bridge"
+acp_hermes_bridge_local_build_dir: "{{ playbook_dir }}/.artifacts/acp_hermes"
+acp_hermes_bridge_local_binary_path: "{{ acp_hermes_bridge_local_build_dir }}/xworkmate-go-core"
+acp_hermes_bridge_build_goos: linux
+acp_hermes_bridge_build_goarch: amd64
+acp_hermes_listen_host: 127.0.0.1
+acp_hermes_listen_port: 3920
+acp_hermes_service_user: ubuntu
+acp_hermes_service_group: ubuntu
+acp_hermes_bridge_binary_path: /usr/local/bin/xworkmate-go-core
+acp_hermes_workdir: /home/ubuntu/hermes-agent
+acp_hermes_home: /home/ubuntu
+acp_hermes_binary_path: /home/ubuntu/hermes-agent/venv/bin/hermes
+acp_hermes_args: acp
+acp_hermes_xdg_config_home: /home/ubuntu/.config
+acp_hermes_xdg_state_home: /home/ubuntu/.local/state
+acp_hermes_allowed_origins:
+  - https://xworkmate.svc.plus
+  - http://localhost:*
+  - http://127.0.0.1:*
+acp_hermes_public_base_url: https://xworkmate-bridge.svc.plus/hermes
+acp_hermes_manage_caddy: false
+acp_hermes_auth_token: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}"
+acp_hermes_environment:
+  XDG_CONFIG_HOME: "{{ acp_hermes_xdg_config_home }}"
+  XDG_STATE_HOME: "{{ acp_hermes_xdg_state_home }}"
+  HERMES_ADAPTER_AUTH_TOKEN: "{{ acp_hermes_auth_token }}"
+  ACP_HERMES_BIN: "{{ acp_hermes_binary_path }}"
+acp_hermes_packages:
+  - caddy
