@@ -80,14 +80,21 @@
     return_content: true
   changed_when: false
   register: xworkmate_bridge_service_ping
+  until: 
+    - xworkmate_bridge_service_ping.status == 200
+    - xworkmate_bridge_service_ping.content | length > 0
+    - (xworkmate_bridge_service_ping.content | from_json).status | default('error') == 'ok'
+  retries: 12
+  delay: 5
 
 - name: Assert xworkmate-bridge ping reports deployed image ref
   ansible.builtin.assert:
     that:
-      - "(xworkmate_bridge_service_ping.content | from_json).status == 'ok'"
       - "(xworkmate_bridge_service_ping.content | from_json).image == service_compose_image"
     fail_msg: >-
       xworkmate-bridge /api/ping does not report the deployed image ref.
+      Expected: {{ service_compose_image }}
+      Got: {{ (xworkmate_bridge_service_ping.content | from_json).image | default('N/A') }}
 
 - name: Check deprecated ACP fragments are absent
   ansible.builtin.stat:
@@ -123,7 +130,7 @@
   ansible.builtin.debug:
     msg:
       - "Bridge service public base URL: {{ xworkmate_bridge_service_public_base_url }}"
-      - "OpenClaw public gateway URL: {{ xworkmate_bridge_service_public_base_url }}/gateway/openclaw"
+      - "OpenClaw public gateway URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/gateway/openclaw"
       - "Codex public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/codex"
       - "OpenCode public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/opencode"
       - "Gemini public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/gemini"
@@ -133,5 +140,5 @@
       - "Codex route: /acp-server/codex -> {{ xworkmate_bridge_codex_upstream_host }}:{{ xworkmate_bridge_codex_upstream_port }}"
       - "OpenCode route: /acp-server/opencode -> {{ xworkmate_bridge_opencode_upstream_host }}:{{ xworkmate_bridge_opencode_upstream_port }}"
       - "Gemini route: /acp-server/gemini -> {{ xworkmate_bridge_gemini_upstream_host }}:{{ xworkmate_bridge_gemini_upstream_port }}"
-      - "Hermes route: /acp-server/hermes -> {{ xworkmate_bridge_gemini_upstream_host }}:{{ xworkmate_bridge_gemini_upstream_port }}"
-      - "OpenClaw route: /gateway/openclaw -> {{ xworkmate_bridge_openclaw_upstream_host }}:{{ xworkmate_bridge_openclaw_upstream_port }}"
+      - "Hermes route: /acp-server/hermes -> {{ xworkmate_bridge_hermes_upstream_host }}:{{ xworkmate_bridge_hermes_upstream_port }}"
+      - "OpenClaw route: /acp-server/gateway/openclaw -> {{ xworkmate_bridge_openclaw_upstream_host }}:{{ xworkmate_bridge_openclaw_upstream_port }}"
