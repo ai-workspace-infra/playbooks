@@ -1,21 +1,21 @@
 ---
 xworkmate_bridge_service_name: xworkmate-bridge
-# 引用全局 Secret
-xworkmate_bridge_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true), true) }}"
+xworkmate_bridge_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default('', true) }}"
 xworkmate_bridge_listen_host: 127.0.0.1
 xworkmate_bridge_listen_port: 8787
 xworkmate_bridge_container_port: 8787
 xworkmate_bridge_container_name: xworkmate-bridge-managed
 xworkmate_bridge_base_dir: /opt/cloud-neutral/xworkmate-bridge
 xworkmate_bridge_compose_file: "{{ xworkmate_bridge_base_dir }}/docker-compose.yml"
+xworkmate_bridge_config_file: "{{ xworkmate_bridge_base_dir }}/config.yaml"
 xworkmate_bridge_project_name: xworkmate-bridge
 service_compose_image: "{{ lookup('ansible.builtin.env', 'SERVICE_COMPOSE_IMAGE') | default('', true) }}"
 service_compose_registry_server: "{{ lookup('ansible.builtin.env', 'GHCR_REGISTRY') | default('ghcr.io', true) }}"
 service_compose_registry_username: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') | default('', true) }}"
 service_compose_registry_password: "{{ lookup('ansible.builtin.env', 'GHCR_PASSWORD') | default(lookup('ansible.builtin.env', 'GHCR_TOKEN') | default('', true), true) }}"
 xworkmate_bridge_container_env:
-  ACP_AUTH_TOKEN: "{{ xworkmate_bridge_auth_token }}"
-  INTERNAL_SERVICE_TOKEN: "{{ xworkmate_bridge_auth_token }}"
+  BRIDGE_AUTH_TOKEN: "{{ xworkmate_bridge_auth_token }}"
+  BRIDGE_CONFIG_PATH: "/app/config.yaml"
   IMAGE: "{{ service_compose_image }}"
 
 # ACP Deployment Flags
@@ -31,10 +31,10 @@ xworkmate_bridge_service_public_base_url: https://xworkmate-bridge.svc.plus
 
 # Internal 真源映射 (Final Source of Truth)
 xworkmate_bridge_openclaw_url: "ws://127.0.0.1:18789/"
-xworkmate_bridge_codex_rpc_url: "http://127.0.0.1:9001/acp/rpc"
-xworkmate_bridge_opencode_rpc_url: "http://127.0.0.1:38992/acp/rpc"
-xworkmate_bridge_gemini_rpc_url: "http://127.0.0.1:8791/acp/rpc"
-xworkmate_bridge_hermes_rpc_url: "http://127.0.0.1:3920/acp/rpc"
+xworkmate_bridge_codex_rpc_url: "ws://127.0.0.1:9001/acp"
+xworkmate_bridge_opencode_rpc_url: "http://127.0.0.1:38992"
+xworkmate_bridge_gemini_rpc_url: "http://127.0.0.1:8791"
+xworkmate_bridge_hermes_rpc_url: "http://127.0.0.1:3920"
 
 xworkmate_bridge_packages:
   - caddy
