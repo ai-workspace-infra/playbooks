@@ -15,7 +15,9 @@ Environment=GEMINI_ADAPTER_BIN={{ acp_gemini_binary_path }}
 Environment=GEMINI_ADAPTER_ARGS={{ acp_gemini_args }}
 Environment=GEMINI_ADAPTER_ALLOWED_ORIGINS={{ acp_gemini_allowed_origins | join(',') }}
 {% for key, value in acp_gemini_environment | dictsort %}
+{% if value | string | trim | length > 0 %}
 Environment={{ key }}={{ value }}
+{% endif %}
 {% endfor %}
 ExecStart={{ acp_gemini_bridge_binary_path }} gemini-acp-adapter --listen {{ acp_gemini_listen_host }}:{{ acp_gemini_listen_port }} --gemini-bin {{ acp_gemini_binary_path }} --gemini-args "{{ acp_gemini_args }}"
 Restart=always

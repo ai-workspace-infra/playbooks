@@ -72,6 +72,17 @@
   when:
     - not ansible_check_mode
 
+- name: Force remove conflicting xworkmate-bridge container if it exists
+  ansible.builtin.shell: |
+    if docker ps -a --format '{{ "{{" }}.Names{{ "}}" }}' | grep -Eq '^{{ xworkmate_bridge_container_name }}$'; then
+      docker rm -f {{ xworkmate_bridge_container_name }}
+    fi
+  args:
+    executable: /bin/bash
+  changed_when: false
+  when:
+    - not ansible_check_mode
+
 - name: Start xworkmate-bridge compose target
   ansible.builtin.command: >-
     docker compose
