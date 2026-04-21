@@ -11,53 +11,81 @@
 
 - name: Check Codex route through unified ACP ingress
   ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_domain }}/acp-server/codex"
-    method: GET
+    url: "https://{{ xworkmate_bridge_domain }}/acp-server/codex/acp/rpc"
+    method: POST
     headers:
       Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: "capabilities-codex"
+      method: "acp.capabilities"
+      params: {}
     follow_redirects: none
-    status_code: [200, 301, 302, 307, 308, 401, 403, 404, 502]
+    status_code: [200, 401, 403, 404, 502]
   changed_when: false
-  register: xworkmate_bridge_codex_redirect
+  register: xworkmate_bridge_codex_rpc
   when:
     - deploy_acp_codex | bool
 
 - name: Check OpenCode route through unified ACP ingress
   ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_domain }}/acp-server/opencode"
-    method: GET
+    url: "https://{{ xworkmate_bridge_domain }}/acp-server/opencode/acp/rpc"
+    method: POST
     headers:
       Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: "capabilities-opencode"
+      method: "acp.capabilities"
+      params: {}
     follow_redirects: none
-    status_code: [200, 301, 302, 307, 308, 401, 403, 404, 502]
+    status_code: [200, 401, 403, 404, 502]
   changed_when: false
-  register: xworkmate_bridge_opencode_redirect
+  register: xworkmate_bridge_opencode_rpc
   when:
     - deploy_acp_opencode | bool
 
 - name: Check Gemini route through unified ACP ingress
   ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_domain }}/acp-server/gemini"
-    method: GET
+    url: "https://{{ xworkmate_bridge_domain }}/acp-server/gemini/acp/rpc"
+    method: POST
     headers:
       Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: "capabilities-gemini"
+      method: "acp.capabilities"
+      params: {}
     follow_redirects: none
-    status_code: [200, 301, 302, 307, 308, 401, 403, 404, 502]
+    status_code: [200, 401, 403, 404, 502]
   changed_when: false
-  register: xworkmate_bridge_gemini_redirect
+  register: xworkmate_bridge_gemini_rpc
   when:
     - deploy_acp_gemini | bool
 
 - name: Check Hermes route through unified ACP ingress
   ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_domain }}/acp-server/hermes"
-    method: GET
+    url: "https://{{ xworkmate_bridge_domain }}/acp-server/hermes/acp/rpc"
+    method: POST
     headers:
       Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: "capabilities-hermes"
+      method: "acp.capabilities"
+      params: {}
     follow_redirects: none
-    status_code: [200, 301, 302, 307, 308, 401, 403, 404, 502]
+    status_code: [200, 401, 403, 404, 502]
   changed_when: false
-  register: xworkmate_bridge_hermes_redirect
+  register: xworkmate_bridge_hermes_rpc
 
 - name: Check xworkmate-bridge public domain root
   ansible.builtin.uri:
@@ -129,15 +157,15 @@
   ansible.builtin.debug:
     msg:
       - "Bridge service public base URL: {{ xworkmate_bridge_service_public_base_url }}"
-      - "OpenClaw public gateway URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/gateway/openclaw"
+      - "OpenClaw public gateway URL: {{ xworkmate_bridge_service_public_base_url }}/gateway/openclaw"
       - "Codex public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/codex"
       - "OpenCode public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/opencode"
       - "Gemini public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/gemini"
       - "Hermes public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/hermes"
       - "Bridge image ref: {{ service_compose_image }}"
       - "Bridge service status: {{ xworkmate_bridge_status.stdout | default('N/A') }}"
-      - "Codex route: /acp-server/codex -> {{ xworkmate_bridge_codex_upstream_host }}:{{ xworkmate_bridge_codex_upstream_port }}"
-      - "OpenCode route: /acp-server/opencode -> {{ xworkmate_bridge_opencode_upstream_host }}:{{ xworkmate_bridge_opencode_upstream_port }}"
-      - "Gemini route: /acp-server/gemini -> {{ xworkmate_bridge_gemini_upstream_host }}:{{ xworkmate_bridge_gemini_upstream_port }}"
-      - "Hermes route: /acp-server/hermes -> {{ xworkmate_bridge_hermes_upstream_host }}:{{ xworkmate_bridge_hermes_upstream_port }}"
-      - "OpenClaw route: /acp-server/gateway/openclaw -> {{ xworkmate_bridge_openclaw_upstream_host }}:{{ xworkmate_bridge_openclaw_upstream_port }}"
+      - "Codex route: /acp-server/codex/acp/rpc -> {{ xworkmate_bridge_codex_upstream_host }}:{{ xworkmate_bridge_codex_upstream_port }}"
+      - "OpenCode route: /acp-server/opencode/acp/rpc -> {{ xworkmate_bridge_opencode_upstream_host }}:{{ xworkmate_bridge_opencode_upstream_port }}"
+      - "Gemini route: /acp-server/gemini/acp/rpc -> {{ xworkmate_bridge_gemini_upstream_host }}:{{ xworkmate_bridge_gemini_upstream_port }}"
+      - "Hermes route: /acp-server/hermes/acp/rpc -> {{ xworkmate_bridge_hermes_upstream_host }}:{{ xworkmate_bridge_hermes_upstream_port }}"
+      - "OpenClaw route: /gateway/openclaw -> {{ xworkmate_bridge_openclaw_upstream_host }}:{{ xworkmate_bridge_openclaw_upstream_port }}"
