@@ -1,9 +1,10 @@
 ---
 xworkmate_bridge_service_name: xworkmate-bridge
-xworkmate_bridge_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default('', true) }}"
+xworkmate_bridge_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('uTvryFvAbz6M5sRtmTaSTQY6otLZ95hneBsWqXu+35I=', true), true) }}"
 xworkmate_bridge_listen_host: 127.0.0.1
 xworkmate_bridge_listen_port: 8787
 xworkmate_bridge_container_port: 8787
+xworkmate_bridge_listen_addr: "0.0.0.0:{{ xworkmate_bridge_container_port }}"
 xworkmate_bridge_container_name: xworkmate-bridge-managed
 xworkmate_bridge_base_dir: /opt/cloud-neutral/xworkmate-bridge
 xworkmate_bridge_compose_file: "{{ xworkmate_bridge_base_dir }}/docker-compose.yml"
