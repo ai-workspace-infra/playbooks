@@ -23,18 +23,45 @@ deploy_acp_codex: true
 deploy_acp_opencode: true
 deploy_acp_gemini: true
 
-# 统一域名：全部指向 xworkmate-bridge.svc.plus
+# Unified domain settings
 xworkmate_bridge_domain: xworkmate-bridge.svc.plus
 xworkmate_bridge_public_base_url: https://xworkmate-bridge.svc.plus
 xworkmate_bridge_service_domain: xworkmate-bridge.svc.plus
 xworkmate_bridge_service_public_base_url: https://xworkmate-bridge.svc.plus
 
-# Internal 真源映射 (Final Source of Truth)
-xworkmate_bridge_openclaw_url: "ws://127.0.0.1:18789/"
-xworkmate_bridge_codex_rpc_url: "ws://127.0.0.1:9001/acp"
-xworkmate_bridge_opencode_rpc_url: "http://127.0.0.1:38992"
-xworkmate_bridge_gemini_rpc_url: "http://127.0.0.1:8791"
-xworkmate_bridge_hermes_rpc_url: "http://127.0.0.1:3920"
+# Caddy configuration paths
+xworkmate_bridge_caddyfile_path: /etc/caddy/Caddyfile
+xworkmate_bridge_caddy_conf_dir: /etc/caddy/conf.d
+xworkmate_bridge_service_caddy_fragment_path: /etc/caddy/conf.d/xworkmate-bridge.caddy
+
+# Upstream host/port settings for summary and validation
+xworkmate_bridge_codex_upstream_host: 127.0.0.1
+xworkmate_bridge_codex_upstream_port: 9001
+xworkmate_bridge_opencode_upstream_host: 127.0.0.1
+xworkmate_bridge_opencode_upstream_port: 38992
+xworkmate_bridge_gemini_upstream_host: 127.0.0.1
+xworkmate_bridge_gemini_upstream_port: 8791
+xworkmate_bridge_hermes_upstream_host: 127.0.0.1
+xworkmate_bridge_hermes_upstream_port: 3920
+xworkmate_bridge_openclaw_upstream_host: 127.0.0.1
+xworkmate_bridge_openclaw_upstream_port: 18789
+
+# Internal RPC URLs (Source of Truth for the bridge service)
+xworkmate_bridge_openclaw_url: "ws://{{ xworkmate_bridge_openclaw_upstream_host }}:{{ xworkmate_bridge_openclaw_upstream_port }}/"
+xworkmate_bridge_codex_rpc_url: "ws://{{ xworkmate_bridge_codex_upstream_host }}:{{ xworkmate_bridge_codex_upstream_port }}/acp"
+xworkmate_bridge_opencode_rpc_url: "http://{{ xworkmate_bridge_opencode_upstream_host }}:{{ xworkmate_bridge_opencode_upstream_port }}"
+xworkmate_bridge_gemini_rpc_url: "http://{{ xworkmate_bridge_gemini_upstream_host }}:{{ xworkmate_bridge_gemini_upstream_port }}"
+xworkmate_bridge_hermes_rpc_url: "http://{{ xworkmate_bridge_hermes_upstream_host }}:{{ xworkmate_bridge_hermes_upstream_port }}"
+
+# Obsolete paths to clean up
+xworkmate_bridge_obsolete_caddy_fragment_paths:
+  - /etc/caddy/conf.d/acp-server.caddy
+  - /etc/caddy/conf.d/acp-server-codex.caddy
+  - /etc/caddy/conf.d/acp-server-opencode.caddy
+  - /etc/caddy/conf.d/acp-server-gemini.caddy
+  - /etc/caddy/conf.d/acp-server-bridge.caddy
+  - /etc/caddy/conf.d/acp-server-bridge-server.caddy
+
 
 xworkmate_bridge_packages:
   - caddy

@@ -71,37 +71,29 @@
   register: xworkmate_bridge_service_root
 
 - name: Check xworkmate-bridge public domain ping
-  ansible.builtin.command:
-    argv:
-      - curl
-      - --fail-with-body
-      - --silent
-      - --show-error
-      - --location
-      - --max-time
-      - "10"
-      - --header
-      - "Authorization: Bearer {{ xworkmate_bridge_auth_token }}"
-      - "https://{{ xworkmate_bridge_service_domain }}/api/ping"
-  changed_when: false
-  failed_when: false
-  no_log: true
+  ansible.builtin.uri:
+    url: "https://{{ xworkmate_bridge_service_domain }}/api/ping"
+    headers:
+      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
+    return_content: true
   register: xworkmate_bridge_service_ping
   until:
-    - xworkmate_bridge_service_ping.rc == 0
-    - xworkmate_bridge_service_ping.stdout | length > 0
-    - xworkmate_bridge_service_ping.stdout is regex('"status"\\s*:\\s*"ok"')
+    - xworkmate_bridge_service_ping.status == 200
+    - xworkmate_bridge_service_ping.json is defined
+    - xworkmate_bridge_service_ping.json.status | default('') == "ok"
   retries: 3
   delay: 5
+  changed_when: false
+  no_log: true
 
 - name: Assert xworkmate-bridge ping reports deployed image ref
   ansible.builtin.assert:
     that:
-      - "(xworkmate_bridge_service_ping.stdout | from_json).image == service_compose_image"
+      - xworkmate_bridge_service_ping.json.image == service_compose_image
     fail_msg: >-
       xworkmate-bridge /api/ping does not report the deployed image ref.
       Expected: {{ service_compose_image }}
-      Got: {{ (xworkmate_bridge_service_ping.stdout | from_json).image | default('N/A') }}
+      Got: {{ xworkmate_bridge_service_ping.json.image | default('N/A') }}
 
 - name: Check deprecated ACP fragments are absent
   ansible.builtin.stat:
