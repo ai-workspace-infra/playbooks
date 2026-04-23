@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ vllm_service_name }}
+  namespace: {{ vllm_namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ vllm_service_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ vllm_service_name }}
+    spec:
+      containers:
+      - name: vllm
+        image: {{ vllm_image }}
+        command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+        args:
+          - "--model={{ vllm_model }}"
+          - "--tensor-parallel-size={{ vllm_tensor_parallel_size }}"
+          - "--pipeline-parallel-size={{ vllm_pipeline_parallel_size }}"
+          - "--gpu-memory-utilization={{ vllm_gpu_memory_utilization }}"
+          - "--max-model-len={{ vllm_max_model_len }}"
+          - "--max-num-seqs={{ vllm_max_num_seqs }}"
+          - "--port={{ vllm_port }}"
+          - "--distributed-executor-backend=ray"
+          - "--worker-use-ray"
+        env:
+          - name: RAY_ADDRESS
+            value: "{{ ray_address }}"
+          - name: NCCL_SOCKET_IFNAME
+            value: "{{ nccl_socket_ifname }}"
+          - name: GLOO_SOCKET_IFNAME
+            value: "{{ gloo_socket_ifname }}"
+          - name: NCCL_IB_DISABLE
+            value: "{{ nccl_ib_disable }}"
+          - name: VLLM_LOGGING_LEVEL
+            value: "{{ vllm_logging_level }}"
+          - name: TORCH_DISTRIBUTED_INIT_TIMEOUT
+            value: "{{ torch_distributed_init_timeout }}"
+          - name: HUGGING_FACE_HUB_TOKEN
+            value: "{{ huggingface_token }}"
+        ports:
+        - containerPort: {{ vllm_port }}
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ vllm_port }}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
+        - name: models
+          mountPath: {{ model_mount_path }}
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+      - name: models
+        hostPath:
+          path: {{ model_host_path }}
+          type: DirectoryOrCreate

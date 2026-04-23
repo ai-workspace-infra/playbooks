@@ -1,0 +1,24 @@
+---
+- name: Create Ray namespace
+  kubernetes.core.k8s:
+    name: "{{ ray_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+  when: inventory_hostname == groups['masters'][0]
+
+- name: Apply RayCluster CRD
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'raycluster.yaml.j2') | from_yaml }}"
+  when: inventory_hostname == groups['masters'][0]
+
+- name: Wait for Ray head node to be ready
+  shell: |
+    kubectl get pod -n {{ ray_namespace }} -l ray.io/node-type=head -o jsonpath='{.items[0].status.phase}'
+  register: head_status
+  until: head_status.stdout == "Running"
+  retries: 30
+  delay: 10
+  changed_when: false
+  when: inventory_hostname == groups['masters'][0]

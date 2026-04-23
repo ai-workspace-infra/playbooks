@@ -1,0 +1,53 @@
+apiVersion: ray.io/v1
+kind: RayCluster
+metadata:
+  name: {{ ray_cluster_name }}
+  namespace: {{ ray_namespace }}
+spec:
+  rayVersion: '{{ ray_version }}'
+  headGroupSpec:
+    rayStartParams:
+      dashboard-host: '0.0.0.0'
+{% if not ray_dashboard_enabled %}
+      dashboard-enabled: 'false'
+{% endif %}
+    template:
+      spec:
+        containers:
+        - name: ray-head
+          image: {{ ray_image }}
+          resources:
+{{ ray_head_resources | to_nice_yaml(indent=4) | indent(12, true) }}
+  workerGroupSpecs:
+{% for group in ray_worker_groups %}
+  - groupName: {{ group.groupName }}
+    replicas: {{ group.replicas }}
+    minReplicas: {{ group.minReplicas }}
+    maxReplicas: {{ group.maxReplicas }}
+    rayStartParams: {}
+    template:
+      spec:
+{% if group.nodeSelector is defined %}
+        nodeSelector:
+{{ group.nodeSelector | to_nice_yaml(indent=2) | indent(10, true) }}
+{% endif %}
+{% if group.tolerations is defined and group.tolerations | length > 0 %}
+        tolerations:
+{{ group.tolerations | to_nice_yaml(indent=2) | indent(10, true) }}
+{% endif %}
+        containers:
+        - name: ray-worker
+          image: {{ ray_image }}
+          resources:
+{{ group.resources | to_nice_yaml(indent=4) | indent(12, true) }}
+{% if group.volumeMounts is defined and group.volumeMounts | length > 0 %}
+          volumeMounts:
+{{ group.volumeMounts | to_nice_yaml(indent=2) | indent(10, true) }}
+{% endif %}
+{% if group.volumeMounts is defined and group.volumeMounts | selectattr('name', 'equalto', 'dshm') | list | length > 0 %}
+        volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+{% endif %}
+{% endfor %}

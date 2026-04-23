@@ -1,0 +1,51 @@
+apiVersion: ray.io/v1
+kind: RayService
+metadata:
+  name: {{ service_name }}
+  namespace: default
+spec:
+  serveConfigV2: |
+    applications:
+      - name: vllm_app
+        import_path: "vllm.engine.arg_utils:AsyncEngineArgs"
+        route_prefix: /
+  rayClusterConfig:
+    rayVersion: {{ kuberay_version }}
+    headGroupSpec:
+      rayStartParams:
+        dashboard-host: '0.0.0.0'
+      template:
+        spec:
+          containers:
+            - name: ray-head
+              image: rayproject/ray:{{ kuberay_version }}
+    workerGroupSpecs:
+      - replicas: {{ worker_replicas }}
+        minReplicas: 1
+        maxReplicas: {{ max_replicas }}
+        groupName: gpu-group
+        rayStartParams: {}
+        template:
+          spec:
+            containers:
+              - name: vllm-node
+                image: {{ vllm_image }}
+                resources:
+                  limits:
+                    nvidia.com/gpu: {{ gpus_per_worker }}
+                env:
+                  - name: HUGGING_FACE_HUB_TOKEN
+                    value: "{{ huggingface_token }}"
+                command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+                args:
+                  - "--model"
+                  - "{{ model_name_or_path }}"
+                  - "--tensor-parallel-size"
+                  - "{{ tensor_parallel_size }}"
+                volumeMounts:
+                  - name: dshm
+                    mountPath: /dev/shm
+            volumes:
+              - name: dshm
+                emptyDir:
+                  medium: Memory

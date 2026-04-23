@@ -1,0 +1,31 @@
+---
+vllm_namespace: "vllm-system"
+vllm_service_name: "vllm-api"
+vllm_image: "vllm/vllm-openai:v0.4.2"
+vllm_model: "/models/Llama-3-70B-Instruct"
+
+vllm_tensor_parallel_size: 2
+vllm_pipeline_parallel_size: 1
+vllm_gpu_memory_utilization: 0.90
+vllm_max_model_len: 4096
+vllm_max_num_seqs: 256
+
+vllm_port: 8000
+vllm_service_type: "ClusterIP"
+vllm_ingress_enabled: false
+vllm_ingress_host: "vllm.example.com"
+
+# Ray Integration
+ray_address: "ray://ray-cluster-head-svc.ray-system.svc.cluster.local:10001"
+
+# Environment Variables
+nccl_socket_ifname: "eth0"
+gloo_socket_ifname: "eth0"
+nccl_ib_disable: "1"
+vllm_logging_level: "INFO"
+torch_distributed_init_timeout: "300"
+huggingface_token: ""
+
+# Model Mount
+model_host_path: "/data/models"
+model_mount_path: "/models"

@@ -1,0 +1,40 @@
+---
+# README:
+# 前置条件：节点操作系统为兼容 Linux，节点间网络互通，已配置免密登录。
+# 执行顺序：仅在 masters 组的第一台节点执行，通过 sealos apply 自动同步到远端节点。
+
+- name: Create sealos workspace
+  file:
+    path: /etc/sealos
+    state: directory
+    mode: '0755'
+  when: inventory_hostname == masters[0]
+
+- name: Generate Clusterfile
+  template:
+    src: clusterfile.yaml.j2
+    dest: /etc/sealos/Clusterfile
+  when: inventory_hostname == masters[0]
+
+- name: Apply Sealos Cluster (Idempotent)
+  command: "sealos apply -f /etc/sealos/Clusterfile"
+  register: sealos_apply
+  changed_when: "'Applied' in sealos_apply.stdout"
+  failed_when: sealos_apply.rc != 0
+  when: inventory_hostname == masters[0]
+
+- name: Wait for nodes to be ready
+  shell: "kubectl get nodes --no-headers | grep -v 'NotReady' | wc -l"
+  register: ready_nodes
+  until: ready_nodes.stdout | int == (masters | length + workers | length)
+  retries: 30
+  delay: 10
+  changed_when: false
+  when: inventory_hostname == masters[0]
+
+- name: Fetch kubeconfig to local
+  fetch:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ kubeconfig_local_path }}"
+    flat: yes
+  when: inventory_hostname == masters[0]

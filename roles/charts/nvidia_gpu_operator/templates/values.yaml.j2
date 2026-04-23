@@ -1,0 +1,15 @@
+driver:
+  enabled: {{ driver_enabled }}
+  version: "{{ driver_version }}"
+toolkit:
+  enabled: {{ toolkit_enabled }}
+devicePlugin:
+  enabled: true
+mig:
+  strategy: "{{ mig_strategy }}"
+dcgmExporter:
+  enabled: {{ dcgm_exporter_enabled }}
+{% if image_pull_secrets | length > 0 %}
+imagePullSecrets:
+{{ image_pull_secrets | to_nice_yaml(indent=2) | indent(2, true) }}
+{% endif %}

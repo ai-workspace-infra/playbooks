@@ -1,0 +1,36 @@
+---
+ray_namespace: "ray-system"
+ray_cluster_name: "ray-cluster"
+ray_image: "rayproject/ray:2.9.0"
+ray_version: "2.9.0"
+
+ray_dashboard_enabled: true
+
+ray_head_resources:
+  requests:
+    cpu: "2"
+    memory: "8Gi"
+  limits:
+    cpu: "4"
+    memory: "16Gi"
+
+ray_worker_groups:
+  - groupName: gpu-workers
+    replicas: 2
+    minReplicas: 1
+    maxReplicas: 4
+    resources:
+      requests:
+        cpu: "4"
+        memory: "32Gi"
+        nvidia.com/gpu: "1"
+      limits:
+        cpu: "8"
+        memory: "64Gi"
+        nvidia.com/gpu: "1"
+    nodeSelector:
+      accelerator: "nvidia-h100"
+    tolerations: []
+    volumeMounts:
+      - mountPath: /dev/shm
+        name: dshm

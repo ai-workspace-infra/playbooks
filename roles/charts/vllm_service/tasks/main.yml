@@ -1,0 +1,36 @@
+---
+- name: Create vLLM namespace
+  kubernetes.core.k8s:
+    name: "{{ vllm_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+  when: inventory_hostname == groups['masters'][0]
+
+- name: Deploy vLLM Deployment
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'deployment.yaml.j2') | from_yaml }}"
+  when: inventory_hostname == groups['masters'][0]
+
+- name: Deploy vLLM Service
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'service.yaml.j2') | from_yaml }}"
+  when: inventory_hostname == groups['masters'][0]
+
+- name: Deploy vLLM Ingress
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'ingress.yaml.j2') | from_yaml }}"
+  when: inventory_hostname == groups['masters'][0] and vllm_ingress_enabled
+
+- name: Wait for vLLM API to be ready
+  shell: |
+    kubectl get deploy {{ vllm_service_name }} -n {{ vllm_namespace }} -o jsonpath='{.status.readyReplicas}'
+  register: vllm_ready
+  until: vllm_ready.stdout == "1"
+  retries: 40
+  delay: 15
+  changed_when: false
+  when: inventory_hostname == groups['masters'][0]

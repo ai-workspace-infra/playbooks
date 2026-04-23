@@ -1,0 +1,15 @@
+apiVersion: cluster.sealos.io/v1
+kind: Cluster
+metadata:
+  name: {{ cluster_name }}
+spec:
+  hosts:
+    - ips: {{ groups['masters'] | map('extract', hostvars, ['ansible_host']) | list | to_json }}
+      roles: [master]
+    - ips: {{ groups['gpu_workers'] | map('extract', hostvars, ['ansible_host']) | list | to_json }}
+      roles: [node]
+  ssh:
+    user: {{ ansible_user | default('root') }}
+  network:
+    podCIDR: {{ pod_cidr }}
+    svcCIDR: {{ service_cidr }}

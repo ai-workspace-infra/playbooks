@@ -1,0 +1,15 @@
+---
+- name: Wait for NVIDIA Device Plugin daemonset to be ready
+  shell: |
+    kubectl rollout status daemonset/nvidia-device-plugin-daemonset -n {{ gpu_operator_namespace }} --timeout=300s
+  register: ds_status
+  changed_when: false
+
+- name: Validate GPU resources are allocatable
+  shell: |
+    kubectl get nodes -l nvidia.com/gpu.present=true -o jsonpath='{.items[*].status.allocatable}'
+  register: gpu_allocatable
+  until: "'nvidia.com/gpu' in gpu_allocatable.stdout"
+  retries: 30
+  delay: 20
+  changed_when: false
