@@ -40,6 +40,20 @@
     - "'i' in (xworkmate_bridge_caddyfile_attrs.stdout | default(''))"
   changed_when: true
 
+- name: Inspect xworkmate-bridge Caddy fragment attributes
+  ansible.builtin.command:
+    cmd: lsattr "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+  register: xworkmate_bridge_site_fragment_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from xworkmate-bridge Caddy fragment when present
+  ansible.builtin.command:
+    cmd: chattr -i "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+  when:
+    - "'i' in (xworkmate_bridge_site_fragment_attrs.stdout | default(''))"
+  changed_when: true
+
 - name: Deploy xworkmate-bridge public Caddy site
   ansible.builtin.template:
     src: xworkmate-bridge-site.caddy.j2
@@ -48,6 +62,13 @@
     group: root
     mode: "0644"
   notify: Reload caddy
+
+- name: Restore immutable flag on xworkmate-bridge Caddy fragment
+  ansible.builtin.command:
+    cmd: chattr +i "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+  when:
+    - "'i' in (xworkmate_bridge_site_fragment_attrs.stdout | default(''))"
+  changed_when: true
 
 - name: Remove deprecated ACP Caddy fragments
   ansible.builtin.file:
