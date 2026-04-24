@@ -12,18 +12,13 @@
 - name: Check Codex route through unified ACP ingress
   ansible.builtin.uri:
     url: "https://{{ xworkmate_bridge_domain }}/acp-server/codex/acp/rpc"
-    method: POST
+    method: OPTIONS
     headers:
-      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
-      Content-Type: "application/json"
-    body_format: json
-    body:
-      jsonrpc: "2.0"
-      id: "capabilities-codex"
-      method: "acp.capabilities"
-      params: {}
+      Origin: "{{ xworkmate_bridge_validation_origin }}"
+      Access-Control-Request-Method: POST
     follow_redirects: none
-    status_code: [200, 401, 403, 404, 502]
+    status_code: [204, 401, 403, 404, 502]
+    timeout: 20
   changed_when: false
   register: xworkmate_bridge_codex_rpc
   when:
@@ -32,18 +27,13 @@
 - name: Check OpenCode route through unified ACP ingress
   ansible.builtin.uri:
     url: "https://{{ xworkmate_bridge_domain }}/acp-server/opencode/acp/rpc"
-    method: POST
+    method: OPTIONS
     headers:
-      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
-      Content-Type: "application/json"
-    body_format: json
-    body:
-      jsonrpc: "2.0"
-      id: "capabilities-opencode"
-      method: "acp.capabilities"
-      params: {}
+      Origin: "{{ xworkmate_bridge_validation_origin }}"
+      Access-Control-Request-Method: POST
     follow_redirects: none
-    status_code: [200, 401, 403, 404, 502]
+    status_code: [204, 401, 403, 404, 502]
+    timeout: 20
   changed_when: false
   register: xworkmate_bridge_opencode_rpc
   when:
@@ -52,18 +42,13 @@
 - name: Check Gemini route through unified ACP ingress
   ansible.builtin.uri:
     url: "https://{{ xworkmate_bridge_domain }}/acp-server/gemini/acp/rpc"
-    method: POST
+    method: OPTIONS
     headers:
-      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
-      Content-Type: "application/json"
-    body_format: json
-    body:
-      jsonrpc: "2.0"
-      id: "capabilities-gemini"
-      method: "acp.capabilities"
-      params: {}
+      Origin: "{{ xworkmate_bridge_validation_origin }}"
+      Access-Control-Request-Method: POST
     follow_redirects: none
-    status_code: [200, 401, 403, 404, 502]
+    status_code: [204, 401, 403, 404, 502]
+    timeout: 20
   changed_when: false
   register: xworkmate_bridge_gemini_rpc
   when:
@@ -72,18 +57,13 @@
 - name: Check Hermes route through unified ACP ingress
   ansible.builtin.uri:
     url: "https://{{ xworkmate_bridge_domain }}/acp-server/hermes/acp/rpc"
-    method: POST
+    method: OPTIONS
     headers:
-      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
-      Content-Type: "application/json"
-    body_format: json
-    body:
-      jsonrpc: "2.0"
-      id: "capabilities-hermes"
-      method: "acp.capabilities"
-      params: {}
+      Origin: "{{ xworkmate_bridge_validation_origin }}"
+      Access-Control-Request-Method: POST
     follow_redirects: none
-    status_code: [200, 401, 403, 404, 502]
+    status_code: [204, 401, 403, 404, 502]
+    timeout: 20
   changed_when: false
   register: xworkmate_bridge_hermes_rpc
 
