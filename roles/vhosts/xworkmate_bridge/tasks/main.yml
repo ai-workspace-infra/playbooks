@@ -83,6 +83,15 @@
   when:
     - not ansible_check_mode
 
+- name: Stop deprecated standalone xworkmate-bridge systemd service
+  ansible.builtin.systemd:
+    name: "{{ xworkmate_bridge_service_name }}"
+    enabled: false
+    state: stopped
+  failed_when: false
+  when:
+    - not ansible_check_mode
+
 - name: Start xworkmate-bridge compose target
   ansible.builtin.command: >-
     docker compose
