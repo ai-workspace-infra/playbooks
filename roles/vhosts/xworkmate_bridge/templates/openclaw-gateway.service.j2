@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenClaw Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ xworkmate_bridge_service_user }}
+Group={{ xworkmate_bridge_service_group }}
+WorkingDirectory=/home/{{ xworkmate_bridge_service_user }}
+Environment=HOME=/home/{{ xworkmate_bridge_service_user }}
+Environment=TERM=xterm-256color
+ExecStart={{ xworkmate_bridge_openclaw_binary_path }} gateway run --bind loopback --port {{ xworkmate_bridge_openclaw_upstream_port }}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
