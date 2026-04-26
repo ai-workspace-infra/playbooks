@@ -8,13 +8,19 @@
   register: acp_opencode_ss
   changed_when: false
 
-- name: Validate OpenCode local HTML endpoint
+- name: Validate OpenCode local ACP endpoint
   ansible.builtin.uri:
-    url: "http://{{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}/"
-    method: GET
+    url: "http://{{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}/acp/rpc"
+    method: POST
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: 1
+      method: acp.capabilities
+      params: {}
     return_content: true
     status_code: 200
-  register: acp_opencode_http
+  register: acp_opencode_adapter_http
 
 - name: Validate local OpenCode ACP bridge HTTP endpoint
   ansible.builtin.uri:
@@ -60,13 +66,12 @@
       - "OpenCode public base URL: {{ acp_opencode_public_base_url }}"
       - "Preferred WebSocket endpoint: {{ acp_opencode_public_base_url }}/acp"
       - "Compatibility HTTP RPC endpoint: {{ acp_opencode_public_base_url }}/acp/rpc"
-      - "OpenCode UI listener: {{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}"
+      - "OpenCode ACP adapter listener: {{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}"
       - "ACP bridge listener: {{ acp_opencode_bridge_listen_host }}:{{ acp_opencode_bridge_listen_port }}"
       - "Service: {{ acp_opencode_status.stdout | default('N/A') }}"
       - "Bridge service: {{ acp_opencode_bridge_status.stdout | default('N/A') }}"
       - "Socket: {{ acp_opencode_ss.stdout | default('N/A') }}"
-      - "HTML content-type: {{ acp_opencode_http.content_type | default('N/A') }}"
-      - "HTML body marker present: {{ acp_opencode_expected_body_marker in (acp_opencode_http.content | default('')) }}"
+      - "Adapter capabilities HTTP: {{ acp_opencode_adapter_http.content | default('N/A') }}"
       - "Bridge capabilities HTTP: {{ acp_opencode_bridge_http.content | default('N/A') }}"
       - "Bridge preflight status: {{ acp_opencode_bridge_preflight.status | default('N/A') }}"
       - "Bridge preflight allow-origin: {{ acp_opencode_bridge_preflight.access_control_allow_origin | default('N/A') }}"
