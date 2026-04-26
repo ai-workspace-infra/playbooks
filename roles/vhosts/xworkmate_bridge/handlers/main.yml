@@ -1,11 +1,15 @@
 ---
 - name: Reload bridge
-  ansible.builtin.command: >-
-    docker compose
-    --project-name {{ xworkmate_bridge_project_name }}
-    -f {{ xworkmate_bridge_compose_file }}
-    restart bridge
-  args:
-    chdir: "{{ xworkmate_bridge_base_dir }}"
+  ansible.builtin.systemd:
+    name: "{{ xworkmate_bridge_service_name }}"
+    state: restarted
+    daemon_reload: true
+  when:
+    - not ansible_check_mode
+
+- name: Reload caddy
+  ansible.builtin.systemd:
+    name: caddy
+    state: reloaded
   when:
     - not ansible_check_mode

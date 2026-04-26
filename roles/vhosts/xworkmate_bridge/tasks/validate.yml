@@ -1,5 +1,5 @@
 ---
-- name: Validate Caddy config for unified ACP ingress
+- name: Validate Caddy config for xworkmate-bridge ingress
   ansible.builtin.command: caddy validate --config "{{ xworkmate_bridge_caddyfile_path }}"
   changed_when: false
 
@@ -9,74 +9,31 @@
   changed_when: false
   register: xworkmate_bridge_fragment
 
-- name: Check Codex route through unified ACP ingress
-  ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_domain }}/acp-server/codex/acp/rpc"
-    method: OPTIONS
-    headers:
-      Origin: "{{ xworkmate_bridge_validation_origin }}"
-      Access-Control-Request-Method: POST
-    follow_redirects: none
-    status_code: [204, 401, 403, 404, 502]
-    timeout: 20
-  changed_when: false
-  register: xworkmate_bridge_codex_rpc
-  when:
-    - deploy_acp_codex | bool
+- name: Assert Caddy fragment only exposes app-facing bridge routes
+  ansible.builtin.assert:
+    that:
+      - "'handle_path /acp*' in xworkmate_bridge_fragment.stdout"
+      - "'handle_path /api*' in xworkmate_bridge_fragment.stdout"
+      - "'/acp-server/' not in xworkmate_bridge_fragment.stdout"
+      - "'/gateway/openclaw' not in xworkmate_bridge_fragment.stdout"
 
-- name: Check OpenCode route through unified ACP ingress
-  ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_domain }}/acp-server/opencode/acp/rpc"
-    method: OPTIONS
-    headers:
-      Origin: "{{ xworkmate_bridge_validation_origin }}"
-      Access-Control-Request-Method: POST
-    follow_redirects: none
-    status_code: [204, 401, 403, 404, 502]
-    timeout: 20
+- name: Check xworkmate-bridge systemd service status
+  ansible.builtin.command:
+    cmd: systemctl is-active "{{ xworkmate_bridge_service_name }}"
   changed_when: false
-  register: xworkmate_bridge_opencode_rpc
-  when:
-    - deploy_acp_opencode | bool
+  register: xworkmate_bridge_service_status
 
-- name: Check Gemini route through unified ACP ingress
-  ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_domain }}/acp-server/gemini/acp/rpc"
-    method: OPTIONS
-    headers:
-      Origin: "{{ xworkmate_bridge_validation_origin }}"
-      Access-Control-Request-Method: POST
-    follow_redirects: none
-    status_code: [204, 401, 403, 404, 502]
-    timeout: 20
+- name: Check required ACP and gateway service status
+  ansible.builtin.command:
+    cmd: systemctl is-active "{{ item }}"
   changed_when: false
-  register: xworkmate_bridge_gemini_rpc
-  when:
-    - deploy_acp_gemini | bool
-
-- name: Check Hermes route through unified ACP ingress
-  ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_domain }}/acp-server/hermes/acp/rpc"
-    method: OPTIONS
-    headers:
-      Origin: "{{ xworkmate_bridge_validation_origin }}"
-      Access-Control-Request-Method: POST
-    follow_redirects: none
-    status_code: [204, 401, 403, 404, 502]
-    timeout: 20
-  changed_when: false
-  register: xworkmate_bridge_hermes_rpc
-
-- name: Check xworkmate-bridge public domain root
-  ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_service_domain }}/"
-    method: GET
-    headers:
-      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
-    follow_redirects: none
-    status_code: [200, 301, 302, 307, 308]
-  changed_when: false
-  register: xworkmate_bridge_service_root
+  loop:
+    - acp-codex
+    - acp-opencode
+    - acp-gemini
+    - acp-hermes
+    - openclaw-gateway
+  register: xworkmate_bridge_dependency_status
 
 - name: Check xworkmate-bridge public domain ping
   ansible.builtin.uri:
@@ -94,14 +51,100 @@
   changed_when: false
   no_log: true
 
-- name: Assert xworkmate-bridge ping reports deployed image ref
+- name: Check xworkmate-bridge capabilities contract
+  ansible.builtin.uri:
+    url: "https://{{ xworkmate_bridge_service_domain }}/acp/rpc"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: "validate-capabilities"
+      method: acp.capabilities
+      params: {}
+    return_content: true
+  register: xworkmate_bridge_capabilities
+  changed_when: false
+  no_log: true
+
+- name: Assert xworkmate-bridge capabilities expose app contract providers
   ansible.builtin.assert:
     that:
-      - xworkmate_bridge_service_ping.json.image == service_compose_image
-    fail_msg: >-
-      xworkmate-bridge /api/ping does not report the deployed image ref.
-      Expected: {{ service_compose_image }}
-      Got: {{ xworkmate_bridge_service_ping.json.image | default('N/A') }}
+      - xworkmate_bridge_capabilities.status == 200
+      - "'agent' in xworkmate_bridge_capabilities.json.result.availableExecutionTargets"
+      - "'gateway' in xworkmate_bridge_capabilities.json.result.availableExecutionTargets"
+      - xworkmate_bridge_capabilities.json.result.providerCatalog | selectattr('providerId', 'equalto', 'codex') | list | length == 1
+      - xworkmate_bridge_capabilities.json.result.providerCatalog | selectattr('providerId', 'equalto', 'opencode') | list | length == 1
+      - xworkmate_bridge_capabilities.json.result.providerCatalog | selectattr('providerId', 'equalto', 'gemini') | list | length == 1
+      - xworkmate_bridge_capabilities.json.result.providerCatalog | selectattr('providerId', 'equalto', 'hermes') | list | length == 1
+      - xworkmate_bridge_capabilities.json.result.gatewayProviders | selectattr('providerId', 'equalto', 'openclaw') | list | length == 1
+
+- name: Check xworkmate-bridge routing resolve contract
+  ansible.builtin.uri:
+    url: "https://{{ xworkmate_bridge_service_domain }}/acp/rpc"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: "validate-routing"
+      method: xworkmate.routing.resolve
+      params:
+        taskPrompt: "search current service status"
+        workingDirectory: "/tmp"
+        routing:
+          routingMode: explicit
+          explicitExecutionTarget: gateway
+          preferredGatewayProviderId: openclaw
+    return_content: true
+  register: xworkmate_bridge_routing
+  changed_when: false
+  no_log: true
+
+- name: Assert xworkmate-bridge routing resolves openclaw gateway
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_routing.status == 200
+      - xworkmate_bridge_routing.json.result.resolvedExecutionTarget == "gateway"
+      - xworkmate_bridge_routing.json.result.resolvedGatewayProviderId == "openclaw"
+
+- name: Check lightweight openclaw session contract
+  ansible.builtin.uri:
+    url: "https://{{ xworkmate_bridge_service_domain }}/acp/rpc"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: "validate-session-openclaw"
+      method: session.start
+      params:
+        sessionId: "validate-openclaw"
+        threadId: "validate-openclaw"
+        taskPrompt: "ping"
+        workingDirectory: "/tmp"
+        routing:
+          routingMode: explicit
+          explicitExecutionTarget: gateway
+          preferredGatewayProviderId: openclaw
+    return_content: true
+    status_code: 200
+  register: xworkmate_bridge_openclaw_session
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Assert openclaw session no longer requires legacy top-level gatewayProvider
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_openclaw_session.status == 200
+      - xworkmate_bridge_openclaw_session.json.error.message | default('') != "GATEWAY_PROVIDER_REQUIRED"
 
 - name: Check deprecated ACP fragments are absent
   ansible.builtin.stat:
@@ -109,8 +152,6 @@
   changed_when: false
   loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
   register: xworkmate_bridge_obsolete_fragments
-  when:
-    - not ansible_check_mode
 
 - name: Assert deprecated ACP fragments were removed
   ansible.builtin.assert:
@@ -120,32 +161,15 @@
   loop: "{{ xworkmate_bridge_obsolete_fragments.results }}"
   loop_control:
     label: "{{ item.item }}"
-  when:
-    - not ansible_check_mode
 
-- name: Show xworkmate-bridge compose status
-  ansible.builtin.command: >-
-    docker compose
-    --project-name {{ xworkmate_bridge_project_name }}
-    -f {{ xworkmate_bridge_compose_file }}
-    ps
-  register: xworkmate_bridge_status
-  changed_when: false
-  failed_when: false
-
-- name: Summarize unified ACP ingress state
+- name: Summarize xworkmate-bridge systemd ingress state
   ansible.builtin.debug:
     msg:
       - "Bridge service public base URL: {{ xworkmate_bridge_service_public_base_url }}"
-      - "OpenClaw public gateway URL: {{ xworkmate_bridge_service_public_base_url }}/gateway/openclaw"
-      - "Codex public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/codex"
-      - "OpenCode public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/opencode"
-      - "Gemini public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/gemini"
-      - "Hermes public base URL: {{ xworkmate_bridge_service_public_base_url }}/acp-server/hermes"
-      - "Bridge image ref: {{ service_compose_image }}"
-      - "Bridge service status: {{ xworkmate_bridge_status.stdout | default('N/A') }}"
-      - "Codex route: /acp-server/codex/acp/rpc -> {{ xworkmate_bridge_codex_upstream_host }}:{{ xworkmate_bridge_codex_upstream_port }}"
-      - "OpenCode route: /acp-server/opencode/acp/rpc -> {{ xworkmate_bridge_opencode_upstream_host }}:{{ xworkmate_bridge_opencode_upstream_port }}"
-      - "Gemini route: /acp-server/gemini/acp/rpc -> {{ xworkmate_bridge_gemini_upstream_host }}:{{ xworkmate_bridge_gemini_upstream_port }}"
-      - "Hermes route: /acp-server/hermes/acp/rpc -> {{ xworkmate_bridge_hermes_upstream_host }}:{{ xworkmate_bridge_hermes_upstream_port }}"
-      - "OpenClaw route: /gateway/openclaw -> {{ xworkmate_bridge_openclaw_upstream_host }}:{{ xworkmate_bridge_openclaw_upstream_port }}"
+      - "Bridge service status: {{ xworkmate_bridge_service_status.stdout | default('N/A') }}"
+      - "App-facing RPC: {{ xworkmate_bridge_service_public_base_url }}/acp/rpc"
+      - "Codex upstream: {{ xworkmate_bridge_codex_rpc_url }}"
+      - "OpenCode upstream: {{ xworkmate_bridge_opencode_rpc_url }}"
+      - "Gemini upstream: {{ xworkmate_bridge_gemini_rpc_url }}"
+      - "Hermes upstream: {{ xworkmate_bridge_hermes_rpc_url }}"
+      - "OpenClaw upstream: {{ xworkmate_bridge_openclaw_url }}"

@@ -1,105 +1,192 @@
 ---
 - name: Install xworkmate-bridge prerequisites
   ansible.builtin.package:
-    name:
-      - caddy
+    name: "{{ xworkmate_bridge_packages }}"
     state: present
 
 - name: Ensure xworkmate-bridge base directory exists
   ansible.builtin.file:
     path: "{{ xworkmate_bridge_base_dir }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ xworkmate_bridge_service_user }}"
+    group: "{{ xworkmate_bridge_service_group }}"
     mode: "0755"
+
+- name: Assert xworkmate-bridge binary exists
+  ansible.builtin.stat:
+    path: "{{ xworkmate_bridge_binary_path }}"
+  register: xworkmate_bridge_binary
+
+- name: Fail when xworkmate-bridge binary is missing
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_binary.stat.exists
+      - xworkmate_bridge_binary.stat.isreg
+    fail_msg: "xworkmate-bridge binary is missing: {{ xworkmate_bridge_binary_path }}"
+
+- name: Assert xworkmate-bridge auth token is provided
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_auth_token | trim | length > 0
+    fail_msg: >-
+      xworkmate_bridge_auth_token is required. Pass it with -e or provide
+      BRIDGE_AUTH_TOKEN / INTERNAL_SERVICE_TOKEN in the deploy environment.
+  no_log: true
+
+- name: Stop deprecated Docker bridge container when present
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if docker ps -a --format '{{ "{{" }}.Names{{ "}}" }}' | grep -Eq '^{{ xworkmate_bridge_deprecated_container_name }}$'; then
+      docker rm -f {{ xworkmate_bridge_deprecated_container_name }}
+    fi
+  args:
+    executable: /bin/bash
+  changed_when: false
+  failed_when: false
+  when:
+    - not ansible_check_mode
+
+- name: Remove deprecated Docker bridge compose file
+  ansible.builtin.file:
+    path: "{{ xworkmate_bridge_deprecated_compose_file }}"
+    state: absent
 
 - name: Deploy xworkmate-bridge runtime configuration
   ansible.builtin.template:
     src: config.yaml.j2
-    dest: "{{ xworkmate_bridge_base_dir }}/config.yaml"
+    dest: "{{ xworkmate_bridge_config_file }}"
+    owner: "{{ xworkmate_bridge_service_user }}"
+    group: "{{ xworkmate_bridge_service_group }}"
+    mode: "0644"
+  notify: Reload bridge
+
+- name: Inspect xworkmate-bridge systemd unit attributes
+  ansible.builtin.command:
+    cmd: lsattr "{{ xworkmate_bridge_systemd_unit_path }}"
+  register: xworkmate_bridge_unit_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from xworkmate-bridge systemd unit when present
+  ansible.builtin.command:
+    cmd: chattr -i "{{ xworkmate_bridge_systemd_unit_path }}"
+  when:
+    - "'i' in (xworkmate_bridge_unit_attrs.stdout | default(''))"
+  changed_when: true
+
+- name: Deploy xworkmate-bridge systemd unit
+  ansible.builtin.template:
+    src: xworkmate-bridge.service.j2
+    dest: "{{ xworkmate_bridge_systemd_unit_path }}"
     owner: root
     group: root
     mode: "0644"
   notify: Reload bridge
 
-- name: Assert xworkmate-bridge deploy uses prebuilt registry image
-  ansible.builtin.assert:
-    that:
-      - service_compose_image | trim | length > 0
-      - "'/' in (service_compose_image | trim)"
-      - "':' in (service_compose_image | trim)"
-    fail_msg: >-
-      XWORKMATE_BRIDGE deploy requires a prebuilt image reference via
-      SERVICE_COMPOSE_IMAGE.
-
-- name: Log into container registry for xworkmate-bridge
-  ansible.builtin.shell: |
-    set -euo pipefail
-    printf '%s' '{{ service_compose_registry_password }}' | docker login {{ service_compose_registry_server }} -u '{{ service_compose_registry_username }}' --password-stdin
-  args:
-    executable: /bin/bash
-  no_log: true
+- name: Restore immutable flag on xworkmate-bridge systemd unit
+  ansible.builtin.command:
+    cmd: chattr +i "{{ xworkmate_bridge_systemd_unit_path }}"
+  changed_when: true
   when:
-    - service_compose_registry_username | length > 0
-    - service_compose_registry_password | length > 0
+    - not ansible_check_mode
 
-- name: Render xworkmate-bridge compose file
-  ansible.builtin.template:
-    src: docker-compose.yml.j2
-    dest: "{{ xworkmate_bridge_compose_file }}"
+- name: Ensure Caddy fragment directory exists
+  ansible.builtin.file:
+    path: "{{ xworkmate_bridge_caddy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Inspect Caddy main file attributes
+  ansible.builtin.command:
+    cmd: lsattr "{{ xworkmate_bridge_caddyfile_path }}"
+  register: xworkmate_bridge_caddyfile_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from Caddy main file when present
+  ansible.builtin.command:
+    cmd: chattr -i "{{ xworkmate_bridge_caddyfile_path }}"
+  when:
+    - "'i' in (xworkmate_bridge_caddyfile_attrs.stdout | default(''))"
+  changed_when: true
+
+- name: Ensure Caddy imports managed fragments
+  ansible.builtin.lineinfile:
+    path: "{{ xworkmate_bridge_caddyfile_path }}"
+    line: "import {{ xworkmate_bridge_caddy_conf_dir }}/*.caddy"
+    insertafter: EOF
+    create: true
     owner: root
     group: root
     mode: "0644"
+    state: present
+  notify: Reload caddy
 
-- name: Validate xworkmate-bridge compose file
-  ansible.builtin.command: >-
-    docker compose
-    --project-name {{ xworkmate_bridge_project_name }}
-    -f {{ xworkmate_bridge_compose_file }}
-    config
-  args:
-    chdir: "{{ xworkmate_bridge_base_dir }}"
+- name: Restore immutable flag on Caddy main file
+  ansible.builtin.command:
+    cmd: chattr +i "{{ xworkmate_bridge_caddyfile_path }}"
+  when:
+    - "'i' in (xworkmate_bridge_caddyfile_attrs.stdout | default(''))"
+  changed_when: true
+
+- name: Inspect xworkmate-bridge Caddy fragment attributes
+  ansible.builtin.command:
+    cmd: lsattr "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+  register: xworkmate_bridge_site_fragment_attrs
   changed_when: false
+  failed_when: false
 
-- name: Pull xworkmate-bridge image
-  ansible.builtin.command: >-
-    docker compose
-    --project-name {{ xworkmate_bridge_project_name }}
-    -f {{ xworkmate_bridge_compose_file }}
-    pull bridge
-  args:
-    chdir: "{{ xworkmate_bridge_base_dir }}"
+- name: Remove immutable flag from xworkmate-bridge Caddy fragment when present
+  ansible.builtin.command:
+    cmd: chattr -i "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+  when:
+    - "'i' in (xworkmate_bridge_site_fragment_attrs.stdout | default(''))"
+  changed_when: true
+
+- name: Deploy xworkmate-bridge public Caddy site
+  ansible.builtin.template:
+    src: xworkmate-bridge-site.caddy.j2
+    dest: "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
+- name: Restore immutable flag on xworkmate-bridge Caddy fragment
+  ansible.builtin.command:
+    cmd: chattr +i "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+  changed_when: true
   when:
     - not ansible_check_mode
 
-- name: Force remove conflicting xworkmate-bridge container if it exists
-  ansible.builtin.shell: |
-    if docker ps -a --format '{{ "{{" }}.Names{{ "}}" }}' | grep -Eq '^{{ xworkmate_bridge_container_name }}$'; then
-      docker rm -f {{ xworkmate_bridge_container_name }}
-    fi
-  args:
-    executable: /bin/bash
-  changed_when: false
+- name: Remove deprecated ACP Caddy fragments
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
+  notify: Reload caddy
+
+- name: Reload systemd manager configuration
+  ansible.builtin.systemd:
+    daemon_reload: true
   when:
     - not ansible_check_mode
 
-- name: Stop deprecated standalone xworkmate-bridge systemd service
+- name: Ensure xworkmate-bridge service is enabled and running
   ansible.builtin.systemd:
     name: "{{ xworkmate_bridge_service_name }}"
-    enabled: false
-    state: stopped
-  failed_when: false
+    enabled: true
+    state: started
   when:
     - not ansible_check_mode
 
-- name: Start xworkmate-bridge compose target
-  ansible.builtin.command: >-
-    docker compose
-    --project-name {{ xworkmate_bridge_project_name }}
-    -f {{ xworkmate_bridge_compose_file }}
-    up -d --force-recreate --remove-orphans bridge
-  args:
-    chdir: "{{ xworkmate_bridge_base_dir }}"
+- name: Ensure Caddy is enabled and running
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: true
+    state: started
   when:
     - not ansible_check_mode
 

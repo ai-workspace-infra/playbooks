@@ -1,0 +1,25 @@
+{{ xworkmate_bridge_domain }} {
+    @unauthorized {
+        not header Authorization "Bearer {{ xworkmate_bridge_auth_token }}"
+    }
+    handle @unauthorized {
+        header Content-Type "application/json"
+        respond `{"jsonrpc":"2.0","error":{"code":-32001,"message":"unauthorized"},"type":"res","ok":false}` 401
+    }
+
+    handle_path /api* {
+        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}
+    }
+
+    handle_path /acp* {
+        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}
+    }
+
+    handle_path / {
+        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}
+    }
+
+    log {
+        output file /var/log/caddy/xworkmate-bridge.log
+    }
+}

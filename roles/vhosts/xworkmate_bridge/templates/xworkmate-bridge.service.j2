@@ -1,0 +1,24 @@
+[Unit]
+Description=XWorkmate bridge control plane
+Requires=acp-codex.service acp-opencode.service acp-gemini.service acp-hermes.service openclaw-gateway.service
+After=network-online.target acp-codex.service acp-opencode.service acp-gemini.service acp-hermes.service openclaw-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ xworkmate_bridge_service_user }}
+Group={{ xworkmate_bridge_service_group }}
+WorkingDirectory={{ xworkmate_bridge_base_dir }}
+Environment="HOME=/home/{{ xworkmate_bridge_service_user }}"
+Environment="TERM=xterm-256color"
+{% for key, value in xworkmate_bridge_service_environment | dictsort %}
+{% if value | string | trim | length > 0 %}
+Environment="{{ key }}={{ value }}"
+{% endif %}
+{% endfor %}
+ExecStart={{ xworkmate_bridge_binary_path }} serve --listen {{ xworkmate_bridge_listen_addr }}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

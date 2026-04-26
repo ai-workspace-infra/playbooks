@@ -1,28 +1,28 @@
 ---
 xworkmate_bridge_service_name: xworkmate-bridge
-xworkmate_bridge_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('uTvryFvAbz6M5sRtmTaSTQY6otLZ95hneBsWqXu+35I=', true), true) }}"
+xworkmate_bridge_service_user: ubuntu
+xworkmate_bridge_service_group: ubuntu
+xworkmate_bridge_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true), true) }}"
 xworkmate_bridge_listen_host: 127.0.0.1
 xworkmate_bridge_listen_port: 8787
-xworkmate_bridge_container_port: 8787
-xworkmate_bridge_listen_addr: "0.0.0.0:{{ xworkmate_bridge_container_port }}"
-xworkmate_bridge_container_name: xworkmate-bridge-managed
+xworkmate_bridge_listen_addr: "{{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}"
 xworkmate_bridge_base_dir: /opt/cloud-neutral/xworkmate-bridge
-xworkmate_bridge_compose_file: "{{ xworkmate_bridge_base_dir }}/docker-compose.yml"
 xworkmate_bridge_config_file: "{{ xworkmate_bridge_base_dir }}/config.yaml"
-xworkmate_bridge_project_name: xworkmate-bridge
-service_compose_image: "{{ lookup('ansible.builtin.env', 'SERVICE_COMPOSE_IMAGE') | default('', true) }}"
-service_compose_registry_server: "{{ lookup('ansible.builtin.env', 'GHCR_REGISTRY') | default('ghcr.io', true) }}"
-service_compose_registry_username: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') | default('', true) }}"
-service_compose_registry_password: "{{ lookup('ansible.builtin.env', 'GHCR_PASSWORD') | default(lookup('ansible.builtin.env', 'GHCR_TOKEN') | default('', true), true) }}"
-xworkmate_bridge_container_env:
+xworkmate_bridge_binary_path: /usr/local/bin/xworkmate-go-core
+xworkmate_bridge_systemd_unit_path: "/etc/systemd/system/{{ xworkmate_bridge_service_name }}.service"
+xworkmate_bridge_runtime_image_ref: "{{ lookup('ansible.builtin.env', 'SERVICE_COMPOSE_IMAGE') | default(lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_IMAGE') | default('', true), true) }}"
+xworkmate_bridge_deprecated_container_name: xworkmate-bridge-managed
+xworkmate_bridge_deprecated_compose_file: "{{ xworkmate_bridge_base_dir }}/docker-compose.yml"
+xworkmate_bridge_service_environment:
   BRIDGE_AUTH_TOKEN: "{{ xworkmate_bridge_auth_token }}"
-  BRIDGE_CONFIG_PATH: "/app/config.yaml"
-  IMAGE: "{{ service_compose_image }}"
+  BRIDGE_CONFIG_PATH: "{{ xworkmate_bridge_config_file }}"
+  IMAGE: "{{ xworkmate_bridge_runtime_image_ref }}"
 
 # ACP Deployment Flags
 deploy_acp_codex: true
 deploy_acp_opencode: true
 deploy_acp_gemini: true
+deploy_acp_hermes: true
 
 # Unified domain settings
 xworkmate_bridge_domain: xworkmate-bridge.svc.plus
@@ -67,5 +67,3 @@ xworkmate_bridge_obsolete_caddy_fragment_paths:
 
 xworkmate_bridge_packages:
   - caddy
-
-# Legacy services to clean up
