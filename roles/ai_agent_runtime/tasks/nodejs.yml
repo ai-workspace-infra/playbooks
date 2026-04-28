@@ -1,0 +1,27 @@
+---
+- name: Install Node.js role
+  ansible.builtin.include_role:
+    name: roles/vhosts/nodejs
+  vars:
+    nodejs_version: "{{ ai_agent_runtime_nodejs_version }}"
+    install_yarn: "{{ ai_agent_runtime_install_yarn }}"
+    yarn_version: "{{ ai_agent_runtime_yarn_version }}"
+
+- name: Install global npm packages for AI runtime
+  ansible.builtin.command:
+    cmd: "npm install -g {{ item }}"
+  loop: "{{ ai_agent_runtime_npm_global_packages }}"
+  when: ai_agent_runtime_npm_global_packages | length > 0
+
+- name: Configure Playwright runtime environment
+  ansible.builtin.copy:
+    dest: /etc/profile.d/ai_agent_runtime_playwright.sh
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD={{ '1' if ai_agent_runtime_playwright_skip_browser_download | bool else '0' }}
+      export PLAYWRIGHT_BROWSERS_PATH=0
+      export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH={{ ai_agent_runtime_browser_executable }}
+  become: true
+  when: ai_agent_runtime_playwright_enabled | bool

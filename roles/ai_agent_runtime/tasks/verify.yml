@@ -1,0 +1,71 @@
+---
+- name: Check node version
+  ansible.builtin.command: node --version
+  register: ai_agent_runtime_node_version
+  changed_when: false
+  when: ai_agent_runtime_nodejs_enabled | bool
+
+- name: Check npm version
+  ansible.builtin.command: npm --version
+  register: ai_agent_runtime_npm_version
+  changed_when: false
+  when: ai_agent_runtime_nodejs_enabled | bool
+
+- name: Check python version
+  ansible.builtin.command: python3 --version
+  register: ai_agent_runtime_python_version
+  changed_when: false
+  when: ai_agent_runtime_python_enabled | bool
+
+- name: Check pip version
+  ansible.builtin.command: pip3 --version
+  register: ai_agent_runtime_pip_version
+  changed_when: false
+  when: ai_agent_runtime_python_enabled | bool
+
+- name: Check chromium version
+  ansible.builtin.command: "{{ ai_agent_runtime_browser_executable }} --version"
+  register: ai_agent_runtime_chromium_version
+  changed_when: false
+  when: ai_agent_runtime_browser_enabled | bool
+
+- name: Check pandoc version
+  ansible.builtin.command: pandoc --version
+  register: ai_agent_runtime_pandoc_version
+  changed_when: false
+  when: ai_agent_runtime_docs_enabled | bool
+
+- name: Check xelatex version
+  ansible.builtin.command: xelatex --version
+  register: ai_agent_runtime_xelatex_version
+  changed_when: false
+  when: ai_agent_runtime_docs_enabled | bool
+
+- name: Check Chinese font inventory
+  ansible.builtin.command: fc-list :lang=zh family
+  register: ai_agent_runtime_chinese_fonts
+  changed_when: false
+  when:
+    - ai_agent_runtime_fonts_enabled | bool
+    - ai_agent_runtime_verify_chinese_fonts | bool
+
+- name: Assert Chinese fonts are available
+  ansible.builtin.assert:
+    that:
+      - ai_agent_runtime_chinese_fonts.stdout | length > 0
+    fail_msg: "No Chinese fonts were discovered by fontconfig."
+  when:
+    - ai_agent_runtime_fonts_enabled | bool
+    - ai_agent_runtime_verify_chinese_fonts | bool
+
+- name: Report AI runtime versions
+  ansible.builtin.debug:
+    msg:
+      node: "{{ ai_agent_runtime_node_version.stdout | default('disabled') }}"
+      npm: "{{ ai_agent_runtime_npm_version.stdout | default('disabled') }}"
+      python3: "{{ ai_agent_runtime_python_version.stdout | default('disabled') }}"
+      pip3: "{{ ai_agent_runtime_pip_version.stdout | default('disabled') }}"
+      chromium: "{{ ai_agent_runtime_chromium_version.stdout | default('disabled') }}"
+      pandoc: "{{ (ai_agent_runtime_pandoc_version.stdout_lines | default(['disabled']))[0] }}"
+      xelatex: "{{ (ai_agent_runtime_xelatex_version.stdout_lines | default(['disabled']))[0] }}"
+      chinese_font_count: "{{ (ai_agent_runtime_chinese_fonts.stdout_lines | default([])) | length }}"

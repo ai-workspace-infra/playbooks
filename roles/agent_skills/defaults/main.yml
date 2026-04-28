@@ -1,0 +1,38 @@
+---
+agent_skills_user: ubuntu
+agent_skills_group: "{{ agent_skills_user }}"
+agent_skills_home: "/home/{{ agent_skills_user }}"
+
+agent_skills_local_source_dir: "{{ lookup('ansible.builtin.env', 'HOME') }}/.agents/skills"
+agent_skills_remote_dir: "{{ agent_skills_home }}/.agents/skills"
+agent_skills_delete_removed: true
+agent_skills_rsync_compress: false
+agent_skills_rsync_timeout: 120
+agent_skills_install_rsync: true
+agent_skills_replace_existing_target_dirs: false
+agent_skills_rsync_excludes:
+  - .DS_Store
+  - .venv/
+  - __pycache__/
+  - "*.pyc"
+agent_skills_rsync_extra_opts:
+  - "--delete-excluded"
+  - "--out-format=<<CHANGED>>%i"
+
+agent_skills_targets:
+  - name: codex
+    paths:
+      - "{{ agent_skills_home }}/.codex/skills"
+  - name: gemini
+    paths:
+      - "{{ agent_skills_home }}/.gemini/skills"
+  - name: opencode
+    paths:
+      - "{{ agent_skills_home }}/.opencode/skills"
+      - "{{ agent_skills_home }}/.config/opencode/skills"
+  - name: hermers
+    paths:
+      - "{{ agent_skills_home }}/.hermers/skills"
+  - name: openclaw
+    paths:
+      - "{{ agent_skills_home }}/.openclaw/skills"

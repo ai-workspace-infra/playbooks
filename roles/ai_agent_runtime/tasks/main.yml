@@ -1,0 +1,46 @@
+---
+- name: Assert AI agent runtime is only supported on Debian family
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == "Debian"
+    fail_msg: "roles/ai_agent_runtime currently supports Debian-based hosts only."
+
+- name: Install AI agent runtime base packages
+  ansible.builtin.apt:
+    name: "{{ ai_agent_runtime_base_packages }}"
+    state: present
+    update_cache: true
+    install_recommends: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+
+- name: Configure Node.js runtime
+  ansible.builtin.include_tasks: nodejs.yml
+  when: ai_agent_runtime_nodejs_enabled | bool
+
+- name: Configure Python runtime
+  ansible.builtin.include_tasks: python.yml
+  when: ai_agent_runtime_python_enabled | bool
+
+- name: Configure browser runtime
+  ansible.builtin.include_tasks: browser.yml
+  when: ai_agent_runtime_browser_enabled | bool
+
+- name: Configure document runtime
+  ansible.builtin.include_tasks: docs.yml
+  when: ai_agent_runtime_docs_enabled | bool
+
+- name: Configure font runtime
+  ansible.builtin.include_tasks: fonts.yml
+  when: ai_agent_runtime_fonts_enabled | bool
+
+- name: Configure shared agent skills
+  ansible.builtin.include_role:
+    name: "{{ ai_agent_runtime_skills_role_name }}"
+  when: ai_agent_runtime_skills_enabled | bool
+
+- name: Verify AI agent runtime
+  ansible.builtin.include_tasks: verify.yml
+  when: ai_agent_runtime_verify_enabled | bool

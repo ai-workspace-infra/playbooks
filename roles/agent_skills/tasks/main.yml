@@ -1,0 +1,166 @@
+---
+- name: Validate agent skills sync input
+  ansible.builtin.assert:
+    that:
+      - agent_skills_user | length > 0
+      - agent_skills_group | length > 0
+      - agent_skills_home | length > 0
+      - agent_skills_local_source_dir | length > 0
+      - agent_skills_remote_dir | length > 0
+      - agent_skills_targets | length > 0
+    fail_msg: "agent_skills_user, home, source, remote dir, and targets must be set."
+
+- name: Inspect local agent skills source directory
+  ansible.builtin.stat:
+    path: "{{ agent_skills_local_source_dir }}"
+  register: agent_skills_local_source
+  delegate_to: localhost
+  become: false
+
+- name: Assert local agent skills source directory exists
+  ansible.builtin.assert:
+    that:
+      - agent_skills_local_source.stat.isdir | default(false)
+    fail_msg: "Local skills source directory does not exist: {{ agent_skills_local_source_dir }}"
+
+- name: Detect local top-level symlink skills
+  ansible.builtin.find:
+    paths: "{{ agent_skills_local_source_dir }}"
+    file_type: link
+    recurse: false
+  register: agent_skills_local_symlinks
+  delegate_to: localhost
+  become: false
+
+- name: Build rsync excludes for local symlink skills
+  ansible.builtin.set_fact:
+    agent_skills_local_symlink_excludes: >-
+      {{
+        agent_skills_local_symlinks.files
+        | map(attribute='path')
+        | map('basename')
+        | list
+      }}
+
+- name: Install rsync for agent skills sync
+  ansible.builtin.apt:
+    name: rsync
+    state: present
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  when: agent_skills_install_rsync | bool
+
+- name: Ensure agent skills owner home exists
+  ansible.builtin.file:
+    path: "{{ agent_skills_home }}"
+    state: directory
+    owner: "{{ agent_skills_user }}"
+    group: "{{ agent_skills_group }}"
+    mode: "0755"
+
+- name: Ensure canonical agent skills directory exists
+  ansible.builtin.file:
+    path: "{{ agent_skills_remote_dir }}"
+    state: directory
+    owner: "{{ agent_skills_user }}"
+    group: "{{ agent_skills_group }}"
+    mode: "0755"
+
+- name: Sync local agent skills into canonical directory
+  ansible.posix.synchronize:
+    src: "{{ agent_skills_local_source_dir }}/"
+    dest: "{{ agent_skills_remote_dir }}/"
+    archive: true
+    compress: "{{ agent_skills_rsync_compress | bool }}"
+    delete: "{{ agent_skills_delete_removed | bool }}"
+    partial: true
+    rsync_timeout: "{{ agent_skills_rsync_timeout }}"
+    rsync_opts: >-
+      {{
+        ((agent_skills_rsync_excludes + agent_skills_local_symlink_excludes) | map('regex_replace', '^(.*)$', '--exclude=\1') | list)
+        + agent_skills_rsync_extra_opts
+      }}
+  delegate_to: localhost
+  become: false
+
+- name: Set canonical agent skills ownership
+  ansible.builtin.file:
+    path: "{{ agent_skills_remote_dir }}"
+    state: directory
+    owner: "{{ agent_skills_user }}"
+    group: "{{ agent_skills_group }}"
+    recurse: true
+
+- name: Flatten agent skills target paths
+  ansible.builtin.set_fact:
+    agent_skills_target_paths: "{{ agent_skills_targets | subelements('paths') | map('last') | list }}"
+
+- name: Inspect agent skills target paths
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: agent_skills_target_path_stats
+  loop: "{{ agent_skills_target_paths }}"
+
+- name: Reject existing non-link target directories unless replacement is enabled
+  ansible.builtin.fail:
+    msg: >-
+      Agent skills target already exists and is not a symlink: {{ item.item }}.
+      Set agent_skills_replace_existing_target_dirs=true if this path should be
+      replaced with a link to {{ agent_skills_remote_dir }}.
+  loop: "{{ agent_skills_target_path_stats.results }}"
+  when:
+    - item.stat.exists | default(false)
+    - not item.stat.islnk | default(false)
+    - not agent_skills_replace_existing_target_dirs | bool
+
+- name: Replace existing non-link target directories when enabled
+  ansible.builtin.file:
+    path: "{{ item.item }}"
+    state: absent
+  loop: "{{ agent_skills_target_path_stats.results }}"
+  when:
+    - item.stat.exists | default(false)
+    - not item.stat.islnk | default(false)
+    - agent_skills_replace_existing_target_dirs | bool
+
+- name: Ensure agent skills target parent directories exist
+  ansible.builtin.file:
+    path: "{{ item | dirname }}"
+    state: directory
+    owner: "{{ agent_skills_user }}"
+    group: "{{ agent_skills_group }}"
+    mode: "0755"
+  loop: "{{ agent_skills_target_paths }}"
+
+- name: Link agent skills targets to canonical directory
+  ansible.builtin.file:
+    src: "{{ agent_skills_remote_dir }}"
+    dest: "{{ item }}"
+    state: link
+    owner: "{{ agent_skills_user }}"
+    group: "{{ agent_skills_group }}"
+    force: true
+  loop: "{{ agent_skills_target_paths }}"
+
+- name: Verify canonical skill manifests are present
+  ansible.builtin.find:
+    paths: "{{ agent_skills_remote_dir }}"
+    patterns: SKILL.md
+    recurse: true
+    file_type: file
+  register: agent_skills_manifest_files
+
+- name: Assert synced agent skills contain manifests
+  ansible.builtin.assert:
+    that:
+      - agent_skills_manifest_files.matched | int > 0
+    fail_msg: "No SKILL.md files found under {{ agent_skills_remote_dir }} after sync."
+
+- name: Report synced agent skills
+  ansible.builtin.debug:
+    msg: >-
+      Synced {{ agent_skills_manifest_files.matched }} skill manifests into
+      {{ agent_skills_remote_dir }} and linked {{ agent_skills_target_paths | length }}
+      agent target directories.
