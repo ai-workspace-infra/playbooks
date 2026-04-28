@@ -14,7 +14,6 @@ This role only:
 It does not manage:
 
 - Desktop user passwords
-- `~/.xsession`
 - XFCE tuning or session cleanup
 - UFW rules, unless they are enabled through the package-only install path
 
@@ -43,3 +42,4 @@ The default package list is intentionally small:
 
 - If the host has just reinstalled `xrdp`, the role now checks for systemd unit files and runs `daemon-reload` before starting services.
 - If the service units are still missing after install, the role fails with a clear message so the packaging issue can be fixed first.
+- The role now writes `~/.xsession` for the target user and starts XFCE under `dbus-launch` so the RDP session keeps a usable desktop shell on Ubuntu.
