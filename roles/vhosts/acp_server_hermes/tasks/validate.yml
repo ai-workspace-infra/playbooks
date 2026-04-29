@@ -15,6 +15,32 @@
     status_code: [204, 405]
   register: acp_hermes_bridge_http
 
+- name: Validate local Hermes ACP capabilities contract
+  ansible.builtin.uri:
+    url: "http://{{ acp_hermes_listen_host }}:{{ acp_hermes_listen_port }}/acp/rpc"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ acp_hermes_effective_auth_token | default(acp_hermes_auth_token) }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: "validate-hermes-capabilities"
+      method: acp.capabilities
+      params: {}
+    return_content: true
+    status_code: 200
+  register: acp_hermes_capabilities
+  changed_when: false
+  no_log: true
+
+- name: Assert local Hermes ACP capabilities expose Hermes provider
+  ansible.builtin.assert:
+    that:
+      - acp_hermes_capabilities.status == 200
+      - acp_hermes_capabilities.json.result.provider.id | default('') == "hermes"
+      - "'hermes' in (acp_hermes_capabilities.json.result.providers | default([]))"
+
 - name: Show Hermes ACP adapter status
   ansible.builtin.command: systemctl status "{{ acp_hermes_service_name }}" --no-pager
   register: acp_hermes_status
@@ -31,4 +57,5 @@
       - "Service: {{ acp_hermes_status.stdout | default('N/A') }}"
       - "Socket: {{ acp_hermes_ss.stdout | default('N/A') }}"
       - "Adapter preflight status: {{ acp_hermes_bridge_http.status | default('N/A') }}"
+      - "Adapter capabilities status: {{ acp_hermes_capabilities.status | default('N/A') }}"
       - "Adapter preflight allow-origin: {{ acp_hermes_bridge_http.access_control_allow_origin | default('N/A') }}"

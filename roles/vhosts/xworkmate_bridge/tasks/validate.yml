@@ -81,6 +81,46 @@
       - xworkmate_bridge_capabilities.json.result.providerCatalog | selectattr('providerId', 'equalto', 'hermes') | list | length == 1
       - xworkmate_bridge_capabilities.json.result.gatewayProviders | selectattr('providerId', 'equalto', 'openclaw') | list | length == 1
 
+- name: Check Hermes empty-output failure remains structured
+  ansible.builtin.uri:
+    url: "https://{{ xworkmate_bridge_service_domain }}/acp/rpc"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: "validate-session-hermes-empty-output-contract"
+      method: session.start
+      params:
+        sessionId: "validate-hermes-empty-output"
+        threadId: "validate-hermes-empty-output"
+        taskPrompt: "Reply with exactly pong"
+        workingDirectory: "/tmp"
+        provider: hermes
+        routing:
+          routingMode: explicit
+          explicitExecutionTarget: agent
+          explicitProviderId: hermes
+        executionTarget: agent
+    return_content: true
+    status_code: 200
+  register: xworkmate_bridge_hermes_session
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Assert Hermes empty-output failure includes provider diagnostics
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_hermes_session.status == 200
+      - xworkmate_bridge_hermes_session.json.result.success == false
+      - xworkmate_bridge_hermes_session.json.result.provider == "hermes"
+      - xworkmate_bridge_hermes_session.json.result.status == "failed"
+      - xworkmate_bridge_hermes_session.json.result.unavailableCode == "PROVIDER_EMPTY_RESPONSE"
+      - xworkmate_bridge_hermes_session.json.result.upstreamMethod == "session/prompt"
+
 - name: Check xworkmate-bridge routing resolve contract
   ansible.builtin.uri:
     url: "https://{{ xworkmate_bridge_service_domain }}/acp/rpc"
