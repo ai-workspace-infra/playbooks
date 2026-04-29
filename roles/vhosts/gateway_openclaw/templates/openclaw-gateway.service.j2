@@ -1,0 +1,26 @@
+[Unit]
+Description=OpenClaw Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ gateway_openclaw_service_user }}
+Group={{ gateway_openclaw_service_group }}
+WorkingDirectory={{ gateway_openclaw_home }}
+Environment=HOME={{ gateway_openclaw_home }}
+Environment=TERM=xterm-256color
+Environment=PATH={{ gateway_openclaw_service_path }}
+Environment=OPENCLAW_GATEWAY_PORT={{ gateway_openclaw_upstream_port }}
+Environment=OPENCLAW_NO_RESPAWN=1
+Environment=NODE_COMPILE_CACHE={{ gateway_openclaw_compile_cache_dir }}
+{% if gateway_openclaw_minimal_gateway_enabled | bool %}
+Environment=OPENCLAW_TEST_MINIMAL_GATEWAY=1
+Environment=VITEST=1
+{% endif %}
+ExecStart={{ gateway_openclaw_binary_path }} gateway run --port {{ gateway_openclaw_upstream_port }} --force
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

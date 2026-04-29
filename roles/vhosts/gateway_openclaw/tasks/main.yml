@@ -1,7 +1,144 @@
 ---
+- name: Assert OpenClaw gateway secrets are provided
+  ansible.builtin.assert:
+    that:
+      - gateway_openclaw_gateway_token | trim | length > 0
+      - gateway_openclaw_ollama_api_key | trim | length > 0
+    fail_msg: >-
+      gateway_openclaw_gateway_token and gateway_openclaw_ollama_api_key are
+      required. Pass them with -e; do not commit them into inventory/defaults.
+  no_log: true
+
+- name: Ensure OpenClaw gateway config directory exists
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_config_path | dirname }}"
+    state: directory
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0700"
+
+- name: Ensure OpenClaw workspace directory exists
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_workspace_path }}"
+    state: directory
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "{{ gateway_openclaw_workspace_mode }}"
+
+- name: Ensure OpenClaw compile cache directory exists
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_compile_cache_dir }}"
+    state: directory
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0755"
+
+- name: Deploy OpenClaw gateway JSON config
+  ansible.builtin.template:
+    src: openclaw.json.j2
+    dest: "{{ gateway_openclaw_config_path }}"
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0600"
+  diff: false
+  notify: Restart openclaw gateway
+
+- name: Inspect OpenClaw package manifest
+  ansible.builtin.stat:
+    path: "{{ gateway_openclaw_install_dir }}/package.json"
+  register: gateway_openclaw_package_manifest
+
+- name: Ensure OpenClaw package install directory is owned by service user
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_install_dir }}"
+    state: directory
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    recurse: true
+  when:
+    - gateway_openclaw_package_manifest.stat.exists | default(false)
+
+- name: Repair OpenClaw package runtime dependencies as service user
+  ansible.builtin.command:
+    cmd: npm install --omit=dev --no-audit --no-fund --prefix "{{ gateway_openclaw_install_dir }}"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_package_deps
+  changed_when: >-
+    'added ' in (gateway_openclaw_package_deps.stdout | default('')) or
+    'removed ' in (gateway_openclaw_package_deps.stdout | default('')) or
+    'changed ' in (gateway_openclaw_package_deps.stdout | default(''))
+  when:
+    - gateway_openclaw_package_manifest.stat.exists | default(false)
+    - not ansible_check_mode
+
+- name: Inspect OpenClaw extension package manifests
+  ansible.builtin.stat:
+    path: "{{ item }}/package.json"
+  register: gateway_openclaw_extension_manifests
+  loop: "{{ gateway_openclaw_extension_dependency_dirs }}"
+
+- name: Repair OpenClaw extension runtime dependencies as service user
+  ansible.builtin.command:
+    cmd: npm install --omit=dev --no-audit --no-fund --prefix "{{ item.item }}"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_extension_deps
+  changed_when: >-
+    'added ' in (gateway_openclaw_extension_deps.stdout | default('')) or
+    'removed ' in (gateway_openclaw_extension_deps.stdout | default('')) or
+    'changed ' in (gateway_openclaw_extension_deps.stdout | default(''))
+  loop: "{{ gateway_openclaw_extension_manifests.results }}"
+  when:
+    - item.stat.exists | default(false)
+    - not ansible_check_mode
+
+- name: Inspect OpenClaw gateway systemd unit attributes
+  ansible.builtin.command:
+    cmd: lsattr "{{ gateway_openclaw_service_unit_path }}"
+  register: gateway_openclaw_unit_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from OpenClaw gateway systemd unit when present
+  ansible.builtin.command:
+    cmd: chattr -i "{{ gateway_openclaw_service_unit_path }}"
+  when:
+    - "'i' in (gateway_openclaw_unit_attrs.stdout | default(''))"
+  changed_when: true
+
+- name: Deploy OpenClaw gateway systemd unit
+  ansible.builtin.template:
+    src: openclaw-gateway.service.j2
+    dest: "{{ gateway_openclaw_service_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart openclaw gateway
+
+- name: Restore immutable flag on OpenClaw gateway systemd unit
+  ansible.builtin.command:
+    cmd: chattr +i "{{ gateway_openclaw_service_unit_path }}"
+  when:
+    - "'i' in (gateway_openclaw_unit_attrs.stdout | default(''))"
+    - not ansible_check_mode
+  changed_when: true
+
 - name: Ensure Caddy fragment directory exists
   ansible.builtin.file:
-    path: "{{ xworkmate_bridge_caddy_conf_dir }}"
+    path: "{{ gateway_openclaw_caddy_conf_dir }}"
     state: directory
     owner: root
     group: root
@@ -9,22 +146,22 @@
 
 - name: Inspect Caddy main file attributes
   ansible.builtin.command:
-    cmd: lsattr "{{ xworkmate_bridge_caddyfile_path }}"
-  register: xworkmate_bridge_caddyfile_attrs
+    cmd: lsattr "{{ gateway_openclaw_caddyfile_path }}"
+  register: gateway_openclaw_caddyfile_attrs
   changed_when: false
   failed_when: false
 
 - name: Remove immutable flag from Caddy main file when present
   ansible.builtin.command:
-    cmd: chattr -i "{{ xworkmate_bridge_caddyfile_path }}"
+    cmd: chattr -i "{{ gateway_openclaw_caddyfile_path }}"
   when:
-    - "'i' in (xworkmate_bridge_caddyfile_attrs.stdout | default(''))"
+    - "'i' in (gateway_openclaw_caddyfile_attrs.stdout | default(''))"
   changed_when: true
 
-- name: Ensure ACP Caddy import is present in main file
+- name: Ensure Caddy imports managed fragments
   ansible.builtin.lineinfile:
-    path: "{{ xworkmate_bridge_caddyfile_path }}"
-    line: "import {{ xworkmate_bridge_caddy_conf_dir }}/*.caddy"
+    path: "{{ gateway_openclaw_caddyfile_path }}"
+    line: "import {{ gateway_openclaw_caddy_conf_dir }}/*.caddy"
     insertafter: EOF
     create: true
     owner: root
@@ -35,47 +172,42 @@
 
 - name: Restore immutable flag on Caddy main file
   ansible.builtin.command:
-    cmd: chattr +i "{{ xworkmate_bridge_caddyfile_path }}"
+    cmd: chattr +i "{{ gateway_openclaw_caddyfile_path }}"
   when:
-    - "'i' in (xworkmate_bridge_caddyfile_attrs.stdout | default(''))"
+    - "'i' in (gateway_openclaw_caddyfile_attrs.stdout | default(''))"
+    - not ansible_check_mode
   changed_when: true
 
-- name: Inspect xworkmate-bridge Caddy fragment attributes
+- name: Inspect OpenClaw Caddy fragment attributes
   ansible.builtin.command:
-    cmd: lsattr "{{ xworkmate_bridge_service_caddy_fragment_path }}"
-  register: xworkmate_bridge_site_fragment_attrs
+    cmd: lsattr "{{ gateway_openclaw_caddy_fragment_path }}"
+  register: gateway_openclaw_caddy_fragment_attrs
   changed_when: false
   failed_when: false
 
-- name: Remove immutable flag from xworkmate-bridge Caddy fragment when present
+- name: Remove immutable flag from OpenClaw Caddy fragment when present
   ansible.builtin.command:
-    cmd: chattr -i "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+    cmd: chattr -i "{{ gateway_openclaw_caddy_fragment_path }}"
   when:
-    - "'i' in (xworkmate_bridge_site_fragment_attrs.stdout | default(''))"
+    - "'i' in (gateway_openclaw_caddy_fragment_attrs.stdout | default(''))"
   changed_when: true
 
-- name: Deploy xworkmate-bridge public Caddy site
+- name: Deploy OpenClaw public Caddy site
   ansible.builtin.template:
-    src: xworkmate-bridge-site.caddy.j2
-    dest: "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+    src: openclaw.svc.plus.caddy.j2
+    dest: "{{ gateway_openclaw_caddy_fragment_path }}"
     owner: root
     group: root
     mode: "0644"
   notify: Reload caddy
 
-- name: Restore immutable flag on xworkmate-bridge Caddy fragment
+- name: Restore immutable flag on OpenClaw Caddy fragment
   ansible.builtin.command:
-    cmd: chattr +i "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+    cmd: chattr +i "{{ gateway_openclaw_caddy_fragment_path }}"
   when:
-    - "'i' in (xworkmate_bridge_site_fragment_attrs.stdout | default(''))"
+    - "'i' in (gateway_openclaw_caddy_fragment_attrs.stdout | default(''))"
+    - not ansible_check_mode
   changed_when: true
-
-- name: Remove deprecated ACP Caddy fragments
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
-  notify: Reload caddy
 
 - name: Ensure Caddy is enabled and running
   ansible.builtin.systemd:

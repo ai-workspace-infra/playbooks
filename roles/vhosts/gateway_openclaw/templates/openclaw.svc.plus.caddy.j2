@@ -1,0 +1,34 @@
+{{ gateway_openclaw_domain }} {
+	@maps path *.map
+	respond @maps 404
+
+	header {
+		-X-Forwarded-For
+		-X-Forwarded-Proto
+		-X-Forwarded-Host
+		-X-Real-IP
+	}
+
+	reverse_proxy {{ gateway_openclaw_upstream_host }}:{{ gateway_openclaw_upstream_port }} {
+		header_up Authorization "Bearer {$OPENCLAW_GATEWAY_TOKEN}"
+		header_up Host {http.request.host}
+		header_up X-Forwarded-Proto {http.request.scheme}
+		header_up X-Forwarded-Host {http.request.host}
+		flush_interval -1
+	}
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+
+	log {
+		output file {{ gateway_openclaw_access_log_path }} {
+			roll_size 50MiB
+			roll_keep 10
+			roll_keep_for 720h
+		}
+	}
+}

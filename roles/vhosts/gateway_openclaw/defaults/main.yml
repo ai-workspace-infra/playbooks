@@ -1,23 +1,46 @@
 ---
-xworkmate_bridge_caddyfile_path: /etc/caddy/Caddyfile
-xworkmate_bridge_caddy_conf_dir: /etc/caddy/conf.d
-xworkmate_bridge_service_caddy_fragment_path: /etc/caddy/conf.d/xworkmate-bridge.caddy
-xworkmate_bridge_domain: xworkmate-bridge.svc.plus
-xworkmate_bridge_public_base_url: https://xworkmate-bridge.svc.plus
+gateway_openclaw_service_user: ubuntu
+gateway_openclaw_service_group: ubuntu
 
-xworkmate_bridge_codex_upstream_host: 127.0.0.1
-xworkmate_bridge_codex_upstream_port: 9001
-xworkmate_bridge_opencode_upstream_host: 127.0.0.1
-xworkmate_bridge_opencode_upstream_port: 3910
-xworkmate_bridge_gemini_upstream_host: 127.0.0.1
-xworkmate_bridge_gemini_upstream_port: 8791
-xworkmate_bridge_openclaw_upstream_host: 127.0.0.1
-xworkmate_bridge_openclaw_upstream_port: 18789
+gateway_openclaw_domain: openclaw.svc.plus
+gateway_openclaw_caddyfile_path: /etc/caddy/Caddyfile
+gateway_openclaw_caddy_conf_dir: /etc/caddy/conf.d
+gateway_openclaw_caddy_fragment_path: "/etc/caddy/conf.d/{{ gateway_openclaw_domain }}.caddy"
+gateway_openclaw_access_log_path: /var/log/caddy/clawdbot.access.log
 
-xworkmate_bridge_obsolete_caddy_fragment_paths:
-  - /etc/caddy/conf.d/acp-server.caddy
-  - /etc/caddy/conf.d/acp-server-codex.caddy
-  - /etc/caddy/conf.d/acp-server-opencode.caddy
-  - /etc/caddy/conf.d/acp-server-gemini.caddy
-  - /etc/caddy/conf.d/acp-server-bridge.caddy
-  - /etc/caddy/conf.d/acp-server-bridge-server.caddy
+gateway_openclaw_service_name: openclaw-gateway
+gateway_openclaw_service_unit_path: "/etc/systemd/system/{{ gateway_openclaw_service_name }}.service"
+gateway_openclaw_binary_path: /usr/lib/node_modules/openclaw/openclaw.mjs
+gateway_openclaw_install_dir: /usr/lib/node_modules/openclaw
+gateway_openclaw_extension_dependency_dirs:
+  - /usr/lib/node_modules/openclaw/dist/extensions/acpx
+gateway_openclaw_home: "/home/{{ gateway_openclaw_service_user }}"
+gateway_openclaw_config_path: "{{ gateway_openclaw_home }}/.openclaw/openclaw.json"
+gateway_openclaw_workspace_path: "{{ gateway_openclaw_home }}/.openclaw/workspace"
+gateway_openclaw_workspace_mode: "0775"
+gateway_openclaw_compile_cache_dir: /var/tmp/openclaw-compile-cache
+gateway_openclaw_service_path: "{{ gateway_openclaw_home }}/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin"
+
+gateway_openclaw_upstream_host: 127.0.0.1
+gateway_openclaw_upstream_port: 18789
+gateway_openclaw_bind: loopback
+gateway_openclaw_mode: local
+gateway_openclaw_auth_mode: token
+gateway_openclaw_gateway_token: ""
+gateway_openclaw_trusted_proxies:
+  - 127.0.0.1
+  - "::1"
+gateway_openclaw_allowed_origins:
+  - https://openclaw.svc.plus
+  - https://jp-xhttp-contabo.svc.plus
+gateway_openclaw_minimal_gateway_enabled: true
+
+gateway_openclaw_acp_enabled: false
+gateway_openclaw_acp_backend: acpx
+gateway_openclaw_acp_default_agent: codex
+gateway_openclaw_codex_app_server_url: ws://127.0.0.1:9001
+
+gateway_openclaw_default_primary_model: glm-5.1:cloud
+gateway_openclaw_main_agent_model: ollama/minimax-m2.7:cloud
+gateway_openclaw_ollama_api_key: ""
+gateway_openclaw_model_provider_base_url: https://ollama.com
