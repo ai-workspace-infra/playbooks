@@ -5,11 +5,27 @@ agent_skills_home: "/home/{{ agent_skills_user }}"
 
 agent_skills_local_source_dir: "{{ lookup('ansible.builtin.env', 'HOME') }}/.agents/skills"
 agent_skills_remote_dir: "{{ agent_skills_home }}/.agents/skills"
+agent_skills_local_source_create: true
 agent_skills_delete_removed: true
 agent_skills_rsync_compress: false
 agent_skills_rsync_timeout: 120
 agent_skills_install_rsync: true
 agent_skills_replace_existing_target_dirs: false
+agent_skills_auto_install_enabled: true
+agent_skills_auto_install_fail_on_missing_installer: true
+agent_skills_quality_gate_enabled: true
+agent_skills_quality_gate_fail_on_error: true
+agent_skills_quality_gate_commands:
+  - name: skill-vetter
+    argv_prefix:
+      - skill-vetter
+  - name: skills-security-check
+    argv_prefix:
+      - skills-security-check
+  - name: self-improving
+    argv_prefix:
+      - self-improving
+      - inspect
 agent_skills_rsync_excludes:
   - .DS_Store
   - .venv/
@@ -18,6 +34,80 @@ agent_skills_rsync_excludes:
 agent_skills_rsync_extra_opts:
   - "--delete-excluded"
   - "--out-format=<<CHANGED>>%i"
+
+agent_skills_typical_scenario_skills:
+  - name: pptx
+    scenario_groups: [local-document-artifacts]
+    aliases: [pptx]
+    source: local-or-clawhub
+  - name: docx
+    scenario_groups: [local-document-artifacts]
+    aliases: [docx]
+    source: local-or-clawhub
+  - name: xlsx
+    scenario_groups: [local-document-artifacts]
+    aliases: [xlsx]
+    source: local-or-clawhub
+  - name: pdf
+    scenario_groups: [local-document-artifacts]
+    aliases: [pdf]
+    source: local-or-clawhub
+  - name: image-resizer
+    scenario_groups: [local-image-processing]
+    aliases: [image-resizer]
+    source: clawhub
+  - name: browser-automation
+    scenario_groups: [local-browser-automation]
+    aliases: [browser-automation]
+    source: clawhub
+  - name: image-cog
+    scenario_groups: [online-image-generation]
+    aliases: [image-cog]
+    source: acp-descriptor
+  - name: image-video-generation-editting
+    scenario_groups: [online-image-video-editing]
+    aliases:
+      - image-video-generation-editting
+      - wan-image-video-generation-editting
+    source: acp-descriptor
+  - name: video-translator
+    scenario_groups: [online-video-translation]
+    aliases: [video-translator]
+    source: acp-descriptor
+  - name: web-search
+    scenario_groups: [online-news-fetch, online-search]
+    aliases:
+      - web-search
+      - search
+      - autoglm-websearch
+    source: clawhub
+  - name: news-fetch
+    scenario_groups: [online-news-fetch]
+    aliases:
+      - news-fetch
+      - blogwatcher
+    source: clawhub
+  - name: find-skills
+    scenario_groups: [skill-maintenance, online-news-fetch, online-search]
+    aliases: [find-skills]
+    source: local-or-clawhub
+  - name: self-improving
+    scenario_groups: [skill-maintenance]
+    aliases:
+      - self-improving
+      - self-improving-1.1.3
+    source: local-or-clawhub
+  - name: skill-vetter
+    scenario_groups: [skill-maintenance]
+    aliases:
+      - skill-vetter
+      - skill-vetter-1.0.0
+    source: local-or-clawhub
+  - name: skills-security-check
+    scenario_groups: [skill-maintenance]
+    aliases: [skills-security-check]
+    source: local-or-clawhub
+agent_skills_extra_required_skills: []
 
 agent_skills_targets:
   - name: codex
