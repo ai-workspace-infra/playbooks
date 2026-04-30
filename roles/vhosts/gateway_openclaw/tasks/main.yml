@@ -163,9 +163,7 @@
     owner: root
     group: root
     mode: "0644"
-  notify:
-    - Reload systemd
-    - Restart openclaw gateway
+  register: gateway_openclaw_service_unit
 
 - name: Restore immutable flag on OpenClaw gateway systemd unit
   ansible.builtin.command:
@@ -174,6 +172,20 @@
     - "'i' in (gateway_openclaw_unit_attrs.stdout | default(''))"
     - not ansible_check_mode
   changed_when: true
+
+- name: Reload systemd manager configuration for OpenClaw gateway
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - not ansible_check_mode
+
+- name: Ensure OpenClaw gateway service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ gateway_openclaw_service_name }}"
+    enabled: true
+    state: "{{ 'restarted' if (gateway_openclaw_service_unit.changed | default(false)) else 'started' }}"
+  when:
+    - not ansible_check_mode
 
 - name: Ensure Caddy fragment directory exists
   ansible.builtin.file:
