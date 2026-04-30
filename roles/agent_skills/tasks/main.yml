@@ -79,7 +79,8 @@
     install_rc=1
     if command -v clawhub >/dev/null 2>&1; then
       for install_name in {{ ([item.install_name | default(item.name)] + (item.aliases | default([]))) | unique | map('quote') | join(' ') }}; do
-        if clawhub --workdir "$target_parent" --dir "$target_base" --no-input install {{ (item.install_force | default(false) | bool) | ternary('--force', '') }} "$install_name"; then
+        if clawhub --workdir "$target_parent" --dir "$target_base" --no-input install \
+          {{ (item.install_force | default(false) | bool) | ternary('--force', '') }} "$install_name"; then
           install_rc=0
           break
         fi
@@ -104,6 +105,8 @@
   loop: "{{ agent_skills_missing_entries }}"
   loop_control:
     label: "{{ item.name }}"
+  register: agent_skills_install_result
+  changed_when: agent_skills_install_result.rc == 0
   delegate_to: localhost
   become: false
   when:
@@ -243,19 +246,36 @@
     mode: "0755"
 
 - name: Sync local agent skills into canonical directory
-  ansible.posix.synchronize:
-    src: "{{ agent_skills_local_source_dir }}/"
-    dest: "{{ agent_skills_remote_dir }}/"
-    archive: true
-    compress: "{{ agent_skills_rsync_compress | bool }}"
-    delete: "{{ agent_skills_delete_removed | bool }}"
-    partial: true
-    rsync_timeout: "{{ agent_skills_rsync_timeout }}"
-    rsync_opts: >-
+  ansible.builtin.command:
+    argv: >-
       {{
-        ((agent_skills_rsync_excludes + agent_skills_local_symlink_excludes) | map('regex_replace', '^(.*)$', '--exclude=\1') | list)
+        [
+          'rsync',
+          '-a',
+          '--partial',
+          '--timeout=' ~ (agent_skills_rsync_timeout | string)
+        ]
+        + (['-z'] if (agent_skills_rsync_compress | bool) else [])
+        + (['--delete'] if (agent_skills_delete_removed | bool) else [])
+        + (
+          (agent_skills_rsync_excludes + agent_skills_local_symlink_excludes)
+          | map('regex_replace', '^(.*)$', '--exclude=\1')
+          | list
+        )
         + agent_skills_rsync_extra_opts
+        + [
+          '-e',
+          'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null',
+          agent_skills_local_source_dir ~ '/',
+          (
+            ansible_user | default(ansible_ssh_user) | default('root')
+          ) ~ '@' ~ (
+            ansible_host | default(inventory_hostname)
+          ) ~ ':' ~ agent_skills_remote_dir ~ '/'
+        ]
       }}
+  register: agent_skills_rsync_result
+  changed_when: "'<<CHANGED>>' in agent_skills_rsync_result.stdout"
   delegate_to: localhost
   become: false
 
