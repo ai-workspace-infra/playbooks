@@ -18,15 +18,16 @@
       - "'/gateway/openclaw' not in xworkmate_bridge_fragment.stdout"
 
 - name: Check xworkmate-bridge systemd service status
-  ansible.builtin.command:
-    cmd: systemctl is-active "{{ xworkmate_bridge_service_name }}"
-  changed_when: false
+  ansible.builtin.systemd:
+    name: "{{ xworkmate_bridge_service_name }}"
   register: xworkmate_bridge_service_status
+  until: xworkmate_bridge_service_status.status.ActiveState | default('') == "active"
+  retries: 12
+  delay: 5
 
 - name: Check required ACP and gateway service status
-  ansible.builtin.command:
-    cmd: systemctl is-active "{{ item }}"
-  changed_when: false
+  ansible.builtin.systemd:
+    name: "{{ item }}"
   loop:
     - acp-codex
     - acp-opencode
@@ -34,6 +35,9 @@
     - acp-hermes
     - openclaw-gateway
   register: xworkmate_bridge_dependency_status
+  until: xworkmate_bridge_dependency_status.status.ActiveState | default('') == "active"
+  retries: 12
+  delay: 5
 
 - name: Check xworkmate-bridge public domain ping
   ansible.builtin.uri:
@@ -206,7 +210,7 @@
   ansible.builtin.debug:
     msg:
       - "Bridge service public base URL: {{ xworkmate_bridge_service_public_base_url }}"
-      - "Bridge service status: {{ xworkmate_bridge_service_status.stdout | default('N/A') }}"
+      - "Bridge service status: {{ xworkmate_bridge_service_status.status.ActiveState | default('N/A') }}"
       - "App-facing RPC: {{ xworkmate_bridge_service_public_base_url }}/acp/rpc"
       - "Codex upstream: {{ xworkmate_bridge_codex_rpc_url }}"
       - "OpenCode upstream: {{ xworkmate_bridge_opencode_rpc_url }}"
