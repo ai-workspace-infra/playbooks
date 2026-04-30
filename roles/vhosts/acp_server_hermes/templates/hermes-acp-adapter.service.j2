@@ -15,7 +15,9 @@ Environment=HERMES_ADAPTER_BIN={{ acp_hermes_binary_path }}
 Environment=HERMES_ADAPTER_ARGS={{ acp_hermes_args }}
 Environment=HERMES_ADAPTER_ALLOWED_ORIGINS={{ acp_hermes_allowed_origins | join(',') }}
 {% for key, value in acp_hermes_environment | dictsort %}
+{% if value | string | trim | length > 0 %}
 Environment={{ key }}={{ value }}
+{% endif %}
 {% endfor %}
 ExecStart={{ acp_hermes_bridge_binary_path }} adapter hermes --listen {{ acp_hermes_listen_host }}:{{ acp_hermes_listen_port }} --hermes-bin {{ acp_hermes_binary_path }} --hermes-args "{{ acp_hermes_args }}"
 Restart=always

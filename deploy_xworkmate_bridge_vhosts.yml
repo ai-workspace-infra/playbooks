@@ -1,4 +1,16 @@
 ---
+- import_playbook: deploy_agent_skills.yml
+
+- name: Ensure minimal XFCE XRDP desktop baseline
+  hosts: "{{ xworkmate_bridge_hosts | default('all') }}"
+  become: true
+  gather_facts: true
+  roles:
+    - role: roles/vhosts/xfce_xrdp_minimal/
+      tags: [xfce, xfce_xrdp_minimal]
+
+- import_playbook: setup-ai-agent-runtime.yml
+
 - name: Deploy ACP vhosts through xworkmate bridge
   hosts: "{{ xworkmate_bridge_hosts | default('all') }}"
   become: true
@@ -12,5 +24,7 @@
       tags: [acp_gemini]
     - role: roles/vhosts/acp_server_hermes/
       tags: [acp_hermes]
+    - role: roles/vhosts/gateway_openclaw/
+      tags: [gateway_openclaw, openclaw]
     - role: roles/vhosts/xworkmate_bridge/
       tags: [xworkmate_bridge]

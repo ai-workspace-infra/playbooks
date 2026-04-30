@@ -24,7 +24,7 @@
   when: ai_agent_runtime_python_enabled | bool
 
 - name: Check chromium version
-  ansible.builtin.command: "{{ ai_agent_runtime_browser_executable }} --version"
+  ansible.builtin.command: "{{ ai_agent_runtime_browser_resolved_executable | default(ai_agent_runtime_browser_executable) }} --version"
   register: ai_agent_runtime_chromium_version
   changed_when: false
   when: ai_agent_runtime_browser_enabled | bool

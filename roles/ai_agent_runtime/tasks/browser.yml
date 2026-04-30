@@ -9,3 +9,47 @@
     DEBIAN_FRONTEND: noninteractive
     APT_LISTCHANGES_FRONTEND: none
   become: true
+
+- name: Resolve Chromium executable
+  ansible.builtin.shell: |
+    set -eu
+    for candidate in \
+      "{{ ai_agent_runtime_browser_executable }}" \
+      chromium \
+      chromium-browser \
+      google-chrome \
+      google-chrome-stable \
+      /usr/bin/chromium \
+      /usr/local/bin/chromium \
+      /snap/bin/chromium; do
+      if command -v "$candidate" >/dev/null 2>&1; then
+        command -v "$candidate"
+        exit 0
+      fi
+      if [ -x "$candidate" ]; then
+        printf '%s\n' "$candidate"
+        exit 0
+      fi
+    done
+    exit 1
+  args:
+    executable: /bin/sh
+  register: ai_agent_runtime_browser_resolve
+  changed_when: false
+
+- name: Set resolved Chromium executable
+  ansible.builtin.set_fact:
+    ai_agent_runtime_browser_resolved_executable: "{{ ai_agent_runtime_browser_resolve.stdout }}"
+
+- name: Configure Playwright runtime environment
+  ansible.builtin.copy:
+    dest: /etc/profile.d/ai_agent_runtime_playwright.sh
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD={{ '1' if ai_agent_runtime_playwright_skip_browser_download | bool else '0' }}
+      export PLAYWRIGHT_BROWSERS_PATH=0
+      export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH={{ ai_agent_runtime_browser_resolved_executable }}
+  become: true
+  when: ai_agent_runtime_playwright_enabled | bool

@@ -79,7 +79,7 @@
     install_rc=1
     if command -v clawhub >/dev/null 2>&1; then
       for install_name in {{ ([item.install_name | default(item.name)] + (item.aliases | default([]))) | unique | map('quote') | join(' ') }}; do
-        if clawhub --workdir "$target_parent" --dir "$target_base" --no-input install "$install_name"; then
+        if clawhub --workdir "$target_parent" --dir "$target_base" --no-input install {{ (item.install_force | default(false) | bool) | ternary('--force', '') }} "$install_name"; then
           install_rc=0
           break
         fi
@@ -299,14 +299,26 @@
     - not item.stat.islnk | default(false)
     - agent_skills_replace_existing_target_dirs | bool
 
+- name: Build agent skills target parent paths
+  ansible.builtin.set_fact:
+    agent_skills_target_parent_paths: "{{ agent_skills_target_paths | map('dirname') | list | unique }}"
+
+- name: Inspect agent skills target parent directories
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: agent_skills_target_parent_stats
+  loop: "{{ agent_skills_target_parent_paths }}"
+
 - name: Ensure agent skills target parent directories exist
   ansible.builtin.file:
-    path: "{{ item | dirname }}"
+    path: "{{ item.item }}"
     state: directory
     owner: "{{ agent_skills_user }}"
     group: "{{ agent_skills_group }}"
     mode: "0755"
-  loop: "{{ agent_skills_target_paths }}"
+  loop: "{{ agent_skills_target_parent_stats.results }}"
+  when:
+    - not item.stat.exists | default(false)
 
 - name: Link agent skills targets to canonical directory
   ansible.builtin.file:

@@ -67,6 +67,30 @@
   changed_when: true
   become: true
 
+- name: Read existing Hermes ACP auth token from systemd service
+  ansible.builtin.shell: |
+    set -eu
+    service_path="/etc/systemd/system/{{ acp_hermes_service_name }}.service"
+    if [ -f "$service_path" ]; then
+      sed -n 's/^Environment=HERMES_ADAPTER_AUTH_TOKEN=\(.*\)$/\1/p' "$service_path" | head -n 1
+    fi
+  args:
+    executable: /bin/sh
+  register: acp_hermes_existing_auth_token
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Resolve Hermes ACP auth token
+  ansible.builtin.set_fact:
+    acp_hermes_effective_auth_token: >-
+      {{
+        acp_hermes_auth_token
+        if (acp_hermes_auth_token | trim | length > 0)
+        else (acp_hermes_existing_auth_token.stdout | default(''))
+      }}
+  no_log: true
+
 - name: Deploy Hermes ACP adapter service
   ansible.builtin.template:
     src: hermes-acp-adapter.service.j2

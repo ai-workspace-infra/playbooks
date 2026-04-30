@@ -12,6 +12,29 @@
     group: "{{ xworkmate_bridge_service_group }}"
     mode: "0755"
 
+- name: Read existing xworkmate-bridge auth token from systemd unit
+  ansible.builtin.shell: |
+    set -eu
+    if [ -f "{{ xworkmate_bridge_systemd_unit_path }}" ]; then
+      sed -n 's/^Environment="BRIDGE_AUTH_TOKEN=\(.*\)"$/\1/p' "{{ xworkmate_bridge_systemd_unit_path }}" | head -n 1
+    fi
+  args:
+    executable: /bin/sh
+  register: xworkmate_bridge_existing_auth_token
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Resolve xworkmate-bridge auth token
+  ansible.builtin.set_fact:
+    xworkmate_bridge_effective_auth_token: >-
+      {{
+        xworkmate_bridge_auth_token
+        if (xworkmate_bridge_auth_token | trim | length > 0)
+        else (xworkmate_bridge_existing_auth_token.stdout | default(''))
+      }}
+  no_log: true
+
 - name: Assert xworkmate-bridge binary exists
   ansible.builtin.stat:
     path: "{{ xworkmate_bridge_binary_path }}"
@@ -27,7 +50,7 @@
 - name: Assert xworkmate-bridge auth token is provided
   ansible.builtin.assert:
     that:
-      - xworkmate_bridge_auth_token | trim | length > 0
+      - xworkmate_bridge_effective_auth_token | trim | length > 0
     fail_msg: >-
       xworkmate_bridge_auth_token is required. Pass it with -e or provide
       BRIDGE_AUTH_TOKEN / INTERNAL_SERVICE_TOKEN in the deploy environment.
@@ -167,50 +190,6 @@
     state: absent
   loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
   notify: Reload caddy
-
-- name: Inspect OpenClaw gateway systemd unit attributes
-  ansible.builtin.command:
-    cmd: lsattr "{{ xworkmate_bridge_openclaw_service_unit_path }}"
-  register: xworkmate_bridge_openclaw_unit_attrs
-  changed_when: false
-  failed_when: false
-
-- name: Remove immutable flag from OpenClaw gateway systemd unit when present
-  ansible.builtin.command:
-    cmd: chattr -i "{{ xworkmate_bridge_openclaw_service_unit_path }}"
-  when:
-    - "'i' in (xworkmate_bridge_openclaw_unit_attrs.stdout | default(''))"
-  changed_when: true
-
-- name: Deploy OpenClaw gateway foreground systemd unit
-  ansible.builtin.template:
-    src: openclaw-gateway.service.j2
-    dest: "{{ xworkmate_bridge_openclaw_service_unit_path }}"
-    owner: root
-    group: root
-    mode: "0644"
-  register: xworkmate_bridge_openclaw_unit
-
-- name: Restore immutable flag on OpenClaw gateway systemd unit
-  ansible.builtin.command:
-    cmd: chattr +i "{{ xworkmate_bridge_openclaw_service_unit_path }}"
-  when:
-    - "'i' in (xworkmate_bridge_openclaw_unit_attrs.stdout | default(''))"
-  changed_when: true
-
-- name: Reload systemd manager configuration
-  ansible.builtin.systemd:
-    daemon_reload: true
-  when:
-    - not ansible_check_mode
-
-- name: Ensure OpenClaw gateway service is enabled and running
-  ansible.builtin.systemd:
-    name: "{{ xworkmate_bridge_openclaw_service_name }}"
-    enabled: true
-    state: "{{ 'restarted' if (xworkmate_bridge_openclaw_unit.changed | default(false)) else 'started' }}"
-  when:
-    - not ansible_check_mode
 
 - name: Ensure xworkmate-bridge service is enabled and running
   ansible.builtin.systemd:

@@ -14,7 +14,7 @@ xworkmate_bridge_runtime_image_ref: "{{ lookup('ansible.builtin.env', 'SERVICE_C
 xworkmate_bridge_deprecated_container_name: xworkmate-bridge-managed
 xworkmate_bridge_deprecated_compose_file: "{{ xworkmate_bridge_base_dir }}/docker-compose.yml"
 xworkmate_bridge_service_environment:
-  BRIDGE_AUTH_TOKEN: "{{ xworkmate_bridge_auth_token }}"
+  BRIDGE_AUTH_TOKEN: "{{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
   BRIDGE_CONFIG_PATH: "{{ xworkmate_bridge_config_file }}"
   IMAGE: "{{ xworkmate_bridge_runtime_image_ref }}"
 
@@ -47,9 +47,6 @@ xworkmate_bridge_hermes_upstream_host: 127.0.0.1
 xworkmate_bridge_hermes_upstream_port: 3920
 xworkmate_bridge_openclaw_upstream_host: 127.0.0.1
 xworkmate_bridge_openclaw_upstream_port: 18789
-xworkmate_bridge_openclaw_service_name: openclaw-gateway
-xworkmate_bridge_openclaw_service_unit_path: "/etc/systemd/system/{{ xworkmate_bridge_openclaw_service_name }}.service"
-xworkmate_bridge_openclaw_binary_path: /usr/bin/openclaw
 
 # Internal RPC URLs (Source of Truth for the bridge service)
 xworkmate_bridge_openclaw_url: "ws://{{ xworkmate_bridge_openclaw_upstream_host }}:{{ xworkmate_bridge_openclaw_upstream_port }}/"

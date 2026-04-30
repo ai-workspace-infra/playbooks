@@ -39,7 +39,7 @@
   ansible.builtin.uri:
     url: "https://{{ xworkmate_bridge_service_domain }}/api/ping"
     headers:
-      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
+      Authorization: "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
     return_content: true
   register: xworkmate_bridge_service_ping
   until:
@@ -56,7 +56,7 @@
     url: "https://{{ xworkmate_bridge_service_domain }}/acp/rpc"
     method: POST
     headers:
-      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
+      Authorization: "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
       Content-Type: application/json
     body_format: json
     body:
@@ -126,7 +126,7 @@
     url: "https://{{ xworkmate_bridge_service_domain }}/acp/rpc"
     method: POST
     headers:
-      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
+      Authorization: "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
       Content-Type: application/json
     body_format: json
     body:
@@ -157,7 +157,7 @@
     url: "https://{{ xworkmate_bridge_service_domain }}/acp/rpc"
     method: POST
     headers:
-      Authorization: "Bearer {{ xworkmate_bridge_auth_token }}"
+      Authorization: "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
       Content-Type: application/json
     body_format: json
     body:

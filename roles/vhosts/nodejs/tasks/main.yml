@@ -99,7 +99,7 @@
 - name: Add Yarn GPG key
   get_url:
     url: https://dl.yarnpkg.com/debian/pubkey.gpg
-    dest: /etc/apt/keyrings/yarn.gpg
+    dest: /etc/apt/keyrings/yarn.asc
     mode: '0644'
   when:
     - install_yarn | default(true)
@@ -107,7 +107,7 @@
 
 - name: Add Yarn repository
   apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/yarn.gpg] https://dl.yarnpkg.com/debian/ stable main"
+    repo: "deb [signed-by=/etc/apt/keyrings/yarn.asc] https://dl.yarnpkg.com/debian/ stable main"
     state: present
     filename: yarn
   when:

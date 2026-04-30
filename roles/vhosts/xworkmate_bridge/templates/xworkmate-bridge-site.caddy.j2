@@ -1,6 +1,6 @@
 {{ xworkmate_bridge_domain }} {
     @unauthorized {
-        not header Authorization "Bearer {{ xworkmate_bridge_auth_token }}"
+        not header Authorization "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
     }
     handle @unauthorized {
         header Content-Type "application/json"

@@ -26,7 +26,7 @@ acp_hermes_auth_token: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN
 acp_hermes_environment:
   XDG_CONFIG_HOME: "{{ acp_hermes_xdg_config_home }}"
   XDG_STATE_HOME: "{{ acp_hermes_xdg_state_home }}"
-  HERMES_ADAPTER_AUTH_TOKEN: "{{ acp_hermes_auth_token }}"
+  HERMES_ADAPTER_AUTH_TOKEN: "{{ acp_hermes_effective_auth_token | default(acp_hermes_auth_token) }}"
   ACP_HERMES_BIN: "{{ acp_hermes_binary_path }}"
 acp_hermes_packages:
   - caddy
