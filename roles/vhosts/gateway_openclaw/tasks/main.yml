@@ -1,12 +1,51 @@
 ---
+- name: Inspect existing OpenClaw gateway JSON config
+  ansible.builtin.stat:
+    path: "{{ gateway_openclaw_config_path }}"
+  register: gateway_openclaw_existing_config_stat
+  no_log: true
+
+- name: Read existing OpenClaw gateway JSON config
+  ansible.builtin.slurp:
+    path: "{{ gateway_openclaw_config_path }}"
+  register: gateway_openclaw_existing_config_raw
+  when: gateway_openclaw_existing_config_stat.stat.exists | default(false)
+  no_log: true
+
+- name: Resolve OpenClaw gateway secrets
+  ansible.builtin.set_fact:
+    gateway_openclaw_effective_gateway_token: >-
+      {{
+        gateway_openclaw_gateway_token
+        if (gateway_openclaw_gateway_token | trim | length > 0)
+        else (
+          (
+            gateway_openclaw_existing_config_raw.content | default('') | b64decode | from_json
+          ).gateway.auth.token | default('')
+        )
+      }}
+    gateway_openclaw_effective_ollama_api_key: >-
+      {{
+        gateway_openclaw_ollama_api_key
+        if (gateway_openclaw_ollama_api_key | trim | length > 0)
+        else (
+          (
+            gateway_openclaw_existing_config_raw.content | default('') | b64decode | from_json
+          ).models.providers.ollama.apiKey | default('')
+        )
+      }}
+  no_log: true
+
 - name: Assert OpenClaw gateway secrets are provided
   ansible.builtin.assert:
     that:
-      - gateway_openclaw_gateway_token | trim | length > 0
-      - gateway_openclaw_ollama_api_key | trim | length > 0
+      - gateway_openclaw_effective_gateway_token | trim | length > 0
+      - gateway_openclaw_effective_ollama_api_key | trim | length > 0
     fail_msg: >-
       gateway_openclaw_gateway_token and gateway_openclaw_ollama_api_key are
-      required. Pass them with -e; do not commit them into inventory/defaults.
+      required. Pass them with -e or keep an existing
+      {{ gateway_openclaw_config_path }} with gateway.auth.token and
+      models.providers.ollama.apiKey; do not commit them into inventory/defaults.
   no_log: true
 
 - name: Ensure OpenClaw gateway config directory exists
