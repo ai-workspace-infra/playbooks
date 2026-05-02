@@ -6,9 +6,14 @@
     - not ansible_check_mode
 
 - name: Restart openclaw gateway
-  ansible.builtin.systemd:
-    name: "{{ gateway_openclaw_service_name }}"
-    state: restarted
+  ansible.builtin.command:
+    cmd: "systemctl --user restart {{ gateway_openclaw_service_name }}.service"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ gateway_openclaw_service_uid }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
   when:
     - not ansible_check_mode
 

@@ -1,0 +1,5 @@
+# Make OpenClaw user-systemd commands work from sudo/su SSH shells.
+if [ "$(id -un 2>/dev/null)" = "{{ gateway_openclaw_service_user }}" ] && [ -d /run/user/$(id -u) ]; then
+  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+fi

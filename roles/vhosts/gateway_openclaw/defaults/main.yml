@@ -10,6 +10,9 @@ gateway_openclaw_access_log_path: /var/log/caddy/clawdbot.access.log
 
 gateway_openclaw_service_name: openclaw-gateway
 gateway_openclaw_service_unit_path: "/etc/systemd/system/{{ gateway_openclaw_service_name }}.service"
+gateway_openclaw_service_uid: "1000"
+gateway_openclaw_user_service_unit_path: "{{ gateway_openclaw_home }}/.config/systemd/user/{{ gateway_openclaw_service_name }}.service"
+gateway_openclaw_profile_script_path: /etc/profile.d/openclaw-user-systemd.sh
 gateway_openclaw_binary_path: /usr/lib/node_modules/openclaw/openclaw.mjs
 gateway_openclaw_install_dir: /usr/lib/node_modules/openclaw
 gateway_openclaw_extension_dependency_dirs:
@@ -20,7 +23,7 @@ gateway_openclaw_secret_env_path: /opt/svc-ai-gateway/.env
 gateway_openclaw_workspace_path: "{{ gateway_openclaw_home }}/.openclaw/workspace"
 gateway_openclaw_workspace_mode: "0775"
 gateway_openclaw_compile_cache_dir: /var/tmp/openclaw-compile-cache
-gateway_openclaw_service_path: "{{ gateway_openclaw_home }}/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin"
+gateway_openclaw_service_path: "{{ gateway_openclaw_home }}/.nix-profile/bin:{{ gateway_openclaw_home }}/.local/bin:{{ gateway_openclaw_home }}/.npm-global/bin:{{ gateway_openclaw_home }}/bin:/usr/local/bin:/usr/bin:/bin"
 
 gateway_openclaw_upstream_host: 127.0.0.1
 gateway_openclaw_upstream_port: 18789
