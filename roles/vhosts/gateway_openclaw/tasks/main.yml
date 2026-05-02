@@ -12,6 +12,35 @@
   when: gateway_openclaw_existing_config_stat.stat.exists | default(false)
   no_log: true
 
+- name: Inspect existing service AI gateway env
+  ansible.builtin.stat:
+    path: "{{ gateway_openclaw_secret_env_path }}"
+  register: gateway_openclaw_secret_env_stat
+  no_log: true
+
+- name: Read existing service AI gateway env
+  ansible.builtin.slurp:
+    path: "{{ gateway_openclaw_secret_env_path }}"
+  register: gateway_openclaw_secret_env_raw
+  when: gateway_openclaw_secret_env_stat.stat.exists | default(false)
+  no_log: true
+
+- name: Resolve existing service AI gateway Ollama key
+  ansible.builtin.set_fact:
+    gateway_openclaw_existing_ollama_api_key: >-
+      {{
+        (
+          gateway_openclaw_secret_env_raw.content
+          | default('')
+          | b64decode
+          | regex_search('(?m)^OLLAMA_API_KEY=(.+)$', '\1')
+          | default([''], true)
+        )[0]
+        | default('')
+        | trim
+      }}
+  no_log: true
+
 - name: Resolve OpenClaw gateway secrets
   ansible.builtin.set_fact:
     gateway_openclaw_effective_gateway_token: >-
@@ -33,6 +62,12 @@
             gateway_openclaw_existing_config_raw.content | default('') | b64decode | from_json
           ).models.providers.ollama.apiKey | default('')
         )
+        if (
+          (
+            gateway_openclaw_existing_config_raw.content | default('') | b64decode | from_json
+          ).models.providers.ollama.apiKey | default('') | trim | length > 0
+        )
+        else gateway_openclaw_existing_ollama_api_key | default('')
       }}
   no_log: true
 
@@ -45,7 +80,9 @@
       gateway_openclaw_gateway_token and gateway_openclaw_ollama_api_key are
       required. Pass them with -e or keep an existing
       {{ gateway_openclaw_config_path }} with gateway.auth.token and
-      models.providers.ollama.apiKey; do not commit them into inventory/defaults.
+      models.providers.ollama.apiKey, or provide OLLAMA_API_KEY in
+      {{ gateway_openclaw_secret_env_path }}; do not commit them into
+      inventory/defaults.
   no_log: true
 
 - name: Ensure OpenClaw gateway config directory exists
