@@ -119,6 +119,126 @@
   diff: false
   notify: Restart openclaw gateway
 
+- name: Ensure OpenClaw user systemd unit directory exists
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_user_service_unit_path | dirname }}"
+    state: directory
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0755"
+
+- name: Deploy OpenClaw user systemd unit
+  ansible.builtin.template:
+    src: openclaw-gateway.user.service.j2
+    dest: "{{ gateway_openclaw_user_service_unit_path }}"
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0644"
+  register: gateway_openclaw_user_service_unit
+
+- name: Deploy OpenClaw user systemd shell environment
+  ansible.builtin.template:
+    src: openclaw-user-systemd.sh.j2
+    dest: "{{ gateway_openclaw_profile_script_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Enable OpenClaw service user linger
+  ansible.builtin.command:
+    cmd: "loginctl enable-linger {{ gateway_openclaw_service_user }}"
+    creates: "/var/lib/systemd/linger/{{ gateway_openclaw_service_user }}"
+  when:
+    - not ansible_check_mode
+
+- name: Ensure OpenClaw service user manager is running
+  ansible.builtin.systemd:
+    name: "user@{{ gateway_openclaw_service_uid }}.service"
+    state: started
+  when:
+    - not ansible_check_mode
+
+- name: Stop and disable stale root-managed OpenClaw gateway service
+  ansible.builtin.systemd:
+    name: "{{ gateway_openclaw_service_name }}"
+    enabled: false
+    state: stopped
+  failed_when: false
+  when:
+    - not ansible_check_mode
+
+- name: Inspect stale OpenClaw gateway root systemd unit attributes
+  ansible.builtin.command:
+    cmd: lsattr "{{ gateway_openclaw_service_unit_path }}"
+  register: gateway_openclaw_unit_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from stale OpenClaw gateway root systemd unit when present
+  ansible.builtin.command:
+    cmd: chattr -i "{{ gateway_openclaw_service_unit_path }}"
+  when:
+    - "'i' in (gateway_openclaw_unit_attrs.stdout | default(''))"
+  changed_when: true
+
+- name: Remove stale root-managed OpenClaw gateway systemd unit
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_service_unit_path }}"
+    state: absent
+  register: gateway_openclaw_removed_root_service_unit
+
+- name: Reload root systemd after removing stale OpenClaw gateway unit
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - gateway_openclaw_removed_root_service_unit.changed | default(false)
+    - not ansible_check_mode
+
+- name: Reload OpenClaw user systemd manager
+  ansible.builtin.command:
+    cmd: systemctl --user daemon-reload
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ gateway_openclaw_service_uid }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  changed_when: false
+  when:
+    - not ansible_check_mode
+
+- name: Ensure OpenClaw user gateway service is enabled and running
+  ansible.builtin.command:
+    cmd: >-
+      systemctl --user enable
+      {{ '--now' if not (gateway_openclaw_user_service_unit.changed | default(false)) else '' }}
+      {{ gateway_openclaw_service_name }}.service
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ gateway_openclaw_service_uid }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_user_service_enable
+  changed_when: >-
+    'Created symlink' in (gateway_openclaw_user_service_enable.stdout | default('')) or
+    'Created symlink' in (gateway_openclaw_user_service_enable.stderr | default(''))
+  when:
+    - not ansible_check_mode
+
+- name: Restart OpenClaw user gateway service after unit changes
+  ansible.builtin.command:
+    cmd: "systemctl --user restart {{ gateway_openclaw_service_name }}.service"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ gateway_openclaw_service_uid }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  when:
+    - gateway_openclaw_user_service_unit.changed | default(false)
+    - not ansible_check_mode
+
 - name: Inspect OpenClaw package manifest
   ansible.builtin.stat:
     path: "{{ gateway_openclaw_install_dir }}/package.json"

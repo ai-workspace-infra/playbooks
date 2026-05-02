@@ -1,3 +1,10 @@
+- name: Update apt cache
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+  # 检查模式下不更新缓存，仅检查 package
+  when: not ansible_check_mode
+
 - name: Install prerequisites for OpenResty
   apt:
     name:
@@ -5,7 +12,6 @@
       - gnupg
       - apt-transport-https
     state: present
-    update_cache: true
 
 - name: Import OpenResty GPG key
   shell: |
@@ -26,7 +32,6 @@
   apt:
     name: openresty
     state: present
-    update_cache: true
 
 - name: Ensure sites-available directory exists
   file:
@@ -70,6 +75,7 @@
     name: openresty
     enabled: true
     state: started
+  # systemd 模块在 -C 模式下安全检查，不会实际启停
 
 - name: Verify OpenResty core API
   shell: |
@@ -80,3 +86,5 @@
   retries: 5
   delay: 3
   until: openresty_verify.rc == 0
+  # 检查模式不重启服务，跳过验证避免误报
+  when: not ansible_check_mode
