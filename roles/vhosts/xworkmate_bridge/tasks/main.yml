@@ -104,6 +104,7 @@
     owner: root
     group: root
     mode: "0644"
+  register: xworkmate_bridge_systemd_unit
   notify: Reload bridge
 
 - name: Restore immutable flag on xworkmate-bridge systemd unit
@@ -111,6 +112,13 @@
     cmd: chattr +i "{{ xworkmate_bridge_systemd_unit_path }}"
   changed_when: true
   when:
+    - not ansible_check_mode
+
+- name: Reload systemd after xworkmate-bridge unit changes
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - xworkmate_bridge_systemd_unit.changed | default(false)
     - not ansible_check_mode
 
 - name: Ensure Caddy fragment directory exists
