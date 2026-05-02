@@ -28,16 +28,31 @@
 - name: Check required ACP and gateway service status
   ansible.builtin.systemd:
     name: "{{ item }}"
-  loop:
-    - acp-codex
-    - acp-opencode
-    - acp-gemini
-    - acp-hermes
-    - openclaw-gateway
+  loop: "{{ xworkmate_bridge_required_services }}"
   register: xworkmate_bridge_dependency_status
   until: xworkmate_bridge_dependency_status.status.ActiveState | default('') == "active"
   retries: 12
   delay: 5
+
+- name: Capture listening TCP sockets for xworkmate-bridge stack
+  ansible.builtin.command:
+    cmd: ss -ltn
+  register: xworkmate_bridge_listening_sockets
+  changed_when: false
+
+- name: Assert xworkmate-bridge stack canonical ports are listening
+  ansible.builtin.assert:
+    that:
+      - >-
+        (xworkmate_bridge_listening_sockets.stdout is search(item.host ~ ':' ~ item.port))
+        or
+        (item.host == '127.0.0.1' and xworkmate_bridge_listening_sockets.stdout is search('\\*:' ~ item.port))
+        or
+        (item.host == '127.0.0.1' and xworkmate_bridge_listening_sockets.stdout is search('0.0.0.0:' ~ item.port))
+    fail_msg: "{{ item.name }} listener {{ item.host }}:{{ item.port }} is not active"
+  loop: "{{ xworkmate_bridge_required_listeners }}"
+  loop_control:
+    label: "{{ item.name }} {{ item.host }}:{{ item.port }}"
 
 - name: Check xworkmate-bridge public domain ping
   ansible.builtin.uri:

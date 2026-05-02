@@ -17,6 +17,12 @@ xworkmate_bridge_service_environment:
   BRIDGE_AUTH_TOKEN: "{{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
   BRIDGE_CONFIG_PATH: "{{ xworkmate_bridge_config_file }}"
   IMAGE: "{{ xworkmate_bridge_runtime_image_ref }}"
+xworkmate_bridge_required_services:
+  - acp-codex.service
+  - acp-opencode.service
+  - acp-gemini.service
+  - acp-hermes.service
+  - openclaw-gateway.service
 
 # ACP Deployment Flags
 deploy_acp_codex: true
@@ -47,6 +53,25 @@ xworkmate_bridge_hermes_upstream_host: 127.0.0.1
 xworkmate_bridge_hermes_upstream_port: 3920
 xworkmate_bridge_openclaw_upstream_host: 127.0.0.1
 xworkmate_bridge_openclaw_upstream_port: 18789
+xworkmate_bridge_required_listeners:
+  - host: "{{ xworkmate_bridge_listen_host }}"
+    port: "{{ xworkmate_bridge_listen_port }}"
+    name: bridge
+  - host: "{{ xworkmate_bridge_codex_upstream_host }}"
+    port: "{{ xworkmate_bridge_codex_upstream_port }}"
+    name: codex
+  - host: "{{ xworkmate_bridge_opencode_upstream_host }}"
+    port: "{{ xworkmate_bridge_opencode_upstream_port }}"
+    name: opencode
+  - host: "{{ xworkmate_bridge_gemini_upstream_host }}"
+    port: "{{ xworkmate_bridge_gemini_upstream_port }}"
+    name: gemini
+  - host: "{{ xworkmate_bridge_hermes_upstream_host }}"
+    port: "{{ xworkmate_bridge_hermes_upstream_port }}"
+    name: hermes
+  - host: "{{ xworkmate_bridge_openclaw_upstream_host }}"
+    port: "{{ xworkmate_bridge_openclaw_upstream_port }}"
+    name: openclaw
 
 # Internal RPC URLs (Source of Truth for the bridge service)
 xworkmate_bridge_openclaw_url: "ws://{{ xworkmate_bridge_openclaw_upstream_host }}:{{ xworkmate_bridge_openclaw_upstream_port }}/"
