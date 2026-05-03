@@ -68,10 +68,9 @@ App-facing endpoints:
 - `https://xworkmate-bridge.svc.plus/gateway/openclaw`: dedicated OpenClaw task submit endpoint for `session.start` and follow-up `session.message`
 - `https://xworkmate-bridge.svc.plus/api/ping`: release and runtime health probe
 
-Non-contract endpoints:
+Non-contract routes:
 
-- `https://xworkmate-bridge.svc.plus/acp-server/{codex,opencode,gemini,hermes}` must return `404`
-- `/codex`, `/opencode`, `/gemini`, and `/hermes` are not public APP contract routes
+- Provider-direct routes such as `/codex`, `/opencode`, `/gemini`, `/hermes`, and legacy ACP provider paths are not public APP contracts
 - `/gateway/openclaw` is not a global ACP base endpoint and must not be used for capabilities, routing, cancel, or close
 
 ## Post-Deploy Verification
@@ -87,7 +86,6 @@ With `Authorization: Bearer $INTERNAL_SERVICE_TOKEN`:
 - `https://xworkmate-bridge.svc.plus/acp/rpc` `acp.capabilities` -> `200`
 - `https://xworkmate-bridge.svc.plus/acp/rpc` `xworkmate.routing.resolve` -> `200`
 - `https://xworkmate-bridge.svc.plus/gateway/openclaw` `session.start` -> `200` with either success or structured provider failure
-- `https://xworkmate-bridge.svc.plus/acp-server/{codex,opencode,gemini,hermes}` -> `404`
 
 Bridge public root:
 
@@ -133,7 +131,7 @@ OpenClaw task submission uses the same JSON-RPC envelope at `/gateway/openclaw`,
 - ACP ingress deployment: validates `/api*`, `/acp*`, `/gateway/openclaw`, and `/`
 - unified internal bearer token: required for protected endpoints
 - bridge public root route: working
-- `/acp-server/*`: intentionally disabled as non-contract public routes
+- legacy ACP provider Caddy fragments: removed from public ingress
 
 ## Out Of Scope
 

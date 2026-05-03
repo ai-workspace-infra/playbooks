@@ -15,10 +15,8 @@
       - "'handle /acp*' in xworkmate_bridge_fragment.stdout"
       - "'handle /api*' in xworkmate_bridge_fragment.stdout"
       - "'handle /gateway/openclaw' in xworkmate_bridge_fragment.stdout"
-      - "'handle /acp-server/*' in xworkmate_bridge_fragment.stdout"
-      - "'respond \"404 page not found\" 404' in xworkmate_bridge_fragment.stdout"
       - "'reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}' in xworkmate_bridge_fragment.stdout"
-      - "'handle /acp-server/* {\\n        reverse_proxy' not in xworkmate_bridge_fragment.stdout"
+      - "'/acp-server' not in xworkmate_bridge_fragment.stdout"
       - "'127.0.0.1:18789' not in xworkmate_bridge_fragment.stdout"
       - "'127.0.0.1:38992' not in xworkmate_bridge_fragment.stdout"
       - "'127.0.0.1:8791' not in xworkmate_bridge_fragment.stdout"
@@ -221,25 +219,6 @@
       - xworkmate_bridge_openclaw_session.json.error.message | default('') != "GATEWAY_PROVIDER_REQUIRED"
       - "'OPENCLAW_GATEWAY_METHOD_NOT_ALLOWED' not in (xworkmate_bridge_openclaw_session.json.error.message | default(''))"
       - "'OPENCLAW_GATEWAY_CONFLICT' not in (xworkmate_bridge_openclaw_session.json.error.message | default(''))"
-
-- name: Check deprecated ACP direct paths return 404
-  ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_service_domain }}/acp-server/{{ item }}"
-    method: POST
-    body_format: json
-    body:
-      jsonrpc: "2.0"
-      id: "validate-direct-path-disabled"
-      method: acp.capabilities
-      params: {}
-    return_content: true
-    status_code: 404
-  loop:
-    - codex
-    - opencode
-    - gemini
-    - hermes
-  changed_when: false
 
 - name: Check deprecated ACP fragments are absent
   ansible.builtin.stat:
