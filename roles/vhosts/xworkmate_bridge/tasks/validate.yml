@@ -14,8 +14,13 @@
     that:
       - "'handle /acp*' in xworkmate_bridge_fragment.stdout"
       - "'handle /api*' in xworkmate_bridge_fragment.stdout"
-      - "'/acp-server/' not in xworkmate_bridge_fragment.stdout"
-      - "'/gateway/openclaw' not in xworkmate_bridge_fragment.stdout"
+      - "'handle /gateway/openclaw' in xworkmate_bridge_fragment.stdout"
+      - "'handle /acp-server/*' in xworkmate_bridge_fragment.stdout"
+      - "'reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}' in xworkmate_bridge_fragment.stdout"
+      - "'127.0.0.1:18789' not in xworkmate_bridge_fragment.stdout"
+      - "'127.0.0.1:38992' not in xworkmate_bridge_fragment.stdout"
+      - "'127.0.0.1:8791' not in xworkmate_bridge_fragment.stdout"
+      - "'127.0.0.1:3920' not in xworkmate_bridge_fragment.stdout"
 
 - name: Check xworkmate-bridge systemd service status
   ansible.builtin.systemd:
