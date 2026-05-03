@@ -14,16 +14,30 @@
 
 - name: Read existing xworkmate-bridge auth token from systemd unit
   ansible.builtin.shell: |
-    set -eu
+    set -euo pipefail
     if [ -f "{{ xworkmate_bridge_systemd_unit_path }}" ]; then
       sed -n 's/^Environment="BRIDGE_AUTH_TOKEN=\(.*\)"$/\1/p' "{{ xworkmate_bridge_systemd_unit_path }}" | head -n 1
     fi
   args:
-    executable: /bin/sh
+    executable: /bin/bash
   register: xworkmate_bridge_existing_auth_token
+  check_mode: false
   changed_when: false
   failed_when: false
   no_log: true
+
+- name: Read existing xworkmate-bridge image ref from systemd unit
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if [ -f "{{ xworkmate_bridge_systemd_unit_path }}" ]; then
+      sed -n 's/^Environment="IMAGE=\(.*\)"$/\1/p' "{{ xworkmate_bridge_systemd_unit_path }}" | head -n 1
+    fi
+  args:
+    executable: /bin/bash
+  register: xworkmate_bridge_existing_image_ref
+  check_mode: false
+  changed_when: false
+  failed_when: false
 
 - name: Resolve xworkmate-bridge auth token
   ansible.builtin.set_fact:
@@ -34,6 +48,15 @@
         else (xworkmate_bridge_existing_auth_token.stdout | default(''))
       }}
   no_log: true
+
+- name: Resolve xworkmate-bridge runtime image ref
+  ansible.builtin.set_fact:
+    xworkmate_bridge_effective_runtime_image_ref: >-
+      {{
+        xworkmate_bridge_runtime_image_ref
+        if (xworkmate_bridge_runtime_image_ref | trim | length > 0)
+        else (xworkmate_bridge_existing_image_ref.stdout | default(''))
+      }}
 
 - name: Assert xworkmate-bridge binary exists
   ansible.builtin.stat:
@@ -191,6 +214,24 @@
   changed_when: true
   when:
     - not ansible_check_mode
+
+- name: Inspect deprecated ACP Caddy fragment attributes
+  ansible.builtin.command:
+    cmd: lsattr "{{ item }}"
+  register: xworkmate_bridge_obsolete_fragment_attrs
+  changed_when: false
+  failed_when: false
+  loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
+
+- name: Remove immutable flag from deprecated ACP Caddy fragments when present
+  ansible.builtin.command:
+    cmd: chattr -i "{{ item.item }}"
+  when:
+    - "'i' in (item.stdout | default(''))"
+  changed_when: true
+  loop: "{{ xworkmate_bridge_obsolete_fragment_attrs.results }}"
+  loop_control:
+    label: "{{ item.item }}"
 
 - name: Remove deprecated ACP Caddy fragments
   ansible.builtin.file:

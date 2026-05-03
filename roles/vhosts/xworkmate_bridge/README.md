@@ -4,17 +4,14 @@ This document records the current real deployment and runtime validation state f
 
 ## Scope
 
-There is no standalone Ansible role implementation under `roles/vhosts/xworkmate_bridge` yet.
+`roles/vhosts/xworkmate_bridge` owns the public ingress and validation contract for `xworkmate-bridge.svc.plus`.
 
-The active implementation currently lives in:
+The provider runtimes remain separate sibling roles:
 
-- [`roles/vhosts/deploy_acp_vhosts`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/deploy_acp_vhosts)
 - [`roles/vhosts/acp_codex`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_codex)
 - [`roles/vhosts/acp_opencode`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_opencode)
 - [`roles/vhosts/acp_gemini`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_gemini)
 - [`roles/vhosts/acp_server_hermes`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_server_hermes)
-
-This README is the umbrella operations note for that deployed stack.
 
 ## Real Deployment
 
@@ -48,9 +45,10 @@ The ACP entrypoints now reuse the same `INTERNAL_SERVICE_TOKEN`.
 Applied areas:
 
 - main bridge service: `xworkmate-bridge.service`
-- Codex ACP bridge: `acp-bridge-codex.service`
-- OpenCode ACP bridge: `acp-bridge-opencode.service`
-- Gemini ACP adapter: `acp-gemini-adapter.service`
+- Codex ACP bridge: `acp-codex.service`
+- OpenCode ACP bridge: `acp-opencode.service`
+- Gemini ACP adapter: `acp-gemini.service`
+- Hermes ACP adapter: `acp-hermes.service`
 
 Behavior after deployment:
 
@@ -63,41 +61,33 @@ Behavior after deployment:
 
 ## Public Endpoints
 
-Base domains:
+App-facing endpoints:
 
-- `https://xworkmate-bridge.svc.plus/`
-- `https://xworkmate-bridge.svc.plus/codex`
-- `https://xworkmate-bridge.svc.plus/opencode`
-- `https://xworkmate-bridge.svc.plus/gemini`
-- `https://xworkmate-bridge.svc.plus/hermes`
+- `wss://xworkmate-bridge.svc.plus/acp`: canonical WebSocket JSON-RPC runtime
+- `https://xworkmate-bridge.svc.plus/acp/rpc`: HTTP JSON-RPC fallback for capabilities, routing, agent, multi-agent, cancel, close, CI, and diagnostics
+- `https://xworkmate-bridge.svc.plus/gateway/openclaw`: dedicated OpenClaw task submit endpoint for `session.start` and follow-up `session.message`
+- `https://xworkmate-bridge.svc.plus/api/ping`: release and runtime health probe
 
-Correct ACP RPC endpoints:
+Non-contract endpoints:
 
-- Codex HTTP RPC: `https://xworkmate-bridge.svc.plus/codex/acp/rpc`
-- Codex WebSocket: `wss://xworkmate-bridge.svc.plus/codex/acp`
-- OpenCode HTTP RPC: `https://xworkmate-bridge.svc.plus/opencode/acp/rpc`
-- OpenCode WebSocket: `wss://xworkmate-bridge.svc.plus/opencode/acp`
-- Gemini HTTP RPC: `https://xworkmate-bridge.svc.plus/gemini/acp/rpc`
-- Gemini WebSocket: `wss://xworkmate-bridge.svc.plus/gemini/acp`
-- Hermes HTTP RPC: `https://xworkmate-bridge.svc.plus/hermes/acp/rpc`
-- Hermes WebSocket: `wss://xworkmate-bridge.svc.plus/hermes/acp`
-
-Note:
-
-- `https://xworkmate-bridge.svc.plus/gemini` is not the RPC endpoint and should not be used as the ACP health check target.
+- `https://xworkmate-bridge.svc.plus/acp-server/{codex,opencode,gemini,hermes}` must return `404`
+- `/codex`, `/opencode`, `/gemini`, and `/hermes` are not public APP contract routes
+- `/gateway/openclaw` is not a global ACP base endpoint and must not be used for capabilities, routing, cancel, or close
 
 ## Post-Deploy Verification
 
 Without token:
 
-- `https://xworkmate-bridge.svc.plus/codex/acp` -> `401`
+- `https://xworkmate-bridge.svc.plus/acp/rpc` -> `401`
+- `https://xworkmate-bridge.svc.plus/gateway/openclaw` -> `401`
 
 With `Authorization: Bearer $INTERNAL_SERVICE_TOKEN`:
 
-- `https://xworkmate-bridge.svc.plus/codex/acp/rpc` -> `200`
-- `https://xworkmate-bridge.svc.plus/opencode/acp/rpc` -> `200`
-- `https://xworkmate-bridge.svc.plus/gemini/acp/rpc` -> `200`
-- `https://xworkmate-bridge.svc.plus/hermes/acp/rpc` -> `200`
+- `wss://xworkmate-bridge.svc.plus/acp` -> `101 Switching Protocols`
+- `https://xworkmate-bridge.svc.plus/acp/rpc` `acp.capabilities` -> `200`
+- `https://xworkmate-bridge.svc.plus/acp/rpc` `xworkmate.routing.resolve` -> `200`
+- `https://xworkmate-bridge.svc.plus/gateway/openclaw` `session.start` -> `200` with either success or structured provider failure
+- `https://xworkmate-bridge.svc.plus/acp-server/{codex,opencode,gemini,hermes}` -> `404`
 
 Bridge public root:
 
@@ -115,7 +105,7 @@ A real JSON-RPC chat task was executed with the prompt:
 请只回复：AI chat task ok
 ```
 
-The request needed explicit routing metadata for Codex and OpenCode:
+Agent tasks use `/acp/rpc` or `/acp` with explicit routing metadata:
 
 ```json
 {
@@ -136,26 +126,14 @@ The request needed explicit routing metadata for Codex and OpenCode:
 }
 ```
 
-Observed results:
-
-- OpenCode: success
-  - output: `AI chat task ok`
-- Codex: request reached the bridge, but upstream Codex execution failed
-  - observed upstream failures included repeated `500` on `wss://api.openai.com/v1/responses`
-  - final upstream error also included `401 Unauthorized` for missing OpenAI bearer/basic authentication
-  - conclusion: bridge auth is correct, but the remote Codex/OpenAI runtime authentication configuration is outside this playbook's scope
-- Gemini: ACP auth is correct, but upstream protocol is not yet fully compatible
-  - response: `"Method not found": session.start`
-  - conclusion: Gemini executable chat flow is blocked by upstream ACP method compatibility and adapter-side protocol mapping gaps, which are outside this playbook's scope
+OpenClaw task submission uses the same JSON-RPC envelope at `/gateway/openclaw`, with `routing.explicitExecutionTarget=gateway` and `routing.preferredGatewayProviderId=openclaw`. Follow-up `session.message` for the same OpenClaw task also stays on `/gateway/openclaw`.
 
 ## Current Operational Status
 
-- ACP ingress deployment: working
-- unified internal bearer token: working
+- ACP ingress deployment: validates `/api*`, `/acp*`, `/gateway/openclaw`, and `/`
+- unified internal bearer token: required for protected endpoints
 - bridge public root route: working
-- OpenCode ACP JSON-RPC chat execution: working
-- Codex ACP JSON-RPC chat execution: bridge path working; upstream runtime authentication is outside this playbook's scope
-- Gemini ACP JSON-RPC chat execution: bridge path working; upstream method compatibility is outside this playbook's scope
+- `/acp-server/*`: intentionally disabled as non-contract public routes
 
 ## Out Of Scope
 

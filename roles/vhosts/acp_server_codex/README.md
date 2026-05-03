@@ -1,6 +1,6 @@
 # acp_codex
 
-Codex ACP deployment role behind the unified `xworkmate-bridge.svc.plus` ingress.
+Codex ACP deployment role for the internal runtime consumed by `xworkmate-bridge`.
 
 Installs:
 
@@ -10,11 +10,11 @@ Installs:
 Exposes:
 
 - raw Codex upstream: `codex app-server --listen ws://127.0.0.1:9001`
-- public ACP bridge: `127.0.0.1:9001` via `acp-bridge-codex`
-- public base URL: `https://xworkmate-bridge.svc.plus/codex`
+- internal ACP listener: `127.0.0.1:9001`
 
 Notes:
 
-- Caddy terminates TLS on `xworkmate-bridge.svc.plus` and routes `/codex*` to this bridge.
-- The Go ACP server serves `/acp` and `/acp/rpc` under the unified `/codex` prefix.
+- `xworkmate-app` must not call a `/codex` public path.
+- Public app traffic goes through `wss://xworkmate-bridge.svc.plus/acp` or `https://xworkmate-bridge.svc.plus/acp/rpc`.
+- Provider selection is exposed through bridge `acp.capabilities` and `xworkmate.routing.resolve`, not provider-specific public URLs.
 - `ACP_ALLOWED_ORIGINS` defaults to `https://xworkmate.svc.plus,http://localhost:*,http://127.0.0.1:*`.

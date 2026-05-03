@@ -1,4 +1,8 @@
 {{ xworkmate_bridge_domain }} {
+    handle /acp-server/* {
+        respond "404 page not found" 404
+    }
+
     @unauthorized {
         not header Authorization "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
     }
@@ -12,10 +16,6 @@
     }
 
     handle /gateway/openclaw {
-        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}
-    }
-
-    handle /acp-server/* {
         reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}
     }
 
