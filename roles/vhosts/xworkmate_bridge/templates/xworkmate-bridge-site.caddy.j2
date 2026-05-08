@@ -12,7 +12,15 @@
     }
 
     handle /gateway/openclaw {
-        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}
+        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }} {
+            flush_interval -1
+            transport http {
+                dial_timeout 10s
+                read_timeout 30m
+                write_timeout 30m
+                keepalive 5m
+            }
+        }
     }
 
     handle /artifacts/* {
@@ -20,7 +28,15 @@
     }
 
     handle /acp* {
-        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}
+        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }} {
+            flush_interval -1
+            transport http {
+                dial_timeout 10s
+                read_timeout 30m
+                write_timeout 30m
+                keepalive 5m
+            }
+        }
     }
 
     handle / {

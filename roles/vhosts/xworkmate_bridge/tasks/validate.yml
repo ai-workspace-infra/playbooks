@@ -17,6 +17,10 @@
       - "'handle /gateway/openclaw' in xworkmate_bridge_fragment.stdout"
       - "'handle /artifacts/*' in xworkmate_bridge_fragment.stdout"
       - "'reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}' in xworkmate_bridge_fragment.stdout"
+      - "'flush_interval -1' in xworkmate_bridge_fragment.stdout"
+      - "'read_timeout 30m' in xworkmate_bridge_fragment.stdout"
+      - "'write_timeout 30m' in xworkmate_bridge_fragment.stdout"
+      - "'keepalive 5m' in xworkmate_bridge_fragment.stdout"
       - "'/acp-server' not in xworkmate_bridge_fragment.stdout"
       - "'127.0.0.1:18789' not in xworkmate_bridge_fragment.stdout"
       - "'127.0.0.1:38992' not in xworkmate_bridge_fragment.stdout"
@@ -220,6 +224,74 @@
       - xworkmate_bridge_openclaw_session.json.error.message | default('') != "GATEWAY_PROVIDER_REQUIRED"
       - "'OPENCLAW_GATEWAY_METHOD_NOT_ALLOWED' not in (xworkmate_bridge_openclaw_session.json.error.message | default(''))"
       - "'OPENCLAW_GATEWAY_CONFLICT' not in (xworkmate_bridge_openclaw_session.json.error.message | default(''))"
+
+- name: Check xworkmate-bridge OpenClaw SSE long-task stream contract
+  ansible.builtin.shell: |
+    set -euo pipefail
+    stream_file="$(mktemp)"
+    trap 'rm -f "$stream_file"' EXIT
+    curl --fail --silent --show-error --no-buffer --max-time 120 \
+      -H "Authorization: Bearer ${XWORKMATE_BRIDGE_AUTH_TOKEN}" \
+      -H "Origin: {{ xworkmate_bridge_validation_origin }}" \
+      -H "Content-Type: application/json" \
+      -H "Accept: text/event-stream" \
+      --data @- \
+      "https://{{ xworkmate_bridge_service_domain }}/gateway/openclaw" > "$stream_file" <<'JSON'
+    {
+      "jsonrpc": "2.0",
+      "id": "validate-openclaw-sse",
+      "method": "session.start",
+      "params": {
+        "sessionId": "validate-openclaw-sse",
+        "threadId": "validate-openclaw-sse",
+        "taskPrompt": "Wait at least 25 seconds, then reply with exactly pong.",
+        "workingDirectory": "/tmp",
+        "routing": {
+          "routingMode": "explicit",
+          "explicitExecutionTarget": "gateway",
+          "preferredGatewayProviderId": "openclaw"
+        }
+      }
+    }
+    JSON
+    python3 - "$stream_file" <<'PY'
+    import json
+    import sys
+
+    path = sys.argv[1]
+    payloads = []
+    for block in open(path, encoding="utf-8").read().split("\n\n"):
+        data_lines = [
+            line[len("data: "):]
+            for line in block.splitlines()
+            if line.startswith("data: ")
+        ]
+        if not data_lines:
+            continue
+        payload = "\n".join(data_lines).strip()
+        if payload == "[DONE]":
+            payloads.append({"done": True})
+            continue
+        payloads.append(json.loads(payload))
+
+    methods = [item.get("method") for item in payloads if isinstance(item, dict)]
+    ids = [item.get("id") for item in payloads if isinstance(item, dict)]
+    if "xworkmate.bridge.accepted" not in methods:
+        raise SystemExit("missing accepted SSE event")
+    if "xworkmate.bridge.keepalive" not in methods:
+        raise SystemExit("missing keepalive SSE event")
+    if "validate-openclaw-sse" not in ids:
+        raise SystemExit("missing final SSE result envelope")
+    if not payloads or payloads[-1].get("done") is not True:
+        raise SystemExit("missing SSE done marker")
+    PY
+  args:
+    executable: /bin/bash
+  environment:
+    XWORKMATE_BRIDGE_AUTH_TOKEN: "{{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
+  changed_when: false
+  check_mode: false
+  no_log: true
 
 - name: Check deprecated ACP fragments are absent
   ansible.builtin.stat:
