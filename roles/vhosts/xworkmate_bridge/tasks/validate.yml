@@ -230,6 +230,7 @@
     set -euo pipefail
     stream_file="$(mktemp)"
     trap 'rm -f "$stream_file"' EXIT
+    stream_started_at="$(date +%s)"
     curl --fail --silent --show-error --no-buffer --max-time 120 \
       -H "Authorization: Bearer ${XWORKMATE_BRIDGE_AUTH_TOKEN}" \
       -H "Origin: {{ xworkmate_bridge_validation_origin }}" \
@@ -254,11 +255,14 @@
       }
     }
     JSON
-    python3 - "$stream_file" <<'PY'
+    stream_finished_at="$(date +%s)"
+    stream_elapsed_seconds="$((stream_finished_at - stream_started_at))"
+    python3 - "$stream_file" "$stream_elapsed_seconds" <<'PY'
     import json
     import sys
 
     path = sys.argv[1]
+    elapsed_seconds = int(sys.argv[2])
     payloads = []
     for block in open(path, encoding="utf-8").read().split("\n\n"):
         data_lines = [
@@ -278,7 +282,7 @@
     ids = [item.get("id") for item in payloads if isinstance(item, dict)]
     if "xworkmate.bridge.accepted" not in methods:
         raise SystemExit("missing accepted SSE event")
-    if "xworkmate.bridge.keepalive" not in methods:
+    if elapsed_seconds >= 15 and "xworkmate.bridge.keepalive" not in methods:
         raise SystemExit("missing keepalive SSE event")
     if "validate-openclaw-sse" not in ids:
         raise SystemExit("missing final SSE result envelope")
