@@ -68,6 +68,12 @@ App-facing endpoints:
 - `https://xworkmate-bridge.svc.plus/gateway/openclaw`: dedicated OpenClaw task submit endpoint for `session.start` and follow-up `session.message`
 - `https://xworkmate-bridge.svc.plus/api/ping`: release and runtime health probe
 
+OpenClaw task admission is configured in the generated bridge `config.yaml` from these role variables:
+
+- `xworkmate_bridge_openclaw_gateway_max_active` defaults to `2`
+- `xworkmate_bridge_openclaw_gateway_max_queued` defaults to `20`
+- `xworkmate_bridge_openclaw_gateway_queue_timeout` defaults to `10m`
+
 Non-contract routes:
 
 - Provider-direct routes such as `/codex`, `/opencode`, `/gemini`, `/hermes`, and legacy ACP provider paths are not public APP contracts
