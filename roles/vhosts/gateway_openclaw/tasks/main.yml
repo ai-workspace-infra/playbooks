@@ -12,35 +12,6 @@
   when: gateway_openclaw_existing_config_stat.stat.exists | default(false)
   no_log: true
 
-- name: Inspect existing service AI gateway env
-  ansible.builtin.stat:
-    path: "{{ gateway_openclaw_secret_env_path }}"
-  register: gateway_openclaw_secret_env_stat
-  no_log: true
-
-- name: Read existing service AI gateway env
-  ansible.builtin.slurp:
-    path: "{{ gateway_openclaw_secret_env_path }}"
-  register: gateway_openclaw_secret_env_raw
-  when: gateway_openclaw_secret_env_stat.stat.exists | default(false)
-  no_log: true
-
-- name: Resolve existing service AI gateway Ollama key
-  ansible.builtin.set_fact:
-    gateway_openclaw_existing_ollama_api_key: >-
-      {{
-        (
-          gateway_openclaw_secret_env_raw.content
-          | default('')
-          | b64decode
-          | regex_search('(?m)^OLLAMA_API_KEY=(.+)$', '\1')
-          | default([''], true)
-        )[0]
-        | default('')
-        | trim
-      }}
-  no_log: true
-
 - name: Resolve OpenClaw gateway secrets
   ansible.builtin.set_fact:
     gateway_openclaw_effective_gateway_token: >-
@@ -53,36 +24,16 @@
           ).gateway.auth.token | default('')
         )
       }}
-    gateway_openclaw_effective_ollama_api_key: >-
-      {{
-        gateway_openclaw_ollama_api_key
-        if (gateway_openclaw_ollama_api_key | trim | length > 0)
-        else (
-          (
-            gateway_openclaw_existing_config_raw.content | default('') | b64decode | from_json
-          ).models.providers.ollama.apiKey | default('')
-        )
-        if (
-          (
-            gateway_openclaw_existing_config_raw.content | default('') | b64decode | from_json
-          ).models.providers.ollama.apiKey | default('') | trim | length > 0
-        )
-        else gateway_openclaw_existing_ollama_api_key | default('')
-      }}
   no_log: true
 
 - name: Assert OpenClaw gateway secrets are provided
   ansible.builtin.assert:
     that:
       - gateway_openclaw_effective_gateway_token | trim | length > 0
-      - gateway_openclaw_effective_ollama_api_key | trim | length > 0
     fail_msg: >-
-      gateway_openclaw_gateway_token and gateway_openclaw_ollama_api_key are
-      required. Pass them with -e or keep an existing
-      {{ gateway_openclaw_config_path }} with gateway.auth.token and
-      models.providers.ollama.apiKey, or provide OLLAMA_API_KEY in
-      {{ gateway_openclaw_secret_env_path }}; do not commit them into
-      inventory/defaults.
+      gateway_openclaw_gateway_token is required. Pass it with -e or keep an
+      existing {{ gateway_openclaw_config_path }} with gateway.auth.token; do
+      not commit it into inventory/defaults.
   no_log: true
 
 - name: Ensure OpenClaw gateway config directory exists
@@ -108,6 +59,38 @@
     owner: "{{ gateway_openclaw_service_user }}"
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0755"
+
+- name: Ensure OpenClaw extension backup directory exists
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_extension_backup_dir }}"
+    state: directory
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0700"
+
+- name: Move stale OpenClaw plugin backups out of extension scan path
+  ansible.builtin.shell: |
+    set -euo pipefail
+    shopt -s nullglob
+    moved=0
+    for backup_path in "{{ gateway_openclaw_home }}/.openclaw/extensions"/openclaw-multi-session-plugins.backup.*; do
+      backup_name="$(basename "$backup_path")"
+      backup_target="{{ gateway_openclaw_extension_backup_dir }}/${backup_name}"
+      if [ -e "$backup_target" ]; then
+        rm -rf "$backup_path"
+      else
+        mv "$backup_path" "$backup_target"
+      fi
+      moved=1
+    done
+    chown -R "{{ gateway_openclaw_service_user }}:{{ gateway_openclaw_service_group }}" "{{ gateway_openclaw_extension_backup_dir }}"
+    echo "moved=${moved}"
+  args:
+    executable: /bin/bash
+  register: gateway_openclaw_stale_extension_backups
+  changed_when: "'moved=1' in (gateway_openclaw_stale_extension_backups.stdout | default(''))"
+  when:
+    - not ansible_check_mode
 
 - name: Inspect OpenClaw gateway JSON config attributes
   ansible.builtin.command:
