@@ -4,36 +4,6 @@
     update_cache: true
   become: true
 
-- name: Purge snapd and snap-managed Chromium leftovers
-  ansible.builtin.apt:
-    name: snapd
-    state: absent
-    purge: true
-    autoremove: true
-  become: true
-
-- name: Remove snap filesystem and user leftovers
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - /snap
-    - /var/snap
-    - /var/lib/snapd
-    - /home/ubuntu/snap
-    - /home/ubuntu/.cache/gio-modules
-  become: true
-
-- name: Ensure xdg-utils is present for browser handoff
-  ansible.builtin.apt:
-    name: xdg-utils
-    state: present
-    install_recommends: false
-  environment:
-    DEBIAN_FRONTEND: noninteractive
-    APT_LISTCHANGES_FRONTEND: none
-  become: true
-
 - name: Install minimal desktop packages
   ansible.builtin.apt:
     name: "{{ xfce_packages }}"

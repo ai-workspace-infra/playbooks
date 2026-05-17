@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+CHROME_BIN=/usr/bin/google-chrome-stable
+if [ ! -x "$CHROME_BIN" ]; then
+  echo "chromium-xrdp: google-chrome-stable is not installed" >&2
+  exit 127
+fi
+if [ "${XDG_SESSION_TYPE:-}" = x11 ] && [ -n "${DISPLAY:-}" ]; then
+  profile_dir="${CHROME_USER_DATA_DIR:-$HOME/.config/google-chrome-xrdp}"
+  install -d -m 700 "$profile_dir"
+  exec "$CHROME_BIN" \
+    --user-data-dir="$profile_dir" \
+    --password-store=basic \
+    --no-first-run \
+    --no-default-browser-check \
+    --disable-gpu-compositing \
+    "$@"
+fi
+exec "$CHROME_BIN" "$@"
