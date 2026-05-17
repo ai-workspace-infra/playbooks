@@ -1,0 +1,190 @@
+---
+- name: Stop and mask snapd services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+    masked: true
+  loop:
+    - snapd.service
+    - snapd.socket
+    - snapd.seeded.service
+    - snapd.apparmor.service
+  become: true
+  failed_when: false
+
+- name: Block snap and snap-backed browser transitional packages
+  ansible.builtin.copy:
+    dest: /etc/apt/preferences.d/no-snap-transitional-browsers
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Package: chromium-browser firefox snapd
+      Pin: release *
+      Pin-Priority: -1
+  become: true
+
+- name: Purge snapd and snap-managed browser leftovers
+  ansible.builtin.apt:
+    name: snapd
+    state: absent
+    purge: true
+    autoremove: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+
+- name: Remove snap filesystem and desktop-user leftovers
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /snap
+    - /var/snap
+    - /var/lib/snapd
+    - "{{ xfce_user_home }}/snap"
+    - "{{ xfce_user_home }}/.cache/gio-modules"
+  become: true
+
+- name: Install Google Chrome apt repository prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - xdg-utils
+    state: present
+    install_recommends: false
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+
+- name: Ensure apt keyring directory exists
+  ansible.builtin.file:
+    path: "{{ xfce_google_chrome_apt_keyring | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install Google Linux signing key
+  ansible.builtin.shell: |
+    set -euo pipefail
+    tmp="$(mktemp)"
+    curl -fsSL "{{ xfce_google_chrome_apt_key_url }}" -o "$tmp"
+    gpg --dearmor -o "{{ xfce_google_chrome_apt_keyring }}" "$tmp"
+    rm -f "$tmp"
+    chmod 0644 "{{ xfce_google_chrome_apt_keyring }}"
+  args:
+    executable: /bin/bash
+    creates: "{{ xfce_google_chrome_apt_keyring }}"
+  become: true
+
+- name: Configure Google Chrome apt repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/google-chrome.list
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ xfce_google_chrome_apt_source }}\n"
+  become: true
+  register: xfce_google_chrome_repo
+
+- name: Refresh apt cache after Google Chrome repository changes
+  ansible.builtin.apt:
+    update_cache: true
+  become: true
+  when: xfce_google_chrome_repo.changed
+
+- name: Install apt-managed Google Chrome deb
+  ansible.builtin.apt:
+    name: "google-chrome-stable={{ xfce_google_chrome_version }}"
+    state: present
+    install_recommends: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+
+- name: Install XRDP Chrome launcher
+  ansible.builtin.template:
+    src: chromium-xrdp.j2
+    dest: /usr/local/bin/chromium-xrdp
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Keep Chromium compatibility commands pointed at Chrome deb
+  ansible.builtin.file:
+    src: /usr/local/bin/chromium-xrdp
+    dest: "{{ item }}"
+    state: link
+    force: true
+    owner: root
+    group: root
+  loop:
+    - /usr/local/bin/chromium
+    - /usr/local/bin/chromium-browser
+  become: true
+
+- name: Ensure desktop applications directory exists
+  ansible.builtin.file:
+    path: "{{ xfce_user_home }}/.local/share/applications"
+    state: directory
+    owner: "{{ xfce_user }}"
+    group: "{{ xfce_user }}"
+    mode: "0755"
+  become: true
+
+- name: Install Google Chrome XRDP desktop entry
+  ansible.builtin.template:
+    src: google-chrome-xrdp.desktop.j2
+    dest: "{{ xfce_user_home }}/.local/share/applications/{{ xfce_google_chrome_desktop_file }}"
+    owner: "{{ xfce_user }}"
+    group: "{{ xfce_user }}"
+    mode: "0600"
+  become: true
+
+- name: Register HTTP/HTTPS/text defaults to Google Chrome XRDP desktop entry
+  ansible.builtin.command: "xdg-mime default {{ xfce_google_chrome_desktop_file }} {{ item }}"
+  loop:
+    - x-scheme-handler/http
+    - x-scheme-handler/https
+    - text/html
+  become: true
+  become_user: "{{ xfce_user }}"
+  environment:
+    HOME: "{{ xfce_user_home }}"
+  changed_when: false
+
+- name: Set xdg default web browser to Google Chrome XRDP desktop entry
+  ansible.builtin.command: "xdg-settings set default-web-browser {{ xfce_google_chrome_desktop_file }}"
+  become: true
+  become_user: "{{ xfce_user }}"
+  environment:
+    HOME: "{{ xfce_user_home }}"
+  changed_when: false
+
+- name: Set system browser alternatives to Google Chrome deb
+  ansible.builtin.command: "update-alternatives --set {{ item }} /usr/bin/google-chrome-stable"
+  loop:
+    - x-www-browser
+    - gnome-www-browser
+  become: true
+  changed_when: false
+
+- name: Verify Google Chrome deb browser installation
+  ansible.builtin.command: /usr/local/bin/chromium-xrdp --version
+  register: xfce_google_chrome_version_check
+  changed_when: false
+  become: true
+
+- name: Show Google Chrome deb browser version
+  ansible.builtin.debug:
+    var: xfce_google_chrome_version_check.stdout
