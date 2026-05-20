@@ -1,0 +1,110 @@
+---
+- name: Install site build prerequisites
+  ansible.builtin.apt:
+    name:
+      - git
+      - rsync
+      - caddy
+    state: present
+    update_cache: true
+
+- name: Ensure Modern IT History directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ modern_it_history_root }}"
+    - "{{ modern_it_history_current_dir }}"
+
+- name: Clone or update Modern IT History repository
+  ansible.builtin.git:
+    repo: "{{ modern_it_history_repo }}"
+    dest: "{{ modern_it_history_repo_dir }}"
+    version: "{{ modern_it_history_branch }}"
+    force: true
+    update: true
+
+- name: Install Docusaurus dependencies
+  ansible.builtin.command: npm ci
+  args:
+    chdir: "{{ modern_it_history_repo_dir }}"
+  environment:
+    NODE_ENV: "{{ modern_it_history_node_env }}"
+
+- name: Build Docusaurus static site
+  ansible.builtin.command: npm run build
+  args:
+    chdir: "{{ modern_it_history_repo_dir }}"
+  environment:
+    NODE_ENV: "{{ modern_it_history_node_env }}"
+
+- name: Publish Docusaurus build to current static root
+  ansible.builtin.command: >
+    rsync -a --delete {{ modern_it_history_build_dir }}/ {{ modern_it_history_current_dir }}/
+
+- name: Install GitHub auto-update script
+  ansible.builtin.template:
+    src: modern-it-history-update.sh.j2
+    dest: /usr/local/bin/modern-it-history-update
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install Modern IT History update service
+  ansible.builtin.template:
+    src: modern-it-history-update.service.j2
+    dest: /etc/systemd/system/modern-it-history-update.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Install Modern IT History update timer
+  ansible.builtin.template:
+    src: modern-it-history-update.timer.j2
+    dest: /etc/systemd/system/modern-it-history-update.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Install ebook Caddy site
+  ansible.builtin.template:
+    src: ebook.svc.plus.caddy.j2
+    dest: /etc/caddy/sites-enabled/{{ modern_it_history_domain }}.caddy
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
+- name: Validate Caddy config
+  ansible.builtin.command: caddy validate --config /etc/caddy/Caddyfile
+  changed_when: false
+
+- name: Enable GitHub auto-update timer
+  ansible.builtin.systemd:
+    name: modern-it-history-update.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Ensure Caddy is enabled and running
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: true
+    state: started
+
+- name: Validate local ebook endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1/"
+    headers:
+      Host: "{{ modern_it_history_domain }}"
+    status_code: 200
+  register: modern_it_history_local_check
+
+- name: Show local validation status
+  ansible.builtin.debug:
+    msg: "ebook local validation status={{ modern_it_history_local_check.status }}"
