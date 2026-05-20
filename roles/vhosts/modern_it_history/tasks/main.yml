@@ -96,16 +96,15 @@
   ansible.builtin.systemd:
     name: caddy
     enabled: true
-    state: started
+    state: reloaded
 
 - name: Validate local ebook endpoint
-  ansible.builtin.uri:
-    url: "http://127.0.0.1/"
-    headers:
-      Host: "{{ modern_it_history_domain }}"
-    status_code: 200
+  ansible.builtin.command: >
+    curl -fsSk --resolve {{ modern_it_history_domain }}:443:127.0.0.1
+    https://{{ modern_it_history_domain }}/
+  changed_when: false
   register: modern_it_history_local_check
 
 - name: Show local validation status
   ansible.builtin.debug:
-    msg: "ebook local validation status={{ modern_it_history_local_check.status }}"
+    msg: "ebook local validation bytes={{ modern_it_history_local_check.stdout | length }}"
