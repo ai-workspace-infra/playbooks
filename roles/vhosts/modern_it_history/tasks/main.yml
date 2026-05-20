@@ -18,6 +18,7 @@
   loop:
     - "{{ modern_it_history_root }}"
     - "{{ modern_it_history_current_dir }}"
+    - "{{ modern_it_history_caddy_conf_dir }}"
 
 - name: Clone or update Modern IT History repository
   ansible.builtin.git:
@@ -74,7 +75,7 @@
 - name: Install ebook Caddy site
   ansible.builtin.template:
     src: ebook.svc.plus.caddy.j2
-    dest: /etc/caddy/sites-enabled/{{ modern_it_history_domain }}.caddy
+    dest: "{{ modern_it_history_caddy_conf_dir }}/{{ modern_it_history_domain }}.caddy"
     owner: root
     group: root
     mode: "0644"
