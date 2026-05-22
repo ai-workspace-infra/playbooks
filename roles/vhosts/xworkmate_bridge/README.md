@@ -70,7 +70,7 @@ App-facing endpoints:
 
 OpenClaw task admission is configured in the generated bridge `config.yaml` from these role variables:
 
-- `xworkmate_bridge_openclaw_gateway_max_active` defaults to `1`
+- `xworkmate_bridge_openclaw_gateway_max_active` defaults to `5`
 - `xworkmate_bridge_openclaw_gateway_max_queued` defaults to `20`
 - `xworkmate_bridge_openclaw_gateway_queue_timeout` defaults to `10m`
 
