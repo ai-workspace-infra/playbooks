@@ -141,7 +141,7 @@
   register: xworkmate_bridge_hermes_session
   changed_when: false
   failed_when: false
-  until: xworkmate_bridge_hermes_session.status == 200
+  until: xworkmate_bridge_hermes_session.status | int == 200
   retries: 3
   delay: 5
   no_log: true
@@ -149,7 +149,7 @@
 - name: Assert Hermes empty-output failure includes provider diagnostics
   ansible.builtin.assert:
     that:
-      - xworkmate_bridge_hermes_session.status == 200
+      - xworkmate_bridge_hermes_session.status | int == 200
       - xworkmate_bridge_hermes_session.json.result.success == false
       - xworkmate_bridge_hermes_session.json.result.provider == "hermes"
       - xworkmate_bridge_hermes_session.json.result.status == "failed"
