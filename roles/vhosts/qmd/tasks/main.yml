@@ -1,0 +1,139 @@
+---
+- name: Assert QMD is only supported on Debian family
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == "Debian"
+    fail_msg: "roles/vhosts/qmd currently supports Debian-based hosts only."
+
+- name: Ensure QMD config and cache directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ qmd_user }}"
+    group: "{{ qmd_group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ qmd_config_dir }}"
+      mode: "{{ qmd_config_dir_mode }}"
+    - path: "{{ qmd_cache_dir }}"
+      mode: "{{ qmd_cache_dir_mode }}"
+    - path: "{{ qmd_mcp_service_unit_path | dirname }}"
+      mode: "0755"
+
+- name: Deploy QMD collection index config
+  ansible.builtin.template:
+    src: index.yml.j2
+    dest: "{{ qmd_index_config_path }}"
+    owner: "{{ qmd_user }}"
+    group: "{{ qmd_group }}"
+    mode: "{{ qmd_index_config_mode }}"
+
+- name: Deploy QMD external embedding environment
+  ansible.builtin.template:
+    src: qmd.env.j2
+    dest: "{{ qmd_env_path }}"
+    owner: "{{ qmd_user }}"
+    group: "{{ qmd_group }}"
+    mode: "0600"
+  diff: false
+
+- name: Inspect QMD binary
+  ansible.builtin.stat:
+    path: "{{ qmd_binary_path }}"
+  register: qmd_binary
+
+- name: Fail when QMD binary is missing or not executable
+  ansible.builtin.assert:
+    that:
+      - qmd_binary.stat.exists | default(false)
+      - qmd_binary.stat.executable | default(false)
+    fail_msg: "QMD binary is missing or not executable: {{ qmd_binary_path }}"
+
+- name: Deploy QMD MCP user systemd unit
+  ansible.builtin.template:
+    src: qmd-mcp.user.service.j2
+    dest: "{{ qmd_mcp_service_unit_path }}"
+    owner: "{{ qmd_user }}"
+    group: "{{ qmd_group }}"
+    mode: "0644"
+  register: qmd_mcp_user_service_unit
+
+- name: Enable QMD service user linger
+  ansible.builtin.command:
+    cmd: "loginctl enable-linger {{ qmd_user }}"
+    creates: "/var/lib/systemd/linger/{{ qmd_user }}"
+  when:
+    - not ansible_check_mode
+
+- name: Ensure QMD service user manager is running
+  ansible.builtin.systemd:
+    name: "user@{{ qmd_service_uid }}.service"
+    state: started
+  when:
+    - not ansible_check_mode
+
+- name: Reload QMD user systemd manager
+  ansible.builtin.command:
+    cmd: systemctl --user daemon-reload
+  environment:
+    HOME: "{{ qmd_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ qmd_service_uid }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ qmd_service_uid }}/bus"
+  become: true
+  become_user: "{{ qmd_user }}"
+  changed_when: false
+  when:
+    - not ansible_check_mode
+
+- name: Ensure QMD MCP daemon is enabled and running
+  ansible.builtin.command:
+    cmd: >-
+      systemctl --user enable
+      {{ '--now' if not (qmd_mcp_user_service_unit.changed | default(false)) else '' }}
+      {{ qmd_mcp_service_name }}.service
+  environment:
+    HOME: "{{ qmd_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ qmd_service_uid }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ qmd_service_uid }}/bus"
+  become: true
+  become_user: "{{ qmd_user }}"
+  register: qmd_mcp_service_enable
+  changed_when: >-
+    'Created symlink' in (qmd_mcp_service_enable.stdout | default('')) or
+    'Created symlink' in (qmd_mcp_service_enable.stderr | default(''))
+  when:
+    - not ansible_check_mode
+
+- name: Restart QMD MCP daemon after unit changes
+  ansible.builtin.command:
+    cmd: "systemctl --user restart {{ qmd_mcp_service_name }}.service"
+  environment:
+    HOME: "{{ qmd_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ qmd_service_uid }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ qmd_service_uid }}/bus"
+  become: true
+  become_user: "{{ qmd_user }}"
+  when:
+    - qmd_mcp_user_service_unit.changed | default(false)
+    - not ansible_check_mode
+
+- name: Validate QMD status
+  ansible.builtin.command:
+    cmd: "{{ qmd_binary_path }} status"
+  environment:
+    HOME: "{{ qmd_home }}"
+    QMD_EMBED_API_BASE_URL: "{{ qmd_embed_api_base_url }}"
+    QMD_EMBED_MODEL: "{{ qmd_embed_model }}"
+  become: true
+  become_user: "{{ qmd_user }}"
+  register: qmd_status
+  changed_when: false
+  check_mode: false
+
+- name: Show QMD validation summary
+  ansible.builtin.debug:
+    msg:
+      - "QMD MCP URL: {{ qmd_mcp_url }}"
+      - "QMD index config: {{ qmd_index_config_path }}"
+      - "QMD embedding model: {{ qmd_embed_model }}"
+      - "{{ qmd_status.stdout | default('') }}"

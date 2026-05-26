@@ -1,7 +1,11 @@
 [Unit]
 Description=XWorkmate bridge control plane
+{% if xworkmate_bridge_required_services | length > 0 %}
 Requires={{ xworkmate_bridge_required_services | join(' ') }}
 After=network-online.target {{ xworkmate_bridge_required_services | join(' ') }}
+{% else %}
+After=network-online.target
+{% endif %}
 Wants=network-online.target
 
 [Service]
@@ -9,7 +13,7 @@ Type=simple
 User={{ xworkmate_bridge_service_user }}
 Group={{ xworkmate_bridge_service_group }}
 WorkingDirectory={{ xworkmate_bridge_base_dir }}
-Environment="HOME=/home/{{ xworkmate_bridge_service_user }}"
+Environment="HOME={{ xworkmate_bridge_service_home }}"
 Environment="TERM=xterm-256color"
 {% for key, value in xworkmate_bridge_service_environment | dictsort %}
 {% if value | string | trim | length > 0 %}

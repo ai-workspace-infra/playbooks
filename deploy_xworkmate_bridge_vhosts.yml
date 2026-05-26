@@ -1,8 +1,4 @@
 ---
-- import_playbook: deploy_agent_skills.yml
-  vars:
-    agent_skills_enabled: "{{ xworkmate_bridge_agent_skills_enabled | default(false) }}"
-
 - name: Ensure minimal XFCE XRDP desktop baseline
   hosts: "{{ xworkmate_bridge_hosts | default('all') }}"
   become: true
@@ -11,9 +7,15 @@
     - role: roles/vhosts/xfce_xrdp_minimal/
       tags: [xfce, xfce_xrdp_minimal]
 
-- import_playbook: setup-ai-agent-runtime.yml
+- import_playbook: setup-ai-agent-skills.yml
   vars:
-    ai_agent_runtime_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) }}"
+    ai_agent_runtime_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) or xworkmate_bridge_agent_skills_enabled | default(false) }}"
+    ai_agent_runtime_nodejs_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) }}"
+    ai_agent_runtime_python_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) }}"
+    ai_agent_runtime_browser_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) }}"
+    ai_agent_runtime_docs_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) }}"
+    ai_agent_runtime_fonts_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) }}"
+    ai_agent_runtime_verify_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) }}"
     ai_agent_runtime_skills_enabled: "{{ xworkmate_bridge_agent_skills_enabled | default(false) }}"
 
 - name: Deploy ACP vhosts through xworkmate bridge

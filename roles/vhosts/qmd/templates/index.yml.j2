@@ -1,0 +1,12 @@
+collections:
+{% for name, collection in qmd_collections | dictsort %}
+  {{ name }}:
+    path: {{ collection.path }}
+    pattern: {{ collection.pattern | to_json }}
+{% if collection.context is defined %}
+    context:
+{% for path, text in collection.context | dictsort %}
+      {{ path | to_json }}: {{ text }}
+{% endfor %}
+{% endif %}
+{% endfor %}
