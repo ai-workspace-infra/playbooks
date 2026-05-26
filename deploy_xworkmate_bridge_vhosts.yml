@@ -1,22 +1,14 @@
 ---
-- name: Ensure minimal XFCE XRDP desktop baseline
-  hosts: "{{ xworkmate_bridge_hosts | default('all') }}"
-  become: true
-  gather_facts: true
-  roles:
-    - role: roles/vhosts/xfce_xrdp_minimal/
-      tags: [xfce, xfce_xrdp_minimal]
-
-- import_playbook: setup-ai-agent-skills.yml
+- import_playbook: setup-ai-agent-runtime.yml
   vars:
-    ai_agent_runtime_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) or xworkmate_bridge_agent_skills_enabled | default(false) }}"
-    ai_agent_runtime_nodejs_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) }}"
-    ai_agent_runtime_python_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) }}"
-    ai_agent_runtime_browser_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) }}"
-    ai_agent_runtime_docs_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) }}"
-    ai_agent_runtime_fonts_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) }}"
-    ai_agent_runtime_verify_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(false) }}"
+    ai_agent_runtime_hosts: "{{ xworkmate_bridge_hosts | default('all') }}"
+    ai_agent_runtime_enabled: "{{ xworkmate_bridge_ai_agent_runtime_enabled | default(true) }}"
     ai_agent_runtime_skills_enabled: "{{ xworkmate_bridge_agent_skills_enabled | default(false) }}"
+    gateway_openclaw_enabled: "{{ xworkmate_bridge_gateway_openclaw_enabled | default(true) }}"
+    acp_server_codex_enabled: "{{ xworkmate_bridge_acp_server_codex_enabled | default(true) }}"
+    acp_server_opencode_enabled: "{{ xworkmate_bridge_acp_server_opencode_enabled | default(true) }}"
+    acp_server_gemini_enabled: "{{ xworkmate_bridge_acp_server_gemini_enabled | default(true) }}"
+    acp_server_hermes_enabled: "{{ xworkmate_bridge_acp_server_hermes_enabled | default(true) }}"
 
 - name: Deploy ACP vhosts through xworkmate bridge
   hosts: "{{ xworkmate_bridge_hosts | default('all') }}"
