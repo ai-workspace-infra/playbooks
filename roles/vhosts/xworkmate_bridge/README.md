@@ -64,8 +64,7 @@ Behavior after deployment:
 App-facing endpoints:
 
 - `wss://xworkmate-bridge.svc.plus/acp`: canonical WebSocket JSON-RPC runtime
-- `https://xworkmate-bridge.svc.plus/acp/rpc`: HTTP JSON-RPC fallback for capabilities, routing, agent, multi-agent, cancel, close, CI, and diagnostics
-- `https://xworkmate-bridge.svc.plus/gateway/openclaw`: dedicated OpenClaw task submit endpoint for `session.start` and follow-up `session.message`
+- `https://xworkmate-bridge.svc.plus/acp/rpc`: HTTP JSON-RPC fallback for capabilities, routing, agent, multi-agent, OpenClaw gateway tasks, cancel, close, CI, and diagnostics
 - `https://xworkmate-bridge.svc.plus/api/ping`: release and runtime health probe
 
 OpenClaw task admission is configured in the generated bridge `config.yaml` from these role variables:
@@ -77,21 +76,20 @@ OpenClaw task admission is configured in the generated bridge `config.yaml` from
 Non-contract routes:
 
 - Provider-direct routes such as `/codex`, `/opencode`, `/gemini`, `/hermes`, and legacy ACP provider paths are not public APP contracts
-- `/gateway/openclaw` is not a global ACP base endpoint and must not be used for capabilities, routing, cancel, or close
+- `/gateway/openclaw` is no longer an app-facing task submit route; OpenClaw tasks use `/acp/rpc` with routing metadata
 
 ## Post-Deploy Verification
 
 Without token:
 
 - `https://xworkmate-bridge.svc.plus/acp/rpc` -> `401`
-- `https://xworkmate-bridge.svc.plus/gateway/openclaw` -> `401`
 
 With `Authorization: Bearer $INTERNAL_SERVICE_TOKEN`:
 
 - `wss://xworkmate-bridge.svc.plus/acp` -> `101 Switching Protocols`
 - `https://xworkmate-bridge.svc.plus/acp/rpc` `acp.capabilities` -> `200`
 - `https://xworkmate-bridge.svc.plus/acp/rpc` `xworkmate.routing.resolve` -> `200`
-- `https://xworkmate-bridge.svc.plus/gateway/openclaw` `session.start` -> `200` with either success or structured provider failure
+- `https://xworkmate-bridge.svc.plus/acp/rpc` OpenClaw `session.start` -> `200` with either success or structured provider failure
 
 Bridge public root:
 
@@ -130,11 +128,11 @@ Agent tasks use `/acp/rpc` or `/acp` with explicit routing metadata:
 }
 ```
 
-OpenClaw task submission uses the same JSON-RPC envelope at `/gateway/openclaw`, with `routing.explicitExecutionTarget=gateway` and `routing.preferredGatewayProviderId=openclaw`. Follow-up `session.message` for the same OpenClaw task also stays on `/gateway/openclaw`.
+OpenClaw task submission uses the same JSON-RPC envelope at `/acp/rpc`, with `routing.explicitExecutionTarget=gateway` and `routing.preferredGatewayProviderId=openclaw`. Follow-up `session.message` for the same OpenClaw task also stays on `/acp/rpc`.
 
 ## Current Operational Status
 
-- ACP ingress deployment: validates `/api*`, `/acp*`, `/gateway/openclaw`, and `/`
+- ACP ingress deployment: validates `/api*`, `/acp*`, `/artifacts/*`, and `/`
 - unified internal bearer token: required for protected endpoints
 - bridge public root route: working
 - legacy ACP provider Caddy fragments: removed from public ingress
