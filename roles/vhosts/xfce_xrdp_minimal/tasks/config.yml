@@ -22,11 +22,13 @@
   ansible.builtin.user:
     name: "{{ xfce_user }}"
     password: "{{ xfce_user_password_plaintext | password_hash('sha512') }}"
-    update_password: always
+    update_password: "{{ xfce_user_update_password }}"
     password_lock: false
   become: true
   no_log: true
-  when: xfce_manage_user | bool
+  when:
+    - xfce_manage_user | bool
+    - not ansible_check_mode
 
 - name: Ensure the desktop user can sudo
   ansible.builtin.user:

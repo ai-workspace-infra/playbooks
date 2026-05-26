@@ -44,7 +44,17 @@ gateway_openclaw_acp_max_concurrent_sessions: 2
 gateway_openclaw_acp_backend: acpx
 gateway_openclaw_acp_default_agent: codex
 gateway_openclaw_codex_app_server_url: ws://127.0.0.1:9001
-gateway_openclaw_default_model: deepseek/deepseek-v4-flash
+gateway_openclaw_default_model:
+  primary: nvidia/nemotron-3-super-120b-a12b
+  fallbacks:
+    - nvidia/minimaxai/minimax-m2.5
+    - nvidia/z-ai/glm5
+gateway_openclaw_default_models:
+  nvidia/nemotron-3-super-120b-a12b: {}
+  nvidia/minimaxai/minimax-m2.5: {}
+  nvidia/z-ai/glm5: {}
+  openai-codex/gpt-5.5: {}
+gateway_openclaw_main_agent_model: nvidia/nemotron-3-super-120b-a12b
 
 gateway_openclaw_main_agent_skills:
   - acp-router
@@ -76,3 +86,75 @@ gateway_openclaw_main_agent_skills:
   - video-translator
   - web-search
   - self-improving
+  - ai-tech-news-video
+  - it-infra-continuous-png
+  - it-infra-evolution-video
+  - product-intro-video
+  - sound-fx-for-video
+  - sketch-animation-video
+  - skylv-hermes-agent-integration
+  - hermes-agent-integration
+  - qmd
+
+gateway_openclaw_mcp_servers:
+  qmd:
+    url: http://localhost:8181/mcp
+    transport: streamable-http
+
+gateway_openclaw_model_providers:
+  nvidia:
+    api: openai-completions
+    baseUrl: https://integrate.api.nvidia.com/v1
+    models:
+      - id: nvidia/nemotron-3-super-120b-a12b
+        name: NVIDIA Nemotron 3 Super 120B
+        input: [text]
+        contextWindow: 262144
+        maxTokens: 8192
+        reasoning: false
+        compat:
+          requiresStringContent: true
+        cost:
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0
+      - id: moonshotai/kimi-k2.5
+        name: Kimi K2.5
+        input: [text]
+        contextWindow: 262144
+        maxTokens: 8192
+        reasoning: false
+        compat:
+          requiresStringContent: true
+        cost:
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0
+      - id: minimaxai/minimax-m2.5
+        name: MiniMax M2.5
+        input: [text]
+        contextWindow: 196608
+        maxTokens: 8192
+        reasoning: false
+        compat:
+          requiresStringContent: true
+        cost:
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0
+      - id: z-ai/glm5
+        name: GLM-5
+        input: [text]
+        contextWindow: 202752
+        maxTokens: 8192
+        reasoning: false
+        compat:
+          requiresStringContent: true
+        cost:
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0

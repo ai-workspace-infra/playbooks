@@ -26,11 +26,13 @@
       "bootstrapMaxChars": 50000,
       "bootstrapTotalMaxChars": 300000,
       "model": {{ gateway_openclaw_default_model | to_json }},
+      "models": {{ gateway_openclaw_default_models | to_json }},
       "thinkingDefault": "low"
     },
     "list": [
       {
         "id": "main",
+        "model": {{ gateway_openclaw_main_agent_model | to_json }},
         "skills": {{ gateway_openclaw_main_agent_skills | unique | list | to_json }}
       }
     ]
@@ -85,7 +87,7 @@
   },
   "models": {
     "mode": "merge",
-    "providers": {}
+    "providers": {{ gateway_openclaw_model_providers | to_json }}
   },
   "wizard": {
     "lastRunAt": "2026-04-19T10:52:37.655Z",
@@ -106,6 +108,9 @@
     "defaultAgent": {{ gateway_openclaw_acp_default_agent | to_json }},
     "maxConcurrentSessions": {{ gateway_openclaw_acp_max_concurrent_sessions | int }}
   },
+  "mcp": {
+    "servers": {{ gateway_openclaw_mcp_servers | to_json }}
+  },
   "plugins": {
     "entries": {
       "nvidia": {"enabled": true},
@@ -119,9 +124,14 @@
           "appServer": {
             "transport": "websocket",
             "url": {{ gateway_openclaw_codex_app_server_url | to_json }}
+          },
+          "discovery": {
+            "enabled": true
           }
         }
       },
+      "memory-wiki": {"enabled": true},
+      "openai": {"enabled": true},
       "openclaw-multi-session-plugins": {"enabled": true},
       "device-pair": {"enabled": false},
       "phone-control": {"enabled": false},

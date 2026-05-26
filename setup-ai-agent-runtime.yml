@@ -1,9 +1,12 @@
 ---
-- name: Setup AI agent runtime
-  hosts: all
+- name: Setup AI agent runtime desktop
+  hosts: jp-xhttp-contabo.svc.plus
   become: true
   gather_facts: true
+  vars:
+    xfce_manage_user: true
+    xfce_user_password_plaintext: "L@xiaomin1250"
+    xfce_user_shell: /bin/bash
+    xfce_enable_ufw: false
   roles:
-    - role: roles/ai_agent_runtime/
-      when: ai_agent_runtime_enabled | default(true) | bool
-      tags: [ai_agent_runtime]
+    - roles/vhosts/xfce_xrdp_minimal/

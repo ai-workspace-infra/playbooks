@@ -39,7 +39,10 @@
 - name: Configure shared agent skills
   ansible.builtin.include_role:
     name: "{{ ai_agent_runtime_skills_role_name }}"
+    apply:
+      tags: agent_skills
   when: ai_agent_runtime_skills_enabled | bool
+  tags: [agent_skills]
 
 - name: Verify AI agent runtime
   ansible.builtin.include_tasks: verify.yml

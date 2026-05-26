@@ -12,6 +12,8 @@
     - snapd.apparmor.service
   become: true
   failed_when: false
+  when:
+    - not ansible_check_mode
 
 - name: Block snap and snap-backed browser transitional packages
   ansible.builtin.copy:
@@ -120,14 +122,16 @@
     mode: "0755"
   become: true
 
-- name: Keep Chromium compatibility commands pointed at Chrome deb
-  ansible.builtin.file:
-    src: /usr/local/bin/chromium-xrdp
+- name: Keep Chromium compatibility commands disabled
+  ansible.builtin.copy:
+    content: |
+      #!/bin/sh
+      echo "Chromium is disabled on this host. Use google-chrome instead." >&2
+      exit 126
     dest: "{{ item }}"
-    state: link
-    force: true
     owner: root
     group: root
+    mode: "0755"
   loop:
     - /usr/local/bin/chromium
     - /usr/local/bin/chromium-browser
@@ -162,6 +166,8 @@
   environment:
     HOME: "{{ xfce_user_home }}"
   changed_when: false
+  when:
+    - not ansible_check_mode
 
 - name: Set xdg default web browser to Google Chrome XRDP desktop entry
   ansible.builtin.command: "xdg-settings set default-web-browser {{ xfce_google_chrome_desktop_file }}"
@@ -170,6 +176,8 @@
   environment:
     HOME: "{{ xfce_user_home }}"
   changed_when: false
+  when:
+    - not ansible_check_mode
 
 - name: Set system browser alternatives to Google Chrome deb
   ansible.builtin.command: "update-alternatives --set {{ item }} /usr/bin/google-chrome-stable"
@@ -178,12 +186,15 @@
     - gnome-www-browser
   become: true
   changed_when: false
+  when:
+    - not ansible_check_mode
 
 - name: Verify Google Chrome deb browser installation
   ansible.builtin.command: /usr/local/bin/chromium-xrdp --version
   register: xfce_google_chrome_version_check
   changed_when: false
   become: true
+  check_mode: false
 
 - name: Show Google Chrome deb browser version
   ansible.builtin.debug:

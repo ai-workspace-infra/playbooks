@@ -4,13 +4,19 @@ agent_skills_group: "{{ agent_skills_user }}"
 agent_skills_home: "/home/{{ agent_skills_user }}"
 
 agent_skills_local_source_dir: "{{ lookup('ansible.builtin.env', 'HOME') }}/.agents/skills"
+agent_skills_xworkspace_core_enabled: true
+agent_skills_xworkspace_core_required: true
+agent_skills_xworkspace_core_source_dir: "{{ playbook_dir | dirname }}/xworkspace-core-skills/skills"
 agent_skills_remote_dir: "{{ agent_skills_home }}/.agents/skills"
 agent_skills_local_source_create: true
-agent_skills_delete_removed: true
+agent_skills_delete_removed: false
 agent_skills_rsync_compress: false
 agent_skills_rsync_timeout: 120
 agent_skills_install_rsync: true
 agent_skills_replace_existing_target_dirs: false
+agent_skills_preserve_existing_target_dirs:
+  - "{{ agent_skills_home }}/.codex/skills"
+agent_skills_remote_flatten_nested_skills: true
 agent_skills_auto_install_enabled: true
 agent_skills_auto_install_fail_on_missing_installer: true
 agent_skills_quality_gate_enabled: true
@@ -31,8 +37,10 @@ agent_skills_rsync_excludes:
   - .venv/
   - __pycache__/
   - "*.pyc"
+  - "*/__pycache__/"
+  - "*/.DS_Store"
 agent_skills_rsync_extra_opts:
-  - "--delete-excluded"
+  - "--protocol=29"
   - "--out-format=<<CHANGED>>%i"
 
 agent_skills_typical_scenario_skills:
@@ -121,9 +129,6 @@ agent_skills_targets:
     paths:
       - "{{ agent_skills_home }}/.opencode/skills"
       - "{{ agent_skills_home }}/.config/opencode/skills"
-  - name: hermers
-    paths:
-      - "{{ agent_skills_home }}/.hermers/skills"
   - name: openclaw
     paths:
       - "{{ agent_skills_home }}/.openclaw/skills"

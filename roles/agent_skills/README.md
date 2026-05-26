@@ -1,18 +1,31 @@
 # Agent Skills
 
-Synchronizes the controller user's `~/.agents/skills/` directory to an Ubuntu
-runtime user's canonical skills directory, then exposes the same directory to
-agent-specific skill locations.
+Synchronizes controller skill sources to an Ubuntu runtime user's canonical
+skills directory, then exposes the same directory to agent-specific skill
+locations.
 
 Default source and target:
 
-- local source: `~/.agents/skills/`
+- local marketplace source: `~/.agents/skills/`
+- local repository source: `../xworkspace-core-skills/skills/`
 - remote canonical path: `/home/ubuntu/.agents/skills/`
 - default agent targets: `codex`, `gemini`, `opencode`, `hermers`, `openclaw`
 
+The repository source is categorized by capability domain, for example
+`video-production/`, `image-production/`, `animation/`, and `workspace-core/`.
+The role syncs those categories as-is, then creates root-level symlinks for
+nested skills so runtimes that scan one directory level can still discover them.
+Set `agent_skills_xworkspace_core_enabled=false` to use only the marketplace
+source, or `agent_skills_remote_flatten_nested_skills=false` to disable root
+symlink materialization.
+
 The role keeps one remote source of truth and links each agent's skills entry to
-that canonical directory. Existing non-symlink target directories are rejected by
-default to avoid silently deleting agent-owned content. Set
+that canonical directory where the online runtime already uses links. Existing
+non-symlink target directories are rejected by default to avoid silently deleting
+agent-owned content. The live `ubuntu` Codex runtime on
+`xworkmate-bridge.svc.plus` keeps `/home/ubuntu/.codex/skills` as a real
+directory, so it is preserved by default through
+`agent_skills_preserve_existing_target_dirs`. Set
 `agent_skills_replace_existing_target_dirs=true` only when those target
 directories should be replaced.
 
@@ -42,6 +55,11 @@ already present locally. Set
 skills when neither installer is available; the role still fails later if a
 required skill cannot be resolved.
 
+Required-skill checks search both the marketplace source and the categorized
+repository source recursively. Auto-install still writes only to
+`~/.agents/skills/`; repository-owned skills should be changed in
+`xworkspace-core-skills`.
+
 After install, optional local quality gates run for each resolved skill when the
 command exists:
 
@@ -58,16 +76,20 @@ Default sync excludes local runtime artifacts such as `.venv/`, `__pycache__/`,
 `.pyc`, and `.DS_Store`; skills should ship source, scripts, templates, and
 references rather than controller-local virtual environments.
 
+The sync defaults to overlay mode (`agent_skills_delete_removed=false`) so it
+does not remove skills that already exist on the live runtime catalog. Enable
+deletion only for controlled rebuilds of `/home/ubuntu/.agents/skills/`.
+
 Example:
 
 ```bash
-ansible-playbook -i inventory.ini -l jp-xhttp-contabo.svc.plus deploy_agent_skills.yml
+ansible-playbook -i inventory.ini -l jp-xhttp-contabo.svc.plus setup-ai-agent-skills.yml --tags agent_skills
 ```
 
 Bootstrap-only example that keeps the existing local source strict but skips
 quality gate failures from newly installed marketplace skills:
 
 ```bash
-ansible-playbook -i inventory.ini -l jp-xhttp-contabo.svc.plus deploy_agent_skills.yml \
+ansible-playbook -i inventory.ini -l jp-xhttp-contabo.svc.plus setup-ai-agent-skills.yml --tags agent_skills \
   -e agent_skills_quality_gate_fail_on_error=false
 ```

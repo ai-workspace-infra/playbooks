@@ -1,0 +1,18 @@
+[Unit]
+Description=QMD MCP daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={{ qmd_home }}
+Environment=HOME={{ qmd_home }}
+Environment=PATH={{ qmd_home }}/.bun/bin:{{ qmd_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile={{ qmd_env_path }}
+ExecStart={{ qmd_binary_path }} mcp --http --port {{ qmd_mcp_port }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+

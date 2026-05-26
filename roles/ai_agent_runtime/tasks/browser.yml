@@ -1,26 +1,18 @@
 ---
-- name: Install AI runtime browser packages
-  ansible.builtin.apt:
-    name: "{{ ai_agent_runtime_browser_packages }}"
-    state: present
-    update_cache: true
-    install_recommends: false
-  environment:
-    DEBIAN_FRONTEND: noninteractive
-    APT_LISTCHANGES_FRONTEND: none
-  become: true
-
-- name: Resolve Chromium executable
+- name: Resolve existing Chromium executable
   ansible.builtin.shell: |
     set -eu
     for candidate in \
       "{{ ai_agent_runtime_browser_executable }}" \
+      /usr/local/bin/chromium \
+      /usr/local/bin/chromium-browser \
+      /usr/bin/google-chrome \
+      /usr/bin/google-chrome-stable \
       chromium \
       chromium-browser \
       google-chrome \
       google-chrome-stable \
       /usr/bin/chromium \
-      /usr/local/bin/chromium \
       /snap/bin/chromium; do
       if command -v "$candidate" >/dev/null 2>&1; then
         command -v "$candidate"
@@ -36,6 +28,51 @@
     executable: /bin/sh
   register: ai_agent_runtime_browser_resolve
   changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install AI runtime browser packages when no browser exists
+  ansible.builtin.apt:
+    name: "{{ ai_agent_runtime_browser_packages }}"
+    state: present
+    update_cache: true
+    install_recommends: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+  when: ai_agent_runtime_browser_resolve.rc != 0
+
+- name: Resolve Chromium executable
+  ansible.builtin.shell: |
+    set -eu
+    for candidate in \
+      "{{ ai_agent_runtime_browser_executable }}" \
+      /usr/local/bin/chromium \
+      /usr/local/bin/chromium-browser \
+      /usr/bin/google-chrome \
+      /usr/bin/google-chrome-stable \
+      chromium \
+      chromium-browser \
+      google-chrome \
+      google-chrome-stable \
+      /usr/bin/chromium \
+      /snap/bin/chromium; do
+      if command -v "$candidate" >/dev/null 2>&1; then
+        command -v "$candidate"
+        exit 0
+      fi
+      if [ -x "$candidate" ]; then
+        printf '%s\n' "$candidate"
+        exit 0
+      fi
+    done
+    exit 1
+  args:
+    executable: /bin/sh
+  register: ai_agent_runtime_browser_resolve
+  changed_when: false
+  check_mode: false
 
 - name: Set resolved Chromium executable
   ansible.builtin.set_fact:
