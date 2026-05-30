@@ -73,6 +73,10 @@ OpenClaw task admission is configured in the generated bridge `config.yaml` from
 - `xworkmate_bridge_openclaw_gateway_max_queued` defaults to `20`
 - `xworkmate_bridge_openclaw_gateway_queue_timeout` defaults to `10m`
 
+Apple review / beta 工测可配置临时 `BRIDGE_REVIEW_AUTH_TOKEN`。该 token 与主
+`BRIDGE_AUTH_TOKEN` 并行生效；清空 `BRIDGE_REVIEW_AUTH_TOKEN` 并重新部署或
+reload/restart bridge 即可单独关停审核通道，不影响生产 token。
+
 Non-contract routes:
 
 - Provider-direct routes such as `/codex`, `/opencode`, `/gemini`, `/hermes`, and legacy ACP provider paths are not public APP contracts

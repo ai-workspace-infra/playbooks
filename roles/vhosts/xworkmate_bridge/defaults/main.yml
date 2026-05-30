@@ -4,6 +4,7 @@ xworkmate_bridge_service_user: ubuntu
 xworkmate_bridge_service_group: ubuntu
 xworkmate_bridge_service_home: "/home/{{ xworkmate_bridge_service_user }}"
 xworkmate_bridge_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true), true) }}"
+xworkmate_bridge_review_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_REVIEW_AUTH_TOKEN') | default('', true) }}"
 xworkmate_bridge_listen_host: 127.0.0.1
 xworkmate_bridge_listen_port: 8787
 xworkmate_bridge_listen_addr: "{{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}"
@@ -16,6 +17,7 @@ xworkmate_bridge_deprecated_container_name: xworkmate-bridge-managed
 xworkmate_bridge_deprecated_compose_file: "{{ xworkmate_bridge_base_dir }}/docker-compose.yml"
 xworkmate_bridge_service_environment:
   BRIDGE_AUTH_TOKEN: "{{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
+  BRIDGE_REVIEW_AUTH_TOKEN: "{{ xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token) }}"
   BRIDGE_CONFIG_PATH: "{{ xworkmate_bridge_config_file }}"
   IMAGE: "{{ xworkmate_bridge_effective_runtime_image_ref | default(xworkmate_bridge_runtime_image_ref) }}"
 xworkmate_bridge_openclaw_gateway_max_active: 5

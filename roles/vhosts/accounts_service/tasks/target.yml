@@ -68,6 +68,22 @@
     state: present
     insertafter: '^CONFIG_TEMPLATE='
 
+- name: Ensure managed xworkmate bridge env is present for {{ accounts_service_target.name }}
+  ansible.builtin.lineinfile:
+    path: "{{ accounts_service_target.env_file }}"
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+    state: present
+    insertafter: '^IMAGE='
+  loop:
+    - key: BRIDGE_AUTH_TOKEN
+      value: "{{ accounts_service_env_defaults.BRIDGE_AUTH_TOKEN }}"
+    - key: BRIDGE_REVIEW_AUTH_TOKEN
+      value: "{{ accounts_service_env_defaults.BRIDGE_REVIEW_AUTH_TOKEN }}"
+    - key: BRIDGE_SERVER_URL
+      value: "{{ accounts_service_env_defaults.BRIDGE_SERVER_URL }}"
+  no_log: true
+
 - name: Render managed account config for {{ accounts_service_target.name }}
   ansible.builtin.template:
     src: account.yaml.j2

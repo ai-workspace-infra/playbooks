@@ -26,6 +26,20 @@
   failed_when: false
   no_log: true
 
+- name: Read existing xworkmate-bridge review auth token from systemd unit
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if [ -f "{{ xworkmate_bridge_systemd_unit_path }}" ]; then
+      sed -n 's/^Environment="BRIDGE_REVIEW_AUTH_TOKEN=\(.*\)"$/\1/p' "{{ xworkmate_bridge_systemd_unit_path }}" | head -n 1
+    fi
+  args:
+    executable: /bin/bash
+  register: xworkmate_bridge_existing_review_auth_token
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  no_log: true
+
 - name: Read existing xworkmate-bridge image ref from systemd unit
   ansible.builtin.shell: |
     set -euo pipefail
@@ -46,6 +60,12 @@
         xworkmate_bridge_auth_token
         if (xworkmate_bridge_auth_token | trim | length > 0)
         else (xworkmate_bridge_existing_auth_token.stdout | default(''))
+      }}
+    xworkmate_bridge_effective_review_auth_token: >-
+      {{
+        xworkmate_bridge_review_auth_token
+        if (xworkmate_bridge_review_auth_token | trim | length > 0)
+        else (xworkmate_bridge_existing_review_auth_token.stdout | default(''))
       }}
   no_log: true
 
