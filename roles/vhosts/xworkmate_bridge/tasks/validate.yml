@@ -273,6 +273,22 @@
     ):
         if code in error_text:
             raise SystemExit(f"legacy OpenClaw routing error remained: {code}")
+    final_text = json.dumps(final, ensure_ascii=False)
+    for marker in (
+        "Requested agent harness",
+        "provider is not one of",
+        "Agent failed before reply",
+        "ACP_HTTP_",
+    ):
+        if marker in final_text:
+            raise SystemExit(f"OpenClaw smoke returned runtime error text: {marker}")
+    result = final.get("result") or final.get("payload") or {}
+    output_text = " ".join(
+        str(result.get(key, ""))
+        for key in ("output", "message", "summary", "resultSummary")
+    )
+    if "pong" not in output_text.lower():
+        raise SystemExit(f"OpenClaw smoke did not return pong: {output_text[:500]}")
     PY
   args:
     executable: /bin/bash
@@ -340,10 +356,32 @@
         raise SystemExit("missing accepted SSE event")
     if elapsed_seconds >= 15 and "xworkmate.bridge.keepalive" not in methods:
         raise SystemExit("missing keepalive SSE event")
-    if "validate-openclaw-sse" not in ids:
+    final = next(
+        (item for item in payloads if isinstance(item, dict) and item.get("id") == "validate-openclaw-sse"),
+        None,
+    )
+    if final is None:
         raise SystemExit("missing final SSE result envelope")
     if not payloads or payloads[-1].get("done") is not True:
         raise SystemExit("missing SSE done marker")
+    final_text = json.dumps(final, ensure_ascii=False)
+    for marker in (
+        "Requested agent harness",
+        "provider is not one of",
+        "Agent failed before reply",
+        "ACP_HTTP_",
+        "OPENCLAW_GATEWAY_METHOD_NOT_ALLOWED",
+        "OPENCLAW_GATEWAY_CONFLICT",
+    ):
+        if marker in final_text:
+            raise SystemExit(f"OpenClaw long-task smoke returned runtime error text: {marker}")
+    result = final.get("result") or final.get("payload") or {}
+    output_text = " ".join(
+        str(result.get(key, ""))
+        for key in ("output", "message", "summary", "resultSummary")
+    )
+    if "pong" not in output_text.lower():
+        raise SystemExit(f"OpenClaw long-task smoke did not return pong: {output_text[:500]}")
     PY
   args:
     executable: /bin/bash

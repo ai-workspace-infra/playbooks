@@ -90,6 +90,105 @@
     - not ansible_check_mode
   notify: Restart openclaw gateway
 
+- name: Ensure OpenClaw global plugin npm directory exists
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_global_npm_dir }}"
+    state: directory
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0700"
+
+- name: Install required OpenClaw global plugin versions
+  ansible.builtin.command:
+    cmd: >-
+      npm install --omit=dev --no-audit --no-fund --save-exact
+      --prefix "{{ gateway_openclaw_global_npm_dir }}"
+      {{ item.name }}@{{ item.version }}
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_required_global_plugin_installs
+  changed_when: >-
+    'added ' in (gateway_openclaw_required_global_plugin_installs.stdout | default('')) or
+    'removed ' in (gateway_openclaw_required_global_plugin_installs.stdout | default('')) or
+    'changed ' in (gateway_openclaw_required_global_plugin_installs.stdout | default(''))
+  loop: "{{ gateway_openclaw_required_global_plugins }}"
+  loop_control:
+    label: "{{ item.name }}@{{ item.version }}"
+  when:
+    - not ansible_check_mode
+  notify: Restart openclaw gateway
+
+- name: Remove unsupported OpenClaw global plugin packages
+  ansible.builtin.command:
+    cmd: >-
+      npm uninstall --no-audit --no-fund
+      --prefix "{{ gateway_openclaw_global_npm_dir }}"
+      {{ item }}
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_removed_global_plugin_packages
+  changed_when: "'removed ' in (gateway_openclaw_removed_global_plugin_packages.stdout | default(''))"
+  loop: "{{ gateway_openclaw_removed_global_plugins }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - gateway_openclaw_removed_global_plugins | length > 0
+    - not ansible_check_mode
+  notify: Restart openclaw gateway
+
+- name: Reset OpenClaw compile cache after package or plugin changes
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_compile_cache_dir }}"
+    state: absent
+  when:
+    - not ansible_check_mode
+    - >-
+      (gateway_openclaw_package_install.changed | default(false))
+      or
+      (gateway_openclaw_required_global_plugin_installs.changed | default(false))
+      or
+      (gateway_openclaw_removed_global_plugin_packages.changed | default(false))
+
+- name: Recreate OpenClaw compile cache after package or plugin changes
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_compile_cache_dir }}"
+    state: directory
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0755"
+  when:
+    - not ansible_check_mode
+    - >-
+      (gateway_openclaw_package_install.changed | default(false))
+      or
+      (gateway_openclaw_required_global_plugin_installs.changed | default(false))
+      or
+      (gateway_openclaw_removed_global_plugin_packages.changed | default(false))
+
+- name: Refresh OpenClaw plugin registry
+  ansible.builtin.command:
+    cmd: "{{ gateway_openclaw_binary_path }} plugins registry --refresh"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  changed_when: false
+  when:
+    - not ansible_check_mode
+
 - name: Move stale OpenClaw plugin backups out of extension scan path
   ansible.builtin.shell: |
     set -euo pipefail
@@ -198,27 +297,6 @@
     - item.stat.exists | default(false)
     - not ansible_check_mode
 
-- name: Repair OpenClaw 2026.5 route state as service user
-  ansible.builtin.command:
-    cmd: "{{ gateway_openclaw_binary_path }} doctor --fix --non-interactive"
-  environment:
-    HOME: "{{ gateway_openclaw_home }}"
-    PATH: "{{ gateway_openclaw_service_path }}"
-    OPENCLAW_NO_RESPAWN: "1"
-    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
-    OPENCLAW_SERVICE_REPAIR_POLICY: external
-  become: true
-  become_user: "{{ gateway_openclaw_service_user }}"
-  register: gateway_openclaw_doctor_repair
-  changed_when: >-
-    ((gateway_openclaw_doctor_repair.stdout | default('')) ~ '\n' ~
-    (gateway_openclaw_doctor_repair.stderr | default('')))
-    is search('(?i)(fixed|repaired|migrated|rewrote|removed|set |moved |updated|archived)')
-  when:
-    - gateway_openclaw_doctor_repair_enabled | bool
-    - not ansible_check_mode
-  notify: Restart openclaw gateway
-
 - name: Restore immutable flag on OpenClaw gateway JSON config
   ansible.builtin.command:
     cmd: chattr +i "{{ gateway_openclaw_config_path }}"
@@ -262,6 +340,45 @@
     fail_msg: >-
       OpenClaw gateway must run {{ gateway_openclaw_required_version }} after the
       package upgrade. Actual version output: {{ gateway_openclaw_version.stdout | default('') }}
+  when:
+    - not ansible_check_mode
+
+- name: Check OpenClaw plugin registry
+  ansible.builtin.command:
+    cmd: "{{ gateway_openclaw_binary_path }} plugins list --json"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_plugin_registry
+  changed_when: false
+  when:
+    - not ansible_check_mode
+
+- name: Assert OpenClaw Codex plugin matches gateway version
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          (gateway_openclaw_plugin_registry.stdout | from_json).plugins
+          | selectattr('id', 'equalto', 'codex')
+          | selectattr('version', 'equalto', gateway_openclaw_required_version)
+          | list
+          | length
+        ) == 1
+      - >-
+        (
+          (gateway_openclaw_plugin_registry.stdout | from_json).plugins
+          | selectattr('id', 'equalto', 'acpx')
+          | list
+          | length
+        ) == 0
+    fail_msg: >-
+      OpenClaw must run @openclaw/codex {{ gateway_openclaw_required_version }}
+      and must not keep stale global @openclaw/acpx.
   when:
     - not ansible_check_mode
 
