@@ -1,0 +1,99 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {
+        "type": "field",
+        "inboundTag": ["wireguard-local-udp"],
+        "outboundTag": "wireguard-peer"
+      },
+      {
+        "type": "field",
+        "inboundTag": ["wireguard-vless"],
+        "outboundTag": "direct"
+      }
+    ]
+  },
+  "inbounds": [
+    {
+      "tag": "wireguard-vless",
+      "listen": "0.0.0.0",
+      "port": {{ xworkmate_bridge_distributed_vpn_vless_port | int }},
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "{{ xworkmate_bridge_distributed_vpn_xray_uuid }}"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "{{ xworkmate_bridge_distributed_vpn_current_node.domain }}",
+          "minVersion": "1.2",
+          "certificates": [
+            {
+              "certificateFile": "{{ xworkmate_bridge_distributed_vpn_tls_cert_path }}",
+              "keyFile": "{{ xworkmate_bridge_distributed_vpn_tls_key_path }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "tag": "wireguard-local-udp",
+      "listen": "127.0.0.1",
+      "port": {{ xworkmate_bridge_distributed_vpn_local_tproxy_port | int }},
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "127.0.0.1",
+        "port": {{ xworkmate_bridge_distributed_vpn_wireguard_port | int }},
+        "network": "udp"
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "wireguard-peer",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "{{ xworkmate_bridge_distributed_vpn_peer_node.domain }}",
+            "port": {{ xworkmate_bridge_distributed_vpn_vless_port | int }},
+            "users": [
+              {
+                "id": "{{ xworkmate_bridge_distributed_vpn_xray_uuid }}",
+                "encryption": "none",
+                "packetEncoding": "xudp"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "{{ xworkmate_bridge_distributed_vpn_peer_node.domain }}",
+          "allowInsecure": false,
+          "fingerprint": "chrome"
+        }
+      }
+    },
+    {
+      "tag": "direct",
+      "protocol": "freedom"
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole"
+    }
+  ]
+}

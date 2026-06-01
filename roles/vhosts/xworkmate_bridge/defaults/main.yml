@@ -12,17 +12,23 @@ xworkmate_bridge_base_dir: /opt/cloud-neutral/xworkmate-bridge
 xworkmate_bridge_config_file: "{{ xworkmate_bridge_base_dir }}/config.yaml"
 xworkmate_bridge_binary_path: /usr/local/bin/xworkmate-go-core
 xworkmate_bridge_systemd_unit_path: "/etc/systemd/system/{{ xworkmate_bridge_service_name }}.service"
-xworkmate_bridge_runtime_image_ref: "{{ service_compose_image | default(lookup('ansible.builtin.env', 'SERVICE_COMPOSE_IMAGE') | default(lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_IMAGE') | default('', true), true), true) }}"
 xworkmate_bridge_deprecated_container_name: xworkmate-bridge-managed
 xworkmate_bridge_deprecated_compose_file: "{{ xworkmate_bridge_base_dir }}/docker-compose.yml"
+xworkmate_bridge_obsolete_systemd_dropin_paths:
+  - "/etc/systemd/system/{{ xworkmate_bridge_service_name }}.service.d/20-distributed-forward.conf"
 xworkmate_bridge_service_environment:
   BRIDGE_AUTH_TOKEN: "{{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
   BRIDGE_REVIEW_AUTH_TOKEN: "{{ xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token) }}"
   BRIDGE_CONFIG_PATH: "{{ xworkmate_bridge_config_file }}"
-  IMAGE: "{{ xworkmate_bridge_effective_runtime_image_ref | default(xworkmate_bridge_runtime_image_ref) }}"
 xworkmate_bridge_openclaw_gateway_max_active: 5
 xworkmate_bridge_openclaw_gateway_max_queued: 20
 xworkmate_bridge_openclaw_gateway_queue_timeout: 10m
+xworkmate_bridge_distributed_topology: ""
+xworkmate_bridge_distributed_local_node_id: ""
+xworkmate_bridge_distributed_task_forward_peer_id: ""
+xworkmate_bridge_distributed_task_forward_endpoint: ""
+xworkmate_bridge_distributed_task_forward_token: ""
+xworkmate_bridge_distributed_nodes: []
 xworkmate_bridge_required_services:
   - acp-codex.service
   - acp-opencode.service

@@ -6,6 +6,15 @@ This document records the current real deployment and runtime validation state f
 
 `roles/vhosts/xworkmate_bridge` owns the public ingress and validation contract for `xworkmate-bridge.svc.plus`.
 
+The private distributed bridge transport is managed by
+[`roles/vhosts/xworkmate_bridge_distributed_vpn`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/xworkmate_bridge_distributed_vpn/README.md)
+and deployed through
+[`vpn-wireguard-over-vless.yml`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/vpn-wireguard-over-vless.yml).
+That role provides `wg-xwm`, `xray-wg-tproxy.service`, and the VPN-only
+`172.29.10.0/24` bridge forwarders. This bridge role consumes the resulting
+distributed topology config; CN forwards tasks to the primary private endpoint,
+while the primary node keeps reverse task forwarding disabled.
+
 The provider runtimes remain separate sibling roles:
 
 - [`roles/vhosts/acp_codex`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_codex)

@@ -1,0 +1,24 @@
+---
+- name: Restart xray-wg-tproxy
+  ansible.builtin.systemd:
+    name: "{{ xworkmate_bridge_distributed_vpn_xray_service_name }}"
+    state: restarted
+    daemon_reload: true
+  when:
+    - not ansible_check_mode
+
+- name: Restart wg-xwm
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ xworkmate_bridge_distributed_vpn_interface }}"
+    state: restarted
+    daemon_reload: true
+  when:
+    - not ansible_check_mode
+
+- name: Restart xworkmate-bridge-vpn-forwarder
+  ansible.builtin.systemd:
+    name: "{{ xworkmate_bridge_distributed_vpn_forwarder_service_name }}"
+    state: restarted
+    daemon_reload: true
+  when:
+    - not ansible_check_mode

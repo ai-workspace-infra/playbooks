@@ -1,5 +1,20 @@
 # playbooks
 
+## XWorkmate Bridge Distributed VPN
+
+The bidirectional WireGuard-over-VLESS transport for the two XWorkmate bridge
+nodes is deployed by:
+
+```bash
+ansible-playbook -i inventory.ini vpn-wireguard-over-vless.yml
+```
+
+The implementation uses split bridge groups (`xworkmate_bridge` and
+`cn_xworkmate_bridge`) under `xworkmate_bridge_distributed`, stores private keys
+and the shared management-side Xray UUID in `https://vault.svc.plus`, and keeps
+the host's default `xray.service` untouched. The runbook lives in
+[`roles/vhosts/xworkmate_bridge_distributed_vpn/README.md`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/xworkmate_bridge_distributed_vpn/README.md).
+
 ## Cloud Dev Desktop
 
 The cloud dev desktop flow lives here as two playbooks:

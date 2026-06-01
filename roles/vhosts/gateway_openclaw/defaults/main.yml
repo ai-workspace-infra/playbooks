@@ -16,6 +16,8 @@ gateway_openclaw_profile_script_path: /etc/profile.d/openclaw-user-systemd.sh
 gateway_openclaw_home: "/home/{{ gateway_openclaw_service_user }}"
 gateway_openclaw_binary_path: "{{ gateway_openclaw_home }}/.local/bin/openclaw"
 gateway_openclaw_install_dir: "{{ gateway_openclaw_home }}/.local/lib/node_modules/openclaw"
+gateway_openclaw_required_version: "2026.5.28"
+gateway_openclaw_npm_package_spec: "openclaw@{{ gateway_openclaw_required_version }}"
 gateway_openclaw_extension_dependency_dirs:
   - "{{ gateway_openclaw_install_dir }}/dist/extensions/acpx"
 gateway_openclaw_config_path: "{{ gateway_openclaw_home }}/.openclaw/openclaw.json"
@@ -24,6 +26,7 @@ gateway_openclaw_workspace_mode: "0775"
 gateway_openclaw_compile_cache_dir: /var/tmp/openclaw-compile-cache
 gateway_openclaw_service_path: "{{ gateway_openclaw_home }}/.nix-profile/bin:{{ gateway_openclaw_home }}/.local/bin:{{ gateway_openclaw_home }}/.npm-global/bin:{{ gateway_openclaw_home }}/bin:/usr/local/bin:/usr/bin:/bin"
 gateway_openclaw_extension_backup_dir: "{{ gateway_openclaw_home }}/.openclaw/backups/extensions"
+gateway_openclaw_doctor_repair_enabled: true
 
 gateway_openclaw_upstream_host: 127.0.0.1
 gateway_openclaw_upstream_port: 18789
@@ -53,7 +56,9 @@ gateway_openclaw_default_models:
   nvidia/nemotron-3-super-120b-a12b: {}
   nvidia/minimaxai/minimax-m2.5: {}
   nvidia/z-ai/glm5: {}
-  openai-codex/gpt-5.5: {}
+  openai/gpt-5.5:
+    agentRuntime:
+      id: codex
 gateway_openclaw_main_agent_model: nvidia/nemotron-3-super-120b-a12b
 
 gateway_openclaw_main_agent_skills:

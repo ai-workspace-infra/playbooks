@@ -1,0 +1,14 @@
+[Unit]
+Description=XWorkmate bridge VPN-only private forwarder
+After=network-online.target wg-quick@{{ xworkmate_bridge_distributed_vpn_interface }}.service
+Requires=wg-quick@{{ xworkmate_bridge_distributed_vpn_interface }}.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/socat TCP-LISTEN:{{ xworkmate_bridge_distributed_vpn_forwarder_port }},bind={{ xworkmate_bridge_distributed_vpn_current_node.wg_ip }},fork,reuseaddr TCP:{{ xworkmate_bridge_distributed_vpn_forwarder_target }}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

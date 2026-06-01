@@ -116,6 +116,16 @@
   changed_when: false
   no_log: true
 
+- name: Assert xworkmate-bridge ping reports native binary metadata
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_service_ping.json.version | default('') | trim | length > 0
+      - xworkmate_bridge_service_ping.json.image | default('') | trim | length == 0
+      - xworkmate_bridge_service_ping.json.tag | default('') | trim | length == 0
+    fail_msg: >-
+      xworkmate-bridge /api/ping must report native binary metadata and must
+      not expose stale Docker image/tag metadata.
+
 - name: Check xworkmate-bridge capabilities contract
   ansible.builtin.uri:
     url: "https://{{ xworkmate_bridge_service_domain }}/acp/rpc"

@@ -21,15 +21,11 @@ if [ -z "$INTERNAL_TOKEN" ]; then
     exit 1
 fi
 
-# 3. Resolve Image (get latest from online if not provided)
-IMAGE="${SERVICE_COMPOSE_IMAGE:-ghcr.io/x-evor/xworkmate-bridge:f30c8d481615933448535b15c0ed9099ed7c4ac9}"
-
-# 4. Run Ansible
+# 3. Run Ansible
 echo "[Ansible] Starting dry-run validation..."
 cd "$(dirname "$0")/.."
 ansible-playbook -i inventory.ini deploy_xworkmate_bridge_vhosts.yml \
   -l jp-xhttp-contabo.svc.plus \
   -e "INTERNAL_SERVICE_TOKEN=$INTERNAL_TOKEN" \
   -e "xworkmate_bridge_auth_token=$INTERNAL_TOKEN" \
-  -e "service_compose_image=$IMAGE" \
   "$@"

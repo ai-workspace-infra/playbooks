@@ -40,19 +40,6 @@
   failed_when: false
   no_log: true
 
-- name: Read existing xworkmate-bridge image ref from systemd unit
-  ansible.builtin.shell: |
-    set -euo pipefail
-    if [ -f "{{ xworkmate_bridge_systemd_unit_path }}" ]; then
-      sed -n 's/^Environment="IMAGE=\(.*\)"$/\1/p' "{{ xworkmate_bridge_systemd_unit_path }}" | head -n 1
-    fi
-  args:
-    executable: /bin/bash
-  register: xworkmate_bridge_existing_image_ref
-  check_mode: false
-  changed_when: false
-  failed_when: false
-
 - name: Resolve xworkmate-bridge auth token
   ansible.builtin.set_fact:
     xworkmate_bridge_effective_auth_token: >-
@@ -68,15 +55,6 @@
         else (xworkmate_bridge_existing_review_auth_token.stdout | default(''))
       }}
   no_log: true
-
-- name: Resolve xworkmate-bridge runtime image ref
-  ansible.builtin.set_fact:
-    xworkmate_bridge_effective_runtime_image_ref: >-
-      {{
-        xworkmate_bridge_runtime_image_ref
-        if (xworkmate_bridge_runtime_image_ref | trim | length > 0)
-        else (xworkmate_bridge_existing_image_ref.stdout | default(''))
-      }}
 
 - name: Assert xworkmate-bridge binary exists
   ansible.builtin.stat:
@@ -117,6 +95,13 @@
     path: "{{ xworkmate_bridge_deprecated_compose_file }}"
     state: absent
 
+- name: Remove obsolete xworkmate-bridge systemd drop-ins
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ xworkmate_bridge_obsolete_systemd_dropin_paths }}"
+  notify: Reload bridge
+
 - name: Deploy xworkmate-bridge runtime configuration
   ansible.builtin.template:
     src: config.yaml.j2
@@ -147,6 +132,8 @@
     owner: root
     group: root
     mode: "0644"
+  diff: false
+  no_log: true
   register: xworkmate_bridge_systemd_unit
   notify: Reload bridge
 

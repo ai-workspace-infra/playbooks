@@ -1,0 +1,286 @@
+---
+- name: Assert distributed VPN node is defined for this host
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname in xworkmate_bridge_distributed_vpn_nodes
+      - xworkmate_bridge_distributed_vpn_nodes[inventory_hostname].peer in xworkmate_bridge_distributed_vpn_nodes
+    fail_msg: "Missing xworkmate_bridge_distributed_vpn_nodes entry for {{ inventory_hostname }} or its peer"
+
+- name: Resolve distributed VPN node facts
+  ansible.builtin.set_fact:
+    xworkmate_bridge_distributed_vpn_current_node: "{{ xworkmate_bridge_distributed_vpn_nodes[inventory_hostname] }}"
+    xworkmate_bridge_distributed_vpn_peer_node: "{{ xworkmate_bridge_distributed_vpn_nodes[xworkmate_bridge_distributed_vpn_nodes[inventory_hostname].peer] }}"
+
+- name: Resolve Caddy-managed TLS certificate paths for VLESS
+  ansible.builtin.set_fact:
+    xworkmate_bridge_distributed_vpn_tls_cert_path: "/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/{{ xworkmate_bridge_distributed_vpn_current_node.domain }}/{{ xworkmate_bridge_distributed_vpn_current_node.domain }}.crt"
+    xworkmate_bridge_distributed_vpn_tls_key_path: "/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/{{ xworkmate_bridge_distributed_vpn_current_node.domain }}/{{ xworkmate_bridge_distributed_vpn_current_node.domain }}.key"
+
+- name: Assert Vault access is configured for distributed VPN secrets
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_distributed_vpn_vault_addr | trim | length > 0
+      - xworkmate_bridge_distributed_vpn_vault_token | trim | length > 0
+    fail_msg: "Set VAULT_SERVER_URL and VAULT_SERVER_ROOT_ACCESS_TOKEN, or VAULT_TOKEN, before deploying distributed VPN secrets"
+  no_log: true
+
+- name: Read shared distributed VPN Xray UUID from Vault
+  ansible.builtin.uri:
+    url: "{{ xworkmate_bridge_distributed_vpn_vault_addr }}/v1/{{ xworkmate_bridge_distributed_vpn_vault_mount }}/data/{{ xworkmate_bridge_distributed_vpn_vault_base_path }}/common"
+    headers:
+      X-Vault-Token: "{{ xworkmate_bridge_distributed_vpn_vault_token }}"
+    return_content: true
+    status_code: 200
+    timeout: 30
+  register: xworkmate_bridge_distributed_vpn_common_secret
+  until: xworkmate_bridge_distributed_vpn_common_secret.status | default(0) == 200
+  retries: 5
+  delay: 3
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  no_log: true
+
+- name: Read host distributed VPN WireGuard secret from Vault
+  ansible.builtin.uri:
+    url: "{{ xworkmate_bridge_distributed_vpn_vault_addr }}/v1/{{ xworkmate_bridge_distributed_vpn_vault_mount }}/data/{{ xworkmate_bridge_distributed_vpn_vault_base_path }}/{{ inventory_hostname }}"
+    headers:
+      X-Vault-Token: "{{ xworkmate_bridge_distributed_vpn_vault_token }}"
+    return_content: true
+    status_code: 200
+    timeout: 30
+  register: xworkmate_bridge_distributed_vpn_host_secret
+  until: xworkmate_bridge_distributed_vpn_host_secret.status | default(0) == 200
+  retries: 5
+  delay: 3
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  no_log: true
+
+- name: Resolve distributed VPN secrets
+  ansible.builtin.set_fact:
+    xworkmate_bridge_distributed_vpn_xray_uuid: "{{ xworkmate_bridge_distributed_vpn_common_secret.json.data.data.xray_uuid }}"
+    xworkmate_bridge_distributed_vpn_wireguard_private_key: "{{ xworkmate_bridge_distributed_vpn_host_secret.json.data.data.wireguard_private_key }}"
+  no_log: true
+
+- name: Install distributed VPN packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - unzip
+      - wireguard-tools
+      - socat
+    state: present
+    update_cache: true
+  when:
+    - ansible_os_family == "Debian"
+
+- name: Check Xray binary
+  ansible.builtin.stat:
+    path: "{{ xworkmate_bridge_distributed_vpn_xray_bin_path }}"
+  register: xworkmate_bridge_distributed_vpn_xray_binary
+
+- name: Resolve Xray release asset architecture
+  ansible.builtin.set_fact:
+    xworkmate_bridge_distributed_vpn_xray_asset_arch: "{{ 'arm64-v8a' if ansible_architecture in ['aarch64', 'arm64'] else '64' }}"
+  when:
+    - not xworkmate_bridge_distributed_vpn_xray_binary.stat.exists
+    - not ansible_check_mode
+
+- name: Resolve controller-side Xray cache paths
+  ansible.builtin.set_fact:
+    xworkmate_bridge_distributed_vpn_xray_local_cache_path: "{{ xworkmate_bridge_distributed_vpn_xray_local_cache_dir }}-{{ xworkmate_bridge_distributed_vpn_xray_asset_arch }}"
+    xworkmate_bridge_distributed_vpn_xray_local_archive_path: "{{ xworkmate_bridge_distributed_vpn_xray_local_cache_dir }}-{{ xworkmate_bridge_distributed_vpn_xray_asset_arch }}.zip"
+  when:
+    - not xworkmate_bridge_distributed_vpn_xray_binary.stat.exists
+    - not ansible_check_mode
+
+- name: Check controller-side cached Xray binary
+  ansible.builtin.stat:
+    path: "{{ xworkmate_bridge_distributed_vpn_xray_local_cache_path }}/xray"
+  register: xworkmate_bridge_distributed_vpn_xray_cached_binary
+  delegate_to: localhost
+  become: false
+  when:
+    - not xworkmate_bridge_distributed_vpn_xray_binary.stat.exists
+    - not ansible_check_mode
+
+- name: Download Xray release archive
+  ansible.builtin.get_url:
+    url: "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-{{ xworkmate_bridge_distributed_vpn_xray_asset_arch }}.zip"
+    dest: "{{ xworkmate_bridge_distributed_vpn_xray_local_archive_path }}"
+    mode: "0644"
+    timeout: 120
+  register: xworkmate_bridge_distributed_vpn_xray_download
+  until: xworkmate_bridge_distributed_vpn_xray_download is succeeded
+  retries: 3
+  delay: 5
+  delegate_to: localhost
+  become: false
+  when:
+    - not xworkmate_bridge_distributed_vpn_xray_binary.stat.exists
+    - not (xworkmate_bridge_distributed_vpn_xray_cached_binary.stat.exists | default(false))
+    - not ansible_check_mode
+
+- name: Create temporary Xray install directory
+  ansible.builtin.file:
+    path: "{{ xworkmate_bridge_distributed_vpn_xray_local_cache_path }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  become: false
+  when:
+    - not xworkmate_bridge_distributed_vpn_xray_binary.stat.exists
+    - not (xworkmate_bridge_distributed_vpn_xray_cached_binary.stat.exists | default(false))
+    - not ansible_check_mode
+
+- name: Extract Xray release archive
+  ansible.builtin.unarchive:
+    src: "{{ xworkmate_bridge_distributed_vpn_xray_local_archive_path }}"
+    dest: "{{ xworkmate_bridge_distributed_vpn_xray_local_cache_path }}"
+    remote_src: true
+  delegate_to: localhost
+  become: false
+  when:
+    - not xworkmate_bridge_distributed_vpn_xray_binary.stat.exists
+    - not (xworkmate_bridge_distributed_vpn_xray_cached_binary.stat.exists | default(false))
+    - not ansible_check_mode
+
+- name: Install Xray binary without creating the default xray.service
+  ansible.builtin.copy:
+    src: "{{ xworkmate_bridge_distributed_vpn_xray_local_cache_path }}/xray"
+    dest: "{{ xworkmate_bridge_distributed_vpn_xray_bin_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - not xworkmate_bridge_distributed_vpn_xray_binary.stat.exists
+    - not ansible_check_mode
+
+- name: Ensure distributed VPN config directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/wireguard
+    - "{{ xworkmate_bridge_distributed_vpn_xray_config_dir }}"
+
+- name: Check VLESS TLS certificate files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: xworkmate_bridge_distributed_vpn_tls_files
+  loop:
+    - "{{ xworkmate_bridge_distributed_vpn_tls_cert_path }}"
+    - "{{ xworkmate_bridge_distributed_vpn_tls_key_path }}"
+
+- name: Assert VLESS TLS certificate files exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+    fail_msg: "Missing VLESS TLS certificate file: {{ item.item }}"
+  loop: "{{ xworkmate_bridge_distributed_vpn_tls_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Deploy Xray WireGuard over VLESS config
+  ansible.builtin.template:
+    src: wireguard-over-vless.json.j2
+    dest: "{{ xworkmate_bridge_distributed_vpn_xray_config_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart xray-wg-tproxy
+  no_log: true
+
+- name: Deploy Xray WireGuard over VLESS service
+  ansible.builtin.template:
+    src: xray-wg-tproxy.service.j2
+    dest: "/etc/systemd/system/{{ xworkmate_bridge_distributed_vpn_xray_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart xray-wg-tproxy
+
+- name: Test Xray WireGuard over VLESS config
+  ansible.builtin.command:
+    cmd: "{{ xworkmate_bridge_distributed_vpn_xray_bin_path }} run -test -config {{ xworkmate_bridge_distributed_vpn_xray_config_path }}"
+  changed_when: false
+  when:
+    - not ansible_check_mode or xworkmate_bridge_distributed_vpn_xray_binary.stat.exists
+
+- name: Deploy WireGuard distributed bridge config
+  ansible.builtin.template:
+    src: wg-xwm.conf.j2
+    dest: "/etc/wireguard/{{ xworkmate_bridge_distributed_vpn_interface }}.conf"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart wg-xwm
+  no_log: true
+
+- name: Deploy VPN-only bridge forwarder service
+  ansible.builtin.template:
+    src: xworkmate-bridge-vpn-forwarder.service.j2
+    dest: "/etc/systemd/system/{{ xworkmate_bridge_distributed_vpn_forwarder_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart xworkmate-bridge-vpn-forwarder
+
+- name: Apply distributed VPN unit changes before service checks
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start Xray WireGuard over VLESS service
+  ansible.builtin.systemd:
+    name: "{{ xworkmate_bridge_distributed_vpn_xray_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - not ansible_check_mode
+
+- name: Enable and start WireGuard distributed bridge interface
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ xworkmate_bridge_distributed_vpn_interface }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - not ansible_check_mode
+
+- name: Enable and start VPN-only bridge forwarder
+  ansible.builtin.systemd:
+    name: "{{ xworkmate_bridge_distributed_vpn_forwarder_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - not ansible_check_mode
+
+- name: Check distributed VPN service active states
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+  register: xworkmate_bridge_distributed_vpn_service_status
+  until: xworkmate_bridge_distributed_vpn_service_status.status.ActiveState | default('') == "active"
+  retries: 6
+  delay: 2
+  loop:
+    - "{{ xworkmate_bridge_distributed_vpn_xray_service_name }}"
+    - "wg-quick@{{ xworkmate_bridge_distributed_vpn_interface }}"
+    - "{{ xworkmate_bridge_distributed_vpn_forwarder_service_name }}"
+  when:
+    - not ansible_check_mode
+
+- name: Show WireGuard distributed interface state
+  ansible.builtin.command:
+    cmd: "wg show {{ xworkmate_bridge_distributed_vpn_interface }}"
+  register: xworkmate_bridge_distributed_vpn_wg_show
+  changed_when: false
+  when:
+    - not ansible_check_mode

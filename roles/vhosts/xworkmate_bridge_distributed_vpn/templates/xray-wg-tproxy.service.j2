@@ -1,0 +1,18 @@
+[Unit]
+Description=Xray WireGuard over VLESS/TLS transport
+Documentation=https://github.com/XTLS/Xray-core
+After=network-online.target nss-lookup.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre={{ xworkmate_bridge_distributed_vpn_xray_bin_path }} run -test -config {{ xworkmate_bridge_distributed_vpn_xray_config_path }}
+ExecStart={{ xworkmate_bridge_distributed_vpn_xray_bin_path }} run -config {{ xworkmate_bridge_distributed_vpn_xray_config_path }}
+Restart=on-failure
+RestartSec=2
+RestartPreventExitStatus=23
+LimitNPROC=10000
+LimitNOFILE=1000000
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,65 @@
+---
+- name: Deploy bidirectional WireGuard over VLESS for XWorkmate bridge distribution
+  hosts: xworkmate_bridge_distributed
+  become: true
+  gather_facts: true
+  roles:
+    - role: roles/vhosts/xworkmate_bridge_distributed_vpn/
+
+- name: Refresh xworkmate-bridge distributed runtime config
+  hosts: xworkmate_bridge_distributed
+  become: true
+  gather_facts: true
+  roles:
+    - role: roles/vhosts/xworkmate_bridge/
+      tags: [xworkmate_bridge]
+
+- name: Validate XWorkmate bridge private distributed path
+  hosts: xworkmate_bridge_distributed
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Resolve current distributed VPN node
+      ansible.builtin.set_fact:
+        xworkmate_bridge_distributed_current_node: "{{ xworkmate_bridge_distributed_vpn_nodes[inventory_hostname] }}"
+
+    - name: Resolve peer distributed VPN node
+      ansible.builtin.set_fact:
+        xworkmate_bridge_distributed_peer_node: "{{ xworkmate_bridge_distributed_vpn_nodes[xworkmate_bridge_distributed_current_node.peer] }}"
+
+    - name: Verify peer WireGuard address is reachable
+      ansible.builtin.command:
+        cmd: "ping -c 3 -W 2 {{ xworkmate_bridge_distributed_peer_node.wg_ip }}"
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Read local bridge auth token for private peer validation
+      ansible.builtin.shell: |
+        set -euo pipefail
+        systemctl cat xworkmate-bridge.service |
+          sed -n 's/^Environment="BRIDGE_AUTH_TOKEN=\(.*\)"$/\1/p' |
+          head -n 1
+      args:
+        executable: /bin/bash
+      register: xworkmate_bridge_private_validation_token
+      changed_when: false
+      no_log: true
+      when: not ansible_check_mode
+
+    - name: Verify peer bridge API through WireGuard private endpoint
+      ansible.builtin.uri:
+        url: "http://{{ xworkmate_bridge_distributed_peer_node.wg_ip }}:{{ xworkmate_bridge_distributed_vpn_forwarder_port }}/api/ping"
+        headers:
+          Authorization: "Bearer {{ xworkmate_bridge_private_validation_token.stdout }}"
+        return_content: true
+      register: xworkmate_bridge_private_peer_ping
+      changed_when: false
+      no_log: true
+      when: not ansible_check_mode
+
+    - name: Assert peer bridge private ping succeeded
+      ansible.builtin.assert:
+        that:
+          - xworkmate_bridge_private_peer_ping.status == 200
+          - xworkmate_bridge_private_peer_ping.json.status | default('') == 'ok'
+      when: not ansible_check_mode

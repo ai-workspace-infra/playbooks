@@ -68,6 +68,28 @@
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0700"
 
+- name: Install required OpenClaw gateway package version
+  ansible.builtin.command:
+    cmd: >-
+      npm install --global --omit=dev --no-audit --no-fund
+      --prefix "{{ gateway_openclaw_home }}/.local"
+      "{{ gateway_openclaw_npm_package_spec }}"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_package_install
+  changed_when: >-
+    'added ' in (gateway_openclaw_package_install.stdout | default('')) or
+    'removed ' in (gateway_openclaw_package_install.stdout | default('')) or
+    'changed ' in (gateway_openclaw_package_install.stdout | default(''))
+  when:
+    - not ansible_check_mode
+  notify: Restart openclaw gateway
+
 - name: Move stale OpenClaw plugin backups out of extension scan path
   ansible.builtin.shell: |
     set -euo pipefail
@@ -115,13 +137,6 @@
     mode: "0600"
   diff: false
   notify: Restart openclaw gateway
-
-- name: Restore immutable flag on OpenClaw gateway JSON config
-  ansible.builtin.command:
-    cmd: chattr +i "{{ gateway_openclaw_config_path }}"
-  when:
-    - "'i' in (gateway_openclaw_config_attrs.stdout | default(''))"
-  changed_when: true
 
 - name: Inspect OpenClaw package manifest
   ansible.builtin.stat:
@@ -183,6 +198,35 @@
     - item.stat.exists | default(false)
     - not ansible_check_mode
 
+- name: Repair OpenClaw 2026.5 route state as service user
+  ansible.builtin.command:
+    cmd: "{{ gateway_openclaw_binary_path }} doctor --fix --non-interactive"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+    OPENCLAW_SERVICE_REPAIR_POLICY: external
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_doctor_repair
+  changed_when: >-
+    ((gateway_openclaw_doctor_repair.stdout | default('')) ~ '\n' ~
+    (gateway_openclaw_doctor_repair.stderr | default('')))
+    is search('(?i)(fixed|repaired|migrated|rewrote|removed|set |moved |updated|archived)')
+  when:
+    - gateway_openclaw_doctor_repair_enabled | bool
+    - not ansible_check_mode
+  notify: Restart openclaw gateway
+
+- name: Restore immutable flag on OpenClaw gateway JSON config
+  ansible.builtin.command:
+    cmd: chattr +i "{{ gateway_openclaw_config_path }}"
+  when:
+    - "'i' in (gateway_openclaw_config_attrs.stdout | default(''))"
+    - not ansible_check_mode
+  changed_when: true
+
 - name: Inspect OpenClaw gateway binary
   ansible.builtin.stat:
     path: "{{ gateway_openclaw_binary_path }}"
@@ -195,6 +239,31 @@
       - gateway_openclaw_binary.stat.exists | default(false)
       - gateway_openclaw_binary.stat.executable | default(false)
     fail_msg: "OpenClaw gateway binary is missing or not executable: {{ gateway_openclaw_binary_path }}"
+
+- name: Check OpenClaw gateway version
+  ansible.builtin.command:
+    cmd: "{{ gateway_openclaw_binary_path }} --version"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_version
+  changed_when: false
+  when:
+    - not ansible_check_mode
+
+- name: Assert OpenClaw gateway version is pinned
+  ansible.builtin.assert:
+    that:
+      - gateway_openclaw_version.stdout is search('OpenClaw ' ~ gateway_openclaw_required_version)
+    fail_msg: >-
+      OpenClaw gateway must run {{ gateway_openclaw_required_version }} after the
+      package upgrade. Actual version output: {{ gateway_openclaw_version.stdout | default('') }}
+  when:
+    - not ansible_check_mode
 
 - name: Ensure OpenClaw user systemd unit directory exists
   ansible.builtin.file:

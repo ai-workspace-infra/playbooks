@@ -15,6 +15,20 @@ openclaw_gateway:
   max_queued: {{ xworkmate_bridge_openclaw_gateway_max_queued | int }}
   queue_timeout: "{{ xworkmate_bridge_openclaw_gateway_queue_timeout }}"
 
+distributed:
+  topology: "{{ xworkmate_bridge_distributed_topology }}"
+  local_node_id: "{{ xworkmate_bridge_distributed_local_node_id }}"
+  task_forward_peer_id: "{{ xworkmate_bridge_distributed_task_forward_peer_id }}"
+  task_forward_endpoint: "{{ xworkmate_bridge_distributed_task_forward_endpoint }}"
+  task_forward_token: "{{ xworkmate_bridge_distributed_task_forward_token }}"
+  nodes:
+{% for node in xworkmate_bridge_distributed_nodes %}
+    - id: "{{ node.id }}"
+      role: "{{ node.role }}"
+      public_base_url: "{{ node.public_base_url }}"
+      bridge_endpoint: "{{ node.bridge_endpoint }}"
+{% endfor %}
+
 # Server orchestration settings
 bridge:
   listenAddr: "{{ xworkmate_bridge_listen_addr }}"
@@ -26,4 +40,3 @@ bridge:
 # Operational notes for this deployment
 notes:
   - Bridge Auth Token is managed via BRIDGE_AUTH_TOKEN environment variable.
-  - Deployed on: {{ ansible_date_time.iso8601 | default('N/A') }}

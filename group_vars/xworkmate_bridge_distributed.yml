@@ -1,0 +1,36 @@
+---
+xworkmate_bridge_distributed_topology: dual-node
+xworkmate_bridge_distributed_nodes:
+  - id: xworkmate-bridge
+    role: primary
+    public_base_url: https://xworkmate-bridge.svc.plus
+    bridge_endpoint: http://172.29.10.1:8787
+  - id: cn-xworkmate-bridge
+    role: edge
+    public_base_url: https://cn-xworkmate-bridge.svc.plus
+    bridge_endpoint: http://172.29.10.2:8787
+
+xworkmate_bridge_distributed_vpn_interface: wg-xwm
+xworkmate_bridge_distributed_vpn_wireguard_port: 51820
+xworkmate_bridge_distributed_vpn_local_tproxy_port: 51830
+xworkmate_bridge_distributed_vpn_vless_port: 2443
+xworkmate_bridge_distributed_vpn_forwarder_port: 8787
+xworkmate_bridge_distributed_vpn_forwarder_target: 127.0.0.1:8787
+xworkmate_bridge_distributed_vpn_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_URL') | default('https://vault.svc.plus', true) }}"
+xworkmate_bridge_distributed_vpn_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN'), true) }}"
+xworkmate_bridge_distributed_vpn_vault_mount: kv
+xworkmate_bridge_distributed_vpn_vault_base_path: xworkmate-bridge/distributed/wireguard-over-vless
+
+xworkmate_bridge_distributed_vpn_nodes:
+  jp-xhttp-contabo.svc.plus:
+    node_id: xworkmate-bridge
+    domain: xworkmate-bridge.svc.plus
+    wg_ip: 172.29.10.1
+    public_key: 1staGq8lmHFRFRFNj2QOFx/MPxb/1fFV4tawC6xSi1Q=
+    peer: cn-xworkmate-bridge.svc.plus
+  cn-xworkmate-bridge.svc.plus:
+    node_id: cn-xworkmate-bridge
+    domain: cn-xworkmate-bridge.svc.plus
+    wg_ip: 172.29.10.2
+    public_key: iYlnFaWiMfMelpiN8ZV2SwCDrLihqtJXvHUsM3BN9zU=
+    peer: jp-xhttp-contabo.svc.plus
