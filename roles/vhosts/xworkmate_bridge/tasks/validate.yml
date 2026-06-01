@@ -8,6 +8,14 @@
     cmd: cat "{{ xworkmate_bridge_service_caddy_fragment_path }}"
   changed_when: false
   register: xworkmate_bridge_fragment
+  no_log: true
+
+- name: Read deployed xworkmate-bridge systemd unit
+  ansible.builtin.command:
+    cmd: cat "{{ xworkmate_bridge_systemd_unit_path }}"
+  changed_when: false
+  register: xworkmate_bridge_systemd_unit_text
+  no_log: true
 
 - name: Assert Caddy fragment only exposes app-facing bridge routes
   ansible.builtin.assert:
@@ -26,6 +34,33 @@
       - "'127.0.0.1:38992' not in xworkmate_bridge_fragment.stdout"
       - "'127.0.0.1:8791' not in xworkmate_bridge_fragment.stdout"
       - "'127.0.0.1:3920' not in xworkmate_bridge_fragment.stdout"
+  no_log: true
+
+- name: Assert Caddy and systemd use the same bridge token set
+  ansible.builtin.assert:
+    that:
+      - >-
+        'Bearer ' ~ (xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token))
+        in xworkmate_bridge_fragment.stdout
+      - >-
+        'Environment="BRIDGE_AUTH_TOKEN=' ~ (xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token)) ~ '"'
+        in xworkmate_bridge_systemd_unit_text.stdout
+      - >-
+        ((xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token) | trim | length) == 0)
+        or
+        (
+          'Bearer ' ~ (xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token))
+          in xworkmate_bridge_fragment.stdout
+        )
+      - >-
+        ((xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token) | trim | length) == 0)
+        or
+        (
+          'Environment="BRIDGE_REVIEW_AUTH_TOKEN=' ~ (xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token)) ~ '"'
+          in xworkmate_bridge_systemd_unit_text.stdout
+        )
+    fail_msg: "xworkmate-bridge Caddy and systemd token configuration are not aligned"
+  no_log: true
 
 - name: Check xworkmate-bridge systemd service status
   ansible.builtin.systemd:
@@ -99,6 +134,25 @@
   register: xworkmate_bridge_capabilities
   changed_when: false
   no_log: true
+
+- name: Check xworkmate-bridge public domain ping with review token
+  ansible.builtin.uri:
+    url: "https://{{ xworkmate_bridge_service_domain }}/api/ping"
+    headers:
+      Authorization: "Bearer {{ xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token) }}"
+      Origin: "{{ xworkmate_bridge_validation_origin }}"
+    return_content: true
+  register: xworkmate_bridge_review_service_ping
+  until:
+    - xworkmate_bridge_review_service_ping.status == 200
+    - xworkmate_bridge_review_service_ping.json is defined
+    - xworkmate_bridge_review_service_ping.json.status | default('') == "ok"
+  retries: 3
+  delay: 5
+  changed_when: false
+  no_log: true
+  when:
+    - xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token) | trim | length > 0
 
 - name: Assert xworkmate-bridge capabilities expose app contract providers
   ansible.builtin.assert:
