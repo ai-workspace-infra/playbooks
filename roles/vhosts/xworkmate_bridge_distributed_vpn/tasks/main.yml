@@ -11,6 +11,67 @@
     xworkmate_bridge_distributed_vpn_current_node: "{{ xworkmate_bridge_distributed_vpn_nodes[inventory_hostname] }}"
     xworkmate_bridge_distributed_vpn_peer_node: "{{ xworkmate_bridge_distributed_vpn_nodes[xworkmate_bridge_distributed_vpn_nodes[inventory_hostname].peer] }}"
 
+- name: Assert distributed VPN runtime ports are valid
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_distributed_vpn_vless_port | int >= 1
+      - xworkmate_bridge_distributed_vpn_vless_port | int <= 65535
+      - xworkmate_bridge_distributed_vpn_wireguard_port | int >= 1
+      - xworkmate_bridge_distributed_vpn_wireguard_port | int <= 65535
+      - xworkmate_bridge_distributed_vpn_local_tproxy_port | int >= 1
+      - xworkmate_bridge_distributed_vpn_local_tproxy_port | int <= 65535
+      - xworkmate_bridge_distributed_vpn_forwarder_port | int >= 1
+      - xworkmate_bridge_distributed_vpn_forwarder_port | int <= 65535
+    fail_msg: "Distributed VPN ports must be between 1 and 65535"
+
+- name: Assert distributed VPN node contract is valid
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_distributed_vpn_nodes | length > 0
+      - xworkmate_bridge_distributed_vpn_nodes.values() | map(attribute='node_id') | list | length == xworkmate_bridge_distributed_vpn_nodes.values() | map(attribute='node_id') | unique | list | length
+      - xworkmate_bridge_distributed_vpn_nodes.values() | map(attribute='wg_ip') | list | length == xworkmate_bridge_distributed_vpn_nodes.values() | map(attribute='wg_ip') | unique | list | length
+      - xworkmate_bridge_distributed_vpn_current_node.node_id | trim | length > 0
+      - xworkmate_bridge_distributed_vpn_current_node.domain | trim | length > 0
+      - xworkmate_bridge_distributed_vpn_current_node.wg_ip is match('^[0-9]{1,3}(\\.[0-9]{1,3}){3}$')
+      - xworkmate_bridge_distributed_vpn_current_node.public_key is match('^[A-Za-z0-9+/]{43}=$')
+      - xworkmate_bridge_distributed_vpn_peer_node.wg_ip is match('^[0-9]{1,3}(\\.[0-9]{1,3}){3}$')
+      - xworkmate_bridge_distributed_vpn_peer_node.public_key is match('^[A-Za-z0-9+/]{43}=$')
+    fail_msg: "Distributed VPN nodes must have unique IDs/IPs plus valid domain, host IP, and WireGuard public key fields"
+
+- name: Assert distributed VPN client peer contract is valid
+  ansible.builtin.assert:
+    that:
+      - item.id | trim | length > 0
+      - item.wg_ip is match('^[0-9]{1,3}(\\.[0-9]{1,3}){3}$')
+      - item.wg_ip not in (xworkmate_bridge_distributed_vpn_nodes.values() | map(attribute='wg_ip') | list)
+      - item.public_key is match('^[A-Za-z0-9+/]{43}=$')
+      - item.attach_to | default(xworkmate_bridge_distributed_vpn_nodes.keys() | list) | length > 0
+      - item.attach_to | default(xworkmate_bridge_distributed_vpn_nodes.keys() | list) | difference(xworkmate_bridge_distributed_vpn_nodes.keys() | list) | length == 0
+    fail_msg: "Distributed VPN clients must have id, host wg_ip, valid WireGuard public_key, and attach_to values that reference existing VPN nodes"
+  loop: "{{ xworkmate_bridge_distributed_vpn_clients }}"
+  loop_control:
+    label: "{{ item.id | default('unnamed-client') }}"
+
+- name: Assert distributed VPN client peer IDs and IPs are unique
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_distributed_vpn_clients | map(attribute='id') | list | length == xworkmate_bridge_distributed_vpn_clients | map(attribute='id') | unique | list | length
+      - xworkmate_bridge_distributed_vpn_clients | map(attribute='wg_ip') | list | length == xworkmate_bridge_distributed_vpn_clients | map(attribute='wg_ip') | unique | list | length
+    fail_msg: "Distributed VPN clients must have unique ids and WireGuard IPs"
+
+- name: Install distributed VPN packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - unzip
+      - wireguard-tools
+      - socat
+    state: present
+    update_cache: true
+  when:
+    - ansible_os_family == "Debian"
+
 - name: Resolve Caddy-managed TLS certificate paths for VLESS
   ansible.builtin.set_fact:
     xworkmate_bridge_distributed_vpn_tls_cert_path: "/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/{{ xworkmate_bridge_distributed_vpn_current_node.domain }}/{{ xworkmate_bridge_distributed_vpn_current_node.domain }}.crt"
@@ -64,18 +125,79 @@
     xworkmate_bridge_distributed_vpn_wireguard_private_key: "{{ xworkmate_bridge_distributed_vpn_host_secret.json.data.data.wireguard_private_key }}"
   no_log: true
 
-- name: Install distributed VPN packages
-  ansible.builtin.apt:
-    name:
-      - ca-certificates
-      - curl
-      - unzip
-      - wireguard-tools
-      - socat
-    state: present
-    update_cache: true
+- name: Derive distributed VPN WireGuard public key from Vault private key
+  ansible.builtin.command:
+    cmd: wg pubkey
+    stdin: "{{ xworkmate_bridge_distributed_vpn_wireguard_private_key }}"
+  register: xworkmate_bridge_distributed_vpn_derived_public_key
+  changed_when: false
+  no_log: true
+
+- name: Assert distributed VPN secret and inventory keys match
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_distributed_vpn_xray_uuid | trim | regex_search('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+      - xworkmate_bridge_distributed_vpn_derived_public_key.stdout | trim == xworkmate_bridge_distributed_vpn_current_node.public_key | trim
+    fail_msg: "Vault WireGuard private key must match the inventory public key, and common.xray_uuid must be a UUID"
+  no_log: true
+
+- name: Assert accounts overlay node sync is configured
+  ansible.builtin.assert:
+    that:
+      - not (xworkmate_bridge_distributed_vpn_sync_accounts_required | bool) or (xworkmate_bridge_distributed_vpn_accounts_internal_token | trim | length > 0)
+      - not (xworkmate_bridge_distributed_vpn_sync_accounts_required | bool) or (xworkmate_bridge_distributed_vpn_accounts_url | trim | length > 0)
+    fail_msg: "Set INTERNAL_SERVICE_TOKEN and ACCOUNTS_SERVICE_URL before deploying distributed VPN, or set xworkmate_bridge_distributed_vpn_sync_accounts_required=false for an explicit offline bootstrap"
+
+- name: Sync distributed VPN overlay node to accounts.svc.plus
+  ansible.builtin.uri:
+    url: "{{ xworkmate_bridge_distributed_vpn_accounts_url | trim }}/api/internal/overlay/nodes/heartbeat"
+    method: POST
+    headers:
+      X-Service-Token: "{{ xworkmate_bridge_distributed_vpn_accounts_internal_token }}"
+    body_format: json
+    body:
+      node_id: "{{ xworkmate_bridge_distributed_vpn_current_node.node_id }}"
+      network_id: xworkmate-private
+      name: "{{ xworkmate_bridge_distributed_vpn_current_node.node_id }}"
+      role: "{{ xworkmate_bridge_distributed_vpn_current_node.role | default('gateway') }}"
+      region: "{{ xworkmate_bridge_distributed_vpn_current_node.region | default('') }}"
+      wireguard_public_key: "{{ xworkmate_bridge_distributed_vpn_current_node.public_key }}"
+      wireguard_address: "{{ xworkmate_bridge_distributed_vpn_current_node.wg_ip }}"
+      endpoint_host: "{{ xworkmate_bridge_distributed_vpn_current_node.domain }}"
+      endpoint_port: "{{ xworkmate_bridge_distributed_vpn_vless_port | int }}"
+      transport_type: vless-tls
+      transport_security: tls
+      transport_uuid: "{{ xworkmate_bridge_distributed_vpn_xray_uuid }}"
+      healthy: true
+    status_code: 200
+    timeout: 30
+  register: xworkmate_bridge_distributed_vpn_accounts_heartbeat
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  no_log: true
   when:
-    - ansible_os_family == "Debian"
+    - xworkmate_bridge_distributed_vpn_accounts_internal_token | trim | length > 0
+
+- name: Assert accounts overlay node heartbeat matches deployed gateway contract
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_distributed_vpn_accounts_heartbeat.json.node.id == xworkmate_bridge_distributed_vpn_current_node.node_id
+      - xworkmate_bridge_distributed_vpn_accounts_heartbeat.json.node.network_id == 'xworkmate-private'
+      - xworkmate_bridge_distributed_vpn_accounts_heartbeat.json.node.wireguard_public_key == xworkmate_bridge_distributed_vpn_current_node.public_key
+      - xworkmate_bridge_distributed_vpn_accounts_heartbeat.json.node.wireguard_address == xworkmate_bridge_distributed_vpn_current_node.wg_ip
+      - xworkmate_bridge_distributed_vpn_accounts_heartbeat.json.node.endpoint_host == xworkmate_bridge_distributed_vpn_current_node.domain
+      - xworkmate_bridge_distributed_vpn_accounts_heartbeat.json.node.endpoint_port | int == xworkmate_bridge_distributed_vpn_vless_port | int
+      - xworkmate_bridge_distributed_vpn_accounts_heartbeat.json.node.transport_type == 'vless-tls'
+      - xworkmate_bridge_distributed_vpn_accounts_heartbeat.json.node.transport_security == 'tls'
+      - xworkmate_bridge_distributed_vpn_accounts_heartbeat.json.node.transport_uuid_set | bool
+      - xworkmate_bridge_distributed_vpn_accounts_heartbeat.json.node.healthy | bool
+    fail_msg: "accounts.svc.plus overlay node heartbeat response does not match the deployed gateway contract"
+  delegate_to: localhost
+  become: false
+  no_log: true
+  when:
+    - xworkmate_bridge_distributed_vpn_accounts_internal_token | trim | length > 0
 
 - name: Check Xray binary
   ansible.builtin.stat:
@@ -169,6 +291,13 @@
   loop:
     - /etc/wireguard
     - "{{ xworkmate_bridge_distributed_vpn_xray_config_dir }}"
+
+- name: Enable IPv4 forwarding for distributed WireGuard routing
+  ansible.builtin.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    state: present
+    reload: true
 
 - name: Check VLESS TLS certificate files
   ansible.builtin.stat:
@@ -284,3 +413,38 @@
   changed_when: false
   when:
     - not ansible_check_mode
+
+- name: Assert WireGuard runtime includes the distributed peer route
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_distributed_vpn_peer_node.public_key in xworkmate_bridge_distributed_vpn_wg_show.stdout
+      - (xworkmate_bridge_distributed_vpn_peer_node.wg_ip ~ '/32') in xworkmate_bridge_distributed_vpn_wg_show.stdout
+    fail_msg: "WireGuard runtime does not include the distributed peer public key and /32 route"
+  when:
+    - not ansible_check_mode
+
+- name: Assert WireGuard runtime includes attached client peers
+  ansible.builtin.assert:
+    that:
+      - item.public_key in xworkmate_bridge_distributed_vpn_wg_show.stdout
+      - (item.wg_ip ~ '/32') in xworkmate_bridge_distributed_vpn_wg_show.stdout
+    fail_msg: "WireGuard runtime does not include an attached client peer public key and /32 route"
+  loop: "{{ xworkmate_bridge_distributed_vpn_clients }}"
+  loop_control:
+    label: "{{ item.id }}"
+  when:
+    - not ansible_check_mode
+    - inventory_hostname in (item.attach_to | default(xworkmate_bridge_distributed_vpn_nodes.keys() | list))
+
+- name: Assert WireGuard runtime routes peer-attached clients through the distributed peer
+  ansible.builtin.assert:
+    that:
+      - (item.wg_ip ~ '/32') in xworkmate_bridge_distributed_vpn_wg_show.stdout
+    fail_msg: "WireGuard runtime does not route a peer-attached client /32 through the distributed peer"
+  loop: "{{ xworkmate_bridge_distributed_vpn_clients }}"
+  loop_control:
+    label: "{{ item.id }}"
+  when:
+    - not ansible_check_mode
+    - inventory_hostname not in (item.attach_to | default(xworkmate_bridge_distributed_vpn_nodes.keys() | list))
+    - xworkmate_bridge_distributed_vpn_current_node.peer in (item.attach_to | default(xworkmate_bridge_distributed_vpn_nodes.keys() | list))
