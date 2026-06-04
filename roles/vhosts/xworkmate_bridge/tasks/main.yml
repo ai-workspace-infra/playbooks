@@ -4,6 +4,19 @@
     name: "{{ xworkmate_bridge_packages }}"
     state: present
 
+- name: Ensure xworkmate-bridge service group exists
+  ansible.builtin.group:
+    name: "{{ xworkmate_bridge_service_group }}"
+    state: present
+
+- name: Ensure xworkmate-bridge service user exists
+  ansible.builtin.user:
+    name: "{{ xworkmate_bridge_service_user }}"
+    group: "{{ xworkmate_bridge_service_group }}"
+    shell: /bin/bash
+    create_home: true
+    state: present
+
 - name: Ensure xworkmate-bridge base directory exists
   ansible.builtin.file:
     path: "{{ xworkmate_bridge_base_dir }}"
