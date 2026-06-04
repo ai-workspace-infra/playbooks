@@ -102,6 +102,20 @@
   loop: "{{ xworkmate_bridge_obsolete_systemd_dropin_paths }}"
   notify: Reload bridge
 
+- name: Inspect xworkmate-bridge config file attributes
+  ansible.builtin.command:
+    cmd: lsattr "{{ xworkmate_bridge_config_file }}"
+  register: xworkmate_bridge_config_attrs
+  changed_when: false
+  failed_when: false
+
+- name: Remove immutable flag from xworkmate-bridge config file when present
+  ansible.builtin.command:
+    cmd: chattr -i "{{ xworkmate_bridge_config_file }}"
+  when:
+    - "'i' in (xworkmate_bridge_config_attrs.stdout | default(''))"
+  changed_when: true
+
 - name: Deploy xworkmate-bridge runtime configuration
   ansible.builtin.template:
     src: config.yaml.j2
@@ -110,6 +124,13 @@
     group: "{{ xworkmate_bridge_service_group }}"
     mode: "0644"
   notify: Reload bridge
+
+- name: Restore immutable flag on xworkmate-bridge config file
+  ansible.builtin.command:
+    cmd: chattr +i "{{ xworkmate_bridge_config_file }}"
+  changed_when: true
+  when:
+    - not ansible_check_mode
 
 - name: Inspect xworkmate-bridge systemd unit attributes
   ansible.builtin.command:
