@@ -102,6 +102,21 @@
   loop: "{{ xworkmate_bridge_obsolete_systemd_dropin_paths }}"
   notify: Reload bridge
 
+- name: Disable and stop obsolete user-level xworkmate-serve service
+  ansible.builtin.shell: |
+    set -euo pipefail
+    sudo -i -u {{ xworkmate_bridge_service_user }} systemctl --user stop xworkmate-serve || true
+    sudo -i -u {{ xworkmate_bridge_service_user }} systemctl --user disable xworkmate-serve || true
+  changed_when: false
+  failed_when: false
+  when:
+    - not ansible_check_mode
+
+- name: Remove obsolete user-level xworkmate-serve service file
+  ansible.builtin.file:
+    path: "/home/{{ xworkmate_bridge_service_user }}/.config/systemd/user/xworkmate-serve.service"
+    state: absent
+
 - name: Inspect xworkmate-bridge config file attributes
   ansible.builtin.command:
     cmd: lsattr "{{ xworkmate_bridge_config_file }}"
