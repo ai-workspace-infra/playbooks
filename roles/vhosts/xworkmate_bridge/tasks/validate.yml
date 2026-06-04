@@ -240,6 +240,9 @@
     python3 - "$stream_file" <<'PY'
     import json
     import sys
+    import urllib.request
+    import os
+    import time
 
     payloads = []
     for block in open(sys.argv[1], encoding="utf-8").read().split("\n\n"):
@@ -264,6 +267,52 @@
         raise SystemExit("missing final OpenClaw result envelope")
     if not payloads or payloads[-1].get("done") is not True:
         raise SystemExit("missing SSE done marker")
+
+    result = final.get("result") or final.get("payload") or {}
+    if result.get("status") == "running":
+        session_id = result.get("sessionId")
+        thread_id = result.get("threadId")
+        turn_id = result.get("turnId")
+        run_id = result.get("runId")
+        auth_token = os.environ.get("XWORKMATE_BRIDGE_AUTH_TOKEN", "")
+
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            req_body = json.dumps({
+                "jsonrpc": "2.0",
+                "id": "poll-task",
+                "method": "xworkmate.tasks.get",
+                "params": {
+                    "sessionId": session_id,
+                    "threadId": thread_id,
+                    "turnId": turn_id,
+                    "runId": run_id
+                }
+            }).encode("utf-8")
+
+            req = urllib.request.Request(
+                "http://127.0.0.1:8787/acp/rpc",
+                data=req_body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {auth_token}"
+                }
+            )
+            try:
+                with urllib.request.urlopen(req) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    poll_result = resp_data.get("result") or {}
+                    status = poll_result.get("status")
+                    if status in ("completed", "failed", "cancelled"):
+                        result = poll_result
+                        final["result"] = poll_result
+                        break
+            except Exception as e:
+                print(f"poll error: {e}", file=sys.stderr)
+            time.sleep(1)
+        else:
+            raise SystemExit("timeout waiting for OpenClaw smoke task to complete")
+
     error_text = json.dumps(final.get("error", {}), ensure_ascii=False)
     for code in (
         "GATEWAY_PROVIDER_REQUIRED",
@@ -282,7 +331,6 @@
     ):
         if marker in final_text:
             raise SystemExit(f"OpenClaw smoke returned runtime error text: {marker}")
-    result = final.get("result") or final.get("payload") or {}
     output_text = " ".join(
         str(result.get(key, ""))
         for key in ("output", "message", "summary", "resultSummary")
@@ -332,6 +380,9 @@
     python3 - "$stream_file" "$stream_elapsed_seconds" <<'PY'
     import json
     import sys
+    import urllib.request
+    import os
+    import time
 
     path = sys.argv[1]
     elapsed_seconds = int(sys.argv[2])
@@ -364,6 +415,52 @@
         raise SystemExit("missing final SSE result envelope")
     if not payloads or payloads[-1].get("done") is not True:
         raise SystemExit("missing SSE done marker")
+
+    result = final.get("result") or final.get("payload") or {}
+    if result.get("status") == "running":
+        session_id = result.get("sessionId")
+        thread_id = result.get("threadId")
+        turn_id = result.get("turnId")
+        run_id = result.get("runId")
+        auth_token = os.environ.get("XWORKMATE_BRIDGE_AUTH_TOKEN", "")
+
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            req_body = json.dumps({
+                "jsonrpc": "2.0",
+                "id": "poll-task",
+                "method": "xworkmate.tasks.get",
+                "params": {
+                    "sessionId": session_id,
+                    "threadId": thread_id,
+                    "turnId": turn_id,
+                    "runId": run_id
+                }
+            }).encode("utf-8")
+
+            req = urllib.request.Request(
+                "http://127.0.0.1:8787/acp/rpc",
+                data=req_body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {auth_token}"
+                }
+            )
+            try:
+                with urllib.request.urlopen(req) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    poll_result = resp_data.get("result") or {}
+                    status = poll_result.get("status")
+                    if status in ("completed", "failed", "cancelled"):
+                        result = poll_result
+                        final["result"] = poll_result
+                        break
+            except Exception as e:
+                print(f"poll error: {e}", file=sys.stderr)
+            time.sleep(1)
+        else:
+            raise SystemExit("timeout waiting for OpenClaw long-task smoke task to complete")
+
     final_text = json.dumps(final, ensure_ascii=False)
     for marker in (
         "Requested agent harness",
@@ -375,7 +472,6 @@
     ):
         if marker in final_text:
             raise SystemExit(f"OpenClaw long-task smoke returned runtime error text: {marker}")
-    result = final.get("result") or final.get("payload") or {}
     output_text = " ".join(
         str(result.get(key, ""))
         for key in ("output", "message", "summary", "resultSummary")
