@@ -25,12 +25,17 @@
     group: "{{ xworkmate_bridge_service_group }}"
     mode: "0755"
 
-- name: Read existing xworkmate-bridge auth token from systemd unit
+- name: Read existing xworkmate-bridge auth token from systemd units
   ansible.builtin.shell: |
     set -euo pipefail
-    if [ -f "{{ xworkmate_bridge_systemd_unit_path }}" ]; then
-      sed -n 's/^Environment="BRIDGE_AUTH_TOKEN=\(.*\)"$/\1/p' "{{ xworkmate_bridge_systemd_unit_path }}" | head -n 1
-    fi
+    for unit in \
+      "{{ xworkmate_bridge_systemd_unit_path }}" \
+      "{{ xworkmate_bridge_user_systemd_unit_path }}"
+    do
+      if [ -f "${unit}" ]; then
+        sed -n 's/^Environment="BRIDGE_AUTH_TOKEN=\(.*\)"$/\1/p' "${unit}" | head -n 1
+      fi
+    done | sed '/^$/d' | head -n 1
   args:
     executable: /bin/bash
   register: xworkmate_bridge_existing_auth_token
@@ -39,12 +44,17 @@
   failed_when: false
   no_log: true
 
-- name: Read existing xworkmate-bridge review auth token from systemd unit
+- name: Read existing xworkmate-bridge review auth token from systemd units
   ansible.builtin.shell: |
     set -euo pipefail
-    if [ -f "{{ xworkmate_bridge_systemd_unit_path }}" ]; then
-      sed -n 's/^Environment="BRIDGE_REVIEW_AUTH_TOKEN=\(.*\)"$/\1/p' "{{ xworkmate_bridge_systemd_unit_path }}" | head -n 1
-    fi
+    for unit in \
+      "{{ xworkmate_bridge_systemd_unit_path }}" \
+      "{{ xworkmate_bridge_user_systemd_unit_path }}"
+    do
+      if [ -f "${unit}" ]; then
+        sed -n 's/^Environment="BRIDGE_REVIEW_AUTH_TOKEN=\(.*\)"$/\1/p' "${unit}" | head -n 1
+      fi
+    done | sed '/^$/d' | head -n 1
   args:
     executable: /bin/bash
   register: xworkmate_bridge_existing_review_auth_token
