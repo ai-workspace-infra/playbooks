@@ -1,0 +1,800 @@
+---
+- name: Setup XWorkspace Console runtime
+  hosts: "{{ xworkspace_console_hosts | default('all') }}"
+  become: true
+  gather_facts: true
+  vars:
+    xworkspace_console_user: ubuntu
+    xworkspace_console_home: /home/ubuntu
+    xworkspace_console_root: /home/ubuntu/xworkspace
+    xworkspace_console_portal_dir: /home/ubuntu/xworkspace/portal
+    xworkspace_console_scripts_dir: /home/ubuntu/xworkspace/scripts
+    xworkspace_console_portal_url: http://localhost:7000
+    xworkspace_console_portal_port: 7000
+    xworkspace_console_ttyd_port: 7681
+    xworkspace_console_enable_ttyd: true
+    xworkspace_console_install_chrome: true
+    xworkspace_console_autostart_enabled: true
+  tasks:
+    - name: Install XWorkspace desktop packages
+      ansible.builtin.apt:
+        update_cache: true
+        name:
+          - xfce4
+          - python3
+          - ttyd
+          - google-chrome-stable
+        state: present
+
+    - name: Ensure XWorkspace directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0755"
+      loop:
+        - "{{ xworkspace_console_root }}"
+        - "{{ xworkspace_console_portal_dir }}"
+        - "{{ xworkspace_console_scripts_dir }}"
+        - "{{ xworkspace_console_home }}/.config"
+        - "{{ xworkspace_console_home }}/.config/autostart"
+        - "{{ xworkspace_console_home }}/.config/systemd"
+        - "{{ xworkspace_console_home }}/.config/systemd/user"
+        - "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants"
+        - "{{ xworkspace_console_home }}/.config/systemd/user/timers.target.wants"
+
+    - name: Deploy XWorkspace status generator
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_scripts_dir }}/generate-status.py"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env python3
+          from __future__ import annotations
+
+          import datetime as dt
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          from pathlib import Path
+          from urllib import request, error
+
+          HOME = Path("{{ xworkspace_console_home }}")
+          ROOT = Path("{{ xworkspace_console_root }}")
+          PORTAL_DIR = Path("{{ xworkspace_console_portal_dir }}")
+          LITELLM_CONFIG = HOME / ".local/share/xworkspace/litellm-config.yaml"
+          OUTPUT = PORTAL_DIR / "status.json"
+
+          def run(*cmd: str) -> str:
+              try:
+                  return subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL).strip()
+              except Exception:
+                  return ""
+
+          def systemd_state(unit: str, scope: str = "--user") -> str:
+              cmd = ["systemctl"]
+              if scope == "--user":
+                  cmd.append("--user")
+              cmd += ["is-active", unit]
+              return run(*cmd) or "unknown"
+
+          def health(url: str) -> tuple[str, str]:
+              try:
+                  with request.urlopen(url, timeout=2) as response:
+                      payload = response.read().decode("utf-8", "replace").strip()
+                      return ("active" if response.status < 400 else "degraded", payload[:160] or "ok")
+              except error.HTTPError as exc:
+                  return ("degraded", f"HTTP {exc.code}")
+              except Exception as exc:
+                  return ("inactive", str(exc).splitlines()[0][:160])
+
+          def probe_unit(name: str, label: str, group: str, endpoint: str | None = None, candidates: list[str] | None = None, scope: str = "--user") -> dict:
+              candidates = candidates or [name]
+              state = "unknown"
+              found = None
+              for candidate in candidates:
+                  state = systemd_state(candidate, scope=scope)
+                  if state != "unknown":
+                      found = candidate
+                      break
+              details = f"{label} {state}"
+              if endpoint:
+                  endpoint_state, endpoint_detail = health(endpoint)
+                  if endpoint_state == "active" and state in {"active", "unknown"}:
+                      state = "active"
+                  elif endpoint_state == "degraded" and state == "active":
+                      state = "degraded"
+                  details = endpoint_detail
+              return {
+                  "id": found or name,
+                  "name": found or name,
+                  "label": label,
+                  "state": state,
+                  "details": details,
+                  "endpoint": endpoint,
+                  "group": group,
+              }
+
+          def parse_models(path: Path) -> list[dict]:
+              if not path.exists():
+                  return []
+              text = path.read_text(encoding="utf-8", errors="replace")
+              models = []
+              current = None
+              for line in text.splitlines():
+                  match = re.search(r"^\s*model_name:\s*(.+?)\s*$", line)
+                  if match:
+                      current = match.group(1).strip().strip('"\'')
+                      models.append({
+                          "name": current,
+                          "state": "active",
+                          "details": "Detected from litellm-config.yaml",
+                      })
+              return models
+
+          services = [
+              probe_unit("xworkspace-portal.service", "portal", "core", "{{ xworkspace_console_portal_url }}", ["xworkspace-portal.service"], "--user"),
+              probe_unit("xworkspace-chrome.service", "chrome", "workspace", None, ["xworkspace-chrome.service"], "--user"),
+              probe_unit("xworkspace-litellm.service", "litellm", "core", "http://127.0.0.1:4000/health/liveliness", ["xworkspace-litellm.service", "litellm.service"], "--user"),
+              probe_unit("xworkmate-bridge.service", "xworkmate-bridge", "workspace", None, ["xworkmate-bridge.service"], "--user"),
+              probe_unit("openclaw-gateway.service", "openclaw", "workspace", None, ["openclaw-gateway.service", "openclaw.service"], "--user"),
+              probe_unit("hermes-gateway.service", "hermes", "workspace", None, ["hermes-gateway.service", "hermes.service"], "--user"),
+              probe_unit("qmd.service", "QMD", "workspace", None, ["qmd.service", "QMD.service", "xworkspace-qmd.service"], "--user"),
+              probe_unit("xworkspace-ttyd.service", "ttyd", "workspace", "http://127.0.0.1:7681", ["xworkspace-ttyd.service"], "--user"),
+              probe_unit("ttyd.service", "ttyd(system)", "workspace", "http://127.0.0.1:7681", ["ttyd.service"], "system"),
+          ]
+
+          litellm = next((item for item in services if item["label"] == "litellm"), None)
+          terminal = next((item for item in services if item["label"].startswith("ttyd")), None)
+          chrome = next((item for item in services if item["label"] == "chrome"), None)
+
+          output = {
+              "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+              "summary": "Workspace healthy" if all(item["state"] == "active" for item in services if item["label"] != "QMD") else "Workspace degraded",
+              "services": services,
+              "models": parse_models(LITELLM_CONFIG),
+              "terminalTranscript": "ubuntu@workspace:~$ openclaw status\nstatus snapshot generated from live probes",
+              "latencySummary": "live probe",
+              "latencySource": litellm["details"] if litellm else "no litellm probe",
+              "rpmSummary": "live probe",
+              "rpmSource": "xworkspace-litellm.service",
+              "costSummary": "live probe",
+              "costSource": "litellm-config.yaml",
+              "chromeState": chrome["state"] if chrome else "unknown",
+              "chromeDetails": chrome["details"] if chrome else "No chrome probe",
+              "terminalState": terminal["state"] if terminal else "unknown",
+              "terminalDetails": terminal["details"] if terminal else "No ttyd probe",
+          }
+
+          OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+          tmp = OUTPUT.with_suffix(".json.tmp")
+          tmp.write_text(json.dumps(output, indent=2, sort_keys=True), encoding="utf-8")
+          os.replace(tmp, OUTPUT)
+
+          print(f"Wrote {OUTPUT}")
+
+    - name: Deploy XWorkspace status service
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-status.service"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=XWorkspace status snapshot generator
+          After=xworkspace-portal.service xworkspace-litellm.service
+          Wants=xworkspace-portal.service xworkspace-litellm.service
+
+          [Service]
+          Type=oneshot
+          ExecStart={{ xworkspace_console_scripts_dir }}/generate-status.py
+
+    - name: Deploy XWorkspace status timer
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-status.timer"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Refresh XWorkspace status snapshot periodically
+
+          [Timer]
+          OnBootSec=5
+          OnUnitActiveSec=8
+          Unit=xworkspace-status.service
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+
+    - name: Deploy Xinit entrypoint for XWorkspace
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_home }}/.xinitrc"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          export XDG_CURRENT_DESKTOP=XFCE
+          export DESKTOP_SESSION=xfce
+          export BROWSER={{ xworkspace_console_scripts_dir }}/chrome-app.sh
+          mkdir -p "$HOME/.config/xworkspace"
+          if [ -z "${XAUTHORITY:-}" ]; then
+            export XAUTHORITY="$HOME/.Xauthority"
+          fi
+          cat > "$HOME/.config/xworkspace/session.env" <<EOF
+          DISPLAY=${DISPLAY:-}
+          XAUTHORITY=${XAUTHORITY:-}
+          XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-}
+          DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-}
+          EOF
+
+          systemctl --user import-environment DISPLAY XAUTHORITY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS >/dev/null 2>&1 || true
+          dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS >/dev/null 2>&1 || true
+
+          systemctl --user daemon-reload >/dev/null 2>&1 || true
+          systemctl --user start xworkspace-console.target >/dev/null 2>&1 || true
+
+          exec dbus-launch --exit-with-session startxfce4
+
+    - name: Point Xsession to Xinit entrypoint
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_home }}/.xsession"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          exec "$HOME/.xinitrc"
+
+    - name: Deploy XWorkspace console launcher script
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_scripts_dir }}/start.sh"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exit 0
+
+    - name: Deploy XWorkspace Chrome launcher wrapper
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_scripts_dir }}/chrome-app.sh"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          mkdir -p "$HOME/.config/xworkspace-chrome"
+          exec /usr/bin/google-chrome \
+            --app=http://localhost:7000 \
+            --user-data-dir="$HOME/.config/xworkspace-chrome" \
+            --profile-directory=Default \
+            --no-first-run \
+            --disable-session-crashed-bubble \
+            --disable-sync \
+            --new-window
+
+    - name: Deploy XWorkspace portal service
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-portal.service"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=XWorkspace Portal
+          After=graphical-session.target
+          Wants=graphical-session.target
+
+          [Service]
+          Type=simple
+          WorkingDirectory={{ xworkspace_console_portal_dir }}
+          ExecStart=/usr/bin/python3 -m http.server {{ xworkspace_console_portal_port }}
+          Restart=always
+          RestartSec=2
+
+          [Install]
+          WantedBy=default.target
+
+    - name: Deploy XWorkspace ttyd service
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-ttyd.service"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=XWorkspace ttyd
+          After=graphical-session.target
+          Wants=graphical-session.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/ttyd -i lo -p {{ xworkspace_console_ttyd_port }} -O login bash
+          Restart=always
+          RestartSec=2
+
+          [Install]
+          WantedBy=default.target
+
+    - name: Deploy XWorkspace Chrome service
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-chrome.service"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=XWorkspace Chrome App
+          After=graphical-session.target xworkspace-portal.service
+          Requires=xworkspace-portal.service
+          Wants=graphical-session.target
+
+          [Service]
+          Type=simple
+          Environment=HOME={{ xworkspace_console_home }}
+          EnvironmentFile=%h/.config/xworkspace/session.env
+          ExecStart=/bin/bash -lc 'mkdir -p "$HOME/.config/xworkspace-chrome" && exec /usr/bin/google-chrome --app={{ xworkspace_console_portal_url }} --user-data-dir="$HOME/.config/xworkspace-chrome" --profile-directory=Default --no-first-run --disable-session-crashed-bubble --disable-sync --new-window'
+          Restart=always
+          RestartSec=2
+
+          [Install]
+          WantedBy=default.target
+
+    - name: Deploy XWorkspace desktop target
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-console.target"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=XWorkspace Desktop Console
+          Wants=xworkspace-portal.service xworkspace-ttyd.service xworkspace-chrome.service xworkspace-litellm.service xworkspace-status.service xworkmate-bridge.service openclaw-gateway.service hermes-gateway.service
+          After=graphical-session.target
+
+          [Install]
+          WantedBy=default.target
+
+    - name: Enable XWorkspace desktop target
+      ansible.builtin.file:
+        src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-console.target"
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-console.target"
+        state: link
+      become_user: "{{ xworkspace_console_user }}"
+
+    - name: Enable XWorkspace portal service
+      ansible.builtin.file:
+        src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-portal.service"
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-portal.service"
+        state: link
+      become_user: "{{ xworkspace_console_user }}"
+
+    - name: Enable XWorkspace ttyd service
+      ansible.builtin.file:
+        src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-ttyd.service"
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-ttyd.service"
+        state: link
+      become_user: "{{ xworkspace_console_user }}"
+
+    - name: Enable XWorkspace Chrome service
+      ansible.builtin.file:
+        src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-chrome.service"
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-chrome.service"
+        state: link
+      become_user: "{{ xworkspace_console_user }}"
+
+    - name: Enable XWorkspace LiteLLM service
+      ansible.builtin.file:
+        src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-litellm.service"
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-litellm.service"
+        state: link
+      become_user: "{{ xworkspace_console_user }}"
+
+    - name: Enable XWorkspace status timer
+      ansible.builtin.file:
+        src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-status.timer"
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/timers.target.wants/xworkspace-status.timer"
+        state: link
+      become_user: "{{ xworkspace_console_user }}"
+
+    - name: Hide XFCE desktop icons
+      ansible.builtin.command: xfconf-query -c xfce4-desktop -p /desktop-icons/style -t int -s 0 --create
+      changed_when: true
+      failed_when: false
+
+    - name: Ensure portal index exists
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_portal_dir }}/index.html"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0644"
+        content: |
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              <title>XWorkspace Console</title>
+              <style>
+                :root {
+                  color-scheme: light;
+                  --bg-1: #f4efe7;
+                  --bg-2: #e6dfd3;
+                  --panel: rgba(255,255,255,.84);
+                  --panel-strong: #ffffff;
+                  --ink: #1f1d1a;
+                  --muted: #6f675f;
+                  --nav: #27221d;
+                  --accent: #2f6fed;
+                  --success: #4fd17b;
+                  --warning: #e3a227;
+                  --danger: #e45b5b;
+                }
+                body {
+                  margin: 0;
+                  font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+                  background: linear-gradient(135deg, var(--bg-1), var(--bg-2));
+                  color: var(--ink);
+                }
+                .frame {
+                  min-height: 100vh;
+                  display: grid;
+                  grid-template-columns: 220px 1fr;
+                }
+                .nav {
+                  background: var(--nav);
+                  color: #f7f1e9;
+                  padding: 20px 16px;
+                }
+                .nav h1 {
+                  margin: 0 0 18px;
+                  font-size: 18px;
+                  letter-spacing: .12em;
+                  text-transform: uppercase;
+                }
+                .nav a {
+                  display: block;
+                  color: inherit;
+                  text-decoration: none;
+                  padding: 12px 14px;
+                  border-radius: 12px;
+                  margin-bottom: 8px;
+                }
+                .nav a.active,
+                .nav a:hover { background: rgba(255,255,255,.10); }
+                .main {
+                  padding: 24px;
+                  display: grid;
+                  gap: 18px;
+                }
+                .card {
+                  background: var(--panel);
+                  border: 1px solid rgba(0,0,0,.08);
+                  border-radius: 24px;
+                  padding: 20px;
+                  box-shadow: 0 18px 50px rgba(0,0,0,.08);
+                }
+                .status {
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 8px;
+                  padding: 8px 12px;
+                  border-radius: 999px;
+                  background: rgba(44,143,87,.1);
+                  color: #2c8f57;
+                  font-weight: 600;
+                }
+                .dot {
+                  width: 10px;
+                  height: 10px;
+                  border-radius: 50%;
+                  background: var(--success);
+                }
+                .terminal {
+                  background: #141619;
+                  color: #d8f9d8;
+                  border-radius: 20px;
+                  min-height: 260px;
+                  padding: 18px;
+                  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+                  overflow: auto;
+                  white-space: pre-wrap;
+                }
+                .muted { color: #6f675f; }
+                .summary-grid {
+                  display: grid;
+                  grid-template-columns: repeat(4, minmax(0, 1fr));
+                  gap: 14px;
+                  margin-top: 16px;
+                }
+                .metric {
+                  background: rgba(247,243,237,.95);
+                  border-radius: 18px;
+                  padding: 14px;
+                }
+                .metric .value {
+                  font-size: 24px;
+                  font-weight: 700;
+                  margin: 10px 0 4px;
+                }
+                .service-list {
+                  display: grid;
+                  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+                  gap: 12px;
+                }
+                .service-item {
+                  background: rgba(247,243,237,.95);
+                  border-radius: 18px;
+                  padding: 14px;
+                  border: 1px solid rgba(0,0,0,.05);
+                }
+                .service-head {
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  gap: 12px;
+                }
+                .service-state {
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 8px;
+                  font-weight: 700;
+                }
+                .state-active { color: #2c8f57; }
+                .state-degraded { color: var(--warning); }
+                .state-inactive { color: var(--danger); }
+                .state-unknown { color: #9e9487; }
+                .spinner {
+                  width: 12px;
+                  height: 12px;
+                  border: 2px solid rgba(0,0,0,.12);
+                  border-top-color: var(--accent);
+                  border-radius: 999px;
+                  animation: spin 1s linear infinite;
+                  display: inline-block;
+                }
+                @keyframes spin {
+                  to { transform: rotate(360deg); }
+                }
+                @media (max-width: 980px) {
+                  .frame { grid-template-columns: 1fr; }
+                  .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+                }
+                .link-row {
+                  display: flex;
+                  flex-wrap: wrap;
+                  gap: 10px;
+                  margin-top: 14px;
+                }
+                .link-button {
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 8px;
+                  padding: 10px 14px;
+                  border-radius: 999px;
+                  background: rgba(47,111,237,.10);
+                  color: #2459c9;
+                  text-decoration: none;
+                  font-weight: 600;
+                }
+                .link-button:hover { background: rgba(47,111,237,.16); }
+                .nav-tabs {
+                  display: flex;
+                  flex-wrap: wrap;
+                  gap: 10px;
+                  margin: 12px 0 0;
+                }
+                .nav-tab {
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 8px;
+                  padding: 10px 14px;
+                  border-radius: 999px;
+                  background: rgba(255,255,255,.74);
+                  color: var(--ink);
+                  text-decoration: none;
+                  border: 1px solid rgba(0,0,0,.06);
+                }
+                .nav-tab:hover { background: rgba(255,255,255,.92); }
+              </style>
+            </head>
+            <body>
+              <div class="frame">
+                <aside class="nav">
+                  <h1>XWorkspace</h1>
+                  <a class="active" href="#workspace">Workspace</a>
+                  <a href="#openclaw">OpenClaw</a>
+                  <a href="#litellm">LiteLLM</a>
+                  <a href="#vault">Vault</a>
+                  <a href="#terminal">Terminal</a>
+                </aside>
+                <main class="main">
+                  <section class="card" id="workspace">
+                    <h2>Workspace</h2>
+                    <p class="muted">Live control plane status from <code>/status.json</code>.</p>
+                    <div class="nav-tabs" id="nav-tabs"></div>
+                    <div id="overall-status" class="status"><span class="dot"></span><span>Loading live status...</span></div>
+                    <div class="summary-grid" id="summary-grid"></div>
+                  </section>
+                  <section class="card" id="openclaw">
+                    <h3>Services</h3>
+                    <p class="muted">OpenClaw, Bridge, LiteLLM, Vault, ttyd, Chrome, and related workspace units.</p>
+                    <div class="service-list" id="service-list"></div>
+                  </section>
+                  <section class="card" id="litellm">
+                    <h3>Models</h3>
+                    <p class="muted">Detected directly from the LiteLLM config snapshot.</p>
+                    <div class="service-list" id="model-list"></div>
+                  </section>
+                  <section class="card" id="terminal">
+                    <h3>Embedded Terminal</h3>
+                    <div class="muted" id="terminal-meta">Waiting for terminal snapshot...</div>
+                    <div class="terminal" id="terminal-output">
+                      <span class="spinner"></span> Loading live terminal snapshot...
+                    </div>
+                  </section>
+                </main>
+              </div>
+              <script>
+                const stateClass = (state) => {
+                  const value = String(state || 'unknown').toLowerCase();
+                  if (value.includes('active') || value.includes('running') || value.includes('ok')) return 'state-active';
+                  if (value.includes('degrad') || value.includes('warn') || value.includes('slow')) return 'state-degraded';
+                  if (value.includes('inactive') || value.includes('failed') || value.includes('down') || value.includes('stopped')) return 'state-inactive';
+                  return 'state-unknown';
+                };
+
+                const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+                  '&': '&amp;',
+                  '<': '&lt;',
+                  '>': '&gt;',
+                  '"': '&quot;',
+                  "'": '&#39;'
+                })[ch]);
+
+                const summarize = (snapshot) => {
+                  const services = Array.isArray(snapshot.services) ? snapshot.services : [];
+                  const active = services.filter((s) => String(s.state).toLowerCase() === 'active').length;
+                  const degraded = services.filter((s) => {
+                    const state = String(s.state || '').toLowerCase();
+                    return state.includes('degrad') || state.includes('warn') || state.includes('slow');
+                  }).length;
+                  return { services, active, degraded };
+                };
+
+                const renderTabs = (tabs) => {
+                  const container = document.getElementById('nav-tabs');
+                  const items = Array.isArray(tabs) ? tabs : [];
+                  const fallback = [
+                    { label: 'OpenClaw', href: 'http://127.0.0.1:18789/channels' },
+                    { label: 'Vault', href: 'http://127.0.0.1:8200' },
+                    { label: 'LiteLLM', href: 'http://127.0.0.1:4000' },
+                  ];
+                  const finalTabs = items.length ? items : fallback;
+                  container.innerHTML = finalTabs.map((tab) => `
+                    <a class="nav-tab" href="${escapeHtml(tab.href || '#')}" ${(tab.external ?? true) ? 'target="_blank" rel="noreferrer"' : ''}>
+                      ${escapeHtml(tab.label || tab.name || 'Link')}
+                    </a>
+                  `).join('');
+                };
+
+                const render = (snapshot) => {
+                  const { services, active, degraded } = summarize(snapshot);
+                  const overall = snapshot.summary || 'Workspace healthy';
+                  const terminal = snapshot.terminalTranscript || 'No terminal snapshot available.';
+                  const models = Array.isArray(snapshot.models) ? snapshot.models : [];
+
+                  document.getElementById('overall-status').innerHTML =
+                    '<span class="dot"></span><span>' + escapeHtml(overall) + '</span>';
+
+                  document.getElementById('summary-grid').innerHTML = [
+                    ['Services', active + ' / ' + services.length, 'healthy services detected'],
+                    ['Degraded', String(degraded), 'needs attention'],
+                    ['Chrome', escapeHtml(snapshot.chromeState || 'unknown'), escapeHtml(snapshot.chromeDetails || 'No chrome probe')],
+                    ['Snapshot', escapeHtml(snapshot.generatedAt || 'unknown'), 'last refresh']
+                  ].map(([title, value, detail]) => `
+                    <div class="metric">
+                      <div class="muted">${escapeHtml(title)}</div>
+                      <div class="value">${escapeHtml(value)}</div>
+                      <div class="muted">${escapeHtml(detail)}</div>
+                    </div>
+                  `).join('');
+
+                  document.getElementById('service-list').innerHTML = services.map((service) => `
+                    <div class="service-item">
+                      <div class="service-head">
+                        <strong>${escapeHtml(service.label || service.id || 'unknown')}</strong>
+                        <span class="service-state ${stateClass(service.state)}">
+                          <span class="dot" style="background:${stateClass(service.state) === 'state-active' ? 'var(--success)' : stateClass(service.state) === 'state-degraded' ? 'var(--warning)' : stateClass(service.state) === 'state-inactive' ? 'var(--danger)' : '#9e9487'}"></span>
+                          ${escapeHtml(service.state || 'unknown')}
+                        </span>
+                      </div>
+                      <div class="muted" style="margin-top:8px">${escapeHtml(service.details || '')}</div>
+                      ${service.endpoint ? `<div class="muted" style="margin-top:8px">${escapeHtml(service.endpoint)}</div>` : ''}
+                    </div>
+                  `).join('');
+
+                  document.getElementById('model-list').innerHTML = models.length
+                    ? models.map((model) => `
+                        <div class="service-item">
+                          <div class="service-head">
+                            <strong>${escapeHtml(model.name || 'unknown')}</strong>
+                            <span class="service-state ${stateClass(model.state)}">
+                              <span class="dot" style="background:${stateClass(model.state) === 'state-active' ? 'var(--success)' : stateClass(model.state) === 'state-degraded' ? 'var(--warning)' : stateClass(model.state) === 'state-inactive' ? 'var(--danger)' : '#9e9487'}"></span>
+                              ${escapeHtml(model.state || 'unknown')}
+                            </span>
+                          </div>
+                          <div class="muted" style="margin-top:8px">${escapeHtml(model.details || '')}</div>
+                        </div>
+                      `).join('')
+                    : '<div class="service-item"><strong>No models detected</strong><div class="muted" style="margin-top:8px">Wait for the LiteLLM config snapshot to populate models.</div></div>';
+
+                  document.getElementById('terminal-meta').textContent =
+                    (snapshot.terminalState || 'unknown') + ' · ' + (snapshot.terminalDetails || 'No terminal details');
+                  document.getElementById('terminal-output').textContent = terminal;
+                };
+
+                const refresh = async () => {
+                  try {
+                    const tabsResponse = await fetch('/portal-tabs.json', { cache: 'no-store' }).catch(() => null);
+                    const tabs = tabsResponse && tabsResponse.ok ? await tabsResponse.json() : null;
+                    renderTabs(tabs);
+
+                    const response = await fetch('/status.json', { cache: 'no-store' });
+                    if (!response.ok) {
+                      throw new Error('status.json returned ' + response.status);
+                    }
+                    const snapshot = await response.json();
+                    render(snapshot);
+                  } catch (error) {
+                    document.getElementById('overall-status').innerHTML =
+                      '<span class="dot" style="background:var(--danger)"></span><span>Failed to load live status</span>';
+                    document.getElementById('summary-grid').innerHTML = `
+                      <div class="metric" style="grid-column:1/-1">
+                        <div class="muted">Portal probe error</div>
+                        <div class="value" style="font-size:18px;color:var(--danger)">` + escapeHtml(error.message || error) + `</div>
+                      </div>`;
+                  }
+                };
+
+                refresh();
+                setInterval(refresh, 8000);
+              </script>
+            </body>
+          </html>
+
+    - name: Ensure portal tabs config exists
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_portal_dir }}/portal-tabs.json"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0644"
+        content: |
+          [
+            {
+              "label": "OpenClaw",
+              "href": "http://127.0.0.1:18789/channels",
+              "external": true
+            },
+            {
+              "label": "Vault",
+              "href": "http://127.0.0.1:8200",
+              "external": true
+            },
+            {
+              "label": "LiteLLM",
+              "href": "http://127.0.0.1:4000",
+              "external": true
+            }
+          ]
