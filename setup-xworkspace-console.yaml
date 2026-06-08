@@ -524,6 +524,35 @@
         state: link
       become_user: "{{ xworkspace_console_user }}"
 
+    - name: Kill legacy python http.server on port 7000
+      ansible.builtin.shell: |
+        pid=$(lsof -ti:7000 2>/dev/null || true)
+        if [ -n "$pid" ]; then
+          kill "$pid" 2>/dev/null || true
+          sleep 1
+        fi
+      become_user: "{{ xworkspace_console_user }}"
+
+    - name: Reload systemd user daemon
+      ansible.builtin.shell: |
+        su - {{ xworkspace_console_user }} -c "systemctl --user daemon-reload"
+      become: true
+
+    - name: Restart xworkspace-portal service
+      ansible.builtin.shell: |
+        su - {{ xworkspace_console_user }} -c "systemctl --user restart xworkspace-portal.service"
+      become: true
+
+    - name: Restart xworkspace-chrome service
+      ansible.builtin.shell: |
+        su - {{ xworkspace_console_user }} -c "systemctl --user restart xworkspace-chrome.service"
+      become: true
+
+    - name: Restart xworkspace-ttyd service
+      ansible.builtin.shell: |
+        su - {{ xworkspace_console_user }} -c "systemctl --user restart xworkspace-ttyd.service"
+      become: true
+
     - name: Hide XFCE desktop icons
       ansible.builtin.command: xfconf-query -c xfce4-desktop -p /desktop-icons/style -t int -s 0 --create
       changed_when: true
