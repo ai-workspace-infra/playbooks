@@ -1,5 +1,5 @@
 ---
-- name: Setup XWorkspace Console runtime
+- name: Setup AI Agentic Workspace runtime
   hosts: "{{ xworkspace_console_hosts | default('all') }}"
   become: true
   gather_facts: true
@@ -16,7 +16,50 @@
     xworkspace_console_install_chrome: true
     xworkspace_console_autostart_enabled: true
   tasks:
-    - name: Install XWorkspace desktop packages
+    - name: Install Google Chrome apt repository prerequisites
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - xdg-utils
+        state: present
+        install_recommends: false
+        update_cache: true
+
+    - name: Ensure Google Chrome apt keyring directory exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install Google Linux signing key
+      ansible.builtin.shell: |
+        set -euo pipefail
+        tmp="$(mktemp)"
+        curl -fsSL "https://dl.google.com/linux/linux_signing_key.pub" -o "$tmp"
+        gpg --dearmor -o /etc/apt/keyrings/google-linux-signing-key.gpg "$tmp"
+        rm -f "$tmp"
+        chmod 0644 /etc/apt/keyrings/google-linux-signing-key.gpg
+      args:
+        executable: /bin/bash
+        creates: /etc/apt/keyrings/google-linux-signing-key.gpg
+
+    - name: Configure Google Chrome apt repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/google-chrome.list
+        owner: root
+        group: root
+        mode: "0644"
+        content: "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-linux-signing-key.gpg] https://dl.google.com/linux/chrome/deb/ stable main\n"
+
+    - name: Refresh apt cache after Google Chrome repository changes
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Install AI Agentic Workspace runtime packages
       ansible.builtin.apt:
         update_cache: true
         name:
@@ -26,7 +69,7 @@
           - google-chrome-stable
         state: present
 
-    - name: Ensure XWorkspace directories exist
+    - name: Ensure AI Agentic Workspace directories exist
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
@@ -44,7 +87,7 @@
         - "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants"
         - "{{ xworkspace_console_home }}/.config/systemd/user/timers.target.wants"
 
-    - name: Deploy XWorkspace status generator
+    - name: Deploy AI Agentic Workspace status generator
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_scripts_dir }}/generate-status.py"
         owner: "{{ xworkspace_console_user }}"
@@ -177,7 +220,7 @@
 
           print(f"Wrote {OUTPUT}")
 
-    - name: Deploy XWorkspace status service
+    - name: Deploy AI Agentic Workspace status service
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-status.service"
         owner: "{{ xworkspace_console_user }}"
@@ -185,7 +228,7 @@
         mode: "0644"
         content: |
           [Unit]
-          Description=XWorkspace status snapshot generator
+          Description=AI Agentic Workspace status snapshot generator
           After=xworkspace-portal.service xworkspace-litellm.service
           Wants=xworkspace-portal.service xworkspace-litellm.service
 
@@ -193,7 +236,7 @@
           Type=oneshot
           ExecStart={{ xworkspace_console_scripts_dir }}/generate-status.py
 
-    - name: Deploy XWorkspace status timer
+    - name: Deploy AI Agentic Workspace status timer
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-status.timer"
         owner: "{{ xworkspace_console_user }}"
@@ -201,7 +244,7 @@
         mode: "0644"
         content: |
           [Unit]
-          Description=Refresh XWorkspace status snapshot periodically
+          Description=Refresh AI Agentic Workspace status snapshot periodically
 
           [Timer]
           OnBootSec=5
@@ -212,7 +255,7 @@
           [Install]
           WantedBy=timers.target
 
-    - name: Deploy Xinit entrypoint for XWorkspace
+    - name: Deploy Xinit entrypoint for AI Agentic Workspace
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.xinitrc"
         owner: "{{ xworkspace_console_user }}"
@@ -254,7 +297,7 @@
           #!/usr/bin/env bash
           exec "$HOME/.xinitrc"
 
-    - name: Deploy XWorkspace console launcher script
+    - name: Deploy AI Agentic Workspace console launcher script
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_scripts_dir }}/start.sh"
         owner: "{{ xworkspace_console_user }}"
@@ -265,7 +308,7 @@
           set -euo pipefail
           exit 0
 
-    - name: Deploy XWorkspace Chrome launcher wrapper
+    - name: Deploy AI Agentic Workspace Chrome launcher wrapper
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_scripts_dir }}/chrome-app.sh"
         owner: "{{ xworkspace_console_user }}"
@@ -284,7 +327,7 @@
             --disable-sync \
             --new-window
 
-    - name: Deploy XWorkspace portal service
+    - name: Deploy AI Agentic Workspace portal service
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-portal.service"
         owner: "{{ xworkspace_console_user }}"
@@ -292,7 +335,7 @@
         mode: "0644"
         content: |
           [Unit]
-          Description=XWorkspace Portal
+          Description=AI Agentic Workspace Portal
           After=graphical-session.target
           Wants=graphical-session.target
 
@@ -306,7 +349,7 @@
           [Install]
           WantedBy=default.target
 
-    - name: Deploy XWorkspace ttyd service
+    - name: Deploy AI Agentic Workspace ttyd service
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-ttyd.service"
         owner: "{{ xworkspace_console_user }}"
@@ -314,7 +357,7 @@
         mode: "0644"
         content: |
           [Unit]
-          Description=XWorkspace ttyd
+          Description=AI Agentic Workspace ttyd
           After=graphical-session.target
           Wants=graphical-session.target
 
@@ -327,7 +370,7 @@
           [Install]
           WantedBy=default.target
 
-    - name: Deploy XWorkspace Chrome service
+    - name: Deploy AI Agentic Workspace Chrome service
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-chrome.service"
         owner: "{{ xworkspace_console_user }}"
@@ -335,7 +378,7 @@
         mode: "0644"
         content: |
           [Unit]
-          Description=XWorkspace Chrome App
+          Description=AI Agentic Workspace Chrome App
           After=graphical-session.target xworkspace-portal.service
           Requires=xworkspace-portal.service
           Wants=graphical-session.target
@@ -351,7 +394,7 @@
           [Install]
           WantedBy=default.target
 
-    - name: Deploy XWorkspace desktop target
+    - name: Deploy AI Agentic Workspace target
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-console.target"
         owner: "{{ xworkspace_console_user }}"
@@ -359,49 +402,49 @@
         mode: "0644"
         content: |
           [Unit]
-          Description=XWorkspace Desktop Console
+          Description=AI Agentic Workspace Console
           Wants=xworkspace-portal.service xworkspace-ttyd.service xworkspace-chrome.service xworkspace-litellm.service xworkspace-status.service xworkmate-bridge.service openclaw-gateway.service hermes-gateway.service
           After=graphical-session.target
 
           [Install]
           WantedBy=default.target
 
-    - name: Enable XWorkspace desktop target
+    - name: Enable AI Agentic Workspace target
       ansible.builtin.file:
         src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-console.target"
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-console.target"
         state: link
       become_user: "{{ xworkspace_console_user }}"
 
-    - name: Enable XWorkspace portal service
+    - name: Enable AI Agentic Workspace portal service
       ansible.builtin.file:
         src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-portal.service"
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-portal.service"
         state: link
       become_user: "{{ xworkspace_console_user }}"
 
-    - name: Enable XWorkspace ttyd service
+    - name: Enable AI Agentic Workspace ttyd service
       ansible.builtin.file:
         src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-ttyd.service"
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-ttyd.service"
         state: link
       become_user: "{{ xworkspace_console_user }}"
 
-    - name: Enable XWorkspace Chrome service
+    - name: Enable AI Agentic Workspace Chrome service
       ansible.builtin.file:
         src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-chrome.service"
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-chrome.service"
         state: link
       become_user: "{{ xworkspace_console_user }}"
 
-    - name: Enable XWorkspace LiteLLM service
+    - name: Enable AI Agentic Workspace LiteLLM service
       ansible.builtin.file:
         src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-litellm.service"
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-litellm.service"
         state: link
       become_user: "{{ xworkspace_console_user }}"
 
-    - name: Enable XWorkspace status timer
+    - name: Enable AI Agentic Workspace status timer
       ansible.builtin.file:
         src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-status.timer"
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/timers.target.wants/xworkspace-status.timer"
@@ -425,7 +468,7 @@
             <head>
               <meta charset="utf-8" />
               <meta name="viewport" content="width=device-width, initial-scale=1" />
-              <title>XWorkspace Console</title>
+          <title>AI Agentic Workspace Console</title>
               <style>
                 :root {
                   color-scheme: light;
@@ -612,7 +655,7 @@
             <body>
               <div class="frame">
                 <aside class="nav">
-                  <h1>XWorkspace</h1>
+                  <h1>AI Agentic Workspace</h1>
                   <a class="active" href="#workspace">Workspace</a>
                   <a href="#openclaw">OpenClaw</a>
                   <a href="#litellm">LiteLLM</a>
