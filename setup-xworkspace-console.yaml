@@ -15,6 +15,7 @@
     xworkspace_console_enable_ttyd: true
     xworkspace_console_install_chrome: true
     xworkspace_console_autostart_enabled: true
+    xworkspace_console_ttyd_binary_path: /usr/local/bin/ttyd
   tasks:
     - name: Install Google Chrome apt repository prerequisites
       ansible.builtin.apt:
@@ -65,9 +66,46 @@
         name:
           - xfce4
           - python3
-          - ttyd
           - google-chrome-stable
         state: present
+
+    - name: Ensure ttyd binary target directory exists
+      ansible.builtin.file:
+        path: "{{ xworkspace_console_ttyd_binary_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Set ttyd binary download metadata
+      ansible.builtin.set_fact:
+        xworkspace_console_ttyd_arch: >-
+          {{ 'x86_64' if ansible_architecture in ['x86_64', 'amd64'] else
+             'aarch64' if ansible_architecture in ['aarch64', 'arm64'] else
+             '' }}
+
+    - name: Fail when ttyd binary architecture is unsupported
+      ansible.builtin.fail:
+        msg: "Unsupported architecture for ttyd binary: {{ ansible_architecture }}"
+      when: xworkspace_console_ttyd_arch == ''
+
+    - name: Download ttyd release binary
+      ansible.builtin.get_url:
+        url: "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.{{ xworkspace_console_ttyd_arch }}"
+        dest: "{{ xworkspace_console_ttyd_binary_path }}"
+        mode: "0755"
+        owner: root
+        group: root
+        force: true
+
+    - name: Verify ttyd binary
+      ansible.builtin.command: "{{ xworkspace_console_ttyd_binary_path }} --version"
+      register: xworkspace_console_ttyd_version
+      changed_when: false
+
+    - name: Show ttyd binary version
+      ansible.builtin.debug:
+        var: xworkspace_console_ttyd_version.stdout
 
     - name: Ensure AI Agentic Workspace directories exist
       ansible.builtin.file:
