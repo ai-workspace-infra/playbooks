@@ -107,6 +107,14 @@
       ansible.builtin.debug:
         var: xworkspace_console_ttyd_version.stdout
 
+    - name: Ensure AI Agentic Workspace user exists
+      ansible.builtin.user:
+        name: "{{ xworkspace_console_user }}"
+        state: present
+        create_home: true
+        shell: /bin/bash
+      when: xworkspace_console_user != 'root'
+
     - name: Ensure AI Agentic Workspace directories exist
       ansible.builtin.file:
         path: "{{ item }}"
