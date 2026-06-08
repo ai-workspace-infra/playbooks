@@ -1,0 +1,47 @@
+---
+- name: Common | detect UFW binary
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: common_firewall_ufw_binary
+
+- name: Common | detect firewalld binary
+  ansible.builtin.stat:
+    path: /usr/bin/firewall-cmd
+  register: common_firewall_firewalld_binary
+
+- name: Common | allow HTTP/HTTPS through UFW
+  ansible.builtin.command: "ufw allow {{ item.port }}/{{ item.protocol }}"
+  register: common_firewall_ufw_allow
+  changed_when: "'Skipping adding existing rule' not in (common_firewall_ufw_allow.stdout | default(''))"
+  failed_when: common_firewall_ufw_allow.rc != 0
+  loop:
+    - { port: "{{ common_firewall.http_port | default(80) }}", protocol: tcp, comment: "{{ common_firewall.allow_comments.http | default('XWorkmate HTTP') }}" }
+    - { port: "{{ common_firewall.https_port | default(443) }}", protocol: tcp, comment: "{{ common_firewall.allow_comments.https | default('XWorkmate HTTPS') }}" }
+  when:
+    - common_firewall.enabled | default(true) | bool
+    - common_firewall_ufw_binary.stat.exists | default(false)
+  become: true
+
+- name: Common | allow HTTP/HTTPS through firewalld
+  ansible.posix.firewalld:
+    port: "{{ item.port }}/{{ item.protocol }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - { port: "{{ common_firewall.http_port | default(80) }}", protocol: tcp, comment: "{{ common_firewall.allow_comments.http | default('XWorkmate HTTP') }}" }
+    - { port: "{{ common_firewall.https_port | default(443) }}", protocol: tcp, comment: "{{ common_firewall.allow_comments.https | default('XWorkmate HTTPS') }}" }
+  when:
+    - common_firewall.enabled | default(true) | bool
+    - not (common_firewall_ufw_binary.stat.exists | default(false))
+    - common_firewall_firewalld_binary.stat.exists | default(false)
+  become: true
+
+- name: Common | explain firewall handling
+  ansible.builtin.debug:
+    msg: >-
+      HTTP/HTTPS firewall handling completed or skipped on {{ inventory_hostname }}.
+      UFW={{ common_firewall_ufw_binary.stat.exists | default(false) }},
+      firewalld={{ common_firewall_firewalld_binary.stat.exists | default(false) }}.
+  when:
+    - common_firewall.enabled | default(true) | bool
