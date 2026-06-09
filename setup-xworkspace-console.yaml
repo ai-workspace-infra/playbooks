@@ -16,6 +16,7 @@
     xworkspace_console_install_chrome: true
     xworkspace_console_autostart_enabled: true
     xworkspace_console_ttyd_binary_path: /usr/local/bin/ttyd
+    xworkspace_console_dashboard_local_src: /Users/shenlan/workspaces/ai-workspace-lab/xworkspace-console/dashboard
   tasks:
     - name: Install Google Chrome apt repository prerequisites
       ansible.builtin.apt:
@@ -373,10 +374,10 @@
             --disable-sync \
             --new-window
 
-    - name: Sync AI Agentic Workspace dashboard source
+    - name: Sync dashboard source from controller to target
       ansible.posix.synchronize:
-        src: "{{ xworkspace_console_local_dashboard_dir | default(xworkspace_console_root + '/dashboard') }}/"
-        dest: "{{ xworkspace_console_portal_dir }}/"
+        src: "{{ xworkspace_console_dashboard_local_src }}/"
+        dest: "{{ xworkspace_console_local_dashboard_dir }}/"
         delete: true
         recursive: true
         rsync_opts:
@@ -386,13 +387,18 @@
       become: false
       delegate_to: localhost
 
-    - name: Install dashboard npm dependencies
-      community.general.npm:
-        path: "{{ xworkspace_console_portal_dir }}"
-        production: false
-        state: present
+    - name: Build dashboard assets on target
+      ansible.builtin.shell: |
+        cd "{{ xworkspace_console_local_dashboard_dir }}" && npm install && npm run build
       become: false
-      delegate_to: "{{ xworkspace_console_hosts | default('all') }}"
+
+    - name: Sync dashboard dist to portal directory
+      ansible.builtin.shell: |
+        mkdir -p "{{ xworkspace_console_portal_dir }}/dist"
+        cp -r "{{ xworkspace_console_local_dashboard_dir }}/dist/"* "{{ xworkspace_console_portal_dir }}/dist/"
+        cp "{{ xworkspace_console_local_dashboard_dir }}/package.json" "{{ xworkspace_console_portal_dir }}/"
+        cp "{{ xworkspace_console_local_dashboard_dir }}/vite.config.ts" "{{ xworkspace_console_portal_dir }}/" 2>/dev/null || true
+      become: false
 
     - name: Deploy AI Agentic Workspace portal service
       ansible.builtin.copy:
@@ -409,7 +415,7 @@
           [Service]
           Type=simple
           WorkingDirectory={{ xworkspace_console_portal_dir }}
-          ExecStart=/usr/bin/npm run dev -- --host 127.0.0.1 --port {{ xworkspace_console_portal_port }}
+          ExecStart=/usr/bin/npm run preview -- --host 127.0.0.1 --port {{ xworkspace_console_portal_port }}
           Restart=always
           RestartSec=2
 
