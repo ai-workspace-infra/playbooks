@@ -9,8 +9,8 @@
     xworkspace_console_root: /home/ubuntu/xworkspace
     xworkspace_console_portal_dir: /home/ubuntu/xworkspace/portal
     xworkspace_console_scripts_dir: /home/ubuntu/xworkspace/scripts
-    xworkspace_console_portal_url: http://localhost:7000
-    xworkspace_console_portal_port: 7000
+    xworkspace_console_portal_url: http://localhost:17000
+    xworkspace_console_portal_port: 17000
     xworkspace_console_ttyd_port: 7681
     xworkspace_console_enable_ttyd: true
     xworkspace_console_install_chrome: true
@@ -365,13 +365,34 @@
           set -euo pipefail
           mkdir -p "$HOME/.config/xworkspace-chrome"
           exec /usr/bin/google-chrome \
-            --app=http://localhost:7000 \
+            --app=http://localhost:17000 \
             --user-data-dir="$HOME/.config/xworkspace-chrome" \
             --profile-directory=Default \
             --no-first-run \
             --disable-session-crashed-bubble \
             --disable-sync \
             --new-window
+
+    - name: Sync AI Agentic Workspace dashboard source
+      ansible.posix.synchronize:
+        src: "{{ xworkspace_console_local_dashboard_dir | default(xworkspace_console_root + '/dashboard') }}/"
+        dest: "{{ xworkspace_console_portal_dir }}/"
+        delete: true
+        recursive: true
+        rsync_opts:
+          --exclude=node_modules
+          --exclude=.git
+          --exclude=dist
+      become: false
+      delegate_to: localhost
+
+    - name: Install dashboard npm dependencies
+      community.general.npm:
+        path: "{{ xworkspace_console_portal_dir }}"
+        production: false
+        state: present
+      become: false
+      delegate_to: "{{ xworkspace_console_hosts | default('all') }}"
 
     - name: Deploy AI Agentic Workspace portal service
       ansible.builtin.copy:
@@ -388,7 +409,7 @@
           [Service]
           Type=simple
           WorkingDirectory={{ xworkspace_console_portal_dir }}
-          ExecStart=/usr/bin/python3 -m http.server {{ xworkspace_console_portal_port }}
+          ExecStart=/usr/bin/npm run dev -- --host 127.0.0.1 --port {{ xworkspace_console_portal_port }}
           Restart=always
           RestartSec=2
 
