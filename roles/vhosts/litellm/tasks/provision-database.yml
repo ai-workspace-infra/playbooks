@@ -47,7 +47,14 @@
 
 - name: Grant schema privileges to user
   ansible.builtin.shell: |
-    docker exec -i postgresql-svc-plus psql -U postgres -d {{ litellm_database_name }} -c "GRANT ALL ON SCHEMA public TO {{ litellm_database_user }}; ALTER SCHEMA public OWNER TO {{ litellm_database_user }};"
+    docker exec -i postgresql-svc-plus psql -U postgres -d {{ litellm_database_name }} -c "
+      GRANT ALL ON SCHEMA public TO {{ litellm_database_user }};
+      ALTER SCHEMA public OWNER TO {{ litellm_database_user }};
+      GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ litellm_database_user }};
+      GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ litellm_database_user }};
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO {{ litellm_database_user }};
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO {{ litellm_database_user }};
+    "
   args:
     executable: /bin/bash
   changed_when: false
