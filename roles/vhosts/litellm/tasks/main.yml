@@ -55,13 +55,26 @@
     mode: "0600"
   notify: Restart litellm
 
-- name: Ensure LiteLLM is installed
+- name: Ensure LiteLLM and DB dependencies are installed
   ansible.builtin.pip:
-    name: litellm[proxy]
+    name:
+      - "litellm[proxy]"
+      - "prisma"
+      - "psycopg2-binary"
     extra_args: --break-system-packages
     state: present
   become: true
   become_user: "{{ litellm_service_user }}"
+
+- name: Generate Prisma Python Client
+  ansible.builtin.shell: |
+    export PATH={{ litellm_service_home }}/.local/bin:$PATH
+    prisma generate
+  args:
+    chdir: "{{ litellm_service_home }}/.local/lib/python3.12/site-packages/litellm/proxy/"
+  become: true
+  become_user: "{{ litellm_service_user }}"
+  changed_when: false
 
 - name: Create systemd service template
   ansible.builtin.template:
