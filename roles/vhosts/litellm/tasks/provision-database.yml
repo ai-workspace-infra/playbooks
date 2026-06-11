@@ -14,8 +14,8 @@
 
 - name: Create PostgreSQL user if not exists
   ansible.builtin.shell: |
-    sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ litellm_database_user }}'" | grep -q 1 || \
-    sudo -u postgres psql -c "CREATE USER {{ litellm_database_user }} WITH PASSWORD '{{ litellm_database_password }}';"
+    docker exec -i postgresql-svc-plus psql -U postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ litellm_database_user }}'" | grep -q 1 || \
+    docker exec -i postgresql-svc-plus psql -U postgres -c "CREATE USER {{ litellm_database_user }} WITH PASSWORD '{{ litellm_database_password }}';"
   args:
     executable: /bin/bash
   register: create_user_result
@@ -23,8 +23,8 @@
 
 - name: Create PostgreSQL database if not exists
   ansible.builtin.shell: |
-    sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='{{ litellm_database_name }}'" | grep -q 1 || \
-    sudo -u postgres psql -c "CREATE DATABASE {{ litellm_database_name }} OWNER {{ litellm_database_user }};"
+    docker exec -i postgresql-svc-plus psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='{{ litellm_database_name }}'" | grep -q 1 || \
+    docker exec -i postgresql-svc-plus psql -U postgres -c "CREATE DATABASE {{ litellm_database_name }} OWNER {{ litellm_database_user }};"
   args:
     executable: /bin/bash
   register: create_db_result
@@ -32,14 +32,14 @@
 
 - name: Grant privileges on database to user
   ansible.builtin.shell: |
-    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ litellm_database_name }} TO {{ litellm_database_user }};"
+    docker exec -i postgresql-svc-plus psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE {{ litellm_database_name }} TO {{ litellm_database_user }};"
   args:
     executable: /bin/bash
   changed_when: false
 
 - name: Apply schema.sql to litellm database
   ansible.builtin.shell: |
-    sudo -u postgres psql -d {{ litellm_database_name }} -f {{ litellm_config_dir }}/schema.sql
+    cat {{ litellm_config_dir }}/schema.sql | docker exec -i postgresql-svc-plus psql -U postgres -d {{ litellm_database_name }}
   args:
     executable: /bin/bash
   register: apply_schema_result
@@ -47,7 +47,7 @@
 
 - name: Grant schema privileges to user
   ansible.builtin.shell: |
-    sudo -u postgres psql -d {{ litellm_database_name }} -c "GRANT ALL ON SCHEMA public TO {{ litellm_database_user }}; ALTER SCHEMA public OWNER TO {{ litellm_database_user }};"
+    docker exec -i postgresql-svc-plus psql -U postgres -d {{ litellm_database_name }} -c "GRANT ALL ON SCHEMA public TO {{ litellm_database_user }}; ALTER SCHEMA public OWNER TO {{ litellm_database_user }};"
   args:
     executable: /bin/bash
   changed_when: false
