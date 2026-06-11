@@ -16,8 +16,10 @@
   community.postgresql.postgresql_db:
     name: "{{ litellm_database_name }}"
     state: present
-  become: true
-  become_user: postgres
+    login_host: "127.0.0.1"
+    login_port: "5432"
+    login_user: "{{ litellm_database_admin_user }}"
+    login_password: "{{ litellm_database_admin_password }}"
   register: litellm_db_result
   when: litellm_database_host | trim | length > 0
 
@@ -26,11 +28,13 @@
     name: "{{ litellm_database_user }}"
     password: "{{ litellm_database_password }}"
     db: "{{ litellm_database_name }}"
+    login_host: "127.0.0.1"
+    login_port: "5432"
+    login_user: "{{ litellm_database_admin_user }}"
+    login_password: "{{ litellm_database_admin_password }}"
     priv: "{{ litellm_database_name }}/ALL"
     role_attr_flags: LOGIN,NOSUPERUSER
     state: present
-  become: true
-  become_user: postgres
   when: litellm_database_host | trim | length > 0
 
 - name: Apply schema.sql to litellm database (idempotent via IF NOT EXISTS)
