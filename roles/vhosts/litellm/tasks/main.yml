@@ -10,6 +10,10 @@
       - python3-psycopg2
     state: present
 
+- name: Provision LiteLLM Database
+  ansible.builtin.import_tasks: provision-database.yml
+  when: litellm_database_host | trim | length > 0
+
 - name: Ensure litellm service group exists
   ansible.builtin.group:
     name: "{{ litellm_service_group }}"

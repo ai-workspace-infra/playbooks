@@ -1,7 +1,7 @@
 ---
 # Provision a dedicated `litellm` database and user on the PostgreSQL server.
-# This task creates the database/user ONLY if they don't exist — safe to re-run.
-# Does NOT touch any other existing databases.
+# This task uses raw psql commands via sudo to bypass Ansible's tmpfile permission bugs 
+# and avoid relying on external dependencies or specific passwords.
 
 - name: Create schema SQL file on remote litellm host
   ansible.builtin.template:
@@ -12,45 +12,42 @@
     mode: "0600"
   when: litellm_database_host | trim | length > 0
 
-- name: Check if litellm database exists
-  community.postgresql.postgresql_db:
-    name: "{{ litellm_database_name }}"
-    state: present
-    login_host: "127.0.0.1"
-    login_port: "5432"
-    login_user: "{{ litellm_database_admin_user }}"
-    login_password: "{{ litellm_database_admin_password }}"
-  register: litellm_db_result
-  when: litellm_database_host | trim | length > 0
-
-- name: Ensure litellm database user exists with access to only litellm database
-  community.postgresql.postgresql_user:
-    name: "{{ litellm_database_user }}"
-    password: "{{ litellm_database_password }}"
-    db: "{{ litellm_database_name }}"
-    login_host: "127.0.0.1"
-    login_port: "5432"
-    login_user: "{{ litellm_database_admin_user }}"
-    login_password: "{{ litellm_database_admin_password }}"
-    priv: "{{ litellm_database_name }}/ALL"
-    role_attr_flags: LOGIN,NOSUPERUSER
-    state: present
-  when: litellm_database_host | trim | length > 0
-
-- name: Apply schema.sql to litellm database (idempotent via IF NOT EXISTS)
+- name: Create PostgreSQL user if not exists
   ansible.builtin.shell: |
-    psql -U {{ litellm_database_user }} \
-         -d {{ litellm_database_name }} \
-         -f {{ litellm_config_dir }}/schema.sql 2>&1
+    sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ litellm_database_user }}'" | grep -q 1 || \
+    sudo -u postgres psql -c "CREATE USER {{ litellm_database_user }} WITH PASSWORD '{{ litellm_database_password }}';"
   args:
     executable: /bin/bash
-  register: litellm_schema_result
-  failed_when: false
-  when: litellm_database_host | trim | length > 0
-  environment:
-    PGPASSWORD: "{{ litellm_database_password }}"
+  register: create_user_result
+  changed_when: "'CREATE ROLE' in create_user_result.stdout | default('')"
 
-- name: Log schema apply result
-  ansible.builtin.debug:
-    msg: "LiteLLM schema applied: {{ litellm_schema_result.stdout | default('skipped')[:200] }}"
-  when: litellm_database_host | trim | length > 0
+- name: Create PostgreSQL database if not exists
+  ansible.builtin.shell: |
+    sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='{{ litellm_database_name }}'" | grep -q 1 || \
+    sudo -u postgres psql -c "CREATE DATABASE {{ litellm_database_name }} OWNER {{ litellm_database_user }};"
+  args:
+    executable: /bin/bash
+  register: create_db_result
+  changed_when: "'CREATE DATABASE' in create_db_result.stdout | default('')"
+
+- name: Grant privileges on database to user
+  ansible.builtin.shell: |
+    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ litellm_database_name }} TO {{ litellm_database_user }};"
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Apply schema.sql to litellm database
+  ansible.builtin.shell: |
+    sudo -u postgres psql -d {{ litellm_database_name }} -f {{ litellm_config_dir }}/schema.sql
+  args:
+    executable: /bin/bash
+  register: apply_schema_result
+  changed_when: "'CREATE' in apply_schema_result.stdout | default('')"
+
+- name: Grant schema privileges to user
+  ansible.builtin.shell: |
+    sudo -u postgres psql -d {{ litellm_database_name }} -c "GRANT ALL ON SCHEMA public TO {{ litellm_database_user }}; ALTER SCHEMA public OWNER TO {{ litellm_database_user }};"
+  args:
+    executable: /bin/bash
+  changed_when: false
