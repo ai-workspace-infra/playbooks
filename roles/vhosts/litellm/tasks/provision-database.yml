@@ -22,7 +22,6 @@
     login_password: "{{ litellm_database_admin_password }}"
   register: litellm_db_result
   when: litellm_database_host | trim | length > 0
-  delegate_to: "{{ litellm_database_host }}"
 
 - name: Ensure litellm database user exists with access to only litellm database
   community.postgresql.postgresql_user:
@@ -37,7 +36,6 @@
     role_attr_flags: LOGIN,NOSUPERUSER
     state: present
   when: litellm_database_host | trim | length > 0
-  delegate_to: "{{ litellm_database_host }}"
 
 - name: Apply schema.sql to litellm database (idempotent via IF NOT EXISTS)
   ansible.builtin.shell: |
