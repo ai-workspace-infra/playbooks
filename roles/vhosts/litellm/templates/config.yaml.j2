@@ -1,24 +1,180 @@
 model_list:
-  - model_name: gpt-4o-mini
+  # ---------------------------------------------------------------------------
+  # GPT Family  (model_name = stable alias exposed to upstream apps)
+  # ---------------------------------------------------------------------------
+  - model_name: gpt-5.5
     litellm_params:
-      model: openai/gpt-4o-mini
+      model: {{ litellm_model_gpt_55 }}
       api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+      supports_vision: false
+      context_window: 200000
+      max_tokens: 32000
 
-  - model_name: claude-sonnet
+  - model_name: gpt-5.5-mini
     litellm_params:
-      model: anthropic/claude-3-5-sonnet-latest
-      api_key: os.environ/ANTHROPIC_API_KEY
+      model: {{ litellm_model_gpt_55_mini }}
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+      supports_vision: false
+      context_window: 128000
+      max_tokens: 16384
+
+  - model_name: gpt-5.5-thinking
+    litellm_params:
+      model: {{ litellm_model_gpt_55_thinking }}
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+      supports_reasoning: true
+      context_window: 200000
+      max_tokens: 32000
+
+  # ---------------------------------------------------------------------------
+  # MiniMax Family
+  # ---------------------------------------------------------------------------
+  - model_name: minimax-2.5
+    litellm_params:
+      model: {{ litellm_model_minimax_25 }}
+      api_key: os.environ/MINIMAX_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+      context_window: 100000
+      max_tokens: 8192
+
+  - model_name: minimax-2.7
+    litellm_params:
+      model: {{ litellm_model_minimax_27 }}
+      api_key: os.environ/MINIMAX_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+      context_window: 100000
+      max_tokens: 8192
+
+  - model_name: minimax-3
+    litellm_params:
+      model: {{ litellm_model_minimax_3 }}
+      api_key: os.environ/MINIMAX_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+      supports_reasoning: true
+      context_window: 1000000
+      max_tokens: 32768
+
+  # ---------------------------------------------------------------------------
+  # DeepSeek Family
+  # ---------------------------------------------------------------------------
+  - model_name: deepseek-v4
+    litellm_params:
+      model: {{ litellm_model_deepseek_v4 }}
+      api_key: os.environ/DEEPSEEK_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+      context_window: 64000
+      max_tokens: 8192
 
   - model_name: deepseek-chat
     litellm_params:
-      model: deepseek/deepseek-chat
+      model: {{ litellm_model_deepseek_chat }}
       api_key: os.environ/DEEPSEEK_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+      context_window: 64000
+      max_tokens: 8192
 
+  - model_name: deepseek-reasoner
+    litellm_params:
+      model: {{ litellm_model_deepseek_reasoner }}
+      api_key: os.environ/DEEPSEEK_API_KEY
+    model_info:
+      mode: chat
+      supports_reasoning: true
+      context_window: 64000
+      max_tokens: 8192
+
+  # ---------------------------------------------------------------------------
+  # Anthropic-compatible Models
+  # ---------------------------------------------------------------------------
+  - model_name: claude-sonnet
+    litellm_params:
+      model: {{ litellm_model_claude_sonnet }}
+      api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+      supports_vision: true
+      context_window: 200000
+      max_tokens: 4096
+
+  # ---------------------------------------------------------------------------
+  # Embedding Models  (exposed via /v1/openai/embeddings)
+  # ---------------------------------------------------------------------------
+  - model_name: embedding-default
+    litellm_params:
+      model: {{ litellm_model_embedding_small }}
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      mode: embedding
+      dimensions: 1536
+      max_input_tokens: 8191
+
+  - model_name: embedding-large
+    litellm_params:
+      model: {{ litellm_model_embedding_large }}
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      mode: embedding
+      dimensions: 3072
+      max_input_tokens: 8191
+
+  - model_name: bge-m3
+    litellm_params:
+      model: {{ litellm_model_bge_m3 }}
+      api_key: os.environ/AZURE_AI_API_KEY
+    model_info:
+      mode: embedding
+      dimensions: 1024
+      max_input_tokens: 4096
+
+  - model_name: jina-embeddings
+    litellm_params:
+      model: {{ litellm_model_jina_embeddings }}
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      mode: embedding
+      dimensions: 1024
+      max_input_tokens: 8192
+
+  - model_name: local-embedding
+    litellm_params:
+      model: {{ litellm_model_local_embedding }}
+      api_base: {{ litellm_local_embedding_base }}
+      api_key: os.environ/LOCAL_MODEL_API_KEY
+    model_info:
+      mode: embedding
+      dimensions: 1024
+
+  # ---------------------------------------------------------------------------
+  # Local OpenAI-Compatible Models
+  # ---------------------------------------------------------------------------
   - model_name: local-qwen
     litellm_params:
-      model: openai/qwen
-      api_base: http://127.0.0.1:8000/v1
+      model: {{ litellm_model_local_qwen }}
+      api_base: {{ litellm_local_embedding_base }} # Update if necessary
       api_key: os.environ/LOCAL_MODEL_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
 
 {% if litellm_database_url | trim | length > 0 %}
 database_url: {{ litellm_database_url }}
@@ -29,29 +185,59 @@ general_settings:
   drop_rate_limit_requests: true
   set_verbose: false
   json_response: false
-  success_callback: []
-  failure_callback: []
+
+{% if litellm_ui_username | trim | length > 0 and litellm_ui_password | trim | length > 0 %}
+  ui_username: os.environ/LITELLM_UI_USERNAME
+  ui_password: os.environ/LITELLM_UI_PASSWORD
+{% endif %}
 
 router_settings:
   model_group_alias:
-    gpt-4o-mini: gpt-4o-mini
-    claude-sonnet: claude-sonnet
+    # GPT Family
+    gpt-5.5: gpt-5.5
+    gpt-5.5-mini: gpt-5.5-mini
+    gpt-5.5-thinking: gpt-5.5-thinking
+    # MiniMax Family
+    minimax-2.5: minimax-2.5
+    minimax-2.7: minimax-2.7
+    minimax-3: minimax-3
+    # DeepSeek Family
+    deepseek-v4: deepseek-v4
     deepseek-chat: deepseek-chat
-  routing_strategy: latency-based-routing
-  enable_pre_call_checks: false
-  retry_after: 60
-  num_retries: 3
+    deepseek-reasoner: deepseek-reasoner
+    # Anthropic Models
+    claude-sonnet: claude-sonnet
+    # Embedding Models
+    embedding-default: embedding-default
+    embedding-large: embedding-large
+    bge-m3: bge-m3
+    jina-embeddings: jina-embeddings
+    local-embedding: local-embedding
+    # Local Models
+    local-qwen: local-qwen
+  routing_strategy: {{ litellm_routing_strategy }}
+  enable_pre_call_checks: {{ litellm_enable_pre_call_checks | lower }}
+  retry_after: {{ litellm_retry_after }}
+  num_retries: {{ litellm_num_retries }}
+  enable_custom_llm_provider: true
 
 litellm_settings:
   drop_params: true
-  set_verbose: true
-  request_timeout: 600
-  telemetry: false
-  max_parallel_requests: 1000
+  set_verbose: {{ litellm_telemetry | lower }}
+  request_timeout: {{ litellm_request_timeout }}
+  telemetry: {{ litellm_telemetry | lower }}
+  max_parallel_requests: {{ litellm_max_parallel_requests }}
+  json_response: false
+  api_base: ""
 
 environment_variables:
   OPENAI_API_KEY: os.environ/OPENAI_API_KEY
   ANTHROPIC_API_KEY: os.environ/ANTHROPIC_API_KEY
   DEEPSEEK_API_KEY: os.environ/DEEPSEEK_API_KEY
+  MINIMAX_API_KEY: os.environ/MINIMAX_API_KEY
   LOCAL_MODEL_API_KEY: os.environ/LOCAL_MODEL_API_KEY
+  AZURE_AI_API_KEY: os.environ/AZURE_AI_API_KEY
   LITELLM_MASTER_KEY: os.environ/LITELLM_MASTER_KEY
+  LITELLM_SALT_KEY: os.environ/LITELLM_SALT_KEY
+  LITELLM_UI_USERNAME: os.environ/LITELLM_UI_USERNAME
+  LITELLM_UI_PASSWORD: os.environ/LITELLM_UI_PASSWORD

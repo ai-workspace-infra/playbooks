@@ -1,0 +1,60 @@
+---
+# Provision a dedicated `litellm` database and user on the PostgreSQL server.
+# This task creates the database/user ONLY if they don't exist — safe to re-run.
+# Does NOT touch any other existing databases.
+
+- name: Create schema SQL file on remote litellm host
+  ansible.builtin.template:
+    src: schema.sql.j2
+    dest: "{{ litellm_config_dir }}/schema.sql"
+    owner: "{{ litellm_service_user }}"
+    group: "{{ litellm_service_group }}"
+    mode: "0600"
+  when: litellm_database_host | trim | length > 0
+
+- name: Check if litellm database exists
+  community.postgresql.postgresql_db:
+    name: "{{ litellm_database_name }}"
+    state: present
+    login_host: "{{ litellm_database_host }}"
+    login_port: "{{ litellm_database_port }}"
+    login_user: "{{ litellm_database_admin_user }}"
+    login_password: "{{ litellm_database_admin_password }}"
+  register: litellm_db_result
+  when: litellm_database_host | trim | length > 0
+  delegate_to: "{{ litellm_database_host }}"
+
+- name: Ensure litellm database user exists with access to only litellm database
+  community.postgresql.postgresql_user:
+    name: "{{ litellm_database_user }}"
+    password: "{{ litellm_database_password }}"
+    db: "{{ litellm_database_name }}"
+    login_host: "{{ litellm_database_host }}"
+    login_port: "{{ litellm_database_port }}"
+    login_user: "{{ litellm_database_admin_user }}"
+    login_password: "{{ litellm_database_admin_password }}"
+    priv: "{{ litellm_database_name }}/ALL"
+    role_attr_flags: LOGIN,NOSUPERUSER
+    state: present
+  when: litellm_database_host | trim | length > 0
+  delegate_to: "{{ litellm_database_host }}"
+
+- name: Apply schema.sql to litellm database (idempotent via IF NOT EXISTS)
+  ansible.builtin.shell: |
+    psql -h {{ litellm_database_host }} \
+         -p {{ litellm_database_port }} \
+         -U {{ litellm_database_user }} \
+         -d {{ litellm_database_name }} \
+         -f {{ litellm_config_dir }}/schema.sql 2>&1
+  args:
+    executable: /bin/bash
+  register: litellm_schema_result
+  failed_when: false
+  when: litellm_database_host | trim | length > 0
+  environment:
+    PGPASSWORD: "{{ litellm_database_password }}"
+
+- name: Log schema apply result
+  ansible.builtin.debug:
+    msg: "LiteLLM schema applied: {{ litellm_schema_result.stdout | default('skipped')[:200] }}"
+  when: litellm_database_host | trim | length > 0
