@@ -181,14 +181,14 @@ database_url: {{ litellm_database_url }}
 {% endif %}
 
 general_settings:
-  master_key: os.environ/LITELLM_MASTER_KEY
+  master_key: "{{ litellm_master_key }}"
   drop_rate_limit_requests: true
   set_verbose: false
   json_response: false
 
 {% if litellm_ui_username | trim | length > 0 and litellm_ui_password | trim | length > 0 %}
-  ui_username: os.environ/LITELLM_UI_USERNAME
-  ui_password: os.environ/LITELLM_UI_PASSWORD
+  ui_username: "{{ litellm_ui_username }}"
+  ui_password: "{{ litellm_ui_password }}"
 {% endif %}
 
 router_settings:
@@ -229,15 +229,3 @@ litellm_settings:
   max_parallel_requests: {{ litellm_max_parallel_requests }}
   json_response: false
   api_base: ""
-
-environment_variables:
-  OPENAI_API_KEY: os.environ/OPENAI_API_KEY
-  ANTHROPIC_API_KEY: os.environ/ANTHROPIC_API_KEY
-  DEEPSEEK_API_KEY: os.environ/DEEPSEEK_API_KEY
-  MINIMAX_API_KEY: os.environ/MINIMAX_API_KEY
-  LOCAL_MODEL_API_KEY: os.environ/LOCAL_MODEL_API_KEY
-  AZURE_AI_API_KEY: os.environ/AZURE_AI_API_KEY
-  LITELLM_MASTER_KEY: os.environ/LITELLM_MASTER_KEY
-  LITELLM_SALT_KEY: os.environ/LITELLM_SALT_KEY
-  LITELLM_UI_USERNAME: os.environ/LITELLM_UI_USERNAME
-  LITELLM_UI_PASSWORD: os.environ/LITELLM_UI_PASSWORD
