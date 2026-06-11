@@ -1,0 +1,57 @@
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-3-5-sonnet-latest
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: deepseek-chat
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+
+  - model_name: local-qwen
+    litellm_params:
+      model: openai/qwen
+      api_base: http://127.0.0.1:8000/v1
+      api_key: os.environ/LOCAL_MODEL_API_KEY
+
+{% if litellm_database_url | trim | length > 0 %}
+database_url: {{ litellm_database_url }}
+{% endif %}
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  drop_rate_limit_requests: true
+  set_verbose: false
+  json_response: false
+  success_callback: []
+  failure_callback: []
+
+router_settings:
+  model_group_alias:
+    gpt-4o-mini: gpt-4o-mini
+    claude-sonnet: claude-sonnet
+    deepseek-chat: deepseek-chat
+  routing_strategy: latency-based-routing
+  enable_pre_call_checks: false
+  retry_after: 60
+  num_retries: 3
+
+litellm_settings:
+  drop_params: true
+  set_verbose: true
+  request_timeout: 600
+  telemetry: false
+  max_parallel_requests: 1000
+
+environment_variables:
+  OPENAI_API_KEY: os.environ/OPENAI_API_KEY
+  ANTHROPIC_API_KEY: os.environ/ANTHROPIC_API_KEY
+  DEEPSEEK_API_KEY: os.environ/DEEPSEEK_API_KEY
+  LOCAL_MODEL_API_KEY: os.environ/LOCAL_MODEL_API_KEY
+  LITELLM_MASTER_KEY: os.environ/LITELLM_MASTER_KEY

@@ -1,0 +1,135 @@
+---
+- name: Install LiteLLM prerequisites
+  ansible.builtin.package:
+    name:
+      - python3
+      - python3-pip
+      - python3-venv
+    state: present
+
+- name: Ensure litellm service group exists
+  ansible.builtin.group:
+    name: "{{ litellm_service_group }}"
+    state: present
+  when: litellm_service_group != 'root'
+
+- name: Ensure litellm service user exists
+  ansible.builtin.user:
+    name: "{{ litellm_service_user }}"
+    group: "{{ litellm_service_group }}"
+    shell: /bin/bash
+    create_home: true
+    state: present
+  when: litellm_service_user != 'root'
+
+- name: Ensure litellm config directory exists
+  ansible.builtin.file:
+    path: "{{ litellm_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create litellm config template
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ litellm_config_file }}"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart litellm
+
+- name: Create litellm environment file template
+  ansible.builtin.template:
+    src: litellm.env.j2
+    dest: "{{ litellm_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart litellm
+
+- name: Ensure LiteLLM is installed
+  ansible.builtin.pip:
+    name: litellm
+    extra_args: --break-system-packages
+    state: present
+  become: true
+  become_user: "{{ litellm_service_user }}"
+
+- name: Create systemd service template
+  ansible.builtin.template:
+    src: litellm-proxy.service.j2
+    dest: "{{ litellm_systemd_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart litellm
+
+- name: Reload systemd after unit changes
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: not ansible_check_mode
+
+- name: Ensure Caddy fragment directory exists
+  ansible.builtin.file:
+    path: "{{ litellm_caddy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure Caddy imports managed fragments
+  ansible.builtin.lineinfile:
+    path: "{{ litellm_caddyfile_path }}"
+    line: "import {{ litellm_caddy_conf_dir }}/*.caddy"
+    insertafter: EOF
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    state: present
+  notify: Reload caddy
+  when: litellm_caddy_config_enabled | bool
+
+- name: Create LiteLLM Caddy fragment
+  ansible.builtin.template:
+    src: litellm.caddy.j2
+    dest: "{{ litellm_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+  when: litellm_caddy_config_enabled | bool
+
+- name: Ensure litellm service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ litellm_service_name }}"
+    enabled: true
+    state: started
+  when: not ansible_check_mode
+
+- name: Ensure Caddy is enabled and running
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: true
+    state: started
+  when:
+    - not ansible_check_mode
+    - litellm_caddy_config_enabled | bool
+
+- name: Apply litellm and Caddy changes before validation
+  ansible.builtin.meta: flush_handlers
+
+- name: Validate LiteLLM service
+  ansible.builtin.uri:
+    url: "http://{{ litellm_listen_host }}:{{ litellm_listen_port }}/health"
+    method: GET
+    status_code: [200, 401]
+  register: litellm_health_check
+  failed_when: false
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Display LiteLLM health status
+  ansible.builtin.debug:
+    msg: "LiteLLM health check: {{ litellm_health_check.status | default('unreachable') }}"

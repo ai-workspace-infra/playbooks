@@ -1,0 +1,19 @@
+[Unit]
+Description=LiteLLM Proxy Service
+After=network.target
+
+[Service]
+Type=simple
+User={{ litellm_service_user }}
+Group={{ litellm_service_group }}
+WorkingDirectory={{ litellm_service_home }}
+EnvironmentFile={{ litellm_env_file }}
+ExecStart={{ litellm_service_home }}/.local/bin/litellm --host {{ litellm_listen_host }} --port {{ litellm_listen_port }} --config {{ litellm_config_file }}
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=litellm-proxy
+
+[Install]
+WantedBy=multi-user.target

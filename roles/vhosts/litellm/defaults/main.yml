@@ -1,0 +1,29 @@
+---
+litellm_service_name: litellm-proxy
+litellm_service_user: ubuntu
+litellm_service_group: ubuntu
+litellm_service_home: "/home/{{ litellm_service_user }}"
+litellm_listen_host: 127.0.0.1
+litellm_listen_port: 4000
+litellm_config_dir: /etc/litellm
+litellm_config_file: "{{ litellm_config_dir }}/config.yaml"
+litellm_env_file: "{{ litellm_config_dir }}/litellm.env"
+litellm_systemd_unit_path: "/etc/systemd/system/{{ litellm_service_name }}.service"
+litellm_master_key: "{{ lookup('ansible.builtin.env', 'LITELLM_MASTER_KEY') | default(lookup('password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
+litellm_salt_key: "{{ lookup('ansible.builtin.env', 'LITELLM_SALT_KEY') | default(lookup('password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
+
+litellm_caddyfile_path: /etc/caddy/Caddyfile
+litellm_caddy_conf_dir: /etc/caddy/conf.d
+litellm_caddy_fragment_path: "/etc/caddy/conf.d/litellm.caddy"
+
+litellm_api_domain: api.svc.plus
+
+litellm_enable_basic_auth: true
+
+litellm_caddy_config_enabled: true
+
+litellm_openai_api_key: "{{ lookup('ansible.builtin.env', 'OPENAI_API_KEY') | default('', true) }}"
+litellm_anthropic_api_key: "{{ lookup('ansible.builtin.env', 'ANTHROPIC_API_KEY') | default('', true) }}"
+litellm_deepseek_api_key: "{{ lookup('ansible.builtin.env', 'DEEPSEEK_API_KEY') | default('', true) }}"
+
+litellm_database_url: "{{ lookup('ansible.builtin.env', 'DATABASE_URL') | default('', true) }}"

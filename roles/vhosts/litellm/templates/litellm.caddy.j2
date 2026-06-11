@@ -1,0 +1,72 @@
+{{ litellm_api_domain }} {
+    @ui_admin {
+        path /ui/*
+    }
+
+    @openai_api {
+        path /v1/openai/*
+    }
+
+    @anthropic_api {
+        path /v1/anthropic/*
+    }
+
+    {% if litellm_enable_basic_auth | bool %}
+    @ui_admin_unauthorized {
+        not header Authorization "Basic *"
+    }
+
+    handle @ui_admin_unauthorized {
+        respond "Unauthorized" 401 {
+            www-authenticate Basic realm="LiteLLM Admin UI"
+        }
+    }
+    {% endif %}
+
+    handle @ui_admin {
+        reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }} {
+            flush_interval -1
+        }
+    }
+
+    handle @openai_api {
+        rewrite * /v1{path}
+        reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }} {
+            flush_interval -1
+            transport http {
+                dial_timeout 30s
+                read_timeout 600s
+                write_timeout 600s
+            }
+        }
+    }
+
+    handle @anthropic_api {
+        rewrite * /v1{path}
+        reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }} {
+            flush_interval -1
+            transport http {
+                dial_timeout 30s
+                read_timeout 600s
+                write_timeout 600s
+            }
+        }
+    }
+
+    handle {
+        reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }}
+    }
+
+    encode gzip zstd
+
+    header {
+        X-Real-IP
+        X-Forwarded-For
+        X-Forwarded-Proto
+        Host
+    }
+
+    log {
+        output file /var/log/caddy/litellm.access.log
+    }
+}
