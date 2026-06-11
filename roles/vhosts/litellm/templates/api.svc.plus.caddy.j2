@@ -107,9 +107,16 @@
         }
     }
 
-    # Catch-all: block unknown paths
+    # Catch-all: pass everything else (like UI, /health, etc) to LiteLLM
     handle {
-        respond "Not Found" 404
+        reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }} {
+            flush_interval -1
+            transport http {
+                dial_timeout 30s
+                read_timeout 600s
+                write_timeout 600s
+            }
+        }
     }
 
     log {
