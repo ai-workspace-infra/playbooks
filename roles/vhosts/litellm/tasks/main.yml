@@ -85,9 +85,23 @@
     group: root
     mode: "0755"
 
+- name: Generate bcrypt hash for LiteLLM UI basic auth
+  ansible.builtin.command: caddy hash-password --plaintext "{{ litellm_master_key }}"
+  register: caddy_hash_result
+  changed_when: false
+  no_log: true
+  when: litellm_enable_basic_auth
+
+- name: Set litellm_basic_auth_password_hash fact
+  ansible.builtin.set_fact:
+    litellm_basic_auth_password_hash: "{{ caddy_hash_result.stdout }}"
+  no_log: true
+  when: litellm_enable_basic_auth
+
 - name: Ensure Caddy imports managed fragments
   ansible.builtin.lineinfile:
     path: "{{ litellm_caddyfile_path }}"
+    regexp: "^import {{ litellm_caddy_conf_dir }}/\\*\\.caddy"
     line: "import {{ litellm_caddy_conf_dir }}/*.caddy"
     insertafter: EOF
     create: true

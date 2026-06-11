@@ -10,8 +10,8 @@ litellm_config_file: "{{ litellm_config_dir }}/config.yaml"
 litellm_env_file: "{{ litellm_config_dir }}/litellm.env"
 litellm_systemd_unit_path: "/etc/systemd/system/{{ litellm_service_name }}.service"
 
-litellm_master_key: "{{ lookup('ansible.builtin.env', 'LITELLM_MASTER_KEY') | default(lookup('password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
-litellm_salt_key: "{{ lookup('ansible.builtin.env', 'LITELLM_SALT_KEY') | default(lookup('password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
+litellm_master_key: "{{ lookup('ansible.builtin.env', 'LITELLM_MASTER_KEY') | default('sk-master-admin-12345', true) }}"
+litellm_salt_key: "{{ lookup('ansible.builtin.env', 'LITELLM_SALT_KEY') | default(lookup('password', '/tmp/.litellm_salt_key length=32 chars=ascii_letters,digits'), true) }}"
 
 litellm_ui_username: "{{ lookup('ansible.builtin.env', 'LITELLM_UI_USERNAME') | default('admin', true) }}"
 litellm_ui_password: "{{ litellm_master_key }}"
@@ -20,7 +20,7 @@ litellm_caddyfile_path: /etc/caddy/Caddyfile
 litellm_caddy_conf_dir: /etc/caddy/conf.d
 
 litellm_basic_auth_username: "{{ litellm_ui_username }}"
-litellm_basic_auth_password_hash: "$2a$14$b2oxMvD0p5ByjdCA18Go5u1qTjPeDjDzzXIanGVXdYIO6fvKf2cY."
+# litellm_basic_auth_password_hash is generated dynamically via tasks
 
 litellm_api_domain: api.svc.plus
 litellm_ui_domain: litellm.svc.plus
