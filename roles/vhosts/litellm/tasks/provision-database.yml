@@ -16,8 +16,8 @@
   community.postgresql.postgresql_db:
     name: "{{ litellm_database_name }}"
     state: present
-    login_host: "{{ litellm_database_host }}"
-    login_port: "{{ litellm_database_port }}"
+    login_host: "127.0.0.1"
+    login_port: "5432"
     login_user: "{{ litellm_database_admin_user }}"
     login_password: "{{ litellm_database_admin_password }}"
   register: litellm_db_result
@@ -28,8 +28,8 @@
     name: "{{ litellm_database_user }}"
     password: "{{ litellm_database_password }}"
     db: "{{ litellm_database_name }}"
-    login_host: "{{ litellm_database_host }}"
-    login_port: "{{ litellm_database_port }}"
+    login_host: "127.0.0.1"
+    login_port: "5432"
     login_user: "{{ litellm_database_admin_user }}"
     login_password: "{{ litellm_database_admin_password }}"
     priv: "{{ litellm_database_name }}/ALL"
@@ -39,8 +39,8 @@
 
 - name: Apply schema.sql to litellm database (idempotent via IF NOT EXISTS)
   ansible.builtin.shell: |
-    psql -h {{ litellm_database_host }} \
-         -p {{ litellm_database_port }} \
+    psql -h 127.0.0.1 \
+         -p 5432 \
          -U {{ litellm_database_user }} \
          -d {{ litellm_database_name }} \
          -f {{ litellm_config_dir }}/schema.sql 2>&1
