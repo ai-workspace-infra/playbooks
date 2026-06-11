@@ -1,17 +1,18 @@
 ---
 # Provision the litellm database and user BEFORE litellm starts.
 # Only runs when litellm_database_host is set.
-- name: Provision LiteLLM Database
-  ansible.builtin.import_tasks: provision-database.yml
-  when: litellm_database_host | trim | length > 0
-
 - name: Install LiteLLM prerequisites
   ansible.builtin.package:
     name:
       - python3
       - python3-pip
       - python3-venv
+      - python3-psycopg2
     state: present
+
+- name: Provision LiteLLM Database
+  ansible.builtin.import_tasks: provision-database.yml
+  when: litellm_database_host | trim | length > 0
 
 - name: Ensure litellm service group exists
   ansible.builtin.group:
