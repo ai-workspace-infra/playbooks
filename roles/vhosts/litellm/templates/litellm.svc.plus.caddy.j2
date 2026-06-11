@@ -4,18 +4,14 @@
     # ------------------------------------------------------------------------
     # Admin UI
     # ------------------------------------------------------------------------
-    handle /ui* {
-        basicauth {
-            {{ litellm_basic_auth_username }} {{ litellm_basic_auth_password_hash }}
-        }
-        reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }} {
-            flush_interval -1
-        }
+{% if litellm_enable_basic_auth %}
+    basicauth {
+        {{ litellm_basic_auth_username }} {{ litellm_basic_auth_password_hash }}
     }
+{% endif %}
 
-    # Catch-all: block unknown paths
-    handle {
-        respond "Not Found" 404
+    reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }} {
+        flush_interval -1
     }
 
     log {
