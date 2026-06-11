@@ -1,4 +1,10 @@
 ---
+# Provision the litellm database and user BEFORE litellm starts.
+# Only runs when litellm_database_host is set.
+- name: Provision LiteLLM Database
+  ansible.builtin.import_tasks: provision-database.yml
+  when: litellm_database_host | trim | length > 0
+
 - name: Install LiteLLM prerequisites
   ansible.builtin.package:
     name:
@@ -34,9 +40,9 @@
   ansible.builtin.template:
     src: config.yaml.j2
     dest: "{{ litellm_config_file }}"
-    owner: root
-    group: root
-    mode: "0640"
+    owner: "{{ litellm_service_user }}"
+    group: "{{ litellm_service_group }}"
+    mode: "0644"
   notify: Restart litellm
 
 - name: Create litellm environment file template
@@ -91,10 +97,20 @@
   notify: Reload caddy
   when: litellm_caddy_config_enabled | bool
 
-- name: Create LiteLLM Caddy fragment
+- name: Create LiteLLM API Caddy fragment
   ansible.builtin.template:
-    src: litellm.caddy.j2
-    dest: "{{ litellm_caddy_fragment_path }}"
+    src: api.svc.plus.caddy.j2
+    dest: "{{ litellm_api_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+  when: litellm_caddy_config_enabled | bool
+
+- name: Create LiteLLM UI Caddy fragment
+  ansible.builtin.template:
+    src: litellm.svc.plus.caddy.j2
+    dest: "{{ litellm_ui_caddy_fragment_path }}"
     owner: root
     group: root
     mode: "0644"

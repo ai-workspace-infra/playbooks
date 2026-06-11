@@ -9,21 +9,93 @@ litellm_config_dir: /etc/litellm
 litellm_config_file: "{{ litellm_config_dir }}/config.yaml"
 litellm_env_file: "{{ litellm_config_dir }}/litellm.env"
 litellm_systemd_unit_path: "/etc/systemd/system/{{ litellm_service_name }}.service"
+
 litellm_master_key: "{{ lookup('ansible.builtin.env', 'LITELLM_MASTER_KEY') | default(lookup('password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
 litellm_salt_key: "{{ lookup('ansible.builtin.env', 'LITELLM_SALT_KEY') | default(lookup('password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
 
+litellm_ui_username: "{{ lookup('ansible.builtin.env', 'LITELLM_UI_USERNAME') | default('admin', true) }}"
+litellm_ui_password: "{{ litellm_master_key }}"
+
 litellm_caddyfile_path: /etc/caddy/Caddyfile
 litellm_caddy_conf_dir: /etc/caddy/conf.d
-litellm_caddy_fragment_path: "/etc/caddy/conf.d/litellm.caddy"
+
+litellm_basic_auth_username: "{{ litellm_ui_username }}"
+litellm_basic_auth_password_hash: "$2a$14$b2oxMvD0p5ByjdCA18Go5u1qTjPeDjDzzXIanGVXdYIO6fvKf2cY."
 
 litellm_api_domain: api.svc.plus
-
+litellm_ui_domain: litellm.svc.plus
+litellm_ui_path: /ui
+litellm_api_caddy_fragment_path: "/etc/caddy/conf.d/{{ litellm_api_domain }}.caddy"
+litellm_ui_caddy_fragment_path: "/etc/caddy/conf.d/{{ litellm_ui_domain }}.caddy"
+litellm_caddy_config_enabled: true
 litellm_enable_basic_auth: true
 
-litellm_caddy_config_enabled: true
-
+# =============================================================================
+# Model Registry - API Keys
+# =============================================================================
 litellm_openai_api_key: "{{ lookup('ansible.builtin.env', 'OPENAI_API_KEY') | default('', true) }}"
 litellm_anthropic_api_key: "{{ lookup('ansible.builtin.env', 'ANTHROPIC_API_KEY') | default('', true) }}"
 litellm_deepseek_api_key: "{{ lookup('ansible.builtin.env', 'DEEPSEEK_API_KEY') | default('', true) }}"
+litellm_minimax_api_key: "{{ lookup('ansible.builtin.env', 'MINIMAX_API_KEY') | default('', true) }}"
+litellm_local_model_api_key: "{{ lookup('ansible.builtin.env', 'LOCAL_MODEL_API_KEY') | default('sk-local-placeholder', true) }}"
 
-litellm_database_url: "{{ lookup('ansible.builtin.env', 'DATABASE_URL') | default('', true) }}"
+# =============================================================================
+# Database Configuration
+# Set litellm_database_host to empty string to disable DB (no UI login).
+# When set, the provision-database task creates the litellm DB + user for you.
+# =============================================================================
+litellm_database_host: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_HOST') | default('', true) }}"
+litellm_database_port: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_PORT') | default('15432', true) }}"
+litellm_database_sslmode: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_SSLMODE') | default('require', true) }}"
+litellm_database_name: litellm
+litellm_database_user: litellm
+litellm_database_password: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_PASSWORD') | default(lookup('password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
+litellm_database_admin_user: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_ADMIN_USER') | default('postgres', true) }}"
+litellm_database_admin_password: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_ADMIN_PASSWORD') | default('', true) }}"
+
+# Build DATABASE_URL from components (used in litellm.env)
+litellm_database_url: "{% if litellm_database_host | trim | length > 0 %}postgresql://{{ litellm_database_user }}:{{ litellm_database_password }}@{{ litellm_database_host }}:{{ litellm_database_port }}/{{ litellm_database_name }}?sslmode={{ litellm_database_sslmode }}{% else %}{% endif %}"
+
+# =============================================================================
+# Model Registry - Model Families
+# =============================================================================
+
+# GPT Family
+litellm_model_gpt_55: "openai/gpt-5.5"
+litellm_model_gpt_55_mini: "openai/gpt-5.5-mini"
+litellm_model_gpt_55_thinking: "openai/gpt-5.5-thinking"
+
+# MiniMax Family
+litellm_model_minimax_25: "minimax/minimax-2.5"
+litellm_model_minimax_27: "minimax/minimax-2.7"
+litellm_model_minimax_3: "minimax/minimax-3"
+
+# DeepSeek Family
+litellm_model_deepseek_v4: "deepseek/deepseek-v4"
+litellm_model_deepseek_chat: "deepseek/deepseek-chat"
+litellm_model_deepseek_reasoner: "deepseek/deepseek-reasoner"
+
+# Anthropic-compatible Models
+litellm_model_claude_sonnet: "anthropic/claude-sonnet"
+
+# Embedding Models
+litellm_model_embedding_small: "openai/text-embedding-3-small"
+litellm_model_embedding_large: "openai/text-embedding-3-large"
+litellm_model_bge_m3: "azure_ai/bge-m3"
+litellm_model_jina_embeddings: "openai/jina-embeddings-v3"
+litellm_model_local_embedding: "openai/local-embedding"
+litellm_local_embedding_base: "http://127.0.0.1:8001/v1"
+
+# Local OpenAI-Compatible Models
+litellm_model_local_qwen: "openai/local-qwen"
+
+# =============================================================================
+# Router Settings
+# =============================================================================
+litellm_routing_strategy: "latency-based-routing"
+litellm_enable_pre_call_checks: false
+litellm_retry_after: 60
+litellm_num_retries: 3
+litellm_request_timeout: 600
+litellm_max_parallel_requests: 1000
+litellm_telemetry: false

@@ -1,0 +1,493 @@
+-- LiteLLM PostgreSQL Schema
+-- Generated from https://github.com/BerriAI/litellm/blob/main/schema.prisma
+-- Apply with: psql -U postgres -d litellm -f schema.sql
+-- Note: This is the full schema. LiteLLM will auto-create tables on first start
+-- if database_url is set but tables don't exist.
+
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_BudgetTable" (
+    "budget_id" TEXT PRIMARY KEY,
+    "soft_budget" REAL DEFAULT 0.0,
+    "max_budget" REAL DEFAULT 0.0,
+    "soft_budget_expiry" TIMESTAMP,
+    "max_budget_expiry" TIMESTAMP,
+    "budget_reset_at" TIMESTAMP,
+    "created_at" TIMESTAMP DEFAULT now(),
+    "updated_at" TIMESTAMP DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_OrganizationTable" (
+    "organization_id" TEXT PRIMARY KEY,
+    "organization_alias" TEXT,
+    "max_budget" REAL DEFAULT 0.0,
+    "soft_budget" REAL DEFAULT 0.0,
+    "spend" REAL DEFAULT 0.0,
+    "models" TEXT[] DEFAULT '{}',
+    "metadata" JSONB DEFAULT '{}',
+    "blocked" BOOLEAN DEFAULT false,
+    "created_at" TIMESTAMP DEFAULT now(),
+    "updated_at" TIMESTAMP DEFAULT now(),
+    "model_spend" JSONB DEFAULT '{}',
+    "model_max_budget" JSONB DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_ModelTable" (
+    "model_id" SERIAL PRIMARY KEY,
+    "model_name" TEXT UNIQUE NOT NULL,
+    "model_info" JSONB DEFAULT '{}',
+    "litellm_provider" TEXT,
+    "mode" TEXT DEFAULT 'chat',
+    "created_at" TIMESTAMP DEFAULT now(),
+    "updated_at" TIMESTAMP DEFAULT now(),
+    "model_names" TEXT[] DEFAULT '{}',
+    "input" JSONB DEFAULT '{"batch_messages_cost": null, "tokens_cost": null, "max_tokens": null}',
+    "output" JSONB DEFAULT '{"batch_messages_cost": null, "tokens_cost": null, "max_tokens": null}',
+    "all_lang" TEXT[] DEFAULT '{}',
+    "supports_function_calling" BOOLEAN DEFAULT false,
+    "supports_vision" BOOLEAN DEFAULT false,
+    "supports_audio_input" BOOLEAN DEFAULT false,
+    "supports_audio_output" BOOLEAN DEFAULT false,
+    "supports_search" BOOLEAN DEFAULT false,
+    "supports_reasoning" BOOLEAN DEFAULT false,
+    "supports_prompt_caching" BOOLEAN DEFAULT false,
+    "context_window" BIGINT DEFAULT 4096,
+    "max_tokens" BIGINT DEFAULT 4096
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_Config" (
+    "param_name" TEXT PRIMARY KEY,
+    "param_value" JSONB
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_TeamTable" (
+    "team_id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "team_alias" TEXT,
+    "organization_id" TEXT,
+    "object_permission_id" TEXT,
+    "admins" TEXT[] DEFAULT '{}',
+    "members" TEXT[] DEFAULT '{}',
+    "members_with_roles" JSONB DEFAULT '{}',
+    "metadata" JSONB DEFAULT '{}',
+    "max_budget" REAL,
+    "soft_budget" REAL,
+    "spend" REAL DEFAULT 0.0,
+    "models" TEXT[] DEFAULT '{}',
+    "max_parallel_requests" INTEGER,
+    "tpm_limit" BIGINT,
+    "rpm_limit" BIGINT,
+    "budget_duration" TEXT,
+    "budget_reset_at" TIMESTAMP,
+    "blocked" BOOLEAN DEFAULT false,
+    "created_at" TIMESTAMP DEFAULT now(),
+    "updated_at" TIMESTAMP DEFAULT now(),
+    "model_spend" JSONB DEFAULT '{}',
+    "model_max_budget" JSONB DEFAULT '{}',
+    "router_settings" JSONB,
+    "team_member_permissions" TEXT[] DEFAULT '{}',
+    "access_group_ids" TEXT[] DEFAULT '{}',
+    "policies" TEXT[] DEFAULT '{}',
+    "default_team_member_models" TEXT[] DEFAULT '{}',
+    "budget_limits" JSONB,
+    "model_id" INTEGER UNIQUE,
+    "allow_team_guardrail_config" BOOLEAN DEFAULT false,
+    FOREIGN KEY ("organization_id") REFERENCES "LiteLLM_OrganizationTable"("organization_id") ON DELETE SET NULL,
+    FOREIGN KEY ("model_id") REFERENCES "LiteLLM_ModelTable"("model_id") ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_ProjectTable" (
+    "project_id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "project_alias" TEXT,
+    "description" TEXT,
+    "team_id" TEXT,
+    "budget_id" TEXT,
+    "metadata" JSONB DEFAULT '{}',
+    "models" TEXT[] DEFAULT '{}',
+    "spend" REAL DEFAULT 0.0,
+    "model_spend" JSONB DEFAULT '{}',
+    "model_rpm_limit" JSONB DEFAULT '{}',
+    "model_tpm_limit" JSONB DEFAULT '{}',
+    "blocked" BOOLEAN DEFAULT false,
+    "object_permission_id" TEXT,
+    "created_at" TIMESTAMP DEFAULT now(),
+    "created_by" TEXT,
+    "updated_at" TIMESTAMP DEFAULT now(),
+    "updated_by" TEXT,
+    FOREIGN KEY ("team_id") REFERENCES "LiteLLM_TeamTable"("team_id") ON DELETE SET NULL,
+    FOREIGN KEY ("budget_id") REFERENCES "LiteLLM_BudgetTable"("budget_id") ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_UserTable" (
+    "user_id" TEXT PRIMARY KEY,
+    "user_alias" TEXT,
+    "team_id" TEXT,
+    "sso_user_id" TEXT UNIQUE,
+    "organization_id" TEXT,
+    "object_permission_id" TEXT,
+    "password" TEXT,
+    "teams" TEXT[] DEFAULT '{}',
+    "user_role" TEXT,
+    "max_budget" REAL,
+    "spend" REAL DEFAULT 0.0,
+    "user_email" TEXT,
+    "models" TEXT[] DEFAULT '{}',
+    "metadata" JSONB DEFAULT '{}',
+    "max_parallel_requests" INTEGER,
+    "tpm_limit" BIGINT,
+    "rpm_limit" BIGINT,
+    "budget_duration" TEXT,
+    "budget_reset_at" TIMESTAMP,
+    "allowed_cache_controls" TEXT[] DEFAULT '{}',
+    "policies" TEXT[] DEFAULT '{}',
+    "model_spend" JSONB DEFAULT '{}',
+    "model_max_budget" JSONB DEFAULT '{}',
+    "created_at" TIMESTAMP DEFAULT now(),
+    "updated_at" TIMESTAMP DEFAULT now(),
+    FOREIGN KEY ("organization_id") REFERENCES "LiteLLM_OrganizationTable"("organization_id") ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_ObjectPermissionTable" (
+    "object_permission_id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "mcp_servers" TEXT[] DEFAULT '{}',
+    "mcp_access_groups" TEXT[] DEFAULT '{}',
+    "mcp_tool_permissions" JSONB,
+    "vector_stores" TEXT[] DEFAULT '{}',
+    "agents" TEXT[] DEFAULT '{}',
+    "agent_access_groups" TEXT[] DEFAULT '{}',
+    "models" TEXT[] DEFAULT '{}',
+    "blocked_tools" TEXT[] DEFAULT '{}',
+    "mcp_toolsets" TEXT[] DEFAULT '{}',
+    "search_tools" TEXT[] DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_VerificationToken" (
+    "token" TEXT PRIMARY KEY,
+    "key_name" TEXT,
+    "key_alias" TEXT,
+    "soft_budget_cooldown" BOOLEAN DEFAULT false,
+    "spend" REAL DEFAULT 0.0,
+    "expires" TIMESTAMP,
+    "models" TEXT[] DEFAULT '{}',
+    "aliases" JSONB DEFAULT '{}',
+    "config" JSONB DEFAULT '{}',
+    "router_settings" JSONB DEFAULT '{}',
+    "user_id" TEXT,
+    "team_id" TEXT,
+    "agent_id" TEXT,
+    "project_id" TEXT,
+    "permissions" JSONB DEFAULT '{}',
+    "max_parallel_requests" INTEGER,
+    "metadata" JSONB DEFAULT '{}',
+    "blocked" BOOLEAN,
+    "tpm_limit" BIGINT,
+    "rpm_limit" BIGINT,
+    "max_budget" REAL,
+    "budget_duration" TEXT,
+    "budget_reset_at" TIMESTAMP,
+    "allowed_cache_controls" TEXT[] DEFAULT '{}',
+    "allowed_routes" TEXT[] DEFAULT '{}',
+    "policies" TEXT[] DEFAULT '{}',
+    "access_group_ids" TEXT[] DEFAULT '{}',
+    "model_spend" JSONB DEFAULT '{}',
+    "model_max_budget" JSONB DEFAULT '{}',
+    "budget_id" TEXT,
+    "organization_id" TEXT,
+    "object_permission_id" TEXT,
+    "created_at" TIMESTAMP DEFAULT now(),
+    "created_by" TEXT,
+    "updated_at" TIMESTAMP DEFAULT now(),
+    "updated_by" TEXT,
+    "last_active" TIMESTAMP,
+    "rotation_count" INTEGER DEFAULT 0,
+    "auto_rotate" BOOLEAN DEFAULT false,
+    "rotation_interval" TEXT,
+    "last_rotation_at" TIMESTAMP,
+    "key_rotation_at" TIMESTAMP,
+    "budget_limits" JSONB,
+    FOREIGN KEY ("user_id") REFERENCES "LiteLLM_UserTable"("user_id") ON DELETE SET NULL,
+    FOREIGN KEY ("team_id") REFERENCES "LiteLLM_TeamTable"("team_id") ON DELETE SET NULL,
+    FOREIGN KEY ("project_id") REFERENCES "LiteLLM_ProjectTable"("project_id") ON DELETE SET NULL,
+    FOREIGN KEY ("organization_id") REFERENCES "LiteLLM_OrganizationTable"("organization_id") ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS "idx_verification_token_user_team" ON "LiteLLM_VerificationToken"("user_id", "team_id");
+CREATE INDEX IF NOT EXISTS "idx_verification_token_team" ON "LiteLLM_VerificationToken"("team_id");
+CREATE INDEX IF NOT EXISTS "idx_verification_token_budget_reset" ON "LiteLLM_VerificationToken"("budget_reset_at", "expires");
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_EndUserTable" (
+    "user_id" TEXT PRIMARY KEY,
+    "alias" TEXT,
+    "spend" REAL DEFAULT 0.0,
+    "allowed_model_region" TEXT,
+    "default_model" TEXT,
+    "budget_id" TEXT,
+    "object_permission_id" TEXT,
+    "blocked" BOOLEAN DEFAULT false,
+    FOREIGN KEY ("budget_id") REFERENCES "LiteLLM_BudgetTable"("budget_id") ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_SpendLogs" (
+    "request_id" TEXT PRIMARY KEY,
+    "call_type" TEXT,
+    "api_key" TEXT DEFAULT '',
+    "spend" REAL DEFAULT 0.0,
+    "total_tokens" INTEGER DEFAULT 0,
+    "prompt_tokens" INTEGER DEFAULT 0,
+    "completion_tokens" INTEGER DEFAULT 0,
+    "startTime" TIMESTAMP,
+    "endTime" TIMESTAMP,
+    "request_duration_ms" INTEGER,
+    "completionStartTime" TIMESTAMP,
+    "model" TEXT DEFAULT '',
+    "model_id" TEXT DEFAULT '',
+    "model_group" TEXT DEFAULT '',
+    "custom_llm_provider" TEXT DEFAULT '',
+    "api_base" TEXT DEFAULT '',
+    "user" TEXT DEFAULT '',
+    "metadata" JSONB DEFAULT '{}',
+    "cache_hit" TEXT DEFAULT '',
+    "cache_key" TEXT DEFAULT '',
+    "request_tags" JSONB DEFAULT '[]',
+    "team_id" TEXT,
+    "organization_id" TEXT,
+    "end_user" TEXT,
+    "requester_ip_address" TEXT,
+    "messages" JSONB DEFAULT '{}',
+    "response" JSONB DEFAULT '{}',
+    "session_id" TEXT,
+    "status" TEXT,
+    "mcp_namespaced_tool_name" TEXT,
+    "agent_id" TEXT,
+    "proxy_server_request" JSONB DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS "idx_spendlogs_starttime" ON "LiteLLM_SpendLogs"("startTime");
+CREATE INDEX IF NOT EXISTS "idx_spendlogs_starttime_requestid" ON "LiteLLM_SpendLogs"("startTime", "request_id");
+CREATE INDEX IF NOT EXISTS "idx_spendlogs_enduser" ON "LiteLLM_SpendLogs"("end_user");
+CREATE INDEX IF NOT EXISTS "idx_spendlogs_session" ON "LiteLLM_SpendLogs"("session_id");
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_ErrorLogs" (
+    "request_id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "startTime" TIMESTAMP,
+    "endTime" TIMESTAMP,
+    "api_base" TEXT DEFAULT '',
+    "model_group" TEXT DEFAULT '',
+    "litellm_model_name" TEXT DEFAULT '',
+    "model_id" TEXT DEFAULT '',
+    "request_kwargs" JSONB DEFAULT '{}',
+    "exception_type" TEXT DEFAULT '',
+    "exception_string" TEXT DEFAULT '',
+    "status_code" TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_TagTable" (
+    "tag_name" TEXT PRIMARY KEY,
+    "description" TEXT,
+    "models" TEXT[] DEFAULT '{}',
+    "model_info" JSONB,
+    "spend" REAL DEFAULT 0.0,
+    "budget_id" TEXT,
+    "created_at" TIMESTAMP DEFAULT now(),
+    "created_by" TEXT,
+    "updated_at" TIMESTAMP DEFAULT now(),
+    FOREIGN KEY ("budget_id") REFERENCES "LiteLLM_BudgetTable"("budget_id") ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_HealthCheckTable" (
+    "health_check_id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "model_name" TEXT,
+    "model_id" TEXT,
+    "status" TEXT,
+    "healthy_count" INTEGER DEFAULT 0,
+    "unhealthy_count" INTEGER DEFAULT 0,
+    "error_message" TEXT,
+    "response_time_ms" REAL,
+    "details" JSONB,
+    "checked_by" TEXT,
+    "checked_at" TIMESTAMP DEFAULT now(),
+    "created_at" TIMESTAMP DEFAULT now(),
+    "updated_at" TIMESTAMP DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "idx_healthcheck_model" ON "LiteLLM_HealthCheckTable"("model_name");
+CREATE INDEX IF NOT EXISTS "idx_healthcheck_checkedat" ON "LiteLLM_HealthCheckTable"("checked_at");
+CREATE INDEX IF NOT EXISTS "idx_healthcheck_status" ON "LiteLLM_HealthCheckTable"("status");
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_AuditLog" (
+    "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "updated_at" TIMESTAMP DEFAULT now(),
+    "changed_by" TEXT DEFAULT '',
+    "changed_by_api_key" TEXT DEFAULT '',
+    "action" TEXT,
+    "table_name" TEXT,
+    "object_id" TEXT,
+    "before_value" JSONB,
+    "updated_values" JSONB
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_DailyUserSpend" (
+    "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "user_id" TEXT,
+    "date" TEXT,
+    "api_key" TEXT,
+    "model" TEXT,
+    "model_group" TEXT,
+    "custom_llm_provider" TEXT,
+    "mcp_namespaced_tool_name" TEXT,
+    "endpoint" TEXT,
+    "prompt_tokens" BIGINT DEFAULT 0,
+    "completion_tokens" BIGINT DEFAULT 0,
+    "cache_read_input_tokens" BIGINT DEFAULT 0,
+    "cache_creation_input_tokens" BIGINT DEFAULT 0,
+    "spend" REAL DEFAULT 0.0,
+    "api_requests" BIGINT DEFAULT 0,
+    "successful_requests" BIGINT DEFAULT 0,
+    "failed_requests" BIGINT DEFAULT 0,
+    "created_at" TIMESTAMP DEFAULT now(),
+    "updated_at" TIMESTAMP DEFAULT now(),
+    UNIQUE("user_id", "date", "api_key", "model", "custom_llm_provider", "mcp_namespaced_tool_name", "endpoint")
+);
+CREATE INDEX IF NOT EXISTS "idx_dailyuserspend_date" ON "LiteLLM_DailyUserSpend"("date");
+CREATE INDEX IF NOT EXISTS "idx_dailyuserspend_userid_date" ON "LiteLLM_DailyUserSpend"("user_id", "date");
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_DailyEndUserSpend" (
+    "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "end_user_id" TEXT,
+    "date" TEXT,
+    "api_key" TEXT,
+    "model" TEXT,
+    "model_group" TEXT,
+    "custom_llm_provider" TEXT,
+    "mcp_namespaced_tool_name" TEXT,
+    "endpoint" TEXT,
+    "prompt_tokens" BIGINT DEFAULT 0,
+    "completion_tokens" BIGINT DEFAULT 0,
+    "cache_read_input_tokens" BIGINT DEFAULT 0,
+    "cache_creation_input_tokens" BIGINT DEFAULT 0,
+    "spend" REAL DEFAULT 0.0,
+    "api_requests" BIGINT DEFAULT 0,
+    "successful_requests" BIGINT DEFAULT 0,
+    "failed_requests" BIGINT DEFAULT 0,
+    "created_at" TIMESTAMP DEFAULT now(),
+    "updated_at" TIMESTAMP DEFAULT now(),
+    UNIQUE("end_user_id", "date", "api_key", "model", "custom_llm_provider", "mcp_namespaced_tool_name", "endpoint")
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_DailyTeamSpend" (
+    "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "team_id" TEXT,
+    "date" TEXT,
+    "api_key" TEXT,
+    "model" TEXT,
+    "model_group" TEXT,
+    "custom_llm_provider" TEXT,
+    "mcp_namespaced_tool_name" TEXT,
+    "endpoint" TEXT,
+    "prompt_tokens" BIGINT DEFAULT 0,
+    "completion_tokens" BIGINT DEFAULT 0,
+    "cache_read_input_tokens" BIGINT DEFAULT 0,
+    "cache_creation_input_tokens" BIGINT DEFAULT 0,
+    "spend" REAL DEFAULT 0.0,
+    "api_requests" BIGINT DEFAULT 0,
+    "successful_requests" BIGINT DEFAULT 0,
+    "failed_requests" BIGINT DEFAULT 0,
+    "created_at" TIMESTAMP DEFAULT now(),
+    "updated_at" TIMESTAMP DEFAULT now(),
+    UNIQUE("team_id", "date", "api_key", "model", "custom_llm_provider", "mcp_namespaced_tool_name", "endpoint")
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_TeamMembership" (
+    "user_id" TEXT NOT NULL,
+    "team_id" TEXT NOT NULL,
+    "spend" REAL DEFAULT 0.0,
+    "total_spend" REAL DEFAULT 0.0,
+    "budget_id" TEXT,
+    PRIMARY KEY ("user_id", "team_id"),
+    FOREIGN KEY ("budget_id") REFERENCES "LiteLLM_BudgetTable"("budget_id") ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_InvitationLink" (
+    "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "user_id" TEXT NOT NULL,
+    "is_accepted" BOOLEAN DEFAULT false,
+    "accepted_at" TIMESTAMP,
+    "expires_at" TIMESTAMP NOT NULL,
+    "created_at" TIMESTAMP DEFAULT now(),
+    "created_by" TEXT NOT NULL,
+    "updated_at" TIMESTAMP DEFAULT now(),
+    "updated_by" TEXT NOT NULL,
+    FOREIGN KEY ("user_id") REFERENCES "LiteLLM_UserTable"("user_id") ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_AccessGroupTable" (
+    "access_group_id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "access_group_name" TEXT UNIQUE NOT NULL,
+    "description" TEXT,
+    "access_model_names" TEXT[] DEFAULT '{}',
+    "access_mcp_server_ids" TEXT[] DEFAULT '{}',
+    "access_agent_ids" TEXT[] DEFAULT '{}',
+    "assigned_team_ids" TEXT[] DEFAULT '{}',
+    "assigned_key_ids" TEXT[] DEFAULT '{}',
+    "created_at" TIMESTAMP DEFAULT now(),
+    "created_by" TEXT,
+    "updated_at" TIMESTAMP DEFAULT now(),
+    "updated_by" TEXT
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_MemoryTable" (
+    "memory_id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "key" TEXT UNIQUE NOT NULL,
+    "value" TEXT,
+    "metadata" JSONB,
+    "user_id" TEXT,
+    "team_id" TEXT,
+    "created_at" TIMESTAMP DEFAULT now(),
+    "created_by" TEXT,
+    "updated_at" TIMESTAMP DEFAULT now(),
+    "updated_by" TEXT
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_WorkflowRun" (
+    "run_id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "session_id" TEXT UNIQUE DEFAULT gen_random_uuid()::TEXT,
+    "workflow_type" TEXT,
+    "status" TEXT DEFAULT 'pending',
+    "created_by" TEXT,
+    "created_at" TIMESTAMP DEFAULT now(),
+    "updated_at" TIMESTAMP DEFAULT now(),
+    "input" JSONB,
+    "output" JSONB,
+    "metadata" JSONB
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_WorkflowEvent" (
+    "event_id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "run_id" TEXT NOT NULL,
+    "event_type" TEXT,
+    "step_name" TEXT,
+    "sequence_number" INTEGER NOT NULL,
+    "data" JSONB,
+    "created_at" TIMESTAMP DEFAULT now(),
+    FOREIGN KEY ("run_id") REFERENCES "LiteLLM_WorkflowRun"("run_id") ON DELETE CASCADE,
+    UNIQUE("run_id", "sequence_number")
+);
+
+CREATE TABLE IF NOT EXISTS "LiteLLM_WorkflowMessage" (
+    "message_id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    "run_id" TEXT NOT NULL,
+    "role" TEXT,
+    "content" TEXT,
+    "sequence_number" INTEGER NOT NULL,
+    "session_id" TEXT,
+    "created_at" TIMESTAMP DEFAULT now(),
+    FOREIGN KEY ("run_id") REFERENCES "LiteLLM_WorkflowRun"("run_id") ON DELETE CASCADE,
+    UNIQUE("run_id", "sequence_number")
+);
+
+-- Store UI settings for the Admin UI
+CREATE TABLE IF NOT EXISTS "LiteLLM_UISettings" (
+    "id" TEXT PRIMARY KEY DEFAULT 'ui_settings',
+    "ui_settings" JSONB,
+    "created_at" TIMESTAMP DEFAULT now(),
+    "updated_at" TIMESTAMP DEFAULT now()
+);
+
+COMMIT;
