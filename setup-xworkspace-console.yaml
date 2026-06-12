@@ -19,7 +19,6 @@
     xworkspace_console_install_chrome: true
     xworkspace_console_autostart_enabled: true
     xworkspace_console_ttyd_binary_path: /usr/local/bin/ttyd
-    xworkspace_console_dashboard_local_src: /Users/shenlan/workspaces/ai-workspace-lab/xworkspace-console/dashboard
   tasks:
     - name: Install Google Chrome apt repository prerequisites
       ansible.builtin.apt:
@@ -378,18 +377,19 @@
             --disable-sync \
             --new-window
 
-    - name: Sync dashboard source from controller to target
-      ansible.posix.synchronize:
-        src: "{{ xworkspace_console_dashboard_local_src }}/"
-        dest: "{{ xworkspace_console_local_dashboard_dir }}/"
-        delete: true
-        recursive: true
-        rsync_opts:
-          --exclude=node_modules
-          --exclude=.git
-          --exclude=dist
+    - name: Clone xworkspace-console repository
+      ansible.builtin.git:
+        repo: "https://github.com/ai-workspace-lab/xworkspace-console.git"
+        dest: "/tmp/xworkspace-console-repo"
+        version: "main"
+        depth: 1
+        force: true
       become: false
-      delegate_to: localhost
+
+    - name: Sync dashboard source to target
+      ansible.builtin.shell: |
+        rsync -a --delete --exclude=node_modules --exclude=.git --exclude=dist /tmp/xworkspace-console-repo/dashboard/ "{{ xworkspace_console_local_dashboard_dir }}/"
+      become: false
 
     - name: Build dashboard assets on target
       ansible.builtin.shell: |
