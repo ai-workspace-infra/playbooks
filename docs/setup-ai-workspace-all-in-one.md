@@ -62,7 +62,12 @@ ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml \
 
 ### 细粒度服务暴露开关 (支持针对性覆盖)
 
-1. **XWorkmate Bridge 公网访问控制**
+1. **XWorkspace Console (底层主工作区门户) 公网访问控制**
+   - **默认值：** `true` (standard 下) / `false` (strict 下)
+   - **参数：** `-e "xworkspace_console_public_access=false"`
+   - **作用：** 设为 true 时，会自动将本地 17000 端口通过 Caddy 反向代理到绑定的 `workspace.svc.plus` 域名提供公网访问。设为 false 时则销毁对应代理文件，只能进服务器内网/XRDP访问。
+
+2. **XWorkmate Bridge 公网访问控制**
    - **默认值：** `true` (standard 下) / `false` (strict 下)
    - **参数：** `-e "xworkmate_bridge_public_access=false"`
    - **作用：** 设为 false 时，会彻底删除该服务在 Caddy `/etc/caddy/conf.d` 中的 `.caddy` 文件，使其失去从外界 HTTPS 进入内部 8787 端口的路径。

@@ -5,6 +5,8 @@
   gather_facts: true
   vars:
     xworkspace_console_user: ubuntu
+    xworkspace_console_public_access: "{{ true if ai_workspace_security_level | default('standard') != 'strict' else false }}"
+    xworkspace_console_domain: workspace.svc.plus
     xworkspace_console_home: /home/ubuntu
     xworkspace_console_root: /home/ubuntu/xworkspace
     xworkspace_console_portal_dir: /home/ubuntu/xworkspace/portal
@@ -943,3 +945,38 @@
               "external": true
             }
           ]
+
+    - name: Ensure Caddy fragment directory exists
+      ansible.builtin.file:
+        path: /etc/caddy/conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy xworkspace-console public Caddy site
+      ansible.builtin.copy:
+        dest: "/etc/caddy/conf.d/{{ xworkspace_console_domain }}.caddy"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          {{ xworkspace_console_domain }} {
+              reverse_proxy 127.0.0.1:{{ xworkspace_console_portal_port }}
+          }
+      when: xworkspace_console_public_access | bool
+      register: xworkspace_caddy_deploy
+
+    - name: Remove xworkspace-console public Caddy site when disabled
+      ansible.builtin.file:
+        path: "/etc/caddy/conf.d/{{ xworkspace_console_domain }}.caddy"
+        state: absent
+      when: not (xworkspace_console_public_access | bool)
+      register: xworkspace_caddy_remove
+
+    - name: Reload Caddy if xworkspace-console proxy changed
+      ansible.builtin.service:
+        name: caddy
+        state: reloaded
+      when: (xworkspace_caddy_deploy.changed or xworkspace_caddy_remove.changed) and not ansible_check_mode
+      failed_when: false
