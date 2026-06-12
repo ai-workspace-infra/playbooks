@@ -393,7 +393,9 @@
 
     - name: Build dashboard assets on target
       ansible.builtin.shell: |
-        cd "{{ xworkspace_console_local_dashboard_dir }}" && npm install && npm run build
+        cd "{{ xworkspace_console_local_dashboard_dir }}"
+        sed -i 's/"ES2020"/"ES2022"/g' tsconfig.json 2>/dev/null || true
+        npm install && npm run build
       become: false
 
     - name: Sync dashboard dist to portal directory
