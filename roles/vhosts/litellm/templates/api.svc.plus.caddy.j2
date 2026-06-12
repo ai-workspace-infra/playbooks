@@ -38,65 +38,11 @@
         }
     }
 
-    handle_path /v1/openai/responses {
-        rewrite * /v1/responses
-        reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }} {
-            flush_interval -1
-            transport http {
-                dial_timeout 30s
-                read_timeout 600s
-                write_timeout 600s
-            }
-        }
-    }
-
-    # Support /v1/chat/completions, /v1/embeddings directly if desired
-    handle /v1/chat/completions {
-        reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }} {
-            flush_interval -1
-            transport http {
-                dial_timeout 30s
-                read_timeout 600s
-                write_timeout 600s
-            }
-        }
-    }
-    handle /v1/embeddings {
-        reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }} {
-            flush_interval -1
-            transport http {
-                dial_timeout 30s
-                read_timeout 600s
-                write_timeout 600s
-            }
-        }
-    }
-    handle /v1/responses {
-        reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }} {
-            flush_interval -1
-            transport http {
-                dial_timeout 30s
-                read_timeout 600s
-                write_timeout 600s
-            }
-        }
-    }
-
     # ------------------------------------------------------------------------
     # Anthropic-Compatible Endpoint
     # ------------------------------------------------------------------------
-    handle_path /v1/anthropic/* {
-        reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }} {
-            flush_interval -1
-            transport http {
-                dial_timeout 30s
-                read_timeout 600s
-                write_timeout 600s
-            }
-        }
-    }
-    
-    handle /v1/messages {
+    handle_path /v1/anthropic/messages {
+        rewrite * /v1/messages
         reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }} {
             flush_interval -1
             transport http {
@@ -107,16 +53,18 @@
         }
     }
 
-    # Catch-all: pass everything else (like UI, /health, etc) to LiteLLM
-    handle {
+    # ------------------------------------------------------------------------
+    # Admin UI
+    # ------------------------------------------------------------------------
+    handle /ui* {
         reverse_proxy {{ litellm_listen_host }}:{{ litellm_listen_port }} {
             flush_interval -1
-            transport http {
-                dial_timeout 30s
-                read_timeout 600s
-                write_timeout 600s
-            }
         }
+    }
+
+    # Catch-all: block unknown paths
+    handle {
+        respond "Not Found" 404
     }
 
     log {
