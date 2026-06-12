@@ -5,32 +5,32 @@
 > [!TIP]
 > ## ⏳ TL;DR (太长不看版)
 > 
-> **一键标准部署 (允许预设公网服务访问)：**
+> **一键标准部署 (无需本地 Ansible 环境，直接在目标机执行)：**
 > ```bash
-> ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml --limit jp-xhttp-contabo.svc.plus --vault-password-file ~/.vault_password
+> curl -sfL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/setup-ai-workspace-all-in-one.sh | VAULT_PASS="您的密码" bash -
 > ```
 > 
 > **一键极严防御部署 (瘫痪所有外网接口，强制全内网/VPN架构)：**
 > ```bash
-> ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml --limit jp-xhttp-contabo.svc.plus --vault-password-file ~/.vault_password -e "ai_workspace_security_level=strict"
+> curl -sfL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/setup-ai-workspace-all-in-one.sh | AI_WORKSPACE_SECURITY_LEVEL=strict VAULT_PASS="您的密码" bash -
 > ```
 > 
 > **组合技：极严防御 + 单独开白名单口子 (如仅开放 LiteLLM 接口)：**
 > ```bash
-> ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml --limit jp-xhttp-contabo.svc.plus --vault-password-file ~/.vault_password -e "ai_workspace_security_level=strict" -e "litellm_api_caddy_strict_whitelist=true"
+> curl -sfL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/setup-ai-workspace-all-in-one.sh | AI_WORKSPACE_SECURITY_LEVEL=strict LITELLM_API_CADDY_STRICT_WHITELIST=true VAULT_PASS="您的密码" bash -
 > ```
 > 
 > **高级定制：一键部署全架构并按需开启可选功能 (如 XRDP)：**
 > ```bash
-> ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml \
->   --limit jp-xhttp-contabo.svc.plus \
->   --vault-password-file ~/.vault_password \
->   -e "xworkspace_console_enable_xrdp=true" \
->   -e "xworkspace_console_public_access=true" \
->   -e "xworkmate_bridge_public_access=true" \
->   -e "gateway_openclaw_public_access=false" \
->   -e "vault_public_access=false" \
->   -e "litellm_api_caddy_strict_whitelist=true"
+> curl -sfL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/setup-ai-workspace-all-in-one.sh | \
+>   XWORKSPACE_CONSOLE_ENABLE_XRDP=true \
+>   XWORKSPACE_CONSOLE_PUBLIC_ACCESS=true \
+>   XWORKMATE_BRIDGE_PUBLIC_ACCESS=true \
+>   GATEWAY_OPENCLAW_PUBLIC_ACCESS=false \
+>   VAULT_PUBLIC_ACCESS=false \
+>   LITELLM_API_CADDY_STRICT_WHITELIST=true \
+>   VAULT_PASS="您的密码" \
+>   bash -
 > ```
 
 本文档将详细介绍它的基础用法，并重点讲解如何通过内置的全局开关与细粒度 `public_access` 控制，打造出“最严安全网络架构”（断开一切外部 Web 端口代理，仅限加密 VPN 内网互联）。
