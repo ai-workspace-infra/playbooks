@@ -7,22 +7,22 @@
 > 
 > **一键标准部署 (无需配置任何前置环境，自带随机密钥保护)：**
 > ```bash
-> curl -sfL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/scripts/setup-ai-workspace-all-in-one.sh | bash -
+> curl -sfL https://raw.githubusercontent.com/ai-workspace-lab/xworkspace-console/main/scripts/setup-ai-workspace-all-in-one.sh | bash -
 > ```
 > 
 > **一键极严防御部署 (瘫痪所有外网接口，强制全内网/VPN架构)：**
 > ```bash
-> curl -sfL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/scripts/setup-ai-workspace-all-in-one.sh | AI_WORKSPACE_SECURITY_LEVEL=strict bash -
+> curl -sfL https://raw.githubusercontent.com/ai-workspace-lab/xworkspace-console/main/scripts/setup-ai-workspace-all-in-one.sh | AI_WORKSPACE_SECURITY_LEVEL=strict bash -
 > ```
 > 
 > **组合技：极严防御 + 单独开白名单口子 (如仅开放 LiteLLM 接口)：**
 > ```bash
-> curl -sfL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/scripts/setup-ai-workspace-all-in-one.sh | AI_WORKSPACE_SECURITY_LEVEL=strict LITELLM_API_CADDY_STRICT_WHITELIST=true bash -
+> curl -sfL https://raw.githubusercontent.com/ai-workspace-lab/xworkspace-console/main/scripts/setup-ai-workspace-all-in-one.sh | AI_WORKSPACE_SECURITY_LEVEL=strict LITELLM_API_CADDY_STRICT_WHITELIST=true bash -
 > ```
 > 
 > **高级定制：一键部署全架构并按需开启可选功能 (如 XRDP，并自定义认证 Token)：**
 > ```bash
-> curl -sfL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/scripts/setup-ai-workspace-all-in-one.sh | \
+> curl -sfL https://raw.githubusercontent.com/ai-workspace-lab/xworkspace-console/main/scripts/setup-ai-workspace-all-in-one.sh | \
 >   XWORKSPACE_CONSOLE_ENABLE_XRDP=true \
 >   XWORKSPACE_CONSOLE_PUBLIC_ACCESS=true \
 >   XWORKMATE_BRIDGE_PUBLIC_ACCESS=true \
