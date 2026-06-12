@@ -19,6 +19,19 @@
 > ```bash
 > ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml --limit jp-xhttp-contabo.svc.plus --vault-password-file ~/.vault_password -e "ai_workspace_security_level=strict" -e "litellm_api_caddy_strict_whitelist=true"
 > ```
+> 
+> **高级定制：一键部署全架构并按需开启可选功能 (如 XRDP)：**
+> ```bash
+> ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml \
+>   --limit jp-xhttp-contabo.svc.plus \
+>   --vault-password-file ~/.vault_password \
+>   -e "xworkspace_console_enable_xrdp=true" \
+>   -e "xworkspace_console_public_access=true" \
+>   -e "xworkmate_bridge_public_access=true" \
+>   -e "gateway_openclaw_public_access=false" \
+>   -e "vault_public_access=false" \
+>   -e "litellm_api_caddy_strict_whitelist=true"
+> ```
 
 本文档将详细介绍它的基础用法，并重点讲解如何通过内置的全局开关与细粒度 `public_access` 控制，打造出“最严安全网络架构”（断开一切外部 Web 端口代理，仅限加密 VPN 内网互联）。
 
@@ -72,20 +85,25 @@ ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml \
    - **参数：** `-e "xworkmate_bridge_public_access=false"`
    - **作用：** 设为 false 时，会彻底删除该服务在 Caddy `/etc/caddy/conf.d` 中的 `.caddy` 文件，使其失去从外界 HTTPS 进入内部 8787 端口的路径。
 
-2. **OpenClaw Gateway 公网访问控制**
+3. **OpenClaw Gateway 公网访问控制**
    - **默认值：** `false` (无论在何种策略下，底层模型网关默认不允许直接向公网打开界面入口)
    - **参数：** `-e "gateway_openclaw_public_access=true"`
    - **作用：** 当您在出差时，身边没有 VPN 环境，但迫切需要连接远程 OpenClaw 平台时，可以通过将其设为 true 临时生成 Caddy 文件，恢复它的公网域名入口访问。
 
-3. **Vault KMS 密钥中心公网访问控制**
+4. **Vault KMS 密钥中心公网访问控制**
    - **默认值：** `false`
    - **参数：** `-e "vault_public_access=true"`
    - **作用：** 设为 false 时，该服务在 K8s 中部署的 Helm `ingress.enabled` 配置会被强制渲染为 false，不会向集群外网注册路由。设为 true 时方可绑定公网 Ingress Class 域名。
 
-4. **LiteLLM 轻量网关访问行为控制**
+5. **LiteLLM 轻量网关访问行为控制**
    - **默认值：** `false`
    - **参数：** `-e "litellm_api_caddy_strict_whitelist=true"` 
    - **作用：** 这个参数用于对 Caddy 代理行为做进一步保护，开启后，Caddy 会拦截一切没有命中官方兼容模型路径（如 `/v1/chat/completions`）的请求并拦截响应为 `404`，例如阻断前端 Dashboard UI（`/ui*`）的外网暴露。
+
+6. **按需开启 XRDP 远程桌面连接**
+   - **默认值：** `false`
+   - **参数：** `-e "xworkspace_console_enable_xrdp=true"`
+   - **作用：** XFCE 桌面环境默认仅提供基于 Web 浏览器的 Console UI，如需通过原生 RDP 客户端（如 Windows 远程桌面）连接目标主机，可增加此参数。
 
 ## 典型组合使用场景
 
