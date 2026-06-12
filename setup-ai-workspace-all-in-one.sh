@@ -87,24 +87,30 @@ append_var "GATEWAY_OPENCLAW_PUBLIC_ACCESS"     "gateway_openclaw_public_access"
 append_var "VAULT_PUBLIC_ACCESS"                "vault_public_access"
 append_var "XWORKSPACE_CONSOLE_ENABLE_XRDP"     "xworkspace_console_enable_xrdp"
 
-# 4. Handle Vault Password
-VAULT_OPT=""
-if [ -n "$VAULT_PASS" ]; then
-    VAULT_FILE=$(mktemp)
-    echo "$VAULT_PASS" > "$VAULT_FILE"
-    VAULT_OPT="--vault-password-file $VAULT_FILE"
-    info "Vault password provided via environment."
+# 4. Handle Vault Password (Auth Token)
+# If DEPLOY_TOKEN is provided, use it. Otherwise, generate a random one or reuse existing.
+VAULT_FILE="$HOME/.vault_password"
+
+if [ -n "$DEPLOY_TOKEN" ]; then
+    echo "$DEPLOY_TOKEN" > "$VAULT_FILE"
+    info "Using provided DEPLOY_TOKEN as the Vault password."
+elif [ -f "$VAULT_FILE" ]; then
+    info "Found existing Vault password at $VAULT_FILE, reusing it."
+else
+    info "No DEPLOY_TOKEN provided and no existing vault password found. Generating a secure random token..."
+    # Generate a random 32-character token
+    openssl rand -base64 32 > "$VAULT_FILE"
+    info "Generated new Vault password and saved to $VAULT_FILE"
 fi
+
+# Ensure correct permissions for the vault file
+chmod 600 "$VAULT_FILE"
+VAULT_OPT="--vault-password-file $VAULT_FILE"
 
 # 5. Run Ansible Playbook locally
 info "Running Ansible Playbook locally..."
 eval "ansible-playbook -i '127.0.0.1,' -c local setup-ai-workspace-all-in-one.yml $VAULT_OPT $ANSIBLE_EXTRA_VARS"
 RET=$?
-
-# Clean up vault file
-if [ -n "$VAULT_OPT" ]; then
-    rm -f "$VAULT_FILE"
-fi
 
 if [ $RET -eq 0 ]; then
     success "AI Workspace deployed successfully!"
