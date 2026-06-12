@@ -27,8 +27,22 @@
 #
 # ==============================================================================
 
+# 基础工作区与控制台
 - import_playbook: setup-xworkspace-console.yaml
-
 - import_playbook: setup-ai-agent-skills.yml
 
+# 核心网关与桥接
 - import_playbook: deploy_xworkmate_bridge_vhosts.yml
+
+# 基础数据与密钥设施
+- import_playbook: setup-vault.yaml
+- import_playbook: deploy_postgresql_svc_plus.yml
+- import_playbook: setup-litellm.yaml
+
+# 大模型与 AI Agents
+- import_playbook: deploy_gateway_openclaw.yml
+- import_playbook: deploy_QMD.yml
+- import_playbook: deploy_agent_hermes.yml
+
+# 可选服务
+- import_playbook: setup-xfce-xrdp.yaml
