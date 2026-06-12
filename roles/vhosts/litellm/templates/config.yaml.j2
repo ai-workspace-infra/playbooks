@@ -1,33 +1,20 @@
 model_list: []
 
-{% if litellm_database_url | trim | length > 0 %}
-database_url: {{ litellm_database_url }}
-{% endif %}
-
 general_settings:
-  master_key: "{{ litellm_master_key }}"
+  master_key: "os.environ/LITELLM_MASTER_KEY"
+  database_url: "os.environ/DATABASE_URL"
+  store_model_in_db: true
   drop_rate_limit_requests: true
-  set_verbose: false
-  json_response: false
-
-{% if litellm_ui_username | trim | length > 0 and litellm_ui_password | trim | length > 0 %}
-  ui_username: "{{ litellm_ui_username }}"
-  ui_password: "{{ litellm_ui_password }}"
-{% endif %}
 
 router_settings:
-  model_group_alias: {}
-  routing_strategy: {{ litellm_routing_strategy }}
-  enable_pre_call_checks: {{ litellm_enable_pre_call_checks | lower }}
-  retry_after: {{ litellm_retry_after }}
-  num_retries: {{ litellm_num_retries }}
-  enable_custom_llm_provider: true
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  retry_after: 30
+  fallbacks: []
 
 litellm_settings:
   drop_params: true
-  set_verbose: {{ litellm_telemetry | lower }}
-  request_timeout: {{ litellm_request_timeout }}
-  telemetry: {{ litellm_telemetry | lower }}
-  max_parallel_requests: {{ litellm_max_parallel_requests }}
-  json_response: false
-  api_base: ""
+  set_verbose: false
+  request_timeout: 600
+  telemetry: false
+

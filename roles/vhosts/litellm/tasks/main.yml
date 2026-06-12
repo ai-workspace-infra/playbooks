@@ -177,3 +177,10 @@
 - name: Display LiteLLM health status
   ansible.builtin.debug:
     msg: "LiteLLM health check: {{ litellm_health_check.status | default('unreachable') }}"
+- name: Create litellm environment file example
+  ansible.builtin.template:
+    src: litellm.env.example.j2
+    dest: "{{ litellm_config_dir }}/litellm.env.example"
+    owner: "{{ litellm_service_user }}"
+    group: "{{ litellm_service_group }}"
+    mode: "0600"
