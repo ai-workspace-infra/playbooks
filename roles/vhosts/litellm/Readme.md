@@ -34,15 +34,22 @@ Caddy + LiteLLM Minimal AI API Gateway + PostgreSQL
 
 ## 部署说明
 
-### Caddy 配置
-Caddy 作为唯一公网 HTTPS 入口，执行路径白名单拦截。
-内部映射如下：
-- `/ui*` -> `http://127.0.0.1:4000/ui*` (且强制鉴权)
+### Caddy 配置与网关模式
+Caddy 作为唯一公网 HTTPS 入口。目前支持两种模式（可通过 `litellm_api_caddy_strict_whitelist` 控制）：
+
+1. **Permissive 模式（默认，推荐 UI 使用）**：
+   - 所有的请求直接穿透代理到 LiteLLM 后端，由 LiteLLM 的原生认证（Bearer Token）负责鉴权。前端 Dashboard 可完全顺畅工作。
+2. **Strict Whitelist 模式（Minimal AI API Gateway）**：
+   - 仅对指定的 AI 模型路径放行，例如 `/v1/chat/completions` 等。
+   - 未匹配到的非法路径在 Caddy 层被直接 `404 Not Found` 阻断。
+   - 此模式下 Admin UI 的诸多后端接口将被拦截。
+
+路径映射规则：
+- `/ui*` -> `http://127.0.0.1:4000/ui*`
 - `/v1/openai/chat/completions` -> `http://127.0.0.1:4000/v1/chat/completions`
 - `/v1/openai/embeddings` -> `http://127.0.0.1:4000/v1/embeddings`
 - `/v1/anthropic/messages` -> `http://127.0.0.1:4000/v1/messages`
 - `/v1/models` -> `http://127.0.0.1:4000/v1/models`
-- 未匹配路径返回 `404 Not Found`。
 
 ### LiteLLM config.yaml
 配置极致精简，不预设任何模型：
