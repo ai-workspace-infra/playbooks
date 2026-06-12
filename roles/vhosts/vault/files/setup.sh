@@ -12,11 +12,12 @@ check_not_empty() {
 check_not_empty "$1" "DOMAIN" && DOMAIN=$1
 check_not_empty "$2" "NAMESPACE" && NAMESPACE=$2
 check_not_empty "$3" "SECRET_NAME" && SECRET_NAME=$3
+PUBLIC_ACCESS=${4:-false}
 
 cat > vaules.yaml << EOF
 server:
   ingress:
-    enabled: true
+    enabled: $PUBLIC_ACCESS
     ingressClassName: "nginx"
     hosts:
       - host: vault.$DOMAIN

@@ -1,4 +1,32 @@
 ---
+# ==============================================================================
+# AI Workspace All-in-One Deployment Playbook
+# ==============================================================================
+# 
+# This playbook deploys the entire AI workspace infrastructure.
+# 
+# Usage Examples:
+# 
+# 1. Standard Deployment (Default):
+#    ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml \
+#      --limit jp-xhttp-contabo.svc.plus \
+#      --vault-password-file ~/.vault_password
+# 
+# 2. Strict Security Level (Disable ALL Public Web APIs, VPN Only):
+#    ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml \
+#      --limit jp-xhttp-contabo.svc.plus \
+#      --vault-password-file ~/.vault_password \
+#      -e "ai_workspace_security_level=strict"
+# 
+# 3. Customizing Individual Public Access Flags:
+#    You can control public access to specific components independently:
+#    -e "litellm_api_caddy_strict_whitelist=true" # Restrict LiteLLM public gateway to allowed paths
+#    -e "xworkmate_bridge_public_access=false"    # Disable XWorkmate Bridge public Caddy proxy
+#    -e "gateway_openclaw_public_access=true"     # Enable OpenClaw Gateway public access
+#    -e "vault_public_access=true"                # Enable Vault public Ingress
+#
+# ==============================================================================
+
 - import_playbook: setup-xworkspace-console.yaml
 
 - import_playbook: setup-ai-agent-skills.yml

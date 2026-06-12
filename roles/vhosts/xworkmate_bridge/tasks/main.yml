@@ -272,6 +272,14 @@
     owner: root
     group: root
     mode: "0644"
+  when: xworkmate_bridge_public_access | bool
+  notify: Reload caddy
+
+- name: Remove xworkmate-bridge public Caddy site when public access is disabled
+  ansible.builtin.file:
+    path: "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+    state: absent
+  when: not (xworkmate_bridge_public_access | bool)
   notify: Reload caddy
 
 - name: Restore immutable flag on xworkmate-bridge Caddy fragment

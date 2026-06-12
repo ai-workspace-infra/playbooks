@@ -565,6 +565,14 @@
     owner: root
     group: root
     mode: "0644"
+  when: gateway_openclaw_public_access | bool
+  notify: Reload caddy
+
+- name: Remove OpenClaw public Caddy site when public access is disabled
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_caddy_fragment_path }}"
+    state: absent
+  when: not (gateway_openclaw_public_access | bool)
   notify: Reload caddy
 
 - name: Restore immutable flag on OpenClaw Caddy fragment
