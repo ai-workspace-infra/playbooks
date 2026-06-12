@@ -2,6 +2,24 @@
 
 `setup-ai-workspace-all-in-one.yml` 是用于在目标 VPS 上完整、自动化地拉起 AI 研发环境底层组件与服务的聚合 Playbook。
 
+> [!TIP]
+> ## ⏳ TL;DR (太长不看版)
+> 
+> **一键标准部署 (允许预设公网服务访问)：**
+> ```bash
+> ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml --limit jp-xhttp-contabo.svc.plus --vault-password-file ~/.vault_password
+> ```
+> 
+> **一键极严防御部署 (瘫痪所有外网接口，强制全内网/VPN架构)：**
+> ```bash
+> ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml --limit jp-xhttp-contabo.svc.plus --vault-password-file ~/.vault_password -e "ai_workspace_security_level=strict"
+> ```
+> 
+> **组合技：极严防御 + 单独开白名单口子 (如仅开放 LiteLLM 接口)：**
+> ```bash
+> ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml --limit jp-xhttp-contabo.svc.plus --vault-password-file ~/.vault_password -e "ai_workspace_security_level=strict" -e "litellm_api_caddy_strict_whitelist=true"
+> ```
+
 本文档将详细介绍它的基础用法，并重点讲解如何通过内置的全局开关与细粒度 `public_access` 控制，打造出“最严安全网络架构”（断开一切外部 Web 端口代理，仅限加密 VPN 内网互联）。
 
 ---
