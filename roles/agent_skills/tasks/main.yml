@@ -318,15 +318,26 @@
           | list
         )
         + agent_skills_rsync_extra_opts
+        + (
+          ((ansible_connection | default('ssh')) == 'local')
+          | ternary(
+              [],
+              ['-e', 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null']
+            )
+        )
         + [
-          '-e',
-          'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null',
           item ~ '/',
           (
-            ansible_user | default(ansible_ssh_user) | default('root')
-          ) ~ '@' ~ (
-            ansible_host | default(inventory_hostname)
-          ) ~ ':' ~ agent_skills_remote_dir ~ '/'
+            ((ansible_connection | default('ssh')) == 'local')
+          )
+          | ternary(
+              agent_skills_remote_dir ~ '/',
+              (
+                ansible_user | default(ansible_ssh_user) | default('root')
+              ) ~ '@' ~ (
+                ansible_host | default(inventory_hostname)
+              ) ~ ':' ~ agent_skills_remote_dir ~ '/'
+            )
         ]
       }}
   register: agent_skills_rsync_result
