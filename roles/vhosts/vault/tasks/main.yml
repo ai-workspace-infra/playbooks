@@ -1,7 +1,121 @@
-- name: Setup Vault Server
+- name: Prepare Kubernetes Vault secrets
+  ansible.builtin.include_role:
+    name: secret-manger
+  when:
+    - vault_deploy_mode == "kubernetes"
+    - inventory_hostname in groups[group]
+
+- name: Setup Vault Server on Kubernetes
   script: files/setup.sh {{ domain }} {{ namespace }} {{ item.secret_name }} {{ vault_public_access | bool | lower }}
   loop: "{{ tls }}"
-  when: inventory_hostname in groups[group]
+  when:
+    - vault_deploy_mode == "kubernetes"
+    - inventory_hostname in groups[group]
+
+- name: Install standalone Vault dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - unzip
+      - jq
+    state: present
+    update_cache: true
+  when:
+    - vault_deploy_mode == "standalone"
+    - inventory_hostname in groups[group]
+
+- name: Check standalone Vault binary
+  ansible.builtin.command: "{{ vault_binary_path }} version"
+  register: vault_binary_check
+  changed_when: false
+  failed_when: false
+  when:
+    - vault_deploy_mode == "standalone"
+    - inventory_hostname in groups[group]
+
+- name: Download standalone Vault release
+  ansible.builtin.unarchive:
+    src: "https://releases.hashicorp.com/vault/{{ vault_version }}/vault_{{ vault_version }}_linux_amd64.zip"
+    dest: /usr/local/bin
+    remote_src: true
+    mode: "0755"
+  when:
+    - vault_deploy_mode == "standalone"
+    - inventory_hostname in groups[group]
+    - vault_binary_check.rc != 0 or (vault_binary_check.stdout | default('')) is not search(vault_version)
+
+- name: Ensure standalone Vault directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ vault_config_dir }}"
+    - "{{ vault_data_dir }}"
+  when:
+    - vault_deploy_mode == "standalone"
+    - inventory_hostname in groups[group]
+
+- name: Deploy standalone Vault systemd service
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ vault_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=HashiCorp Vault standalone dev server
+      Documentation=https://developer.hashicorp.com/vault/docs
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      Environment="VAULT_DEV_ROOT_TOKEN_ID={{ vault_server_root_access_token }}"
+      ExecStart={{ vault_binary_path }} server -dev -dev-listen-address={{ vault_listen_addr }} -dev-root-token-id={{ vault_server_root_access_token }}
+      Restart=always
+      RestartSec=5
+      LimitNOFILE=65536
+
+      [Install]
+      WantedBy=multi-user.target
+  no_log: true
+  when:
+    - vault_deploy_mode == "standalone"
+    - inventory_hostname in groups[group]
+
+- name: Start standalone Vault service
+  ansible.builtin.systemd:
+    name: "{{ vault_service_name }}"
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  when:
+    - vault_deploy_mode == "standalone"
+    - inventory_hostname in groups[group]
+
+- name: Wait for standalone Vault API
+  ansible.builtin.uri:
+    url: "{{ vault_admin_addr }}/v1/sys/health"
+    status_code:
+      - 200
+      - 429
+      - 472
+      - 473
+      - 501
+      - 503
+    return_content: true
+  register: vault_health
+  until: vault_health.status in [200, 429, 472, 473, 501, 503]
+  retries: 12
+  delay: 5
+  changed_when: false
+  when:
+    - vault_deploy_mode == "standalone"
+    - inventory_hostname in groups[group]
 
 - name: Bootstrap Vault admin userpass auth
   ansible.builtin.script: >-

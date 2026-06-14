@@ -2,6 +2,13 @@ group: master
 namespace: vault
 # When false, disables the Ingress for public access.
 vault_public_access: false
+vault_deploy_mode: "{{ lookup('ansible.builtin.env', 'VAULT_DEPLOY_MODE') | default('kubernetes', true) }}"
+vault_version: "{{ lookup('ansible.builtin.env', 'VAULT_VERSION') | default('1.20.4', true) }}"
+vault_listen_addr: 127.0.0.1:8200
+vault_service_name: vault
+vault_binary_path: /usr/local/bin/vault
+vault_config_dir: /etc/vault.d
+vault_data_dir: /opt/vault/data
 ai_workspace_auth_token: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN') | default('', true) }}"
 vault_server_root_access_token: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN') | default(ai_workspace_auth_token, true), true) }}"
 vault_admin_init_enabled: "{{ (vault_server_root_access_token | trim | length > 0) and (vault_admin_password | trim | length > 0) }}"
