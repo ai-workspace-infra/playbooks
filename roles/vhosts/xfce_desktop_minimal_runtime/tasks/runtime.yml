@@ -1,0 +1,13 @@
+---
+- name: Install versioned NodeJS runtime
+  ansible.builtin.include_role:
+    name: roles/vhosts/nodejs
+  vars:
+    nodejs_version: "{{ ai_agent_runtime_nodejs_version | default(nodejs_version) }}"
+  when: xfce_desktop_install_nodejs_runtime | bool
+
+- name: Install Playwright browser runtime
+  ansible.builtin.include_role:
+    name: ai_agent_runtime
+    tasks_from: browser
+  when: xfce_desktop_install_playwright_runtime | bool

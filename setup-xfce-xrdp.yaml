@@ -1,12 +1,16 @@
 ---
-- name: Deploy XFCE XRDP Service (Optional)
+- name: Deploy XFCE desktop + optional XRDP (Optional)
   hosts: all
   become: true
   gather_facts: true
   vars:
     xworkspace_console_enable_xrdp: false
   tasks:
-    - name: Include XFCE XRDP Minimal Role
+    - name: Include XFCE desktop runtime role
       ansible.builtin.include_role:
-        name: roles/vhosts/xfce_xrdp_minimal
+        name: roles/vhosts/xfce_desktop_minimal_runtime
+
+    - name: Include XRDP server role when enabled
+      ansible.builtin.include_role:
+        name: roles/vhosts/remote_desktop_xrdp_server
       when: xworkspace_console_enable_xrdp | bool

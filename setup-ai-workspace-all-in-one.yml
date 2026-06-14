@@ -2,11 +2,11 @@
 # ==============================================================================
 # AI Workspace All-in-One Deployment Playbook
 # ==============================================================================
-# 
+#
 # This playbook deploys the entire AI workspace infrastructure.
-# 
+#
 # Usage Examples:
-# 
+#
 # 1. Standard Deployment (Default):
 #    ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml \
 #      --limit jp-xhttp-contabo.svc.plus \
@@ -27,6 +27,32 @@
 #
 # ==============================================================================
 
+- name: Validate AI Workspace runtime modes
+  hosts: all
+  gather_facts: false
+  vars:
+    ai_workspace_runtime_modes: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_RUNTIME_MODES') | default('docker,systemd', true) }}"
+  tasks:
+    - name: Normalize runtime mode list
+      ansible.builtin.set_fact:
+        ai_workspace_runtime_mode_list: >-
+          {{
+            ai_workspace_runtime_modes.split(',')
+            | map('trim')
+            | reject('equalto', '')
+            | list
+            if ai_workspace_runtime_modes is string
+            else ai_workspace_runtime_modes
+          }}
+
+    - name: Validate runtime mode combination
+      ansible.builtin.assert:
+        that:
+          - ai_workspace_runtime_mode_list | length > 0
+          - not ('docker' in ai_workspace_runtime_mode_list and 'k3s' in ai_workspace_runtime_mode_list)
+          - ai_workspace_runtime_mode_list | difference(['docker', 'k3s', 'systemd']) | length == 0
+        fail_msg: "docker 与 k3s 互斥；请选择 docker/k3s/systemd 的合法组合。"
+
 # 基础工作区与控制台
 - import_playbook: setup-nodejs.yml
 - import_playbook: setup-xworkspace-console.yaml
@@ -45,7 +71,6 @@
 
 # 大模型与 AI Agents
 - import_playbook: deploy_QMD.yml
-- import_playbook: deploy_agent_hermes.yml
 
 # 可选服务
 - import_playbook: setup-xfce-xrdp.yaml

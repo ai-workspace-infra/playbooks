@@ -1,0 +1,15 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+  become: true
+
+- name: Install minimal desktop packages
+  ansible.builtin.apt:
+    name: "{{ xfce_packages }}"
+    state: present
+    install_recommends: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
