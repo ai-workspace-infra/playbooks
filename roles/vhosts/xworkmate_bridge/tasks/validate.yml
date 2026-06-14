@@ -101,11 +101,12 @@
 
 - name: Check xworkmate-bridge public domain ping
   ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_service_domain }}/api/ping"
+    url: "{{ xworkmate_bridge_validation_base_url }}/api/ping"
     headers:
       Authorization: "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
       Origin: "{{ xworkmate_bridge_validation_origin }}"
     return_content: true
+    validate_certs: "{{ xworkmate_bridge_validation_validate_certs | bool }}"
   register: xworkmate_bridge_service_ping
   until:
     - xworkmate_bridge_service_ping.status == 200
@@ -128,7 +129,7 @@
 
 - name: Check xworkmate-bridge capabilities contract
   ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_service_domain }}/acp/rpc"
+    url: "{{ xworkmate_bridge_validation_base_url }}/acp/rpc"
     method: POST
     headers:
       Authorization: "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
@@ -141,17 +142,19 @@
       method: acp.capabilities
       params: {}
     return_content: true
+    validate_certs: "{{ xworkmate_bridge_validation_validate_certs | bool }}"
   register: xworkmate_bridge_capabilities
   changed_when: false
   no_log: true
 
 - name: Check xworkmate-bridge public domain ping with review token
   ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_service_domain }}/api/ping"
+    url: "{{ xworkmate_bridge_validation_base_url }}/api/ping"
     headers:
       Authorization: "Bearer {{ xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token) }}"
       Origin: "{{ xworkmate_bridge_validation_origin }}"
     return_content: true
+    validate_certs: "{{ xworkmate_bridge_validation_validate_certs | bool }}"
   register: xworkmate_bridge_review_service_ping
   until:
     - xworkmate_bridge_review_service_ping.status == 200
@@ -178,7 +181,7 @@
 
 - name: Check xworkmate-bridge routing resolve contract
   ansible.builtin.uri:
-    url: "https://{{ xworkmate_bridge_service_domain }}/acp/rpc"
+    url: "{{ xworkmate_bridge_validation_base_url }}/acp/rpc"
     method: POST
     headers:
       Authorization: "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
@@ -197,6 +200,7 @@
           explicitExecutionTarget: gateway
           preferredGatewayProviderId: openclaw
     return_content: true
+    validate_certs: "{{ xworkmate_bridge_validation_validate_certs | bool }}"
   register: xworkmate_bridge_routing
   changed_when: false
   no_log: true
