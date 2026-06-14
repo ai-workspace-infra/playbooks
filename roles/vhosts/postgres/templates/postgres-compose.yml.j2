@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: "{{ postgresql_image }}"
+    container_name: "{{ postgresql_container_name }}"
+    restart: unless-stopped
+    env_file:
+      - "{{ postgresql_compose_env_file }}"
+    ports:
+      - "{{ postgresql_listen_addresses }}:{{ postgresql_port }}:5432"
+    volumes:
+      - "{{ postgresql_data_dir }}:/var/lib/postgresql/data"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {{ postgresql_admin_user }} -d {{ postgresql_database }}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

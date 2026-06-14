@@ -54,6 +54,58 @@
     path: "{{ qmd_binary_path }}"
   register: qmd_binary
 
+- name: Ensure QMD source parent directory exists
+  ansible.builtin.file:
+    path: "{{ qmd_source_dir | dirname }}"
+    state: directory
+    owner: "{{ qmd_user }}"
+    group: "{{ qmd_group }}"
+    mode: "0755"
+
+- name: Checkout pinned QMD source
+  ansible.builtin.git:
+    repo: "{{ qmd_source_repo }}"
+    dest: "{{ qmd_source_dir }}"
+    version: "{{ qmd_version }}"
+    force: true
+  become: true
+  become_user: "{{ qmd_user }}"
+  register: qmd_source_checkout
+
+- name: Install QMD source dependencies
+  ansible.builtin.command:
+    cmd: npm install
+    chdir: "{{ qmd_source_dir }}"
+  become: true
+  become_user: "{{ qmd_user }}"
+  when:
+    - qmd_source_checkout.changed | default(false) or not (qmd_binary.stat.exists | default(false))
+
+- name: Build QMD from pinned source
+  ansible.builtin.command:
+    cmd: npm run build
+    chdir: "{{ qmd_source_dir }}"
+  become: true
+  become_user: "{{ qmd_user }}"
+  when:
+    - qmd_source_checkout.changed | default(false) or not (qmd_binary.stat.exists | default(false))
+
+- name: Link pinned QMD binary
+  ansible.builtin.file:
+    src: "{{ qmd_source_dir }}/bin/qmd"
+    dest: "{{ qmd_binary_path }}"
+    state: link
+    owner: "{{ qmd_user }}"
+    group: "{{ qmd_group }}"
+    force: true
+  when:
+    - qmd_source_checkout.changed | default(false) or not (qmd_binary.stat.exists | default(false))
+
+- name: Reinspect QMD binary after source install
+  ansible.builtin.stat:
+    path: "{{ qmd_binary_path }}"
+  register: qmd_binary_after_source
+
 - name: Install fallback QMD shim when QMD binary is absent
   ansible.builtin.copy:
     dest: "{{ qmd_binary_path }}"
@@ -95,7 +147,7 @@
           print("QMD fallback shim")
       if __name__ == "__main__":
           main()
-  when: not (qmd_binary.stat.exists | default(false))
+  when: not (qmd_binary_after_source.stat.exists | default(false))
 
 - name: Reinspect QMD binary
   ansible.builtin.stat:

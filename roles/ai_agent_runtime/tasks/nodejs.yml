@@ -12,3 +12,10 @@
     cmd: "npm install -g {{ item }}"
   loop: "{{ ai_agent_runtime_npm_global_packages }}"
   when: ai_agent_runtime_npm_global_packages | length > 0
+
+- name: Install pinned Playwright package for AI runtime
+  ansible.builtin.command:
+    cmd: "npm install -g playwright@{{ ai_agent_runtime_playwright_version }}"
+  when:
+    - ai_agent_runtime_playwright_enabled | bool
+    - ai_agent_runtime_playwright_version | length > 0

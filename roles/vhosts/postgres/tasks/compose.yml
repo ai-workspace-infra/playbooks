@@ -1,0 +1,64 @@
+---
+- name: Ensure Docker runtime is installed for PostgreSQL compose mode
+  ansible.builtin.include_role:
+    name: roles/vhosts/docker
+
+- name: Ensure PostgreSQL compose directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ postgresql_compose_project_dir }}"
+      mode: "0755"
+    - path: "{{ postgresql_data_dir }}"
+      mode: "0700"
+
+- name: Render PostgreSQL compose environment
+  ansible.builtin.copy:
+    dest: "{{ postgresql_compose_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      POSTGRES_DB={{ postgresql_database }}
+      POSTGRES_USER={{ postgresql_admin_user }}
+      POSTGRES_PASSWORD={{ postgresql_admin_password }}
+  no_log: true
+
+- name: Render PostgreSQL compose file
+  ansible.builtin.template:
+    src: postgres-compose.yml.j2
+    dest: "{{ postgresql_compose_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Validate PostgreSQL compose file
+  ansible.builtin.command:
+    cmd: "docker compose -f {{ postgresql_compose_file }} config --quiet"
+    chdir: "{{ postgresql_compose_project_dir }}"
+  changed_when: false
+
+- name: Start PostgreSQL compose service
+  ansible.builtin.command:
+    cmd: "docker compose -f {{ postgresql_compose_file }} -p {{ postgresql_compose_project_name }} up -d --remove-orphans"
+    chdir: "{{ postgresql_compose_project_dir }}"
+  register: postgresql_compose_up
+  changed_when: >-
+    'Started' in (postgresql_compose_up.stdout | default('')) or
+    'Created' in (postgresql_compose_up.stdout | default('')) or
+    'Recreated' in (postgresql_compose_up.stdout | default('')) or
+    'Pulled' in (postgresql_compose_up.stdout | default(''))
+
+- name: Validate PostgreSQL compose service
+  ansible.builtin.command:
+    cmd: "docker exec {{ postgresql_container_name }} pg_isready -U {{ postgresql_admin_user }} -d {{ postgresql_database }}"
+  register: postgresql_compose_ready
+  retries: 12
+  delay: 5
+  until: postgresql_compose_ready.rc == 0
+  changed_when: false
+  when: not ansible_check_mode

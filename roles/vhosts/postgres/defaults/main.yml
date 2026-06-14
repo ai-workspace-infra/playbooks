@@ -1,4 +1,5 @@
 ---
+postgresql_deploy_mode: compose
 postgresql_use_official_repo: false
 postgresql_package_dependencies:
   - ca-certificates
@@ -18,3 +19,14 @@ postgresql_port: 5432
 postgresql_password_encryption: scram-sha-256
 postgresql_allowed_hosts: []
 postgresql_auth_method: scram-sha-256
+
+postgresql_compose_project_dir: /opt/ai-workspace/postgres
+postgresql_compose_file: "{{ postgresql_compose_project_dir }}/docker-compose.yml"
+postgresql_compose_env_file: "{{ postgresql_compose_project_dir }}/postgres.env"
+postgresql_compose_project_name: ai-workspace-postgres
+postgresql_image: "postgres:17.7"
+postgresql_container_name: ai-workspace-postgres
+postgresql_data_dir: "{{ postgresql_compose_project_dir }}/data"
+postgresql_database: postgres
+postgresql_admin_user: postgres
+postgresql_admin_password: "{{ lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRESQL_PASSWORD') | default(lookup('password', '/tmp/.ai_workspace_postgres_password length=32 chars=ascii_letters,digits'), true), true) }}"
