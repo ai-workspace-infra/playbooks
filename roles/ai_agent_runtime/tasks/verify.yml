@@ -66,6 +66,16 @@
     - ai_agent_runtime_fonts_enabled | bool
     - ai_agent_runtime_verify_chinese_fonts | bool
 
+- name: Check agent CLI versions
+  ansible.builtin.command: "{{ item }} --version"
+  register: ai_agent_runtime_agent_cli_versions
+  changed_when: false
+  check_mode: false
+  loop: "{{ ai_agent_runtime_agent_cli_commands }}"
+  when:
+    - ai_agent_runtime_nodejs_enabled | bool
+    - ai_agent_runtime_agent_cli_commands | length > 0
+
 - name: Report AI runtime versions
   ansible.builtin.debug:
     msg:
@@ -77,3 +87,8 @@
       pandoc: "{{ (ai_agent_runtime_pandoc_version.stdout_lines | default(['disabled']))[0] }}"
       xelatex: "{{ (ai_agent_runtime_xelatex_version.stdout_lines | default(['disabled']))[0] }}"
       chinese_font_count: "{{ (ai_agent_runtime_chinese_fonts.stdout_lines | default([])) | length }}"
+      agent_cli: >-
+        {{
+          ai_agent_runtime_agent_cli_versions.results | default([])
+          | items2dict(key_name='item', value_name='stdout')
+        }}
