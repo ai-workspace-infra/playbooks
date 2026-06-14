@@ -11,14 +11,71 @@
     xworkspace_console_root: /home/ubuntu/xworkspace
     xworkspace_console_repo_dir: /home/ubuntu/xworkspace-console
     xworkspace_console_dashboard_dir: /home/ubuntu/xworkspace-console/dashboard
+    xworkspace_console_api_dir: /home/ubuntu/xworkspace-console/api
     xworkspace_console_scripts_dir: /home/ubuntu/xworkspace/scripts
+    xworkspace_console_config_dir: /home/ubuntu/.config/xworkspace
     xworkspace_console_url: http://127.0.0.1:17000
     xworkspace_console_port: 17000
+    xworkspace_console_api_port: 8788
     xworkspace_console_ttyd_port: 7681
     xworkspace_console_enable_ttyd: true
     xworkspace_console_install_chrome: true
     xworkspace_console_autostart_enabled: true
     xworkspace_console_ttyd_binary_path: /usr/local/bin/ttyd
+    ai_workspace_auth_token: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN') | default('', true) }}"
+    xworkspace_console_auth_token: >-
+      {{ lookup('ansible.builtin.env', 'XWORKSPACE_CONSOLE_AUTH_TOKEN')
+         | default(lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN'), true)
+         | default(lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN'), true)
+         | default(lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_AUTH_TOKEN'), true)
+         | default(lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN'), true) }}
+    xworkspace_console_review_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_REVIEW_AUTH_TOKEN') | default('', true) }}"
+    xworkspace_console_portal_services:
+      - key: litellm
+        name: LiteLLM Admin UI
+        url: http://localhost:4000/ui
+        openMode: iframe
+        healthUrl: http://127.0.0.1:4000/ui
+        description: Model routing and provider administration.
+        icon: chart
+        match:
+          - litellm
+          - lite
+        port: 4000
+        role: model-router
+      - key: openclaw
+        name: OpenClaw
+        url: http://127.0.0.1:18789/channels
+        openMode: external
+        healthUrl: http://127.0.0.1:18789/channels
+        description: Gateway dashboard.
+        icon: claw
+        match:
+          - openclaw
+          - gateway
+        port: 18789
+        role: gateway
+      - key: vault
+        name: Vault Server
+        url: http://127.0.0.1:8200/ui
+        openMode: external
+        healthUrl: http://127.0.0.1:8200/ui
+        description: Vault UI.
+        icon: shield
+        match:
+          - vault
+        port: 8200
+      - key: terminal
+        name: Terminal
+        url: http://127.0.0.1:7681
+        openMode: iframe
+        healthUrl: http://127.0.0.1:7681
+        description: Local ttyd terminal.
+        icon: terminal
+        match:
+          - ttyd
+          - terminal
+        port: 7681
   tasks:
     - name: Install Google Chrome apt repository prerequisites
       ansible.builtin.apt:
@@ -130,6 +187,7 @@
         - "{{ xworkspace_console_scripts_dir }}"
         - "{{ xworkspace_console_repo_dir }}"
         - "{{ xworkspace_console_home }}/.config"
+        - "{{ xworkspace_console_config_dir }}"
         - "{{ xworkspace_console_home }}/.config/autostart"
         - "{{ xworkspace_console_home }}/.config/systemd"
         - "{{ xworkspace_console_home }}/.config/systemd/user"
@@ -390,6 +448,48 @@
         npm install && npm run build
       become_user: "{{ xworkspace_console_user }}"
 
+    - name: Deploy AI Workspace portal service configuration
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_config_dir }}/portal-services.json"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0644"
+        content: "{{ {'services': xworkspace_console_portal_services} | to_nice_json }}\n"
+
+    - name: Deploy AI Workspace portal token file
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_config_dir }}/auth-token"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0600"
+        content: "{{ xworkspace_console_auth_token }}\n"
+      no_log: true
+
+    - name: Deploy AI Workspace shared auth token file
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_home }}/.ai_workspace_auth_token"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0600"
+        content: "{{ xworkspace_console_auth_token }}\n"
+      no_log: true
+
+    - name: Deploy XWorkspace API environment
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_config_dir }}/portal.env"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0600"
+        content: |
+          AI_WORKSPACE_AUTH_TOKEN={{ xworkspace_console_auth_token }}
+          XWORKSPACE_CONSOLE_AUTH_TOKEN={{ xworkspace_console_auth_token }}
+          BRIDGE_AUTH_TOKEN={{ xworkspace_console_auth_token }}
+          BRIDGE_REVIEW_AUTH_TOKEN={{ xworkspace_console_review_auth_token }}
+          XWORKMATE_BRIDGE_AUTH_TOKEN={{ xworkspace_console_auth_token }}
+          INTERNAL_SERVICE_TOKEN={{ xworkspace_console_auth_token }}
+          XWORKSPACE_PORTAL_SERVICES_FILE={{ xworkspace_console_config_dir }}/portal-services.json
+      no_log: true
+
     - name: Deploy XWorkspace Console service
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-console.service"
@@ -412,6 +512,29 @@
           [Install]
           WantedBy=default.target
 
+    - name: Deploy XWorkspace API service
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-api.service"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=XWorkspace status API
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          WorkingDirectory={{ xworkspace_console_api_dir }}
+          EnvironmentFile={{ xworkspace_console_config_dir }}/portal.env
+          ExecStart=/usr/bin/env go run .
+          Restart=always
+          RestartSec=2
+
+          [Install]
+          WantedBy=default.target
+
     - name: Deploy AI Agentic Workspace ttyd service
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-ttyd.service"
@@ -426,7 +549,7 @@
 
           [Service]
           Type=simple
-          ExecStart=/usr/bin/ttyd -i lo -p {{ xworkspace_console_ttyd_port }} -O login bash
+          ExecStart={{ xworkspace_console_ttyd_binary_path }} -i lo -p {{ xworkspace_console_ttyd_port }} -O login bash
           Restart=always
           RestartSec=2
 
@@ -437,6 +560,13 @@
       ansible.builtin.file:
         src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-console.service"
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-console.service"
+        state: link
+      become_user: "{{ xworkspace_console_user }}"
+
+    - name: Enable XWorkspace API service
+      ansible.builtin.file:
+        src: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-api.service"
+        dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-api.service"
         state: link
       become_user: "{{ xworkspace_console_user }}"
 
@@ -490,17 +620,34 @@
 
     - name: Reload systemd user daemon
       ansible.builtin.shell: |
-        su - {{ xworkspace_console_user }} -c "systemctl --user daemon-reload"
+        uid="$(id -u {{ xworkspace_console_user }})"
+        loginctl enable-linger {{ xworkspace_console_user }} || true
+        systemctl start "user@${uid}.service" || true
+        runuser -u {{ xworkspace_console_user }} -- env XDG_RUNTIME_DIR="/run/user/${uid}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${uid}/bus" systemctl --user daemon-reload
       become: true
 
     - name: Restart xworkspace-console service
       ansible.builtin.shell: |
-        su - {{ xworkspace_console_user }} -c "systemctl --user restart xworkspace-console.service"
+        uid="$(id -u {{ xworkspace_console_user }})"
+        loginctl enable-linger {{ xworkspace_console_user }} || true
+        systemctl start "user@${uid}.service" || true
+        runuser -u {{ xworkspace_console_user }} -- env XDG_RUNTIME_DIR="/run/user/${uid}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${uid}/bus" systemctl --user restart xworkspace-console.service
+      become: true
+
+    - name: Restart xworkspace-api service
+      ansible.builtin.shell: |
+        uid="$(id -u {{ xworkspace_console_user }})"
+        loginctl enable-linger {{ xworkspace_console_user }} || true
+        systemctl start "user@${uid}.service" || true
+        runuser -u {{ xworkspace_console_user }} -- env XDG_RUNTIME_DIR="/run/user/${uid}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${uid}/bus" systemctl --user restart xworkspace-api.service
       become: true
 
     - name: Restart xworkspace-ttyd service
       ansible.builtin.shell: |
-        su - {{ xworkspace_console_user }} -c "systemctl --user restart xworkspace-ttyd.service"
+        uid="$(id -u {{ xworkspace_console_user }})"
+        loginctl enable-linger {{ xworkspace_console_user }} || true
+        systemctl start "user@${uid}.service" || true
+        runuser -u {{ xworkspace_console_user }} -- env XDG_RUNTIME_DIR="/run/user/${uid}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${uid}/bus" systemctl --user restart xworkspace-ttyd.service
       become: true
 
     - name: Hide XFCE desktop icons

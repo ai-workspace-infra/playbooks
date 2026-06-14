@@ -41,7 +41,8 @@ gateway_openclaw_upstream_port: 18789
 gateway_openclaw_bind: loopback
 gateway_openclaw_mode: local
 gateway_openclaw_auth_mode: token
-gateway_openclaw_gateway_token: ""
+ai_workspace_auth_token: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN') | default('', true) }}"
+gateway_openclaw_gateway_token: "{{ lookup('ansible.builtin.env', 'OPENCLAW_GATEWAY_TOKEN') | default(ai_workspace_auth_token, true) }}"
 gateway_openclaw_trusted_proxies:
   - 127.0.0.1
   - "::1"

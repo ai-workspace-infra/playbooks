@@ -3,7 +3,8 @@ xworkmate_bridge_service_name: xworkmate-bridge
 xworkmate_bridge_service_user: ubuntu
 xworkmate_bridge_service_group: ubuntu
 xworkmate_bridge_service_home: "/home/{{ xworkmate_bridge_service_user }}"
-xworkmate_bridge_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true), true) }}"
+ai_workspace_auth_token: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN') | default('', true) }}"
+xworkmate_bridge_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_AUTH_TOKEN') | default(lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default(ai_workspace_auth_token, true), true), true) }}"
 xworkmate_bridge_review_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_REVIEW_AUTH_TOKEN') | default('', true) }}"
 xworkmate_bridge_listen_host: 127.0.0.1
 xworkmate_bridge_listen_port: 8787
@@ -43,14 +44,15 @@ deploy_acp_gemini: true
 deploy_acp_hermes: true
 
 # Unified domain settings
-xworkmate_bridge_domain: xworkmate-bridge.svc.plus
+ai_workspace_public_domain: "{{ lookup('ansible.builtin.env', 'SERVER_DOMAIN') | default(lookup('ansible.builtin.env', 'ACP_BRIDGE_DOMAIN') | default(lookup('ansible.builtin.env', 'BRIDGE_DOMAIN') | default('xworkmate-bridge.svc.plus', true), true), true) }}"
+xworkmate_bridge_domain: "{{ lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_DOMAIN') | default(ai_workspace_public_domain, true) }}"
 
 # When false, disables public Caddy access to XWorkmate Bridge.
 xworkmate_bridge_public_access: "{{ true if ai_workspace_security_level != 'strict' else false }}"
 
-xworkmate_bridge_public_base_url: https://xworkmate-bridge.svc.plus
-xworkmate_bridge_service_domain: xworkmate-bridge.svc.plus
-xworkmate_bridge_service_public_base_url: https://xworkmate-bridge.svc.plus
+xworkmate_bridge_public_base_url: "https://{{ xworkmate_bridge_domain }}"
+xworkmate_bridge_service_domain: "{{ xworkmate_bridge_domain }}"
+xworkmate_bridge_service_public_base_url: "https://{{ xworkmate_bridge_domain }}"
 xworkmate_bridge_validation_origin: https://xworkmate.svc.plus
 
 # Caddy configuration paths

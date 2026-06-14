@@ -10,7 +10,8 @@ litellm_config_file: "{{ litellm_config_dir }}/config.yaml"
 litellm_env_file: "{{ litellm_config_dir }}/litellm.env"
 litellm_systemd_unit_path: "/etc/systemd/system/{{ litellm_service_name }}.service"
 
-litellm_master_key: "{{ lookup('ansible.builtin.env', 'LITELLM_MASTER_KEY') | default('', true) }}"
+ai_workspace_auth_token: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN') | default('', true) }}"
+litellm_master_key: "{{ lookup('ansible.builtin.env', 'LITELLM_MASTER_KEY') | default(ai_workspace_auth_token, true) }}"
 litellm_salt_key: "{{ lookup('ansible.builtin.env', 'LITELLM_SALT_KEY') | default(lookup('password', '/tmp/.litellm_salt_key length=32 chars=ascii_letters,digits'), true) }}"
 
 litellm_ui_username: "{{ lookup('ansible.builtin.env', 'LITELLM_UI_USERNAME') | default('admin', true) }}"

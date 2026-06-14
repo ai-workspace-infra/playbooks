@@ -2,3 +2,18 @@
   script: files/setup.sh {{ domain }} {{ namespace }} {{ item.secret_name }} {{ vault_public_access | bool | lower }}
   loop: "{{ tls }}"
   when: inventory_hostname in groups[group]
+
+- name: Bootstrap Vault admin userpass auth
+  ansible.builtin.script: >-
+    files/init_vault_admin.sh
+    --username {{ vault_admin_username | quote }}
+    --password {{ vault_admin_password | quote }}
+    --vault-addr {{ vault_admin_addr | quote }}
+    --root-token {{ vault_server_root_access_token | quote }}
+    --output-dir {{ vault_admin_output_dir | quote }}
+    --ui-url {{ vault_admin_ui_url | quote }}
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - inventory_hostname in groups[group]
+    - vault_admin_init_enabled | bool

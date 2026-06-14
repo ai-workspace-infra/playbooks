@@ -2,6 +2,14 @@ group: master
 namespace: vault
 # When false, disables the Ingress for public access.
 vault_public_access: false
+ai_workspace_auth_token: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN') | default('', true) }}"
+vault_server_root_access_token: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN') | default(ai_workspace_auth_token, true), true) }}"
+vault_admin_init_enabled: "{{ (vault_server_root_access_token | trim | length > 0) and (vault_admin_password | trim | length > 0) }}"
+vault_admin_username: admin
+vault_admin_password: "{{ lookup('ansible.builtin.env', 'VAULT_ADMIN_PASSWORD') | default(ai_workspace_auth_token, true) }}"
+vault_admin_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('http://127.0.0.1:8200', true) }}"
+vault_admin_ui_url: "{{ vault_admin_addr }}/ui/vault/auth?with=userpass"
+vault_admin_output_dir: "{{ lookup('ansible.builtin.env', 'VAULT_ADMIN_OUTPUT_DIR') | default('/tmp', true) }}"
 update_secret: true
 tls:
   - secret_name: vault-tls
