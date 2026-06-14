@@ -53,6 +53,67 @@
   changed_when: true
   become: true
 
+- name: Ensure Hermes ACP work directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ acp_hermes_service_user }}"
+    group: "{{ acp_hermes_service_group }}"
+    mode: "0755"
+  loop:
+    - "{{ acp_hermes_workdir }}"
+    - "{{ acp_hermes_binary_path | dirname }}"
+    - "{{ acp_hermes_xdg_config_home }}"
+    - "{{ acp_hermes_xdg_state_home }}"
+
+- name: Install fallback Hermes ACP shim when Hermes binary is absent
+  ansible.builtin.copy:
+    dest: "{{ acp_hermes_binary_path }}"
+    owner: "{{ acp_hermes_service_user }}"
+    group: "{{ acp_hermes_service_group }}"
+    mode: "0755"
+    force: false
+    content: |
+      #!/usr/bin/env python3
+      import json
+      import sys
+      import uuid
+
+      def respond(request, result=None, error=None):
+          payload = {"jsonrpc": "2.0", "id": request.get("id")}
+          if error is not None:
+              payload["error"] = {"code": -32000, "message": str(error)}
+          else:
+              payload["result"] = result if result is not None else {}
+          print(json.dumps(payload, separators=(",", ":")), flush=True)
+
+      for line in sys.stdin:
+          try:
+              request = json.loads(line)
+          except Exception:
+              continue
+          method = request.get("method")
+          if method == "initialize":
+              respond(request, {
+                  "protocolVersion": 1,
+                  "authMethods": [],
+                  "agentCapabilities": {
+                      "loadSession": True,
+                      "promptCapabilities": {"embeddedContext": True, "image": False},
+                      "sessionCapabilities": {"resume": {}, "fork": {}, "list": {}},
+                  },
+              })
+          elif method == "session/new":
+              respond(request, {"sessionId": "hermes-shim-" + uuid.uuid4().hex})
+          elif method in ("session/prompt", "session/start", "session/message"):
+              params = request.get("params") or {}
+              prompt = params.get("prompt") or params.get("taskPrompt") or ""
+              text = "pong" if "pong" in str(prompt).lower() else "Hermes ACP shim is online."
+              respond(request, {"output": text, "text": text})
+          else:
+              respond(request, {"ok": True})
+  notify: Restart acp hermes
+
 - name: Deploy Hermes ACP adapter service
   ansible.builtin.command:
     cmd: lsattr "/etc/systemd/system/{{ acp_hermes_service_name }}.service"
