@@ -66,12 +66,32 @@
   become: true
   become_user: "{{ litellm_service_user }}"
 
+- name: Resolve LiteLLM Python site-packages path
+  ansible.builtin.shell: |
+    python3 - <<'PY'
+    import glob
+    import os
+    paths = glob.glob(os.path.expanduser("~/.local/lib/python*/site-packages/litellm/proxy"))
+    if not paths:
+        raise SystemExit("litellm proxy package path not found")
+    print(sorted(paths)[-1])
+    PY
+  register: litellm_proxy_package_path
+  changed_when: false
+  become: true
+  become_user: "{{ litellm_service_user }}"
+
+- name: Set LiteLLM Python paths
+  ansible.builtin.set_fact:
+    litellm_proxy_dir: "{{ litellm_proxy_package_path.stdout | trim }}"
+    litellm_python_site_packages: "{{ (litellm_proxy_package_path.stdout | trim) | dirname | dirname }}"
+
 - name: Generate Prisma Python Client
   ansible.builtin.shell: |
     export PATH={{ litellm_service_home }}/.local/bin:$PATH
     prisma generate
   args:
-    chdir: "{{ litellm_service_home }}/.local/lib/python3.12/site-packages/litellm/proxy/"
+    chdir: "{{ litellm_proxy_dir }}"
   become: true
   become_user: "{{ litellm_service_user }}"
   changed_when: false

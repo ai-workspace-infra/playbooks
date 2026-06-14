@@ -66,6 +66,26 @@
     path: "{{ postgresql_conf_path }}"
   register: postgresql_conf_file
 
+- name: Discover PostgreSQL configuration file when default path is absent
+  ansible.builtin.shell: |
+    set -e
+    find /etc/postgresql -path '*/main/postgresql.conf' -type f | sort -V | tail -n 1
+  register: postgresql_conf_discovery
+  changed_when: false
+  when: not postgresql_conf_file.stat.exists
+
+- name: Use discovered PostgreSQL configuration file
+  ansible.builtin.set_fact:
+    postgresql_conf_path: "{{ postgresql_conf_discovery.stdout | trim }}"
+  when:
+    - not postgresql_conf_file.stat.exists
+    - postgresql_conf_discovery.stdout | trim | length > 0
+
+- name: Refresh facts for PostgreSQL configuration file
+  ansible.builtin.stat:
+    path: "{{ postgresql_conf_path }}"
+  register: postgresql_conf_file
+
 - name: Configure listen_addresses in postgresql.conf
   ansible.builtin.lineinfile:
     path: "{{ postgresql_conf_path }}"
@@ -93,6 +113,26 @@
   notify: Restart PostgreSQL
 
 - name: Ensure pg_hba.conf exists
+  ansible.builtin.stat:
+    path: "{{ postgresql_hba_path }}"
+  register: postgresql_hba_file
+
+- name: Discover PostgreSQL pg_hba.conf when default path is absent
+  ansible.builtin.shell: |
+    set -e
+    find /etc/postgresql -path '*/main/pg_hba.conf' -type f | sort -V | tail -n 1
+  register: postgresql_hba_discovery
+  changed_when: false
+  when: not postgresql_hba_file.stat.exists
+
+- name: Use discovered PostgreSQL pg_hba.conf
+  ansible.builtin.set_fact:
+    postgresql_hba_path: "{{ postgresql_hba_discovery.stdout | trim }}"
+  when:
+    - not postgresql_hba_file.stat.exists
+    - postgresql_hba_discovery.stdout | trim | length > 0
+
+- name: Refresh facts for PostgreSQL pg_hba.conf
   ansible.builtin.stat:
     path: "{{ postgresql_hba_path }}"
   register: postgresql_hba_file
