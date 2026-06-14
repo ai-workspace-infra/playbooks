@@ -414,9 +414,25 @@
   when:
     - not ansible_check_mode
 
+- name: Resolve OpenClaw service user uid
+  ansible.builtin.command:
+    cmd: "id -u {{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_resolved_service_uid
+  changed_when: false
+  check_mode: false
+
+- name: Set OpenClaw effective service uid
+  ansible.builtin.set_fact:
+    gateway_openclaw_effective_service_uid: >-
+      {{
+        gateway_openclaw_service_uid
+        if (gateway_openclaw_service_uid | string | trim | length > 0)
+        else gateway_openclaw_resolved_service_uid.stdout
+      }}
+
 - name: Ensure OpenClaw service user manager is running
   ansible.builtin.systemd:
-    name: "user@{{ gateway_openclaw_service_uid }}.service"
+    name: "user@{{ gateway_openclaw_effective_service_uid }}.service"
     state: started
   when:
     - not ansible_check_mode
@@ -461,11 +477,11 @@
   ansible.builtin.shell: |
     set -eu
     loginctl enable-linger {{ gateway_openclaw_service_user }} || true
-    systemctl start "user@{{ gateway_openclaw_service_uid }}.service" || true
+    systemctl start "user@{{ gateway_openclaw_effective_service_uid }}.service" || true
     runuser -u {{ gateway_openclaw_service_user }} -- env \
       HOME={{ gateway_openclaw_home | quote }} \
-      XDG_RUNTIME_DIR=/run/user/{{ gateway_openclaw_service_uid }} \
-      DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus \
+      XDG_RUNTIME_DIR=/run/user/{{ gateway_openclaw_effective_service_uid }} \
+      DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ gateway_openclaw_effective_service_uid }}/bus \
       systemctl --user daemon-reload
   args:
     executable: /bin/bash
@@ -478,11 +494,11 @@
   ansible.builtin.shell: |
     set -eu
     loginctl enable-linger {{ gateway_openclaw_service_user }} || true
-    systemctl start "user@{{ gateway_openclaw_service_uid }}.service" || true
+    systemctl start "user@{{ gateway_openclaw_effective_service_uid }}.service" || true
     runuser -u {{ gateway_openclaw_service_user }} -- env \
       HOME={{ gateway_openclaw_home | quote }} \
-      XDG_RUNTIME_DIR=/run/user/{{ gateway_openclaw_service_uid }} \
-      DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus \
+      XDG_RUNTIME_DIR=/run/user/{{ gateway_openclaw_effective_service_uid }} \
+      DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ gateway_openclaw_effective_service_uid }}/bus \
       systemctl --user enable {{ '--now' if not (gateway_openclaw_user_service_unit.changed | default(false)) else '' }} {{ gateway_openclaw_service_name }}.service
   args:
     executable: /bin/bash
@@ -498,11 +514,11 @@
   ansible.builtin.shell: |
     set -eu
     loginctl enable-linger {{ gateway_openclaw_service_user }} || true
-    systemctl start "user@{{ gateway_openclaw_service_uid }}.service" || true
+    systemctl start "user@{{ gateway_openclaw_effective_service_uid }}.service" || true
     runuser -u {{ gateway_openclaw_service_user }} -- env \
       HOME={{ gateway_openclaw_home | quote }} \
-      XDG_RUNTIME_DIR=/run/user/{{ gateway_openclaw_service_uid }} \
-      DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus \
+      XDG_RUNTIME_DIR=/run/user/{{ gateway_openclaw_effective_service_uid }} \
+      DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ gateway_openclaw_effective_service_uid }}/bus \
       systemctl --user restart {{ gateway_openclaw_service_name }}.service
   args:
     executable: /bin/bash

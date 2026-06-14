@@ -6,14 +6,22 @@
     - not ansible_check_mode
 
 - name: Restart openclaw gateway
-  ansible.builtin.command:
-    cmd: "systemctl --user restart {{ gateway_openclaw_service_name }}.service"
-  environment:
-    HOME: "{{ gateway_openclaw_home }}"
-    XDG_RUNTIME_DIR: "/run/user/{{ gateway_openclaw_service_uid }}"
-    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus"
+  ansible.builtin.shell: |
+    set -eu
+    uid="{{ gateway_openclaw_effective_service_uid | default(gateway_openclaw_service_uid, true) }}"
+    if [ -z "$uid" ]; then
+      uid="$(id -u {{ gateway_openclaw_service_user }})"
+    fi
+    loginctl enable-linger {{ gateway_openclaw_service_user }} || true
+    systemctl start "user@${uid}.service" || true
+    runuser -u {{ gateway_openclaw_service_user }} -- env \
+      HOME={{ gateway_openclaw_home | quote }} \
+      XDG_RUNTIME_DIR="/run/user/${uid}" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${uid}/bus" \
+      systemctl --user restart {{ gateway_openclaw_service_name }}.service
+  args:
+    executable: /bin/bash
   become: true
-  become_user: "{{ gateway_openclaw_service_user }}"
   when:
     - not ansible_check_mode
 
