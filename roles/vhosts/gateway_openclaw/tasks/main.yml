@@ -458,30 +458,35 @@
     - not ansible_check_mode
 
 - name: Reload OpenClaw user systemd manager
-  ansible.builtin.command:
-    cmd: systemctl --user daemon-reload
-  environment:
-    HOME: "{{ gateway_openclaw_home }}"
-    XDG_RUNTIME_DIR: "/run/user/{{ gateway_openclaw_service_uid }}"
-    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus"
+  ansible.builtin.shell: |
+    set -eu
+    loginctl enable-linger {{ gateway_openclaw_service_user }} || true
+    systemctl start "user@{{ gateway_openclaw_service_uid }}.service" || true
+    runuser -u {{ gateway_openclaw_service_user }} -- env \
+      HOME={{ gateway_openclaw_home | quote }} \
+      XDG_RUNTIME_DIR=/run/user/{{ gateway_openclaw_service_uid }} \
+      DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus \
+      systemctl --user daemon-reload
+  args:
+    executable: /bin/bash
   become: true
-  become_user: "{{ gateway_openclaw_service_user }}"
   changed_when: false
   when:
     - not ansible_check_mode
 
 - name: Ensure OpenClaw user gateway service is enabled and running
-  ansible.builtin.command:
-    cmd: >-
-      systemctl --user enable
-      {{ '--now' if not (gateway_openclaw_user_service_unit.changed | default(false)) else '' }}
-      {{ gateway_openclaw_service_name }}.service
-  environment:
-    HOME: "{{ gateway_openclaw_home }}"
-    XDG_RUNTIME_DIR: "/run/user/{{ gateway_openclaw_service_uid }}"
-    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus"
+  ansible.builtin.shell: |
+    set -eu
+    loginctl enable-linger {{ gateway_openclaw_service_user }} || true
+    systemctl start "user@{{ gateway_openclaw_service_uid }}.service" || true
+    runuser -u {{ gateway_openclaw_service_user }} -- env \
+      HOME={{ gateway_openclaw_home | quote }} \
+      XDG_RUNTIME_DIR=/run/user/{{ gateway_openclaw_service_uid }} \
+      DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus \
+      systemctl --user enable {{ '--now' if not (gateway_openclaw_user_service_unit.changed | default(false)) else '' }} {{ gateway_openclaw_service_name }}.service
+  args:
+    executable: /bin/bash
   become: true
-  become_user: "{{ gateway_openclaw_service_user }}"
   register: gateway_openclaw_user_service_enable
   changed_when: >-
     'Created symlink' in (gateway_openclaw_user_service_enable.stdout | default('')) or
@@ -490,14 +495,18 @@
     - not ansible_check_mode
 
 - name: Restart OpenClaw user gateway service after unit changes
-  ansible.builtin.command:
-    cmd: "systemctl --user restart {{ gateway_openclaw_service_name }}.service"
-  environment:
-    HOME: "{{ gateway_openclaw_home }}"
-    XDG_RUNTIME_DIR: "/run/user/{{ gateway_openclaw_service_uid }}"
-    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus"
+  ansible.builtin.shell: |
+    set -eu
+    loginctl enable-linger {{ gateway_openclaw_service_user }} || true
+    systemctl start "user@{{ gateway_openclaw_service_uid }}.service" || true
+    runuser -u {{ gateway_openclaw_service_user }} -- env \
+      HOME={{ gateway_openclaw_home | quote }} \
+      XDG_RUNTIME_DIR=/run/user/{{ gateway_openclaw_service_uid }} \
+      DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ gateway_openclaw_service_uid }}/bus \
+      systemctl --user restart {{ gateway_openclaw_service_name }}.service
+  args:
+    executable: /bin/bash
   become: true
-  become_user: "{{ gateway_openclaw_service_user }}"
   when:
     - gateway_openclaw_user_service_unit.changed | default(false)
     - not ansible_check_mode
