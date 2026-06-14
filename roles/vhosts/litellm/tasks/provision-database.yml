@@ -14,41 +14,71 @@
 
 - name: Create PostgreSQL user if not exists
   ansible.builtin.shell: |
+    {% if litellm_database_provisioner == 'docker' %}
     docker exec -i postgresql-svc-plus psql -U postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ litellm_database_user }}'" | grep -q 1 || \
     docker exec -i postgresql-svc-plus psql -U postgres -c "CREATE USER {{ litellm_database_user }} WITH PASSWORD '{{ litellm_database_password }}';"
+    {% else %}
+    psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ litellm_database_user }}'" | grep -q 1 || \
+    psql -c "CREATE USER {{ litellm_database_user }} WITH PASSWORD '{{ litellm_database_password }}';"
+    {% endif %}
   args:
     executable: /bin/bash
+  become: true
+  become_user: "{{ 'root' if litellm_database_provisioner == 'docker' else 'postgres' }}"
   register: create_user_result
   changed_when: "'CREATE ROLE' in create_user_result.stdout | default('')"
+  no_log: true
 
 - name: Create PostgreSQL database if not exists
   ansible.builtin.shell: |
+    {% if litellm_database_provisioner == 'docker' %}
     docker exec -i postgresql-svc-plus psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='{{ litellm_database_name }}'" | grep -q 1 || \
     docker exec -i postgresql-svc-plus psql -U postgres -c "CREATE DATABASE {{ litellm_database_name }} OWNER {{ litellm_database_user }};"
+    {% else %}
+    psql -tAc "SELECT 1 FROM pg_database WHERE datname='{{ litellm_database_name }}'" | grep -q 1 || \
+    psql -c "CREATE DATABASE {{ litellm_database_name }} OWNER {{ litellm_database_user }};"
+    {% endif %}
   args:
     executable: /bin/bash
+  become: true
+  become_user: "{{ 'root' if litellm_database_provisioner == 'docker' else 'postgres' }}"
   register: create_db_result
   changed_when: "'CREATE DATABASE' in create_db_result.stdout | default('')"
+  no_log: true
 
 - name: Grant privileges on database to user
   ansible.builtin.shell: |
+    {% if litellm_database_provisioner == 'docker' %}
     docker exec -i postgresql-svc-plus psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE {{ litellm_database_name }} TO {{ litellm_database_user }};"
+    {% else %}
+    psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ litellm_database_name }} TO {{ litellm_database_user }};"
+    {% endif %}
   args:
     executable: /bin/bash
+  become: true
+  become_user: "{{ 'root' if litellm_database_provisioner == 'docker' else 'postgres' }}"
   changed_when: false
+  no_log: true
 
 
 
 - name: Grant schema privileges to user
   ansible.builtin.shell: |
-    docker exec -i postgresql-svc-plus psql -U postgres -d {{ litellm_database_name }} -c "
+    {% if litellm_database_provisioner == 'docker' %}
+    docker exec -i postgresql-svc-plus psql -U postgres -d {{ litellm_database_name }} <<'SQL'
+    {% else %}
+    psql -d {{ litellm_database_name }} <<'SQL'
+    {% endif %}
       GRANT ALL ON SCHEMA public TO {{ litellm_database_user }};
       ALTER SCHEMA public OWNER TO {{ litellm_database_user }};
       GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ litellm_database_user }};
       GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ litellm_database_user }};
       ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO {{ litellm_database_user }};
       ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO {{ litellm_database_user }};
-    "
+    SQL
   args:
     executable: /bin/bash
+  become: true
+  become_user: "{{ 'root' if litellm_database_provisioner == 'docker' else 'postgres' }}"
   changed_when: false
+  no_log: true

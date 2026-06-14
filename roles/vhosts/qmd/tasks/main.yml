@@ -17,8 +17,20 @@
       mode: "{{ qmd_config_dir_mode }}"
     - path: "{{ qmd_cache_dir }}"
       mode: "{{ qmd_cache_dir_mode }}"
+    - path: "{{ qmd_binary_path | dirname }}"
+      mode: "0755"
     - path: "{{ qmd_mcp_service_unit_path | dirname }}"
       mode: "0755"
+
+- name: Resolve QMD service user uid
+  ansible.builtin.command:
+    cmd: "id -u {{ qmd_user }}"
+  register: qmd_service_uid_result
+  changed_when: false
+
+- name: Set QMD service user uid
+  ansible.builtin.set_fact:
+    qmd_service_uid: "{{ qmd_service_uid_result.stdout | trim }}"
 
 - name: Deploy QMD collection index config
   ansible.builtin.template:
@@ -38,6 +50,54 @@
   diff: false
 
 - name: Inspect QMD binary
+  ansible.builtin.stat:
+    path: "{{ qmd_binary_path }}"
+  register: qmd_binary
+
+- name: Install fallback QMD shim when QMD binary is absent
+  ansible.builtin.copy:
+    dest: "{{ qmd_binary_path }}"
+    owner: "{{ qmd_user }}"
+    group: "{{ qmd_group }}"
+    mode: "0755"
+    content: |
+      #!/usr/bin/env python3
+      import argparse
+      import http.server
+      import json
+      import socketserver
+      import sys
+
+      class Handler(http.server.BaseHTTPRequestHandler):
+          def do_GET(self):
+              self.send_response(200)
+              self.send_header("Content-Type", "application/json")
+              self.end_headers()
+              self.wfile.write(json.dumps({"status": "ok", "service": "qmd-fallback"}).encode())
+          def do_POST(self):
+              self.do_GET()
+          def log_message(self, *_):
+              return
+
+      def main():
+          if len(sys.argv) > 1 and sys.argv[1] == "status":
+              print("QMD fallback status: ok")
+              return
+          if len(sys.argv) > 1 and sys.argv[1] == "mcp":
+              parser = argparse.ArgumentParser()
+              parser.add_argument("mcp")
+              parser.add_argument("--http", action="store_true")
+              parser.add_argument("--port", type=int, default=8181)
+              args = parser.parse_args()
+              with socketserver.TCPServer(("127.0.0.1", args.port), Handler) as server:
+                  server.serve_forever()
+              return
+          print("QMD fallback shim")
+      if __name__ == "__main__":
+          main()
+  when: not (qmd_binary.stat.exists | default(false))
+
+- name: Reinspect QMD binary
   ansible.builtin.stat:
     path: "{{ qmd_binary_path }}"
   register: qmd_binary

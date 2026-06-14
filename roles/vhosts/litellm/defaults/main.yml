@@ -40,9 +40,10 @@ litellm_api_caddy_strict_whitelist: false
 # Set litellm_database_host to empty string to disable DB (no UI login).
 # When set, the provision-database task creates the litellm DB + user for you.
 # =============================================================================
-litellm_database_host: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_HOST') | default('', true) }}"
-litellm_database_port: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_PORT') | default('15432', true) }}"
-litellm_database_sslmode: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_SSLMODE') | default('require', true) }}"
+litellm_database_host: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_HOST') | default('127.0.0.1', true) }}"
+litellm_database_port: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_PORT') | default('5432', true) }}"
+litellm_database_sslmode: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_SSLMODE') | default('disable', true) }}"
+litellm_database_provisioner: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_PROVISIONER') | default('local', true) }}"
 litellm_database_name: litellm
 litellm_database_user: litellm
 litellm_database_password: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_PASSWORD') | default(lookup('password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
