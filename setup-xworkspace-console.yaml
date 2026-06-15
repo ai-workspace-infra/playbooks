@@ -13,6 +13,8 @@
     xworkspace_console_home: /home/ubuntu
     xworkspace_console_root: /home/ubuntu/xworkspace
     xworkspace_console_repo_dir: /home/ubuntu/xworkspace-console
+    xworkspace_console_source_repo: "https://github.com/ai-workspace-lab/xworkspace-console.git"
+    xworkspace_console_source_version: "main"
     xworkspace_console_dashboard_dir: /home/ubuntu/xworkspace-console/dashboard
     xworkspace_console_api_dir: /home/ubuntu/xworkspace-console/api
     xworkspace_console_scripts_dir: /home/ubuntu/xworkspace/scripts
@@ -440,9 +442,9 @@
 
     - name: Clone xworkspace-console repository
       ansible.builtin.git:
-        repo: "https://github.com/ai-workspace-lab/xworkspace-console.git"
+        repo: "{{ xworkspace_console_source_repo }}"
         dest: "{{ xworkspace_console_repo_dir }}"
-        version: "main"
+        version: "{{ xworkspace_console_source_version }}"
         depth: 1
         force: true
       become_user: "{{ xworkspace_console_user }}"
