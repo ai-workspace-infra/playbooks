@@ -3,6 +3,9 @@
   hosts: all
   become: true
   gather_facts: true
+  module_defaults:
+    ansible.builtin.apt:
+      lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(900) | int }}"
   roles:
     - role: roles/vhosts/postgres
       tags: [postgresql]
