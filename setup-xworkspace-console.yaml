@@ -15,8 +15,16 @@
     xworkspace_console_repo_dir: /home/ubuntu/xworkspace-console
     xworkspace_console_source_repo: "https://github.com/ai-workspace-lab/xworkspace-console.git"
     xworkspace_console_source_version: "main"
+    xworkspace_console_runtime_archive: "{{ lookup('ansible.builtin.env', 'XWORKSPACE_CONSOLE_RUNTIME_ARCHIVE') | default('', true) }}"
+    ai_workspace_prebuilt_components_required: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_PREBUILT_COMPONENTS_REQUIRED') | default('false', true) | bool }}"
     xworkspace_console_dashboard_dir: /home/ubuntu/xworkspace-console/dashboard
     xworkspace_console_api_dir: /home/ubuntu/xworkspace-console/api
+    xworkspace_console_api_binary: /home/ubuntu/xworkspace-console/bin/xworkspace-api
+    xworkspace_console_runtime_marker: /home/ubuntu/xworkspace-console/.runtime-archive-sha256
+    xworkspace_console_api_working_dir: >-
+      {{ xworkspace_console_repo_dir if xworkspace_console_runtime_archive | length > 0 else xworkspace_console_api_dir }}
+    xworkspace_console_api_exec: >-
+      {{ xworkspace_console_api_binary if xworkspace_console_runtime_archive | length > 0 else '/usr/bin/env go run .' }}
     xworkspace_console_scripts_dir: /home/ubuntu/xworkspace/scripts
     xworkspace_console_config_dir: /home/ubuntu/.config/xworkspace
     xworkspace_console_url: http://127.0.0.1:17000
@@ -454,6 +462,54 @@
             --disable-sync \
             --new-window
 
+    - name: Validate packaged XWorkspace Console runtime
+      ansible.builtin.stat:
+        path: "{{ xworkspace_console_runtime_archive }}"
+      register: xworkspace_console_runtime_archive_stat
+      when: xworkspace_console_runtime_archive | length > 0
+
+    - name: Require packaged XWorkspace Console runtime
+      ansible.builtin.assert:
+        that:
+          - xworkspace_console_runtime_archive | length > 0
+          - xworkspace_console_runtime_archive_stat.stat.exists | default(false)
+        fail_msg: "A valid XWORKSPACE_CONSOLE_RUNTIME_ARCHIVE is required in prebuilt-only mode."
+      when: ai_workspace_prebuilt_components_required
+
+    - name: Inspect installed XWorkspace Console runtime marker
+      ansible.builtin.slurp:
+        path: "{{ xworkspace_console_runtime_marker }}"
+      register: xworkspace_console_runtime_marker_content
+      failed_when: false
+      when: xworkspace_console_runtime_archive | length > 0
+
+    - name: Install packaged XWorkspace Console runtime
+      ansible.builtin.unarchive:
+        src: "{{ xworkspace_console_runtime_archive }}"
+        dest: "{{ xworkspace_console_repo_dir | dirname }}"
+        remote_src: true
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+      when:
+        - xworkspace_console_runtime_archive | length > 0
+        - xworkspace_console_runtime_archive_stat.stat.exists | default(false)
+        - >-
+          (xworkspace_console_runtime_marker_content.content | default('') | b64decode | trim)
+          != (xworkspace_console_runtime_archive_stat.stat.checksum | default(''))
+          or not (xworkspace_console_api_binary is file)
+          or not ((xworkspace_console_dashboard_dir ~ '/dist/index.html') is file)
+
+    - name: Record installed XWorkspace Console runtime checksum
+      ansible.builtin.copy:
+        dest: "{{ xworkspace_console_runtime_marker }}"
+        owner: "{{ xworkspace_console_user }}"
+        group: "{{ xworkspace_console_user }}"
+        mode: "0644"
+        content: "{{ xworkspace_console_runtime_archive_stat.stat.checksum }}\n"
+      when:
+        - xworkspace_console_runtime_archive | length > 0
+        - xworkspace_console_runtime_archive_stat.stat.exists | default(false)
+
     - name: Clone xworkspace-console repository
       ansible.builtin.git:
         repo: "{{ xworkspace_console_source_repo }}"
@@ -462,12 +518,28 @@
         depth: 1
         force: true
       become_user: "{{ xworkspace_console_user }}"
+      register: xworkspace_console_source_checkout
+      when: xworkspace_console_runtime_archive | length == 0
 
     - name: Build dashboard assets on target
       ansible.builtin.shell: |
+        set -euo pipefail
         cd "{{ xworkspace_console_dashboard_dir }}"
+        source_commit="$(git -C "{{ xworkspace_console_repo_dir }}" rev-parse HEAD)"
+        marker=".ai-workspace-build-commit"
+        if [ -f "dist/index.html" ] && [ "$(cat "$marker" 2>/dev/null || true)" = "$source_commit" ]; then
+          echo "build=unchanged"
+          exit 0
+        fi
         npm install && npm run build
+        printf '%s\n' "$source_commit" > "$marker"
+        echo "build=changed"
+      args:
+        executable: /bin/bash
       become_user: "{{ xworkspace_console_user }}"
+      register: xworkspace_console_dashboard_build
+      changed_when: "'build=changed' in (xworkspace_console_dashboard_build.stdout | default(''))"
+      when: xworkspace_console_runtime_archive | length == 0
 
     - name: Deploy AI Workspace portal service configuration
       ansible.builtin.copy:
@@ -547,9 +619,9 @@
 
           [Service]
           Type=simple
-          WorkingDirectory={{ xworkspace_console_api_dir }}
+          WorkingDirectory={{ xworkspace_console_api_working_dir }}
           EnvironmentFile={{ xworkspace_console_config_dir }}/portal.env
-          ExecStart=/usr/bin/env go run .
+          ExecStart={{ xworkspace_console_api_exec }}
           Restart=always
           RestartSec=2
 

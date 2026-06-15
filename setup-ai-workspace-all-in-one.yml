@@ -27,59 +27,7 @@
 #
 # ==============================================================================
 
-- name: Validate AI Workspace runtime modes
-  hosts: all
-  gather_facts: false
-  vars:
-    ai_workspace_runtime_modes: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_RUNTIME_MODES') | default('docker,systemd', true) }}"
-  tasks:
-    - name: Normalize runtime mode list
-      ansible.builtin.set_fact:
-        ai_workspace_runtime_mode_list: >-
-          {{
-            ai_workspace_runtime_modes.split(',')
-            | map('trim')
-            | reject('equalto', '')
-            | list
-            if ai_workspace_runtime_modes is string
-            else ai_workspace_runtime_modes
-          }}
+- import_playbook: setup-ai-workspace-preflight.yml
 
-    - name: Validate runtime mode combination
-      ansible.builtin.assert:
-        that:
-          - ai_workspace_runtime_mode_list | length > 0
-          - not ('docker' in ai_workspace_runtime_mode_list and 'k3s' in ai_workspace_runtime_mode_list)
-          - ai_workspace_runtime_mode_list | difference(['docker', 'k3s', 'systemd']) | length == 0
-        fail_msg: "docker 与 k3s 互斥；请选择 docker/k3s/systemd 的合法组合。"
-
-# 基础工作区与控制台
 - import_playbook: setup-nodejs.yml
-- import_playbook: setup-xworkspace-console.yaml
-- import_playbook: setup-ai-agent-skills.yml
-
-# 网关运行时先启动，供 xworkmate-bridge 健康检查聚合
-- import_playbook: deploy_gateway_openclaw.yml
-
-# 核心网关与桥接
-- import_playbook: deploy_xworkmate_bridge_vhosts.yml
-
-# 基础数据与密钥设施
-- import_playbook: setup-vault.yaml
-- import_playbook: setup-postgres-standalone.yaml
-- import_playbook: setup-litellm.yaml
-
-# 大模型与 AI Agents
-- import_playbook: deploy_QMD.yml
-
-# 可选服务
-- import_playbook: setup-xfce-xrdp.yaml
-
-# 最后的部署校验
-- name: 最终部署状态检查
-  hosts: all
-  become: true
-  gather_facts: false
-  roles:
-    - role: roles/vhosts/validation
-
+- import_playbook: setup-ai-workspace-runtime.yml

@@ -1,0 +1,26 @@
+---
+- name: Validate AI Workspace runtime modes
+  hosts: all
+  gather_facts: false
+  vars:
+    ai_workspace_runtime_modes: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_RUNTIME_MODES') | default('docker,systemd', true) }}"
+  tasks:
+    - name: Normalize runtime mode list
+      ansible.builtin.set_fact:
+        ai_workspace_runtime_mode_list: >-
+          {{
+            ai_workspace_runtime_modes.split(',')
+            | map('trim')
+            | reject('equalto', '')
+            | list
+            if ai_workspace_runtime_modes is string
+            else ai_workspace_runtime_modes
+          }}
+
+    - name: Validate runtime mode combination
+      ansible.builtin.assert:
+        that:
+          - ai_workspace_runtime_mode_list | length > 0
+          - not ('docker' in ai_workspace_runtime_mode_list and 'k3s' in ai_workspace_runtime_mode_list)
+          - ai_workspace_runtime_mode_list | difference(['docker', 'k3s', 'systemd']) | length == 0
+        fail_msg: "docker 与 k3s 互斥；请选择 docker/k3s/systemd 的合法组合。"

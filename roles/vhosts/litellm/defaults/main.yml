@@ -8,9 +8,12 @@ litellm_version: "3ad385a8a46988b6a81fe6c0bc22ef58685baa58"
 litellm_debian_11_compat_version: "1.74.9"
 litellm_package_spec: >-
   {{
+    lookup('ansible.builtin.env', 'LITELLM_PACKAGE_SPEC')
+    | default(
     'litellm[proxy]==' ~ litellm_debian_11_compat_version
     if ansible_facts.distribution == 'Debian' and ansible_facts.distribution_major_version == '11'
-    else 'litellm[proxy] @ git+' ~ litellm_source_repo ~ '@' ~ litellm_version
+    else 'litellm[proxy] @ git+' ~ litellm_source_repo ~ '@' ~ litellm_version,
+    true)
   }}
 litellm_python_executable: "{{ lookup('ansible.builtin.env', 'LITELLM_PYTHON_EXECUTABLE') | default('python3', true) }}"
 litellm_pip_executable: "{{ lookup('ansible.builtin.env', 'LITELLM_PIP_EXECUTABLE') | default('', true) }}"

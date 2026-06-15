@@ -62,6 +62,53 @@
     group: "{{ qmd_group }}"
     mode: "0755"
 
+- name: Validate packaged QMD runtime
+  ansible.builtin.stat:
+    path: "{{ qmd_runtime_archive }}"
+  register: qmd_runtime_archive_stat
+  when: qmd_runtime_archive | length > 0
+
+- name: Require packaged QMD runtime
+  ansible.builtin.assert:
+    that:
+      - qmd_runtime_archive | length > 0
+      - qmd_runtime_archive_stat.stat.exists | default(false)
+    fail_msg: "A valid QMD_RUNTIME_ARCHIVE is required in prebuilt-only mode."
+  when: ai_workspace_prebuilt_components_required
+
+- name: Inspect installed QMD runtime marker
+  ansible.builtin.slurp:
+    path: "{{ qmd_runtime_marker }}"
+  register: qmd_runtime_marker_content
+  failed_when: false
+  when: qmd_runtime_archive | length > 0
+
+- name: Install packaged QMD runtime
+  ansible.builtin.unarchive:
+    src: "{{ qmd_runtime_archive }}"
+    dest: "{{ qmd_source_dir | dirname }}"
+    remote_src: true
+    owner: "{{ qmd_user }}"
+    group: "{{ qmd_group }}"
+  when:
+    - qmd_runtime_archive | length > 0
+    - qmd_runtime_archive_stat.stat.exists | default(false)
+    - >-
+      (qmd_runtime_marker_content.content | default('') | b64decode | trim)
+      != (qmd_runtime_archive_stat.stat.checksum | default(''))
+      or not ((qmd_source_dir ~ '/bin/qmd') is file)
+
+- name: Record installed QMD runtime checksum
+  ansible.builtin.copy:
+    dest: "{{ qmd_runtime_marker }}"
+    owner: "{{ qmd_user }}"
+    group: "{{ qmd_group }}"
+    mode: "0644"
+    content: "{{ qmd_runtime_archive_stat.stat.checksum }}\n"
+  when:
+    - qmd_runtime_archive | length > 0
+    - qmd_runtime_archive_stat.stat.exists | default(false)
+
 - name: Checkout pinned QMD source
   ansible.builtin.git:
     repo: "{{ qmd_source_repo }}"
@@ -71,6 +118,7 @@
   become: true
   become_user: "{{ qmd_user }}"
   register: qmd_source_checkout
+  when: qmd_runtime_archive | length == 0
 
 - name: Install QMD source dependencies
   ansible.builtin.command:
@@ -79,6 +127,7 @@
   become: true
   become_user: "{{ qmd_user }}"
   when:
+    - qmd_runtime_archive | length == 0
     - qmd_source_checkout.changed | default(false) or not (qmd_binary.stat.exists | default(false))
 
 - name: Build QMD from pinned source
@@ -88,6 +137,7 @@
   become: true
   become_user: "{{ qmd_user }}"
   when:
+    - qmd_runtime_archive | length == 0
     - qmd_source_checkout.changed | default(false) or not (qmd_binary.stat.exists | default(false))
 
 - name: Link pinned QMD binary
@@ -99,7 +149,7 @@
     group: "{{ qmd_group }}"
     force: true
   when:
-    - qmd_source_checkout.changed | default(false) or not (qmd_binary.stat.exists | default(false))
+    - qmd_runtime_archive | length > 0 or qmd_source_checkout.changed | default(false) or not (qmd_binary.stat.exists | default(false))
 
 - name: Reinspect QMD binary after source install
   ansible.builtin.stat:
@@ -147,7 +197,9 @@
           print("QMD fallback shim")
       if __name__ == "__main__":
           main()
-  when: not (qmd_binary_after_source.stat.exists | default(false))
+  when:
+    - not ai_workspace_prebuilt_components_required
+    - not (qmd_binary_after_source.stat.exists | default(false))
 
 - name: Reinspect QMD binary
   ansible.builtin.stat:
