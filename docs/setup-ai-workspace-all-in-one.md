@@ -35,6 +35,13 @@
 
 本文档将详细介绍它的基础用法，并重点讲解如何通过内置的全局开关与细粒度 `public_access` 控制，打造出“最严安全网络架构”（断开一切外部 Web 端口代理，仅限加密 VPN 内网互联）。
 
+## TODO
+
+- [ ] 等待并核对 `xworkspace-console` 的离线包 GitHub Actions 发布链路，确认 `publish-release` 完整结束且 release 产物上传成功。
+- [ ] 继续核对 `root@acp-bridge.onwalk.net` 的远程部署进度，确认 `setup-ai-workspace-all-in-one.sh` 最终完成并输出统一摘要。
+- [ ] 完成最终验收核对：Bridge 对外可达、其余服务默认仅本地监听、`acp-codex` / `opencode` / `gemini` / `hermes` / `qmd` / `litellm` 状态正常。
+- [ ] 记录最终提交哈希与远端验证结果，回填到本计划的交付结果部分。
+
 ---
 
 ## 1. 常规快速部署
