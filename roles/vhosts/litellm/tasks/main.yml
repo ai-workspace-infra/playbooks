@@ -90,13 +90,14 @@
       - "prisma"
       - "psycopg2-binary"
     extra_args: --break-system-packages
+    executable: "{{ litellm_pip_executable if litellm_pip_executable | length > 0 else omit }}"
     state: present
   become: true
   become_user: "{{ litellm_service_user }}"
 
 - name: Resolve LiteLLM Python site-packages path
   ansible.builtin.shell: |
-    python3 - <<'PY'
+    {{ litellm_python_executable | quote }} - <<'PY'
     import glob
     import os
     paths = glob.glob(os.path.expanduser("~/.local/lib/python*/site-packages/litellm/proxy"))
