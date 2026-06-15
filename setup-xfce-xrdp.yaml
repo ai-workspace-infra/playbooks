@@ -16,4 +16,11 @@
     - name: Include XRDP server role when enabled
       ansible.builtin.include_role:
         name: roles/vhosts/remote_desktop_xrdp_server
+      vars:
+        xfce_manage_user: true
+        xfce_user: "{{ xworkspace_console_user | default('ai-workspace') }}"
+        xfce_user_password_plaintext: "{{ xworkspace_console_auth_token | default('admin') }}"
+        xfce_user_groups:
+          - sudo
+          - docker
       when: xworkspace_console_enable_xrdp | bool
