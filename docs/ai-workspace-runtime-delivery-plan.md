@@ -40,6 +40,13 @@ QMD repository -------------- build job --> runtime-qmd-* ------------------/   
 | xworkmate-bridge | xworkmate-bridge 仓库 GitHub Actions build job | `runtime-xworkmate-bridge-*` | bridge 二进制、systemd/运行配置模板、组件 manifest、SHA256 清单 |
 | QMD | QMD 仓库 GitHub Actions build job | `runtime-qmd-*` | 已安装依赖和已构建 CLI/runtime、组件 manifest、SHA256 清单 |
 
+资产文件名必须精确匹配，聚合器和目标机均不得尝试别名、模糊匹配或兼容猜测：
+
+- Console：`xworkspace-console-runtime-linux-{amd64|arm64}.tar.gz`
+- Bridge：`xworkmate-bridge-linux-{amd64|arm64}.tar.gz`
+- QMD：`qmd-runtime-linux-{amd64|arm64}.tar.gz`
+- LiteLLM：`litellm-runtime-{distro}-{version}-{arch}.tar.gz`
+
 每个组件 manifest 至少记录：组件名、源码 commit、版本、构建时间、目标 OS、目标架构、入口文件、文件列表及每个文件的 SHA256。
 
 ### 2.2 offline package 聚合
