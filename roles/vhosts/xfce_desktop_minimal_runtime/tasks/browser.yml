@@ -86,6 +86,9 @@
     executable: /bin/bash
     creates: "{{ xfce_google_chrome_apt_keyring }}"
   become: true
+  when:
+    - xfce_browser_package == 'google-chrome-stable'
+    - not xfce_offline_active
 
 - name: Configure Google Chrome apt repository
   ansible.builtin.copy:
@@ -96,22 +99,34 @@
     content: "{{ xfce_google_chrome_apt_source }}\n"
   become: true
   register: xfce_google_chrome_repo
+  when:
+    - xfce_browser_package == 'google-chrome-stable'
+    - not xfce_offline_active
 
 - name: Refresh apt cache after Google Chrome repository changes
   ansible.builtin.apt:
     update_cache: true
   become: true
-  when: xfce_google_chrome_repo.changed
+  when:
+    - xfce_browser_package == 'google-chrome-stable'
+    - not xfce_offline_active
+    - xfce_google_chrome_repo.changed
 
-- name: Install apt-managed Google Chrome deb
+- name: Install apt-managed workspace browser
   ansible.builtin.apt:
-    name: "google-chrome-stable={{ xfce_google_chrome_version }}"
+    name: >-
+      {{
+        'google-chrome-stable=' ~ xfce_google_chrome_version
+        if xfce_browser_package == 'google-chrome-stable'
+        else xfce_browser_package
+      }}
     state: present
     install_recommends: false
   environment:
     DEBIAN_FRONTEND: noninteractive
     APT_LISTCHANGES_FRONTEND: none
   become: true
+  when: xfce_browser_package | length > 0
 
 - name: Install XRDP Chrome launcher
   ansible.builtin.template:
@@ -136,6 +151,7 @@
     - /usr/local/bin/chromium
     - /usr/local/bin/chromium-browser
   become: true
+  when: xfce_browser_package == 'google-chrome-stable'
 
 - name: Ensure desktop applications directory exists
   ansible.builtin.file:
@@ -179,8 +195,8 @@
   when:
     - not ansible_check_mode
 
-- name: Set system browser alternatives to Google Chrome deb
-  ansible.builtin.command: "update-alternatives --set {{ item }} /usr/bin/google-chrome-stable"
+- name: Set system browser alternatives to workspace browser
+  ansible.builtin.command: "update-alternatives --set {{ item }} {{ xfce_browser_binary }}"
   loop:
     - x-www-browser
     - gnome-www-browser
@@ -188,6 +204,7 @@
   changed_when: false
   when:
     - not ansible_check_mode
+    - xfce_browser_package | length > 0
 
 - name: Verify Google Chrome deb browser installation
   ansible.builtin.command: /usr/local/bin/chromium-xrdp --version

@@ -6,6 +6,7 @@
     mode: "0755"
   delegate_to: localhost
   become: false
+  when: not (acp_opencode_bridge_use_prebuilt | bool)
 
 - name: Build XWorkmate Go ACP server locally for OpenCode
   ansible.builtin.command:
@@ -18,6 +19,7 @@
   delegate_to: localhost
   become: false
   check_mode: false
+  when: not (acp_opencode_bridge_use_prebuilt | bool)
 
 - name: Inspect OpenCode bridge binary attributes
   ansible.builtin.command:
@@ -41,6 +43,7 @@
     owner: root
     group: root
     mode: "0755"
+  when: not (acp_opencode_bridge_use_prebuilt | bool)
 
 - name: Restore immutable flag on OpenCode bridge binary
   ansible.builtin.command:
