@@ -1,0 +1,32 @@
+---
+- name: SSH | Ensure sshd drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  become: true
+
+- name: SSH | Write sshd hardening drop-in (Disable password authentication for all users)
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/00-disable-password.conf
+    mode: "0644"
+    owner: root
+    group: root
+    content: |
+      PasswordAuthentication no
+      PubkeyAuthentication yes
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+  become: true
+  notify: Restart SSH
+
+- name: SSH | Deploy ssh_check.exp helper script
+  ansible.builtin.copy:
+    src: files/ssh_check.exp
+    dest: /usr/local/bin/ssh_check.exp
+    mode: "0755"
+    owner: root
+    group: root
+  become: true

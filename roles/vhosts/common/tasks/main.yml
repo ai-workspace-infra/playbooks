@@ -32,6 +32,14 @@
   ansible.builtin.script: files/secure_ssh.sh
   become: true
 
+- name: Base | harden ssh config
+  ansible.builtin.import_tasks: harden_ssh.yml
+  tags: [ssh, security]
+
+- name: Base | configure fail2ban
+  ansible.builtin.import_tasks: fail2ban.yml
+  tags: [fail2ban, security]
+
 - name: Base | file limits
   ansible.builtin.import_tasks: limits.yml
   when:

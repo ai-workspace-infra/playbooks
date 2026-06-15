@@ -1,0 +1,45 @@
+#!/usr/bin/expect -f
+set timeout 30
+set proxy [lindex $argv 0]
+set target [lindex $argv 1]
+
+# Retrieve password from environment variable (secure)
+# Fallback to the third argument if environment variable is not set
+if { [info exists ::env(SSH_CHECK_PASSWORD)] } {
+    set password $::env(SSH_CHECK_PASSWORD)
+} else {
+    set password [lindex $argv 2]
+}
+
+if { $proxy == "" || $target == "" || $password == "" } {
+    send_user "Error: Missing required parameters.\n"
+    send_user "Usage (Recommended): export SSH_CHECK_PASSWORD=\"your_password\"\n"
+    send_user "                     ssh_check.exp <proxy_user@host> <target_user@host>\n"
+    send_user "Usage (Legacy):      ssh_check.exp <proxy_user@host> <target_user@host> <password>\n"
+    exit 1
+}
+
+# Use UserKnownHostsFile=/dev/null to avoid modifying the local known_hosts file
+spawn ssh -J $proxy -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $target
+expect {
+    "password:" {
+        # Temporarily disable logging to hide the password from being echoed in stdout/logs
+        log_user 0
+        send "$password\r"
+        log_user 1
+        exp_continue
+    }
+    -re "(#|\\\$)" {
+        send_user "SUCCESS\n"
+        send "exit\n"
+        expect eof
+    }
+    timeout {
+        send_user "TIMEOUT\n"
+        exit 1
+    }
+    eof {
+        send_user "EOF_CLOSED\n"
+        exit 1
+    }
+}

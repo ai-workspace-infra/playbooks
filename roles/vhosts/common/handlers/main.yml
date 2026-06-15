@@ -12,3 +12,13 @@
 - name: apt-update-cache
   ansible.builtin.apt:
     update_cache: true
+
+- name: Restart SSH
+  ansible.builtin.service:
+    name: "{{ 'ssh' if ansible_facts.os_family == 'Debian' else 'sshd' }}"
+    state: reloaded
+
+- name: Restart Fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    state: restarted
