@@ -29,4 +29,5 @@ postgresql_container_name: ai-workspace-postgres
 postgresql_data_dir: "{{ postgresql_compose_project_dir }}/data"
 postgresql_database: postgres
 postgresql_admin_user: postgres
-postgresql_admin_password: "{{ lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRESQL_PASSWORD') | default(lookup('password', '/tmp/.ai_workspace_postgres_password length=32 chars=ascii_letters,digits'), true), true) }}"
+postgresql_admin_password_file: /root/.ai_workspace_postgres_password
+postgresql_admin_password: "{{ lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRESQL_PASSWORD') | default(lookup('password', postgresql_admin_password_file ~ ' length=32 chars=ascii_letters,digits'), true), true) }}"

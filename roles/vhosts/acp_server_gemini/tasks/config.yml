@@ -6,6 +6,7 @@
     mode: "0755"
   delegate_to: localhost
   become: false
+  when: not (acp_gemini_bridge_use_prebuilt | bool)
 
 - name: Build XWorkmate Go ACP adapter locally for Gemini
   ansible.builtin.command:
@@ -19,6 +20,7 @@
   delegate_to: localhost
   become: false
   check_mode: false
+  when: not (acp_gemini_bridge_use_prebuilt | bool)
 
 - name: Inspect Gemini bridge binary attributes
   ansible.builtin.command:
@@ -43,6 +45,7 @@
     group: "{{ acp_gemini_service_group }}"
     mode: "0755"
   notify: Restart acp gemini
+  when: not (acp_gemini_bridge_use_prebuilt | bool)
 
 - name: Restore immutable flag on Gemini bridge binary
   ansible.builtin.command:

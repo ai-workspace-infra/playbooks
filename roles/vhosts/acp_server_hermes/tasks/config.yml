@@ -6,6 +6,7 @@
     mode: "0755"
   delegate_to: localhost
   become: false
+  when: not (acp_hermes_bridge_use_prebuilt | bool)
 
 - name: Build XWorkmate Go ACP adapter locally for Hermes
   ansible.builtin.command:
@@ -19,6 +20,7 @@
   delegate_to: localhost
   become: false
   check_mode: false
+  when: not (acp_hermes_bridge_use_prebuilt | bool)
 
 - name: Inspect Hermes bridge binary attributes
   ansible.builtin.command:
@@ -44,6 +46,7 @@
     group: "{{ acp_hermes_service_group }}"
     mode: "0755"
   notify: Restart acp hermes
+  when: not (acp_hermes_bridge_use_prebuilt | bool)
 
 - name: Restore immutable flag on Hermes bridge binary
   ansible.builtin.command:

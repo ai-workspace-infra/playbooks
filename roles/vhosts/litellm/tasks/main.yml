@@ -10,6 +10,34 @@
       - python3-psycopg2
     state: present
 
+- name: Materialize persisted LiteLLM secrets
+  ansible.builtin.assert:
+    that:
+      - litellm_salt_key | length > 0
+      - litellm_database_password | length > 0
+    fail_msg: "LiteLLM persisted secrets must not be empty."
+  no_log: true
+
+- name: Inspect persisted LiteLLM secrets
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ litellm_salt_key_file }}"
+    - "{{ litellm_database_password_file }}"
+  register: litellm_secret_files
+  no_log: true
+
+- name: Protect persisted LiteLLM secrets
+  ansible.builtin.file:
+    path: "{{ item.item }}"
+    owner: root
+    group: root
+    mode: "0600"
+    state: file
+  loop: "{{ litellm_secret_files.results }}"
+  when: item.stat.exists
+  no_log: true
+
 - name: Provision LiteLLM Database
   ansible.builtin.import_tasks: provision-database.yml
   when: litellm_database_host | trim | length > 0
@@ -164,6 +192,16 @@
     mode: "0644"
   notify: Reload caddy
   when: litellm_caddy_config_enabled | bool
+
+- name: Remove LiteLLM public Caddy fragments when public access is disabled
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ litellm_api_caddy_fragment_path }}"
+    - "{{ litellm_ui_caddy_fragment_path }}"
+  notify: Reload caddy
+  when: not (litellm_caddy_config_enabled | bool)
 
 - name: Ensure litellm service is enabled and running
   ansible.builtin.systemd:

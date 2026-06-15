@@ -25,6 +25,11 @@
     xworkspace_console_ttyd_port: 7681
     xworkspace_console_enable_ttyd: true
     xworkspace_console_install_chrome: true
+    xworkspace_console_browser_package: >-
+      {{ 'google-chrome-stable' if ansible_architecture in ['x86_64', 'amd64'] else '' }}
+    xworkspace_console_browser_binary: >-
+      {{ '/usr/bin/google-chrome' if ansible_architecture in ['x86_64', 'amd64'] else '/usr/local/bin/chromium' }}
+    ai_workspace_offline_active: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_OFFLINE_ACTIVE') | default('false', true) | bool }}"
     xworkspace_console_autostart_enabled: true
     xworkspace_console_ttyd_binary_path: /usr/local/bin/ttyd
     ai_workspace_auth_token: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN') | default('', true) }}"
@@ -112,6 +117,9 @@
       args:
         executable: /bin/bash
         creates: /etc/apt/keyrings/google-linux-signing-key.gpg
+      when:
+        - ansible_architecture in ['x86_64', 'amd64']
+        - not ai_workspace_offline_active
 
     - name: Configure Google Chrome apt repository
       ansible.builtin.copy:
@@ -120,20 +128,25 @@
         group: root
         mode: "0644"
         content: "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-linux-signing-key.gpg] https://dl.google.com/linux/chrome/deb/ stable main\n"
+      when:
+        - ansible_architecture in ['x86_64', 'amd64']
+        - not ai_workspace_offline_active
 
     - name: Refresh apt cache after Google Chrome repository changes
       ansible.builtin.apt:
         update_cache: true
+      when:
+        - ansible_architecture in ['x86_64', 'amd64']
+        - not ai_workspace_offline_active
 
     - name: Install AI Agentic Workspace runtime packages
       ansible.builtin.apt:
         update_cache: true
-        name:
-          - caddy
-          - xfce4
-          - python3
-          - golang-go
-          - google-chrome-stable
+        name: >-
+          {{
+            ['caddy', 'xfce4', 'python3', 'golang-go']
+            + ([xworkspace_console_browser_package] if xworkspace_console_browser_package | length > 0 else [])
+          }}
         state: present
 
     - name: Ensure ttyd binary target directory exists
@@ -163,7 +176,8 @@
         mode: "0755"
         owner: root
         group: root
-        force: true
+        force: false
+      when: not ai_workspace_offline_active
 
     - name: Verify ttyd binary
       ansible.builtin.command: "{{ xworkspace_console_ttyd_binary_path }} --version"
@@ -431,7 +445,7 @@
           #!/usr/bin/env bash
           set -euo pipefail
           mkdir -p "$HOME/.config/xworkspace-chrome"
-          exec /usr/bin/google-chrome \
+          exec {{ xworkspace_console_browser_binary }} \
             --app=http://localhost:17000 \
             --user-data-dir="$HOME/.config/xworkspace-chrome" \
             --profile-directory=Default \

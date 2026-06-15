@@ -2,6 +2,7 @@
 - name: Validate Caddy config for xworkmate-bridge ingress
   ansible.builtin.command: caddy validate --config "{{ xworkmate_bridge_caddyfile_path }}"
   changed_when: false
+  when: xworkmate_bridge_public_access | bool
 
 - name: Read deployed xworkmate-bridge Caddy fragment
   ansible.builtin.command:
@@ -9,6 +10,7 @@
   changed_when: false
   register: xworkmate_bridge_fragment
   no_log: true
+  when: xworkmate_bridge_public_access | bool
 
 - name: Read deployed xworkmate-bridge systemd unit
   ansible.builtin.command:
@@ -16,6 +18,7 @@
   changed_when: false
   register: xworkmate_bridge_systemd_unit_text
   no_log: true
+  when: xworkmate_bridge_public_access | bool
 
 - name: Assert Caddy fragment only exposes app-facing bridge routes
   ansible.builtin.assert:
@@ -35,6 +38,7 @@
       - "'127.0.0.1:8791' not in xworkmate_bridge_fragment.stdout"
       - "'127.0.0.1:3920' not in xworkmate_bridge_fragment.stdout"
   no_log: true
+  when: xworkmate_bridge_public_access | bool
 
 - name: Assert Caddy and systemd use the same bridge token set
   ansible.builtin.assert:
@@ -61,6 +65,7 @@
         )
     fail_msg: "xworkmate-bridge Caddy and systemd token configuration are not aligned"
   no_log: true
+  when: xworkmate_bridge_public_access | bool
 
 - name: Check xworkmate-bridge systemd service status
   ansible.builtin.systemd:

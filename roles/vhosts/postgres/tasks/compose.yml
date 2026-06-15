@@ -1,7 +1,37 @@
 ---
+- name: Inspect Docker runtime for PostgreSQL compose mode
+  ansible.builtin.command: docker --version
+  register: postgresql_docker_version
+  changed_when: false
+  failed_when: false
+
 - name: Ensure Docker runtime is installed for PostgreSQL compose mode
   ansible.builtin.include_role:
     name: roles/vhosts/docker
+  when: postgresql_docker_version.rc != 0
+
+- name: Materialize PostgreSQL admin password
+  ansible.builtin.assert:
+    that:
+      - postgresql_admin_password | length > 0
+    fail_msg: "PostgreSQL admin password must not be empty."
+  no_log: true
+
+- name: Inspect persisted PostgreSQL admin password
+  ansible.builtin.stat:
+    path: "{{ postgresql_admin_password_file }}"
+  register: postgresql_admin_password_file_status
+  no_log: true
+
+- name: Protect persisted PostgreSQL admin password
+  ansible.builtin.file:
+    path: "{{ postgresql_admin_password_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+    state: file
+  no_log: true
+  when: postgresql_admin_password_file_status.stat.exists
 
 - name: Ensure PostgreSQL compose directories exist
   ansible.builtin.file:
@@ -61,4 +91,19 @@
   delay: 5
   until: postgresql_compose_ready.rc == 0
   changed_when: false
+  when: not ansible_check_mode
+
+- name: Synchronize PostgreSQL admin password
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ postgresql_container_name }}"
+      - psql
+      - -U
+      - "{{ postgresql_admin_user }}"
+      - -c
+      - "ALTER USER {{ postgresql_admin_user }} WITH PASSWORD '{{ postgresql_admin_password | replace(\"'\", \"''\") }}';"
+  changed_when: false
+  no_log: true
   when: not ansible_check_mode
