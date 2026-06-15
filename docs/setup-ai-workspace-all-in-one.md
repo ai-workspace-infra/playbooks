@@ -39,6 +39,7 @@
 
 - [ ] 等待并核对 `xworkspace-console` 的离线包 GitHub Actions 发布链路，确认 `publish-release` 完整结束且 release 产物上传成功。
 - [ ] 继续核对 `root@acp-bridge.onwalk.net` 的远程部署进度，确认 `setup-ai-workspace-all-in-one.sh` 最终完成并输出统一摘要。
+- [ ] `setup-ai-workspace-all-in-one.sh` 在目标主机上优先使用离线安装包加速部署，减少在线拉取与安装耗时。
 - [ ] 完成最终验收核对：Bridge 对外可达、其余服务默认仅本地监听、`acp-codex` / `opencode` / `gemini` / `hermes` / `qmd` / `litellm` 状态正常。
 - [ ] 记录最终提交哈希与远端验证结果，回填到本计划的交付结果部分。
 
