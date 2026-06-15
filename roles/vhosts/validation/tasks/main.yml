@@ -1,1 +1,10 @@
 ---
+- name: Check required ACP and gateway service status
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+  loop: "{{ xworkmate_bridge_required_services | default(['acp-codex.service', 'acp-opencode.service', 'acp-gemini.service', 'acp-hermes.service']) }}"
+  register: xworkmate_bridge_dependency_status
+  until: xworkmate_bridge_dependency_status.status.ActiveState | default('') == "active"
+  retries: 12
+  delay: 5
+  ignore_errors: true

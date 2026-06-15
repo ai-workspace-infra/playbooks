@@ -75,14 +75,7 @@
   retries: 12
   delay: 5
 
-- name: Check required ACP and gateway service status
-  ansible.builtin.systemd:
-    name: "{{ item }}"
-  loop: "{{ xworkmate_bridge_required_services }}"
-  register: xworkmate_bridge_dependency_status
-  until: xworkmate_bridge_dependency_status.status.ActiveState | default('') == "active"
-  retries: 12
-  delay: 5
+
 
 - name: Capture listening TCP sockets for xworkmate-bridge stack
   ansible.builtin.command:
