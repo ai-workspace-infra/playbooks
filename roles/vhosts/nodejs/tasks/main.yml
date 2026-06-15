@@ -51,6 +51,7 @@
   loop:
     - /etc/apt/sources.list.d/nodesource.list
     - "/etc/apt/sources.list.d/nodesource-node{{ nodejs_version_major }}.list"
+    - /etc/apt/keyrings/nodesource.gpg
   when:
     - nodejs_needs_install | default(true)
     - not nodejs_offline_active
@@ -58,7 +59,7 @@
 - name: Add NodeSource GPG key
   get_url:
     url: "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
-    dest: /etc/apt/keyrings/nodesource.gpg
+    dest: /etc/apt/keyrings/nodesource.asc
     mode: '0644'
   register: nodesource_key
   when:
@@ -67,7 +68,7 @@
 
 - name: Add NodeSource repository
   apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/nodesource.gpg arch=amd64,arm64] https://deb.nodesource.com/node_{{ nodejs_version_major }}.x nodistro main"
+    repo: "deb [signed-by=/etc/apt/keyrings/nodesource.asc arch=amd64,arm64] https://deb.nodesource.com/node_{{ nodejs_version_major }}.x nodistro main"
     state: present
     filename: nodesource
   register: nodesource_repo
