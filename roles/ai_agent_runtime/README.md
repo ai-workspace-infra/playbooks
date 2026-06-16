@@ -16,8 +16,19 @@ role entrypoint. The role installs:
 Design constraints:
 
 - system packages are the primary source of truth
+- global npm packages are managed through
+  `/usr/local/sbin/ai-workspace-manage-npm-global-package` so repeated installs
+  are idempotent and stale global bin links can be overwritten safely
 - Playwright uses the resolved system browser instead of downloading browsers
 - Chinese PDF rendering is treated as a runtime requirement, not an optional add-on
+
+Global npm package actions:
+
+- `install` is the default and only changes the host when a package is missing
+  or an exact pinned version differs
+- `reinstall` forces the configured package set back into place
+- `upgrade`, `backup`, `restore`, and `migrate` are reserved action entrypoints
+  for future runtime lifecycle workflows
 
 Default Playwright environment:
 

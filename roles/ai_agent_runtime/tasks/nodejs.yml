@@ -7,15 +7,28 @@
     install_yarn: "{{ ai_agent_runtime_install_yarn }}"
     yarn_version: "{{ ai_agent_runtime_yarn_version }}"
 
+- name: Install npm global package manager helper
+  ansible.builtin.copy:
+    src: manage_npm_global_package.sh
+    dest: /usr/local/sbin/ai-workspace-manage-npm-global-package
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
 - name: Install global npm packages for AI runtime
   ansible.builtin.command:
-    cmd: "npm install -g {{ item }}"
+    cmd: "/usr/local/sbin/ai-workspace-manage-npm-global-package {{ ai_agent_runtime_npm_global_package_action }} {{ item }}"
   loop: "{{ ai_agent_runtime_npm_global_packages }}"
+  register: ai_agent_runtime_npm_global_install
+  changed_when: "'changed=1' in ai_agent_runtime_npm_global_install.stdout"
   when: ai_agent_runtime_npm_global_packages | length > 0
 
 - name: Install pinned Playwright package for AI runtime
   ansible.builtin.command:
-    cmd: "npm install -g playwright@{{ ai_agent_runtime_playwright_version }}"
+    cmd: "/usr/local/sbin/ai-workspace-manage-npm-global-package {{ ai_agent_runtime_npm_global_package_action }} playwright@{{ ai_agent_runtime_playwright_version }}"
+  register: ai_agent_runtime_playwright_install
+  changed_when: "'changed=1' in ai_agent_runtime_playwright_install.stdout"
   when:
     - ai_agent_runtime_playwright_enabled | bool
     - ai_agent_runtime_playwright_version | length > 0
