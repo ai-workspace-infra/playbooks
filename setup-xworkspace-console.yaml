@@ -15,6 +15,12 @@
     xworkspace_console_repo_dir: /home/ubuntu/xworkspace-console
     xworkspace_console_source_repo: "https://github.com/ai-workspace-lab/xworkspace-console.git"
     xworkspace_console_source_version: "main"
+    xworkspace_console_source_repo_safe_dir: >-
+      {{
+        (xworkspace_console_source_repo | regex_replace('^file://', ''))
+        if xworkspace_console_source_repo is match('^file://')
+        else ''
+      }}
     xworkspace_console_runtime_archive: "{{ lookup('ansible.builtin.env', 'XWORKSPACE_CONSOLE_RUNTIME_ARCHIVE') | default('', true) }}"
     ai_workspace_prebuilt_components_required: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_PREBUILT_COMPONENTS_REQUIRED') | default('false', true) | bool }}"
     xworkspace_console_dashboard_dir: /home/ubuntu/xworkspace-console/dashboard
@@ -509,6 +515,36 @@
       when:
         - xworkspace_console_runtime_archive | length > 0
         - xworkspace_console_runtime_archive_stat.stat.exists | default(false)
+
+    - name: Trust local XWorkspace Console source repository for Git
+      ansible.builtin.command:
+        argv:
+          - git
+          - config
+          - --global
+          - --add
+          - safe.directory
+          - "{{ xworkspace_console_source_repo_safe_dir }}"
+      become_user: "{{ xworkspace_console_user }}"
+      changed_when: false
+      when:
+        - xworkspace_console_runtime_archive | length == 0
+        - xworkspace_console_source_repo_safe_dir | length > 0
+
+    - name: Trust local XWorkspace Console source repository .git directory for Git
+      ansible.builtin.command:
+        argv:
+          - git
+          - config
+          - --global
+          - --add
+          - safe.directory
+          - "{{ xworkspace_console_source_repo_safe_dir }}/.git"
+      become_user: "{{ xworkspace_console_user }}"
+      changed_when: false
+      when:
+        - xworkspace_console_runtime_archive | length == 0
+        - xworkspace_console_source_repo_safe_dir | length > 0
 
     - name: Clone xworkspace-console repository
       ansible.builtin.git:
