@@ -56,23 +56,25 @@ gateway_openclaw_acp_max_concurrent_sessions: 2
 gateway_openclaw_acp_backend: acpx
 gateway_openclaw_acp_default_agent: codex
 gateway_openclaw_codex_app_server_url: ws://127.0.0.1:9001
+gateway_openclaw_default_model_primary: "deepseek/deepseek-v4-flash"
+gateway_openclaw_default_model_fallback: "deepseek/deepseek-v4-pro"
 gateway_openclaw_default_model:
-  primary: deepseek/deepseek-v4-flash
+  primary: "{{ gateway_openclaw_default_model_primary }}"
   fallbacks:
-    - deepseek/deepseek-v4-pro
+    - "{{ gateway_openclaw_default_model_fallback }}"
     - nvidia/nemotron-3-super-120b-a12b
     - nvidia/minimaxai/minimax-m2.5
     - nvidia/z-ai/glm5
 gateway_openclaw_default_models:
-  deepseek/deepseek-v4-flash: {}
-  deepseek/deepseek-v4-pro: {}
+  "{{ gateway_openclaw_default_model_primary }}": {}
+  "{{ gateway_openclaw_default_model_fallback }}": {}
   nvidia/nemotron-3-super-120b-a12b: {}
   nvidia/minimaxai/minimax-m2.5: {}
   nvidia/z-ai/glm5: {}
   openai/gpt-5.5:
     agentRuntime:
       id: codex
-gateway_openclaw_main_agent_model: deepseek/deepseek-v4-flash
+gateway_openclaw_main_agent_model: "{{ gateway_openclaw_default_model_primary }}"
 
 gateway_openclaw_main_agent_skills:
   - acp-router
@@ -122,16 +124,16 @@ gateway_openclaw_mcp_servers:
 gateway_openclaw_model_providers:
   litellm:
     api: openai-completions
-    baseUrl: "http://127.0.0.1:4000/v1"
+    baseUrl: "http://127.0.0.1:{{ litellm_listen_port | default(4000) }}/v1"
     apiKey: "{{ ai_workspace_auth_token }}"
     models:
-      - id: deepseek/deepseek-v4-flash
+      - id: "{{ gateway_openclaw_default_model_primary }}"
         name: DeepSeek V4 Flash
         input: [text]
         contextWindow: 128000
         maxTokens: 8192
         reasoning: false
-      - id: deepseek/deepseek-v4-pro
+      - id: "{{ gateway_openclaw_default_model_fallback }}"
         name: DeepSeek V4 Pro
         input: [text]
         contextWindow: 128000
