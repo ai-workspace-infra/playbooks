@@ -1,0 +1,51 @@
+---
+- name: Set restore staging directory
+  ansible.builtin.set_fact:
+    restore_staging_dir: "/tmp/xworkspace_restore_{{ 999999 | random }}"
+
+- name: Create restore staging directory
+  ansible.builtin.file:
+    path: "{{ restore_staging_dir }}"
+    state: directory
+    mode: '0700'
+
+- name: Decrypt and extract backup archive
+  ansible.builtin.shell: >
+    openssl enc -d -aes-256-cbc -pbkdf2 -salt -pass pass:"backup 归档打包为冷备文件" -in {{ backup_input_file }} | tar -xzf - -C {{ restore_staging_dir }}
+  args:
+    executable: /bin/bash
+
+- name: Ensure target config directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ ansible_env.HOME }}/.config"
+    - "{{ ansible_env.HOME }}/.local/state"
+    - "{{ ansible_env.HOME }}/.cache"
+
+- name: Restore configuration directories
+  ansible.builtin.shell: |
+    [ -d {{ restore_staging_dir }}/data/.config_xworkspace ] && cp -a {{ restore_staging_dir }}/data/.config_xworkspace {{ ansible_env.HOME }}/.config/xworkspace || true
+    [ -d {{ restore_staging_dir }}/data/.local_state_xworkspace ] && cp -a {{ restore_staging_dir }}/data/.local_state_xworkspace {{ ansible_env.HOME }}/.local/state/xworkspace || true
+    [ -d {{ restore_staging_dir }}/data/.openclaw ] && cp -a {{ restore_staging_dir }}/data/.openclaw {{ ansible_env.HOME }}/.openclaw || true
+    [ -d {{ restore_staging_dir }}/data/.cache_qmd ] && cp -a {{ restore_staging_dir }}/data/.cache_qmd {{ ansible_env.HOME }}/.cache/qmd || true
+    [ -d {{ restore_staging_dir }}/data/.config_qmd ] && cp -a {{ restore_staging_dir }}/data/.config_qmd {{ ansible_env.HOME }}/.config/qmd || true
+    [ -f {{ restore_staging_dir }}/data/.ai_workspace_auth_token ] && cp {{ restore_staging_dir }}/data/.ai_workspace_auth_token {{ ansible_env.HOME }}/.ai_workspace_auth_token || true
+    [ -f {{ restore_staging_dir }}/data/.vault_password ] && cp {{ restore_staging_dir }}/data/.vault_password {{ ansible_env.HOME }}/.vault_password || true
+  args:
+    executable: /bin/bash
+
+- name: Restore LiteLLM database
+  ansible.builtin.shell: |
+    if [ -f {{ restore_staging_dir }}/data/litellm.dump ]; then
+      pg_restore -U {{ migrate_litellm_db_user }} -h {{ migrate_litellm_db_host }} -d {{ migrate_litellm_db }} -1 --clean {{ restore_staging_dir }}/data/litellm.dump || true
+    fi
+  args:
+    executable: /bin/bash
+
+- name: Cleanup restore staging directory
+  ansible.builtin.file:
+    path: "{{ restore_staging_dir }}"
+    state: absent

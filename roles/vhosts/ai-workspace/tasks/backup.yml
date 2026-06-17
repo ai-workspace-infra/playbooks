@@ -1,0 +1,39 @@
+---
+- name: Set backup staging directory
+  ansible.builtin.set_fact:
+    backup_staging_dir: "/tmp/xworkspace_backup_{{ 999999 | random }}"
+
+- name: Create backup staging directories
+  ansible.builtin.file:
+    path: "{{ backup_staging_dir }}/data"
+    state: directory
+    mode: '0700'
+
+- name: Copy user configuration directories to staging
+  ansible.builtin.shell: |
+    cp -a {{ ansible_env.HOME }}/.config/xworkspace {{ backup_staging_dir }}/data/.config_xworkspace || true
+    cp -a {{ ansible_env.HOME }}/.local/state/xworkspace {{ backup_staging_dir }}/data/.local_state_xworkspace || true
+    cp -a {{ ansible_env.HOME }}/.openclaw {{ backup_staging_dir }}/data/.openclaw || true
+    cp -a {{ ansible_env.HOME }}/.cache/qmd {{ backup_staging_dir }}/data/.cache_qmd || true
+    cp -a {{ ansible_env.HOME }}/.config/qmd {{ backup_staging_dir }}/data/.config_qmd || true
+    cp {{ ansible_env.HOME }}/.ai_workspace_auth_token {{ backup_staging_dir }}/data/.ai_workspace_auth_token || true
+    cp {{ ansible_env.HOME }}/.vault_password {{ backup_staging_dir }}/data/.vault_password || true
+  args:
+    executable: /bin/bash
+
+- name: Dump LiteLLM database to staging
+  ansible.builtin.shell: >
+    pg_dump -U {{ migrate_litellm_db_user }} -h {{ migrate_litellm_db_host }} -Fc {{ migrate_litellm_db }} > {{ backup_staging_dir }}/data/litellm.dump || true
+  args:
+    executable: /bin/bash
+
+- name: Archive and Encrypt backup
+  ansible.builtin.shell: >
+    tar -czf - -C {{ backup_staging_dir }} data | openssl enc -aes-256-cbc -pbkdf2 -salt -pass pass:"backup 归档打包为冷备文件" > {{ backup_output_file }}
+  args:
+    executable: /bin/bash
+
+- name: Cleanup backup staging directory
+  ansible.builtin.file:
+    path: "{{ backup_staging_dir }}"
+    state: absent
