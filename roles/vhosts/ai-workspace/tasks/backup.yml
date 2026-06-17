@@ -21,6 +21,54 @@
   args:
     executable: /bin/bash
 
+- name: Dump Vault KV secrets
+  ansible.builtin.shell: |
+    python3 -c "
+    import urllib.request, urllib.error, json, os
+
+    VAULT_ADDR = 'http://127.0.0.1:8200'
+    VAULT_TOKEN = open(os.path.expanduser('~/.ai_workspace_auth_token')).read().strip()
+
+    def list_keys(path):
+        req = urllib.request.Request(f'{VAULT_ADDR}/v1/secret/metadata/{path}?list=true', headers={'X-Vault-Token': VAULT_TOKEN})
+        try:
+            with urllib.request.urlopen(req) as response:
+                return json.loads(response.read().decode())['data']['keys']
+        except urllib.error.HTTPError as e:
+            if e.code == 404: return []
+            raise
+
+    def get_secret(path):
+        req = urllib.request.Request(f'{VAULT_ADDR}/v1/secret/data/{path}', headers={'X-Vault-Token': VAULT_TOKEN})
+        try:
+            with urllib.request.urlopen(req) as response:
+                return json.loads(response.read().decode())['data']['data']
+        except urllib.error.HTTPError as e:
+            if e.code == 404: return {}
+            raise
+
+    def dump_recursive(path=''):
+        result = {}
+        keys = list_keys(path)
+        for k in keys:
+            full_path = path + k
+            if k.endswith('/'):
+                result.update(dump_recursive(full_path))
+            else:
+                result[full_path] = get_secret(full_path)
+        return result
+
+    try:
+        data = dump_recursive()
+        with open('{{ backup_staging_dir }}/data/vault_secrets.json', 'w') as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f'Warning: Could not dump vault secrets: {e}')
+    "
+  args:
+    executable: /bin/bash
+  ignore_errors: true
+
 - name: Dump LiteLLM database to staging
   ansible.builtin.shell: >
     pg_dump -U {{ migrate_litellm_db_user }} -h {{ migrate_litellm_db_host }} -Fc {{ migrate_litellm_db }} > {{ backup_staging_dir }}/data/litellm.dump || true
