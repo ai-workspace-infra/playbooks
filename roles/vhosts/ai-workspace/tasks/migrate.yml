@@ -1,0 +1,48 @@
+---
+- name: Ensure local data directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ openclaw_data_dir }}/plugin-skills"
+    - "{{ openclaw_data_dir }}/skill-workshop"
+    - "{{ openclaw_data_dir }}/agents/main/sessions"
+
+- name: Sync skills and plugins
+  ansible.posix.synchronize:
+    src: "{{ migrate_source_user }}@{{ migrate_source_host }}:{{ item }}"
+    dest: "{{ item | dirname }}/"
+    mode: pull
+    archive: yes
+    checksum: yes
+    use_ssh_args: yes
+  loop:
+    - "{{ openclaw_data_dir }}/plugin-skills/"
+    - "{{ openclaw_data_dir }}/skill-workshop/"
+
+- name: Sync temporary sessions
+  ansible.posix.synchronize:
+    src: "{{ migrate_source_user }}@{{ migrate_source_host }}:{{ openclaw_data_dir }}/agents/main/sessions/"
+    dest: "{{ openclaw_data_dir }}/agents/main/sessions/"
+    mode: pull
+    archive: yes
+    checksum: yes
+    use_ssh_args: yes
+
+- name: Migrate QMD memory (merge)
+  ansible.builtin.command: >
+    qmd sync --host {{ migrate_source_user }}@{{ migrate_source_host }}
+    --remote-qmd-user {{ migrate_source_user }} --update --embed
+  register: qmd_sync_result
+  changed_when: "'Sync completed' in qmd_sync_result.stdout or qmd_sync_result.rc == 0"
+  ignore_errors: yes
+
+- name: Migrate LiteLLM database
+  ansible.builtin.shell: >
+    ssh -o StrictHostKeyChecking=no {{ migrate_source_user }}@{{ migrate_source_host }}
+    "pg_dump -U {{ migrate_litellm_db_user }} -h {{ migrate_litellm_db_host }} -Fc {{ migrate_litellm_db }}" |
+    pg_restore -U {{ migrate_litellm_db_user }} -h {{ migrate_litellm_db_host }} -d {{ migrate_litellm_db }} -1 --clean
+  register: pg_migrate_result
+  changed_when: pg_migrate_result.rc == 0
+  ignore_errors: yes
