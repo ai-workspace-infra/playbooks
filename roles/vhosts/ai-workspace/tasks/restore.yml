@@ -45,6 +45,34 @@
   args:
     executable: /bin/bash
 
+- name: Restore Vault KV secrets
+  ansible.builtin.shell: |
+    python3 -c "
+    import urllib.request, urllib.error, json, os
+
+    VAULT_ADDR = 'http://127.0.0.1:8200'
+    try:
+        VAULT_TOKEN = open(os.path.expanduser('~/.ai_workspace_auth_token')).read().strip()
+    except:
+        VAULT_TOKEN = None
+
+    if VAULT_TOKEN and os.path.exists('{{ restore_staging_dir }}/data/vault_secrets.json'):
+        with open('{{ restore_staging_dir }}/data/vault_secrets.json', 'r') as f:
+            secrets = json.load(f)
+        
+        for path, data in secrets.items():
+            payload = json.dumps({'data': data}).encode('utf-8')
+            req = urllib.request.Request(f'{VAULT_ADDR}/v1/secret/data/{path}', data=payload, headers={'X-Vault-Token': VAULT_TOKEN, 'Content-Type': 'application/json'}, method='POST')
+            try:
+                urllib.request.urlopen(req)
+                print(f'Restored {path}')
+            except Exception as e:
+                print(f'Failed to restore {path}: {e}')
+    "
+  args:
+    executable: /bin/bash
+  ignore_errors: true
+
 - name: Cleanup restore staging directory
   ansible.builtin.file:
     path: "{{ restore_staging_dir }}"
