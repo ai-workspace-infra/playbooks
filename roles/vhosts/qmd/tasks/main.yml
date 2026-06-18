@@ -1,9 +1,9 @@
 ---
-- name: Assert QMD is only supported on Debian family
+- name: Assert QMD is supported on Debian or Darwin family
   ansible.builtin.assert:
     that:
-      - ansible_facts.os_family == "Debian"
-    fail_msg: "roles/vhosts/qmd currently supports Debian-based hosts only."
+      - ansible_facts.os_family in ["Debian", "Darwin"]
+    fail_msg: "roles/vhosts/qmd currently supports Debian-based and Darwin hosts only."
 
 - name: Ensure QMD config and cache directories exist
   ansible.builtin.file:
@@ -27,10 +27,12 @@
     cmd: "id -u {{ qmd_user }}"
   register: qmd_service_uid_result
   changed_when: false
+  when: ansible_os_family != 'Darwin'
 
 - name: Set QMD service user uid
   ansible.builtin.set_fact:
     qmd_service_uid: "{{ qmd_service_uid_result.stdout | trim }}"
+  when: ansible_os_family != 'Darwin'
 
 - name: Deploy QMD collection index config
   ansible.builtin.template:
@@ -221,6 +223,7 @@
     group: "{{ qmd_group }}"
     mode: "0644"
   register: qmd_mcp_user_service_unit
+  when: ansible_os_family != 'Darwin'
 
 - name: Enable QMD service user linger
   ansible.builtin.command:
@@ -228,6 +231,7 @@
     creates: "/var/lib/systemd/linger/{{ qmd_user }}"
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
 
 - name: Ensure QMD service user manager is running
   ansible.builtin.systemd:
@@ -235,6 +239,7 @@
     state: started
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
 
 - name: Reload QMD user systemd manager
   ansible.builtin.command:
@@ -248,6 +253,7 @@
   changed_when: false
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
 
 - name: Ensure QMD MCP daemon is enabled and running
   ansible.builtin.command:
@@ -267,6 +273,7 @@
     'Created symlink' in (qmd_mcp_service_enable.stderr | default(''))
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
 
 - name: Restart QMD MCP daemon after unit changes
   ansible.builtin.command:
@@ -280,6 +287,11 @@
   when:
     - qmd_mcp_user_service_unit.changed | default(false)
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
+
+- name: Import macOS specific QMD tasks
+  ansible.builtin.import_tasks: macos.yml
+  when: ansible_os_family == 'Darwin'
 
 - name: Validate QMD status
   ansible.builtin.command:

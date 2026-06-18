@@ -1,0 +1,13 @@
+---
+- name: Create launchd plist template for XWorkMate Bridge
+  ansible.builtin.template:
+    src: bridge.plist.j2
+    dest: "{{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.bridge.plist"
+    mode: "0644"
+  notify: Restart bridge on macOS
+
+- name: Reload launchd agent for XWorkMate Bridge
+  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.bridge.plist"
+  register: launchctl_result
+  changed_when: false
+  failed_when: launchctl_result.rc != 0 and 'already loaded' not in launchctl_result.stderr

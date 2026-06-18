@@ -1,0 +1,11 @@
+---
+- name: Restart QMD on macOS
+  ansible.builtin.command: "launchctl stop plus.svc.xworkspace.qmd"
+  register: launchctl_stop
+  failed_when: false
+  changed_when: false
+  notify: Start QMD on macOS
+
+- name: Start QMD on macOS
+  ansible.builtin.command: "launchctl start plus.svc.xworkspace.qmd"
+  changed_when: false

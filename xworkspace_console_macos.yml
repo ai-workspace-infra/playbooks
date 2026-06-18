@@ -1,0 +1,37 @@
+---
+- name: Create launchd plist templates for XWorkspace
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.{{ item.name }}.plist"
+    mode: "0644"
+  loop:
+    - src: console.plist.j2
+      name: console
+    - src: api.plist.j2
+      name: api
+    - src: ttyd.plist.j2
+      name: ttyd
+  register: xworkspace_mac_plists
+
+- name: Restart launchd agents for XWorkspace on template change
+  ansible.builtin.command: "launchctl stop plus.svc.xworkspace.{{ item.item.name }}"
+  loop: "{{ xworkspace_mac_plists.results }}"
+  when: item.changed
+  failed_when: false
+  changed_when: false
+
+- name: Reload launchd agents for XWorkspace
+  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.{{ item.name }}.plist"
+  loop:
+    - { name: console }
+    - { name: api }
+    - { name: ttyd }
+  register: launchctl_result
+  changed_when: false
+  failed_when: launchctl_result.rc != 0 and 'already loaded' not in launchctl_result.stderr
+
+- name: Start launchd agents for XWorkspace
+  ansible.builtin.command: "launchctl start plus.svc.xworkspace.{{ item.item.name }}"
+  loop: "{{ xworkspace_mac_plists.results }}"
+  when: item.changed
+  changed_when: false

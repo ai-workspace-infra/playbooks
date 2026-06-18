@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>plus.svc.xworkspace.qmd</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+            source "{{ qmd_env_path }}"
+            exec "{{ qmd_binary_path }}" mcp --http --port {{ qmd_mcp_port }}
+        </string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>WorkingDirectory</key>
+    <string>{{ qmd_home }}</string>
+    <key>StandardOutPath</key>
+    <string>{{ ansible_env.HOME }}/.local/state/xworkspace/qmd.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ ansible_env.HOME }}/.local/state/xworkspace/qmd.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>{{ qmd_home }}</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:{{ ansible_env.HOME }}/.nvm/versions/node/{{ nodejs_version }}/bin</string>
+    </dict>
+</dict>
+</plist>

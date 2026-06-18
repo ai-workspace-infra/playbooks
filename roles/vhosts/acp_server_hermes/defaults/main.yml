@@ -4,7 +4,7 @@ acp_hermes_version: "0.15"
 acp_hermes_bridge_local_source_dir: "{{ playbook_dir }}/../xworkmate-bridge"
 acp_hermes_bridge_local_build_dir: "{{ playbook_dir }}/.artifacts/acp_hermes"
 acp_hermes_bridge_local_binary_path: "{{ acp_hermes_bridge_local_build_dir }}/xworkmate-go-core"
-acp_hermes_bridge_build_goos: linux
+acp_hermes_bridge_build_goos: "{{ 'darwin' if ansible_os_family == 'Darwin' else 'linux' }}"
 acp_hermes_bridge_build_goarch: "{{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}"
 acp_hermes_bridge_use_prebuilt: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_USE_PREBUILT_BRIDGE') | default('false', true) | bool }}"
 acp_hermes_listen_host: 127.0.0.1

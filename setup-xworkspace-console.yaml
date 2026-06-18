@@ -10,9 +10,9 @@
     xworkspace_console_user: ubuntu
     xworkspace_console_public_access: false
     xworkspace_console_domain: workspace.svc.plus
-    xworkspace_console_home: /home/ubuntu
-    xworkspace_console_root: /home/ubuntu/xworkspace
-    xworkspace_console_repo_dir: /home/ubuntu/xworkspace-console
+    xworkspace_console_home: "{{ ansible_env.HOME | default('/home/ubuntu') }}"
+    xworkspace_console_root: "{{ xworkspace_console_home }}/.local/state/ai-workspace"
+    xworkspace_console_repo_dir: "{{ xworkspace_console_home }}/xworkspace-console"
     xworkspace_console_source_repo: "https://github.com/ai-workspace-lab/xworkspace-console.git"
     xworkspace_console_source_version: "main"
     xworkspace_console_source_repo_safe_dir: >-
@@ -23,16 +23,16 @@
       }}
     xworkspace_console_runtime_archive: "{{ lookup('ansible.builtin.env', 'XWORKSPACE_CONSOLE_RUNTIME_ARCHIVE') | default('', true) }}"
     ai_workspace_prebuilt_components_required: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_PREBUILT_COMPONENTS_REQUIRED') | default('false', true) | bool }}"
-    xworkspace_console_dashboard_dir: /home/ubuntu/xworkspace-console/dashboard
-    xworkspace_console_api_dir: /home/ubuntu/xworkspace-console/api
-    xworkspace_console_api_binary: /home/ubuntu/xworkspace-console/bin/xworkspace-api
-    xworkspace_console_runtime_marker: /home/ubuntu/xworkspace-console/.runtime-archive-sha256
+    xworkspace_console_dashboard_dir: "{{ xworkspace_console_repo_dir }}/dashboard"
+    xworkspace_console_api_dir: "{{ xworkspace_console_repo_dir }}/api"
+    xworkspace_console_api_binary: "{{ xworkspace_console_repo_dir }}/bin/xworkspace-api"
+    xworkspace_console_runtime_marker: "{{ xworkspace_console_repo_dir }}/.runtime-archive-sha256"
     xworkspace_console_api_working_dir: >-
       {{ xworkspace_console_repo_dir if xworkspace_console_runtime_archive | length > 0 else xworkspace_console_api_dir }}
     xworkspace_console_api_exec: >-
       {{ xworkspace_console_api_binary if xworkspace_console_runtime_archive | length > 0 else '/usr/bin/env go run .' }}
-    xworkspace_console_scripts_dir: /home/ubuntu/xworkspace/scripts
-    xworkspace_console_config_dir: /home/ubuntu/.config/xworkspace
+    xworkspace_console_scripts_dir: "{{ xworkspace_console_root }}/scripts"
+    xworkspace_console_config_dir: "{{ xworkspace_console_home }}/.config/xworkspace"
     xworkspace_console_url: http://127.0.0.1:17000
     xworkspace_console_port: 17000
     xworkspace_console_api_port: 8788
@@ -111,6 +111,7 @@
         state: present
         install_recommends: false
         update_cache: true
+      when: ansible_os_family != 'Darwin'
 
     - name: Ensure Google Chrome apt keyring directory exists
       ansible.builtin.file:
@@ -119,6 +120,7 @@
         owner: root
         group: root
         mode: "0755"
+      when: ansible_os_family != 'Darwin'
 
     - name: Install Google Linux signing key
       ansible.builtin.shell: |
@@ -134,6 +136,7 @@
       when:
         - ansible_architecture in ['x86_64', 'amd64']
         - not ai_workspace_offline_active
+        - ansible_os_family != 'Darwin'
 
     - name: Configure Google Chrome apt repository
       ansible.builtin.copy:
@@ -145,6 +148,7 @@
       when:
         - ansible_architecture in ['x86_64', 'amd64']
         - not ai_workspace_offline_active
+        - ansible_os_family != 'Darwin'
 
     - name: Refresh apt cache after Google Chrome repository changes
       ansible.builtin.apt:
@@ -152,6 +156,7 @@
       when:
         - ansible_architecture in ['x86_64', 'amd64']
         - not ai_workspace_offline_active
+        - ansible_os_family != 'Darwin'
 
     - name: Install AI Agentic Workspace runtime packages
       ansible.builtin.apt:
@@ -162,6 +167,7 @@
             + ([xworkspace_console_browser_package] if xworkspace_console_browser_package | length > 0 else [])
           }}
         state: present
+      when: ansible_os_family != 'Darwin'
 
     - name: Ensure ttyd binary target directory exists
       ansible.builtin.file:
@@ -170,6 +176,7 @@
         owner: root
         group: root
         mode: "0755"
+      when: ansible_os_family != 'Darwin'
 
     - name: Set ttyd binary download metadata
       ansible.builtin.set_fact:
@@ -191,16 +198,31 @@
         owner: root
         group: root
         force: false
-      when: not ai_workspace_offline_active
+      when:
+        - not ai_workspace_offline_active
+        - ansible_os_family != 'Darwin'
 
     - name: Verify ttyd binary
       ansible.builtin.command: "{{ xworkspace_console_ttyd_binary_path }} --version"
-      register: xworkspace_console_ttyd_version
       changed_when: false
+      register: ttyd_version_check
+      failed_when: ttyd_version_check.rc != 0
+      when: ansible_os_family != 'Darwin'
+
+    - name: Find ttyd path on macOS
+      ansible.builtin.command: which ttyd
+      register: ttyd_macos_path
+      changed_when: false
+      when: ansible_os_family == 'Darwin'
+
+    - name: Set ttyd binary path for macOS
+      ansible.builtin.set_fact:
+        xworkspace_console_ttyd_binary_path: "{{ ttyd_macos_path.stdout }}"
+      when: ansible_os_family == 'Darwin'
 
     - name: Show ttyd binary version
       ansible.builtin.debug:
-        var: xworkspace_console_ttyd_version.stdout
+        msg: "{{ ttyd_version_check.stdout | default('ttyd path: ' + ttyd_macos_path.stdout | default('Unknown')) }}"
 
     - name: Ensure AI Agentic Workspace user exists
       ansible.builtin.user:
@@ -208,32 +230,36 @@
         state: present
         create_home: true
         shell: /bin/bash
-      when: xworkspace_console_user != 'root'
+      when: 
+        - xworkspace_console_user != 'root'
+        - ansible_os_family != 'Darwin'
 
     - name: Ensure AI Agentic Workspace directories exist
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0755"
-      loop:
-        - "{{ xworkspace_console_root }}"
-        - "{{ xworkspace_console_scripts_dir }}"
-        - "{{ xworkspace_console_repo_dir }}"
-        - "{{ xworkspace_console_home }}/.config"
-        - "{{ xworkspace_console_config_dir }}"
-        - "{{ xworkspace_console_home }}/.config/autostart"
-        - "{{ xworkspace_console_home }}/.config/systemd"
-        - "{{ xworkspace_console_home }}/.config/systemd/user"
-        - "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants"
-        - "{{ xworkspace_console_home }}/.config/systemd/user/timers.target.wants"
+      loop: "{{ _directories | reject('search', 'systemd') | list if ansible_os_family == 'Darwin' else _directories }}"
+      vars:
+        _directories:
+          - "{{ xworkspace_console_root }}"
+          - "{{ xworkspace_console_scripts_dir }}"
+          - "{{ xworkspace_console_repo_dir }}"
+          - "{{ xworkspace_console_home }}/.config"
+          - "{{ xworkspace_console_config_dir }}"
+          - "{{ xworkspace_console_home }}/.config/autostart"
+          - "{{ xworkspace_console_home }}/.config/systemd"
+          - "{{ xworkspace_console_home }}/.config/systemd/user"
+          - "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants"
+          - "{{ xworkspace_console_home }}/.config/systemd/user/timers.target.wants"
 
     - name: Deploy AI Agentic Workspace status generator
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_scripts_dir }}/generate-status.py"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0755"
         content: |
           #!/usr/bin/env python3
@@ -365,7 +391,7 @@
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-status.service"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0644"
         content: |
           [Unit]
@@ -376,12 +402,13 @@
           [Service]
           Type=oneshot
           ExecStart={{ xworkspace_console_scripts_dir }}/generate-status.py
+      when: ansible_os_family != 'Darwin'
 
     - name: Deploy AI Agentic Workspace status timer
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-status.timer"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0644"
         content: |
           [Unit]
@@ -395,12 +422,13 @@
 
           [Install]
           WantedBy=timers.target
+      when: ansible_os_family != 'Darwin'
 
     - name: Deploy Xinit entrypoint for AI Agentic Workspace
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.xinitrc"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0755"
         content: |
           #!/usr/bin/env bash
@@ -427,22 +455,24 @@
           systemctl --user start xworkspace-console.service >/dev/null 2>&1 || true
 
           exec dbus-launch --exit-with-session startxfce4
+      when: ansible_os_family != 'Darwin'
 
     - name: Point Xsession to Xinit entrypoint
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.xsession"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0755"
         content: |
           #!/usr/bin/env bash
           exec "$HOME/.xinitrc"
+      when: ansible_os_family != 'Darwin'
 
     - name: Deploy AI Agentic Workspace console launcher script
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_scripts_dir }}/start.sh"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0755"
         content: |
           #!/usr/bin/env bash
@@ -453,7 +483,7 @@
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_scripts_dir }}/chrome-app.sh"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0755"
         content: |
           #!/usr/bin/env bash
@@ -495,7 +525,7 @@
         dest: "{{ xworkspace_console_repo_dir | dirname }}"
         remote_src: true
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
       when:
         - xworkspace_console_runtime_archive | length > 0
         - xworkspace_console_runtime_archive_stat.stat.exists | default(false)
@@ -509,7 +539,7 @@
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_runtime_marker }}"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0644"
         content: "{{ xworkspace_console_runtime_archive_stat.stat.checksum }}\n"
       when:
@@ -581,7 +611,7 @@
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_config_dir }}/portal-services.json"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0644"
         content: "{{ {'services': xworkspace_console_portal_services} | to_nice_json }}\n"
 
@@ -589,7 +619,7 @@
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_config_dir }}/auth-token"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0600"
         content: "{{ xworkspace_console_auth_token }}\n"
       no_log: true
@@ -598,7 +628,7 @@
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.ai_workspace_auth_token"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0600"
         content: "{{ xworkspace_console_auth_token }}\n"
       no_log: true
@@ -607,7 +637,7 @@
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_config_dir }}/portal.env"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0600"
         content: |
           AI_WORKSPACE_AUTH_TOKEN={{ xworkspace_console_auth_token }}
@@ -623,7 +653,7 @@
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-console.service"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0644"
         content: |
           [Unit]
@@ -640,12 +670,13 @@
 
           [Install]
           WantedBy=default.target
+      when: ansible_os_family != 'Darwin'
 
     - name: Deploy XWorkspace API service
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-api.service"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0644"
         content: |
           [Unit]
@@ -663,12 +694,13 @@
 
           [Install]
           WantedBy=default.target
+      when: ansible_os_family != 'Darwin'
 
     - name: Deploy AI Agentic Workspace ttyd service
       ansible.builtin.copy:
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/xworkspace-ttyd.service"
         owner: "{{ xworkspace_console_user }}"
-        group: "{{ xworkspace_console_user }}"
+        group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkspace_console_user }}"
         mode: "0644"
         content: |
           [Unit]
@@ -684,6 +716,7 @@
 
           [Install]
           WantedBy=default.target
+      when: ansible_os_family != 'Darwin'
 
     - name: Enable XWorkspace Console service
       ansible.builtin.file:
@@ -691,6 +724,7 @@
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-console.service"
         state: link
       become_user: "{{ xworkspace_console_user }}"
+      when: ansible_os_family != 'Darwin'
 
     - name: Enable XWorkspace API service
       ansible.builtin.file:
@@ -698,6 +732,7 @@
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-api.service"
         state: link
       become_user: "{{ xworkspace_console_user }}"
+      when: ansible_os_family != 'Darwin'
 
     - name: Enable AI Agentic Workspace ttyd service
       ansible.builtin.file:
@@ -705,6 +740,7 @@
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-ttyd.service"
         state: link
       become_user: "{{ xworkspace_console_user }}"
+      when: ansible_os_family != 'Darwin'
 
     - name: Enable AI Agentic Workspace LiteLLM service
       ansible.builtin.file:
@@ -713,6 +749,7 @@
         state: link
         force: true
       become_user: "{{ xworkspace_console_user }}"
+      when: ansible_os_family != 'Darwin'
 
     - name: Enable AI Agentic Workspace status timer
       ansible.builtin.file:
@@ -720,6 +757,7 @@
         dest: "{{ xworkspace_console_home }}/.config/systemd/user/timers.target.wants/xworkspace-status.timer"
         state: link
       become_user: "{{ xworkspace_console_user }}"
+      when: ansible_os_family != 'Darwin'
 
     - name: Kill legacy python http.server on port 7000
       ansible.builtin.shell: |
@@ -741,6 +779,7 @@
         - "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-portal.service"
         - "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-chrome.service"
         - "{{ xworkspace_console_home }}/.config/systemd/user/default.target.wants/xworkspace-console.target"
+      when: ansible_os_family != 'Darwin'
 
     - name: Remove legacy portal directory
       ansible.builtin.file:
@@ -754,6 +793,7 @@
         systemctl start "user@${uid}.service" || true
         runuser -u {{ xworkspace_console_user }} -- env XDG_RUNTIME_DIR="/run/user/${uid}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${uid}/bus" systemctl --user daemon-reload
       become: true
+      when: ansible_os_family != 'Darwin'
 
     - name: Restart xworkspace-console service
       ansible.builtin.shell: |
@@ -762,6 +802,7 @@
         systemctl start "user@${uid}.service" || true
         runuser -u {{ xworkspace_console_user }} -- env XDG_RUNTIME_DIR="/run/user/${uid}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${uid}/bus" systemctl --user restart xworkspace-console.service
       become: true
+      when: ansible_os_family != 'Darwin'
 
     - name: Restart xworkspace-api service
       ansible.builtin.shell: |
@@ -770,6 +811,7 @@
         systemctl start "user@${uid}.service" || true
         runuser -u {{ xworkspace_console_user }} -- env XDG_RUNTIME_DIR="/run/user/${uid}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${uid}/bus" systemctl --user restart xworkspace-api.service
       become: true
+      when: ansible_os_family != 'Darwin'
 
     - name: Restart xworkspace-ttyd service
       ansible.builtin.shell: |
@@ -778,6 +820,7 @@
         systemctl start "user@${uid}.service" || true
         runuser -u {{ xworkspace_console_user }} -- env XDG_RUNTIME_DIR="/run/user/${uid}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${uid}/bus" systemctl --user restart xworkspace-ttyd.service
       become: true
+      when: ansible_os_family != 'Darwin'
 
     - name: Hide XFCE desktop icons
       ansible.builtin.command: xfconf-query -c xfce4-desktop -p /desktop-icons/style -t int -s 0 --create
@@ -791,6 +834,7 @@
         owner: root
         group: root
         mode: "0755"
+      when: ansible_os_family != 'Darwin'
 
     - name: Deploy xworkspace-console public Caddy site
       ansible.builtin.copy:
@@ -802,19 +846,29 @@
           {{ xworkspace_console_domain }} {
               reverse_proxy 127.0.0.1:{{ xworkspace_console_port }}
           }
-      when: xworkspace_console_public_access | bool
+      when:
+        - xworkspace_console_public_access | bool
+        - ansible_os_family != 'Darwin'
       register: xworkspace_caddy_deploy
 
     - name: Remove xworkspace-console public Caddy site when disabled
       ansible.builtin.file:
         path: "/etc/caddy/conf.d/{{ xworkspace_console_domain }}.caddy"
         state: absent
-      when: not (xworkspace_console_public_access | bool)
+      when:
+        - not (xworkspace_console_public_access | bool)
+        - ansible_os_family != 'Darwin'
       register: xworkspace_caddy_remove
 
     - name: Reload Caddy if xworkspace-console proxy changed
       ansible.builtin.service:
         name: caddy
         state: reloaded
-      when: (xworkspace_caddy_deploy.changed or xworkspace_caddy_remove.changed) and not ansible_check_mode
+      when:
+        - (xworkspace_caddy_deploy.changed or xworkspace_caddy_remove.changed) and not ansible_check_mode
+        - ansible_os_family != 'Darwin'
       failed_when: false
+
+    - name: Import macOS specific XWorkspace console tasks
+      ansible.builtin.include_tasks: xworkspace_console_macos.yml
+      when: ansible_os_family == 'Darwin'
