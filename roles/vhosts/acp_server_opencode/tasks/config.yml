@@ -41,8 +41,8 @@
   ansible.builtin.copy:
     src: "{{ acp_opencode_bridge_local_binary_path }}"
     dest: "{{ acp_opencode_bridge_binary_path }}"
-    owner: root
-    group: root
+    owner: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
+    group: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0755"
   when: not (acp_opencode_bridge_use_prebuilt | bool)
 
