@@ -1,9 +1,16 @@
 ---
 # ===== Base system (always) =====
+# The Base hardening tasks below set timezone (timedatectl), rewrite
+# /etc/hostname + /etc/hosts, set the hostname, harden ssh, configure fail2ban,
+# raise file limits and open firewall ports. They all run with become: true and
+# rely on Linux-only tooling/paths, so they are skipped on macOS (Darwin), where
+# the deploy runs unprivileged. macOS prerequisites are handled by
+# common_darwin.yml instead.
 - name: Base | set timezone
   ansible.builtin.command: "timedatectl set-timezone Asia/Shanghai"
   changed_when: false
   become: true
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | render /etc/hostname
   ansible.builtin.template:
@@ -13,11 +20,13 @@
     group: root
     mode: "0644"
   become: true
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | set hostname
   ansible.builtin.hostname:
     name: "{{ inventory_hostname }}"
   become: true
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | update /etc/hosts
   ansible.builtin.template:
@@ -27,29 +36,35 @@
     group: root
     mode: "0644"
   become: true
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | harden ssh
   ansible.builtin.script: files/secure_ssh.sh
   become: true
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | harden ssh config
   ansible.builtin.import_tasks: harden_ssh.yml
   tags: [ssh, security]
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | configure fail2ban
   ansible.builtin.import_tasks: fail2ban.yml
   tags: [fail2ban, security]
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | file limits
   ansible.builtin.import_tasks: limits.yml
   when:
     - common_security_limits.enabled | default(true) | bool
+    - ansible_os_family != 'Darwin'
   tags: [limits, baseline]
 
 - name: Base | allow HTTP/HTTPS ports
   ansible.builtin.import_tasks: firewall_ports.yml
   when:
     - common_firewall.enabled | default(true) | bool
+    - ansible_os_family != 'Darwin'
   tags: [firewall, baseline]
 
 # ===== Common baseline (OS split) =====
@@ -64,6 +79,12 @@
   when:
     - enable_common | bool
     - ansible_facts.os_family == "RedHat"
+
+- name: Common | Darwin (macOS) baseline
+  ansible.builtin.import_tasks: common_darwin.yml
+  when:
+    - enable_common | bool
+    - ansible_facts.os_family == "Darwin"
 
 # ===== Add-ons (default OFF) =====
 - name: Addon | S3FS mount
