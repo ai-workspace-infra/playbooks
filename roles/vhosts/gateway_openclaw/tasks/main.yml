@@ -565,6 +565,7 @@
     owner: root
     group: root
     mode: "0755"
+  when: ansible_os_family != 'Darwin'
 
 - name: Inspect Caddy main file attributes
   ansible.builtin.command:
@@ -592,6 +593,7 @@
     group: root
     mode: "0644"
     state: present
+  when: ansible_os_family != 'Darwin'
   notify: Reload caddy
 
 - name: Restore immutable flag on Caddy main file
@@ -626,14 +628,18 @@
     owner: root
     group: root
     mode: "0644"
-  when: gateway_openclaw_public_access | bool
+  when:
+    - ansible_os_family != 'Darwin'
+    - gateway_openclaw_public_access | bool
   notify: Reload caddy
 
 - name: Remove OpenClaw public Caddy site when public access is disabled
   ansible.builtin.file:
     path: "{{ gateway_openclaw_caddy_fragment_path }}"
     state: absent
-  when: not (gateway_openclaw_public_access | bool)
+  when:
+    - ansible_os_family != 'Darwin'
+    - not (gateway_openclaw_public_access | bool)
   notify: Reload caddy
 
 - name: Restore immutable flag on OpenClaw Caddy fragment
