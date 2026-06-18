@@ -9,6 +9,14 @@
   ansible.builtin.import_tasks: compose.yml
   when: postgresql_deploy_mode == 'compose'
 
-- name: Deploy PostgreSQL natively
+- name: Deploy PostgreSQL natively (Linux)
   ansible.builtin.import_tasks: native.yml
-  when: postgresql_deploy_mode == 'native'
+  when:
+    - postgresql_deploy_mode == 'native'
+    - ansible_os_family != 'Darwin'
+
+- name: Deploy PostgreSQL natively (macOS)
+  ansible.builtin.import_tasks: macos.yml
+  when:
+    - postgresql_deploy_mode == 'native'
+    - ansible_os_family == 'Darwin'

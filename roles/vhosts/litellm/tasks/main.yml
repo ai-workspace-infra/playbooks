@@ -1,7 +1,7 @@
 ---
 # Provision the litellm database and user BEFORE litellm starts.
 # Only runs when litellm_database_host is set.
-- name: Install LiteLLM prerequisites
+- name: Install LiteLLM prerequisites (Linux)
   ansible.builtin.package:
     name:
       - python3
@@ -9,6 +9,13 @@
       - python3-venv
       - python3-psycopg2
     state: present
+  when: ansible_os_family != 'Darwin'
+
+- name: Install LiteLLM prerequisites (macOS)
+  community.general.homebrew:
+    name: python@3.13
+    state: present
+  when: ansible_os_family == 'Darwin'
 
 - name: Materialize persisted LiteLLM secrets
   ansible.builtin.assert:
@@ -42,7 +49,9 @@
   ansible.builtin.group:
     name: "{{ litellm_service_group }}"
     state: present
-  when: litellm_service_group != 'root'
+  when:
+    - litellm_service_group != 'root'
+    - ansible_os_family != 'Darwin'
 
 - name: Ensure litellm service user exists
   ansible.builtin.user:
@@ -51,7 +60,9 @@
     shell: /bin/bash
     create_home: true
     state: present
-  when: litellm_service_user != 'root'
+  when:
+    - litellm_service_user != 'root'
+    - ansible_os_family != 'Darwin'
 
 - name: Ensure litellm config directory exists
   ansible.builtin.file:
@@ -133,11 +144,14 @@
     group: root
     mode: "0644"
   notify: Restart litellm
+  when: ansible_os_family != 'Darwin'
 
 - name: Reload systemd after unit changes
   ansible.builtin.systemd:
     daemon_reload: true
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
 
 - name: Ensure Caddy fragment directory exists
   ansible.builtin.file:
@@ -209,7 +223,13 @@
     name: "{{ litellm_service_name }}"
     enabled: true
     state: started
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
+
+- name: Import macOS specific service tasks
+  ansible.builtin.import_tasks: macos.yml
+  when: ansible_os_family == 'Darwin'
 
 - name: Ensure Caddy is enabled and running
   ansible.builtin.systemd:
@@ -219,6 +239,7 @@
   when:
     - not ansible_check_mode
     - litellm_caddy_config_enabled | bool
+    - ansible_os_family != 'Darwin'
 
 - name: Apply litellm and Caddy changes before validation
   ansible.builtin.meta: flush_handlers
@@ -243,3 +264,24 @@
     owner: "{{ litellm_service_user }}"
     group: "{{ litellm_service_group }}"
     mode: "0600"
+
+- name: Register mainstream models to LiteLLM
+  ansible.builtin.script: files/register_mainstream_models.sh
+  environment:
+    LITELLM_URL: "http://{{ litellm_listen_host }}:{{ litellm_listen_port }}"
+    LITELLM_TOKEN: "{{ litellm_master_key }}"
+    DEEPSEEK_API_KEY: "{{ litellm_deepseek_api_key }}"
+    OPENAI_API_KEY: "{{ litellm_openai_api_key }}"
+    NVIDIA_API_KEY: "{{ litellm_nvidia_api_key }}"
+    GEMINI_API_KEY: "{{ litellm_gemini_api_key }}"
+    ANTHROPIC_API_KEY: "{{ litellm_anthropic_api_key }}"
+    OLLAMA_API_KEY: "{{ litellm_ollama_api_key }}"
+  when: >
+    not ansible_check_mode and
+    ((litellm_deepseek_api_key | length > 0) or
+     (litellm_openai_api_key | length > 0) or
+     (litellm_nvidia_api_key | length > 0) or
+     (litellm_gemini_api_key | length > 0) or
+     (litellm_anthropic_api_key | length > 0) or
+     (litellm_ollama_api_key | length > 0))
+  changed_when: false

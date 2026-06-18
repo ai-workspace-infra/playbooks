@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>plus.svc.xworkspace.litellm</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+            export PATH="/opt/homebrew/bin:/usr/local/bin:{{ litellm_service_home }}/.local/bin:$PATH"
+            export DATABASE_URL="{{ litellm_database_url }}"
+            export LITELLM_MASTER_KEY="{{ litellm_master_key }}"
+            export LITELLM_SALT_KEY="{{ litellm_salt_key }}"
+            export UI_USERNAME="{{ litellm_ui_username }}"
+            export UI_PASSWORD="{{ litellm_ui_password }}"
+            export DEEPSEEK_API_KEY="{{ litellm_deepseek_api_key }}"
+            export OPENAI_API_KEY="{{ litellm_openai_api_key }}"
+            export NVIDIA_API_KEY="{{ litellm_nvidia_api_key }}"
+            export OLLAMA_API_KEY="{{ litellm_ollama_api_key }}"
+            export GEMINI_API_KEY="{{ litellm_gemini_api_key }}"
+            export ANTHROPIC_API_KEY="{{ litellm_anthropic_api_key }}"
+            
+            exec "{{ litellm_proxy_dir | default(litellm_service_home ~ '/.local/lib/python3.13/site-packages/litellm/proxy') }}/../../../../bin/litellm" --host {{ litellm_listen_host }} --port {{ litellm_listen_port }} --config "{{ litellm_config_file }}" --use_prisma_db_push
+        </string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>WorkingDirectory</key>
+    <string>{{ litellm_service_home }}</string>
+    <key>StandardOutPath</key>
+    <string>{{ litellm_service_home }}/.local/state/xworkspace/litellm.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ litellm_service_home }}/.local/state/xworkspace/litellm.err.log</string>
+</dict>
+</plist>

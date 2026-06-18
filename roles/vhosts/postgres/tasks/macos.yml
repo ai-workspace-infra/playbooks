@@ -1,0 +1,57 @@
+---
+- name: Ensure PostgreSQL 16 is installed via Homebrew
+  community.general.homebrew:
+    name: postgresql@16
+    state: present
+
+- name: Start PostgreSQL via Homebrew Services
+  ansible.builtin.command: brew services start postgresql@16
+  register: brew_services_output
+  changed_when: "'Successfully started' in brew_services_output.stdout or 'started' in brew_services_output.stdout"
+  failed_when: brew_services_output.rc != 0 and 'already started' not in brew_services_output.stderr and 'already started' not in brew_services_output.stdout
+
+- name: Wait for PostgreSQL to become ready
+  ansible.builtin.wait_for:
+    host: "{{ postgresql_listen_addresses }}"
+    port: "{{ postgresql_port }}"
+    timeout: 60
+
+- name: Ensure the database user exists
+  ansible.builtin.shell: |
+    set -e
+    # Run the SQL via psql as the current user (which Homebrew configures as superuser)
+    psql -h "{{ postgresql_listen_addresses }}" -p "{{ postgresql_port }}" -d postgres -v ON_ERROR_STOP=1 <<SQL
+    DO \$\$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ postgresql_admin_user }}') THEN
+        CREATE ROLE "{{ postgresql_admin_user }}" LOGIN PASSWORD '{{ postgresql_admin_password }}';
+      ELSE
+        ALTER ROLE "{{ postgresql_admin_user }}" LOGIN PASSWORD '{{ postgresql_admin_password }}';
+      END IF;
+    END
+    \$\$;
+    SQL
+  environment:
+    PATH: "/opt/homebrew/opt/postgresql@16/bin:/usr/local/opt/postgresql@16/bin:{{ ansible_env.PATH }}"
+  no_log: true
+  changed_when: true # Idempotent SQL
+
+- name: Ensure the database exists and belongs to the user
+  ansible.builtin.shell: |
+    set -e
+    psql -h "{{ postgresql_listen_addresses }}" -p "{{ postgresql_port }}" -d postgres -v ON_ERROR_STOP=1 <<SQL
+    SELECT format('CREATE DATABASE %I OWNER %I', '{{ postgresql_database }}', '{{ postgresql_admin_user }}')
+    WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '{{ postgresql_database }}') \gexec
+    ALTER DATABASE "{{ postgresql_database }}" OWNER TO "{{ postgresql_admin_user }}";
+    SQL
+  environment:
+    PATH: "/opt/homebrew/opt/postgresql@16/bin:/usr/local/opt/postgresql@16/bin:{{ ansible_env.PATH }}"
+  changed_when: true # Idempotent SQL
+
+- name: Verify PostgreSQL connection
+  ansible.builtin.shell: |
+    PGPASSWORD="{{ postgresql_admin_password }}" psql -h "{{ postgresql_listen_addresses }}" -p "{{ postgresql_port }}" -U "{{ postgresql_admin_user }}" -d "{{ postgresql_database }}" -v ON_ERROR_STOP=1 -Atc 'select 1'
+  environment:
+    PATH: "/opt/homebrew/opt/postgresql@16/bin:/usr/local/opt/postgresql@16/bin:{{ ansible_env.PATH }}"
+  no_log: true
+  changed_when: false

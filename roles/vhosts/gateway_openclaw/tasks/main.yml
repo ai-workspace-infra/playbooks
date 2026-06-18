@@ -219,11 +219,13 @@
   register: gateway_openclaw_config_attrs
   changed_when: false
   failed_when: false
+  when: ansible_os_family != 'Darwin'
 
 - name: Remove immutable flag from OpenClaw gateway JSON config when present
   ansible.builtin.command:
     cmd: chattr -i "{{ gateway_openclaw_config_path }}"
   when:
+    - ansible_os_family != 'Darwin'
     - "'i' in (gateway_openclaw_config_attrs.stdout | default(''))"
   changed_when: true
 
@@ -301,6 +303,7 @@
   ansible.builtin.command:
     cmd: chattr +i "{{ gateway_openclaw_config_path }}"
   when:
+    - ansible_os_family != 'Darwin'
     - "'i' in (gateway_openclaw_config_attrs.stdout | default(''))"
     - not ansible_check_mode
   changed_when: true
@@ -398,6 +401,7 @@
     owner: "{{ gateway_openclaw_service_user }}"
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0755"
+  when: ansible_os_family != 'Darwin'
 
 - name: Deploy OpenClaw user systemd unit
   ansible.builtin.template:
@@ -407,6 +411,7 @@
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0644"
   register: gateway_openclaw_user_service_unit
+  when: ansible_os_family != 'Darwin'
 
 - name: Deploy OpenClaw user systemd shell environment
   ansible.builtin.template:
@@ -415,6 +420,7 @@
     owner: root
     group: root
     mode: "0644"
+  when: ansible_os_family != 'Darwin'
 
 - name: Enable OpenClaw service user linger
   ansible.builtin.command:
@@ -422,6 +428,7 @@
     creates: "/var/lib/systemd/linger/{{ gateway_openclaw_service_user }}"
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
 
 - name: Resolve OpenClaw service user uid
   ansible.builtin.command:
@@ -429,6 +436,7 @@
   register: gateway_openclaw_resolved_service_uid
   changed_when: false
   check_mode: false
+  when: ansible_os_family != 'Darwin'
 
 - name: Set OpenClaw effective service uid
   ansible.builtin.set_fact:
@@ -436,8 +444,9 @@
       {{
         gateway_openclaw_service_uid
         if (gateway_openclaw_service_uid | string | trim | length > 0)
-        else gateway_openclaw_resolved_service_uid.stdout
+        else (gateway_openclaw_resolved_service_uid.stdout | default(''))
       }}
+  when: ansible_os_family != 'Darwin'
 
 - name: Ensure OpenClaw service user manager is running
   ansible.builtin.systemd:
@@ -445,6 +454,7 @@
     state: started
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
 
 - name: Stop and disable stale root-managed OpenClaw gateway service
   ansible.builtin.systemd:
@@ -454,6 +464,7 @@
   failed_when: false
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
 
 - name: Inspect stale OpenClaw gateway root systemd unit attributes
   ansible.builtin.command:
@@ -461,11 +472,13 @@
   register: gateway_openclaw_unit_attrs
   changed_when: false
   failed_when: false
+  when: ansible_os_family != 'Darwin'
 
 - name: Remove immutable flag from stale OpenClaw gateway root systemd unit when present
   ansible.builtin.command:
     cmd: chattr -i "{{ gateway_openclaw_service_unit_path }}"
   when:
+    - ansible_os_family != 'Darwin'
     - "'i' in (gateway_openclaw_unit_attrs.stdout | default(''))"
   changed_when: true
 
@@ -474,6 +487,7 @@
     path: "{{ gateway_openclaw_service_unit_path }}"
     state: absent
   register: gateway_openclaw_removed_root_service_unit
+  when: ansible_os_family != 'Darwin'
 
 - name: Reload root systemd after removing stale OpenClaw gateway unit
   ansible.builtin.systemd:
@@ -481,6 +495,7 @@
   when:
     - gateway_openclaw_removed_root_service_unit.changed | default(false)
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
 
 - name: Reload OpenClaw user systemd manager
   ansible.builtin.shell: |
@@ -498,6 +513,7 @@
   changed_when: false
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
 
 - name: Ensure OpenClaw user gateway service is enabled and running
   ansible.builtin.shell: |
@@ -518,6 +534,7 @@
     'Created symlink' in (gateway_openclaw_user_service_enable.stderr | default(''))
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
 
 - name: Restart OpenClaw user gateway service after unit changes
   ansible.builtin.shell: |
@@ -535,6 +552,11 @@
   when:
     - gateway_openclaw_user_service_unit.changed | default(false)
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
+
+- name: Import macOS specific service tasks
+  ansible.builtin.import_tasks: macos.yml
+  when: ansible_os_family == 'Darwin'
 
 - name: Ensure Caddy fragment directory exists
   ansible.builtin.file:
@@ -550,11 +572,13 @@
   register: gateway_openclaw_caddyfile_attrs
   changed_when: false
   failed_when: false
+  when: ansible_os_family != 'Darwin'
 
 - name: Remove immutable flag from Caddy main file when present
   ansible.builtin.command:
     cmd: chattr -i "{{ gateway_openclaw_caddyfile_path }}"
   when:
+    - ansible_os_family != 'Darwin'
     - "'i' in (gateway_openclaw_caddyfile_attrs.stdout | default(''))"
   changed_when: true
 
@@ -574,6 +598,7 @@
   ansible.builtin.command:
     cmd: chattr +i "{{ gateway_openclaw_caddyfile_path }}"
   when:
+    - ansible_os_family != 'Darwin'
     - "'i' in (gateway_openclaw_caddyfile_attrs.stdout | default(''))"
     - not ansible_check_mode
   changed_when: true
@@ -584,11 +609,13 @@
   register: gateway_openclaw_caddy_fragment_attrs
   changed_when: false
   failed_when: false
+  when: ansible_os_family != 'Darwin'
 
 - name: Remove immutable flag from OpenClaw Caddy fragment when present
   ansible.builtin.command:
     cmd: chattr -i "{{ gateway_openclaw_caddy_fragment_path }}"
   when:
+    - ansible_os_family != 'Darwin'
     - "'i' in (gateway_openclaw_caddy_fragment_attrs.stdout | default(''))"
   changed_when: true
 
@@ -613,6 +640,7 @@
   ansible.builtin.command:
     cmd: chattr +i "{{ gateway_openclaw_caddy_fragment_path }}"
   when:
+    - ansible_os_family != 'Darwin'
     - "'i' in (gateway_openclaw_caddy_fragment_attrs.stdout | default(''))"
     - not ansible_check_mode
   changed_when: true
@@ -624,3 +652,4 @@
     state: started
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'

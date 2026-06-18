@@ -2,8 +2,21 @@
   ansible.builtin.service:
     name: caddy
     state: reloaded
+  when: ansible_os_family != 'Darwin'
 
 - name: Restart litellm
   ansible.builtin.service:
     name: "{{ litellm_service_name }}"
     state: restarted
+  when: ansible_os_family != 'Darwin'
+
+- name: Restart litellm on macOS
+  ansible.builtin.command: "launchctl stop plus.svc.xworkspace.litellm"
+  register: launchctl_stop
+  failed_when: false
+  changed_when: false
+  notify: Start litellm on macOS
+
+- name: Start litellm on macOS
+  ansible.builtin.command: "launchctl start plus.svc.xworkspace.litellm"
+  changed_when: false
