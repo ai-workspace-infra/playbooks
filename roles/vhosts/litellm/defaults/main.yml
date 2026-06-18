@@ -1,8 +1,8 @@
 ---
 litellm_service_name: litellm-proxy
-litellm_service_user: ubuntu
-litellm_service_group: ubuntu
-litellm_service_home: "/home/{{ litellm_service_user }}"
+litellm_service_user: "{{ ansible_env.USER | default('ubuntu') }}"
+litellm_service_group: "{{ 'staff' if ansible_os_family == 'Darwin' else (ansible_env.USER | default('ubuntu')) }}"
+litellm_service_home: "{{ ansible_env.HOME | default('/home/' + litellm_service_user) }}"
 litellm_source_repo: "https://github.com/ai-workspace-services/litellm.git"
 litellm_version: "3ad385a8a46988b6a81fe6c0bc22ef58685baa58"
 litellm_debian_11_compat_version: "1.74.9"
