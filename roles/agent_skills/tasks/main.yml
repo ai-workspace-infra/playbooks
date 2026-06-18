@@ -277,7 +277,9 @@
   environment:
     DEBIAN_FRONTEND: noninteractive
     APT_LISTCHANGES_FRONTEND: none
-  when: agent_skills_install_rsync | bool
+  when:
+    - agent_skills_install_rsync | bool
+    - ansible_os_family != 'Darwin'
 
 - name: Ensure agent skills owner home exists
   ansible.builtin.file:
