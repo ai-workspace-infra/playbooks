@@ -80,11 +80,18 @@
   ansible.builtin.set_fact:
     ai_agent_runtime_browser_resolved_executable: "{{ ai_agent_runtime_browser_resolve.stdout }}"
 
+- name: Ensure AI workspace env directory exists on macOS
+  ansible.builtin.file:
+    path: "{{ xworkspace_console_home | default(ansible_env.HOME) }}/.local/state/ai-workspace/env"
+    state: directory
+    mode: "0755"
+  when: ansible_os_family == 'Darwin'
+
 - name: Configure Playwright runtime environment
   ansible.builtin.copy:
-    dest: "{{ '/etc/profile.d' if ansible_os_family != 'Darwin' else xworkspace_console_home + '/.local/state/ai-workspace/env' }}/ai_agent_runtime_playwright.sh"
-    owner: "{{ 'root' if ansible_os_family != 'Darwin' else xworkspace_console_user }}"
-    group: "{{ 'root' if ansible_os_family != 'Darwin' else ('staff' if ansible_os_family == 'Darwin' else xworkspace_console_user) }}"
+    dest: "{{ '/etc/profile.d' if ansible_os_family != 'Darwin' else (xworkspace_console_home | default(ansible_env.HOME)) + '/.local/state/ai-workspace/env' }}/ai_agent_runtime_playwright.sh"
+    owner: "{{ 'root' if ansible_os_family != 'Darwin' else (xworkspace_console_user | default(ansible_env.USER)) }}"
+    group: "{{ 'root' if ansible_os_family != 'Darwin' else ('staff' if ansible_os_family == 'Darwin' else (xworkspace_console_user | default(ansible_env.USER))) }}"
     mode: "0644"
     content: |
       export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD={{ '1' if ai_agent_runtime_playwright_skip_browser_download | bool else '0' }}
