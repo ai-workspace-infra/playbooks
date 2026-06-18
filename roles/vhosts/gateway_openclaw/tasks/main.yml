@@ -103,7 +103,7 @@
     cmd: >-
       npm install --omit=dev --no-audit --no-fund --save-exact
       --prefix "{{ gateway_openclaw_global_npm_dir }}"
-      {{ item.name }}@{{ item.version }}
+      {{ item.package_spec | default(item.name ~ '@' ~ item.version) | quote }}
   environment:
     HOME: "{{ gateway_openclaw_home }}"
     PATH: "{{ gateway_openclaw_service_path }}"
@@ -118,7 +118,7 @@
     'changed ' in (gateway_openclaw_required_global_plugin_installs.stdout | default(''))
   loop: "{{ gateway_openclaw_required_global_plugins }}"
   loop_control:
-    label: "{{ item.name }}@{{ item.version }}"
+    label: "{{ item.package_spec | default(item.name ~ '@' ~ item.version) }}"
   when:
     - not ansible_check_mode
   notify: Restart openclaw gateway
@@ -376,8 +376,17 @@
           | list
           | length
         ) == 0
+      - >-
+        (
+          (gateway_openclaw_plugin_registry.stdout | from_json).plugins
+          | selectattr('id', 'equalto', 'openclaw-multi-session-plugins')
+          | selectattr('version', 'equalto', gateway_openclaw_required_version)
+          | list
+          | length
+        ) == 1
     fail_msg: >-
       OpenClaw must run @openclaw/codex {{ gateway_openclaw_required_version }}
+      plus openclaw-multi-session-plugins {{ gateway_openclaw_required_version }},
       and must not keep stale global @openclaw/acpx.
   when:
     - not ansible_check_mode
