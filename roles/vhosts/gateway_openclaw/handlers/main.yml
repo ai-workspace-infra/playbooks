@@ -4,6 +4,7 @@
     daemon_reload: true
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
 
 - name: Restart openclaw gateway
   ansible.builtin.shell: |
@@ -24,6 +25,18 @@
   become: true
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
+
+- name: Restart openclaw on macOS
+  ansible.builtin.command: "launchctl stop plus.svc.xworkspace.openclaw"
+  register: launchctl_stop
+  failed_when: false
+  changed_when: false
+  notify: Start openclaw on macOS
+
+- name: Start openclaw on macOS
+  ansible.builtin.command: "launchctl start plus.svc.xworkspace.openclaw"
+  changed_when: false
 
 - name: Reload caddy
   ansible.builtin.systemd:
@@ -31,3 +44,4 @@
     state: reloaded
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
