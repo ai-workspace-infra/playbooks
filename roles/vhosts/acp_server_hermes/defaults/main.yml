@@ -9,15 +9,16 @@ acp_hermes_bridge_build_goarch: "{{ 'arm64' if ansible_architecture in ['aarch64
 acp_hermes_bridge_use_prebuilt: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_USE_PREBUILT_BRIDGE') | default('false', true) | bool }}"
 acp_hermes_listen_host: 127.0.0.1
 acp_hermes_listen_port: 3920
-acp_hermes_service_user: ubuntu
-acp_hermes_service_group: ubuntu
+acp_hermes_service_user: "{{ ansible_env.USER | default('ubuntu') if ansible_os_family == 'Darwin' else 'ubuntu' }}"
+acp_hermes_service_group: "{{ 'staff' if ansible_os_family == 'Darwin' else 'ubuntu' }}"
 acp_hermes_bridge_binary_path: /usr/local/bin/xworkmate-go-core
-acp_hermes_workdir: /home/ubuntu/hermes-agent
-acp_hermes_home: /home/ubuntu
-acp_hermes_binary_path: /home/ubuntu/hermes-agent/venv/bin/hermes
+acp_hermes_home: "{{ ansible_env.HOME | default('/home/' + acp_hermes_service_user) if ansible_os_family == 'Darwin' else '/home/ubuntu' }}"
+acp_hermes_workdir: "{{ acp_hermes_home }}/hermes-agent"
+acp_hermes_binary_path: "{{ acp_hermes_workdir }}/venv/bin/hermes"
+acp_hermes_path: "{{ acp_hermes_binary_path | dirname }}:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin"
 acp_hermes_args: acp
-acp_hermes_xdg_config_home: /home/ubuntu/.config
-acp_hermes_xdg_state_home: /home/ubuntu/.local/state
+acp_hermes_xdg_config_home: "{{ acp_hermes_home }}/.config"
+acp_hermes_xdg_state_home: "{{ acp_hermes_home }}/.local/state"
 acp_hermes_allowed_origins:
   - https://xworkmate.svc.plus
   - http://localhost:*
