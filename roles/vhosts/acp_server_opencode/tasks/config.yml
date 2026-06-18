@@ -76,6 +76,7 @@
     mode: "0644"
   notify: Reload caddy
   when:
+    - ansible_os_family != 'Darwin'
     - acp_opencode_manage_caddy | bool
 
 - name: Remove deprecated standalone OpenCode Caddy fragments
@@ -83,6 +84,7 @@
     path: "{{ item }}"
     state: absent
   loop: "{{ acp_opencode_obsolete_caddy_fragment_paths }}"
+  when: ansible_os_family != 'Darwin'
   notify: Reload caddy
 
 - name: Deploy OpenCode ACP systemd service
