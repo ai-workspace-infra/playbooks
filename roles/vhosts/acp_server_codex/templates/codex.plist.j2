@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>plus.svc.xworkspace.acp.codex</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+            export PATH="{{ acp_codex_path }}"
+            export LITELLM_MASTER_KEY="{{ acp_codex_auth_token }}"
+            {% for key, value in acp_codex_environment.items() %}
+            export {{ key }}="{{ value }}"
+            {% endfor %}
+            
+            exec "{{ acp_codex_bridge_binary_path }}" acp-server \
+                --port {{ acp_codex_listen_port }} \
+                --host {{ acp_codex_listen_host }} \
+                --sub-command codex \
+                --sub-command mcp-app-server
+        </string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>WorkingDirectory</key>
+    <string>{{ acp_codex_workdir }}</string>
+    <key>StandardOutPath</key>
+    <string>{{ ansible_env.HOME }}/.local/state/xworkspace/acp.codex.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ ansible_env.HOME }}/.local/state/xworkspace/acp.codex.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>{{ acp_codex_workdir }}</string>
+    </dict>
+</dict>
+</plist>
