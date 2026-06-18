@@ -42,8 +42,8 @@
   ansible.builtin.copy:
     src: "{{ acp_gemini_bridge_local_binary_path }}"
     dest: "{{ acp_gemini_bridge_binary_path }}"
-    owner: "{{ acp_gemini_service_user }}"
-    group: "{{ acp_gemini_service_group }}"
+    owner: "{{ omit if ansible_os_family == 'Darwin' else acp_gemini_service_user }}"
+    group: "{{ omit if ansible_os_family == 'Darwin' else acp_gemini_service_group }}"
     mode: "0755"
   notify: Restart acp gemini
   when: not (acp_gemini_bridge_use_prebuilt | bool)
