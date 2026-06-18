@@ -37,12 +37,14 @@
       - gnupg
       - ca-certificates
     state: present
+  when: ansible_os_family != 'Darwin'
 
 - name: Ensure apt keyrings directory exists
   file:
     path: /etc/apt/keyrings
     state: directory
     mode: '0755'
+  when: ansible_os_family != 'Darwin'
 
 - name: Remove old NodeSource repository list files
   file:
@@ -55,6 +57,7 @@
   when:
     - nodejs_needs_install | default(true)
     - not nodejs_offline_active
+    - ansible_os_family != 'Darwin'
 
 - name: Add NodeSource GPG key
   get_url:
@@ -65,6 +68,7 @@
   when:
     - nodejs_needs_install | default(true)
     - not nodejs_offline_active
+    - ansible_os_family != 'Darwin'
 
 - name: Add NodeSource repository
   apt_repository:
@@ -75,6 +79,7 @@
   when:
     - nodejs_needs_install | default(true)
     - not nodejs_offline_active
+    - ansible_os_family != 'Darwin'
 
 - name: Update apt cache for NodeSource repository
   apt:
@@ -84,6 +89,7 @@
     - nodejs_needs_install | default(true)
     - not nodejs_offline_active
     - nodesource_key.changed or nodesource_repo.changed
+    - ansible_os_family != 'Darwin'
 
 - name: Install Node.js (exact version)
   apt:
@@ -92,7 +98,9 @@
     state: present
     allow_downgrade: true
     update_cache: yes
-  when: nodejs_needs_install | default(true)
+  when:
+    - nodejs_needs_install | default(true)
+    - ansible_os_family != 'Darwin'
 
 - name: Verify npm is available
   command: npm --version
@@ -123,6 +131,7 @@
     - install_yarn | default(true)
     - yarn_desired_version | length == 0
     - not nodejs_offline_active
+    - ansible_os_family != 'Darwin'
 
 - name: Add Yarn repository
   apt_repository:
@@ -133,6 +142,7 @@
     - install_yarn | default(true)
     - yarn_desired_version | length == 0
     - not nodejs_offline_active
+    - ansible_os_family != 'Darwin'
 
 - name: Install Yarn
   apt:
@@ -142,6 +152,7 @@
   when:
     - install_yarn | default(true)
     - yarn_desired_version | length == 0
+    - ansible_os_family != 'Darwin'
 
 - name: Enable Corepack
   command: corepack enable
@@ -160,7 +171,7 @@
 - name: Set npm to use version tags by default
   shell: npm config set save-exact true
   args:
-    creates: /root/.npmrc
+    creates: "{{ ansible_env.HOME }}/.npmrc"
 
 - name: Create npm global directory
   file:
@@ -173,7 +184,9 @@
     src: npm_global.sh.j2
     dest: /etc/profile.d/npm_global.sh
     mode: '0644'
-  when: add_npm_to_path | default(true)
+  when:
+    - add_npm_to_path | default(true)
+    - ansible_os_family != 'Darwin'
 
 - name: Verify installations
   debug:

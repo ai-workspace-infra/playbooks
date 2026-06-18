@@ -23,6 +23,7 @@
     update_cache: true
   when:
     - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
 
 - name: Check standalone Vault binary
   ansible.builtin.command: "{{ vault_binary_path }} version"
@@ -31,6 +32,7 @@
   failed_when: false
   when:
     - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
 
 - name: Download standalone Vault release
   ansible.builtin.unarchive:
@@ -40,6 +42,7 @@
     mode: "0755"
   when:
     - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
     - vault_binary_check.rc != 0 or (vault_binary_check.stdout | default('')) is not search(vault_version)
 
 - name: Ensure standalone Vault directories exist
@@ -81,6 +84,7 @@
   no_log: true
   when:
     - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
 
 - name: Start standalone Vault service
   ansible.builtin.systemd:
@@ -90,6 +94,11 @@
     daemon_reload: true
   when:
     - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+
+- name: Import macOS specific Vault tasks
+  ansible.builtin.import_tasks: macos.yml
+  when: ansible_os_family == 'Darwin'
 
 - name: Wait for standalone Vault API
   ansible.builtin.uri:

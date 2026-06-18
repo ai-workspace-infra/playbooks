@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>plus.svc.xworkspace.bridge</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+            {% for key, value in xworkmate_bridge_service_environment.items() %}
+            export {{ key }}="{{ value }}"
+            {% endfor %}
+            
+            exec "{{ xworkmate_bridge_binary_path }}" server \
+                --port {{ xworkmate_bridge_listen_port }} \
+                --host {{ xworkmate_bridge_listen_host }}
+        </string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>WorkingDirectory</key>
+    <string>{{ xworkmate_bridge_base_dir }}</string>
+    <key>StandardOutPath</key>
+    <string>{{ ansible_env.HOME }}/.local/state/xworkspace/bridge.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ ansible_env.HOME }}/.local/state/xworkspace/bridge.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>{{ xworkmate_bridge_base_dir }}</string>
+    </dict>
+</dict>
+</plist>

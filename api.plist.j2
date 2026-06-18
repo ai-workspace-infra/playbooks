@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>plus.svc.xworkspace.api</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+            source "{{ xworkspace_console_config_dir }}/portal.env"
+            exec {{ xworkspace_console_api_exec }}
+        </string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>WorkingDirectory</key>
+    <string>{{ xworkspace_console_api_working_dir }}</string>
+    <key>StandardOutPath</key>
+    <string>{{ ansible_env.HOME }}/.local/state/xworkspace/api.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ ansible_env.HOME }}/.local/state/xworkspace/api.err.log</string>
+</dict>
+</plist>

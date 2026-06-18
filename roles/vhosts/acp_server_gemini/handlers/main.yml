@@ -1,8 +1,23 @@
 ---
+- name: Reload caddy
+  ansible.builtin.service:
+    name: caddy
+    state: reloaded
+  when: ansible_os_family != 'Darwin'
+
 - name: Restart acp gemini
-  ansible.builtin.systemd:
+  ansible.builtin.service:
     name: "{{ acp_gemini_service_name }}"
     state: restarted
-    daemon_reload: true
-  when:
-    - not ansible_check_mode
+  when: ansible_os_family != 'Darwin'
+
+- name: Restart acp gemini on macOS
+  ansible.builtin.command: "launchctl stop plus.svc.xworkspace.acp.gemini"
+  register: launchctl_stop
+  failed_when: false
+  changed_when: false
+  notify: Start acp gemini on macOS
+
+- name: Start acp gemini on macOS
+  ansible.builtin.command: "launchctl start plus.svc.xworkspace.acp.gemini"
+  changed_when: false

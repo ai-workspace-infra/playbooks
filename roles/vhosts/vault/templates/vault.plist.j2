@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>plus.svc.xworkspace.vault</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+            export VAULT_DEV_ROOT_TOKEN_ID="{{ vault_server_root_access_token }}"
+            exec "{{ vault_binary_path }}" server -dev -dev-listen-address={{ vault_listen_addr }} -dev-root-token-id={{ vault_server_root_access_token }}
+        </string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>WorkingDirectory</key>
+    <string>{{ vault_data_dir }}</string>
+    <key>StandardOutPath</key>
+    <string>{{ ansible_env.HOME }}/.local/state/xworkspace/vault.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ ansible_env.HOME }}/.local/state/xworkspace/vault.err.log</string>
+</dict>
+</plist>

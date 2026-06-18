@@ -1,0 +1,30 @@
+---
+- name: Install HashiCorp Tap
+  ansible.builtin.command: brew tap hashicorp/tap
+  changed_when: false
+
+- name: Install Vault via Homebrew
+  ansible.builtin.command: brew install hashicorp/tap/vault
+  args:
+    creates: /opt/homebrew/bin/vault
+  changed_when: true
+
+- name: Create symlink for Vault binary to match Linux path
+  ansible.builtin.file:
+    src: /opt/homebrew/bin/vault
+    dest: /usr/local/bin/vault
+    state: link
+  become: true
+  ignore_errors: true
+
+- name: Create launchd plist template for Vault
+  ansible.builtin.template:
+    src: vault.plist.j2
+    dest: "{{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.vault.plist"
+    mode: "0644"
+
+- name: Start Vault on macOS
+  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.vault.plist"
+  register: launchctl_result
+  changed_when: false
+  failed_when: launchctl_result.rc != 0 and 'already loaded' not in launchctl_result.stderr

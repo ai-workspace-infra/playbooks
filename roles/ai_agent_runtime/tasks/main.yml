@@ -1,9 +1,9 @@
 ---
-- name: Assert AI agent runtime is only supported on Debian family
+- name: Assert AI agent runtime is supported on Debian or Darwin family
   ansible.builtin.assert:
     that:
-      - ansible_facts.os_family == "Debian"
-    fail_msg: "roles/ai_agent_runtime currently supports Debian-based hosts only."
+      - ansible_facts.os_family in ["Debian", "Darwin"]
+    fail_msg: "roles/ai_agent_runtime currently supports Debian-based and Darwin hosts only."
 
 - name: Install AI agent runtime base packages
   ansible.builtin.apt:
@@ -15,6 +15,7 @@
     DEBIAN_FRONTEND: noninteractive
     APT_LISTCHANGES_FRONTEND: none
   become: true
+  when: ansible_os_family != 'Darwin'
 
 - name: Configure Node.js runtime
   ansible.builtin.include_tasks: nodejs.yml

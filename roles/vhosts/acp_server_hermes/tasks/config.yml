@@ -34,6 +34,7 @@
   ansible.builtin.command:
     cmd: chattr -i "{{ acp_hermes_bridge_binary_path }}"
   when:
+    - ansible_os_family != 'Darwin'
     - "'i' in (acp_hermes_bridge_binary_attrs.stdout | default(''))"
   changed_when: true
   become: true
@@ -52,6 +53,7 @@
   ansible.builtin.command:
     cmd: chattr +i "{{ acp_hermes_bridge_binary_path }}"
   when:
+    - ansible_os_family != 'Darwin'
     - "'i' in (acp_hermes_bridge_binary_attrs.stdout | default(''))"
   changed_when: true
   become: true
@@ -124,11 +126,13 @@
   changed_when: false
   failed_when: false
   check_mode: false
+  when: ansible_os_family != 'Darwin'
 
 - name: Remove immutable flag from Hermes ACP systemd service when present
   ansible.builtin.command:
     cmd: chattr -i "/etc/systemd/system/{{ acp_hermes_service_name }}.service"
   when:
+    - ansible_os_family != 'Darwin'
     - "'i' in (acp_hermes_service_attrs.stdout | default(''))"
   changed_when: true
   become: true
@@ -147,6 +151,7 @@
   failed_when: false
   no_log: true
   check_mode: false
+  when: ansible_os_family != 'Darwin'
 
 - name: Resolve Hermes ACP auth token
   ansible.builtin.set_fact:
@@ -166,11 +171,13 @@
     group: root
     mode: "0644"
   notify: Restart acp hermes
+  when: ansible_os_family != 'Darwin'
 
 - name: Restore immutable flag on Hermes ACP systemd service
   ansible.builtin.command:
     cmd: chattr +i "/etc/systemd/system/{{ acp_hermes_service_name }}.service"
   when:
+    - ansible_os_family != 'Darwin'
     - "'i' in (acp_hermes_service_attrs.stdout | default(''))"
   changed_when: true
   become: true
@@ -178,6 +185,7 @@
 - name: Reload systemd manager configuration for Hermes ACP
   ansible.builtin.systemd:
     daemon_reload: true
+  when: ansible_os_family != 'Darwin'
 
 - name: Ensure Hermes ACP adapter service is enabled and running
   ansible.builtin.systemd:
@@ -186,3 +194,8 @@
     state: started
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
+
+- name: Import macOS specific Hermes ACP tasks
+  ansible.builtin.import_tasks: macos.yml
+  when: ansible_os_family == 'Darwin'

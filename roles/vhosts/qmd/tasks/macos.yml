@@ -1,0 +1,13 @@
+---
+- name: Create launchd plist template for QMD
+  ansible.builtin.template:
+    src: qmd.plist.j2
+    dest: "{{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.qmd.plist"
+    mode: "0644"
+  notify: Restart QMD on macOS
+
+- name: Reload launchd agent for QMD
+  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.qmd.plist"
+  register: launchctl_result
+  changed_when: false
+  failed_when: launchctl_result.rc != 0 and 'already loaded' not in launchctl_result.stderr
