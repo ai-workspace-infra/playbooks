@@ -18,11 +18,11 @@
       {{
         gateway_openclaw_gateway_token
         if (gateway_openclaw_gateway_token | trim | length > 0)
-        else (
+        else ((
           (
             gateway_openclaw_existing_config_raw.content | default('') | b64decode | from_json
           ).gateway.auth.token | default('')
-        )
+        ) if (gateway_openclaw_existing_config_raw.content | default('') | length > 0) else '')
       }}
   no_log: true
 
