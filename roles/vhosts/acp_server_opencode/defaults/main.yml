@@ -1,12 +1,12 @@
 ---
 acp_opencode_service_name: acp-opencode
-acp_opencode_runtime_user: ubuntu
-acp_opencode_runtime_group: "{{ acp_opencode_runtime_user }}"
-acp_opencode_runtime_home: "/home/{{ acp_opencode_runtime_user }}"
-acp_opencode_service_user: ubuntu
-acp_opencode_service_group: ubuntu
-acp_opencode_home: /home/ubuntu
-acp_opencode_workdir: /home/ubuntu/.opencode
+acp_opencode_runtime_user: "{{ ansible_env.USER | default('ubuntu') }}"
+acp_opencode_runtime_group: "{{ 'staff' if ansible_os_family == 'Darwin' else (ansible_env.USER | default('ubuntu')) }}"
+acp_opencode_runtime_home: "{{ ansible_env.HOME | default('/home/' + acp_opencode_runtime_user) }}"
+acp_opencode_service_user: "{{ ansible_env.USER | default('ubuntu') }}"
+acp_opencode_service_group: "{{ 'staff' if ansible_os_family == 'Darwin' else (ansible_env.USER | default('ubuntu')) }}"
+acp_opencode_home: "{{ ansible_env.HOME | default('/home/' + acp_opencode_service_user) }}"
+acp_opencode_workdir: "{{ ansible_env.HOME | default('/home/' + acp_opencode_service_user) }}/.opencode"
 acp_opencode_listen_host: 127.0.0.1
 acp_opencode_listen_port: 38992
 acp_opencode_packages: []

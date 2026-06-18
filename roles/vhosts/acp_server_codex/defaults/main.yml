@@ -1,8 +1,8 @@
 ---
 acp_codex_service_name: acp-codex
-acp_codex_runtime_user: ubuntu
-acp_codex_runtime_group: "{{ acp_codex_runtime_user }}"
-acp_codex_runtime_home: "/home/{{ acp_codex_runtime_user }}"
+acp_codex_runtime_user: "{{ ansible_env.USER | default('ubuntu') }}"
+acp_codex_runtime_group: "{{ 'staff' if ansible_os_family == 'Darwin' else (ansible_env.USER | default('ubuntu')) }}"
+acp_codex_runtime_home: "{{ ansible_env.HOME | default('/home/' + acp_codex_runtime_user) }}"
 acp_codex_service_user: "{{ acp_codex_runtime_user }}"
 acp_codex_service_group: "{{ acp_codex_runtime_group }}"
 acp_codex_workdir: "{{ acp_codex_runtime_home }}"
