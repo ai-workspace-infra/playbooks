@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>plus.svc.xworkspace.acp.opencode</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+            export PATH="{{ acp_opencode_path }}"
+            export LITELLM_MASTER_KEY="{{ acp_opencode_auth_token }}"
+            {% for key, value in acp_opencode_environment.items() %}
+            export {{ key }}="{{ value }}"
+            {% endfor %}
+            
+            exec "{{ acp_opencode_bridge_binary_path }}" acp-server \
+                --port {{ acp_opencode_listen_port }} \
+                --host {{ acp_opencode_listen_host }} \
+                --sub-command opencode \
+                --sub-command mcp-app-server
+        </string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>WorkingDirectory</key>
+    <string>{{ acp_opencode_workdir }}</string>
+    <key>StandardOutPath</key>
+    <string>{{ ansible_env.HOME }}/.local/state/xworkspace/acp.opencode.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ ansible_env.HOME }}/.local/state/xworkspace/acp.opencode.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>{{ acp_opencode_workdir }}</string>
+    </dict>
+</dict>
+</plist>

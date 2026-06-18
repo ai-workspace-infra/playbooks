@@ -1,0 +1,13 @@
+---
+- name: Create launchd plist template for OpenCode ACP
+  ansible.builtin.template:
+    src: opencode.plist.j2
+    dest: "{{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.acp.opencode.plist"
+    mode: "0644"
+  notify: Restart acp opencode on macOS
+
+- name: Reload launchd agent for OpenCode ACP
+  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.acp.opencode.plist"
+  register: launchctl_result
+  changed_when: false
+  failed_when: launchctl_result.rc != 0 and 'already loaded' not in launchctl_result.stderr
