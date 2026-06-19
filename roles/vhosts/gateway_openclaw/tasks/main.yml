@@ -90,6 +90,32 @@
     - not ansible_check_mode
   notify: Restart openclaw gateway
 
+- name: Ensure OpenClaw extensions directory exists
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_home }}/.openclaw/extensions"
+    state: directory
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0755"
+  become: "{{ ansible_os_family != 'Darwin' }}"
+
+- name: Download OpenClaw Multi-Session Plugins offline archive
+  ansible.builtin.get_url:
+    url: "{{ gateway_openclaw_multi_session_plugin_archive_url }}"
+    dest: "/tmp/openclaw-multi-session-plugins.tar.gz"
+    mode: "0644"
+
+- name: Extract OpenClaw Multi-Session Plugins
+  ansible.builtin.unarchive:
+    src: "/tmp/openclaw-multi-session-plugins.tar.gz"
+    dest: "{{ gateway_openclaw_home }}/.openclaw/extensions"
+    remote_src: true
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0755"
+  become: "{{ ansible_os_family != 'Darwin' }}"
+  notify: Restart openclaw gateway
+
 - name: Ensure OpenClaw global plugin npm directory exists
   ansible.builtin.file:
     path: "{{ gateway_openclaw_global_npm_dir }}"
