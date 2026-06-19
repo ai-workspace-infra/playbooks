@@ -176,6 +176,13 @@
   ansible.builtin.file:
     path: "{{ gateway_openclaw_compile_cache_dir }}"
     state: absent
+  # OpenClaw may still be writing compiled artifacts into the cache while it is
+  # being removed, so shutil.rmtree races and fails with [Errno 66] Directory
+  # not empty (seen on macOS). Retry until the directory is gone.
+  register: gateway_openclaw_cache_reset
+  until: gateway_openclaw_cache_reset is succeeded
+  retries: 5
+  delay: 3
   when:
     - not ansible_check_mode
     - >-
