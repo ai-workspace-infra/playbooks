@@ -39,9 +39,8 @@ litellm_gemini_api_key: "{{ lookup('ansible.builtin.env', 'GEMINI_API_KEY') | de
 litellm_anthropic_api_key: "{{ lookup('ansible.builtin.env', 'ANTHROPIC_API_KEY') | default('', true) }}"
 litellm_ollama_api_key: "{{ lookup('ansible.builtin.env', 'OLLAMA_API_KEY') | default('', true) }}"
 
-litellm_caddy_base_dir: "{{ /opt/homebrew/etc/caddy if ansible_os_family == Darwin else /etc/caddy }}"
-litellm_caddyfile_path: "{{ litellm_caddy_base_dir }}/Caddyfile"
-litellm_caddy_conf_dir: "{{ litellm_caddy_base_dir }}/conf.d"
+litellm_caddyfile_path: "{{ caddy_config_dir }}/Caddyfile"
+litellm_caddy_conf_dir: "{{ caddy_config_dir }}/conf.d"
 
 litellm_basic_auth_username: "{{ litellm_ui_username }}"
 # litellm_basic_auth_password_hash is generated dynamically via tasks
@@ -49,8 +48,8 @@ litellm_basic_auth_username: "{{ litellm_ui_username }}"
 litellm_api_domain: api.svc.plus
 litellm_ui_domain: litellm.svc.plus
 litellm_ui_path: /ui
-litellm_api_caddy_fragment_path: "{{ litellm_caddy_base_dir }}/conf.d/{{ litellm_api_domain }}.caddy"
-litellm_ui_caddy_fragment_path: "{{ litellm_caddy_base_dir }}/conf.d/{{ litellm_ui_domain }}.caddy"
+litellm_api_caddy_fragment_path: "{{ caddy_config_dir }}/conf.d/{{ litellm_api_domain }}.caddy"
+litellm_ui_caddy_fragment_path: "{{ caddy_config_dir }}/conf.d/{{ litellm_ui_domain }}.caddy"
 litellm_caddy_config_enabled: false
 litellm_enable_basic_auth: false
 
