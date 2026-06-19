@@ -558,98 +558,102 @@
   ansible.builtin.import_tasks: macos.yml
   when: ansible_os_family == 'Darwin'
 
-- name: Ensure Caddy fragment directory exists
-  ansible.builtin.file:
-    path: "{{ gateway_openclaw_caddy_conf_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
+- name: Configure Caddy integration
+  become: true
+  when: gateway_openclaw_caddy_enabled | bool
+  block:
+    - name: Ensure Caddy fragment directory exists
+      ansible.builtin.file:
+        path: "{{ gateway_openclaw_caddy_conf_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
 
-- name: Inspect Caddy main file attributes
-  ansible.builtin.command:
-    cmd: lsattr "{{ gateway_openclaw_caddyfile_path }}"
-  register: gateway_openclaw_caddyfile_attrs
-  changed_when: false
-  failed_when: false
-  when: ansible_os_family != 'Darwin'
+    - name: Inspect Caddy main file attributes
+      ansible.builtin.command:
+        cmd: lsattr "{{ gateway_openclaw_caddyfile_path }}"
+      register: gateway_openclaw_caddyfile_attrs
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family != 'Darwin'
 
-- name: Remove immutable flag from Caddy main file when present
-  ansible.builtin.command:
-    cmd: chattr -i "{{ gateway_openclaw_caddyfile_path }}"
-  when:
-    - ansible_os_family != 'Darwin'
-    - "'i' in (gateway_openclaw_caddyfile_attrs.stdout | default(''))"
-  changed_when: true
+    - name: Remove immutable flag from Caddy main file when present
+      ansible.builtin.command:
+        cmd: chattr -i "{{ gateway_openclaw_caddyfile_path }}"
+      when:
+        - ansible_os_family != 'Darwin'
+        - "'i' in (gateway_openclaw_caddyfile_attrs.stdout | default(''))"
+      changed_when: true
 
-- name: Ensure Caddy imports managed fragments
-  ansible.builtin.lineinfile:
-    path: "{{ gateway_openclaw_caddyfile_path }}"
-    line: "import {{ gateway_openclaw_caddy_conf_dir }}/*.caddy"
-    insertafter: EOF
-    create: true
-    owner: root
-    group: root
-    mode: "0644"
-    state: present
-  notify: Reload caddy
+    - name: Ensure Caddy imports managed fragments
+      ansible.builtin.lineinfile:
+        path: "{{ gateway_openclaw_caddyfile_path }}"
+        line: "import {{ gateway_openclaw_caddy_conf_dir }}/*.caddy"
+        insertafter: EOF
+        create: true
+        owner: root
+        group: root
+        mode: "0644"
+        state: present
+      notify: Reload caddy
 
-- name: Restore immutable flag on Caddy main file
-  ansible.builtin.command:
-    cmd: chattr +i "{{ gateway_openclaw_caddyfile_path }}"
-  when:
-    - ansible_os_family != 'Darwin'
-    - "'i' in (gateway_openclaw_caddyfile_attrs.stdout | default(''))"
-    - not ansible_check_mode
-  changed_when: true
+    - name: Restore immutable flag on Caddy main file
+      ansible.builtin.command:
+        cmd: chattr +i "{{ gateway_openclaw_caddyfile_path }}"
+      when:
+        - ansible_os_family != 'Darwin'
+        - "'i' in (gateway_openclaw_caddyfile_attrs.stdout | default(''))"
+        - not ansible_check_mode
+      changed_when: true
 
-- name: Inspect OpenClaw Caddy fragment attributes
-  ansible.builtin.command:
-    cmd: lsattr "{{ gateway_openclaw_caddy_fragment_path }}"
-  register: gateway_openclaw_caddy_fragment_attrs
-  changed_when: false
-  failed_when: false
-  when: ansible_os_family != 'Darwin'
+    - name: Inspect OpenClaw Caddy fragment attributes
+      ansible.builtin.command:
+        cmd: lsattr "{{ gateway_openclaw_caddy_fragment_path }}"
+      register: gateway_openclaw_caddy_fragment_attrs
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family != 'Darwin'
 
-- name: Remove immutable flag from OpenClaw Caddy fragment when present
-  ansible.builtin.command:
-    cmd: chattr -i "{{ gateway_openclaw_caddy_fragment_path }}"
-  when:
-    - ansible_os_family != 'Darwin'
-    - "'i' in (gateway_openclaw_caddy_fragment_attrs.stdout | default(''))"
-  changed_when: true
+    - name: Remove immutable flag from OpenClaw Caddy fragment when present
+      ansible.builtin.command:
+        cmd: chattr -i "{{ gateway_openclaw_caddy_fragment_path }}"
+      when:
+        - ansible_os_family != 'Darwin'
+        - "'i' in (gateway_openclaw_caddy_fragment_attrs.stdout | default(''))"
+      changed_when: true
 
-- name: Deploy OpenClaw public Caddy site
-  ansible.builtin.template:
-    src: openclaw.svc.plus.caddy.j2
-    dest: "{{ gateway_openclaw_caddy_fragment_path }}"
-    owner: root
-    group: root
-    mode: "0644"
-  when: gateway_openclaw_public_access | bool
-  notify: Reload caddy
+    - name: Deploy OpenClaw public Caddy site
+      ansible.builtin.template:
+        src: openclaw.svc.plus.caddy.j2
+        dest: "{{ gateway_openclaw_caddy_fragment_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      when: gateway_openclaw_public_access | bool
+      notify: Reload caddy
 
-- name: Remove OpenClaw public Caddy site when public access is disabled
-  ansible.builtin.file:
-    path: "{{ gateway_openclaw_caddy_fragment_path }}"
-    state: absent
-  when: not (gateway_openclaw_public_access | bool)
-  notify: Reload caddy
+    - name: Remove OpenClaw public Caddy site when public access is disabled
+      ansible.builtin.file:
+        path: "{{ gateway_openclaw_caddy_fragment_path }}"
+        state: absent
+      when: not (gateway_openclaw_public_access | bool)
+      notify: Reload caddy
 
-- name: Restore immutable flag on OpenClaw Caddy fragment
-  ansible.builtin.command:
-    cmd: chattr +i "{{ gateway_openclaw_caddy_fragment_path }}"
-  when:
-    - ansible_os_family != 'Darwin'
-    - "'i' in (gateway_openclaw_caddy_fragment_attrs.stdout | default(''))"
-    - not ansible_check_mode
-  changed_when: true
+    - name: Restore immutable flag on OpenClaw Caddy fragment
+      ansible.builtin.command:
+        cmd: chattr +i "{{ gateway_openclaw_caddy_fragment_path }}"
+      when:
+        - ansible_os_family != 'Darwin'
+        - "'i' in (gateway_openclaw_caddy_fragment_attrs.stdout | default(''))"
+        - not ansible_check_mode
+      changed_when: true
 
-- name: Ensure Caddy is enabled and running
-  ansible.builtin.systemd:
-    name: caddy
-    enabled: true
-    state: started
-  when:
-    - not ansible_check_mode
-    - ansible_os_family != 'Darwin'
+    - name: Ensure Caddy is enabled and running
+      ansible.builtin.systemd:
+        name: caddy
+        enabled: true
+        state: started
+      when:
+        - not ansible_check_mode
+        - ansible_os_family != 'Darwin'

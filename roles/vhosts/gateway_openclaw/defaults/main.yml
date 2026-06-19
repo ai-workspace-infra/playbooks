@@ -7,9 +7,11 @@ gateway_openclaw_domain: openclaw.svc.plus
 # When false, disables public Caddy access to OpenClaw.
 gateway_openclaw_public_access: false
 
-gateway_openclaw_caddyfile_path: /etc/caddy/Caddyfile
-gateway_openclaw_caddy_conf_dir: /etc/caddy/conf.d
-gateway_openclaw_caddy_fragment_path: "/etc/caddy/conf.d/{{ gateway_openclaw_domain }}.caddy"
+gateway_openclaw_caddy_enabled: "{{ gateway_openclaw_public_access | bool }}"
+gateway_openclaw_caddy_base_dir: "{{ '/opt/homebrew/etc/caddy' if ansible_os_family == 'Darwin' else '/etc/caddy' }}"
+gateway_openclaw_caddyfile_path: "{{ gateway_openclaw_caddy_base_dir }}/Caddyfile"
+gateway_openclaw_caddy_conf_dir: "{{ gateway_openclaw_caddy_base_dir }}/conf.d"
+gateway_openclaw_caddy_fragment_path: "{{ gateway_openclaw_caddy_conf_dir }}/{{ gateway_openclaw_domain }}.caddy"
 gateway_openclaw_access_log_path: /var/log/caddy/clawdbot.access.log
 
 gateway_openclaw_service_name: openclaw-gateway
