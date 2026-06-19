@@ -150,6 +150,10 @@
   ansible.builtin.file:
     path: "{{ gateway_openclaw_compile_cache_dir }}"
     state: absent
+  register: gateway_openclaw_compile_cache_reset
+  retries: 5
+  delay: 1
+  until: gateway_openclaw_compile_cache_reset is succeeded
   when:
     - not ansible_check_mode
     - >-
