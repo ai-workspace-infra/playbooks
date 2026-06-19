@@ -223,131 +223,136 @@
     - not ansible_check_mode
     - ansible_os_family != 'Darwin'
 
-- name: Ensure Caddy fragment directory exists
-  ansible.builtin.file:
-    path: "{{ xworkmate_bridge_caddy_conf_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-  become: true
+# Caddy ingress for xworkmate-bridge. Skipped entirely when caddy_enabled is
+# false (default on macOS single-host deploys); override with -e caddy_enabled=true.
+- name: Configure xworkmate-bridge Caddy ingress
+  when: caddy_enabled | bool
+  block:
+    - name: Ensure Caddy fragment directory exists
+      ansible.builtin.file:
+        path: "{{ xworkmate_bridge_caddy_conf_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      become: true
 
-- name: Inspect Caddy main file attributes
-  ansible.builtin.command:
-    cmd: lsattr "{{ xworkmate_bridge_caddyfile_path }}"
-  register: xworkmate_bridge_caddyfile_attrs
-  changed_when: false
-  failed_when: false
-  when: ansible_os_family != 'Darwin'
-  become: true
+    - name: Inspect Caddy main file attributes
+      ansible.builtin.command:
+        cmd: lsattr "{{ xworkmate_bridge_caddyfile_path }}"
+      register: xworkmate_bridge_caddyfile_attrs
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family != 'Darwin'
+      become: true
 
-- name: Remove immutable flag from Caddy main file when present
-  ansible.builtin.command:
-    cmd: chattr -i "{{ xworkmate_bridge_caddyfile_path }}"
-  when:
-    - ansible_os_family != 'Darwin'
-    - "'i' in (xworkmate_bridge_caddyfile_attrs.stdout | default(''))"
-  changed_when: true
-  become: true
+    - name: Remove immutable flag from Caddy main file when present
+      ansible.builtin.command:
+        cmd: chattr -i "{{ xworkmate_bridge_caddyfile_path }}"
+      when:
+        - ansible_os_family != 'Darwin'
+        - "'i' in (xworkmate_bridge_caddyfile_attrs.stdout | default(''))"
+      changed_when: true
+      become: true
 
-- name: Ensure Caddy imports managed fragments
-  ansible.builtin.lineinfile:
-    path: "{{ xworkmate_bridge_caddyfile_path }}"
-    line: "import {{ xworkmate_bridge_caddy_conf_dir }}/*.caddy"
-    insertafter: EOF
-    create: true
-    owner: root
-    group: root
-    mode: "0644"
-    state: present
-  notify: Reload caddy
-  become: true
+    - name: Ensure Caddy imports managed fragments
+      ansible.builtin.lineinfile:
+        path: "{{ xworkmate_bridge_caddyfile_path }}"
+        line: "import {{ xworkmate_bridge_caddy_conf_dir }}/*.caddy"
+        insertafter: EOF
+        create: true
+        owner: root
+        group: root
+        mode: "0644"
+        state: present
+      notify: Reload caddy
+      become: true
 
-- name: Restore immutable flag on Caddy main file
-  ansible.builtin.command:
-    cmd: chattr +i "{{ xworkmate_bridge_caddyfile_path }}"
-  when:
-    - ansible_os_family != 'Darwin'
-    - "'i' in (xworkmate_bridge_caddyfile_attrs.stdout | default(''))"
-  changed_when: true
-  become: true
+    - name: Restore immutable flag on Caddy main file
+      ansible.builtin.command:
+        cmd: chattr +i "{{ xworkmate_bridge_caddyfile_path }}"
+      when:
+        - ansible_os_family != 'Darwin'
+        - "'i' in (xworkmate_bridge_caddyfile_attrs.stdout | default(''))"
+      changed_when: true
+      become: true
 
-- name: Inspect xworkmate-bridge Caddy fragment attributes
-  ansible.builtin.command:
-    cmd: lsattr "{{ xworkmate_bridge_service_caddy_fragment_path }}"
-  register: xworkmate_bridge_site_fragment_attrs
-  changed_when: false
-  failed_when: false
-  when: ansible_os_family != 'Darwin'
-  become: true
+    - name: Inspect xworkmate-bridge Caddy fragment attributes
+      ansible.builtin.command:
+        cmd: lsattr "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+      register: xworkmate_bridge_site_fragment_attrs
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family != 'Darwin'
+      become: true
 
-- name: Remove immutable flag from xworkmate-bridge Caddy fragment when present
-  ansible.builtin.command:
-    cmd: chattr -i "{{ xworkmate_bridge_service_caddy_fragment_path }}"
-  when:
-    - ansible_os_family != 'Darwin'
-    - "'i' in (xworkmate_bridge_site_fragment_attrs.stdout | default(''))"
-  changed_when: true
-  become: true
+    - name: Remove immutable flag from xworkmate-bridge Caddy fragment when present
+      ansible.builtin.command:
+        cmd: chattr -i "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+      when:
+        - ansible_os_family != 'Darwin'
+        - "'i' in (xworkmate_bridge_site_fragment_attrs.stdout | default(''))"
+      changed_when: true
+      become: true
 
-- name: Deploy xworkmate-bridge public Caddy site
-  ansible.builtin.template:
-    src: xworkmate-bridge-site.caddy.j2
-    dest: "{{ xworkmate_bridge_service_caddy_fragment_path }}"
-    owner: root
-    group: root
-    mode: "0644"
-  when: xworkmate_bridge_public_access | bool
-  notify: Reload caddy
-  become: true
+    - name: Deploy xworkmate-bridge public Caddy site
+      ansible.builtin.template:
+        src: xworkmate-bridge-site.caddy.j2
+        dest: "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      when: xworkmate_bridge_public_access | bool
+      notify: Reload caddy
+      become: true
 
-- name: Remove xworkmate-bridge public Caddy site when public access is disabled
-  ansible.builtin.file:
-    path: "{{ xworkmate_bridge_service_caddy_fragment_path }}"
-    state: absent
-  when: not (xworkmate_bridge_public_access | bool)
-  notify: Reload caddy
-  become: true
+    - name: Remove xworkmate-bridge public Caddy site when public access is disabled
+      ansible.builtin.file:
+        path: "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+        state: absent
+      when: not (xworkmate_bridge_public_access | bool)
+      notify: Reload caddy
+      become: true
 
-- name: Restore immutable flag on xworkmate-bridge Caddy fragment
-  ansible.builtin.command:
-    cmd: chattr +i "{{ xworkmate_bridge_service_caddy_fragment_path }}"
-  changed_when: true
-  when:
-    - not ansible_check_mode
-    - ansible_os_family != 'Darwin'
-    - xworkmate_bridge_public_access | bool
-  become: true
+    - name: Restore immutable flag on xworkmate-bridge Caddy fragment
+      ansible.builtin.command:
+        cmd: chattr +i "{{ xworkmate_bridge_service_caddy_fragment_path }}"
+      changed_when: true
+      when:
+        - not ansible_check_mode
+        - ansible_os_family != 'Darwin'
+        - xworkmate_bridge_public_access | bool
+      become: true
 
-- name: Inspect deprecated ACP Caddy fragment attributes
-  ansible.builtin.command:
-    cmd: lsattr "{{ item }}"
-  register: xworkmate_bridge_obsolete_fragment_attrs
-  changed_when: false
-  failed_when: false
-  loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
-  when: ansible_os_family != 'Darwin'
-  become: true
+    - name: Inspect deprecated ACP Caddy fragment attributes
+      ansible.builtin.command:
+        cmd: lsattr "{{ item }}"
+      register: xworkmate_bridge_obsolete_fragment_attrs
+      changed_when: false
+      failed_when: false
+      loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
+      when: ansible_os_family != 'Darwin'
+      become: true
 
-- name: Remove immutable flag from deprecated ACP Caddy fragments when present
-  ansible.builtin.command:
-    cmd: chattr -i "{{ item.item }}"
-  when:
-    - ansible_os_family != 'Darwin'
-    - "'i' in (item.stdout | default(''))"
-  changed_when: true
-  loop: "{{ xworkmate_bridge_obsolete_fragment_attrs.results }}"
-  loop_control:
-    label: "{{ item.item }}"
-  become: true
+    - name: Remove immutable flag from deprecated ACP Caddy fragments when present
+      ansible.builtin.command:
+        cmd: chattr -i "{{ item.item }}"
+      when:
+        - ansible_os_family != 'Darwin'
+        - "'i' in (item.stdout | default(''))"
+      changed_when: true
+      loop: "{{ xworkmate_bridge_obsolete_fragment_attrs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      become: true
 
-- name: Remove deprecated ACP Caddy fragments
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
-  notify: Reload caddy
-  become: true
+    - name: Remove deprecated ACP Caddy fragments
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
+      notify: Reload caddy
+      become: true
 
 - name: Ensure xworkmate-bridge service is enabled and running
   ansible.builtin.systemd:
