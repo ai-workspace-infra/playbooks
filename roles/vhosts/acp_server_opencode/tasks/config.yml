@@ -37,10 +37,21 @@
   changed_when: true
   become: true
 
-- name: Upload XWorkmate Go ACP server binary for OpenCode
-  ansible.builtin.copy:
-    src: "{{ acp_opencode_bridge_local_binary_path }}"
-    dest: "{{ acp_opencode_bridge_binary_path }}"
+- name: Download XWorkmate Bridge release archive for OpenCode
+  ansible.builtin.get_url:
+    url: "https://github.com/ai-workspace-lab/xworkmate-bridge/releases/latest/download/xworkmate-bridge-{{ ansible_system | lower }}-{{ 'amd64' if ansible_architecture in ['x86_64', 'amd64'] else 'arm64' }}.tar.gz"
+    dest: "/tmp/xworkmate-bridge-opencode.tar.gz"
+    mode: "0644"
+  when: not (acp_opencode_bridge_use_prebuilt | bool)
+
+- name: Extract XWorkmate Go ACP server binary for OpenCode
+  ansible.builtin.unarchive:
+    src: "/tmp/xworkmate-bridge-opencode.tar.gz"
+    dest: "{{ acp_opencode_bridge_binary_path | dirname }}"
+    remote_src: true
+    extra_opts:
+      - "--strip-components=2"
+      - "xworkmate-bridge/bin/xworkmate-go-core"
     owner: root
     group: root
     mode: "0755"
