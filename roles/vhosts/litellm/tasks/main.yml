@@ -12,9 +12,18 @@
   when: ansible_os_family != 'Darwin'
 
 - name: Install LiteLLM prerequisites (macOS)
-  community.general.homebrew:
-    name: python@3.13
-    state: present
+  # Use brew from PATH (Apple Silicon prefix first) instead of the
+  # community.general.homebrew module, which can select a stale Intel Homebrew
+  # at /usr/local that crashes on newer macOS versions. See postgres macos.yml.
+  ansible.builtin.command: brew install python@3.13
+  environment:
+    PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH }}"
+    HOMEBREW_NO_AUTO_UPDATE: "1"
+  register: litellm_brew_python
+  changed_when: >-
+    'already installed' not in (litellm_brew_python.stderr | default(''))
+    and 'already installed' not in (litellm_brew_python.stdout | default(''))
+  failed_when: litellm_brew_python.rc != 0
   when: ansible_os_family == 'Darwin'
 
 - name: Materialize persisted LiteLLM secrets
@@ -68,8 +77,8 @@
   ansible.builtin.file:
     path: "{{ litellm_config_dir }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ litellm_service_user if ansible_os_family == 'Darwin' else 'root' }}"
+    group: "{{ litellm_service_group if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0755"
 
 - name: Provision LiteLLM Database
@@ -89,8 +98,8 @@
   ansible.builtin.template:
     src: litellm.env.j2
     dest: "{{ litellm_env_file }}"
-    owner: root
-    group: root
+    owner: "{{ litellm_service_user if ansible_os_family == 'Darwin' else 'root' }}"
+    group: "{{ litellm_service_group if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0600"
   notify: Restart litellm
 

@@ -42,8 +42,8 @@
   ansible.builtin.copy:
     src: "{{ acp_codex_bridge_local_binary_path }}"
     dest: "{{ acp_codex_bridge_binary_path }}"
-    owner: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
-    group: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
+    owner: root
+    group: root
     mode: "0755"
   when: not (acp_codex_bridge_use_prebuilt | bool)
 
@@ -61,7 +61,6 @@
     path: "{{ item }}"
     state: absent
   loop: "{{ acp_codex_obsolete_caddy_fragment_paths }}"
-  when: ansible_os_family != 'Darwin'
   notify: Reload caddy
 
 - name: Deploy Caddy main file
@@ -73,7 +72,6 @@
     mode: "0644"
   notify: Reload caddy
   when:
-    - ansible_os_family != 'Darwin'
     - acp_codex_manage_caddy | bool
 
 - name: Deploy Codex ACP systemd service

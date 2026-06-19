@@ -42,18 +42,14 @@
   register: ai_agent_runtime_pandoc_version
   changed_when: false
   check_mode: false
-  when:
-    - ansible_facts.os_family == "Debian"
-    - ai_agent_runtime_docs_enabled | bool
+  when: ai_agent_runtime_docs_enabled | bool
 
 - name: Check xelatex version
   ansible.builtin.command: xelatex --version
   register: ai_agent_runtime_xelatex_version
   changed_when: false
   check_mode: false
-  when:
-    - ansible_facts.os_family == "Debian"
-    - ai_agent_runtime_docs_enabled | bool
+  when: ai_agent_runtime_docs_enabled | bool
 
 - name: Check Chinese font inventory
   ansible.builtin.command: fc-list :lang=zh family
@@ -61,7 +57,6 @@
   changed_when: false
   check_mode: false
   when:
-    - ansible_facts.os_family == "Debian"
     - ai_agent_runtime_fonts_enabled | bool
     - ai_agent_runtime_verify_chinese_fonts | bool
 
@@ -71,7 +66,6 @@
       - ai_agent_runtime_chinese_fonts.stdout | length > 0
     fail_msg: "No Chinese fonts were discovered by fontconfig."
   when:
-    - ansible_facts.os_family == "Debian"
     - ai_agent_runtime_fonts_enabled | bool
     - ai_agent_runtime_verify_chinese_fonts | bool
 

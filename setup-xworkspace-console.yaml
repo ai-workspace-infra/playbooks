@@ -576,13 +576,22 @@
         - xworkspace_console_runtime_archive | length == 0
         - xworkspace_console_source_repo_safe_dir | length > 0
 
+    - name: Remove stale xworkspace-console repo to avoid shallow checkout failures
+      ansible.builtin.file:
+        path: "{{ xworkspace_console_repo_dir }}"
+        state: absent
+      become_user: "{{ xworkspace_console_user }}"
+      when:
+        - xworkspace_console_runtime_archive | length == 0
+        - xworkspace_console_source_version == 'main' or xworkspace_console_source_version == 'HEAD'
+
     - name: Clone xworkspace-console repository
       ansible.builtin.git:
         repo: "{{ xworkspace_console_source_repo }}"
         dest: "{{ xworkspace_console_repo_dir }}"
         version: "{{ xworkspace_console_source_version }}"
-        depth: 1
         force: true
+        depth: 1
       become_user: "{{ xworkspace_console_user }}"
       register: xworkspace_console_source_checkout
       when: xworkspace_console_runtime_archive | length == 0
