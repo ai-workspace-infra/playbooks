@@ -6,9 +6,9 @@ vault_deploy_mode: "{{ lookup('ansible.builtin.env', 'VAULT_DEPLOY_MODE') | defa
 vault_version: "{{ lookup('ansible.builtin.env', 'VAULT_VERSION') | default('1.21.4', true) }}"
 vault_listen_addr: 127.0.0.1:8200
 vault_service_name: vault
-vault_binary_path: /usr/local/bin/vault
-vault_config_dir: /etc/vault.d
-vault_data_dir: /opt/vault/data
+vault_binary_path: "{{ '/opt/homebrew/bin/vault' if ansible_os_family == 'Darwin' else '/usr/local/bin/vault' }}"
+vault_config_dir: "{{ (ansible_env.HOME | default('/tmp')) + '/.config/vault.d' if ansible_os_family == 'Darwin' else '/etc/vault.d' }}"
+vault_data_dir: "{{ (ansible_env.HOME | default('/tmp')) + '/.local/state/vault/data' if ansible_os_family == 'Darwin' else '/opt/vault/data' }}"
 ai_workspace_auth_token: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN') | default('', true) }}"
 vault_server_root_access_token: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN') | default(ai_workspace_auth_token, true), true) }}"
 vault_admin_init_enabled: "{{ (vault_server_root_access_token | trim | length > 0) and (vault_admin_password | trim | length > 0) }}"
