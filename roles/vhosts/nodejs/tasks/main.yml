@@ -93,8 +93,7 @@
 
 - name: Install Node.js (exact version)
   apt:
-    name:
-      - "{{ 'nodejs' if nodejs_offline_active else ('nodejs=' + nodejs_version_pin + '-1nodesource1' if nodejs_version_pin != '' else 'nodejs') }}"
+    name: "{{ ['nodejs', 'npm'] if nodejs_offline_active else [('nodejs=' + nodejs_version_pin + '-1nodesource1') if nodejs_version_pin != '' else 'nodejs'] }}"
     state: present
     allow_downgrade: true
     update_cache: yes
@@ -106,7 +105,6 @@
   command: npm --version
   register: npm_version_check
   changed_when: false
-  failed_when: false
   check_mode: false
 
 - name: Get current Yarn version
