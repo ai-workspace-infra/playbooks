@@ -14,6 +14,7 @@
     owner: root
     group: root
     mode: "0755"
+  become: true
 
 - name: Deploy managed accounts Caddy fragment
   ansible.builtin.template:
@@ -23,12 +24,14 @@
     group: root
     mode: "0644"
   notify: Reload caddy
+  become: true
 
 - name: Ensure Caddy is enabled and running for accounts service
   ansible.builtin.systemd:
     name: caddy
     enabled: true
     state: started
+  become: true
 
 - name: Log into container registry for accounts service
   ansible.builtin.shell: |

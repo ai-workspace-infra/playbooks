@@ -77,6 +77,7 @@
   notify: Reload caddy
   when:
     - acp_opencode_manage_caddy | bool
+  become: true
 
 - name: Remove deprecated standalone OpenCode Caddy fragments
   ansible.builtin.file:
@@ -84,6 +85,7 @@
     state: absent
   loop: "{{ acp_opencode_obsolete_caddy_fragment_paths }}"
   notify: Reload caddy
+  become: true
 
 - name: Deploy OpenCode ACP systemd service
   ansible.builtin.command:
@@ -134,6 +136,7 @@
   when:
     - ansible_os_family != 'Darwin'
     - acp_opencode_manage_caddy | bool
+  become: true
 
 - name: Ensure OpenCode ACP service is enabled and running
   ansible.builtin.systemd:

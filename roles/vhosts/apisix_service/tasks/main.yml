@@ -10,6 +10,7 @@
 - name: Check caddy CLI is present on the target node
   ansible.builtin.command: caddy version
   changed_when: false
+  become: true
 
 - name: Check managed APISIX source tree
   ansible.builtin.stat:
@@ -35,6 +36,7 @@
   ansible.builtin.stat:
     path: "{{ apisix_service_caddy_conf_dir }}"
   register: apisix_service_caddy_conf_dir_stat
+  become: true
 
 - name: Check managed APISIX env file
   ansible.builtin.stat:
@@ -57,6 +59,7 @@
     apisix_service_docs_writable: "{{ (not ansible_check_mode) or apisix_service_docs_dir_stat.stat.exists }}"
     apisix_service_scripts_writable: "{{ (not ansible_check_mode) or apisix_service_scripts_dir_stat.stat.exists }}"
     apisix_service_caddy_writable: "{{ (not ansible_check_mode) or apisix_service_caddy_conf_dir_stat.stat.exists }}"
+  become: true
 
 - name: Ensure managed APISIX directories exist
   ansible.builtin.file:
@@ -71,6 +74,7 @@
     - "{{ apisix_service_docs_dir }}"
     - "{{ apisix_service_scripts_dir }}"
     - "{{ apisix_service_caddy_conf_dir }}"
+  become: true
 
 - name: Copy managed APISIX source tree files
   ansible.builtin.copy:
@@ -121,6 +125,7 @@
     mode: "0644"
   notify: Reload caddy
   when: apisix_service_caddy_writable
+  become: true
 
 - name: Validate APISIX env contract
   ansible.builtin.shell: |
@@ -180,6 +185,7 @@
   ansible.builtin.command: systemctl reload caddy
   changed_when: true
   when: not ansible_check_mode
+  become: true
 
 - name: Run APISIX health check
   ansible.builtin.command: "{{ apisix_service_scripts_dir }}/healthcheck.sh"

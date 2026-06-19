@@ -59,9 +59,10 @@ xworkmate_bridge_validation_validate_certs: true
 xworkmate_bridge_validation_origin: https://xworkmate.svc.plus
 
 # Caddy configuration paths
-xworkmate_bridge_caddyfile_path: /etc/caddy/Caddyfile
-xworkmate_bridge_caddy_conf_dir: /etc/caddy/conf.d
-xworkmate_bridge_service_caddy_fragment_path: /etc/caddy/conf.d/xworkmate-bridge.caddy
+xworkmate_bridge_caddy_base_dir: "{{ \/opt/homebrew/etc/caddy\ if ansible_os_family == \Darwin\ else \/etc/caddy\ }}"
+xworkmate_bridge_caddyfile_path: {{ xworkmate_bridge_caddy_base_dir }}/Caddyfile
+xworkmate_bridge_caddy_conf_dir: {{ xworkmate_bridge_caddy_base_dir }}/conf.d
+xworkmate_bridge_service_caddy_fragment_path: {{ xworkmate_bridge_caddy_base_dir }}/conf.d/xworkmate-bridge.caddy
 
 # Upstream host/port settings for summary and validation
 xworkmate_bridge_codex_upstream_host: 127.0.0.1
@@ -103,12 +104,12 @@ xworkmate_bridge_hermes_rpc_url: "http://{{ xworkmate_bridge_hermes_upstream_hos
 
 # Obsolete paths to clean up
 xworkmate_bridge_obsolete_caddy_fragment_paths:
-  - /etc/caddy/conf.d/acp-server.caddy
-  - /etc/caddy/conf.d/acp-server-codex.caddy
-  - /etc/caddy/conf.d/acp-server-opencode.caddy
-  - /etc/caddy/conf.d/acp-server-gemini.caddy
-  - /etc/caddy/conf.d/acp-server-bridge.caddy
-  - /etc/caddy/conf.d/acp-server-bridge-server.caddy
+  - {{ xworkmate_bridge_caddy_base_dir }}/conf.d/acp-server.caddy
+  - {{ xworkmate_bridge_caddy_base_dir }}/conf.d/acp-server-codex.caddy
+  - {{ xworkmate_bridge_caddy_base_dir }}/conf.d/acp-server-opencode.caddy
+  - {{ xworkmate_bridge_caddy_base_dir }}/conf.d/acp-server-gemini.caddy
+  - {{ xworkmate_bridge_caddy_base_dir }}/conf.d/acp-server-bridge.caddy
+  - {{ xworkmate_bridge_caddy_base_dir }}/conf.d/acp-server-bridge-server.caddy
 
 
 xworkmate_bridge_packages:

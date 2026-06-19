@@ -7,6 +7,7 @@
       - caddy
     state: present
     update_cache: true
+  become: true
 
 - name: Ensure Modern IT History directories exist
   ansible.builtin.file:
@@ -19,6 +20,7 @@
     - "{{ modern_it_history_root }}"
     - "{{ modern_it_history_current_dir }}"
     - "{{ modern_it_history_caddy_conf_dir }}"
+  become: true
 
 - name: Clone or update Modern IT History repository
   ansible.builtin.git:
@@ -80,6 +82,7 @@
     group: root
     mode: "0644"
   notify: Reload caddy
+  become: true
 
 - name: Validate Caddy config
   ansible.builtin.command: caddy validate --config /etc/caddy/Caddyfile
@@ -97,6 +100,7 @@
     name: caddy
     enabled: true
     state: reloaded
+  become: true
 
 - name: Validate local ebook endpoint
   ansible.builtin.command: >
