@@ -591,9 +591,11 @@
   ansible.builtin.import_tasks: macos.yml
   when: ansible_os_family == 'Darwin'
 
-- name: Configure Caddy integration
-  become: true
-  when: gateway_openclaw_caddy_enabled | bool
+# Caddy ingress for OpenClaw. Skipped entirely when caddy_enabled is false
+# (default on macOS single-host deploys), so /etc/caddy is never touched and no
+# caddy service is started/notified. Override with -e caddy_enabled=true.
+- name: Configure OpenClaw Caddy ingress
+  when: caddy_enabled | bool
   block:
     - name: Ensure Caddy fragment directory exists
       ansible.builtin.file:
