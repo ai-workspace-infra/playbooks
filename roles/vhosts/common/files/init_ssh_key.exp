@@ -1,0 +1,26 @@
+#!/usr/bin/expect -f
+
+if {[llength $argv] != 3} {
+    puts "Usage: ./init_ssh_key.exp <username> <host> <password>"
+    exit 1
+}
+
+set user [lindex $argv 0]
+set host [lindex $argv 1]
+set password [lindex $argv 2]
+
+set timeout 20
+
+spawn ssh-copy-id -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $user@$host
+
+expect {
+    "*assword:*" {
+        send "$password\r"
+        expect eof
+    }
+    "All keys were skipped because they already exist on the remote system." {
+        expect eof
+    }
+    eof {
+    }
+}
