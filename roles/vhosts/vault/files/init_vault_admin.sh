@@ -139,6 +139,21 @@ vault write "auth/userpass/users/${USERNAME}" \
 
 userpass_accessor="$(vault auth list -format=json | jq -r '."userpass/".accessor')"
 
+entity_id=""
+alias_ids_json="$(vault list -format=json identity/entity-alias/id 2>/dev/null || true)"
+if [[ -n "$alias_ids_json" && "$alias_ids_json" != "null" ]]; then
+  while IFS= read -r alias_id; do
+    alias_json="$(vault read -format=json "identity/entity-alias/id/${alias_id}" 2>/dev/null || true)"
+    if [[ -z "$alias_json" ]]; then
+      continue
+    fi
+    if printf '%s' "$alias_json" | jq -e --arg username "$USERNAME" --arg accessor "$userpass_accessor" '.data.name == $username and .data.mount_accessor == $accessor' >/dev/null; then
+      entity_id="$(printf '%s' "$alias_json" | jq -r '.data.canonical_id')"
+      break
+    fi
+  done < <(printf '%s' "$alias_ids_json" | jq -r '.[]?')
+fi
+
 methods_json="$(curl -sS \
   -H "X-Vault-Token: ${VAULT_TOKEN}" \
   -H "X-Vault-Request: true" \
@@ -158,9 +173,17 @@ if [[ -z "$method_id" ]]; then
   method_id="$(printf '%s' "$method_json" | jq -r '.data.method_id // .data.id')"
 fi
 
-bootstrap_json="$(vault write -format=json "auth/userpass/login/${USERNAME}" password="$PASSWORD")"
-entity_id="$(printf '%s' "$bootstrap_json" | jq -r '.auth.entity_id')"
-bootstrap_token="$(printf '%s' "$bootstrap_json" | jq -r '.auth.client_token')"
+bootstrap_token=""
+if [[ -z "$entity_id" || "$entity_id" == "null" ]]; then
+  bootstrap_json="$(vault write -format=json "auth/userpass/login/${USERNAME}" password="$PASSWORD")"
+  entity_id="$(printf '%s' "$bootstrap_json" | jq -r '.auth.entity_id')"
+  bootstrap_token="$(printf '%s' "$bootstrap_json" | jq -r '.auth.client_token')"
+fi
+
+if [[ -z "$entity_id" || "$entity_id" == "null" ]]; then
+  echo "unable to resolve Vault entity for userpass user ${USERNAME}" >&2
+  exit 1
+fi
 
 mkdir -p "$OUTPUT_DIR"
 enrollment_json="${OUTPUT_DIR}/vault-${USERNAME}-totp.json"
@@ -183,7 +206,9 @@ vault write "identity/mfa/login-enforcement/${ENFORCEMENT_NAME}" \
   mfa_method_ids="$method_id" \
   auth_method_accessors="$userpass_accessor" >/dev/null
 
-vault token revoke "$bootstrap_token" >/dev/null || true
+if [[ -n "$bootstrap_token" && "$bootstrap_token" != "null" ]]; then
+  vault token revoke "$bootstrap_token" >/dev/null || true
+fi
 
 cat <<EOF
 vault_addr=$VAULT_ADDR
