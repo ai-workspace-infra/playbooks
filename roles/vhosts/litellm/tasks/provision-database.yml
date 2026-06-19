@@ -25,7 +25,11 @@
     {% endif %}
   args:
     executable: /bin/bash
-  become: true
+  environment:
+    PATH: "/opt/homebrew/opt/postgresql@16/bin:/usr/local/opt/postgresql@16/bin:{{ ansible_env.PATH }}"
+  # On macOS Homebrew there is no `postgres` system user and no passwordless
+  # sudo; the current user is the DB superuser, so run psql without escalation.
+  become: "{{ ansible_os_family != 'Darwin' }}"
   become_user: "{{ 'root' if litellm_database_provisioner == 'docker' else 'postgres' }}"
   register: create_user_result
   changed_when: "'CREATE ROLE' in create_user_result.stdout | default('')"
@@ -42,7 +46,11 @@
     {% endif %}
   args:
     executable: /bin/bash
-  become: true
+  environment:
+    PATH: "/opt/homebrew/opt/postgresql@16/bin:/usr/local/opt/postgresql@16/bin:{{ ansible_env.PATH }}"
+  # On macOS Homebrew there is no `postgres` system user and no passwordless
+  # sudo; the current user is the DB superuser, so run psql without escalation.
+  become: "{{ ansible_os_family != 'Darwin' }}"
   become_user: "{{ 'root' if litellm_database_provisioner == 'docker' else 'postgres' }}"
   register: create_db_result
   changed_when: "'CREATE DATABASE' in create_db_result.stdout | default('')"
@@ -57,7 +65,11 @@
     {% endif %}
   args:
     executable: /bin/bash
-  become: true
+  environment:
+    PATH: "/opt/homebrew/opt/postgresql@16/bin:/usr/local/opt/postgresql@16/bin:{{ ansible_env.PATH }}"
+  # On macOS Homebrew there is no `postgres` system user and no passwordless
+  # sudo; the current user is the DB superuser, so run psql without escalation.
+  become: "{{ ansible_os_family != 'Darwin' }}"
   become_user: "{{ 'root' if litellm_database_provisioner == 'docker' else 'postgres' }}"
   changed_when: false
   no_log: true
@@ -80,7 +92,11 @@
     SQL
   args:
     executable: /bin/bash
-  become: true
+  environment:
+    PATH: "/opt/homebrew/opt/postgresql@16/bin:/usr/local/opt/postgresql@16/bin:{{ ansible_env.PATH }}"
+  # On macOS Homebrew there is no `postgres` system user and no passwordless
+  # sudo; the current user is the DB superuser, so run psql without escalation.
+  become: "{{ ansible_os_family != 'Darwin' }}"
   become_user: "{{ 'root' if litellm_database_provisioner == 'docker' else 'postgres' }}"
   changed_when: false
   no_log: true

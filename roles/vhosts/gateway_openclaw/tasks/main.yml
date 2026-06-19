@@ -18,11 +18,11 @@
       {{
         gateway_openclaw_gateway_token
         if (gateway_openclaw_gateway_token | trim | length > 0)
-        else ((
+        else (
           (
             gateway_openclaw_existing_config_raw.content | default('') | b64decode | from_json
           ).gateway.auth.token | default('')
-        ) if (gateway_openclaw_existing_config_raw.content | default('') | length > 0) else '')
+        )
       }}
   no_log: true
 
@@ -79,7 +79,7 @@
     PATH: "{{ gateway_openclaw_service_path }}"
     OPENCLAW_NO_RESPAWN: "1"
     NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
-  become: true
+  become: "{{ ansible_os_family != 'Darwin' }}"
   become_user: "{{ gateway_openclaw_service_user }}"
   register: gateway_openclaw_package_install
   changed_when: >-
@@ -150,10 +150,6 @@
   ansible.builtin.file:
     path: "{{ gateway_openclaw_compile_cache_dir }}"
     state: absent
-  register: gateway_openclaw_compile_cache_reset
-  retries: 5
-  delay: 1
-  until: gateway_openclaw_compile_cache_reset is succeeded
   when:
     - not ansible_check_mode
     - >-
@@ -569,7 +565,6 @@
     owner: root
     group: root
     mode: "0755"
-  when: ansible_os_family != 'Darwin'
 
 - name: Inspect Caddy main file attributes
   ansible.builtin.command:
@@ -597,7 +592,6 @@
     group: root
     mode: "0644"
     state: present
-  when: ansible_os_family != 'Darwin'
   notify: Reload caddy
 
 - name: Restore immutable flag on Caddy main file
@@ -632,18 +626,14 @@
     owner: root
     group: root
     mode: "0644"
-  when:
-    - ansible_os_family != 'Darwin'
-    - gateway_openclaw_public_access | bool
+  when: gateway_openclaw_public_access | bool
   notify: Reload caddy
 
 - name: Remove OpenClaw public Caddy site when public access is disabled
   ansible.builtin.file:
     path: "{{ gateway_openclaw_caddy_fragment_path }}"
     state: absent
-  when:
-    - ansible_os_family != 'Darwin'
-    - not (gateway_openclaw_public_access | bool)
+  when: not (gateway_openclaw_public_access | bool)
   notify: Reload caddy
 
 - name: Restore immutable flag on OpenClaw Caddy fragment

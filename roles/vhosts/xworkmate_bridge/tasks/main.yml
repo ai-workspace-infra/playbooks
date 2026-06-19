@@ -9,7 +9,6 @@
   ansible.builtin.group:
     name: "{{ xworkmate_bridge_service_group }}"
     state: present
-  when: ansible_os_family != 'Darwin'
 
 - name: Ensure xworkmate-bridge service user exists
   ansible.builtin.user:
@@ -18,7 +17,6 @@
     shell: /bin/bash
     create_home: true
     state: present
-  when: ansible_os_family != 'Darwin'
 
 - name: Ensure xworkmate-bridge base directory exists
   ansible.builtin.file:
@@ -123,14 +121,12 @@
   ansible.builtin.file:
     path: "{{ xworkmate_bridge_deprecated_compose_file }}"
     state: absent
-  when: ansible_os_family != 'Darwin'
 
 - name: Remove obsolete xworkmate-bridge systemd drop-ins
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop: "{{ xworkmate_bridge_obsolete_systemd_dropin_paths }}"
-  when: ansible_os_family != 'Darwin'
   notify: Reload bridge
 
 - name: Disable and stop obsolete user-level xworkmate-serve service
@@ -148,7 +144,6 @@
   ansible.builtin.file:
     path: "/home/{{ xworkmate_bridge_service_user }}/.config/systemd/user/xworkmate-serve.service"
     state: absent
-  when: ansible_os_family != 'Darwin'
 
 - name: Inspect xworkmate-bridge config file attributes
   ansible.builtin.command:
@@ -235,7 +230,6 @@
     owner: root
     group: root
     mode: "0755"
-  when: ansible_os_family != 'Darwin'
 
 - name: Inspect Caddy main file attributes
   ansible.builtin.command:
@@ -263,7 +257,6 @@
     group: root
     mode: "0644"
     state: present
-  when: ansible_os_family != 'Darwin'
   notify: Reload caddy
 
 - name: Restore immutable flag on Caddy main file
@@ -297,18 +290,14 @@
     owner: root
     group: root
     mode: "0644"
-  when:
-    - ansible_os_family != 'Darwin'
-    - xworkmate_bridge_public_access | bool
+  when: xworkmate_bridge_public_access | bool
   notify: Reload caddy
 
 - name: Remove xworkmate-bridge public Caddy site when public access is disabled
   ansible.builtin.file:
     path: "{{ xworkmate_bridge_service_caddy_fragment_path }}"
     state: absent
-  when:
-    - ansible_os_family != 'Darwin'
-    - not (xworkmate_bridge_public_access | bool)
+  when: not (xworkmate_bridge_public_access | bool)
   notify: Reload caddy
 
 - name: Restore immutable flag on xworkmate-bridge Caddy fragment
@@ -345,7 +334,6 @@
     path: "{{ item }}"
     state: absent
   loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
-  when: ansible_os_family != 'Darwin'
   notify: Reload caddy
 
 - name: Ensure xworkmate-bridge service is enabled and running
@@ -374,7 +362,6 @@
   tags: [xworkmate_bridge, xworkmate_bridge_validate]
   when:
     - not ansible_check_mode
-    - ansible_os_family != 'Darwin'
 
 - name: Import macOS specific xworkmate-bridge tasks
   ansible.builtin.import_tasks: macos.yml

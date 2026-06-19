@@ -12,7 +12,6 @@
     - name: Include XFCE desktop runtime role
       ansible.builtin.include_role:
         name: roles/vhosts/xfce_desktop_minimal_runtime
-      when: ansible_os_family != "Darwin"
 
     - name: Include XRDP server role when enabled
       ansible.builtin.include_role:
@@ -24,6 +23,4 @@
         xfce_user_groups:
           - sudo
           - docker
-      when:
-        - ansible_os_family != "Darwin"
-        - xworkspace_console_enable_xrdp | bool
+      when: xworkspace_console_enable_xrdp | bool

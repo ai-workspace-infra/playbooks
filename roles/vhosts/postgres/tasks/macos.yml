@@ -1,8 +1,19 @@
 ---
 - name: Ensure PostgreSQL 16 is installed via Homebrew
-  community.general.homebrew:
-    name: postgresql@16
-    state: present
+  # Use brew from PATH (like the vault/openclaw roles) rather than the
+  # community.general.homebrew module, which auto-detects a brew prefix and can
+  # pick a stale Intel Homebrew at /usr/local that crashes on newer macOS
+  # versions ("unknown or unsupported macOS version"). Prepending the Apple
+  # Silicon prefix selects the working brew when both are installed.
+  ansible.builtin.command: brew install postgresql@16
+  environment:
+    PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH }}"
+    HOMEBREW_NO_AUTO_UPDATE: "1"
+  register: postgresql_brew_install
+  changed_when: >-
+    'already installed' not in (postgresql_brew_install.stderr | default(''))
+    and 'already installed' not in (postgresql_brew_install.stdout | default(''))
+  failed_when: postgresql_brew_install.rc != 0
 
 - name: Start PostgreSQL via Homebrew Services
   ansible.builtin.command: brew services start postgresql@16

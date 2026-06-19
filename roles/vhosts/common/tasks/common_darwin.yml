@@ -1,0 +1,14 @@
+---
+# macOS (Darwin) baseline: install shared command-line prerequisites that the
+# Linux apt/yum baselines provide elsewhere. These tools are required by helper
+# scripts in other roles (e.g. vault's init_vault_admin.sh needs jq), so they
+# are installed once here in the common role rather than per-role.
+#
+# Homebrew installs into /opt/homebrew (Apple Silicon) or /usr/local (Intel);
+# `creates` is checked against both so the task stays idempotent on either arch.
+- name: Common(Darwin) | install Homebrew prerequisites
+  ansible.builtin.command: "brew install {{ item }}"
+  args:
+    creates: "{{ '/opt/homebrew/bin/' ~ item if ansible_machine == 'arm64' else '/usr/local/bin/' ~ item }}"
+  loop: "{{ common_darwin_brew_packages }}"
+  changed_when: true
