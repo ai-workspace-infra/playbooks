@@ -12,3 +12,8 @@ ai_workspace_security_level: standard
 # Caddy, /etc/caddy not writable). Override anytime with -e caddy_enabled=true
 # (force on) or -e caddy_enabled=false (force off) — extra-vars win.
 caddy_enabled: "{{ ansible_os_family != 'Darwin' }}"
+
+# Caddy config root. Linux uses the system path /etc/caddy; macOS (Homebrew)
+# uses /opt/homebrew/etc/caddy. Roles derive their Caddyfile / conf.d / fragment
+# paths from this so a force-enabled Caddy on macOS writes to the brew location.
+caddy_config_dir: "{{ '/opt/homebrew/etc/caddy' if ansible_os_family == 'Darwin' else '/etc/caddy' }}"
