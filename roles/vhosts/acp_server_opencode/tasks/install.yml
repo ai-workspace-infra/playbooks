@@ -29,6 +29,7 @@
   changed_when: "'Rule added' in acp_opencode_ufw_80.stdout"
   failed_when: acp_opencode_ufw_80.rc != 0
   when:
+    - ansible_os_family == 'Debian'
     - acp_opencode_enable_ufw | bool
     - acp_opencode_ufw_binary.stat.exists | default(false)
 
@@ -38,5 +39,6 @@
   changed_when: "'Rule added' in acp_opencode_ufw_443.stdout"
   failed_when: acp_opencode_ufw_443.rc != 0
   when:
+    - ansible_os_family == 'Debian'
     - acp_opencode_enable_ufw | bool
     - acp_opencode_ufw_binary.stat.exists | default(false)
