@@ -576,6 +576,19 @@
         - xworkspace_console_runtime_archive | length == 0
         - xworkspace_console_source_repo_safe_dir | length > 0
 
+    - name: Stop xworkspace-status timer and services to avoid write conflict on Linux
+      ansible.builtin.shell: |
+        uid="$(id -u {{ xworkspace_console_user }})"
+        systemctl start "user@${uid}.service" || true
+        for svc in xworkspace-status.timer xworkspace-status.service xworkspace-console.service; do
+          runuser -u {{ xworkspace_console_user }} -- env XDG_RUNTIME_DIR="/run/user/${uid}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${uid}/bus" systemctl --user stop "$svc" || true
+        done
+      become: true
+      changed_when: false
+      when:
+        - ansible_os_family != 'Darwin'
+        - xworkspace_console_runtime_archive | length == 0
+
     - name: Remove stale xworkspace-console repo to avoid shallow checkout failures
       ansible.builtin.file:
         path: "{{ xworkspace_console_repo_dir }}"
