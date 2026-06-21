@@ -464,6 +464,7 @@
         (
           (gateway_openclaw_plugin_registry.stdout | from_json).plugins
           | selectattr('id', 'equalto', 'acpx')
+          | rejectattr('version', 'equalto', gateway_openclaw_required_version)
           | list
           | length
         ) == 0
@@ -478,7 +479,7 @@
     fail_msg: >-
       OpenClaw must run @openclaw/codex {{ gateway_openclaw_required_version }}
       plus openclaw-multi-session-plugins {{ gateway_openclaw_required_version }},
-      and must not keep stale global @openclaw/acpx.
+      and any OpenClaw-managed acpx plugin must match the gateway version.
   when:
     - not ansible_check_mode
     - ansible_os_family != 'Windows'
