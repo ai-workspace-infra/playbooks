@@ -12,19 +12,18 @@
   when: ansible_system == 'Linux'
   listen: Restart acp gemini
 
-- name: Restart acp gemini on macOS
+- name: Unload acp gemini on macOS
   ansible.builtin.command: "launchctl unload {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.acp.gemini.plist"
-  register: launchctl_unload
   failed_when: false
   changed_when: false
-  notify: Start acp gemini on macOS
   when: ansible_system == 'Darwin'
   listen: Restart acp gemini
 
-- name: Start acp gemini on macOS
+- name: Load acp gemini on macOS
   ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.acp.gemini.plist"
   changed_when: false
   when: ansible_system == 'Darwin'
+  listen: Restart acp gemini
 
 - name: Restart acp gemini on Windows
   ansible.builtin.debug:
