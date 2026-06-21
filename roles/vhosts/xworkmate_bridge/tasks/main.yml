@@ -23,9 +23,9 @@
   ansible.builtin.file:
     path: "{{ xworkmate_bridge_base_dir }}"
     state: directory
-    owner: "{{ xworkmate_bridge_service_user }}"
-    group: "{{ xworkmate_bridge_service_group }}"
-    mode: "0755"
+    owner: "{{ xworkmate_bridge_service_user if ansible_os_family != 'Windows' else omit }}"
+    group: "{{ xworkmate_bridge_service_group if ansible_os_family != 'Windows' else omit }}"
+    mode: "{{ '0755' if ansible_os_family != 'Windows' else omit }}"
 
 - name: Read existing xworkmate-bridge auth token from systemd units
   ansible.builtin.shell: |
@@ -166,9 +166,9 @@
   ansible.builtin.template:
     src: config.yaml.j2
     dest: "{{ xworkmate_bridge_config_file }}"
-    owner: "{{ xworkmate_bridge_service_user }}"
-    group: "{{ xworkmate_bridge_service_group }}"
-    mode: "0644"
+    owner: "{{ xworkmate_bridge_service_user if ansible_os_family != 'Windows' else omit }}"
+    group: "{{ xworkmate_bridge_service_group if ansible_os_family != 'Windows' else omit }}"
+    mode: "{{ '0644' if ansible_os_family != 'Windows' else omit }}"
   notify: Restart bridge
 
 - name: Restore immutable flag on xworkmate-bridge config file
@@ -363,6 +363,7 @@
   when:
     - not ansible_check_mode
     - ansible_os_family != 'Darwin'
+    - ansible_os_family != 'Windows'
 
 - name: Ensure Caddy is enabled and running
   ansible.builtin.systemd:
@@ -372,11 +373,16 @@
   when:
     - not ansible_check_mode
     - ansible_os_family != 'Darwin'
+    - ansible_os_family != 'Windows'
   become: true
 
 - name: Import macOS specific xworkmate-bridge tasks
   ansible.builtin.import_tasks: macos.yml
   when: ansible_os_family == 'Darwin'
+
+- name: Include Windows specific xworkmate-bridge tasks
+  ansible.builtin.include_tasks: windows.yml
+  when: ansible_os_family == 'Windows'
 
 - name: Apply xworkmate-bridge service and Caddy changes before validation
   ansible.builtin.meta: flush_handlers
