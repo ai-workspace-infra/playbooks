@@ -1,0 +1,51 @@
+---
+- name: Install required OpenClaw gateway package version on Windows
+  community.windows.win_command:
+    cmd: >-
+      npm install --global --omit=dev --no-audit --no-fund
+      --prefix "{{ gateway_openclaw_home }}\.local"
+      "{{ gateway_openclaw_npm_package_spec }}"
+  environment:
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  register: gateway_openclaw_package_install_win
+  changed_when: >-
+    'added ' in (gateway_openclaw_package_install_win.stdout | default('')) or
+    'updated ' in (gateway_openclaw_package_install_win.stdout | default(''))
+  when: not ansible_check_mode
+  notify: Restart openclaw
+
+- name: Ensure OpenClaw extensions directory exists on Windows
+  ansible.windows.win_file:
+    path: "{{ gateway_openclaw_home }}\.openclaw\extensions"
+    state: directory
+
+- name: Extract OpenClaw Multi-Session Plugins on Windows
+  community.windows.win_unzip:
+    src: "{{ gateway_openclaw_multi_session_plugin_archive_url }}"
+    dest: "{{ gateway_openclaw_home }}\.openclaw\extensions"
+    creates: "{{ gateway_openclaw_home }}\.openclaw\extensions\openclaw-multi-session-plugins"
+  when: not ansible_check_mode
+  notify: Restart openclaw
+
+- name: Deploy OpenClaw gateway JSON config on Windows
+  ansible.windows.win_template:
+    src: openclaw.json.j2
+    dest: "{{ gateway_openclaw_config_path }}"
+  notify: Restart openclaw
+
+- name: Register OpenClaw gateway as a Windows Service (schtasks)
+  community.windows.win_command:
+    cmd: "{{ gateway_openclaw_home }}\.local\node_modules\openclaw\bin\openclaw.cmd gateway install"
+  environment:
+    OPENCLAW_NO_RESPAWN: "1"
+  register: gateway_openclaw_service_install_win
+  changed_when: "'created' in (gateway_openclaw_service_install_win.stdout | default(''))"
+  when: not ansible_check_mode
+
+- name: Ensure OpenClaw Windows gateway service is enabled and running
+  community.windows.win_command:
+    cmd: "{{ gateway_openclaw_home }}\.local\node_modules\openclaw\bin\openclaw.cmd gateway status"
+  register: gateway_openclaw_service_status_win
+  changed_when: false
+  when: not ansible_check_mode

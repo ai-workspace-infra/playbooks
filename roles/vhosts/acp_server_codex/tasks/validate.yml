@@ -2,11 +2,20 @@
 - name: Validate Caddy configuration
   ansible.builtin.command: caddy validate --config "{{ acp_codex_caddyfile_path }}"
   changed_when: false
+  when: acp_codex_manage_caddy | bool
 
 - name: Check Codex app server listener
-  ansible.builtin.command: ss -ltnp
+  ansible.builtin.shell: |
+    if command -v ss >/dev/null 2>&1; then
+      ss -ltnp
+    else
+      lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null || true
+    fi
+  args:
+    executable: /bin/bash
   register: acp_codex_ss
   changed_when: false
+  failed_when: false
 
 - name: Show Codex ACP status
   ansible.builtin.command: systemctl status "{{ acp_codex_service_name }}" --no-pager

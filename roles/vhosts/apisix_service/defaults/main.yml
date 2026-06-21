@@ -4,8 +4,9 @@ apisix_service_root: /opt/svc-ai-gateway
 apisix_service_conf_dir: "{{ apisix_service_root }}/conf"
 apisix_service_docs_dir: "{{ apisix_service_root }}/docs"
 apisix_service_scripts_dir: "{{ apisix_service_root }}/scripts"
-apisix_service_caddy_conf_dir: /etc/caddy/conf.d
-apisix_service_caddy_fragment_path: /etc/caddy/conf.d/api.svc.plus.caddy
+apisix_service_caddy_base_dir: "{{ '/opt/homebrew/etc/caddy' if ansible_os_family == 'Darwin' else '/etc/caddy' }}"
+apisix_service_caddy_conf_dir: "{{ apisix_service_caddy_base_dir }}/conf.d"
+apisix_service_caddy_fragment_path: "{{ apisix_service_caddy_base_dir }}/conf.d/api.svc.plus.caddy"
 apisix_service_env_file: "{{ apisix_service_root }}/.env"
 apisix_service_compose_file: "{{ apisix_service_root }}/docker-compose.yml"
 apisix_service_caddyfile: "{{ apisix_service_root }}/Caddyfile"

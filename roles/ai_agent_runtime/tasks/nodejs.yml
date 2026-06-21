@@ -22,6 +22,7 @@
     group: "{{ 'root' if ansible_os_family != 'Darwin' else ('staff' if ansible_os_family == 'Darwin' else xworkspace_console_user) }}"
     mode: "0755"
   become: "{{ ansible_os_family != 'Darwin' }}"
+  when: ansible_os_family != 'Windows'
 
 - name: Install global npm packages for AI runtime
   ansible.builtin.command:
@@ -29,7 +30,9 @@
   loop: "{{ ai_agent_runtime_npm_global_packages }}"
   register: ai_agent_runtime_npm_global_install
   changed_when: "'changed=1' in ai_agent_runtime_npm_global_install.stdout"
-  when: ai_agent_runtime_npm_global_packages | length > 0
+  when: 
+    - ai_agent_runtime_npm_global_packages | length > 0
+    - ansible_os_family != 'Windows'
 
 - name: Install pinned Playwright package for AI runtime
   ansible.builtin.command:
@@ -39,3 +42,8 @@
   when:
     - ai_agent_runtime_playwright_enabled | bool
     - ai_agent_runtime_playwright_version | length > 0
+    - ansible_os_family != 'Windows'
+
+- name: Include Windows specific Node.js package tasks
+  ansible.builtin.include_tasks: windows.yml
+  when: ansible_os_family == 'Windows'

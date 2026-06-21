@@ -16,11 +16,10 @@
             export {{ key }}="{{ value }}"
             {% endfor %}
             
-            exec "{{ acp_hermes_bridge_binary_path }}" acp-server \
-                --port {{ acp_hermes_listen_port }} \
-                --host {{ acp_hermes_listen_host }} \
-                --sub-command hermes \
-                --sub-command mcp-app-server
+            exec "{{ acp_hermes_bridge_binary_path }}" adapter hermes \
+                -listen {{ acp_hermes_listen_host }}:{{ acp_hermes_listen_port }} \
+                -hermes-bin "{{ acp_hermes_binary_path }}" \
+                -hermes-args "{{ acp_hermes_args }}"
         </string>
     </array>
     <key>RunAtLoad</key>

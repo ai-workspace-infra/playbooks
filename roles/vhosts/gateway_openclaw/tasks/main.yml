@@ -71,7 +71,7 @@
 - name: Install required OpenClaw gateway package version
   ansible.builtin.command:
     cmd: >-
-      npm install --global --omit=dev --no-audit --no-fund
+      /usr/bin/env npm install --global --omit=dev --no-audit --no-fund
       --prefix "{{ gateway_openclaw_home }}/.local"
       "{{ gateway_openclaw_npm_package_spec }}"
   environment:
@@ -79,7 +79,7 @@
     PATH: "{{ gateway_openclaw_service_path }}"
     OPENCLAW_NO_RESPAWN: "1"
     NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
-  become: true
+  become: "{{ ansible_os_family != 'Darwin' }}"
   become_user: "{{ gateway_openclaw_service_user }}"
   register: gateway_openclaw_package_install
   changed_when: >-
@@ -88,7 +88,34 @@
     'changed ' in (gateway_openclaw_package_install.stdout | default(''))
   when:
     - not ansible_check_mode
-  notify: Restart openclaw gateway
+    - ansible_os_family != 'Windows'
+  notify: Restart openclaw
+
+- name: Ensure OpenClaw extensions directory exists
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_home }}/.openclaw/extensions"
+    state: directory
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0755"
+  become: "{{ ansible_os_family != 'Darwin' }}"
+
+- name: Download OpenClaw Multi-Session Plugins offline archive
+  ansible.builtin.get_url:
+    url: "{{ gateway_openclaw_multi_session_plugin_archive_url }}"
+    dest: "/tmp/openclaw-multi-session-plugins.tar.gz"
+    mode: "0644"
+
+- name: Extract OpenClaw Multi-Session Plugins
+  ansible.builtin.unarchive:
+    src: "/tmp/openclaw-multi-session-plugins.tar.gz"
+    dest: "{{ gateway_openclaw_home }}/.openclaw/extensions"
+    remote_src: true
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0755"
+  become: "{{ ansible_os_family != 'Darwin' }}"
+  notify: Restart openclaw
 
 - name: Ensure OpenClaw global plugin npm directory exists
   ansible.builtin.file:
@@ -121,7 +148,8 @@
     label: "{{ item.package_spec | default(item.name ~ '@' ~ item.version) }}"
   when:
     - not ansible_check_mode
-  notify: Restart openclaw gateway
+    - ansible_os_family != 'Windows'
+  notify: Restart openclaw
 
 - name: Remove unsupported OpenClaw global plugin packages
   ansible.builtin.command:
@@ -144,14 +172,22 @@
   when:
     - gateway_openclaw_removed_global_plugins | length > 0
     - not ansible_check_mode
-  notify: Restart openclaw gateway
+  notify: Restart openclaw
 
 - name: Reset OpenClaw compile cache after package or plugin changes
   ansible.builtin.file:
     path: "{{ gateway_openclaw_compile_cache_dir }}"
     state: absent
+  # OpenClaw may still be writing compiled artifacts into the cache while it is
+  # being removed, so shutil.rmtree races and fails with [Errno 66] Directory
+  # not empty (seen on macOS). Retry until the directory is gone.
+  register: gateway_openclaw_cache_reset
+  until: gateway_openclaw_cache_reset is succeeded
+  retries: 5
+  delay: 3
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - >-
       (gateway_openclaw_package_install.changed | default(false))
       or
@@ -168,6 +204,7 @@
     mode: "0755"
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - >-
       (gateway_openclaw_package_install.changed | default(false))
       or
@@ -188,6 +225,7 @@
   changed_when: false
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Move stale OpenClaw plugin backups out of extension scan path
   ansible.builtin.shell: |
@@ -212,6 +250,7 @@
   changed_when: "'moved=1' in (gateway_openclaw_stale_extension_backups.stdout | default(''))"
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Inspect OpenClaw gateway JSON config attributes
   ansible.builtin.command:
@@ -219,7 +258,7 @@
   register: gateway_openclaw_config_attrs
   changed_when: false
   failed_when: false
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Remove immutable flag from OpenClaw gateway JSON config when present
   ansible.builtin.command:
@@ -237,7 +276,7 @@
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0600"
   diff: false
-  notify: Restart openclaw gateway
+  notify: Restart openclaw
 
 - name: Inspect OpenClaw package manifest
   ansible.builtin.stat:
@@ -256,7 +295,7 @@
 
 - name: Repair OpenClaw package runtime dependencies as service user
   ansible.builtin.command:
-    cmd: npm install --omit=dev --no-audit --no-fund --prefix "{{ gateway_openclaw_install_dir }}"
+    cmd: /usr/bin/env npm install --omit=dev --no-audit --no-fund --prefix "{{ gateway_openclaw_install_dir }}"
   environment:
     HOME: "{{ gateway_openclaw_home }}"
     PATH: "{{ gateway_openclaw_service_path }}"
@@ -272,6 +311,7 @@
   when:
     - gateway_openclaw_package_manifest.stat.exists | default(false)
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Inspect OpenClaw extension package manifests
   ansible.builtin.stat:
@@ -281,7 +321,7 @@
 
 - name: Repair OpenClaw extension runtime dependencies as service user
   ansible.builtin.command:
-    cmd: npm install --omit=dev --no-audit --no-fund --prefix "{{ item.item }}"
+    cmd: /usr/bin/env npm install --omit=dev --no-audit --no-fund --prefix "{{ item.item }}"
   environment:
     HOME: "{{ gateway_openclaw_home }}"
     PATH: "{{ gateway_openclaw_service_path }}"
@@ -298,6 +338,7 @@
   when:
     - item.stat.exists | default(false)
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Restore immutable flag on OpenClaw gateway JSON config
   ansible.builtin.command:
@@ -335,6 +376,7 @@
   changed_when: false
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Assert OpenClaw gateway version is pinned
   ansible.builtin.assert:
@@ -345,6 +387,7 @@
       package upgrade. Actual version output: {{ gateway_openclaw_version.stdout | default('') }}
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Check OpenClaw plugin registry
   ansible.builtin.command:
@@ -360,6 +403,7 @@
   changed_when: false
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Assert OpenClaw Codex plugin matches gateway version
   ansible.builtin.assert:
@@ -393,6 +437,7 @@
       and must not keep stale global @openclaw/acpx.
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Ensure OpenClaw user systemd unit directory exists
   ansible.builtin.file:
@@ -401,7 +446,7 @@
     owner: "{{ gateway_openclaw_service_user }}"
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0755"
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Deploy OpenClaw user systemd unit
   ansible.builtin.template:
@@ -411,7 +456,7 @@
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0644"
   register: gateway_openclaw_user_service_unit
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Deploy OpenClaw user systemd shell environment
   ansible.builtin.template:
@@ -420,7 +465,7 @@
     owner: root
     group: root
     mode: "0644"
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Enable OpenClaw service user linger
   ansible.builtin.command:
@@ -428,6 +473,7 @@
     creates: "/var/lib/systemd/linger/{{ gateway_openclaw_service_user }}"
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - ansible_os_family != 'Darwin'
 
 - name: Resolve OpenClaw service user uid
@@ -436,7 +482,7 @@
   register: gateway_openclaw_resolved_service_uid
   changed_when: false
   check_mode: false
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Set OpenClaw effective service uid
   ansible.builtin.set_fact:
@@ -446,7 +492,7 @@
         if (gateway_openclaw_service_uid | string | trim | length > 0)
         else (gateway_openclaw_resolved_service_uid.stdout | default(''))
       }}
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Ensure OpenClaw service user manager is running
   ansible.builtin.systemd:
@@ -454,6 +500,7 @@
     state: started
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - ansible_os_family != 'Darwin'
 
 - name: Stop and disable stale root-managed OpenClaw gateway service
@@ -464,6 +511,7 @@
   failed_when: false
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - ansible_os_family != 'Darwin'
 
 - name: Inspect stale OpenClaw gateway root systemd unit attributes
@@ -472,7 +520,7 @@
   register: gateway_openclaw_unit_attrs
   changed_when: false
   failed_when: false
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Remove immutable flag from stale OpenClaw gateway root systemd unit when present
   ansible.builtin.command:
@@ -487,7 +535,7 @@
     path: "{{ gateway_openclaw_service_unit_path }}"
     state: absent
   register: gateway_openclaw_removed_root_service_unit
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Reload root systemd after removing stale OpenClaw gateway unit
   ansible.builtin.systemd:
@@ -513,6 +561,7 @@
   changed_when: false
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - ansible_os_family != 'Darwin'
 
 - name: Ensure OpenClaw user gateway service is enabled and running
@@ -534,6 +583,7 @@
     'Created symlink' in (gateway_openclaw_user_service_enable.stderr | default(''))
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - ansible_os_family != 'Darwin'
 
 - name: Restart OpenClaw user gateway service after unit changes
@@ -558,98 +608,108 @@
   ansible.builtin.import_tasks: macos.yml
   when: ansible_os_family == 'Darwin'
 
-- name: Ensure Caddy fragment directory exists
-  ansible.builtin.file:
-    path: "{{ gateway_openclaw_caddy_conf_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
+- name: Include Windows specific service tasks
+  ansible.builtin.include_tasks: windows.yml
+  when: ansible_os_family == 'Windows'
 
-- name: Inspect Caddy main file attributes
-  ansible.builtin.command:
-    cmd: lsattr "{{ gateway_openclaw_caddyfile_path }}"
-  register: gateway_openclaw_caddyfile_attrs
-  changed_when: false
-  failed_when: false
-  when: ansible_os_family != 'Darwin'
+# Caddy ingress for OpenClaw. Skipped entirely when caddy_enabled is false
+# (default on macOS single-host deploys), so /etc/caddy is never touched and no
+# caddy service is started/notified. Override with -e caddy_enabled=true.
+- name: Configure OpenClaw Caddy ingress
+  when: caddy_enabled | bool
+  block:
+    - name: Ensure Caddy fragment directory exists
+      ansible.builtin.file:
+        path: "{{ gateway_openclaw_caddy_conf_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
 
-- name: Remove immutable flag from Caddy main file when present
-  ansible.builtin.command:
-    cmd: chattr -i "{{ gateway_openclaw_caddyfile_path }}"
-  when:
-    - ansible_os_family != 'Darwin'
-    - "'i' in (gateway_openclaw_caddyfile_attrs.stdout | default(''))"
-  changed_when: true
+    - name: Inspect Caddy main file attributes
+      ansible.builtin.command:
+        cmd: lsattr "{{ gateway_openclaw_caddyfile_path }}"
+      register: gateway_openclaw_caddyfile_attrs
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family not in ['Darwin', 'Windows']
 
-- name: Ensure Caddy imports managed fragments
-  ansible.builtin.lineinfile:
-    path: "{{ gateway_openclaw_caddyfile_path }}"
-    line: "import {{ gateway_openclaw_caddy_conf_dir }}/*.caddy"
-    insertafter: EOF
-    create: true
-    owner: root
-    group: root
-    mode: "0644"
-    state: present
-  notify: Reload caddy
+    - name: Remove immutable flag from Caddy main file when present
+      ansible.builtin.command:
+        cmd: chattr -i "{{ gateway_openclaw_caddyfile_path }}"
+      when:
+        - ansible_os_family != 'Darwin'
+        - "'i' in (gateway_openclaw_caddyfile_attrs.stdout | default(''))"
+      changed_when: true
 
-- name: Restore immutable flag on Caddy main file
-  ansible.builtin.command:
-    cmd: chattr +i "{{ gateway_openclaw_caddyfile_path }}"
-  when:
-    - ansible_os_family != 'Darwin'
-    - "'i' in (gateway_openclaw_caddyfile_attrs.stdout | default(''))"
-    - not ansible_check_mode
-  changed_when: true
+    - name: Ensure Caddy imports managed fragments
+      ansible.builtin.lineinfile:
+        path: "{{ gateway_openclaw_caddyfile_path }}"
+        line: "import {{ gateway_openclaw_caddy_conf_dir }}/*.caddy"
+        insertafter: EOF
+        create: true
+        owner: root
+        group: root
+        mode: "0644"
+        state: present
+      notify: Reload caddy
 
-- name: Inspect OpenClaw Caddy fragment attributes
-  ansible.builtin.command:
-    cmd: lsattr "{{ gateway_openclaw_caddy_fragment_path }}"
-  register: gateway_openclaw_caddy_fragment_attrs
-  changed_when: false
-  failed_when: false
-  when: ansible_os_family != 'Darwin'
+    - name: Restore immutable flag on Caddy main file
+      ansible.builtin.command:
+        cmd: chattr +i "{{ gateway_openclaw_caddyfile_path }}"
+      when:
+        - ansible_os_family != 'Darwin'
+        - "'i' in (gateway_openclaw_caddyfile_attrs.stdout | default(''))"
+        - not ansible_check_mode
+      changed_when: true
 
-- name: Remove immutable flag from OpenClaw Caddy fragment when present
-  ansible.builtin.command:
-    cmd: chattr -i "{{ gateway_openclaw_caddy_fragment_path }}"
-  when:
-    - ansible_os_family != 'Darwin'
-    - "'i' in (gateway_openclaw_caddy_fragment_attrs.stdout | default(''))"
-  changed_when: true
+    - name: Inspect OpenClaw Caddy fragment attributes
+      ansible.builtin.command:
+        cmd: lsattr "{{ gateway_openclaw_caddy_fragment_path }}"
+      register: gateway_openclaw_caddy_fragment_attrs
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family not in ['Darwin', 'Windows']
 
-- name: Deploy OpenClaw public Caddy site
-  ansible.builtin.template:
-    src: openclaw.svc.plus.caddy.j2
-    dest: "{{ gateway_openclaw_caddy_fragment_path }}"
-    owner: root
-    group: root
-    mode: "0644"
-  when: gateway_openclaw_public_access | bool
-  notify: Reload caddy
+    - name: Remove immutable flag from OpenClaw Caddy fragment when present
+      ansible.builtin.command:
+        cmd: chattr -i "{{ gateway_openclaw_caddy_fragment_path }}"
+      when:
+        - ansible_os_family != 'Darwin'
+        - "'i' in (gateway_openclaw_caddy_fragment_attrs.stdout | default(''))"
+      changed_when: true
 
-- name: Remove OpenClaw public Caddy site when public access is disabled
-  ansible.builtin.file:
-    path: "{{ gateway_openclaw_caddy_fragment_path }}"
-    state: absent
-  when: not (gateway_openclaw_public_access | bool)
-  notify: Reload caddy
+    - name: Deploy OpenClaw public Caddy site
+      ansible.builtin.template:
+        src: openclaw.svc.plus.caddy.j2
+        dest: "{{ gateway_openclaw_caddy_fragment_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      when: gateway_openclaw_public_access | bool
+      notify: Reload caddy
 
-- name: Restore immutable flag on OpenClaw Caddy fragment
-  ansible.builtin.command:
-    cmd: chattr +i "{{ gateway_openclaw_caddy_fragment_path }}"
-  when:
-    - ansible_os_family != 'Darwin'
-    - "'i' in (gateway_openclaw_caddy_fragment_attrs.stdout | default(''))"
-    - not ansible_check_mode
-  changed_when: true
+    - name: Remove OpenClaw public Caddy site when public access is disabled
+      ansible.builtin.file:
+        path: "{{ gateway_openclaw_caddy_fragment_path }}"
+        state: absent
+      when: not (gateway_openclaw_public_access | bool)
+      notify: Reload caddy
 
-- name: Ensure Caddy is enabled and running
-  ansible.builtin.systemd:
-    name: caddy
-    enabled: true
-    state: started
-  when:
-    - not ansible_check_mode
-    - ansible_os_family != 'Darwin'
+    - name: Restore immutable flag on OpenClaw Caddy fragment
+      ansible.builtin.command:
+        cmd: chattr +i "{{ gateway_openclaw_caddy_fragment_path }}"
+      when:
+        - ansible_os_family != 'Darwin'
+        - "'i' in (gateway_openclaw_caddy_fragment_attrs.stdout | default(''))"
+        - not ansible_check_mode
+      changed_when: true
+
+    - name: Ensure Caddy is enabled and running
+      ansible.builtin.systemd:
+        name: caddy
+        enabled: true
+        state: started
+      when:
+        - not ansible_check_mode
+        - ansible_os_family != 'Darwin'

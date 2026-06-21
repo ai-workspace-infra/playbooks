@@ -37,13 +37,25 @@
   changed_when: true
   become: true
 
-- name: Upload XWorkmate Go ACP server binary for OpenCode
-  ansible.builtin.copy:
-    src: "{{ acp_opencode_bridge_local_binary_path }}"
-    dest: "{{ acp_opencode_bridge_binary_path }}"
-    owner: root
-    group: root
+- name: Download XWorkmate Bridge release archive for OpenCode
+  ansible.builtin.get_url:
+    url: "https://github.com/ai-workspace-lab/xworkmate-bridge/releases/latest/download/xworkmate-bridge-{{ ansible_system | lower }}-{{ 'amd64' if ansible_architecture in ['x86_64', 'amd64'] else 'arm64' }}.tar.gz"
+    dest: "/tmp/xworkmate-bridge-opencode.tar.gz"
+    mode: "0644"
+  when: not (acp_opencode_bridge_use_prebuilt | bool)
+
+- name: Extract XWorkmate Go ACP server binary for OpenCode
+  ansible.builtin.unarchive:
+    src: "/tmp/xworkmate-bridge-opencode.tar.gz"
+    dest: "{{ acp_opencode_bridge_binary_path | dirname }}"
+    remote_src: true
+    extra_opts:
+      - "--strip-components=2"
+      - "xworkmate-bridge/bin/xworkmate-go-core"
+    owner: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
+    group: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0755"
+  become: true
   when: not (acp_opencode_bridge_use_prebuilt | bool)
 
 - name: Restore immutable flag on OpenCode bridge binary
@@ -77,6 +89,7 @@
   notify: Reload caddy
   when:
     - acp_opencode_manage_caddy | bool
+  become: true
 
 - name: Remove deprecated standalone OpenCode Caddy fragments
   ansible.builtin.file:
@@ -84,6 +97,7 @@
     state: absent
   loop: "{{ acp_opencode_obsolete_caddy_fragment_paths }}"
   notify: Reload caddy
+  become: true
 
 - name: Deploy OpenCode ACP systemd service
   ansible.builtin.command:
@@ -134,6 +148,7 @@
   when:
     - ansible_os_family != 'Darwin'
     - acp_opencode_manage_caddy | bool
+  become: true
 
 - name: Ensure OpenCode ACP service is enabled and running
   ansible.builtin.systemd:

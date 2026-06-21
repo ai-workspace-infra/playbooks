@@ -7,9 +7,9 @@ gateway_openclaw_domain: openclaw.svc.plus
 # When false, disables public Caddy access to OpenClaw.
 gateway_openclaw_public_access: false
 
-gateway_openclaw_caddyfile_path: /etc/caddy/Caddyfile
-gateway_openclaw_caddy_conf_dir: /etc/caddy/conf.d
-gateway_openclaw_caddy_fragment_path: "/etc/caddy/conf.d/{{ gateway_openclaw_domain }}.caddy"
+gateway_openclaw_caddyfile_path: "{{ caddy_config_dir }}/Caddyfile"
+gateway_openclaw_caddy_conf_dir: "{{ caddy_config_dir }}/conf.d"
+gateway_openclaw_caddy_fragment_path: "{{ caddy_config_dir }}/conf.d/{{ gateway_openclaw_domain }}.caddy"
 gateway_openclaw_access_log_path: /var/log/caddy/clawdbot.access.log
 
 gateway_openclaw_service_name: openclaw-gateway
@@ -23,13 +23,10 @@ gateway_openclaw_install_dir: "{{ gateway_openclaw_home }}/.local/lib/node_modul
 gateway_openclaw_required_version: "2026.6.1"
 gateway_openclaw_npm_package_spec: "openclaw@{{ gateway_openclaw_required_version }}"
 gateway_openclaw_global_npm_dir: "{{ gateway_openclaw_home }}/.openclaw/npm"
-gateway_openclaw_multi_session_plugin_package_spec: "github:x-evor/openclaw-multi-session-plugins#main"
+gateway_openclaw_multi_session_plugin_archive_url: "https://github.com/ai-workspace-lab/openclaw-multi-session-plugins/releases/latest/download/openclaw-multi-session-plugins-runtime-all.tar.gz"
 gateway_openclaw_required_global_plugins:
   - name: "@openclaw/codex"
     version: "{{ gateway_openclaw_required_version }}"
-  - name: "openclaw-multi-session-plugins"
-    version: "{{ gateway_openclaw_required_version }}"
-    package_spec: "{{ gateway_openclaw_multi_session_plugin_package_spec }}"
 gateway_openclaw_removed_global_plugins:
   - "@openclaw/acpx"
 gateway_openclaw_extension_dependency_dirs: []
@@ -37,7 +34,7 @@ gateway_openclaw_config_path: "{{ gateway_openclaw_home }}/.openclaw/openclaw.js
 gateway_openclaw_workspace_path: "{{ gateway_openclaw_home }}/.openclaw/workspace"
 gateway_openclaw_workspace_mode: "0775"
 gateway_openclaw_compile_cache_dir: /var/tmp/openclaw-compile-cache
-gateway_openclaw_service_path: "{{ gateway_openclaw_home }}/.nix-profile/bin:{{ gateway_openclaw_home }}/.local/bin:{{ gateway_openclaw_home }}/.npm-global/bin:{{ gateway_openclaw_home }}/bin:/usr/local/bin:/usr/bin:/bin"
+gateway_openclaw_service_path: "{{ gateway_openclaw_home }}/.nix-profile/bin:{{ gateway_openclaw_home }}/.local/bin:{{ gateway_openclaw_home }}/.npm-global/bin:{{ gateway_openclaw_home }}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 gateway_openclaw_extension_backup_dir: "{{ gateway_openclaw_home }}/.openclaw/backups/extensions"
 
 gateway_openclaw_upstream_host: 127.0.0.1
