@@ -10,14 +10,14 @@
   listen: Restart QMD
 
 - name: Unload QMD on macOS
-  ansible.builtin.command: "launchctl unload {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.qmd.plist"
+  ansible.builtin.command: "launchctl unload {{ qmd_launch_agent_path }}"
   failed_when: false
   changed_when: false
   when: ansible_system == 'Darwin'
   listen: Restart QMD
 
 - name: Load QMD on macOS
-  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.qmd.plist"
+  ansible.builtin.command: "launchctl load -w {{ qmd_launch_agent_path }}"
   changed_when: false
   when: ansible_system == 'Darwin'
   listen: Restart QMD
