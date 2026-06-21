@@ -88,7 +88,7 @@
     'changed ' in (gateway_openclaw_package_install.stdout | default(''))
   when:
     - not ansible_check_mode
-  notify: Restart openclaw gateway
+  notify: Restart openclaw
 
 - name: Ensure OpenClaw extensions directory exists
   ansible.builtin.file:
@@ -114,7 +114,7 @@
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0755"
   become: "{{ ansible_os_family != 'Darwin' }}"
-  notify: Restart openclaw gateway
+  notify: Restart openclaw
 
 - name: Ensure OpenClaw global plugin npm directory exists
   ansible.builtin.file:
@@ -147,7 +147,7 @@
     label: "{{ item.package_spec | default(item.name ~ '@' ~ item.version) }}"
   when:
     - not ansible_check_mode
-  notify: Restart openclaw gateway
+  notify: Restart openclaw
 
 - name: Remove unsupported OpenClaw global plugin packages
   ansible.builtin.command:
@@ -170,7 +170,7 @@
   when:
     - gateway_openclaw_removed_global_plugins | length > 0
     - not ansible_check_mode
-  notify: Restart openclaw gateway
+  notify: Restart openclaw
 
 - name: Reset OpenClaw compile cache after package or plugin changes
   ansible.builtin.file:
@@ -270,7 +270,7 @@
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0600"
   diff: false
-  notify: Restart openclaw gateway
+  notify: Restart openclaw
 
 - name: Inspect OpenClaw package manifest
   ansible.builtin.stat:
