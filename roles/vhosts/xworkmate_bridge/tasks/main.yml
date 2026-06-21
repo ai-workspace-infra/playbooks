@@ -128,7 +128,7 @@
     path: "{{ item }}"
     state: absent
   loop: "{{ xworkmate_bridge_obsolete_systemd_dropin_paths }}"
-  notify: Reload bridge
+  notify: Restart bridge
 
 - name: Disable and stop obsolete user-level xworkmate-serve service
   ansible.builtin.shell: |
@@ -169,7 +169,7 @@
     owner: "{{ xworkmate_bridge_service_user }}"
     group: "{{ xworkmate_bridge_service_group }}"
     mode: "0644"
-  notify: Reload bridge
+  notify: Restart bridge
 
 - name: Restore immutable flag on xworkmate-bridge config file
   ansible.builtin.command:
@@ -205,7 +205,7 @@
   diff: false
   no_log: true
   register: xworkmate_bridge_systemd_unit
-  notify: Reload bridge
+  notify: Restart bridge
   when: ansible_os_family != 'Darwin'
 
 - name: Restore immutable flag on xworkmate-bridge systemd unit
