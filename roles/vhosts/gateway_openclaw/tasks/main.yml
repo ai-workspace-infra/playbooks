@@ -88,6 +88,7 @@
     'changed ' in (gateway_openclaw_package_install.stdout | default(''))
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
   notify: Restart openclaw
 
 - name: Ensure OpenClaw extensions directory exists
@@ -147,6 +148,7 @@
     label: "{{ item.package_spec | default(item.name ~ '@' ~ item.version) }}"
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
   notify: Restart openclaw
 
 - name: Remove unsupported OpenClaw global plugin packages
@@ -185,6 +187,7 @@
   delay: 3
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - >-
       (gateway_openclaw_package_install.changed | default(false))
       or
@@ -201,6 +204,7 @@
     mode: "0755"
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - >-
       (gateway_openclaw_package_install.changed | default(false))
       or
@@ -221,6 +225,7 @@
   changed_when: false
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Move stale OpenClaw plugin backups out of extension scan path
   ansible.builtin.shell: |
@@ -245,6 +250,7 @@
   changed_when: "'moved=1' in (gateway_openclaw_stale_extension_backups.stdout | default(''))"
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Inspect OpenClaw gateway JSON config attributes
   ansible.builtin.command:
@@ -305,6 +311,7 @@
   when:
     - gateway_openclaw_package_manifest.stat.exists | default(false)
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Inspect OpenClaw extension package manifests
   ansible.builtin.stat:
@@ -331,6 +338,7 @@
   when:
     - item.stat.exists | default(false)
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Restore immutable flag on OpenClaw gateway JSON config
   ansible.builtin.command:
@@ -368,6 +376,7 @@
   changed_when: false
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Assert OpenClaw gateway version is pinned
   ansible.builtin.assert:
@@ -378,6 +387,7 @@
       package upgrade. Actual version output: {{ gateway_openclaw_version.stdout | default('') }}
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Check OpenClaw plugin registry
   ansible.builtin.command:
@@ -393,6 +403,7 @@
   changed_when: false
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Assert OpenClaw Codex plugin matches gateway version
   ansible.builtin.assert:
@@ -426,6 +437,7 @@
       and must not keep stale global @openclaw/acpx.
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Ensure OpenClaw user systemd unit directory exists
   ansible.builtin.file:
@@ -461,6 +473,7 @@
     creates: "/var/lib/systemd/linger/{{ gateway_openclaw_service_user }}"
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - ansible_os_family != 'Darwin'
 
 - name: Resolve OpenClaw service user uid
@@ -487,6 +500,7 @@
     state: started
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - ansible_os_family != 'Darwin'
 
 - name: Stop and disable stale root-managed OpenClaw gateway service
@@ -497,6 +511,7 @@
   failed_when: false
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - ansible_os_family != 'Darwin'
 
 - name: Inspect stale OpenClaw gateway root systemd unit attributes
@@ -546,6 +561,7 @@
   changed_when: false
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - ansible_os_family != 'Darwin'
 
 - name: Ensure OpenClaw user gateway service is enabled and running
@@ -567,6 +583,7 @@
     'Created symlink' in (gateway_openclaw_user_service_enable.stderr | default(''))
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Windows'
     - ansible_os_family != 'Darwin'
 
 - name: Restart OpenClaw user gateway service after unit changes
@@ -590,6 +607,10 @@
 - name: Import macOS specific service tasks
   ansible.builtin.import_tasks: macos.yml
   when: ansible_os_family == 'Darwin'
+
+- name: Include Windows specific service tasks
+  ansible.builtin.include_tasks: windows.yml
+  when: ansible_os_family == 'Windows'
 
 # Caddy ingress for OpenClaw. Skipped entirely when caddy_enabled is false
 # (default on macOS single-host deploys), so /etc/caddy is never touched and no
