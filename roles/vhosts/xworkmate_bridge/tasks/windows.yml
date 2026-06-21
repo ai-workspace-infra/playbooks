@@ -1,0 +1,26 @@
+---
+- name: Deploy xworkmate-bridge Windows startup script
+  ansible.windows.win_template:
+    src: start.ps1.j2
+    dest: "{{ xworkmate_bridge_base_dir }}\\start.ps1"
+  notify: Restart bridge
+
+- name: Create xworkmate-bridge Scheduled Task on Windows
+  community.windows.win_scheduled_task:
+    name: xworkmate-bridge
+    description: "XWorkmate Bridge Service"
+    executable: powershell.exe
+    arguments: "-ExecutionPolicy Bypass -WindowStyle Hidden -File {{ xworkmate_bridge_base_dir }}\\start.ps1"
+    time: startup
+    state: present
+    enabled: true
+    run_level: highest
+    logon_type: service_account
+    user: SYSTEM
+
+- name: Ensure xworkmate-bridge Scheduled Task is running
+  community.windows.win_command:
+    cmd: schtasks /Run /TN "xworkmate-bridge"
+  failed_when: false
+  changed_when: false
+  when: not ansible_check_mode

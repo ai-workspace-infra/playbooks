@@ -7,11 +7,11 @@ ansible_host_key_checking: False
 # Set to 'strict' to disable public Caddy/Ingress access for all roles.
 ai_workspace_security_level: standard
 
-# Whether to install/configure the Caddy reverse proxy (public HTTP/TLS ingress).
-# Default: enabled on Linux, disabled on macOS single-host deploys (no system
-# Caddy, /etc/caddy not writable). Override anytime with -e caddy_enabled=true
-# (force on) or -e caddy_enabled=false (force off) — extra-vars win.
-caddy_enabled: "{{ ansible_os_family != 'Darwin' }}"
+# Caddy ingress is enabled by default on Linux where we expect a dedicated box.
+# It is disabled on macOS (developer workstation with port conflicts) and Windows
+# (Caddy not natively supported in our Windows pipeline).
+# Override anytime with -e caddy_enabled=true or -e caddy_enabled=false.
+caddy_enabled: "{{ ansible_os_family != 'Darwin' and ansible_os_family != 'Windows' }}"
 
 # Caddy config root. Linux uses the system path /etc/caddy; macOS (Homebrew)
 # uses /opt/homebrew/etc/caddy. Roles derive their Caddyfile / conf.d / fragment
