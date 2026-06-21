@@ -15,8 +15,16 @@ litellm_package_spec: >-
     else 'litellm[proxy] @ git+' ~ litellm_source_repo ~ '@' ~ litellm_version,
     true)
   }}
-litellm_python_executable: "{{ lookup('ansible.builtin.env', 'LITELLM_PYTHON_EXECUTABLE') | default('python3', true) }}"
-litellm_pip_executable: "{{ lookup('ansible.builtin.env', 'LITELLM_PIP_EXECUTABLE') | default('', true) }}"
+litellm_bootstrap_python_executable: >-
+  {{
+    lookup('ansible.builtin.env', 'LITELLM_PYTHON_EXECUTABLE')
+    | default('/opt/homebrew/bin/python3.13' if ansible_os_family == 'Darwin' else '/usr/bin/python3', true)
+  }}
+litellm_venv_dir: "{{ litellm_service_home }}/.local/share/litellm/venv"
+litellm_python_executable: "{{ litellm_venv_dir }}/bin/python"
+litellm_pip_executable: "{{ litellm_venv_dir }}/bin/pip"
+litellm_binary_path: "{{ litellm_venv_dir }}/bin/litellm"
+litellm_prisma_binary_path: "{{ litellm_venv_dir }}/bin/prisma"
 litellm_listen_host: 127.0.0.1
 litellm_listen_port: 4000
 litellm_config_dir: /etc/litellm

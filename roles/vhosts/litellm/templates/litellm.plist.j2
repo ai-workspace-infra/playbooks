@@ -9,7 +9,7 @@
         <string>/bin/bash</string>
         <string>-c</string>
         <string>
-            export PATH="/opt/homebrew/bin:/usr/local/bin:{{ litellm_service_home }}/.local/bin:$PATH"
+            export PATH="{{ litellm_venv_dir }}/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
             export DATABASE_URL="{{ litellm_database_url }}"
             export LITELLM_MASTER_KEY="{{ litellm_master_key }}"
             export LITELLM_SALT_KEY="{{ litellm_salt_key }}"
@@ -22,7 +22,7 @@
             export GEMINI_API_KEY="{{ litellm_gemini_api_key }}"
             export ANTHROPIC_API_KEY="{{ litellm_anthropic_api_key }}"
             
-            exec "{{ litellm_proxy_dir | default(litellm_service_home ~ '/.local/lib/python3.13/site-packages/litellm/proxy') }}/../../../../bin/litellm" --host {{ litellm_listen_host }} --port {{ litellm_listen_port }} --config "{{ litellm_config_file }}" --use_prisma_db_push
+            exec "{{ litellm_binary_path }}" --host {{ litellm_listen_host }} --port {{ litellm_listen_port }} --config "{{ litellm_config_file }}" --use_prisma_db_push
         </string>
     </array>
     <key>RunAtLoad</key>

@@ -8,10 +8,9 @@ User={{ litellm_service_user }}
 Group={{ litellm_service_group }}
 WorkingDirectory={{ litellm_service_home }}
 EnvironmentFile={{ litellm_env_file }}
-Environment=PYTHONPATH={{ litellm_python_site_packages | default(litellm_service_home ~ '/.local/lib/python3.12/site-packages') }}
-Environment=PYTHONUSERBASE={{ litellm_service_home }}/.local
-Environment=PATH={{ litellm_service_home }}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart={{ litellm_service_home }}/.local/bin/litellm --host {{ litellm_listen_host }} --port {{ litellm_listen_port }} --config {{ litellm_config_file }}
+Environment=PYTHONPATH={{ litellm_python_site_packages }}
+Environment=PATH={{ litellm_venv_dir }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart={{ litellm_binary_path }} --host {{ litellm_listen_host }} --port {{ litellm_listen_port }} --config {{ litellm_config_file }}
 Restart=always
 RestartSec=5
 StandardOutput=journal
