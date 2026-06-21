@@ -5,22 +5,42 @@ litellm_service_group: "{{ 'staff' if ansible_os_family == 'Darwin' else (ansibl
 litellm_service_home: "{{ ansible_env.HOME | default('/home/' + litellm_service_user) }}"
 litellm_source_repo: "https://github.com/ai-workspace-services/litellm.git"
 litellm_version: "3ad385a8a46988b6a81fe6c0bc22ef58685baa58"
+litellm_source_archive_url: "https://github.com/ai-workspace-services/litellm/archive/{{ litellm_version }}.zip"
 litellm_debian_11_compat_version: "1.74.9"
+litellm_default_bootstrap_python_executable: >-
+  {{
+    '/opt/homebrew/bin/python3.13'
+    if ansible_os_family == 'Darwin'
+    else ('C:/Python313/python.exe' if ansible_os_family == 'Windows' else '/usr/bin/python3')
+  }}
+litellm_default_pip_cache_dir: >-
+  {{
+    lookup('ansible.builtin.env', 'LOCALAPPDATA')
+    | default(litellm_service_home ~ '/AppData/Local/pip/Cache', true)
+    if ansible_os_family == 'Windows'
+    else (litellm_service_home ~ '/Library/Caches/pip' if ansible_os_family == 'Darwin' else litellm_service_home ~ '/.cache/pip')
+  }}
 litellm_package_spec: >-
   {{
     lookup('ansible.builtin.env', 'LITELLM_PACKAGE_SPEC')
     | default(
     'litellm[proxy]==' ~ litellm_debian_11_compat_version
     if ansible_facts.distribution == 'Debian' and ansible_facts.distribution_major_version == '11'
-    else 'litellm[proxy] @ git+' ~ litellm_source_repo ~ '@' ~ litellm_version,
+    else 'litellm[proxy] @ ' ~ litellm_source_archive_url,
     true)
   }}
 litellm_bootstrap_python_executable: >-
   {{
     lookup('ansible.builtin.env', 'LITELLM_PYTHON_EXECUTABLE')
-    | default('/opt/homebrew/bin/python3.13' if ansible_os_family == 'Darwin' else '/usr/bin/python3', true)
+    | default(litellm_default_bootstrap_python_executable, true)
   }}
 litellm_venv_dir: "{{ litellm_service_home }}/.local/share/litellm/venv"
+litellm_pip_cache_dir: >-
+  {{
+    lookup('ansible.builtin.env', 'LITELLM_PIP_CACHE_DIR')
+    | default(litellm_default_pip_cache_dir, true)
+  }}
+litellm_install_marker_file: "{{ litellm_venv_dir }}/.install-spec"
 litellm_python_executable: "{{ litellm_venv_dir }}/bin/python"
 litellm_pip_executable: "{{ litellm_venv_dir }}/bin/pip"
 litellm_binary_path: "{{ litellm_venv_dir }}/bin/litellm"

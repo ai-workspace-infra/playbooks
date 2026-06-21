@@ -110,6 +110,53 @@
   become: true
   become_user: "{{ litellm_service_user }}"
 
+- name: Inspect installed LiteLLM dependency marker
+  ansible.builtin.stat:
+    path: "{{ litellm_install_marker_file }}"
+  register: litellm_install_marker
+  become: true
+  become_user: "{{ litellm_service_user }}"
+
+- name: Read installed LiteLLM dependency marker
+  ansible.builtin.command:
+    cmd: "cat {{ litellm_install_marker_file }}"
+  register: litellm_install_marker_content
+  changed_when: false
+  failed_when: false
+  become: true
+  become_user: "{{ litellm_service_user }}"
+  when: litellm_install_marker.stat.exists
+
+- name: Inspect installed LiteLLM dependency versions
+  ansible.builtin.command:
+    cmd: >-
+      {{ litellm_python_executable }} -c
+      "import importlib.metadata as m, json;
+      packages = ['litellm', 'prisma', 'psycopg2-binary'];
+      data = {};
+      for package in packages:
+          try:
+              data[package] = m.version(package)
+          except Exception:
+              data[package] = 'missing';
+      print(json.dumps(data))"
+  register: litellm_dependency_versions
+  changed_when: false
+  failed_when: false
+  become: true
+  become_user: "{{ litellm_service_user }}"
+
+- name: Decide whether LiteLLM dependencies need installation
+  ansible.builtin.set_fact:
+    litellm_dependency_install_required: >-
+      {{
+        not litellm_install_marker.stat.exists
+        or (litellm_install_marker_content.stdout | default('') | trim != litellm_package_spec)
+        or (litellm_dependency_versions.stdout | default('{}') | from_json).litellm == 'missing'
+        or (litellm_dependency_versions.stdout | default('{}') | from_json).prisma == 'missing'
+        or (litellm_dependency_versions.stdout | default('{}') | from_json)['psycopg2-binary'] == 'missing'
+      }}
+
 - name: Ensure LiteLLM and DB dependencies are installed
   ansible.builtin.pip:
     name:
@@ -118,8 +165,23 @@
       - "psycopg2-binary"
     executable: "{{ litellm_pip_executable }}"
     state: present
+  environment:
+    PIP_CACHE_DIR: "{{ litellm_pip_cache_dir }}"
+    PIP_DEFAULT_TIMEOUT: "120"
   become: true
   become_user: "{{ litellm_service_user }}"
+  when: litellm_dependency_install_required | bool
+
+- name: Record installed LiteLLM dependency spec
+  ansible.builtin.copy:
+    dest: "{{ litellm_install_marker_file }}"
+    content: "{{ litellm_package_spec }}\n"
+    owner: "{{ litellm_service_user }}"
+    group: "{{ litellm_service_group }}"
+    mode: "0644"
+  become: true
+  become_user: "{{ litellm_service_user }}"
+  when: litellm_dependency_install_required | bool
 
 - name: Resolve LiteLLM Python site-packages path
   ansible.builtin.command:
