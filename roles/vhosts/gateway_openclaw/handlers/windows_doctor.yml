@@ -1,6 +1,16 @@
 ---
-- name: Execute OpenClaw doctor
-  community.windows.win_command: "{{ gateway_openclaw_home }}\\.local\\node_modules\\openclaw\\bin\\openclaw.cmd doctor --fix --force --non-interactive --yes"
+- name: Check OpenClaw health on Windows
+  community.windows.win_command: "{{ gateway_openclaw_home }}\\.local\\node_modules\\openclaw\\bin\\openclaw.cmd doctor --lint --severity-min error"
   environment:
     OPENCLAW_NO_RESPAWN: "1"
     NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  register: gateway_openclaw_doctor_lint_win
+  changed_when: false
+  failed_when: false
+
+- name: Repair OpenClaw health findings on Windows
+  community.windows.win_command: "{{ gateway_openclaw_home }}\\.local\\node_modules\\openclaw\\bin\\openclaw.cmd doctor --repair --non-interactive --yes"
+  environment:
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  when: gateway_openclaw_doctor_lint_win.rc | default(0) != 0

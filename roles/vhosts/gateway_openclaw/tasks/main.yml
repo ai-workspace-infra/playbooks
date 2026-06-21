@@ -68,6 +68,13 @@
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0700"
 
+- name: Inspect installed OpenClaw gateway package version
+  ansible.builtin.slurp:
+    path: "{{ gateway_openclaw_install_dir }}/package.json"
+  register: gateway_openclaw_installed_package_manifest
+  failed_when: false
+  when: ansible_os_family != 'Windows'
+
 - name: Install required OpenClaw gateway package version
   ansible.builtin.command:
     cmd: >-
@@ -89,7 +96,13 @@
   when:
     - not ansible_check_mode
     - ansible_os_family != 'Windows'
-  notify: Restart openclaw
+    - >-
+      (gateway_openclaw_installed_package_manifest.content | default('') | length == 0)
+      or
+      ((gateway_openclaw_installed_package_manifest.content | b64decode | from_json).version | default('') != gateway_openclaw_required_version)
+  notify:
+    - Run OpenClaw doctor
+    - Restart openclaw
 
 - name: Ensure OpenClaw extensions directory exists
   ansible.builtin.file:
@@ -114,8 +127,11 @@
     owner: "{{ gateway_openclaw_service_user }}"
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0755"
+    creates: "{{ gateway_openclaw_home }}/.openclaw/extensions/openclaw-multi-session-plugins"
   become: "{{ ansible_os_family != 'Darwin' }}"
-  notify: Restart openclaw
+  notify:
+    - Run OpenClaw doctor
+    - Restart openclaw
 
 - name: Ensure OpenClaw global plugin npm directory exists
   ansible.builtin.file:
@@ -124,6 +140,21 @@
     owner: "{{ gateway_openclaw_service_user }}"
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0700"
+
+- name: Inspect installed OpenClaw global plugin versions
+  ansible.builtin.command:
+    cmd: npm list --depth=0 --json --prefix "{{ gateway_openclaw_global_npm_dir }}"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_installed_global_plugins
+  changed_when: false
+  failed_when: false
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Windows'
 
 - name: Install required OpenClaw global plugin versions
   ansible.builtin.command:
@@ -149,7 +180,12 @@
   when:
     - not ansible_check_mode
     - ansible_os_family != 'Windows'
-  notify: Restart openclaw
+    - >-
+      (((gateway_openclaw_installed_global_plugins.stdout | default('{}') | from_json).dependencies | default({})).get(item.name, {}).get('version', ''))
+      != item.version
+  notify:
+    - Run OpenClaw doctor
+    - Restart openclaw
 
 - name: Remove unsupported OpenClaw global plugin packages
   ansible.builtin.command:
@@ -172,7 +208,9 @@
   when:
     - gateway_openclaw_removed_global_plugins | length > 0
     - not ansible_check_mode
-  notify: Restart openclaw
+  notify:
+    - Run OpenClaw doctor
+    - Restart openclaw
 
 - name: Reset OpenClaw compile cache after package or plugin changes
   ansible.builtin.file:
@@ -276,7 +314,9 @@
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0600"
   diff: false
-  notify: Restart openclaw
+  notify:
+    - Run OpenClaw doctor
+    - Restart openclaw
 
 - name: Inspect OpenClaw package manifest
   ansible.builtin.stat:
@@ -303,6 +343,8 @@
     NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
   become: true
   become_user: "{{ gateway_openclaw_service_user }}"
+  args:
+    creates: "{{ gateway_openclaw_install_dir }}/node_modules"
   register: gateway_openclaw_package_deps
   changed_when: >-
     'added ' in (gateway_openclaw_package_deps.stdout | default('')) or
@@ -329,6 +371,8 @@
     NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
   become: true
   become_user: "{{ gateway_openclaw_service_user }}"
+  args:
+    creates: "{{ item.item }}/node_modules"
   register: gateway_openclaw_extension_deps
   changed_when: >-
     'added ' in (gateway_openclaw_extension_deps.stdout | default('')) or
