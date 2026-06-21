@@ -1,12 +1,12 @@
 ---
 - name: Run OpenClaw doctor (POSIX)
-  ansible.builtin.command: "{{ gateway_openclaw_binary_path }} doctor --fix --force"
+  ansible.builtin.command: "{{ gateway_openclaw_binary_path }} doctor --fix --force --non-interactive --yes"
   environment:
     HOME: "{{ gateway_openclaw_home }}"
     PATH: "{{ gateway_openclaw_service_path }}"
     OPENCLAW_NO_RESPAWN: "1"
     NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
-  become: "{{ ansible_os_family == 'Debian' }}"
+  become: true
   become_user: "{{ gateway_openclaw_service_user }}"
   when:
     - not ansible_check_mode
