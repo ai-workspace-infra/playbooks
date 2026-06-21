@@ -1,22 +1,31 @@
+---
 - name: Reload caddy
-  ansible.builtin.service:
+  ansible.builtin.systemd:
     name: caddy
     state: reloaded
-  when: ansible_os_family != 'Darwin'
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
 
-- name: Restart litellm
-  ansible.builtin.service:
+- name: Reload litellm
+  ansible.builtin.systemd:
     name: "{{ litellm_service_name }}"
     state: restarted
-  when: ansible_os_family != 'Darwin'
+    daemon_reload: true
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
+  listen: Restart litellm
 
-- name: Restart litellm on macOS
-  ansible.builtin.command: "launchctl stop plus.svc.xworkspace.litellm"
-  register: launchctl_stop
+- name: Unload litellm on macOS
+  ansible.builtin.command: "launchctl unload {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.litellm.plist"
   failed_when: false
   changed_when: false
-  notify: Start litellm on macOS
+  when: ansible_system == 'Darwin'
+  listen: Restart litellm
 
-- name: Start litellm on macOS
-  ansible.builtin.command: "launchctl start plus.svc.xworkspace.litellm"
+- name: Load litellm on macOS
+  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.litellm.plist"
   changed_when: false
+  when: ansible_system == 'Darwin'
+  listen: Restart litellm
