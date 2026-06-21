@@ -374,6 +374,10 @@
     - ansible_os_family != 'Darwin'
   become: true
 
+- name: Import macOS specific xworkmate-bridge tasks
+  ansible.builtin.import_tasks: macos.yml
+  when: ansible_os_family == 'Darwin'
+
 - name: Apply xworkmate-bridge service and Caddy changes before validation
   ansible.builtin.meta: flush_handlers
   become: true
@@ -383,7 +387,3 @@
   tags: [xworkmate_bridge, xworkmate_bridge_validate]
   when:
     - not ansible_check_mode
-
-- name: Import macOS specific xworkmate-bridge tasks
-  ansible.builtin.import_tasks: macos.yml
-  when: ansible_os_family == 'Darwin'
