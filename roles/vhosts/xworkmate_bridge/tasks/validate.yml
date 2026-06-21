@@ -78,8 +78,16 @@
 
 
 - name: Capture listening TCP sockets for xworkmate-bridge stack
-  ansible.builtin.command:
-    cmd: ss -ltn
+  # ss is Linux-only; on macOS fall back to lsof, whose output likewise contains
+  # host:port (e.g. 127.0.0.1:8787, *:8787) so the assertion below still matches.
+  ansible.builtin.shell: |
+    if command -v ss >/dev/null 2>&1; then
+      ss -ltn
+    else
+      lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null || true
+    fi
+  args:
+    executable: /bin/bash
   register: xworkmate_bridge_listening_sockets
   changed_when: false
 

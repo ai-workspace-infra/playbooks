@@ -1,8 +1,16 @@
 ---
 - name: Check Gemini ACP adapter listener
-  ansible.builtin.command: ss -ltnp
+  ansible.builtin.shell: |
+    if command -v ss >/dev/null 2>&1; then
+      ss -ltnp
+    else
+      lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null || true
+    fi
+  args:
+    executable: /bin/bash
   register: acp_gemini_ss
   changed_when: false
+  failed_when: false
 
 - name: Validate local Gemini ACP adapter CORS preflight
   ansible.builtin.uri:
