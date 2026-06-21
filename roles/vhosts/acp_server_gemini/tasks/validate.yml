@@ -22,6 +22,9 @@
     return_content: true
     status_code: [204, 405]
   register: acp_gemini_bridge_http
+  retries: 30
+  delay: 2
+  until: acp_gemini_bridge_http.status in [204, 405]
 
 - name: Show Gemini ACP adapter status
   ansible.builtin.command: systemctl status "{{ acp_gemini_service_name }}" --no-pager
