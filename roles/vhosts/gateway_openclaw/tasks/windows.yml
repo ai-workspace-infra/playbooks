@@ -1,4 +1,10 @@
 ---
+- name: Inspect installed OpenClaw gateway package version on Windows
+  ansible.windows.win_slurp:
+    src: "{{ gateway_openclaw_home }}\\.local\\node_modules\\openclaw\\package.json"
+  register: gateway_openclaw_installed_package_manifest_win
+  failed_when: false
+
 - name: Install required OpenClaw gateway package version on Windows
   community.windows.win_command:
     cmd: >-
@@ -12,8 +18,15 @@
   changed_when: >-
     'added ' in (gateway_openclaw_package_install_win.stdout | default('')) or
     'updated ' in (gateway_openclaw_package_install_win.stdout | default(''))
-  when: not ansible_check_mode
-  notify: Restart openclaw
+  when:
+    - not ansible_check_mode
+    - >-
+      (gateway_openclaw_installed_package_manifest_win.content | default('') | length == 0)
+      or
+      ((gateway_openclaw_installed_package_manifest_win.content | b64decode | from_json).version | default('') != gateway_openclaw_required_version)
+  notify:
+    - Run OpenClaw doctor
+    - Restart openclaw
 
 - name: Ensure OpenClaw extensions directory exists on Windows
   ansible.windows.win_file:
@@ -26,13 +39,17 @@
     dest: "{{ gateway_openclaw_home }}\.openclaw\extensions"
     creates: "{{ gateway_openclaw_home }}\.openclaw\extensions\openclaw-multi-session-plugins"
   when: not ansible_check_mode
-  notify: Restart openclaw
+  notify:
+    - Run OpenClaw doctor
+    - Restart openclaw
 
 - name: Deploy OpenClaw gateway JSON config on Windows
   ansible.windows.win_template:
     src: openclaw.json.j2
     dest: "{{ gateway_openclaw_config_path }}"
-  notify: Restart openclaw
+  notify:
+    - Run OpenClaw doctor
+    - Restart openclaw
 
 - name: Register OpenClaw gateway as a Windows Service (schtasks)
   community.windows.win_command:

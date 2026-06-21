@@ -1,6 +1,23 @@
 ---
-- name: Run OpenClaw doctor (POSIX)
-  ansible.builtin.command: "{{ gateway_openclaw_binary_path }} doctor --fix --force --non-interactive --yes"
+- name: Check OpenClaw health (POSIX)
+  ansible.builtin.command: "{{ gateway_openclaw_binary_path }} doctor --lint --severity-min error"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_doctor_lint
+  changed_when: false
+  failed_when: false
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Windows'
+  listen: Run OpenClaw doctor
+
+- name: Repair OpenClaw health findings (POSIX)
+  ansible.builtin.command: "{{ gateway_openclaw_binary_path }} doctor --repair --non-interactive --yes"
   environment:
     HOME: "{{ gateway_openclaw_home }}"
     PATH: "{{ gateway_openclaw_service_path }}"
@@ -11,21 +28,22 @@
   when:
     - not ansible_check_mode
     - ansible_os_family != 'Windows'
-  listen: Restart openclaw
+    - gateway_openclaw_doctor_lint.rc | default(0) != 0
+  listen: Run OpenClaw doctor
 
 - name: Run OpenClaw doctor (Windows)
   ansible.builtin.include_tasks: windows_doctor.yml
   when:
     - not ansible_check_mode
     - ansible_os_family == 'Windows'
-  listen: Restart openclaw
+  listen: Run OpenClaw doctor
 
 - name: Reload systemd
   ansible.builtin.systemd:
     daemon_reload: true
   when:
     - not ansible_check_mode
-    - ansible_os_family != 'Darwin'
+    - ansible_os_family not in ['Darwin', 'Windows']
   listen: Restart openclaw
 
 - name: Restart openclaw gateway
@@ -47,7 +65,14 @@
   become: true
   when:
     - not ansible_check_mode
-    - ansible_os_family != 'Darwin'
+    - ansible_os_family not in ['Darwin', 'Windows']
+  listen: Restart openclaw
+
+- name: Restart OpenClaw gateway on Windows
+  ansible.builtin.include_tasks: windows_restart.yml
+  when:
+    - not ansible_check_mode
+    - ansible_os_family == 'Windows'
   listen: Restart openclaw
 
 - name: Unload openclaw on macOS
