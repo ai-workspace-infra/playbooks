@@ -12,12 +12,12 @@
   when: ansible_os_family != 'Darwin'
 
 - name: Restart acp codex on macOS
-  ansible.builtin.command: "launchctl stop plus.svc.xworkspace.acp.codex"
-  register: launchctl_stop
+  ansible.builtin.command: "launchctl unload {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.acp.codex.plist"
+  register: launchctl_unload
   failed_when: false
   changed_when: false
   notify: Start acp codex on macOS
 
 - name: Start acp codex on macOS
-  ansible.builtin.command: "launchctl start plus.svc.xworkspace.acp.codex"
+  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.acp.codex.plist"
   changed_when: false
