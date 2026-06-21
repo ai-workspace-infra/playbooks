@@ -19,6 +19,8 @@
   failed_when: nodejs_brew_install.rc != 0 and 'already installed' not in (nodejs_brew_install.stdout | lower) and 'already installed' not in (nodejs_brew_install.stderr | lower)
   environment:
     HOMEBREW_DEVELOPER: "1"
+    HOMEBREW_NO_AUTO_UPDATE: "1"
+    HOMEBREW_NO_INSTALL_CLEANUP: "1"
 
 - name: Ensure {{ nodejs_homebrew_formula }} is linked as the default node
   ansible.builtin.command: "brew link --force --overwrite {{ nodejs_homebrew_formula }}"
