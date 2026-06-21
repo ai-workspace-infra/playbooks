@@ -52,8 +52,8 @@
     extra_opts:
       - "--strip-components=2"
       - "xworkmate-bridge/bin/xworkmate-go-core"
-    owner: root
-    group: root
+    owner: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
+    group: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0755"
   become: true
   when: not (acp_opencode_bridge_use_prebuilt | bool)
