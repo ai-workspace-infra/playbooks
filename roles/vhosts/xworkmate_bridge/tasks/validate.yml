@@ -2,7 +2,9 @@
 - name: Validate Caddy config for xworkmate-bridge ingress
   ansible.builtin.command: caddy validate --config "{{ xworkmate_bridge_caddyfile_path }}"
   changed_when: false
-  when: xworkmate_bridge_public_access | bool
+  when: 
+    - xworkmate_bridge_public_access | bool
+    - caddy_enabled | bool
 
 - name: Read deployed xworkmate-bridge Caddy fragment
   ansible.builtin.command:
@@ -10,7 +12,9 @@
   changed_when: false
   register: xworkmate_bridge_fragment
   no_log: true
-  when: xworkmate_bridge_public_access | bool
+  when: 
+    - xworkmate_bridge_public_access | bool
+    - caddy_enabled | bool
 
 - name: Read deployed xworkmate-bridge systemd unit
   ansible.builtin.command:
@@ -18,7 +22,9 @@
   changed_when: false
   register: xworkmate_bridge_systemd_unit_text
   no_log: true
-  when: xworkmate_bridge_public_access | bool
+  when: 
+    - xworkmate_bridge_public_access | bool
+    - ansible_os_family != 'Darwin' 
 
 - name: Assert Caddy fragment only exposes app-facing bridge routes
   ansible.builtin.assert:
@@ -38,7 +44,9 @@
       - "'127.0.0.1:8791' not in xworkmate_bridge_fragment.stdout"
       - "'127.0.0.1:3920' not in xworkmate_bridge_fragment.stdout"
   no_log: true
-  when: xworkmate_bridge_public_access | bool
+  when: 
+    - xworkmate_bridge_public_access | bool
+    - caddy_enabled | bool
 
 - name: Assert Caddy and systemd use the same bridge token set
   ansible.builtin.assert:
@@ -65,7 +73,10 @@
         )
     fail_msg: "xworkmate-bridge Caddy and systemd token configuration are not aligned"
   no_log: true
-  when: xworkmate_bridge_public_access | bool
+  when: 
+    - xworkmate_bridge_public_access | bool
+    - ansible_os_family != 'Darwin' 
+    - caddy_enabled | bool
 
 - name: Check xworkmate-bridge systemd service status
   ansible.builtin.systemd:
@@ -74,6 +85,7 @@
   until: xworkmate_bridge_service_status.status.ActiveState | default('') == "active"
   retries: 12
   delay: 5
+  when: ansible_os_family != 'Darwin' 
 
 
 
@@ -224,15 +236,17 @@
   changed_when: false
   loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
   register: xworkmate_bridge_obsolete_fragments
+  when: caddy_enabled | bool
 
 - name: Assert deprecated ACP fragments were removed
   ansible.builtin.assert:
     that:
       - not item.stat.exists
     fail_msg: "Deprecated ACP fragment still exists: {{ item.item }}"
-  loop: "{{ xworkmate_bridge_obsolete_fragments.results }}"
+  loop: "{{ xworkmate_bridge_obsolete_fragments.results | default([]) }}"
   loop_control:
     label: "{{ item.item }}"
+  when: caddy_enabled | bool
 
 - name: Summarize xworkmate-bridge systemd ingress state
   ansible.builtin.debug:
