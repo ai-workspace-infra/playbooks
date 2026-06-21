@@ -1,4 +1,28 @@
 ---
+- name: Run OpenClaw doctor (POSIX)
+  ansible.builtin.command: "{{ gateway_openclaw_binary_path }} doctor --fix --force"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: "{{ ansible_os_family == 'Debian' }}"
+  become_user: "{{ gateway_openclaw_service_user }}"
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Windows'
+  listen: Restart openclaw
+
+- name: Run OpenClaw doctor (Windows)
+  community.windows.win_command: "{{ gateway_openclaw_home }}\\.local\\node_modules\\openclaw\\bin\\openclaw.cmd doctor --fix --force"
+  environment:
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  when:
+    - not ansible_check_mode
+    - ansible_os_family == 'Windows'
+  listen: Restart openclaw
+
 - name: Reload systemd
   ansible.builtin.systemd:
     daemon_reload: true
