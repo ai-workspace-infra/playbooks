@@ -19,9 +19,9 @@
     docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -c "CREATE USER {{ litellm_database_user }};"
     docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -c "ALTER USER {{ litellm_database_user }} WITH PASSWORD '{{ litellm_database_password | replace("'", "''") }}';"
     {% else %}
-    psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ litellm_database_user }}'" | grep -q 1 || \
-    psql -c "CREATE USER {{ litellm_database_user }};"
-    psql -c "ALTER USER {{ litellm_database_user }} WITH PASSWORD '{{ litellm_database_password | replace("'", "''") }}';"
+    psql -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ litellm_database_user }}'" | grep -q 1 || \
+    psql -d postgres -c "CREATE USER {{ litellm_database_user }};"
+    psql -d postgres -c "ALTER USER {{ litellm_database_user }} WITH PASSWORD '{{ litellm_database_password | replace("'", "''") }}';"
     {% endif %}
   args:
     executable: /bin/bash
@@ -41,8 +41,8 @@
     docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -tAc "SELECT 1 FROM pg_database WHERE datname='{{ litellm_database_name }}'" | grep -q 1 || \
     docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -c "CREATE DATABASE {{ litellm_database_name }} OWNER {{ litellm_database_user }};"
     {% else %}
-    psql -tAc "SELECT 1 FROM pg_database WHERE datname='{{ litellm_database_name }}'" | grep -q 1 || \
-    psql -c "CREATE DATABASE {{ litellm_database_name }} OWNER {{ litellm_database_user }};"
+    psql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='{{ litellm_database_name }}'" | grep -q 1 || \
+    psql -d postgres -c "CREATE DATABASE {{ litellm_database_name }} OWNER {{ litellm_database_user }};"
     {% endif %}
   args:
     executable: /bin/bash
@@ -61,7 +61,7 @@
     {% if litellm_database_provisioner == 'docker' %}
     docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -c "GRANT ALL PRIVILEGES ON DATABASE {{ litellm_database_name }} TO {{ litellm_database_user }};"
     {% else %}
-    psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ litellm_database_name }} TO {{ litellm_database_user }};"
+    psql -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE {{ litellm_database_name }} TO {{ litellm_database_user }};"
     {% endif %}
   args:
     executable: /bin/bash
