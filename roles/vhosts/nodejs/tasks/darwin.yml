@@ -5,7 +5,7 @@
     nodejs_homebrew_formula: "node@{{ nodejs_version_major | default(22) }}"
 
 - name: Ensure unversioned Homebrew node formula is absent
-  ansible.builtin.command: "brew uninstall --force node"
+  ansible.builtin.command: "brew uninstall --ignore-dependencies --force node"
   register: nodejs_brew_uninstall
   changed_when: "'uninstalled' in (nodejs_brew_uninstall.stdout | lower) or 'uninstalled' in (nodejs_brew_uninstall.stderr | lower)"
   failed_when: nodejs_brew_uninstall.rc != 0 and 'no such keg' not in (nodejs_brew_uninstall.stdout | lower) and 'not installed' not in (nodejs_brew_uninstall.stderr | lower)
