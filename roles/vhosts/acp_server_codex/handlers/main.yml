@@ -3,13 +3,14 @@
   ansible.builtin.service:
     name: caddy
     state: reloaded
-  when: ansible_os_family != 'Darwin'
+  when: ansible_system == 'Linux'
 
-- name: Restart acp codex
+- name: Restart acp codex on Linux
   ansible.builtin.service:
     name: "{{ acp_codex_service_name }}"
     state: restarted
-  when: ansible_os_family != 'Darwin'
+  when: ansible_system == 'Linux'
+  listen: Restart acp codex
 
 - name: Restart acp codex on macOS
   ansible.builtin.command: "launchctl unload {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.acp.codex.plist"
@@ -17,7 +18,16 @@
   failed_when: false
   changed_when: false
   notify: Start acp codex on macOS
+  when: ansible_system == 'Darwin'
+  listen: Restart acp codex
 
 - name: Start acp codex on macOS
   ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.acp.codex.plist"
   changed_when: false
+  when: ansible_system == 'Darwin'
+
+- name: Restart acp codex on Windows
+  ansible.builtin.debug:
+    msg: "Windows restart for codex is not yet implemented"
+  when: ansible_os_family == 'Windows'
+  listen: Restart acp codex
