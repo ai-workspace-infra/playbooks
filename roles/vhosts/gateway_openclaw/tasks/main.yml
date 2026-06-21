@@ -252,7 +252,7 @@
   register: gateway_openclaw_config_attrs
   changed_when: false
   failed_when: false
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Remove immutable flag from OpenClaw gateway JSON config when present
   ansible.builtin.command:
@@ -434,7 +434,7 @@
     owner: "{{ gateway_openclaw_service_user }}"
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0755"
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Deploy OpenClaw user systemd unit
   ansible.builtin.template:
@@ -444,7 +444,7 @@
     group: "{{ gateway_openclaw_service_group }}"
     mode: "0644"
   register: gateway_openclaw_user_service_unit
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Deploy OpenClaw user systemd shell environment
   ansible.builtin.template:
@@ -453,7 +453,7 @@
     owner: root
     group: root
     mode: "0644"
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Enable OpenClaw service user linger
   ansible.builtin.command:
@@ -469,7 +469,7 @@
   register: gateway_openclaw_resolved_service_uid
   changed_when: false
   check_mode: false
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Set OpenClaw effective service uid
   ansible.builtin.set_fact:
@@ -479,7 +479,7 @@
         if (gateway_openclaw_service_uid | string | trim | length > 0)
         else (gateway_openclaw_resolved_service_uid.stdout | default(''))
       }}
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Ensure OpenClaw service user manager is running
   ansible.builtin.systemd:
@@ -505,7 +505,7 @@
   register: gateway_openclaw_unit_attrs
   changed_when: false
   failed_when: false
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Remove immutable flag from stale OpenClaw gateway root systemd unit when present
   ansible.builtin.command:
@@ -520,7 +520,7 @@
     path: "{{ gateway_openclaw_service_unit_path }}"
     state: absent
   register: gateway_openclaw_removed_root_service_unit
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Windows']
 
 - name: Reload root systemd after removing stale OpenClaw gateway unit
   ansible.builtin.systemd:
@@ -611,7 +611,7 @@
       register: gateway_openclaw_caddyfile_attrs
       changed_when: false
       failed_when: false
-      when: ansible_os_family != 'Darwin'
+      when: ansible_os_family not in ['Darwin', 'Windows']
 
     - name: Remove immutable flag from Caddy main file when present
       ansible.builtin.command:
@@ -648,7 +648,7 @@
       register: gateway_openclaw_caddy_fragment_attrs
       changed_when: false
       failed_when: false
-      when: ansible_os_family != 'Darwin'
+      when: ansible_os_family not in ['Darwin', 'Windows']
 
     - name: Remove immutable flag from OpenClaw Caddy fragment when present
       ansible.builtin.command:
