@@ -9,7 +9,7 @@ docs_service_hostname: "{{ inventory_hostname | default(ansible_facts['hostname'
 docs_service_canonical_domain: "{{ lookup('ansible.builtin.env', 'DOCS_CANONICAL_DOMAIN') | default('docs.svc.plus', true) }}"
 docs_service_served_domains: "{{ lookup('ansible.builtin.env', 'DOCS_SERVED_DOMAINS') | default(docs_service_canonical_domain, true) }}"
 docs_service_domain_slug: "{{ docs_service_canonical_domain | replace('.', '-') }}"
-docs_service_caddy_base_dir: "{{ /opt/homebrew/etc/caddy if ansible_os_family == Darwin else /etc/caddy }}"
+docs_service_caddy_base_dir: "{{ '/opt/homebrew/etc/caddy' if ansible_os_family == 'Darwin' else '/etc/caddy' }}"
 docs_service_caddy_conf_dir: "{{ docs_service_caddy_base_dir }}/conf.d"
 docs_service_caddy_fragment_name: "{{ docs_service_server_name }}-{{ docs_service_release_id }}-{{ docs_service_hostname }}-{{ docs_service_domain_slug }}.caddy"
 docs_service_caddy_fragment_path: "{{ docs_service_caddy_conf_dir }}/{{ docs_service_caddy_fragment_name }}"
