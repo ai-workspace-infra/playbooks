@@ -2,6 +2,7 @@
 - name: Install Gemini ACP prerequisites
   ansible.builtin.import_tasks: install.yml
   tags: [acp_gemini, acp_gemini_install]
+  when: ansible_os_family != 'Darwin'
 
 - name: Configure Gemini ACP adapter
   ansible.builtin.import_tasks: config.yml
@@ -16,3 +17,4 @@
   tags: [acp_gemini, acp_gemini_validate]
   when:
     - not ansible_check_mode
+    - ansible_os_family != 'Darwin'

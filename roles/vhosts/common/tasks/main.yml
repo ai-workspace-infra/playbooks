@@ -1,5 +1,11 @@
 ---
 # ===== Base system (always) =====
+# The Base hardening tasks below set timezone (timedatectl), rewrite
+# /etc/hostname + /etc/hosts, set the hostname, harden ssh, configure fail2ban,
+# raise file limits and open firewall ports. They all run with become: true and
+# rely on Linux-only tooling/paths, so they are skipped on macOS (Darwin), where
+# the deploy runs unprivileged. macOS prerequisites are handled by
+# common_darwin.yml instead.
 - name: Base | set timezone
   ansible.builtin.command: "timedatectl set-timezone Asia/Shanghai"
   changed_when: false
@@ -73,6 +79,12 @@
   when:
     - enable_common | bool
     - ansible_facts.os_family == "RedHat"
+
+- name: Common | Darwin (macOS) baseline
+  ansible.builtin.import_tasks: common_darwin.yml
+  when:
+    - enable_common | bool
+    - ansible_facts.os_family == "Darwin"
 
 # ===== Add-ons (default OFF) =====
 - name: Addon | S3FS mount

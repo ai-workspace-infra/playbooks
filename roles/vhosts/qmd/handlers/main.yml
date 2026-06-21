@@ -1,11 +1,23 @@
 ---
-- name: Restart QMD on macOS
-  ansible.builtin.command: "launchctl stop plus.svc.xworkspace.qmd"
-  register: launchctl_stop
+- name: Reload QMD
+  ansible.builtin.systemd:
+    name: "{{ qmd_service_name }}"
+    state: restarted
+    daemon_reload: true
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
+  listen: Restart QMD
+
+- name: Unload QMD on macOS
+  ansible.builtin.command: "launchctl unload {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.qmd.plist"
   failed_when: false
   changed_when: false
-  notify: Start QMD on macOS
+  when: ansible_system == 'Darwin'
+  listen: Restart QMD
 
-- name: Start QMD on macOS
-  ansible.builtin.command: "launchctl start plus.svc.xworkspace.qmd"
+- name: Load QMD on macOS
+  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.qmd.plist"
   changed_when: false
+  when: ansible_system == 'Darwin'
+  listen: Restart QMD

@@ -1,10 +1,32 @@
 ---
+- name: Run OpenClaw doctor (POSIX)
+  ansible.builtin.command: "{{ gateway_openclaw_binary_path }} doctor --fix --force --non-interactive --yes"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Windows'
+  listen: Restart openclaw
+
+- name: Run OpenClaw doctor (Windows)
+  ansible.builtin.include_tasks: windows_doctor.yml
+  when:
+    - not ansible_check_mode
+    - ansible_os_family == 'Windows'
+  listen: Restart openclaw
+
 - name: Reload systemd
   ansible.builtin.systemd:
     daemon_reload: true
   when:
     - not ansible_check_mode
     - ansible_os_family != 'Darwin'
+  listen: Restart openclaw
 
 - name: Restart openclaw gateway
   ansible.builtin.shell: |
@@ -26,17 +48,20 @@
   when:
     - not ansible_check_mode
     - ansible_os_family != 'Darwin'
+  listen: Restart openclaw
 
-- name: Restart openclaw on macOS
-  ansible.builtin.command: "launchctl stop plus.svc.xworkspace.openclaw"
-  register: launchctl_stop
+- name: Unload openclaw on macOS
+  ansible.builtin.command: "launchctl unload {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.openclaw.plist"
   failed_when: false
   changed_when: false
-  notify: Start openclaw on macOS
+  when: ansible_system == 'Darwin'
+  listen: Restart openclaw
 
-- name: Start openclaw on macOS
-  ansible.builtin.command: "launchctl start plus.svc.xworkspace.openclaw"
+- name: Load openclaw on macOS
+  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.openclaw.plist"
   changed_when: false
+  when: ansible_system == 'Darwin'
+  listen: Restart openclaw
 
 - name: Reload caddy
   ansible.builtin.systemd:

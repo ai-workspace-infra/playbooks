@@ -158,9 +158,30 @@ if [[ -z "$method_id" ]]; then
   method_id="$(printf '%s' "$method_json" | jq -r '.data.method_id // .data.id')"
 fi
 
-bootstrap_json="$(vault write -format=json "auth/userpass/login/${USERNAME}" password="$PASSWORD")"
-entity_id="$(printf '%s' "$bootstrap_json" | jq -r '.auth.entity_id')"
-bootstrap_token="$(printf '%s' "$bootstrap_json" | jq -r '.auth.client_token')"
+# Resolve the admin's identity entity WITHOUT logging in. Once the login MFA
+# enforcement below exists, a userpass login is MFA-gated and returns no
+# entity_id (causing "missing entityID" on every re-run). Instead look up the
+# entity via its userpass entity-alias, creating the entity + alias on first run.
+entity_id=""
+for alias_id in $(vault list -format=json identity/entity-alias/id 2>/dev/null | jq -r '.[]?'); do
+  alias_json="$(vault read -format=json "identity/entity-alias/id/${alias_id}" 2>/dev/null || true)"
+  alias_name="$(printf '%s' "$alias_json" | jq -r '.data.name // empty')"
+  alias_mount="$(printf '%s' "$alias_json" | jq -r '.data.mount_accessor // empty')"
+  if [[ "$alias_name" == "$USERNAME" && "$alias_mount" == "$userpass_accessor" ]]; then
+    entity_id="$(printf '%s' "$alias_json" | jq -r '.data.canonical_id // empty')"
+    break
+  fi
+done
+
+if [[ -z "$entity_id" ]]; then
+  entity_id="$(vault write -format=json identity/entity \
+    name="$USERNAME" \
+    policies="$POLICY_NAME" | jq -r '.data.id')"
+  vault write identity/entity-alias \
+    name="$USERNAME" \
+    canonical_id="$entity_id" \
+    mount_accessor="$userpass_accessor" >/dev/null
+fi
 
 mkdir -p "$OUTPUT_DIR"
 enrollment_json="${OUTPUT_DIR}/vault-${USERNAME}-totp.json"
@@ -183,7 +204,6 @@ vault write "identity/mfa/login-enforcement/${ENFORCEMENT_NAME}" \
   mfa_method_ids="$method_id" \
   auth_method_accessors="$userpass_accessor" >/dev/null
 
-vault token revoke "$bootstrap_token" >/dev/null || true
 
 cat <<EOF
 vault_addr=$VAULT_ADDR

@@ -115,6 +115,7 @@
     group: root
     mode: "0755"
   when: docs_service_manage_caddy | bool
+  become: true
 
 - name: Render docs Caddy fragment
   ansible.builtin.template:
@@ -124,6 +125,7 @@
     group: root
     mode: "0644"
   when: docs_service_manage_caddy | bool
+  become: true
 
 - name: Remove obsolete docs Caddy fragments
   ansible.builtin.shell: |
@@ -145,6 +147,7 @@
   register: docs_service_caddy_cleanup
   changed_when: docs_service_caddy_cleanup.stdout | trim != ""
   when: docs_service_manage_caddy | bool
+  become: true
 
 - name: Validate Caddy config after updating docs fragment
   ansible.builtin.command: caddy validate --config /etc/caddy/Caddyfile
@@ -160,6 +163,7 @@
   when:
     - docs_service_manage_caddy | bool
     - not ansible_check_mode
+  become: true
 
 - name: Check docs health endpoint
   ansible.builtin.uri:

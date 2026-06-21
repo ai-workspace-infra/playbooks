@@ -8,6 +8,9 @@
     DEBIAN_FRONTEND: noninteractive
     APT_LISTCHANGES_FRONTEND: none
   become: true
+  when:
+    - acp_opencode_packages | default([]) | length > 0
+    - ansible_os_family == 'Debian'
 
 - name: Ensure Caddy conf directory exists
   ansible.builtin.file:
@@ -16,6 +19,8 @@
     owner: root
     group: root
     mode: "0755"
+  become: true
+  when: acp_opencode_manage_caddy | bool
 
 - name: Detect UFW binary for OpenCode ACP
   ansible.builtin.stat:
@@ -28,6 +33,7 @@
   changed_when: "'Rule added' in acp_opencode_ufw_80.stdout"
   failed_when: acp_opencode_ufw_80.rc != 0
   when:
+    - ansible_os_family == 'Debian'
     - acp_opencode_enable_ufw | bool
     - acp_opencode_ufw_binary.stat.exists | default(false)
 
@@ -37,5 +43,6 @@
   changed_when: "'Rule added' in acp_opencode_ufw_443.stdout"
   failed_when: acp_opencode_ufw_443.rc != 0
   when:
+    - ansible_os_family == 'Debian'
     - acp_opencode_enable_ufw | bool
     - acp_opencode_ufw_binary.stat.exists | default(false)

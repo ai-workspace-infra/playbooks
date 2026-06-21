@@ -6,6 +6,7 @@
     owner: root
     group: root
     mode: "0755"
+  become: true
 
 - name: Deploy unified ACP Caddy site
   ansible.builtin.template:
@@ -15,9 +16,11 @@
     group: root
     mode: "0644"
   notify: Reload caddy
+  become: true
 
 - name: Ensure Caddy is enabled and running for unified ACP vhost
   ansible.builtin.systemd:
     name: caddy
     enabled: true
     state: started
+  become: true

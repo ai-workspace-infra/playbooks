@@ -5,8 +5,8 @@ This role manages GitHub Organization Rulesets to enforce branch protection and 
 ## Governance Rules
 
 ### 1. Global Main Protection
-- **Target:** `main` branch
-- **Inclusion:** All repositories (`~ALL`)
+- **Target:** `{{ github_target_branch }}` branch
+- **Inclusion:** `{{ github_repository_name }}`
 - **Rules:**
   - Prevent deletion.
   - Prevent force pushes (non-fast-forward).
@@ -14,8 +14,8 @@ This role manages GitHub Organization Rulesets to enforce branch protection and 
   - Dismiss stale reviews on push.
 
 ### 2. Global Release Protection
-- **Target:** `release/*` branches
-- **Inclusion:** All repositories (`~ALL`)
+- **Target:** `{{ github_release_branch_pattern }}` branches
+- **Inclusion:** `{{ github_repository_name }}`
 - **Rules:**
   - Prevent deletion.
   - Prevent force pushes.
@@ -37,4 +37,22 @@ ansible-playbook apply-branch-protection.yml
 
 ## Configuration
 - `github_org_name`: Defined in `defaults/main.yml`.
+- `github_repository_name`: Optional repository scope. Defaults to `~ALL`.
+- `github_target_branch`: Main branch target. Defaults to `main`.
+- `github_release_branch_pattern`: Release branch pattern. Defaults to `release/*`.
 - `github_rulesets`: Defined in `vars/main.yml`.
+
+## Common usage
+
+Target one repository and one release branch:
+
+```bash
+export GITHUB_TOKEN=your_admin_token
+ansible-playbook apply-branch-protection.yml \
+  -e github_org_name=cloud-neutral \
+  -e github_repository_name=xstream-vpn \
+  -e github_target_branch=main \
+  -e github_release_branch_pattern=release/http3-quic-stable
+```
+
+If you want the rule to apply to all repositories in the organization, keep the default `github_repository_name=~ALL`.
