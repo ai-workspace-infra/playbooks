@@ -57,6 +57,7 @@
     - "{{ vault_data_dir }}"
   when:
     - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
 
 - name: Deploy standalone Vault systemd service
   ansible.builtin.copy:
@@ -128,6 +129,8 @@
     --root-token {{ vault_server_root_access_token | quote }}
     --output-dir {{ vault_admin_output_dir | quote }}
     --ui-url {{ vault_admin_ui_url | quote }}
+  environment:
+    PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH }}"
   no_log: true
   when:
     - not ansible_check_mode

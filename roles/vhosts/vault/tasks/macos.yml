@@ -1,4 +1,14 @@
 ---
+- name: Ensure macOS Vault directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ vault_config_dir }}"
+    - "{{ vault_data_dir }}"
+    - "{{ ansible_env.HOME }}/.local/state/xworkspace"
+
 - name: Install HashiCorp Tap
   ansible.builtin.command: brew tap hashicorp/tap
   changed_when: false
@@ -7,6 +17,12 @@
   ansible.builtin.command: brew install hashicorp/tap/vault
   args:
     creates: /opt/homebrew/bin/vault
+  changed_when: true
+
+- name: Install jq via Homebrew (required by Vault admin bootstrap)
+  ansible.builtin.command: brew install jq
+  args:
+    creates: /opt/homebrew/bin/jq
   changed_when: true
 
 - name: Create symlink for Vault binary to match Linux path

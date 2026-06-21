@@ -9,7 +9,7 @@ xworkmate_bridge_review_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_RE
 xworkmate_bridge_listen_host: 127.0.0.1
 xworkmate_bridge_listen_port: 8787
 xworkmate_bridge_listen_addr: "{{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}"
-xworkmate_bridge_base_dir: /opt/cloud-neutral/xworkmate-bridge
+xworkmate_bridge_base_dir: "{{ (ansible_env.HOME ~ '/Library/Application Support/cloud-neutral/xworkmate-bridge') if ansible_os_family == 'Darwin' else '/opt/cloud-neutral/xworkmate-bridge' }}"
 xworkmate_bridge_config_file: "{{ xworkmate_bridge_base_dir }}/config.yaml"
 xworkmate_bridge_binary_path: /usr/local/bin/xworkmate-go-core
 xworkmate_bridge_systemd_unit_path: "/etc/systemd/system/{{ xworkmate_bridge_service_name }}.service"
