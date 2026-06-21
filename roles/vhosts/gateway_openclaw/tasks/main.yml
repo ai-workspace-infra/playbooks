@@ -71,7 +71,7 @@
 - name: Install required OpenClaw gateway package version
   ansible.builtin.command:
     cmd: >-
-      npm install --global --omit=dev --no-audit --no-fund
+      /usr/bin/env npm install --global --omit=dev --no-audit --no-fund
       --prefix "{{ gateway_openclaw_home }}/.local"
       "{{ gateway_openclaw_npm_package_spec }}"
   environment:
@@ -295,7 +295,7 @@
 
 - name: Repair OpenClaw package runtime dependencies as service user
   ansible.builtin.command:
-    cmd: npm install --omit=dev --no-audit --no-fund --prefix "{{ gateway_openclaw_install_dir }}"
+    cmd: /usr/bin/env npm install --omit=dev --no-audit --no-fund --prefix "{{ gateway_openclaw_install_dir }}"
   environment:
     HOME: "{{ gateway_openclaw_home }}"
     PATH: "{{ gateway_openclaw_service_path }}"
@@ -321,7 +321,7 @@
 
 - name: Repair OpenClaw extension runtime dependencies as service user
   ansible.builtin.command:
-    cmd: npm install --omit=dev --no-audit --no-fund --prefix "{{ item.item }}"
+    cmd: /usr/bin/env npm install --omit=dev --no-audit --no-fund --prefix "{{ item.item }}"
   environment:
     HOME: "{{ gateway_openclaw_home }}"
     PATH: "{{ gateway_openclaw_service_path }}"
