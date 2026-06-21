@@ -7,17 +7,20 @@
   when:
     - not ansible_check_mode
     - ansible_os_family != 'Darwin'
+  listen: Restart bridge
 
-- name: Restart bridge on macOS
-  ansible.builtin.command: "launchctl stop plus.svc.xworkspace.bridge"
-  register: launchctl_stop
+- name: Unload bridge on macOS
+  ansible.builtin.command: "launchctl unload {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.bridge.plist"
   failed_when: false
   changed_when: false
-  notify: Start bridge on macOS
+  when: ansible_system == 'Darwin'
+  listen: Restart bridge
 
-- name: Start bridge on macOS
-  ansible.builtin.command: "launchctl start plus.svc.xworkspace.bridge"
+- name: Load bridge on macOS
+  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.bridge.plist"
   changed_when: false
+  when: ansible_system == 'Darwin'
+  listen: Restart bridge
 
 - name: Reload caddy
   ansible.builtin.systemd:
