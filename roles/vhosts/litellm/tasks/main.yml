@@ -103,28 +103,29 @@
     mode: "0600"
   notify: Restart litellm
 
+- name: Create isolated LiteLLM Python environment
+  ansible.builtin.command:
+    cmd: "{{ litellm_bootstrap_python_executable }} -m venv {{ litellm_venv_dir }}"
+    creates: "{{ litellm_python_executable }}"
+  become: true
+  become_user: "{{ litellm_service_user }}"
+
 - name: Ensure LiteLLM and DB dependencies are installed
   ansible.builtin.pip:
     name:
       - "{{ litellm_package_spec }}"
       - "prisma"
       - "psycopg2-binary"
-    extra_args: --break-system-packages
-    executable: "{{ litellm_pip_executable if litellm_pip_executable | length > 0 else omit }}"
+    executable: "{{ litellm_pip_executable }}"
     state: present
   become: true
   become_user: "{{ litellm_service_user }}"
 
 - name: Resolve LiteLLM Python site-packages path
-  ansible.builtin.shell: |
-    {{ litellm_python_executable | quote }} - <<'PY'
-    import glob
-    import os
-    paths = glob.glob(os.path.expanduser("~/.local/lib/python*/site-packages/litellm/proxy"))
-    if not paths:
-        raise SystemExit("litellm proxy package path not found")
-    print(sorted(paths)[-1])
-    PY
+  ansible.builtin.command:
+    cmd: >-
+      {{ litellm_python_executable }} -c
+      "import pathlib, litellm.proxy; print(pathlib.Path(litellm.proxy.__file__).parent)"
   register: litellm_proxy_package_path
   changed_when: false
   become: true
@@ -136,9 +137,8 @@
     litellm_python_site_packages: "{{ (litellm_proxy_package_path.stdout | trim) | dirname | dirname }}"
 
 - name: Generate Prisma Python Client
-  ansible.builtin.shell: |
-    export PATH={{ litellm_service_home }}/.local/bin:$PATH
-    prisma generate
+  ansible.builtin.command:
+    cmd: "{{ litellm_prisma_binary_path }} generate"
   args:
     chdir: "{{ litellm_proxy_dir }}"
   become: true
