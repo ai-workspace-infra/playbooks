@@ -5,14 +5,20 @@
     nodejs_homebrew_formula: "node@{{ nodejs_version_major | default(22) }}"
 
 - name: Ensure unversioned Homebrew node formula is absent
-  community.general.homebrew:
-    name: node
-    state: absent
+  ansible.builtin.command: "brew uninstall --force node"
+  register: nodejs_brew_uninstall
+  changed_when: "'uninstalled' in (nodejs_brew_uninstall.stdout | lower) or 'uninstalled' in (nodejs_brew_uninstall.stderr | lower)"
+  failed_when: nodejs_brew_uninstall.rc != 0 and 'no such keg' not in (nodejs_brew_uninstall.stdout | lower) and 'not installed' not in (nodejs_brew_uninstall.stderr | lower)
+  environment:
+    HOMEBREW_DEVELOPER: "1"
 
 - name: Ensure Homebrew {{ nodejs_homebrew_formula }} formula is installed
-  community.general.homebrew:
-    name: "{{ nodejs_homebrew_formula }}"
-    state: present
+  ansible.builtin.command: "brew install {{ nodejs_homebrew_formula }}"
+  register: nodejs_brew_install
+  changed_when: "'already installed' not in (nodejs_brew_install.stdout | lower) and 'already installed' not in (nodejs_brew_install.stderr | lower)"
+  failed_when: nodejs_brew_install.rc != 0 and 'already installed' not in (nodejs_brew_install.stdout | lower) and 'already installed' not in (nodejs_brew_install.stderr | lower)
+  environment:
+    HOMEBREW_DEVELOPER: "1"
 
 - name: Ensure {{ nodejs_homebrew_formula }} is linked as the default node
   ansible.builtin.command: "brew link --force --overwrite {{ nodejs_homebrew_formula }}"
