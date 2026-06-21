@@ -192,3 +192,7 @@
       Node.js version: {{ nodejs_installed_version | default('Not installed') }}
       NPM version: {{ npm_version_check.stdout if npm_version_check.rc == 0 else 'N/A' }}
       Yarn version: {{ yarn_version_check.stdout if yarn_version_check.rc == 0 and install_yarn | default(true) else 'Not installed' }}
+
+- name: Import macOS specific Node.js tasks
+  ansible.builtin.import_tasks: darwin.yml
+  when: ansible_os_family == 'Darwin'
