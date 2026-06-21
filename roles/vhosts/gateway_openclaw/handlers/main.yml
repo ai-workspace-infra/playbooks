@@ -14,10 +14,7 @@
   listen: Restart openclaw
 
 - name: Run OpenClaw doctor (Windows)
-  community.windows.win_command: "{{ gateway_openclaw_home }}\\.local\\node_modules\\openclaw\\bin\\openclaw.cmd doctor --fix --force"
-  environment:
-    OPENCLAW_NO_RESPAWN: "1"
-    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  ansible.builtin.include_tasks: windows_doctor.yml
   when:
     - not ansible_check_mode
     - ansible_os_family == 'Windows'
