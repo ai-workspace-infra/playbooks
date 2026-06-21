@@ -9,3 +9,11 @@ migrate_litellm_db_host: "127.0.0.1"
 # Migration paths
 openclaw_data_dir: "~/.openclaw"
 xworkspace_state_dir: "~/.local/state/xworkspace"
+
+# Caddy configuration for install.svc.plus
+ai_workspace_caddy_base_dir: "{{ '/opt/homebrew/etc/caddy' if ansible_os_family == 'Darwin' else '/etc/caddy' }}"
+ai_workspace_caddy_conf_dir: "{{ ai_workspace_caddy_base_dir }}/conf.d"
+ai_workspace_caddy_fragment_path: "{{ ai_workspace_caddy_conf_dir }}/install.svc.plus.caddy"
+ai_workspace_public_domain: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_PUBLIC_DOMAIN') | default('install.svc.plus', true) }}"
+ai_workspace_install_script_url: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_INSTALL_SCRIPT_URL') | default('https://raw.githubusercontent.com/ai-workspace-lab/xworkspace-console/main/scripts/setup-ai-workspace-all-in-one.sh', true) }}"
+ai_workspace_manage_caddy: true

@@ -1,0 +1,36 @@
+---
+- name: Ensure AI Workspace Caddy fragment directory exists
+  ansible.builtin.file:
+    path: "{{ ai_workspace_caddy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: ai_workspace_manage_caddy | bool
+  become: true
+
+- name: Render AI Workspace Caddy redirect fragment
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ ai_workspace_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: ai_workspace_manage_caddy | bool
+  become: true
+
+- name: Validate Caddy config after updating AI Workspace fragment
+  ansible.builtin.command: caddy validate --config /etc/caddy/Caddyfile
+  changed_when: false
+  when:
+    - ai_workspace_manage_caddy | bool
+    - not ansible_check_mode
+
+- name: Reload Caddy after updating AI Workspace fragment
+  ansible.builtin.service:
+    name: caddy
+    state: reloaded
+  when:
+    - ai_workspace_manage_caddy | bool
+    - not ansible_check_mode
+  become: true
