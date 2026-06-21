@@ -30,6 +30,9 @@
     return_content: true
     status_code: 200
   register: acp_opencode_adapter_http
+  retries: 30
+  delay: 2
+  until: acp_opencode_adapter_http.status == 200
 
 - name: Show OpenCode ACP status
   ansible.builtin.command: systemctl status "{{ acp_opencode_service_name }}" --no-pager

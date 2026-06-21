@@ -22,6 +22,9 @@
     return_content: true
     status_code: [204, 405]
   register: acp_hermes_bridge_http
+  retries: 30
+  delay: 2
+  until: acp_hermes_bridge_http.status in [204, 405]
 
 - name: Validate local Hermes ACP capabilities contract
   ansible.builtin.uri:
@@ -41,6 +44,9 @@
   register: acp_hermes_capabilities
   changed_when: false
   no_log: true
+  retries: 30
+  delay: 2
+  until: acp_hermes_capabilities.status == 200
 
 - name: Assert local Hermes ACP capabilities expose Hermes provider
   ansible.builtin.assert:
