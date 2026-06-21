@@ -1,0 +1,28 @@
+---
+- name: Determine Windows Node.js architecture
+  ansible.builtin.set_fact:
+    nodejs_win_arch: "{{ 'x64' if ansible_architecture == '64-bit' else 'x86' }}"
+
+- name: Construct Node.js MSI download URL
+  ansible.builtin.set_fact:
+    nodejs_msi_url: "https://nodejs.org/dist/v{{ nodejs_version_pin | default(nodejs_version_major + '.0.0', true) }}/node-v{{ nodejs_version_pin | default(nodejs_version_major + '.0.0', true) }}-{{ nodejs_win_arch }}.msi"
+  when: nodejs_version_pin != '' or nodejs_version_major != ''
+
+- name: Construct unversioned Node.js MSI download URL
+  ansible.builtin.set_fact:
+    nodejs_msi_url: "https://nodejs.org/dist/latest/node-v{{ nodejs_win_arch }}.msi"
+  when: nodejs_version_pin == '' and nodejs_version_major == ''
+
+- name: Download Node.js MSI
+  ansible.windows.win_get_url:
+    url: "{{ nodejs_msi_url }}"
+    dest: "%TEMP%\\nodejs-installer.msi"
+    force: yes
+  register: nodejs_download
+
+- name: Install Node.js
+  ansible.windows.win_package:
+    path: "%TEMP%\\nodejs-installer.msi"
+    state: present
+    arguments: /qn
+  register: nodejs_install
