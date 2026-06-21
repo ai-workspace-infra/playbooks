@@ -1,0 +1,17 @@
+---
+- name: Install global npm packages for AI runtime on Windows
+  community.windows.win_command:
+    cmd: "npm install -g {{ item }}"
+  loop: "{{ ai_agent_runtime_npm_global_packages }}"
+  register: ai_agent_runtime_npm_global_install_win
+  changed_when: "'added' in ai_agent_runtime_npm_global_install_win.stdout or 'updated' in ai_agent_runtime_npm_global_install_win.stdout"
+  when: ai_agent_runtime_npm_global_packages | length > 0
+
+- name: Install pinned Playwright package for AI runtime on Windows
+  community.windows.win_command:
+    cmd: "npm install -g playwright@{{ ai_agent_runtime_playwright_version }}"
+  register: ai_agent_runtime_playwright_install_win
+  changed_when: "'added' in ai_agent_runtime_playwright_install_win.stdout or 'updated' in ai_agent_runtime_playwright_install_win.stdout"
+  when:
+    - ai_agent_runtime_playwright_enabled | bool
+    - ai_agent_runtime_playwright_version | length > 0
