@@ -7,6 +7,10 @@ acp_opencode_service_user: "{{ ansible_env.USER | default('ubuntu') }}"
 acp_opencode_service_group: "{{ 'staff' if ansible_os_family == 'Darwin' else (ansible_env.USER | default('ubuntu')) }}"
 acp_opencode_home: "{{ ansible_env.HOME | default('/home/' + acp_opencode_service_user) }}"
 acp_opencode_workdir: "{{ ansible_env.HOME | default('/home/' + acp_opencode_service_user) }}/.opencode"
+# PATH for the launchd/systemd service (mirrors gemini/codex). On macOS the
+# user-level npm global bin lives under ~/.local/bin; include Homebrew + system.
+acp_opencode_npm_global_bin: "{{ acp_opencode_home + '/.local/bin' if ansible_os_family == 'Darwin' else '/usr/bin' }}"
+acp_opencode_path: "{{ acp_opencode_npm_global_bin }}:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin"
 acp_opencode_listen_host: 127.0.0.1
 acp_opencode_listen_port: 38992
 acp_opencode_packages: []
