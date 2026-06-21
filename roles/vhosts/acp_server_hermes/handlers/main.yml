@@ -12,19 +12,18 @@
   when: ansible_system == 'Linux'
   listen: Restart acp hermes
 
-- name: Restart acp hermes on macOS
+- name: Unload acp hermes on macOS
   ansible.builtin.command: "launchctl unload {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.acp.hermes.plist"
-  register: launchctl_unload
   failed_when: false
   changed_when: false
-  notify: Start acp hermes on macOS
   when: ansible_system == 'Darwin'
   listen: Restart acp hermes
 
-- name: Start acp hermes on macOS
+- name: Load acp hermes on macOS
   ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.acp.hermes.plist"
   changed_when: false
   when: ansible_system == 'Darwin'
+  listen: Restart acp hermes
 
 - name: Restart acp hermes on Windows
   ansible.builtin.debug:

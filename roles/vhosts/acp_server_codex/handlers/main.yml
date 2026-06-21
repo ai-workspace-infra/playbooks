@@ -12,19 +12,18 @@
   when: ansible_system == 'Linux'
   listen: Restart acp codex
 
-- name: Restart acp codex on macOS
+- name: Unload acp codex on macOS
   ansible.builtin.command: "launchctl unload {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.acp.codex.plist"
-  register: launchctl_unload
   failed_when: false
   changed_when: false
-  notify: Start acp codex on macOS
   when: ansible_system == 'Darwin'
   listen: Restart acp codex
 
-- name: Start acp codex on macOS
+- name: Load acp codex on macOS
   ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.acp.codex.plist"
   changed_when: false
   when: ansible_system == 'Darwin'
+  listen: Restart acp codex
 
 - name: Restart acp codex on Windows
   ansible.builtin.debug:
