@@ -4,6 +4,7 @@
   ansible.builtin.command: "timedatectl set-timezone Asia/Shanghai"
   changed_when: false
   become: true
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | render /etc/hostname
   ansible.builtin.template:
@@ -13,11 +14,13 @@
     group: root
     mode: "0644"
   become: true
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | set hostname
   ansible.builtin.hostname:
     name: "{{ inventory_hostname }}"
   become: true
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | update /etc/hosts
   ansible.builtin.template:
@@ -27,29 +30,35 @@
     group: root
     mode: "0644"
   become: true
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | harden ssh
   ansible.builtin.script: files/secure_ssh.sh
   become: true
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | harden ssh config
   ansible.builtin.import_tasks: harden_ssh.yml
   tags: [ssh, security]
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | configure fail2ban
   ansible.builtin.import_tasks: fail2ban.yml
   tags: [fail2ban, security]
+  when: ansible_os_family != 'Darwin'
 
 - name: Base | file limits
   ansible.builtin.import_tasks: limits.yml
   when:
     - common_security_limits.enabled | default(true) | bool
+    - ansible_os_family != 'Darwin'
   tags: [limits, baseline]
 
 - name: Base | allow HTTP/HTTPS ports
   ansible.builtin.import_tasks: firewall_ports.yml
   when:
     - common_firewall.enabled | default(true) | bool
+    - ansible_os_family != 'Darwin'
   tags: [firewall, baseline]
 
 # ===== Common baseline (OS split) =====
