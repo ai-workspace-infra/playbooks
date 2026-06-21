@@ -1,13 +1,26 @@
 ---
-- name: Create launchd plist template for QMD
+- name: Ensure QMD launchd directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ qmd_user }}"
+    group: "{{ qmd_group }}"
+    mode: "0755"
+  loop:
+    - "{{ qmd_launch_agent_path | dirname }}"
+    - "{{ qmd_launch_agent_log_dir }}"
+
+- name: Deploy QMD LaunchAgent
   ansible.builtin.template:
     src: qmd.plist.j2
-    dest: "{{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.qmd.plist"
+    dest: "{{ qmd_launch_agent_path }}"
+    owner: "{{ qmd_user }}"
+    group: "{{ qmd_group }}"
     mode: "0644"
   notify: Restart QMD
 
-- name: Reload launchd agent for QMD
-  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.qmd.plist"
+- name: Ensure QMD LaunchAgent is loaded
+  ansible.builtin.command: "launchctl load -w {{ qmd_launch_agent_path }}"
   register: launchctl_result
   changed_when: false
   failed_when: launchctl_result.rc != 0 and 'already loaded' not in launchctl_result.stderr
