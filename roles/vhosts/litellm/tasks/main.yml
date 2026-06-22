@@ -110,6 +110,20 @@
   become: true
   become_user: "{{ litellm_service_user }}"
 
+# A venv bootstrapped by ensurepip can ship a pip older than 25.1, which lacks
+# `--resume-retries`. Upgrade pip first so the resilient download flags used by
+# the dependency install below are always available.
+- name: Ensure recent pip in the LiteLLM environment
+  ansible.builtin.pip:
+    name: pip
+    state: latest
+    executable: "{{ litellm_pip_executable }}"
+  environment:
+    PIP_CACHE_DIR: "{{ litellm_pip_cache_dir }}"
+    PIP_DEFAULT_TIMEOUT: "120"
+  become: true
+  become_user: "{{ litellm_service_user }}"
+
 - name: Inspect installed LiteLLM dependency marker
   ansible.builtin.stat:
     path: "{{ litellm_install_marker_file }}"
@@ -165,9 +179,14 @@
       - "psycopg2-binary"
     executable: "{{ litellm_pip_executable }}"
     state: present
+    # litellm[proxy] pulls large wheels (e.g. polars-runtime ~46MB) that often
+    # break mid-stream on slow/mirrored links with IncompleteRead. --retries
+    # reconnects and --resume-retries continues a partial download instead of
+    # restarting it, so a flaky connection no longer fails the whole deploy.
+    extra_args: "--retries {{ litellm_pip_retries }} --resume-retries {{ litellm_pip_resume_retries }}"
   environment:
     PIP_CACHE_DIR: "{{ litellm_pip_cache_dir }}"
-    PIP_DEFAULT_TIMEOUT: "120"
+    PIP_DEFAULT_TIMEOUT: "{{ litellm_pip_timeout }}"
   become: true
   become_user: "{{ litellm_service_user }}"
   when: litellm_dependency_install_required | bool
