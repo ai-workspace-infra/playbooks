@@ -13,6 +13,11 @@ if [ -z "$LITELLM_TOKEN" ]; then
     exit 1
 fi
 
+if [ -z "${DEEPSEEK_API_KEY:-}" ] && [ -z "${NVIDIA_API_KEY:-}" ] && [ -z "${OLLAMA_API_KEY:-}" ]; then
+    echo "[INFO] DEEPSEEK_API_KEY, NVIDIA_API_KEY, and OLLAMA_API_KEY are empty. Manual configuration mode."
+    exit 0
+fi
+
 echo "[INFO] Using LiteLLM URL: $LITELLM_URL"
 
 # Function to add a model
@@ -63,7 +68,7 @@ EOF
     response=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$LITELLM_URL/model/new" \
         -H "Authorization: Bearer $LITELLM_TOKEN" \
         -H "Content-Type: application/json" \
-        -d "$payload")
+        -d "$payload") || true
     
     http_code=$(echo "$response" | grep -Eo 'HTTP_CODE:[0-9]{3}' | cut -d':' -f2 || echo "000")
     if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
@@ -74,57 +79,64 @@ EOF
     fi
 }
 
-echo "========================================="
-echo "Registering DeepSeek Models..."
-echo "========================================="
-add_model "deepseek-chat" "deepseek/deepseek-chat" "DEEPSEEK_API_KEY"
-add_model "deepseek-reasoner" "deepseek/deepseek-reasoner" "DEEPSEEK_API_KEY"
-add_model "deepseek-v4-flash" "deepseek/deepseek-v4-flash" "DEEPSEEK_API_KEY"
-add_model "deepseek-v4-pro" "deepseek/deepseek-v4-pro" "DEEPSEEK_API_KEY"
+if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+    echo "========================================="
+    echo "Registering DeepSeek Models..."
+    echo "========================================="
+    add_model "deepseek-v4-flash" "deepseek/deepseek-v4-flash" "DEEPSEEK_API_KEY"
+    add_model "deepseek-v4-pro" "deepseek/deepseek-v4-pro" "DEEPSEEK_API_KEY"
+    add_model "deepseek-chat" "deepseek/deepseek-chat" "DEEPSEEK_API_KEY"
+    add_model "deepseek-reasoner" "deepseek/deepseek-reasoner" "DEEPSEEK_API_KEY"
+fi
 
-echo "========================================="
-echo "Registering NVIDIA Build Models..."
-echo "========================================="
-# For NVIDIA NIM models, you can use openai format with custom base, or nvidia_nim/ provider
-add_model "nvidia/deepseek-r1" "openai/deepseek-ai/deepseek-r1" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
-add_model "nvidia/minimax-text-01" "openai/minimax/minimax-text-01" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
-add_model "nvidia/glm-4" "openai/thudm/glm-4-9b-chat" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
-add_model "nvidia/glm-5" "openai/thudm/glm-5" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
+if [ -n "${NVIDIA_API_KEY:-}" ]; then
+    echo "========================================="
+    echo "Registering NVIDIA Build Models..."
+    echo "========================================="
+    add_model "minimax-2.5" "openai/minimax/minimax-2.5" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
+    add_model "minimax-2.7" "openai/minimax/minimax-2.7" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
+    add_model "minimax-3.0" "openai/minimax/minimax-3.0" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
+    add_model "glm-4" "openai/thudm/glm-4-9b-chat" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
+    add_model "glm-5" "openai/thudm/glm-5" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
+fi
+
+if [ -n "${OLLAMA_API_KEY:-}" ]; then
+    echo "========================================="
+    echo "Registering OLLAMA/Proxy Models (Kimi, Qinwen, GLM)..."
+    echo "========================================="
+    OLLAMA_API_BASE="${OLLAMA_API_BASE:-https://api.ollama.cloud/v1}"
+    add_model "glm-5.x" "openai/glm-5" "OLLAMA_API_KEY" "$OLLAMA_API_BASE"
+    add_model "kimi" "openai/moonshot-v1-auto" "OLLAMA_API_KEY" "$OLLAMA_API_BASE"
+    add_model "qwen" "openai/qwen-max" "OLLAMA_API_KEY" "$OLLAMA_API_BASE"
+    add_model "ollama-llama3" "openai/llama3" "OLLAMA_API_KEY" "$OLLAMA_API_BASE"
+fi
 
 echo "========================================="
 echo "Registering Gemini Models..."
 echo "========================================="
-add_model "gemini-2.5-pro" "gemini/gemini-2.5-pro" "GEMINI_API_KEY"
-add_model "gemini-2.5-flash" "gemini/gemini-2.5-flash" "GEMINI_API_KEY"
-add_model "gemini-1.5-pro" "gemini/gemini-1.5-pro" "GEMINI_API_KEY"
+if [ -n "${GEMINI_API_KEY:-}" ]; then
+    add_model "gemini-2.5-pro" "gemini/gemini-2.5-pro" "GEMINI_API_KEY"
+    add_model "gemini-2.5-flash" "gemini/gemini-2.5-flash" "GEMINI_API_KEY"
+    add_model "gemini-1.5-pro" "gemini/gemini-1.5-pro" "GEMINI_API_KEY"
+fi
 
 echo "========================================="
 echo "Registering GPT Models..."
 echo "========================================="
-add_model "gpt-5.5" "openai/gpt-5.5" "OPENAI_API_KEY"
-add_model "gpt-5.4" "openai/gpt-5.4" "OPENAI_API_KEY"
-add_model "gpt-5.4-mini" "openai/gpt-5.4-mini" "OPENAI_API_KEY"
+if [ -n "${OPENAI_API_KEY:-}" ]; then
+    add_model "gpt-5.5" "openai/gpt-5.5" "OPENAI_API_KEY"
+    add_model "gpt-5.4" "openai/gpt-5.4" "OPENAI_API_KEY"
+    add_model "gpt-5.4-mini" "openai/gpt-5.4-mini" "OPENAI_API_KEY"
+fi
 
 echo "========================================="
 echo "Registering Claude Models..."
 echo "========================================="
-add_model "claude-3.5-sonnet" "anthropic/claude-3-5-sonnet-20241022" "ANTHROPIC_API_KEY"
-add_model "claude-3.5-haiku" "anthropic/claude-3-5-haiku-20241022" "ANTHROPIC_API_KEY"
-add_model "claude-3-opus" "anthropic/claude-3-opus-20240229" "ANTHROPIC_API_KEY"
-
-echo "========================================="
-echo "Registering Zhipu (GLM) using OLLAMA_API_KEY..."
-echo "========================================="
-add_model "glm-4" "openai/glm-4" "OLLAMA_API_KEY" "https://open.bigmodel.cn/api/paas/v4"
-add_model "glm-5" "openai/glm-5" "OLLAMA_API_KEY" "https://open.bigmodel.cn/api/paas/v4"
-
-echo "========================================="
-echo "Registering OLLAMA Cloud Models..."
-echo "========================================="
-# Assuming OLLAMA API is exposed via a cloud endpoint or an OpenAI proxy
-OLLAMA_API_BASE="${OLLAMA_API_BASE:-https://api.ollama.cloud/v1}"
-add_model "ollama-llama3" "openai/llama3" "OLLAMA_API_KEY" "$OLLAMA_API_BASE"
-add_model "ollama-qwen" "openai/qwen" "OLLAMA_API_KEY" "$OLLAMA_API_BASE"
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    add_model "claude-3.5-sonnet" "anthropic/claude-3-5-sonnet-20241022" "ANTHROPIC_API_KEY"
+    add_model "claude-3.5-haiku" "anthropic/claude-3-5-haiku-20241022" "ANTHROPIC_API_KEY"
+    add_model "claude-3-opus" "anthropic/claude-3-opus-20240229" "ANTHROPIC_API_KEY"
+fi
 
 echo "All models requested have been registered."
 echo "You can check them at $LITELLM_URL/ui/?page=models"
