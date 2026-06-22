@@ -1,0 +1,125 @@
+---
+# =============================================================================
+# Final deployment of the prebuilt XWorkspace Console runtime.
+#
+# The runtime binary is built in CI and published as
+# xworkspace-console-runtime-<os>-<arch>.tar.gz (incl. darwin-arm64). This role
+# is consumption-only: download/stage -> unpack to a per-user system dir ->
+# read the package manifest -> exec the prebuilt API binary via launchd. It
+# never compiles from source and never runs `go`.
+# =============================================================================
+
+- name: Resolve XWorkspace Console runtime source
+  ansible.builtin.set_fact:
+    ai_workspace_console_runtime_archive_resolved: >-
+      {{ ai_workspace_console_runtime_archive
+         if (ai_workspace_console_runtime_archive | length > 0)
+         else '/tmp/xworkspace-console-runtime.tar.gz' }}
+  when: ai_workspace_console_deploy_enabled | bool
+
+- name: Ensure XWorkspace Console install parent exists
+  ansible.builtin.file:
+    path: "{{ ai_workspace_console_install_parent }}"
+    state: directory
+    mode: "0755"
+  when: ai_workspace_console_deploy_enabled | bool
+
+- name: Download XWorkspace Console runtime release
+  ansible.builtin.get_url:
+    url: "{{ ai_workspace_console_runtime_url }}"
+    dest: "{{ ai_workspace_console_runtime_archive_resolved }}"
+    mode: "0644"
+    force: true
+  # Only fetch from the network when an offline archive was not supplied.
+  when:
+    - ai_workspace_console_deploy_enabled | bool
+    - ai_workspace_console_runtime_archive | length == 0
+
+- name: Stat XWorkspace Console runtime archive
+  ansible.builtin.stat:
+    path: "{{ ai_workspace_console_runtime_archive_resolved }}"
+    checksum_algorithm: sha256
+  register: ai_workspace_console_runtime_archive_stat
+  when: ai_workspace_console_deploy_enabled | bool
+
+- name: Require a valid XWorkspace Console runtime archive
+  ansible.builtin.assert:
+    that:
+      - ai_workspace_console_runtime_archive_stat.stat.exists | default(false)
+    fail_msg: >-
+      No XWorkspace Console runtime archive at
+      {{ ai_workspace_console_runtime_archive_resolved }}.
+      Set XWORKSPACE_CONSOLE_RUNTIME_ARCHIVE (offline) or ensure
+      {{ ai_workspace_console_runtime_url }} is reachable.
+  when: ai_workspace_console_deploy_enabled | bool
+
+- name: Read installed XWorkspace Console runtime marker
+  ansible.builtin.slurp:
+    path: "{{ ai_workspace_console_runtime_marker }}"
+  register: ai_workspace_console_runtime_marker_content
+  failed_when: false
+  when: ai_workspace_console_deploy_enabled | bool
+
+- name: Install (unpack) XWorkspace Console runtime
+  ansible.builtin.unarchive:
+    src: "{{ ai_workspace_console_runtime_archive_resolved }}"
+    dest: "{{ ai_workspace_console_install_parent }}"
+    remote_src: true
+    mode: "0755"
+  # Re-extract only when the package checksum changed or the binary is missing,
+  # so repeat runs are idempotent and do not thrash the service.
+  when:
+    - ai_workspace_console_deploy_enabled | bool
+    - >-
+      (ai_workspace_console_runtime_marker_content.content | default('') | b64decode | trim)
+      != (ai_workspace_console_runtime_archive_stat.stat.checksum | default(''))
+      or not (ai_workspace_console_manifest_path is file)
+
+- name: Read XWorkspace Console runtime manifest
+  ansible.builtin.slurp:
+    path: "{{ ai_workspace_console_manifest_path }}"
+  register: ai_workspace_console_manifest_raw
+  when: ai_workspace_console_deploy_enabled | bool
+
+- name: Resolve XWorkspace Console API binary from manifest
+  ansible.builtin.set_fact:
+    ai_workspace_console_manifest: "{{ ai_workspace_console_manifest_raw.content | b64decode | from_json }}"
+  when: ai_workspace_console_deploy_enabled | bool
+
+- name: Set XWorkspace Console API binary path
+  ansible.builtin.set_fact:
+    ai_workspace_console_api_binary: "{{ ai_workspace_console_install_dir }}/{{ ai_workspace_console_manifest.apiBinary }}"
+  when: ai_workspace_console_deploy_enabled | bool
+
+- name: Stat XWorkspace Console API binary
+  ansible.builtin.stat:
+    path: "{{ ai_workspace_console_api_binary }}"
+  register: ai_workspace_console_api_binary_stat
+  when: ai_workspace_console_deploy_enabled | bool
+
+- name: Require an executable XWorkspace Console API binary
+  ansible.builtin.assert:
+    that:
+      - ai_workspace_console_api_binary_stat.stat.exists | default(false)
+      - ai_workspace_console_api_binary_stat.stat.executable | default(false)
+    fail_msg: >-
+      Prebuilt API binary missing or not executable:
+      {{ ai_workspace_console_api_binary }} (manifest os/arch:
+      {{ ai_workspace_console_manifest.os | default('?') }}/{{ ai_workspace_console_manifest.arch | default('?') }}).
+  when: ai_workspace_console_deploy_enabled | bool
+
+- name: Record installed XWorkspace Console runtime marker
+  ansible.builtin.copy:
+    dest: "{{ ai_workspace_console_runtime_marker }}"
+    content: "{{ ai_workspace_console_runtime_archive_stat.stat.checksum }}\n"
+    mode: "0644"
+  when:
+    - ai_workspace_console_deploy_enabled | bool
+    - ai_workspace_console_runtime_archive_stat.stat.exists | default(false)
+
+# --- macOS service: exec the prebuilt binary directly (no go, no PATH games) ---
+- name: Deploy XWorkspace Console API on macOS
+  ansible.builtin.import_tasks: macos.yml
+  when:
+    - ai_workspace_console_deploy_enabled | bool
+    - ansible_os_family == 'Darwin'

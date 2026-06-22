@@ -1,0 +1,42 @@
+---
+# macOS final deployment of the console API: run the prebuilt arm64 binary
+# from the unpacked runtime via a user LaunchAgent. The binary is self-contained
+# (pure Go, no cgo), so it needs neither `go` nor any Homebrew tooling at runtime
+# — this avoids the launchd minimal-PATH problem that broke the `go run .` path.
+
+- name: Ensure XWorkspace Console runtime directories exist (macOS)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ ai_workspace_console_config_dir }}"
+    - "{{ ai_workspace_console_log_dir }}"
+    - "{{ ansible_env.HOME }}/Library/LaunchAgents"
+
+- name: Deploy XWorkspace Console API LaunchAgent (macOS)
+  ansible.builtin.template:
+    src: xworkspace-api.plist.j2
+    dest: "{{ ansible_env.HOME }}/Library/LaunchAgents/{{ ai_workspace_console_api_label }}.plist"
+    mode: "0644"
+  register: ai_workspace_console_api_plist
+
+- name: Restart XWorkspace Console API LaunchAgent on change (macOS)
+  ansible.builtin.command: "launchctl stop {{ ai_workspace_console_api_label }}"
+  when: ai_workspace_console_api_plist.changed
+  changed_when: false
+  failed_when: false
+
+- name: Load XWorkspace Console API LaunchAgent (macOS)
+  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/{{ ai_workspace_console_api_label }}.plist"
+  register: ai_workspace_console_api_load
+  changed_when: false
+  failed_when: >-
+    ai_workspace_console_api_load.rc != 0
+    and 'already loaded' not in ai_workspace_console_api_load.stderr
+
+- name: Start XWorkspace Console API LaunchAgent on change (macOS)
+  ansible.builtin.command: "launchctl start {{ ai_workspace_console_api_label }}"
+  when: ai_workspace_console_api_plist.changed
+  changed_when: false
+  failed_when: false
