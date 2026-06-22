@@ -141,19 +141,19 @@
   become_user: "{{ litellm_service_user }}"
   when: litellm_install_marker.stat.exists
 
+# The probe must stay a valid single-line Python program: the `>-` folding
+# collapses every newline into a space, so a `for ... : try: ... except:` block
+# would become one illegal logical line, crash with SyntaxError, and (with
+# failed_when:false) leave stdout empty -> the from_json below then explodes.
+# Build the version map from importlib.metadata.distributions() with dict/list
+# comprehensions, which are valid single statements joined by semicolons.
 - name: Inspect installed LiteLLM dependency versions
   ansible.builtin.command:
     cmd: >-
       {{ litellm_python_executable }} -c
       "import importlib.metadata as m, json;
-      packages = ['litellm', 'prisma', 'psycopg2-binary'];
-      data = {};
-      for package in packages:
-          try:
-              data[package] = m.version(package)
-          except Exception:
-              data[package] = 'missing';
-      print(json.dumps(data))"
+      dists = {d.metadata['Name'].lower(): d.version for d in m.distributions()};
+      print(json.dumps({p: dists.get(p, 'missing') for p in ['litellm', 'prisma', 'psycopg2-binary']}))"
   register: litellm_dependency_versions
   changed_when: false
   failed_when: false
@@ -162,13 +162,16 @@
 
 - name: Decide whether LiteLLM dependencies need installation
   ansible.builtin.set_fact:
+    # default('{}', true) also substitutes when stdout is an empty string (not
+    # just undefined), so a failed/empty probe degrades to "install required"
+    # instead of crashing from_json with "Expecting value: line 1 column 1".
     litellm_dependency_install_required: >-
       {{
         not litellm_install_marker.stat.exists
         or (litellm_install_marker_content.stdout | default('') | trim != litellm_package_spec)
-        or (litellm_dependency_versions.stdout | default('{}') | from_json).litellm == 'missing'
-        or (litellm_dependency_versions.stdout | default('{}') | from_json).prisma == 'missing'
-        or (litellm_dependency_versions.stdout | default('{}') | from_json)['psycopg2-binary'] == 'missing'
+        or (litellm_dependency_versions.stdout | default('{}', true) | from_json).litellm == 'missing'
+        or (litellm_dependency_versions.stdout | default('{}', true) | from_json).prisma == 'missing'
+        or (litellm_dependency_versions.stdout | default('{}', true) | from_json)['psycopg2-binary'] == 'missing'
       }}
 
 - name: Ensure LiteLLM and DB dependencies are installed
