@@ -43,6 +43,11 @@ litellm_pip_cache_dir: >-
 litellm_install_marker_file: "{{ litellm_venv_dir }}/.install-spec"
 litellm_python_executable: "{{ litellm_venv_dir }}/bin/python"
 litellm_pip_executable: "{{ litellm_venv_dir }}/bin/pip"
+# Network resilience for the (large) online dependency install. Resume-retries
+# requires pip >= 25.1, which the role guarantees by upgrading pip in the venv.
+litellm_pip_retries: 5
+litellm_pip_resume_retries: 5
+litellm_pip_timeout: 180
 litellm_binary_path: "{{ litellm_venv_dir }}/bin/litellm"
 litellm_prisma_binary_path: "{{ litellm_venv_dir }}/bin/prisma"
 litellm_listen_host: 127.0.0.1
