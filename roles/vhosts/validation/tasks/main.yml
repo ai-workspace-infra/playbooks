@@ -1,10 +1,36 @@
 ---
-- name: Check required ACP and gateway service status
+- name: Check required ACP and gateway service status (Linux)
   ansible.builtin.systemd:
     name: "{{ item }}"
   loop: "{{ xworkmate_bridge_required_services | default(['acp-codex.service', 'acp-opencode.service', 'acp-gemini.service', 'acp-hermes.service']) }}"
-  register: xworkmate_bridge_dependency_status
-  until: xworkmate_bridge_dependency_status.status.ActiveState | default('') == "active"
+  register: xworkmate_bridge_dependency_status_linux
+  until: xworkmate_bridge_dependency_status_linux.status.ActiveState | default('') == "active"
   retries: 12
   delay: 5
   ignore_errors: true
+  when: ansible_os_family not in ['Darwin', 'Windows']
+
+- name: Check required ACP and gateway service status (macOS)
+  ansible.builtin.command: "launchctl list plus.svc.xworkspace.{{ item | regex_replace('\\.service$', '') | replace('-', '.') }}"
+  loop: "{{ xworkmate_bridge_required_services | default(['acp-codex.service', 'acp-opencode.service', 'acp-gemini.service', 'acp-hermes.service']) }}"
+  register: xworkmate_bridge_dependency_status_macos
+  until: xworkmate_bridge_dependency_status_macos.rc == 0 and ('\"PID\"' in xworkmate_bridge_dependency_status_macos.stdout)
+  retries: 12
+  delay: 5
+  ignore_errors: true
+  changed_when: false
+  when: ansible_os_family == 'Darwin'
+
+- name: Check required ACP and gateway service status (Windows)
+  ansible.windows.win_service_info:
+    name: "{{ item | regex_replace('\\.service$', '') }}"
+  loop: "{{ xworkmate_bridge_required_services | default(['acp-codex.service', 'acp-opencode.service', 'acp-gemini.service', 'acp-hermes.service']) }}"
+  register: xworkmate_bridge_dependency_status_windows
+  until: >
+    xworkmate_bridge_dependency_status_windows.exists and
+    (xworkmate_bridge_dependency_status_windows.services | length > 0) and
+    (xworkmate_bridge_dependency_status_windows.services[0].state == 'running')
+  retries: 12
+  delay: 5
+  ignore_errors: true
+  when: ansible_os_family == 'Windows'
