@@ -107,8 +107,22 @@ litellm_database_password: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_P
 litellm_database_admin_user: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_ADMIN_USER') | default('postgres', true) }}"
 litellm_database_admin_password: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_ADMIN_PASSWORD') | default('', true) }}"
 
+# Percent-encode the password for use inside the DATABASE_URL userinfo. The
+# shared auth token is `openssl rand -base64`, which can contain '/', '+' and
+# '=' — a raw '/' truncates the URL authority and Prisma aborts with
+# "P1013: invalid port number in database URL". Jinja's `urlencode` leaves '/'
+# safe, so encode the reserved set explicitly ('%' first to avoid double
+# encoding). The actual DB user password stays raw (provision-database and
+# LITELLM_DB_PASSWORD use it verbatim); only the URL form is encoded so the
+# client decodes back to the same raw secret.
+litellm_database_password_urlencoded: >-
+  {{ litellm_database_password
+     | replace('%', '%25') | replace('/', '%2F') | replace('+', '%2B')
+     | replace('=', '%3D') | replace('@', '%40') | replace(':', '%3A')
+     | replace('?', '%3F') | replace('#', '%23') | replace(' ', '%20') }}
+
 # Build DATABASE_URL from components (used in litellm.env)
-litellm_database_url: "{% if litellm_database_host | trim | length > 0 %}postgresql://{{ litellm_database_user }}:{{ litellm_database_password }}@{{ litellm_database_host }}:{{ litellm_database_port }}/{{ litellm_database_name }}?sslmode={{ litellm_database_sslmode }}{% else %}{% endif %}"
+litellm_database_url: "{% if litellm_database_host | trim | length > 0 %}postgresql://{{ litellm_database_user }}:{{ litellm_database_password_urlencoded | trim }}@{{ litellm_database_host }}:{{ litellm_database_port }}/{{ litellm_database_name }}?sslmode={{ litellm_database_sslmode }}{% else %}{% endif %}"
 
 # Models are now dynamically managed via DB/UI or user-provided config
 
