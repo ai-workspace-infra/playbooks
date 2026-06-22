@@ -9,3 +9,40 @@ migrate_litellm_db_host: "127.0.0.1"
 # Migration paths
 openclaw_data_dir: "~/.openclaw"
 xworkspace_state_dir: "~/.local/state/xworkspace"
+
+# =============================================================================
+# XWorkspace Console runtime — final deployment (consumption only)
+#
+# The console runtime binary (Go API) and dashboard dist are cross-compiled and
+# published by CI:
+#   ai-workspace-lab/xworkspace-console
+#   .github/workflows/offline-package-xworkspace-console-runtime.yaml
+# as xworkspace-console-runtime-<os>-<arch>.tar.gz (incl. darwin-arm64). This
+# role NEVER builds from source; it only downloads/stages the prebuilt tarball,
+# unpacks it to a per-user system dir, and deploys the launchd service that
+# execs the prebuilt API binary recorded in the package manifest.
+# =============================================================================
+ai_workspace_console_deploy_enabled: true
+ai_workspace_console_runtime_os: "{{ ansible_system | lower }}"
+ai_workspace_console_runtime_arch: "{{ 'amd64' if ansible_architecture in ['x86_64', 'amd64'] else 'arm64' }}"
+# Stable moving release maintained by the CI publish job (matches the
+# latest-runtime convention used by the bridge/qmd/litellm runtimes).
+ai_workspace_console_runtime_release_tag: "latest-runtime"
+ai_workspace_console_runtime_release_base: "https://github.com/ai-workspace-lab/xworkspace-console/releases/download/{{ ai_workspace_console_runtime_release_tag }}"
+ai_workspace_console_runtime_asset: "xworkspace-console-runtime-{{ ai_workspace_console_runtime_os }}-{{ ai_workspace_console_runtime_arch }}.tar.gz"
+ai_workspace_console_runtime_url: "{{ ai_workspace_console_runtime_release_base }}/{{ ai_workspace_console_runtime_asset }}"
+# Offline/air-gapped override: a locally-staged runtime tarball. When set it is
+# used verbatim and no download happens (offline package path).
+ai_workspace_console_runtime_archive: "{{ lookup('ansible.builtin.env', 'XWORKSPACE_CONSOLE_RUNTIME_ARCHIVE') | default('', true) }}"
+# The tarball carries a top-level xworkspace-console/ dir, so it is extracted
+# into the parent and lands at <parent>/xworkspace-console.
+ai_workspace_console_install_parent: "{{ ansible_env.HOME }}/.local/share"
+ai_workspace_console_install_dir: "{{ ai_workspace_console_install_parent }}/xworkspace-console"
+ai_workspace_console_runtime_marker: "{{ ai_workspace_console_install_dir }}/.runtime-archive-sha256"
+ai_workspace_console_manifest_path: "{{ ai_workspace_console_install_dir }}/manifest.json"
+# Token env file produced by the console play; the API sources it for auth.
+ai_workspace_console_config_dir: "{{ ansible_env.HOME }}/.config/ai-workspace"
+ai_workspace_console_portal_env: "{{ ai_workspace_console_config_dir }}/portal.env"
+ai_workspace_console_log_dir: "{{ ansible_env.HOME }}/.local/state/xworkspace"
+ai_workspace_console_api_label: "plus.svc.xworkspace.api"
+ai_workspace_console_api_port: 8788

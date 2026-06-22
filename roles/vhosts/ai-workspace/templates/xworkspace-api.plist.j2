@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{{ ai_workspace_console_api_label }}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+            set -a
+            [ -f "{{ ai_workspace_console_portal_env }}" ] &amp;&amp; . "{{ ai_workspace_console_portal_env }}"
+            set +a
+            exec "{{ ai_workspace_console_api_binary }}"
+        </string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>WorkingDirectory</key>
+    <string>{{ ai_workspace_console_install_dir }}</string>
+    <key>StandardOutPath</key>
+    <string>{{ ai_workspace_console_log_dir }}/api.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{ ai_workspace_console_log_dir }}/api.err.log</string>
+</dict>
+</plist>
