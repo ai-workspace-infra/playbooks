@@ -9,9 +9,13 @@
   vars:
     xworkspace_console_enable_xrdp: false
   tasks:
+    # XFCE/XRDP is a Linux remote-desktop stack (apt-based, systemd) and is not
+    # applicable to macOS, which already has a native GUI. Skip the whole stack
+    # on Darwin so the apt-driven tasks never run there.
     - name: Include XFCE desktop runtime role
       ansible.builtin.include_role:
         name: roles/vhosts/xfce_desktop_minimal_runtime
+      when: ansible_os_family != 'Darwin'
 
     - name: Include XRDP server role when enabled
       ansible.builtin.include_role:
@@ -23,4 +27,6 @@
         xfce_user_groups:
           - sudo
           - docker
-      when: xworkspace_console_enable_xrdp | bool
+      when:
+        - ansible_os_family != 'Darwin'
+        - xworkspace_console_enable_xrdp | bool
