@@ -225,6 +225,13 @@
     cmd: "{{ litellm_prisma_binary_path }} generate"
   args:
     chdir: "{{ litellm_proxy_dir }}"
+  # `prisma generate` shells out to the `prisma-client-py` generator, which is a
+  # console script installed into the venv's bin dir. The default command PATH
+  # does not include the venv, so the absolute prisma binary still fails with
+  # "prisma-client-py: command not found". Put the venv bin dir on PATH so the
+  # generator subprocess is resolvable.
+  environment:
+    PATH: "{{ litellm_venv_dir }}/bin:/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH }}"
   become: true
   become_user: "{{ litellm_service_user }}"
   changed_when: false
