@@ -42,7 +42,7 @@ add_model() {
   "model_name": "$alias_name",
   "litellm_params": {
     "model": "$litellm_provider_model",
-    "api_key": "os.environ/$api_key_env_var",
+    "api_key": "${!api_key_env_var}",
     "api_base": "$api_base"
   },
   "model_info": {
@@ -58,7 +58,7 @@ EOF
   "model_name": "$alias_name",
   "litellm_params": {
     "model": "$litellm_provider_model",
-    "api_key": "os.environ/$api_key_env_var"
+    "api_key": "${!api_key_env_var}"
   },
   "model_info": {
     "id": "$alias_name",
