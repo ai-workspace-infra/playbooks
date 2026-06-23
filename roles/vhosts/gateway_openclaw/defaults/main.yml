@@ -56,15 +56,27 @@ gateway_openclaw_acp_max_concurrent_sessions: 2
 gateway_openclaw_acp_backend: acpx
 gateway_openclaw_acp_default_agent: codex
 gateway_openclaw_codex_app_server_url: ws://127.0.0.1:9001
-gateway_openclaw_default_model_primary: "deepseek/deepseek-v4-flash"
-gateway_openclaw_default_model_fallback: "deepseek/deepseek-v4-pro"
+gateway_openclaw_default_model_primary: "deepseek-v4-flash"
+gateway_openclaw_default_model_fallback: "deepseek-v4-pro"
 gateway_openclaw_default_model:
   primary: "{{ gateway_openclaw_default_model_primary }}"
   fallbacks:
     - "{{ gateway_openclaw_default_model_fallback }}"
+    - "deepseek-chat"
+    - "deepseek-reasoner"
+    - "nvidia-glm-5.2"
+    - "nvidia-minimax-m3"
+    - "nvidia-qwen3.5"
+    - "ollama-cloud-kimi-k2.7-code"
 gateway_openclaw_default_models:
   "{{ gateway_openclaw_default_model_primary }}": {}
   "{{ gateway_openclaw_default_model_fallback }}": {}
+  "deepseek-chat": {}
+  "deepseek-reasoner": {}
+  "nvidia-glm-5.2": {}
+  "nvidia-minimax-m3": {}
+  "nvidia-qwen3.5": {}
+  "ollama-cloud-kimi-k2.7-code": {}
   openai/gpt-5.5:
     agentRuntime:
       id: codex
@@ -133,3 +145,28 @@ gateway_openclaw_model_providers:
         contextWindow: 128000
         maxTokens: 8192
         reasoning: true
+      - id: "deepseek-chat"
+        name: DeepSeek V3 Chat
+        input: [text]
+        contextWindow: 64000
+      - id: "deepseek-reasoner"
+        name: DeepSeek R1 Reasoner
+        input: [text]
+        contextWindow: 64000
+        reasoning: true
+      - id: "nvidia-glm-5.2"
+        name: GLM 5.2
+        input: [text]
+        contextWindow: 128000
+      - id: "nvidia-minimax-m3"
+        name: MiniMax M3
+        input: [text]
+        contextWindow: 128000
+      - id: "nvidia-qwen3.5"
+        name: Qwen 3.5
+        input: [text]
+        contextWindow: 128000
+      - id: "ollama-cloud-kimi-k2.7-code"
+        name: Kimi K2.7 Code
+        input: [text]
+        contextWindow: 128000
