@@ -80,8 +80,18 @@ EOF
     if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
         echo "[SUCCESS] Model $alias_name added."
     else
-        echo "[ERROR] Failed to add model $alias_name. HTTP Code: $http_code"
-        echo "Response: $response"
+        echo "[INFO] Model $alias_name failed to add via /model/new (HTTP $http_code), attempting /model/update..."
+        response=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$LITELLM_URL/model/update" \
+            -H "Authorization: Bearer $LITELLM_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$payload") || true
+        http_code=$(echo "$response" | grep -Eo 'HTTP_CODE:[0-9]{3}' | cut -d':' -f2 || echo "000")
+        if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
+            echo "[SUCCESS] Model $alias_name updated."
+        else
+            echo "[ERROR] Failed to add/update model $alias_name. HTTP Code: $http_code"
+            echo "Response: $response"
+        fi
     fi
 }
 
