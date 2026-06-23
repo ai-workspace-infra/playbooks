@@ -7,7 +7,10 @@
     ansible.builtin.apt:
       lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(900) | int }}"
   vars:
-    xworkspace_console_user: ubuntu
+    # 跟随连接用户，与 xworkspace_console_home(ansible_env.HOME) 保持一致：
+    # 以 root 连接时 user=root/home=/root，避免 become_user=ubuntu 去 link /root
+    # 下的 unit 文件而报 "src does not exist"（root 家目录 700，ubuntu 无法进入）。
+    xworkspace_console_user: "{{ ansible_env.USER | default('ubuntu') }}"
     xworkspace_console_public_access: false
     xworkspace_console_domain: workspace.svc.plus
     xworkspace_console_home: "{{ ansible_env.HOME | default('/home/ubuntu') }}"
@@ -16,7 +19,9 @@
     xworkspace_console_runtime_archive: "{{ lookup('ansible.builtin.env', 'XWORKSPACE_CONSOLE_RUNTIME_ARCHIVE') | default('', true) }}"
     ai_workspace_prebuilt_components_required: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_PREBUILT_COMPONENTS_REQUIRED') | default('false', true) | bool }}"
     xworkspace_console_dashboard_dir: "{{ xworkspace_console_repo_dir }}/dashboard"
-    xworkspace_console_api_dir: "{{ xworkspace_console_repo_dir }}/api"
+    # 预编译 runtime tar 的 manifest.json 记 apiBinary: bin/xworkspace-api，
+    # 二进制落在 bin/(非源码布局的 api/)。对齐之，否则服务 203/EXEC 崩溃重启。
+    xworkspace_console_api_dir: "{{ xworkspace_console_repo_dir }}/bin"
     xworkspace_console_api_binary: "{{ xworkspace_console_api_dir }}/xworkspace-api"
     xworkspace_console_runtime_marker: "{{ xworkspace_console_repo_dir }}/.runtime-archive-sha256"
     xworkspace_console_api_working_dir: "{{ xworkspace_console_repo_dir }}"
@@ -157,6 +162,11 @@
             + ([xworkspace_console_browser_package] if xworkspace_console_browser_package | length > 0 else [])
           }}
         state: present
+      # xfce4 元包会拉入整套桌面，安装期间偶发重置网络/拖长，导致前台 SSH 会话
+      # 掉线 → ansible 误判 UNREACHABLE（实际包已在主机装完）。改异步执行 + 轮询，
+      # 让安装在主机后台跑、ansible 重连轮询，掉线也不影响。
+      async: "{{ ai_workspace_runtime_apt_async | default(1800) | int }}"
+      poll: 15
       when: ansible_os_family != 'Darwin'
 
     - name: Ensure ttyd binary target directory exists
