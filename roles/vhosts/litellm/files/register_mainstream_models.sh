@@ -89,19 +89,22 @@ if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
     echo "========================================="
     echo "Registering DeepSeek Models..."
     echo "========================================="
-    add_model "deepseek-v4-flash" "deepseek/deepseek-v4-flash" "DEEPSEEK_API_KEY"
-    add_model "deepseek-v4-pro" "deepseek/deepseek-v4-pro" "DEEPSEEK_API_KEY"
-    add_model "deepseek-chat" "deepseek/deepseek-chat" "DEEPSEEK_API_KEY"
-    add_model "deepseek-reasoner" "deepseek/deepseek-reasoner" "DEEPSEEK_API_KEY"
+    add_model "deepseek/deepseek-v4-flash" "deepseek/deepseek-v4-flash" "DEEPSEEK_API_KEY"
+    add_model "deepseek/deepseek-v4-pro" "deepseek/deepseek-v4-pro" "DEEPSEEK_API_KEY"
+    add_model "deepseek/deepseek-chat" "deepseek/deepseek-chat" "DEEPSEEK_API_KEY"
+    add_model "deepseek/deepseek-reasoner" "deepseek/deepseek-reasoner" "DEEPSEEK_API_KEY"
 fi
 
 if [ -n "${NVIDIA_API_KEY:-}" ]; then
     echo "========================================="
     echo "Registering NVIDIA Build Models..."
     echo "========================================="
-    add_model "nvidia-glm-5.2" "openai/thudm/glm-5.2-chat" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
-    add_model "nvidia-minimax-m3" "openai/minimax/minimax-m3" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
-    add_model "nvidia-qwen3.5" "openai/alibaba/qwen3.5-72b-instruct" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
+    add_model "nvidia/deepseek-v4-flash" "openai/deepseek-v4-flash" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
+    add_model "nvidia/deepseek-v4-pro" "openai/deepseek-v4-pro" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
+    add_model "nvidia/glm-5.2" "openai/thudm/glm-5.2-chat" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
+    add_model "nvidia/minimax-m3" "openai/minimax/minimax-m3" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
+    add_model "nvidia/qwen3.5" "openai/alibaba/qwen3.5-72b-instruct" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
+    add_model "nvidia/kimi-k2.7-code" "openai/moonshot/kimi-k2.7-code" "NVIDIA_API_KEY" "https://integrate.api.nvidia.com/v1"
 fi
 
 echo "========================================="
@@ -136,7 +139,12 @@ if [ -n "${OLLAMA_API_KEY:-}" ]; then
     echo "Registering OLLAMA Cloud Models..."
     echo "========================================="
     OLLAMA_API_BASE="${OLLAMA_API_BASE:-https://api.ollama.cloud/v1}"
-    add_model "ollama-cloud-kimi-k2.7-code" "openai/moonshot/kimi-k2.7-code" "OLLAMA_API_KEY" "$OLLAMA_API_BASE"
+    add_model "ollama/deepseek-v4-flash" "openai/deepseek-v4-flash" "OLLAMA_API_KEY" "$OLLAMA_API_BASE"
+    add_model "ollama/deepseek-v4-pro" "openai/deepseek-v4-pro" "OLLAMA_API_KEY" "$OLLAMA_API_BASE"
+    add_model "ollama/glm-5.2" "openai/thudm/glm-5.2-chat" "OLLAMA_API_KEY" "$OLLAMA_API_BASE"
+    add_model "ollama/minimax-m3" "openai/minimax/minimax-m3" "OLLAMA_API_KEY" "$OLLAMA_API_BASE"
+    add_model "ollama/qwen3.5" "openai/alibaba/qwen3.5-72b-instruct" "OLLAMA_API_KEY" "$OLLAMA_API_BASE"
+    add_model "ollama/kimi-k2.7-code" "openai/moonshot/kimi-k2.7-code" "OLLAMA_API_KEY" "$OLLAMA_API_BASE"
 fi
 
 echo "All models requested have been registered."
