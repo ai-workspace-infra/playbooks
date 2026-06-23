@@ -118,6 +118,10 @@
     url: "{{ gateway_openclaw_multi_session_plugin_archive_url }}"
     dest: "/tmp/openclaw-multi-session-plugins.tar.gz"
     mode: "0644"
+  register: gateway_openclaw_multi_session_plugin_download
+  until: gateway_openclaw_multi_session_plugin_download is succeeded
+  retries: 3
+  delay: 5
 
 - name: Extract OpenClaw Multi-Session Plugins
   ansible.builtin.unarchive:
