@@ -5,6 +5,8 @@
     state: present
     update_cache: true
     install_recommends: false
+    # 等 dpkg 前端锁，避免与 cloud-init/unattended-upgrades 抢锁而立即失败
+    lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(900) | int }}"
   environment:
     DEBIAN_FRONTEND: noninteractive
     APT_LISTCHANGES_FRONTEND: none
