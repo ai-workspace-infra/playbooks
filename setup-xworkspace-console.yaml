@@ -490,10 +490,14 @@
 
     - name: Download XWorkspace Console runtime release
       ansible.builtin.get_url:
-        url: "https://github.com/ai-workspace-lab/xworkspace-console/releases/latest/download/xworkspace-console-runtime-{{ ansible_system | lower }}-{{ 'amd64' if ansible_architecture in ['x86_64', 'amd64'] else 'arm64' }}.tar.gz"
+        url: "https://github.com/ai-workspace-lab/xworkspace-console/releases/download/latest-runtime/xworkspace-console-runtime-{{ ansible_system | lower }}-{{ 'amd64' if ansible_architecture in ['x86_64', 'amd64'] else 'arm64' }}.tar.gz"
         dest: "/tmp/xworkspace-console-runtime.tar.gz"
         mode: "0644"
         force: true
+      register: xworkspace_console_runtime_download
+      until: xworkspace_console_runtime_download is succeeded
+      retries: 3
+      delay: 5
       when: xworkspace_console_runtime_archive | length == 0
 
     - name: Set runtime archive path
