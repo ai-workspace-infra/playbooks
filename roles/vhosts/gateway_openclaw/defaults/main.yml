@@ -58,44 +58,63 @@ gateway_openclaw_acp_default_agent: codex
 gateway_openclaw_codex_app_server_url: ws://127.0.0.1:9001
 gateway_openclaw_default_model_primary: "deepseek/deepseek-v4-flash"
 gateway_openclaw_default_model_fallback: "deepseek/deepseek-v4-pro"
+gateway_openclaw_fallbacks_deepseek:
+  - "{{ gateway_openclaw_default_model_fallback }}"
+  - "deepseek/deepseek-chat"
+  - "deepseek/deepseek-reasoner"
+gateway_openclaw_fallbacks_nvidia:
+  - "nvidia/deepseek-v4-flash"
+  - "nvidia/deepseek-v4-pro"
+  - "nvidia/glm-5.2"
+  - "nvidia/minimax-m3"
+  - "nvidia/qwen3.5"
+  - "nvidia/kimi-k2.7-code"
+gateway_openclaw_fallbacks_ollama:
+  - "ollama/deepseek-v4-flash"
+  - "ollama/deepseek-v4-pro"
+  - "ollama/glm-5.2"
+  - "ollama/minimax-m3"
+  - "ollama/qwen3.5"
+  - "ollama/kimi-k2.7-code"
+
 gateway_openclaw_default_model:
   primary: "{{ gateway_openclaw_default_model_primary }}"
-  fallbacks:
-    - "{{ gateway_openclaw_default_model_fallback }}"
-    - "deepseek/deepseek-chat"
-    - "deepseek/deepseek-reasoner"
-    - "nvidia/deepseek-v4-flash"
-    - "nvidia/deepseek-v4-pro"
-    - "nvidia/glm-5.2"
-    - "nvidia/minimax-m3"
-    - "nvidia/qwen3.5"
-    - "nvidia/kimi-k2.7-code"
-    - "ollama/deepseek-v4-flash"
-    - "ollama/deepseek-v4-pro"
-    - "ollama/glm-5.2"
-    - "ollama/minimax-m3"
-    - "ollama/qwen3.5"
-    - "ollama/kimi-k2.7-code"
-gateway_openclaw_default_models:
+  fallbacks: >-
+    {{
+      ([]
+      + (gateway_openclaw_fallbacks_deepseek if lookup('ansible.builtin.env', 'DEEPSEEK_API_KEY') else [])
+      + (gateway_openclaw_fallbacks_nvidia if lookup('ansible.builtin.env', 'NVIDIA_API_KEY') else [])
+      + (gateway_openclaw_fallbacks_ollama if lookup('ansible.builtin.env', 'OLLAMA_API_KEY') else []))
+      | unique | list
+    }}
+
+gateway_openclaw_default_models_deepseek:
   "{{ gateway_openclaw_default_model_primary }}": {}
   "{{ gateway_openclaw_default_model_fallback }}": {}
   "deepseek/deepseek-chat": {}
   "deepseek/deepseek-reasoner": {}
+gateway_openclaw_default_models_nvidia:
   "nvidia/deepseek-v4-flash": {}
   "nvidia/deepseek-v4-pro": {}
   "nvidia/glm-5.2": {}
   "nvidia/minimax-m3": {}
   "nvidia/qwen3.5": {}
   "nvidia/kimi-k2.7-code": {}
+gateway_openclaw_default_models_ollama:
   "ollama/deepseek-v4-flash": {}
   "ollama/deepseek-v4-pro": {}
   "ollama/glm-5.2": {}
   "ollama/minimax-m3": {}
   "ollama/qwen3.5": {}
   "ollama/kimi-k2.7-code": {}
-  openai/gpt-5.5:
-    agentRuntime:
-      id: codex
+
+gateway_openclaw_default_models: >-
+  {{
+    { 'openai/gpt-5.5': { 'agentRuntime': { 'id': 'codex' } } }
+    | combine(gateway_openclaw_default_models_deepseek if lookup('ansible.builtin.env', 'DEEPSEEK_API_KEY') else {})
+    | combine(gateway_openclaw_default_models_nvidia if lookup('ansible.builtin.env', 'NVIDIA_API_KEY') else {})
+    | combine(gateway_openclaw_default_models_ollama if lookup('ansible.builtin.env', 'OLLAMA_API_KEY') else {})
+  }}
 gateway_openclaw_main_agent_model: "{{ gateway_openclaw_default_model_primary }}"
 
 gateway_openclaw_main_agent_skills:
@@ -143,88 +162,97 @@ gateway_openclaw_mcp_servers:
     url: http://localhost:8181/mcp
     transport: streamable-http
 
-gateway_openclaw_model_providers:
-  deepseek:
-    api: openai-completions
-    baseUrl: "http://127.0.0.1:{{ litellm_listen_port | default(4000) }}/v1"
-    apiKey: "{{ ai_workspace_auth_token }}"
-    models:
-      - id: "{{ gateway_openclaw_default_model_primary }}"
-        name: DeepSeek V4 Flash
-        input: [text]
-        contextWindow: 128000
-        maxTokens: 8192
-        reasoning: false
-      - id: "{{ gateway_openclaw_default_model_fallback }}"
-        name: DeepSeek V4 Pro
-        input: [text]
-        contextWindow: 128000
-        maxTokens: 8192
-        reasoning: true
-      - id: "deepseek/deepseek-chat"
-        name: DeepSeek V3 Chat
-        input: [text]
-        contextWindow: 64000
-      - id: "deepseek/deepseek-reasoner"
-        name: DeepSeek R1 Reasoner
-        input: [text]
-        contextWindow: 64000
-        reasoning: true
-  nvidia:
-    api: openai-completions
-    baseUrl: "http://127.0.0.1:{{ litellm_listen_port | default(4000) }}/v1"
-    apiKey: "{{ ai_workspace_auth_token }}"
-    models:
-      - id: "nvidia/deepseek-v4-flash"
-        name: NVIDIA DeepSeek V4 Flash
-        input: [text]
-        contextWindow: 128000
-      - id: "nvidia/deepseek-v4-pro"
-        name: NVIDIA DeepSeek V4 Pro
-        input: [text]
-        contextWindow: 128000
-      - id: "nvidia/glm-5.2"
-        name: NVIDIA GLM 5.2
-        input: [text]
-        contextWindow: 128000
-      - id: "nvidia/minimax-m3"
-        name: NVIDIA MiniMax M3
-        input: [text]
-        contextWindow: 128000
-      - id: "nvidia/qwen3.5"
-        name: NVIDIA Qwen 3.5
-        input: [text]
-        contextWindow: 128000
-      - id: "nvidia/kimi-k2.7-code"
-        name: NVIDIA Kimi K2.7 Code
-        input: [text]
-        contextWindow: 128000
-  ollama:
-    api: openai-completions
-    baseUrl: "http://127.0.0.1:{{ litellm_listen_port | default(4000) }}/v1"
-    apiKey: "{{ ai_workspace_auth_token }}"
-    models:
-      - id: "ollama/deepseek-v4-flash"
-        name: Ollama DeepSeek V4 Flash
-        input: [text]
-        contextWindow: 128000
-      - id: "ollama/deepseek-v4-pro"
-        name: Ollama DeepSeek V4 Pro
-        input: [text]
-        contextWindow: 128000
-      - id: "ollama/glm-5.2"
-        name: Ollama GLM 5.2
-        input: [text]
-        contextWindow: 128000
-      - id: "ollama/minimax-m3"
-        name: Ollama MiniMax M3
-        input: [text]
-        contextWindow: 128000
-      - id: "ollama/qwen3.5"
-        name: Ollama Qwen 3.5
-        input: [text]
-        contextWindow: 128000
-      - id: "ollama/kimi-k2.7-code"
-        name: Ollama Kimi K2.7 Code
-        input: [text]
-        contextWindow: 128000
+gateway_openclaw_provider_deepseek:
+  api: openai-completions
+  baseUrl: "http://127.0.0.1:{{ litellm_listen_port | default(4000) }}/v1"
+  apiKey: "{{ ai_workspace_auth_token }}"
+  models:
+    - id: "{{ gateway_openclaw_default_model_primary }}"
+      name: DeepSeek V4 Flash
+      input: [text]
+      contextWindow: 128000
+      maxTokens: 8192
+      reasoning: false
+    - id: "{{ gateway_openclaw_default_model_fallback }}"
+      name: DeepSeek V4 Pro
+      input: [text]
+      contextWindow: 128000
+      maxTokens: 8192
+      reasoning: true
+    - id: "deepseek/deepseek-chat"
+      name: DeepSeek V3 Chat
+      input: [text]
+      contextWindow: 64000
+    - id: "deepseek/deepseek-reasoner"
+      name: DeepSeek R1 Reasoner
+      input: [text]
+      contextWindow: 64000
+      reasoning: true
+
+gateway_openclaw_provider_nvidia:
+  api: openai-completions
+  baseUrl: "http://127.0.0.1:{{ litellm_listen_port | default(4000) }}/v1"
+  apiKey: "{{ ai_workspace_auth_token }}"
+  models:
+    - id: "nvidia/deepseek-v4-flash"
+      name: NVIDIA DeepSeek V4 Flash
+      input: [text]
+      contextWindow: 128000
+    - id: "nvidia/deepseek-v4-pro"
+      name: NVIDIA DeepSeek V4 Pro
+      input: [text]
+      contextWindow: 128000
+    - id: "nvidia/glm-5.2"
+      name: NVIDIA GLM 5.2
+      input: [text]
+      contextWindow: 128000
+    - id: "nvidia/minimax-m3"
+      name: NVIDIA MiniMax M3
+      input: [text]
+      contextWindow: 128000
+    - id: "nvidia/qwen3.5"
+      name: NVIDIA Qwen 3.5
+      input: [text]
+      contextWindow: 128000
+    - id: "nvidia/kimi-k2.7-code"
+      name: NVIDIA Kimi K2.7 Code
+      input: [text]
+      contextWindow: 128000
+
+gateway_openclaw_provider_ollama:
+  api: openai-completions
+  baseUrl: "http://127.0.0.1:{{ litellm_listen_port | default(4000) }}/v1"
+  apiKey: "{{ ai_workspace_auth_token }}"
+  models:
+    - id: "ollama/deepseek-v4-flash"
+      name: Ollama DeepSeek V4 Flash
+      input: [text]
+      contextWindow: 128000
+    - id: "ollama/deepseek-v4-pro"
+      name: Ollama DeepSeek V4 Pro
+      input: [text]
+      contextWindow: 128000
+    - id: "ollama/glm-5.2"
+      name: Ollama GLM 5.2
+      input: [text]
+      contextWindow: 128000
+    - id: "ollama/minimax-m3"
+      name: Ollama MiniMax M3
+      input: [text]
+      contextWindow: 128000
+    - id: "ollama/qwen3.5"
+      name: Ollama Qwen 3.5
+      input: [text]
+      contextWindow: 128000
+    - id: "ollama/kimi-k2.7-code"
+      name: Ollama Kimi K2.7 Code
+      input: [text]
+      contextWindow: 128000
+
+gateway_openclaw_model_providers: >-
+  {{
+    {}
+    | combine({'deepseek': gateway_openclaw_provider_deepseek} if lookup('ansible.builtin.env', 'DEEPSEEK_API_KEY') else {})
+    | combine({'nvidia': gateway_openclaw_provider_nvidia} if lookup('ansible.builtin.env', 'NVIDIA_API_KEY') else {})
+    | combine({'ollama': gateway_openclaw_provider_ollama} if lookup('ansible.builtin.env', 'OLLAMA_API_KEY') else {})
+  }}
