@@ -22,8 +22,18 @@ enable_common: true
 # macOS (Darwin) baseline: shared Homebrew CLI prerequisites used by helper
 # scripts across roles (e.g. jq is required by vault's init_vault_admin.sh).
 # macOS ships curl/base64 already; jq is not present by default.
+#
+# docker/docker-compose/colima provide a headless container runtime on macOS
+# (colima runs the Docker daemon in a lightweight VM; the docker formula is the
+# CLI only, no Docker Desktop). Needed for container workloads such as the qmd
+# PostgreSQL memory-bridge integration tests (test/pg-compose.yml). Each formula
+# installs a /opt/homebrew/bin/<name> binary, so the task's `creates` check stays
+# idempotent. After install, start the runtime once with `colima start`.
 common_darwin_brew_packages:
   - jq
+  - docker
+  - docker-compose
+  - colima
 
 common_firewall:
   enabled: true
