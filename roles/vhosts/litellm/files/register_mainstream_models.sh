@@ -91,6 +91,8 @@ if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
     echo "========================================="
     add_model "deepseek-v4-flash" "deepseek/deepseek-v4-flash" "DEEPSEEK_API_KEY"
     add_model "deepseek-v4-pro" "deepseek/deepseek-v4-pro" "DEEPSEEK_API_KEY"
+    add_model "deepseek-chat" "deepseek/deepseek-chat" "DEEPSEEK_API_KEY"
+    add_model "deepseek-reasoner" "deepseek/deepseek-reasoner" "DEEPSEEK_API_KEY"
 fi
 
 if [ -n "${NVIDIA_API_KEY:-}" ]; then
