@@ -69,6 +69,21 @@
   changed_when: true
   become: true
 
+- name: Ensure Gemini ACP runtime directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ acp_gemini_service_user }}"
+    group: "{{ acp_gemini_service_group }}"
+    mode: "0755"
+  loop:
+    - "{{ acp_gemini_home }}"
+    - "{{ acp_gemini_workdir }}"
+    - "{{ acp_gemini_xdg_config_home }}"
+    - "{{ acp_gemini_xdg_state_home }}"
+  become: true
+  when: ansible_os_family != 'Darwin'
+
 - name: Deploy Gemini ACP systemd service
   ansible.builtin.command:
     cmd: lsattr "/etc/systemd/system/{{ acp_gemini_service_name }}.service"
