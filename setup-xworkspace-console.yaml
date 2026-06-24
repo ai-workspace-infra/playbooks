@@ -158,7 +158,8 @@
         update_cache: true
         name: >-
           {{
-            ['caddy', 'xfce4', 'python3', 'golang-go']
+            ['xfce4', 'python3', 'golang-go']
+            + (['caddy'] if caddy_enabled | default(true) | bool else [])
             + ([xworkspace_console_browser_package] if xworkspace_console_browser_package | length > 0 else [])
           }}
         state: present
@@ -623,8 +624,11 @@
 
           [Service]
           Type=simple
-          WorkingDirectory={{ xworkspace_console_dashboard_dir }}
-          ExecStart=/usr/bin/npm run preview -- --host 127.0.0.1 --port {{ xworkspace_console_port }}
+          WorkingDirectory={{ xworkspace_console_dashboard_dir }}/dist
+          # console 只是 17000 上的静态后端（dashboard 为无路由单页 dist），由系统
+          # caddy 经 /etc/caddy/conf.d/ 反代对外。用 python3 静态伺服即可，跨 Linux/
+          # macOS 统一、不再起第二个 caddy（避免与系统 caddy 抢 :80）。
+          ExecStart=/usr/bin/env python3 -m http.server {{ xworkspace_console_port }} --bind 127.0.0.1 --directory {{ xworkspace_console_dashboard_dir }}/dist
           Restart=always
           RestartSec=2
 

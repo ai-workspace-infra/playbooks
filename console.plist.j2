@@ -10,7 +10,9 @@
         <string>-c</string>
         <string>
             export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-            exec /usr/bin/env npm run preview -- --host 127.0.0.1 --port {{ xworkspace_console_port }}
+            # 预编译 runtime 只发 dashboard/dist（无 package.json），且 dashboard 是
+            # 无客户端路由的单页应用，故用 python3 静态伺服 dist 即可（macOS 无 caddy）。
+            exec /usr/bin/env python3 -m http.server {{ xworkspace_console_port }} --bind 127.0.0.1 --directory "{{ xworkspace_console_dashboard_dir }}/dist"
         </string>
     </array>
     <key>RunAtLoad</key>
@@ -18,7 +20,7 @@
     <key>KeepAlive</key>
     <true/>
     <key>WorkingDirectory</key>
-    <string>{{ xworkspace_console_dashboard_dir }}</string>
+    <string>{{ xworkspace_console_dashboard_dir }}/dist</string>
     <key>StandardOutPath</key>
     <string>{{ ansible_env.HOME }}/.local/state/xworkspace/console.log</string>
     <key>StandardErrorPath</key>
