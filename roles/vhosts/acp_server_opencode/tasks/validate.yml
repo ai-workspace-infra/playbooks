@@ -17,22 +17,30 @@
   changed_when: false
   failed_when: false
 
-- name: Validate OpenCode local ACP endpoint
-  ansible.builtin.uri:
-    url: "http://{{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}/acp/rpc"
-    method: POST
-    body_format: json
-    body:
-      jsonrpc: "2.0"
-      id: 1
-      method: acp.capabilities
-      params: {}
-    return_content: true
-    status_code: 200
-  register: acp_opencode_adapter_http
-  retries: 30
-  delay: 2
-  until: acp_opencode_adapter_http.status == 200
+# 用 curl 重试循环替代 uri：服务刚 (重)启时 adapter 会先 accept TCP 但短时间内不
+# 应答(读挂起)，而 uri 默认 30s 超时 + retries/until 在连接超时上不可靠循环（实测
+# 仅试一次即失败）。每次 5s 上限、真重试，给冷启动足够时间（adapter 就绪后 ~4ms 回 200）。
+- name: Validate OpenCode local ACP endpoint (readiness retry)
+  ansible.builtin.shell: |
+    set -eu
+    url="http://{{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}/acp/rpc"
+    body='{"jsonrpc":"2.0","id":1,"method":"acp.capabilities","params":{}}'
+    code=""
+    for i in $(seq 1 30); do
+      code="$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$url" \
+        -H 'Content-Type: application/json' -d "$body" 2>/dev/null || true)"
+      if [ "$code" = "200" ]; then
+        echo "OpenCode ACP endpoint ready after ${i} attempt(s)"
+        exit 0
+      fi
+      sleep 2
+    done
+    echo "OpenCode ACP endpoint ${url} not ready after retries (last code: ${code:-none})" >&2
+    exit 1
+  args:
+    executable: /bin/bash
+  changed_when: false
+  register: acp_opencode_adapter_probe
 
 - name: Show OpenCode ACP status
   ansible.builtin.command: systemctl status "{{ acp_opencode_service_name }}" --no-pager
