@@ -1,9 +1,21 @@
 ---
-- name: Fail2ban | Install Fail2ban package
+# Debian/Ubuntu 走 apt：play 的 module_defaults.apt.lock_timeout(模板值)经
+# ansible.builtin.package 间接派发到 apt 时不渲染 → lock_timeout 收到字面 "{{ ... }}"
+# 报 int 转换失败（与 xworkmate_bridge/litellm 同类修复）。
+- name: Fail2ban | Install Fail2ban package (Debian/Ubuntu via apt)
+  ansible.builtin.apt:
+    name: fail2ban
+    state: present
+    update_cache: true
+  become: true
+  when: ansible_os_family == 'Debian'
+
+- name: Fail2ban | Install Fail2ban package (non-Debian)
   ansible.builtin.package:
     name: fail2ban
     state: present
   become: true
+  when: ansible_os_family != 'Debian'
 
 - name: Fail2ban | Deploy jail.local configuration
   ansible.builtin.copy:
