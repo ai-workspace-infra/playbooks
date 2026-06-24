@@ -49,7 +49,14 @@ deploy_acp_hermes: true
 
 # Unified domain settings
 ai_workspace_public_domain: "{{ lookup('ansible.builtin.env', 'SERVER_DOMAIN') | default(lookup('ansible.builtin.env', 'ACP_BRIDGE_DOMAIN') | default(lookup('ansible.builtin.env', 'BRIDGE_DOMAIN') | default('xworkmate-bridge.svc.plus', true), true), true) }}"
-xworkmate_bridge_domain: "{{ lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_DOMAIN') | default(ai_workspace_public_domain, true) }}"
+# 域名优先级：XWORKMATE_BRIDGE_DOMAIN(env，operator 指定) > CMDB service_domains
+# 首个域名(inventory hostvar；on-host 模型由流水线作为该 env 传入) > ai_workspace_public_domain。
+# 用作 xworkmate-bridge.caddy 站点名与 /etc/hostname，绝不为空/127.0.0.1。
+xworkmate_bridge_domain: >-
+  {{ lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_DOMAIN')
+     | default((service_domains | default('', true) | string | split(',')
+               | map('trim') | reject('equalto', '') | list | first | default('', true)), true)
+     | default(ai_workspace_public_domain, true) }}
 
 # When false, disables public Caddy access to XWorkmate Bridge.
 xworkmate_bridge_public_access: true

@@ -16,6 +16,17 @@
     state: present
   when: ansible_os_family not in ['Darwin', 'Debian', 'Windows']
 
+# 把目标主机 hostname 设为 bridge 域名(= XWORKMATE_BRIDGE_DOMAIN，否则 CMDB
+# service_domains)。仅 Linux、且为合法 FQDN 时设置；绝不取 127.0.0.1/localhost。
+- name: Set host FQDN from xworkmate-bridge domain
+  ansible.builtin.hostname:
+    name: "{{ xworkmate_bridge_domain }}"
+  when:
+    - ansible_os_family not in ['Darwin', 'Windows']
+    - xworkmate_bridge_domain | default('') | trim | length > 0
+    - "'.' in xworkmate_bridge_domain"
+    - xworkmate_bridge_domain not in ['127.0.0.1', 'localhost']
+
 - name: Ensure xworkmate-bridge service group exists
   ansible.builtin.group:
     name: "{{ xworkmate_bridge_service_group }}"
