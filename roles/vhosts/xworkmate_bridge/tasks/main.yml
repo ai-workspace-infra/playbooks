@@ -1,9 +1,20 @@
 ---
-- name: Install xworkmate-bridge prerequisites
+# Debian/Ubuntu 显式走 apt：play 的 module_defaults.apt.lock_timeout(模板值)只有
+# 在 ansible.builtin.apt 任务上才会被正确渲染；经 ansible.builtin.package 间接派发到
+# apt 时该模板不渲染，会把字面 "{{ ... }}" 当成 lock_timeout 传入而报 int 转换失败。
+- name: Install xworkmate-bridge prerequisites (Debian/Ubuntu via apt)
+  ansible.builtin.apt:
+    name: "{{ xworkmate_bridge_packages }}"
+    state: present
+    update_cache: true
+  when: ansible_os_family == 'Debian'
+
+# 非 Debian Linux 仍用通用 package(派发到 yum/dnf，不继承 apt 的 lock_timeout 默认)
+- name: Install xworkmate-bridge prerequisites (non-Debian Linux)
   ansible.builtin.package:
     name: "{{ xworkmate_bridge_packages }}"
     state: present
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Debian', 'Windows']
 
 - name: Ensure xworkmate-bridge service group exists
   ansible.builtin.group:
