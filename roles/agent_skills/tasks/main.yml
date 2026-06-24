@@ -1,285 +1,24 @@
 ---
-- name: Validate agent skills sync input
+# 设计：全程在「目标主机」上执行——没有任何 delegate_to: localhost。
+# 因此两种执行模型行为完全一致：
+#   - 本地/pull：curl|bash → ansible-playbook -c local（localhost 即主机）
+#   - 远程 controller：ansible-playbook -i <inventory> over ssh（任务在主机上跑）
+# 源以 git clone 获取（最通用、跨平台），不再依赖 controller 端预置目录，
+# 合并用 ansible.builtin.copy（无裸 rsync、无本地钉死）。
+
+- name: Validate agent skills input
   ansible.builtin.assert:
     that:
       - agent_skills_user | length > 0
       - agent_skills_group | length > 0
       - agent_skills_home | length > 0
-      - agent_skills_local_source_dir | length > 0
-      - (not agent_skills_xworkspace_core_enabled | bool) or agent_skills_xworkspace_core_source_dir | length > 0
       - agent_skills_remote_dir | length > 0
       - agent_skills_targets | length > 0
-    fail_msg: "agent_skills_user, home, source dirs, remote dir, and targets must be set."
+    fail_msg: "agent_skills_user/group/home, remote_dir and targets must be set."
 
 - name: Build required agent skills list
   ansible.builtin.set_fact:
     agent_skills_required_entries: "{{ agent_skills_typical_scenario_skills + agent_skills_extra_required_skills }}"
-
-- name: Ensure local agent skills source directory exists for auto install
-  ansible.builtin.file:
-    path: "{{ agent_skills_local_source_dir }}"
-    state: directory
-    mode: "0755"
-  delegate_to: localhost
-  become: false
-  check_mode: false
-  when:
-    - agent_skills_local_source_create | bool
-    - agent_skills_auto_install_enabled | bool
-
-- name: Inspect local agent skills source directory
-  ansible.builtin.stat:
-    path: "{{ agent_skills_local_source_dir }}"
-  register: agent_skills_local_source
-  delegate_to: localhost
-  become: false
-
-- name: Assert local agent skills source directory exists
-  ansible.builtin.assert:
-    that:
-      - agent_skills_local_source.stat.isdir | default(false)
-    fail_msg: "Local skills source directory does not exist: {{ agent_skills_local_source_dir }}"
-
-- name: Inspect xworkspace core skills source directory
-  ansible.builtin.stat:
-    path: "{{ agent_skills_xworkspace_core_source_dir }}"
-  register: agent_skills_xworkspace_core_source
-  delegate_to: localhost
-  become: false
-  when: agent_skills_xworkspace_core_enabled | bool
-
-- name: Assert xworkspace core skills source directory exists
-  ansible.builtin.assert:
-    that:
-      - agent_skills_xworkspace_core_source.stat.isdir | default(false)
-    fail_msg: "xworkspace core skills source directory does not exist: {{ agent_skills_xworkspace_core_source_dir }}"
-  when:
-    - agent_skills_xworkspace_core_enabled | bool
-    - agent_skills_xworkspace_core_required | bool
-
-- name: Build effective agent skills source directories
-  ansible.builtin.set_fact:
-    agent_skills_effective_source_dirs: >-
-      {{
-        [agent_skills_local_source_dir]
-        + (
-          (
-            agent_skills_xworkspace_core_enabled | bool
-            and agent_skills_xworkspace_core_source.stat.isdir | default(false)
-          )
-          | ternary([agent_skills_xworkspace_core_source_dir], [])
-        )
-      }}
-
-- name: Inspect required local scenario skills
-  ansible.builtin.shell: |
-    set -eu
-    for source_dir in {{ agent_skills_effective_source_dirs | map('quote') | join(' ') }}; do
-      for candidate in {{ ([item.name] + (item.aliases | default([]))) | unique | map('quote') | join(' ') }}; do
-        if [ -f "$source_dir/$candidate/SKILL.md" ]; then
-          printf '%s\n' "$source_dir/$candidate"
-          exit 0
-        fi
-        match="$(find "$source_dir" -type f -path "*/$candidate/SKILL.md" -print -quit)"
-        if [ -n "$match" ]; then
-          dirname "$match"
-          exit 0
-        fi
-      done
-    done
-    exit 1
-  args:
-    executable: /bin/bash
-  register: agent_skills_local_skill_presence
-  changed_when: false
-  failed_when: false
-  loop: "{{ agent_skills_required_entries }}"
-  loop_control:
-    label: "{{ item.name }}"
-  delegate_to: localhost
-  become: false
-  check_mode: false
-
-- name: Build missing scenario skills list
-  ansible.builtin.set_fact:
-    agent_skills_missing_entries: >-
-      {{
-        agent_skills_local_skill_presence.results
-        | selectattr('rc', 'ne', 0)
-        | map(attribute='item')
-        | list
-      }}
-
-- name: Install missing scenario skills from local installer adapters
-  ansible.builtin.shell: |
-    set -eu
-    skill_name={{ item.name | quote }}
-    target_dir={{ agent_skills_local_source_dir | quote }}
-    target_parent="$(dirname "$target_dir")"
-    target_base="$(basename "$target_dir")"
-    install_rc=1
-    if command -v clawhub >/dev/null 2>&1; then
-      for install_name in {{ ([item.install_name | default(item.name)] + (item.aliases | default([]))) | unique | map('quote') | join(' ') }}; do
-        if clawhub --workdir "$target_parent" --dir "$target_base" --no-input install \
-          {{ (item.install_force | default(false) | bool) | ternary('--force', '') }} "$install_name"; then
-          install_rc=0
-          break
-        fi
-      done
-      exit "$install_rc"
-    elif command -v find-skills >/dev/null 2>&1; then
-      for install_name in {{ ([item.install_name | default(item.name)] + (item.aliases | default([]))) | unique | map('quote') | join(' ') }}; do
-        if find-skills install "$install_name" --target "$target_dir"; then
-          install_rc=0
-          break
-        fi
-      done
-      exit "$install_rc"
-    elif [ "{{ agent_skills_auto_install_fail_on_missing_installer | bool | ternary('true', 'false') }}" = "true" ]; then
-      echo "Missing installer for $skill_name. Install clawhub or find-skills, or preseed $target_dir/$skill_name." >&2
-      exit 127
-    else
-      echo "Skipped missing skill $skill_name because no installer adapter is available." >&2
-    fi
-  args:
-    executable: /bin/bash
-  loop: "{{ agent_skills_missing_entries }}"
-  loop_control:
-    label: "{{ item.name }}"
-  register: agent_skills_install_result
-  changed_when: agent_skills_install_result.rc == 0
-  delegate_to: localhost
-  become: false
-  when:
-    - agent_skills_auto_install_enabled | bool
-    - agent_skills_missing_entries | length > 0
-
-- name: Reinspect required local scenario skills after auto install
-  ansible.builtin.shell: |
-    set -eu
-    for source_dir in {{ agent_skills_effective_source_dirs | map('quote') | join(' ') }}; do
-      for candidate in {{ ([item.name] + (item.aliases | default([]))) | unique | map('quote') | join(' ') }}; do
-        if [ -f "$source_dir/$candidate/SKILL.md" ]; then
-          printf '%s\n' "$source_dir/$candidate"
-          exit 0
-        fi
-        match="$(find "$source_dir" -type f -path "*/$candidate/SKILL.md" -print -quit)"
-        if [ -n "$match" ]; then
-          dirname "$match"
-          exit 0
-        fi
-      done
-    done
-    exit 1
-  args:
-    executable: /bin/bash
-  register: agent_skills_local_skill_presence_after_install
-  changed_when: false
-  failed_when: false
-  loop: "{{ agent_skills_required_entries }}"
-  loop_control:
-    label: "{{ item.name }}"
-  delegate_to: localhost
-  become: false
-  when: agent_skills_auto_install_enabled | bool
-  check_mode: false
-
-- name: Build unresolved scenario skills list
-  ansible.builtin.set_fact:
-    agent_skills_unresolved_entries: >-
-      {{
-        (
-          agent_skills_auto_install_enabled | bool
-        )
-        | ternary(
-            agent_skills_local_skill_presence_after_install.results | default([]),
-            agent_skills_local_skill_presence.results | default([])
-          )
-        | selectattr('rc', 'ne', 0)
-        | map(attribute='item.name')
-        | list
-      }}
-
-- name: Assert required scenario skills are available locally
-  ansible.builtin.assert:
-    that:
-      - agent_skills_unresolved_entries | length == 0
-    fail_msg: >-
-      Required scenario skills are still missing from {{ agent_skills_local_source_dir }}:
-      {{ agent_skills_unresolved_entries | join(', ') }}.
-
-- name: Build resolved local scenario skill paths
-  ansible.builtin.set_fact:
-    agent_skills_resolved_local_paths: >-
-      {{
-        (
-          (agent_skills_auto_install_enabled | bool)
-          | ternary(
-              agent_skills_local_skill_presence_after_install.results | default([]),
-              agent_skills_local_skill_presence.results | default([])
-            )
-        )
-        | selectattr('rc', 'eq', 0)
-        | map(attribute='stdout')
-        | list
-        | unique
-      }}
-
-- name: Run optional scenario skill quality gates
-  ansible.builtin.shell: |
-    set -eu
-    skill_path={{ item.0 | quote }}
-    gate_name={{ item.1.name | quote }}
-    if command -v "$gate_name" >/dev/null 2>&1; then
-      {{ item.1.argv_prefix | map('quote') | join(' ') }} "$skill_path"
-    else
-      echo "Skipped missing quality gate: $gate_name"
-    fi
-  args:
-    executable: /bin/bash
-  register: agent_skills_quality_gate_results
-  changed_when: false
-  failed_when: agent_skills_quality_gate_fail_on_error | bool and agent_skills_quality_gate_results.rc != 0
-  loop: "{{ agent_skills_resolved_local_paths | product(agent_skills_quality_gate_commands) | list }}"
-  loop_control:
-    label: "{{ item.1.name }} {{ item.0 | basename }}"
-  delegate_to: localhost
-  become: false
-  when:
-    - agent_skills_quality_gate_enabled | bool
-    - agent_skills_resolved_local_paths | length > 0
-  check_mode: false
-
-- name: Detect local top-level symlink skills
-  ansible.builtin.find:
-    paths: "{{ agent_skills_local_source_dir }}"
-    file_type: link
-    recurse: false
-  register: agent_skills_local_symlinks
-  delegate_to: localhost
-  become: false
-
-- name: Build rsync excludes for local symlink skills
-  ansible.builtin.set_fact:
-    agent_skills_local_symlink_excludes: >-
-      {{
-        agent_skills_local_symlinks.files
-        | map(attribute='path')
-        | map('basename')
-        | list
-      }}
-
-- name: Install rsync for agent skills sync
-  ansible.builtin.apt:
-    name: rsync
-    state: present
-    update_cache: true
-  environment:
-    DEBIAN_FRONTEND: noninteractive
-    APT_LISTCHANGES_FRONTEND: none
-  when:
-    - agent_skills_install_rsync | bool
-    - ansible_os_family != 'Darwin'
 
 - name: Ensure agent skills owner home exists
   ansible.builtin.file:
@@ -297,60 +36,187 @@
     group: "{{ agent_skills_group }}"
     mode: "0755"
 
-- name: Sync local agent skills into canonical directory
-  ansible.builtin.command:
-    argv: >-
+# --- 源获取：在目标主机 git clone（最通用） ---------------------------------
+- name: Ensure core skills checkout parent exists
+  ansible.builtin.file:
+    path: "{{ agent_skills_xworkspace_core_clone_dir | dirname }}"
+    state: directory
+    owner: "{{ agent_skills_user }}"
+    group: "{{ agent_skills_group }}"
+    mode: "0755"
+  when: agent_skills_xworkspace_core_enabled | bool
+
+- name: Clone/update xworkspace core skills on the target host
+  ansible.builtin.git:
+    repo: "{{ agent_skills_xworkspace_core_repo_url }}"
+    dest: "{{ agent_skills_xworkspace_core_clone_dir }}"
+    version: "{{ agent_skills_xworkspace_core_version }}"
+    depth: 1
+    force: true
+  become_user: "{{ agent_skills_user }}"
+  register: agent_skills_core_clone
+  when: agent_skills_xworkspace_core_enabled | bool
+
+- name: Inspect core skills directory
+  ansible.builtin.stat:
+    path: "{{ agent_skills_xworkspace_core_source_dir }}"
+  register: agent_skills_core_skills_stat
+  when: agent_skills_xworkspace_core_enabled | bool
+
+- name: Require core skills directory when enabled and required
+  ansible.builtin.assert:
+    that:
+      - agent_skills_core_skills_stat.stat.isdir | default(false)
+    fail_msg: "core skills dir missing after clone: {{ agent_skills_xworkspace_core_source_dir }}"
+  when:
+    - agent_skills_xworkspace_core_enabled | bool
+    - agent_skills_xworkspace_core_required | bool
+
+- name: Build skill search dirs (canonical + core checkout)
+  ansible.builtin.set_fact:
+    agent_skills_search_dirs: >-
       {{
-        [
-          'rsync',
-          '-a',
-          '--partial',
-          '--timeout=' ~ (agent_skills_rsync_timeout | string)
-        ]
-        + (['--dry-run'] if ansible_check_mode else [])
-        + (['-z'] if (agent_skills_rsync_compress | bool) else [])
-        + (['--delete'] if (agent_skills_delete_removed | bool and agent_skills_source_index == 0) else [])
-        + (['--delete-excluded'] if (agent_skills_delete_removed | bool and agent_skills_source_index == 0) else [])
+        [agent_skills_remote_dir]
         + (
           (
-            agent_skills_rsync_excludes
-            + ((agent_skills_source_index == 0) | ternary(agent_skills_local_symlink_excludes, []))
+            agent_skills_xworkspace_core_enabled | bool
+            and agent_skills_core_skills_stat.stat.isdir | default(false)
           )
-          | map('regex_replace', '^(.*)$', '--exclude=\1')
-          | list
+          | ternary([agent_skills_xworkspace_core_source_dir], [])
         )
-        + agent_skills_rsync_extra_opts
-        + (
-          ((ansible_connection | default('ssh')) == 'local')
-          | ternary(
-              [],
-              ['-e', 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null']
-            )
-        )
-        + [
-          item ~ '/',
-          (
-            ((ansible_connection | default('ssh')) == 'local')
-          )
-          | ternary(
-              agent_skills_remote_dir ~ '/',
-              (
-                ansible_user | default(ansible_ssh_user) | default('root')
-              ) ~ '@' ~ (
-                ansible_host | default(inventory_hostname)
-              ) ~ ':' ~ agent_skills_remote_dir ~ '/'
-            )
-        ]
       }}
-  register: agent_skills_rsync_result
-  changed_when: "'<<CHANGED>>' in agent_skills_rsync_result.stdout"
+
+# --- 缺失场景技能：用 installer 适配器装到 canonical（主机本地） --------------
+- name: Inspect required scenario skills presence
+  ansible.builtin.shell: |
+    set -eu
+    for d in {{ agent_skills_search_dirs | map('quote') | join(' ') }}; do
+      for c in {{ ([item.name] + (item.aliases | default([]))) | unique | map('quote') | join(' ') }}; do
+        if [ -f "$d/$c/SKILL.md" ]; then printf '%s\n' "$d/$c"; exit 0; fi
+        m="$(find "$d" -type f -path "*/$c/SKILL.md" -print -quit 2>/dev/null || true)"
+        if [ -n "$m" ]; then dirname "$m"; exit 0; fi
+      done
+    done
+    exit 1
+  args:
+    executable: /bin/bash
+  register: agent_skills_presence
+  changed_when: false
+  failed_when: false
   check_mode: false
-  loop: "{{ agent_skills_effective_source_dirs }}"
+  loop: "{{ agent_skills_required_entries }}"
   loop_control:
-    index_var: agent_skills_source_index
-    label: "{{ item }}"
-  delegate_to: localhost
-  become: false
+    label: "{{ item.name }}"
+
+- name: Build missing scenario skills list
+  ansible.builtin.set_fact:
+    agent_skills_missing_entries: >-
+      {{ agent_skills_presence.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}
+
+- name: Install missing scenario skills via installer adapters (clawhub/find-skills)
+  ansible.builtin.shell: |
+    set -eu
+    skill={{ item.name | quote }}
+    target_dir={{ agent_skills_remote_dir | quote }}
+    parent="$(dirname "$target_dir")"; base="$(basename "$target_dir")"
+    rc=1
+    if command -v clawhub >/dev/null 2>&1; then
+      for n in {{ ([item.install_name | default(item.name)] + (item.aliases | default([]))) | unique | map('quote') | join(' ') }}; do
+        if clawhub --workdir "$parent" --dir "$base" --no-input install {{ (item.install_force | default(false) | bool) | ternary('--force', '') }} "$n"; then rc=0; break; fi
+      done
+      exit "$rc"
+    elif command -v find-skills >/dev/null 2>&1; then
+      for n in {{ ([item.install_name | default(item.name)] + (item.aliases | default([]))) | unique | map('quote') | join(' ') }}; do
+        if find-skills install "$n" --target "$target_dir"; then rc=0; break; fi
+      done
+      exit "$rc"
+    elif [ "{{ agent_skills_auto_install_fail_on_missing_installer | bool | ternary('true', 'false') }}" = "true" ]; then
+      echo "No installer (clawhub/find-skills) for $skill; preseed $target_dir/$skill." >&2
+      exit 127
+    else
+      echo "Skipped missing $skill (no installer adapter)." >&2
+    fi
+  args:
+    executable: /bin/bash
+  become_user: "{{ agent_skills_user }}"
+  register: agent_skills_install_result
+  changed_when: agent_skills_install_result.rc == 0
+  loop: "{{ agent_skills_missing_entries }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - agent_skills_auto_install_enabled | bool
+    - agent_skills_missing_entries | length > 0
+
+# --- 合并 core 技能到 canonical（主机本地 copy；无 rsync、无 delegate） --------
+- name: Merge core skills into canonical directory
+  ansible.builtin.copy:
+    src: "{{ agent_skills_xworkspace_core_source_dir }}/"
+    dest: "{{ agent_skills_remote_dir }}/"
+    remote_src: true
+    owner: "{{ agent_skills_user }}"
+    group: "{{ agent_skills_group }}"
+    mode: preserve
+  when:
+    - agent_skills_xworkspace_core_enabled | bool
+    - agent_skills_core_skills_stat.stat.isdir | default(false)
+
+- name: Re-inspect required scenario skills in canonical dir
+  ansible.builtin.shell: |
+    set -eu
+    d={{ agent_skills_remote_dir | quote }}
+    for c in {{ ([item.name] + (item.aliases | default([]))) | unique | map('quote') | join(' ') }}; do
+      if [ -f "$d/$c/SKILL.md" ]; then printf '%s\n' "$d/$c"; exit 0; fi
+      m="$(find "$d" -type f -path "*/$c/SKILL.md" -print -quit 2>/dev/null || true)"
+      if [ -n "$m" ]; then dirname "$m"; exit 0; fi
+    done
+    exit 1
+  args:
+    executable: /bin/bash
+  register: agent_skills_presence_final
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  loop: "{{ agent_skills_required_entries }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Assert required scenario skills are available
+  ansible.builtin.assert:
+    that:
+      - (agent_skills_presence_final.results | selectattr('rc', 'ne', 0) | list | length) == 0
+    fail_msg: >-
+      Required scenario skills still missing under {{ agent_skills_remote_dir }}:
+      {{ agent_skills_presence_final.results | selectattr('rc', 'ne', 0) | map(attribute='item.name') | join(', ') }}.
+
+- name: Build resolved skill paths
+  ansible.builtin.set_fact:
+    agent_skills_resolved_paths: >-
+      {{ agent_skills_presence_final.results | selectattr('rc', 'eq', 0) | map(attribute='stdout') | list | unique }}
+
+- name: Run optional scenario skill quality gates
+  ansible.builtin.shell: |
+    set -eu
+    skill_path={{ item.0 | quote }}
+    gate_name={{ item.1.name | quote }}
+    if command -v "$gate_name" >/dev/null 2>&1; then
+      {{ item.1.argv_prefix | map('quote') | join(' ') }} "$skill_path"
+    else
+      echo "Skipped missing quality gate: $gate_name"
+    fi
+  args:
+    executable: /bin/bash
+  become_user: "{{ agent_skills_user }}"
+  register: agent_skills_quality_gate_results
+  changed_when: false
+  failed_when: agent_skills_quality_gate_fail_on_error | bool and agent_skills_quality_gate_results.rc != 0
+  loop: "{{ agent_skills_resolved_paths | product(agent_skills_quality_gate_commands) | list }}"
+  loop_control:
+    label: "{{ item.1.name }} {{ item.0 | basename }}"
+  when:
+    - agent_skills_quality_gate_enabled | bool
+    - agent_skills_resolved_paths | length > 0
+  check_mode: false
 
 - name: Set canonical agent skills ownership
   ansible.builtin.file:
@@ -360,6 +226,7 @@
     group: "{{ agent_skills_group }}"
     recurse: true
 
+# --- 把分类嵌套技能在 canonical 根做扁平 symlink（主机本地） ------------------
 - name: Link nested categorized skills at canonical root
   ansible.builtin.shell: |
     set -eu
@@ -368,13 +235,9 @@
       skill_dir="$(dirname "$skill_manifest")"
       skill_name="$(basename "$skill_dir")"
       link_path={{ agent_skills_remote_dir | quote }}/"$skill_name"
-      if [ -e "$link_path" ] && [ ! -L "$link_path" ]; then
-        continue
-      fi
+      if [ -e "$link_path" ] && [ ! -L "$link_path" ]; then continue; fi
       current_target=""
-      if [ -L "$link_path" ]; then
-        current_target="$(readlink "$link_path")"
-      fi
+      if [ -L "$link_path" ]; then current_target="$(readlink "$link_path")"; fi
       if [ "$current_target" != "$skill_dir" ]; then
         if [ "{{ ansible_check_mode | ternary('true', 'false') }}" != "true" ]; then
           ln -sfn "$skill_dir" "$link_path"
@@ -382,9 +245,7 @@
         changed=1
       fi
     done < <(find {{ agent_skills_remote_dir | quote }} -mindepth 3 -name SKILL.md -type f -print)
-    if [ "$changed" = "1" ]; then
-      echo "<<CHANGED>>linked nested skills"
-    fi
+    if [ "$changed" = "1" ]; then echo "<<CHANGED>>linked nested skills"; fi
   args:
     executable: /bin/bash
   register: agent_skills_flatten_result
@@ -401,6 +262,7 @@
     recurse: true
   when: agent_skills_remote_flatten_nested_skills | bool
 
+# --- 把各 Agent 的 skills 目录 symlink 到 canonical ---------------------------
 - name: Flatten agent skills target paths
   ansible.builtin.set_fact:
     agent_skills_target_paths: "{{ agent_skills_targets | subelements('paths') | map('last') | list }}"
@@ -415,8 +277,8 @@
   ansible.builtin.fail:
     msg: >-
       Agent skills target already exists and is not a symlink: {{ item.item }}.
-      Set agent_skills_replace_existing_target_dirs=true if this path should be
-      replaced with a link to {{ agent_skills_remote_dir }}.
+      Set agent_skills_replace_existing_target_dirs=true to replace it with a link
+      to {{ agent_skills_remote_dir }}.
   loop: "{{ agent_skills_target_path_stats.results }}"
   when:
     - item.stat.exists | default(false)
@@ -477,11 +339,10 @@
   ansible.builtin.assert:
     that:
       - agent_skills_manifest_files.matched | int > 0
-    fail_msg: "No SKILL.md files found under {{ agent_skills_remote_dir }} after sync."
+    fail_msg: "No SKILL.md files found under {{ agent_skills_remote_dir }}."
 
 - name: Report synced agent skills
   ansible.builtin.debug:
     msg: >-
-      Synced {{ agent_skills_manifest_files.matched }} skill manifests into
-      {{ agent_skills_remote_dir }} and linked {{ agent_skills_target_paths | length }}
-      agent target directories.
+      {{ agent_skills_manifest_files.matched }} skill manifests under
+      {{ agent_skills_remote_dir }}; linked {{ agent_skills_target_paths | length }} agent targets.
