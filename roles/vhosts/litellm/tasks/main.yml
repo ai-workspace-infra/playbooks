@@ -117,6 +117,53 @@
     mode: "0600"
   notify: Restart litellm
 
+# litellm 的 pinned fork 要求 Python <3.14。当系统解释器 >=3.14(如 Ubuntu 26.04 的
+# 3.14，且 apt 无 3.13/3.12)时，用 uv 装独立 Python 3.13 并改用它建 venv，否则
+# pip 会报 "requires a different Python: 3.14 not in '<3.14,>=3.10'"。
+- name: Detect litellm bootstrap python version
+  ansible.builtin.command: >-
+    {{ litellm_bootstrap_python_executable }} -c
+    'import sys; print("%d.%d" % sys.version_info[:2])'
+  register: litellm_bootstrap_py_ver
+  changed_when: false
+  failed_when: false
+
+- name: Provision compatible Python 3.13 via uv (system python >=3.14, litellm needs <3.14)
+  when:
+    - ansible_os_family not in ['Darwin', 'Windows']
+    - (litellm_bootstrap_py_ver.stdout | default('0.0', true) | trim) is version('3.14', '>=')
+  become: true
+  become_user: "{{ litellm_service_user }}"
+  block:
+    - name: Install uv for litellm python provisioning
+      ansible.builtin.shell: |
+        set -eu
+        if [ ! -x "{{ litellm_service_home }}/.local/bin/uv" ] && ! command -v uv >/dev/null 2>&1; then
+          curl -LsSf https://astral.sh/uv/install.sh \
+            | env UV_INSTALL_DIR="{{ litellm_service_home }}/.local/bin" sh
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Install Python 3.13 via uv
+      ansible.builtin.command: "{{ litellm_service_home }}/.local/bin/uv python install 3.13"
+      changed_when: true
+
+    - name: Resolve uv-managed Python 3.13 path
+      ansible.builtin.command: "{{ litellm_service_home }}/.local/bin/uv python find 3.13"
+      register: litellm_uv_python313
+      changed_when: false
+
+    - name: Use uv Python 3.13 as litellm bootstrap interpreter
+      ansible.builtin.set_fact:
+        litellm_bootstrap_python_executable: "{{ litellm_uv_python313.stdout | trim }}"
+
+    - name: Drop incompatible existing litellm venv (rebuild with Python 3.13)
+      ansible.builtin.file:
+        path: "{{ litellm_venv_dir }}"
+        state: absent
+
 - name: Create isolated LiteLLM Python environment
   ansible.builtin.command:
     cmd: "{{ litellm_bootstrap_python_executable }} -m venv {{ litellm_venv_dir }}"
