@@ -16,6 +16,21 @@
     state: present
   when: ansible_os_family not in ['Darwin', 'Debian', 'Windows']
 
+# 非空传递检查：bridge 域名喂给 /etc/hostname 与 caddy 站点名；空/非 FQDN/127.0.0.1
+# 会渲染出无效 Caddyfile。公网暴露(caddy_enabled)时必须是合法 FQDN，缺失即抛错。
+- name: Assert bridge domain is a non-empty FQDN when exposed via Caddy
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_domain | default('') | trim | length > 0
+      - "'.' in xworkmate_bridge_domain"
+      - xworkmate_bridge_domain not in ['127.0.0.1', 'localhost']
+    fail_msg: >-
+      xworkmate_bridge_domain 必须是非空 FQDN（用于 /etc/hostname 与
+      /etc/caddy/conf.d/xworkmate-bridge 站点名）。请设置 XWORKMATE_BRIDGE_DOMAIN，
+      或在 CMDB/inventory 提供 service_domains（当前解析为
+      "{{ xworkmate_bridge_domain | default('') }}"）。
+  when: caddy_enabled | default(true) | bool
+
 # 把目标主机 hostname 设为 bridge 域名(= XWORKMATE_BRIDGE_DOMAIN，否则 CMDB
 # service_domains)。仅 Linux、且为合法 FQDN 时设置；绝不取 127.0.0.1/localhost。
 - name: Set host FQDN from xworkmate-bridge domain
