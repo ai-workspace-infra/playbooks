@@ -1,7 +1,21 @@
 ---
 # Provision the litellm database and user BEFORE litellm starts.
 # Only runs when litellm_database_host is set.
-- name: Install LiteLLM prerequisites (Linux)
+# Debian/Ubuntu 显式走 apt：play 的 module_defaults.apt.lock_timeout(模板值)只有在
+# apt 任务上才渲染；经 package 间接派发到 apt 时模板不渲染 → lock_timeout 收到字面
+# "{{ ... }}" 报 int 转换失败（见 xworkmate_bridge 同类修复）。
+- name: Install LiteLLM prerequisites (Debian/Ubuntu via apt)
+  ansible.builtin.apt:
+    name:
+      - python3
+      - python3-pip
+      - python3-venv
+      - python3-psycopg2
+    state: present
+    update_cache: true
+  when: ansible_os_family == 'Debian'
+
+- name: Install LiteLLM prerequisites (non-Debian Linux)
   ansible.builtin.package:
     name:
       - python3
@@ -9,7 +23,7 @@
       - python3-venv
       - python3-psycopg2
     state: present
-  when: ansible_os_family != 'Darwin'
+  when: ansible_os_family not in ['Darwin', 'Debian', 'Windows']
 
 - name: Install LiteLLM prerequisites (macOS)
   # Use brew from PATH (Apple Silicon prefix first) instead of the
