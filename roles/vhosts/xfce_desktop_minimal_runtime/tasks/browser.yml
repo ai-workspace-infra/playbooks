@@ -138,6 +138,9 @@
     name: "{{ xfce_browser_package_spec | default(xfce_browser_package) }}"
     state: present
     install_recommends: false
+    # Chrome 源只留当前 stable；若显式钉到一个比候选更旧（但仍在源内）的版本，
+    # 安装会被 apt 视为降级而拒绝。允许降级，避免该路径硬失败。
+    allow_downgrade: true
   environment:
     DEBIAN_FRONTEND: noninteractive
     APT_LISTCHANGES_FRONTEND: none
