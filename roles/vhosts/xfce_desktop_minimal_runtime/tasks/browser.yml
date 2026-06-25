@@ -110,16 +110,32 @@
   when:
     - xfce_browser_package == 'google-chrome-stable'
     - not xfce_offline_active
-    - xfce_google_chrome_repo.changed
+
+- name: Inspect available Google Chrome apt versions
+  ansible.builtin.command: apt-cache madison google-chrome-stable
+  changed_when: false
+  register: xfce_google_chrome_versions
+  when:
+    - xfce_browser_package == 'google-chrome-stable'
+    - xfce_google_chrome_version | length > 0
+
+- name: Select Google Chrome package spec
+  ansible.builtin.set_fact:
+    xfce_browser_package_spec: >-
+      {{
+        'google-chrome-stable=' ~ xfce_google_chrome_version
+        if (
+          xfce_browser_package == 'google-chrome-stable'
+          and (xfce_google_chrome_version | length) > 0
+          and (xfce_google_chrome_versions.stdout | default('') is search('\\|[[:space:]]*' ~ (xfce_google_chrome_version | regex_escape) ~ '[[:space:]]*\\|'))
+        )
+        else xfce_browser_package
+      }}
+  when: xfce_browser_package | length > 0
 
 - name: Install apt-managed workspace browser
   ansible.builtin.apt:
-    name: >-
-      {{
-        'google-chrome-stable=' ~ xfce_google_chrome_version
-        if xfce_browser_package == 'google-chrome-stable'
-        else xfce_browser_package
-      }}
+    name: "{{ xfce_browser_package_spec | default(xfce_browser_package) }}"
     state: present
     install_recommends: false
   environment:
