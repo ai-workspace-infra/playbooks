@@ -33,18 +33,24 @@
   no_log: true
   when: postgresql_admin_password_file_status.stat.exists
 
-- name: Ensure PostgreSQL compose directories exist
+- name: Ensure PostgreSQL compose project directory exists
   ansible.builtin.file:
-    path: "{{ item.path }}"
+    path: "{{ postgresql_compose_project_dir }}"
     state: directory
     owner: root
     group: root
-    mode: "{{ item.mode }}"
-  loop:
-    - path: "{{ postgresql_compose_project_dir }}"
-      mode: "0755"
-    - path: "{{ postgresql_data_dir }}"
-      mode: "0700"
+    mode: "0755"
+
+# 数据目录归容器内 postgres uid（默认 999），而非 root：否则重跑时这个 file
+# 任务会把 PGDATA 顶层重置回 root:root 0700，而非空 PGDATA 不再被 entrypoint
+# chown，导致 uid 999 无法进入 → "could not open file ... Permission denied"。
+- name: Ensure PostgreSQL data directory exists (owned by container postgres uid)
+  ansible.builtin.file:
+    path: "{{ postgresql_data_dir }}"
+    state: directory
+    owner: "{{ postgresql_container_uid }}"
+    group: "{{ postgresql_container_gid }}"
+    mode: "0700"
 
 - name: Render PostgreSQL compose environment
   ansible.builtin.copy:

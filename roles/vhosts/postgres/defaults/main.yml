@@ -27,6 +27,12 @@ postgresql_compose_project_name: ai-workspace-postgres
 postgresql_image: "postgres:17.7"
 postgresql_container_name: ai-workspace-postgres
 postgresql_data_dir: "{{ postgresql_compose_project_dir }}/data"
+# 官方 postgres 镜像内 postgres 用户的 uid/gid（17.x 为 999）。数据目录必须归
+# 该 uid，否则容器内 postgres 进程无法进入自己的 PGDATA（global/pg_filenode.map
+# Permission denied）。首次 initdb 由 entrypoint chown，但非空 PGDATA 不再 chown，
+# 故 ansible 须把目录直接建成该 uid，避免重跑时被重置回 root。
+postgresql_container_uid: "999"
+postgresql_container_gid: "999"
 postgresql_database: postgres
 postgresql_admin_user: postgres
 postgresql_admin_password_file: /root/.ai_workspace_postgres_password
