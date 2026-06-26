@@ -11,28 +11,55 @@
         respond `{"jsonrpc":"2.0","error":{"code":-32001,"message":"unauthorized"},"type":"res","ok":false}` 401
     }
 
+    # /api* 承载 tasks.get 轮询与（部分）流式响应：与 /acp* 用同样的流式 + 长超时配置，
+    # 避免落到 Caddy 默认短超时把轮询/流式打断（T2）。
     handle /api* {
-        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}
+        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }} {
+            flush_interval -1
+            transport http {
+                dial_timeout {{ xworkmate_bridge_acp_dial_timeout }}
+                read_timeout {{ xworkmate_bridge_acp_stream_timeout }}
+                write_timeout {{ xworkmate_bridge_acp_stream_timeout }}
+                keepalive {{ xworkmate_bridge_acp_upstream_keepalive }}
+            }
+        }
     }
 
     handle /artifacts/* {
-        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}
+        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }} {
+            flush_interval -1
+            transport http {
+                dial_timeout {{ xworkmate_bridge_acp_dial_timeout }}
+                read_timeout {{ xworkmate_bridge_acp_stream_timeout }}
+                write_timeout {{ xworkmate_bridge_acp_stream_timeout }}
+                keepalive {{ xworkmate_bridge_acp_upstream_keepalive }}
+            }
+        }
     }
 
+    # /acp* 流式超时必须 >= bridge openClawAgentWaitMaxTimeout(60min)，否则长任务在入口被掐断（T1）。
     handle /acp* {
         reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }} {
             flush_interval -1
             transport http {
-                dial_timeout 10s
-                read_timeout 30m
-                write_timeout 30m
-                keepalive 5m
+                dial_timeout {{ xworkmate_bridge_acp_dial_timeout }}
+                read_timeout {{ xworkmate_bridge_acp_stream_timeout }}
+                write_timeout {{ xworkmate_bridge_acp_stream_timeout }}
+                keepalive {{ xworkmate_bridge_acp_upstream_keepalive }}
             }
         }
     }
 
     handle / {
-        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }}
+        reverse_proxy {{ xworkmate_bridge_listen_host }}:{{ xworkmate_bridge_listen_port }} {
+            flush_interval -1
+            transport http {
+                dial_timeout {{ xworkmate_bridge_acp_dial_timeout }}
+                read_timeout {{ xworkmate_bridge_acp_stream_timeout }}
+                write_timeout {{ xworkmate_bridge_acp_stream_timeout }}
+                keepalive {{ xworkmate_bridge_acp_upstream_keepalive }}
+            }
+        }
     }
 
     log {

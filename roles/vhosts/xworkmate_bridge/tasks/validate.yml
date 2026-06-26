@@ -36,9 +36,10 @@
         'reverse_proxy ' ~ xworkmate_bridge_listen_host ~ ':' ~ xworkmate_bridge_listen_port
         in xworkmate_bridge_fragment.stdout
       - "'flush_interval -1' in xworkmate_bridge_fragment.stdout"
-      - "'read_timeout 30m' in xworkmate_bridge_fragment.stdout"
-      - "'write_timeout 30m' in xworkmate_bridge_fragment.stdout"
-      - "'keepalive 5m' in xworkmate_bridge_fragment.stdout"
+      # 流式超时与 bridge openClawAgentWaitMaxTimeout(60min) 对齐，由 xworkmate_bridge_acp_stream_timeout 驱动（T1/T2）。
+      - "'read_timeout ' ~ xworkmate_bridge_acp_stream_timeout in xworkmate_bridge_fragment.stdout"
+      - "'write_timeout ' ~ xworkmate_bridge_acp_stream_timeout in xworkmate_bridge_fragment.stdout"
+      - "'keepalive ' ~ xworkmate_bridge_acp_upstream_keepalive in xworkmate_bridge_fragment.stdout"
       - "'/gateway/openclaw' not in xworkmate_bridge_fragment.stdout"
       - "'/acp-server' not in xworkmate_bridge_fragment.stdout"
       - "'127.0.0.1:18789' not in xworkmate_bridge_fragment.stdout"
