@@ -29,6 +29,13 @@ xworkmate_bridge_service_environment:
 xworkmate_bridge_openclaw_gateway_max_active: 2
 xworkmate_bridge_openclaw_gateway_max_queued: 20
 xworkmate_bridge_openclaw_gateway_queue_timeout: 10m
+# Caddy reverse_proxy 流式（SSE）超时。必须 >= bridge openClawAgentWaitMaxTimeout(60min)
+# 才不会在长任务执行到一半时把 SSE 从入口掐断（表现为 ACP_HTTP_CONNECTION_CLOSED，
+# 而 OpenClaw gateway 仍在后台跑）。来源常量见 xworkmate-bridge/internal/acp/orchestrator.go:32。
+# 取 70m = 60min 上限 + 10min 余量(HTTP margin + keepalive 抖动)。改这里即同时驱动 read/write_timeout。
+xworkmate_bridge_acp_stream_timeout: 70m
+xworkmate_bridge_acp_dial_timeout: 10s
+xworkmate_bridge_acp_upstream_keepalive: 5m
 xworkmate_bridge_distributed_topology: ""
 xworkmate_bridge_distributed_local_node_id: ""
 xworkmate_bridge_distributed_task_forward_peer_id: ""
