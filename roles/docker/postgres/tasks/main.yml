@@ -1,5 +1,93 @@
 ---
-# TODO: implement docker deployment tasks
-- name: Placeholder task
-  debug:
-    msg: "Role placeholder. Implement docker deployment tasks."
+- name: Ensure Homebrew Docker and Colima are installed (macOS)
+  ansible.builtin.command: brew install colima docker docker-compose
+  environment:
+    PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+    HOMEBREW_NO_AUTO_UPDATE: "1"
+  register: brew_install
+  changed_when: >-
+    'already installed' not in (brew_install.stderr | default(''))
+    and 'already installed' not in (brew_install.stdout | default(''))
+  when: ansible_os_family == 'Darwin'
+
+- name: Ensure Colima is started (macOS)
+  ansible.builtin.command: colima start
+  environment:
+    PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+  register: colima_start
+  changed_when: "'already running' not in colima_start.stdout and 'already running' not in colima_start.stderr"
+  when: ansible_os_family == 'Darwin'
+
+- name: Ensure PostgreSQL compose project directory exists
+  ansible.builtin.file:
+    path: "{{ postgresql_compose_project_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Ensure PostgreSQL init-scripts directory exists
+  ansible.builtin.file:
+    path: "{{ postgresql_compose_project_dir }}/init-scripts"
+    state: directory
+    mode: "0755"
+
+- name: Ensure PostgreSQL data directory exists
+  ansible.builtin.file:
+    path: "{{ postgresql_data_dir }}"
+    state: directory
+    mode: "0700"
+    owner: "{{ postgresql_container_uid }}"
+    group: "{{ postgresql_container_gid }}"
+  # macOS/Colima usually handles volume mounts with current user, but uid 999 is standard for postgres container
+  ignore_errors: "{{ ansible_os_family == 'Darwin' }}"
+
+- name: Render PostgreSQL compose environment file
+  ansible.builtin.copy:
+    dest: "{{ postgresql_compose_env_file }}"
+    mode: "0600"
+    content: |
+      POSTGRES_DB={{ postgresql_database }}
+      POSTGRES_USER={{ postgresql_admin_user }}
+      POSTGRES_PASSWORD={{ postgresql_admin_password }}
+  no_log: true
+
+- name: Render PostgreSQL compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ postgresql_compose_file }}"
+    mode: "0644"
+
+- name: Copy postgresql.conf
+  ansible.builtin.copy:
+    src: postgresql.conf
+    dest: "{{ postgresql_compose_project_dir }}/postgresql.conf"
+    mode: "0644"
+
+- name: Copy init-extensions script
+  ansible.builtin.copy:
+    src: init-scripts/01-init-extensions.sql
+    dest: "{{ postgresql_compose_project_dir }}/init-scripts/01-init-extensions.sql"
+    mode: "0644"
+
+- name: Start PostgreSQL compose service
+  ansible.builtin.command:
+    cmd: "docker compose -f {{ postgresql_compose_file }} -p {{ postgresql_compose_project_name }} up -d --remove-orphans"
+    chdir: "{{ postgresql_compose_project_dir }}"
+  register: postgresql_compose_up
+  changed_when: >-
+    'Started' in (postgresql_compose_up.stdout | default('')) or
+    'Created' in (postgresql_compose_up.stdout | default('')) or
+    'Recreated' in (postgresql_compose_up.stdout | default('')) or
+    'Pulled' in (postgresql_compose_up.stdout | default(''))
+  environment:
+    PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+
+- name: Validate PostgreSQL compose service
+  ansible.builtin.command:
+    cmd: "docker exec {{ postgresql_compose_project_name }} pg_isready -U {{ postgresql_admin_user }} -d {{ postgresql_database }}"
+  register: postgresql_compose_ready
+  retries: 12
+  delay: 5
+  until: postgresql_compose_ready.rc == 0
+  changed_when: false
+  environment:
+    PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"

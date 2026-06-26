@@ -15,6 +15,20 @@
     and 'already installed' not in (postgresql_brew_install.stdout | default(''))
   failed_when: postgresql_brew_install.rc != 0
 
+- name: Stop conflicting PostgreSQL versions
+  ansible.builtin.shell: |
+    conflicting_services=$(brew services list | awk '/^postgresql(@[0-9]+)?/ && $2 == "started" && $1 != "postgresql@16" {print $1}')
+    if [ -n "$conflicting_services" ]; then
+      for svc in $conflicting_services; do
+        brew services stop "$svc"
+      done
+      echo "Stopped: $conflicting_services"
+    fi
+  environment:
+    PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH }}"
+  register: stop_conflicting_pg
+  changed_when: "'Stopped:' in stop_conflicting_pg.stdout"
+
 - name: Start PostgreSQL via Homebrew Services
   ansible.builtin.command: brew services start postgresql@16
   register: brew_services_output
