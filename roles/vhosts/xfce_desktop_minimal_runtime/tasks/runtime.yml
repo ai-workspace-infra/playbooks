@@ -4,9 +4,11 @@
     name: roles/vhosts/nodejs
   vars:
     # 不可写成 default(nodejs_version)：传入名为 nodejs_version 的变量里再引用
-    # nodejs_version 形成自引用，Ansible 2.19+ 惰性模板会判定递归 (Recursive loop
-    # detected) 而失败。缺省时交给 nodejs 角色自身的 defaults。
-    nodejs_version: "{{ ai_agent_runtime_nodejs_version | default(omit) }}"
+    # nodejs_version 形成自引用，Ansible 2.19+ 惰性模板判定递归 (Recursive loop
+    # detected) 而失败。也不可用 default(omit)：include_role 的 vars 里 omit 不会
+    # 回退到角色默认，而是把 omit 占位符字面塞进去，导致 node_<<Omit>>.x 仓库地址。
+    # 用显式回退到 nodejs 角色的文档默认值。
+    nodejs_version: "{{ ai_agent_runtime_nodejs_version | default('22.22.3', true) }}"
   when: xfce_desktop_install_nodejs_runtime | bool
 
 - name: Install Playwright browser runtime
