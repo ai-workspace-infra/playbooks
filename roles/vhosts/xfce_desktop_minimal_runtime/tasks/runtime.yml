@@ -3,7 +3,10 @@
   ansible.builtin.include_role:
     name: roles/vhosts/nodejs
   vars:
-    nodejs_version: "{{ ai_agent_runtime_nodejs_version | default(nodejs_version) }}"
+    # 不可写成 default(nodejs_version)：传入名为 nodejs_version 的变量里再引用
+    # nodejs_version 形成自引用，Ansible 2.19+ 惰性模板会判定递归 (Recursive loop
+    # detected) 而失败。缺省时交给 nodejs 角色自身的 defaults。
+    nodejs_version: "{{ ai_agent_runtime_nodejs_version | default(omit) }}"
   when: xfce_desktop_install_nodejs_runtime | bool
 
 - name: Install Playwright browser runtime
