@@ -1,0 +1,16 @@
+---
+postgresql_image: "ghcr.io/x-evor/images/postgresql:17"
+postgresql_compose_project_dir: "{{ '/opt/ai-workspace/postgres' if ansible_os_family != 'Darwin' else lookup('env', 'HOME') + '/ai-workspace-postgres' }}"
+postgresql_compose_project_name: "ai-workspace-postgres"
+postgresql_compose_file: "{{ postgresql_compose_project_dir }}/docker-compose.yml"
+postgresql_compose_env_file: "{{ postgresql_compose_project_dir }}/.env"
+postgresql_data_dir: "{{ postgresql_compose_project_dir }}/data"
+
+postgresql_admin_user: postgres
+postgresql_admin_password: "changeme"
+postgresql_database: postgres
+postgresql_port: 5432
+postgresql_local_port: 15432
+
+postgresql_container_uid: "999"
+postgresql_container_gid: "999"

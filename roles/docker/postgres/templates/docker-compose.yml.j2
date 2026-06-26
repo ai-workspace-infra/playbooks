@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: "{{ postgresql_image }}"
+    container_name: "{{ postgresql_compose_project_name }}"
+    restart: unless-stopped
+
+    env_file:
+      - "{{ postgresql_compose_env_file }}"
+
+    # PostgreSQL 只监听 localhost,通过 stunnel 提供外部访问
+    # 不直接暴露端口,确保所有连接都经过 TLS 加密
+    expose:
+      - "5432"
+    ports:
+      - "{{ postgresql_local_port }}:5432"
+      - "{{ postgresql_port }}:5432"
+
+    volumes:
+      - "{{ postgresql_data_dir }}:/var/lib/postgresql/data"
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro
+
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U {{ postgresql_admin_user }} -h 127.0.0.1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    networks:
+      - postgres_network
+
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+networks:
+  postgres_network:
+    driver: bridge
