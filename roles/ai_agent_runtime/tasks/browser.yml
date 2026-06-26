@@ -14,12 +14,16 @@
       google-chrome-stable \
       /usr/bin/chromium \
       /snap/bin/chromium; do
+      resolved=""
       if command -v "$candidate" >/dev/null 2>&1; then
-        command -v "$candidate"
-        exit 0
+        resolved="$(command -v "$candidate")"
+      elif [ -x "$candidate" ]; then
+        resolved="$candidate"
       fi
-      if [ -x "$candidate" ]; then
-        printf '%s\n' "$candidate"
+      # 必须真正可执行：跳过 xfce 安装的 disabled chromium stub（退出码 126），
+      # 否则 resolver 会选中它，后续 --version 校验必失败。
+      if [ -n "$resolved" ] && "$resolved" --version >/dev/null 2>&1; then
+        printf '%s\n' "$resolved"
         exit 0
       fi
     done
@@ -62,12 +66,16 @@
       /usr/bin/chromium \
       /snap/bin/chromium \
       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; do
+      resolved=""
       if command -v "$candidate" >/dev/null 2>&1; then
-        command -v "$candidate"
-        exit 0
+        resolved="$(command -v "$candidate")"
+      elif [ -x "$candidate" ]; then
+        resolved="$candidate"
       fi
-      if [ -x "$candidate" ]; then
-        printf '%s\n' "$candidate"
+      # 必须真正可执行：跳过 xfce 安装的 disabled chromium stub（退出码 126），
+      # 否则 resolver 会选中它，后续 --version 校验必失败。
+      if [ -n "$resolved" ] && "$resolved" --version >/dev/null 2>&1; then
+        printf '%s\n' "$resolved"
         exit 0
       fi
     done
