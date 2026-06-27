@@ -11,8 +11,8 @@
   ansible.builtin.set_fact:
     cloudflare_dns_api_token: >-
       {{
-        vars.get('CLOUDFLARE_DNS_API_TOKEN', '')
-        | default(vars.get('CLOUDFLARE_API_TOKEN', ''), true)
+        vars.get('CLOUDFLARE_API_TOKEN', '')
+        | default(vars.get('CLOUDFLARE_DNS_API_TOKEN', ''), true)
       }}
   when: cloudflare_dns_api_token | default('', true) | length == 0
 
@@ -20,8 +20,8 @@
   ansible.builtin.set_fact:
     cloudflare_dns_api_token: >-
       {{
-        lookup('ansible.builtin.env', 'CLOUDFLARE_DNS_API_TOKEN')
-        | default(lookup('ansible.builtin.env', 'CLOUDFLARE_API_TOKEN'), true)
+        lookup('ansible.builtin.env', 'CLOUDFLARE_API_TOKEN')
+        | default(lookup('ansible.builtin.env', 'CLOUDFLARE_DNS_API_TOKEN'), true)
       }}
   when: cloudflare_dns_api_token | default('', true) | length == 0
 
