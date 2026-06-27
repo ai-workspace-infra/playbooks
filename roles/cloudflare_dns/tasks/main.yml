@@ -11,8 +11,8 @@
   ansible.builtin.set_fact:
     cloudflare_dns_api_token: >-
       {{
-        vars.get('CLOUDFLARE_API_TOKEN', '')
-        | default(vars.get('CLOUDFLARE_DNS_API_TOKEN', ''), true)
+        vars.get('CLOUDFLARE_DNS_API_TOKEN', '')
+        | default(vars.get('CLOUDFLARE_API_TOKEN', ''), true)
       }}
   when: cloudflare_dns_api_token | default('', true) | length == 0
 
@@ -20,8 +20,8 @@
   ansible.builtin.set_fact:
     cloudflare_dns_api_token: >-
       {{
-        lookup('ansible.builtin.env', 'CLOUDFLARE_API_TOKEN')
-        | default(lookup('ansible.builtin.env', 'CLOUDFLARE_DNS_API_TOKEN'), true)
+        lookup('ansible.builtin.env', 'CLOUDFLARE_DNS_API_TOKEN')
+        | default(lookup('ansible.builtin.env', 'CLOUDFLARE_API_TOKEN'), true)
       }}
   when: cloudflare_dns_api_token | default('', true) | length == 0
 
@@ -78,7 +78,7 @@
           - "'#zone:read' in (cloudflare_dns_zone_lookup.json.result[0].permissions | default([]))"
           - "'#dns_records:edit' in (cloudflare_dns_zone_lookup.json.result[0].permissions | default([]))"
         fail_msg: >-
-          CLOUDFLARE_API_TOKEN is valid but lacks DNS edit permission for {{ cloudflare_dns_zone_name }}.
+          CLOUDFLARE_DNS_API_TOKEN is valid but lacks DNS edit permission for {{ cloudflare_dns_zone_name }}.
           Current permissions: {{ cloudflare_dns_zone_lookup.json.result[0].permissions | default([]) }}.
           Required: Zone read + DNS edit on the svc.plus zone.
       when:

@@ -6,10 +6,10 @@ Reusable Ansible role for creating and updating Cloudflare DNS records in the `s
 
 - Zone lookup by name, or direct `cloudflare_dns_zone_id`
 - Create/update/delete of managed DNS records
-- Token resolution from Ansible extra vars:
+- Token resolution from Ansible extra vars, with the DNS-scoped token preferred:
   - `-e CLOUDFLARE_DNS_API_TOKEN=...`
   - `-e CLOUDFLARE_API_TOKEN=...`
-- Environment-backed token resolution as fallback:
+- Environment-backed token resolution as fallback, with the DNS-scoped token preferred:
   - `CLOUDFLARE_DNS_API_TOKEN`
   - `CLOUDFLARE_API_TOKEN`
 
