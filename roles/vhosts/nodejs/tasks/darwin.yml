@@ -5,7 +5,7 @@
     nodejs_homebrew_formula: "node@{{ nodejs_version_major | default(22) }}"
 
 - name: Ensure unversioned Homebrew node formula is absent
-  ansible.builtin.command: "brew uninstall --ignore-dependencies --force node"
+  ansible.builtin.command: "{{ nodejs_homebrew_prefix }}/bin/brew uninstall --ignore-dependencies --force node"
   register: nodejs_brew_uninstall
   changed_when: "'uninstalled' in (nodejs_brew_uninstall.stdout | lower) or 'uninstalled' in (nodejs_brew_uninstall.stderr | lower)"
   failed_when: nodejs_brew_uninstall.rc != 0 and 'no such keg' not in (nodejs_brew_uninstall.stdout | lower) and 'not installed' not in (nodejs_brew_uninstall.stderr | lower)
@@ -17,7 +17,7 @@
     HOMEBREW_BOTTLE_DOMAIN: "{{ lookup('ansible.builtin.env', 'HOMEBREW_BOTTLE_DOMAIN') | default('https://mirrors.ustc.edu.cn/homebrew-bottles', true) }}"
 
 - name: Ensure Homebrew {{ nodejs_homebrew_formula }} formula is installed
-  ansible.builtin.command: "brew install {{ nodejs_homebrew_formula }}"
+  ansible.builtin.command: "{{ nodejs_homebrew_prefix }}/bin/brew install {{ nodejs_homebrew_formula }}"
   register: nodejs_brew_install
   changed_when: "'already installed' not in (nodejs_brew_install.stdout | lower) and 'already installed' not in (nodejs_brew_install.stderr | lower)"
   failed_when: nodejs_brew_install.rc != 0 and 'already installed' not in (nodejs_brew_install.stdout | lower) and 'already installed' not in (nodejs_brew_install.stderr | lower)
@@ -29,7 +29,7 @@
     HOMEBREW_BOTTLE_DOMAIN: "{{ lookup('ansible.builtin.env', 'HOMEBREW_BOTTLE_DOMAIN') | default('https://mirrors.ustc.edu.cn/homebrew-bottles', true) }}"
 
 - name: Ensure {{ nodejs_homebrew_formula }} is linked as the default node
-  ansible.builtin.command: "brew link --force --overwrite {{ nodejs_homebrew_formula }}"
+  ansible.builtin.command: "{{ nodejs_homebrew_prefix }}/bin/brew link --force --overwrite {{ nodejs_homebrew_formula }}"
   register: nodejs_brew_link
   changed_when: "'linking' in (nodejs_brew_link.stdout | lower)"
   failed_when: nodejs_brew_link.rc != 0 and 'already linked' not in (nodejs_brew_link.stdout | lower) and 'already linked' not in (nodejs_brew_link.stderr | lower)
@@ -44,7 +44,7 @@
     create: true
 
 - name: Pin {{ nodejs_homebrew_formula }} to prevent automatic upgrades
-  ansible.builtin.command: "brew pin {{ nodejs_homebrew_formula }}"
+  ansible.builtin.command: "{{ nodejs_homebrew_prefix }}/bin/brew pin {{ nodejs_homebrew_formula }}"
   register: nodejs_brew_pin
   changed_when: "'pinned' in (nodejs_brew_pin.stdout | lower)"
   failed_when: nodejs_brew_pin.rc != 0 and 'already pinned' not in (nodejs_brew_pin.stdout | lower) and 'already pinned' not in (nodejs_brew_pin.stderr | lower)
