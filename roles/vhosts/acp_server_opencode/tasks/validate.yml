@@ -20,33 +20,68 @@
 # 用 curl 重试循环替代 uri：服务刚 (重)启时 adapter 会先 accept TCP 但短时间内不
 # 应答(读挂起)，而 uri 默认 30s 超时 + retries/until 在连接超时上不可靠循环（实测
 # 仅试一次即失败）。每次 5s 上限、真重试，给冷启动足够时间（adapter 就绪后 ~4ms 回 200）。
-- name: Validate OpenCode local ACP endpoint (readiness retry)
-  ansible.builtin.shell: |
-    set -eu
-    url="http://{{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}/acp/rpc"
-    body='{"jsonrpc":"2.0","id":1,"method":"acp.capabilities","params":{}}'
-    code=""
-    for i in $(seq 1 30); do
-      code="$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$url" \
-        -H 'Content-Type: application/json' -d "$body" 2>/dev/null || true)"
-      if [ "$code" = "200" ]; then
-        echo "OpenCode ACP endpoint ready after ${i} attempt(s)"
-        exit 0
-      fi
-      sleep 2
-    done
-    echo "OpenCode ACP endpoint ${url} not ready after retries (last code: ${code:-none})" >&2
-    exit 1
-  args:
-    executable: /bin/bash
-  changed_when: false
-  register: acp_opencode_adapter_probe
+# 包在 block/rescue：探针失败时把 systemctl status + journalctl 打到 CI 日志，
+# 否则 play 在此中止，看不到 adapter 进程真正的崩溃原因（如 last code 000）。
+- name: Validate OpenCode local ACP endpoint
+  block:
+    - name: Validate OpenCode local ACP endpoint (readiness retry)
+      ansible.builtin.shell: |
+        set -eu
+        url="http://{{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}/acp/rpc"
+        body='{"jsonrpc":"2.0","id":1,"method":"acp.capabilities","params":{}}'
+        code=""
+        for i in $(seq 1 30); do
+          code="$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$url" \
+            -H 'Content-Type: application/json' -d "$body" 2>/dev/null || true)"
+          if [ "$code" = "200" ]; then
+            echo "OpenCode ACP endpoint ready after ${i} attempt(s)"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "OpenCode ACP endpoint ${url} not ready after retries (last code: ${code:-none})" >&2
+        exit 1
+      args:
+        executable: /bin/bash
+      changed_when: false
+      register: acp_opencode_adapter_probe
+  rescue:
+    - name: Capture OpenCode ACP service status on failure
+      ansible.builtin.command: systemctl status "{{ acp_opencode_service_name }}" --no-pager --full
+      register: acp_opencode_status_fail
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family != 'Darwin'
+
+    - name: Capture recent OpenCode ACP service logs on failure
+      ansible.builtin.command: journalctl -u "{{ acp_opencode_service_name }}" -n 80 --no-pager
+      register: acp_opencode_journal_fail
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family != 'Darwin'
+
+    - name: Show OpenCode ACP failure diagnostics
+      ansible.builtin.debug:
+        msg:
+          - "Probe stderr: {{ acp_opencode_adapter_probe.stderr | default('N/A') }}"
+          - "Listeners: {{ acp_opencode_ss.stdout | default('N/A') }}"
+          - "Service status: {{ acp_opencode_status_fail.stdout | default('N/A') }}"
+          - "Recent logs: {{ acp_opencode_journal_fail.stdout | default('N/A') }}"
+
+    - name: Fail after emitting OpenCode ACP diagnostics
+      ansible.builtin.fail:
+        msg: >-
+          OpenCode ACP endpoint
+          {{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }} did not
+          become ready. See the diagnostics above (service status + journal) for
+          the adapter crash cause.
 
 - name: Show OpenCode ACP status
   ansible.builtin.command: systemctl status "{{ acp_opencode_service_name }}" --no-pager
   register: acp_opencode_status
   changed_when: false
   failed_when: false
+  when: ansible_os_family != 'Darwin'
 
 - name: Show OpenCode ACP validation summary
   ansible.builtin.debug:
@@ -55,6 +90,6 @@
       - "Preferred WebSocket endpoint: {{ acp_opencode_public_base_url }}/acp"
       - "Compatibility HTTP RPC endpoint: {{ acp_opencode_public_base_url }}/acp/rpc"
       - "OpenCode ACP adapter listener: {{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }}"
+      - "Readiness probe: {{ acp_opencode_adapter_probe.stdout | default('N/A') }}"
       - "Service: {{ acp_opencode_status.stdout | default('N/A') }}"
       - "Socket: {{ acp_opencode_ss.stdout | default('N/A') }}"
-      - "Adapter capabilities HTTP: {{ acp_opencode_adapter_http.content | default('N/A') }}"
