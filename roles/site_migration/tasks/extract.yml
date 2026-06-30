@@ -1,0 +1,46 @@
+---
+- name: Ensure backup directory exists on source
+  ansible.builtin.file:
+    path: "{{ migration_flow.source.backup_dir }}"
+    state: directory
+    owner: root
+    mode: '0755'
+
+- name: Export AI Core PostgreSQL Databases (Port 15432)
+  ansible.builtin.shell: |
+    pg_dump "{{ item.0.connection_uri }}/{{ item.1 }}?sslmode=disable" | gzip > "{{ migration_flow.source.backup_dir }}/{{ item.1 }}.sql.gz"
+  with_subelements:
+    - "{{ migration_flow.modules | selectattr('name', 'equalto', 'ai_core_db') | list }}"
+    - databases
+  when: migration_flow.modules | selectattr('name', 'equalto', 'ai_core_db') | list | length > 0
+
+- name: Export Zitadel PostgreSQL (Docker)
+  ansible.builtin.shell: |
+    docker exec {{ item.0.container }} pg_dumpall -U postgres | gzip > "{{ migration_flow.source.backup_dir }}/{{ item.0.name }}.sql.gz"
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'zitadel_db') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'zitadel_db') | list | length > 0
+
+- name: Export Gitea PostgreSQL (Port 5434)
+  ansible.builtin.shell: |
+    sudo -u postgres pg_dumpall -p {{ item.pg_port }} | gzip > "{{ migration_flow.source.backup_dir }}/{{ item.name }}_db.sql.gz"
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list | length > 0
+
+- name: Archive Gitea Data Directory
+  ansible.builtin.command:
+    cmd: tar -czf "{{ migration_flow.source.backup_dir }}/{{ item.name }}_data.tar.gz" -C /var/lib/gitea data
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list | length > 0
+
+- name: Archive Caddy Configurations
+  ansible.builtin.command:
+    cmd: tar -czf "{{ migration_flow.source.backup_dir }}/caddy_configs.tar.gz" -C /etc/caddy conf.d
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'caddy_configs') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'caddy_configs') | list | length > 0
+
+- name: Fetch exported artifacts to Ansible Control Node (Runner)
+  ansible.posix.synchronize:
+    mode: pull
+    src: "{{ migration_flow.source.backup_dir }}/"
+    dest: "/tmp/migration_staging/"
+    archive: yes
