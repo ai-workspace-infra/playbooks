@@ -1,0 +1,111 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install required packages
+  ansible.builtin.apt:
+    name:
+      - postgresql
+      - postgresql-contrib
+      - python3-psycopg2
+      - curl
+      - wget
+      - git
+      - caddy
+    state: present
+
+- name: Start and enable PostgreSQL
+  ansible.builtin.systemd:
+    name: postgresql
+    state: started
+    enabled: yes
+
+- name: Create Gitea database user
+  community.postgresql.postgresql_user:
+    name: gitea
+    password: gitea
+    role_attr_flags: LOGIN
+    login_port: 5434
+  become: yes
+  become_user: postgres
+
+- name: Create Gitea database
+  community.postgresql.postgresql_db:
+    name: gitea
+    owner: gitea
+    encoding: UTF8
+    login_port: 5434
+  become: yes
+  become_user: postgres
+
+- name: Create git user
+  ansible.builtin.user:
+    name: git
+    system: yes
+    shell: /bin/bash
+    comment: 'Git Version Control'
+    create_home: yes
+    home: /home/git
+
+- name: Download Gitea binary
+  ansible.builtin.get_url:
+    url: "https://dl.gitea.com/gitea/1.22.6/gitea-1.22.6-linux-amd64"
+    dest: /usr/local/bin/gitea
+    mode: '0755'
+
+- name: Create Gitea directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: git
+    group: git
+    mode: '0750'
+  loop:
+    - /var/lib/gitea
+    - /var/lib/gitea/custom
+    - /var/lib/gitea/data
+    - /var/lib/gitea/data/lfs
+    - /var/lib/gitea/indexers
+    - /var/lib/gitea/log
+
+- name: Create Gitea config directory
+  ansible.builtin.file:
+    path: /etc/gitea
+    state: directory
+    owner: root
+    group: git
+    mode: '0770'
+
+- name: Deploy Gitea systemd service
+  ansible.builtin.template:
+    src: gitea.service.j2
+    dest: /etc/systemd/system/gitea.service
+    mode: '0644'
+  notify:
+    - Reload systemd
+    - Restart gitea
+
+- name: Start and enable Gitea service
+  ansible.builtin.systemd:
+    name: gitea
+    enabled: yes
+    state: started
+
+- name: Ensure Caddy conf.d directory exists
+  ansible.builtin.file:
+    path: /etc/caddy/conf.d
+    state: directory
+    mode: '0755'
+
+- name: Configure Caddy for Gitea in conf.d
+  ansible.builtin.copy:
+    dest: /etc/caddy/conf.d/gitea.svc.plus.caddy
+    content: |
+      gitea.svc.plus {
+          reverse_proxy localhost:3001
+      }
+    mode: '0644'
+  notify:
+    - Restart caddy

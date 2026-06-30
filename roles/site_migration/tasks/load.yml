@@ -1,0 +1,82 @@
+---
+- name: Ensure restore directory exists on target
+  ansible.builtin.file:
+    path: "{{ migration_flow.destination.restore_dir }}"
+    state: directory
+    owner: root
+    mode: '0755'
+
+- name: Push exported artifacts from Ansible Control Node to Target
+  ansible.posix.synchronize:
+    mode: push
+    src: "/tmp/migration_staging/"
+    dest: "{{ migration_flow.destination.restore_dir }}/"
+    archive: yes
+
+- name: Domain Rewrite (Parameterization) for DB Dumps
+  ansible.builtin.shell: |
+    for f in {{ migration_flow.destination.restore_dir }}/*.sql.gz; do
+      if [ -f "$f" ]; then
+        echo "Rewriting domains in $f..."
+        # Extract, replace domain, and compress back
+        gunzip -c "$f" | sed 's/{{ migration_flow.source.domain_base }}/{{ migration_flow.destination.domain_base }}/g' | gzip > "${f}.rewritten"
+        mv "${f}.rewritten" "$f"
+      fi
+    done
+  when: >
+    migration_flow.modules | selectattr('name', 'equalto', 'caddy_configs') | selectattr('domain_rewrite', 'defined') | selectattr('domain_rewrite', 'equalto', true) | list | length > 0
+
+- name: Restore AI Core PostgreSQL Databases (Port 15432)
+  ansible.builtin.shell: |
+    gunzip -c "{{ migration_flow.destination.restore_dir }}/{{ item.1 }}.sql.gz" | psql "{{ item.0.connection_uri }}/{{ item.1 }}?sslmode=disable"
+  with_subelements:
+    - "{{ migration_flow.modules | selectattr('name', 'equalto', 'ai_core_db') | list }}"
+    - databases
+  when: migration_flow.modules | selectattr('name', 'equalto', 'ai_core_db') | list | length > 0
+
+- name: Restore Zitadel PostgreSQL (Docker)
+  ansible.builtin.shell: |
+    gunzip -c "{{ migration_flow.destination.restore_dir }}/{{ item.0.name }}.sql.gz" | docker exec -i {{ item.0.container }} psql -U postgres
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'zitadel_db') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'zitadel_db') | list | length > 0
+
+- name: Stop Gitea Service for data restore
+  ansible.builtin.systemd:
+    name: gitea
+    state: stopped
+  ignore_errors: yes
+
+- name: Restore Gitea PostgreSQL (Port 5434)
+  ansible.builtin.shell: |
+    gunzip -c "{{ migration_flow.destination.restore_dir }}/{{ item.name }}_db.sql.gz" | sudo -u postgres psql -p {{ item.pg_port }}
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list | length > 0
+
+- name: Restore Gitea Data Directory
+  ansible.builtin.command:
+    cmd: tar -xzf "{{ migration_flow.destination.restore_dir }}/{{ item.name }}_data.tar.gz" -C /var/lib/gitea
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list | length > 0
+  notify: Restart Gitea
+
+- name: Restore Caddy Configurations
+  ansible.builtin.command:
+    cmd: tar -xzf "{{ migration_flow.destination.restore_dir }}/caddy_configs.tar.gz" -C /etc/caddy
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'caddy_configs') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'caddy_configs') | list | length > 0
+  notify: Restart Caddy
+
+- name: Domain Rewrite for Caddy Configurations
+  ansible.builtin.shell: |
+    find /etc/caddy/conf.d -type f -exec sed -i 's/{{ migration_flow.source.domain_base }}/{{ migration_flow.destination.domain_base }}/g' {} +
+    # Rename files that contain the source domain in their filename
+    find /etc/caddy/conf.d -name "*{{ migration_flow.source.domain_base }}*" | while read f; do
+      new_f=$(echo "$f" | sed 's/{{ migration_flow.source.domain_base }}/{{ migration_flow.destination.domain_base }}/g')
+      mv "$f" "$new_f"
+    done
+  when: >
+    migration_flow.modules | selectattr('name', 'equalto', 'caddy_configs') | selectattr('domain_rewrite', 'defined') | selectattr('domain_rewrite', 'equalto', true) | list | length > 0
+  notify: Restart Caddy
+
+- name: Flush handlers to apply restarts immediately
+  ansible.builtin.meta: flush_handlers
