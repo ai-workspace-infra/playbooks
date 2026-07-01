@@ -1,0 +1,18 @@
+[Unit]
+Description=Gitea (Git with a cup of tea)
+After=syslog.target
+After=network.target
+After=postgresql.service
+
+[Service]
+RestartSec=2s
+Type=simple
+User=git
+Group=git
+WorkingDirectory=/var/lib/gitea/
+ExecStart=/usr/local/bin/gitea web --config /etc/gitea/app.ini --port 3001 --install-port 3001
+Restart=always
+Environment=USER=git HOME=/home/git GITEA_WORK_DIR=/var/lib/gitea GITEA__server__HTTP_PORT=3001
+
+[Install]
+WantedBy=multi-user.target
