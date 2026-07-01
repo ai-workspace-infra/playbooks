@@ -1,4 +1,22 @@
 ---
+- name: Read Zitadel admin password from Vault
+  delegate_to: localhost
+  become: false
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/kv/data/iam.svc.plus"
+    headers:
+      X-Vault-Token: "{{ vault_token }}"
+    method: GET
+  register: zitadel_vault_secret
+  run_once: true
+  check_mode: false
+  no_log: true
+
+- name: Set Zitadel admin password fact
+  ansible.builtin.set_fact:
+    zitadel_admin_password: "{{ zitadel_vault_secret.json.data.data['zitadel-admin@zitadel.iam.svc.plus'] }}"
+  no_log: true
+
 - name: Ensure Zitadel directories exist
   become: true
   ansible.builtin.file:
