@@ -34,10 +34,9 @@
     - databases
   when: migration_flow.modules | selectattr('name', 'equalto', 'ai_core_db') | list | length > 0
 
-- name: Restore Zitadel PostgreSQL (Docker)
-  ansible.builtin.shell: |
-    gunzip -c "{{ migration_flow.destination.restore_dir }}/{{ item.0.name }}.sql.gz" | docker exec -i {{ item.0.container }} psql -U postgres
-  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'zitadel_db') | list }}"
+- name: Restore Zitadel PostgreSQL (Docker) - SKIPPED (Fresh Init)
+  ansible.builtin.debug:
+    msg: "Skipping Zitadel DB restore as per user request (Fresh init)."
   when: migration_flow.modules | selectattr('name', 'equalto', 'zitadel_db') | list | length > 0
 
 - name: Stop Gitea Service for data restore
@@ -46,9 +45,11 @@
     state: stopped
   ignore_errors: yes
 
-- name: Restore Gitea PostgreSQL (Port 5434)
+- name: Restore Gitea PostgreSQL (Unified DB in Docker)
   ansible.builtin.shell: |
-    gunzip -c "{{ migration_flow.destination.restore_dir }}/{{ item.name }}_db.sql.gz" | sudo -u postgres psql -p {{ item.pg_port }}
+    # The dump from old PG16 might be a pg_dumpall, which includes roles and databases.
+    # Restoring it into the unified db via docker exec.
+    gunzip -c "{{ migration_flow.destination.restore_dir }}/{{ item.name }}_db.sql.gz" | docker exec -i postgresql-svc-plus psql -U postgres
   loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list }}"
   when: migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list | length > 0
 
