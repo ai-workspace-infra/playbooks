@@ -23,7 +23,7 @@ services:
       ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: '2029-01-01T00:00:00Z'
     networks:
       - app
-      - docker_postgres_network
+      - cn-toolkit-shared
     ports:
       - "{{ zitadel_api_bind_host }}:{{ zitadel_api_port }}:8080"
     healthcheck:
@@ -62,7 +62,7 @@ services:
       ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME: Automatically Initialized IAM Login Client
       ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: '2029-01-01T00:00:00Z'
     networks:
-      - docker_postgres_network
+      - cn-toolkit-shared
     healthcheck:
       test: [ "CMD", "/app/zitadel", "ready" ]
       interval: 10s
@@ -99,5 +99,5 @@ services:
 networks:
   app:
     name: zitadel_app
-  docker_postgres_network:
+  cn-toolkit-shared:
     external: true

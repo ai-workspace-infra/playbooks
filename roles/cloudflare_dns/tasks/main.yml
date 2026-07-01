@@ -80,7 +80,7 @@
         fail_msg: >-
           CLOUDFLARE_DNS_API_TOKEN is valid but lacks DNS edit permission for {{ cloudflare_dns_zone_name }}.
           Current permissions: {{ cloudflare_dns_zone_lookup.json.result[0].permissions | default([]) }}.
-          Required: Zone read + DNS edit on the svc.plus zone.
+          Required: Zone read + DNS edit on the {{ cloudflare_dns_zone_name }} zone.
       when:
         - cloudflare_dns_zone_lookup is defined
         - cloudflare_dns_zone_lookup.json is defined
@@ -127,9 +127,50 @@
               'proxied': (item.item.proxied | default(false) | bool)
             } | to_json
           }}
+        status_code: [200, 409]
       loop: "{{ cloudflare_dns_record_queries.results }}"
       loop_control:
         label: "{{ item.item.name }}"
+      register: cloudflare_dns_create_results
+      failed_when: false
+
+    - name: Query records again for upsert fallback
+      ansible.builtin.uri:
+        url: "{{ cloudflare_dns_api_base }}/zones/{{ cloudflare_dns_zone_id }}/dns_records?name={{ item.item.item.name }}&type={{ item.item.item.type }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ cloudflare_dns_api_token }}"
+        return_content: true
+      loop: "{{ cloudflare_dns_create_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.item.name }}"
+      when: item.status | default(200) == 400
+      register: cloudflare_dns_upsert_queries
+
+    - name: Upsert conflicting DNS records via PUT
+      ansible.builtin.uri:
+        url: "{{ cloudflare_dns_api_base }}/zones/{{ cloudflare_dns_zone_id }}/dns_records/{{ item.json.result[0].id }}"
+        method: PUT
+        headers:
+          Authorization: "Bearer {{ cloudflare_dns_api_token }}"
+          Content-Type: application/json
+        body_format: raw
+        body: >-
+          {{
+            {
+              'type': item.item.item.item.type,
+              'name': item.item.item.item.name,
+              'content': item.item.item.item.content | default(item.item.item.item.value),
+              'ttl': (item.item.item.item.ttl | default(1) | int),
+              'proxied': (item.item.item.item.proxied | default(false) | bool)
+            } | to_json
+          }}
+      loop: "{{ cloudflare_dns_upsert_queries.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.item.item.name | default('skip') }}"
+      when:
+        - item.json is defined
+        - item.json.result | default([]) | length > 0
 
     - name: Show managed DNS records
       ansible.builtin.debug:

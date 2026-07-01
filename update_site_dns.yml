@@ -1,0 +1,60 @@
+---
+- name: Update Target Domain Cloudflare DNS records
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    # 默认值，实际由 GHA 注入 (-e target_domain=onwalk.net -e source_domain=svc.plus)
+    target_domain: "svc.plus"
+    source_domain: "svc.plus"
+  tasks:
+    - name: Load static DNS definitions
+      ansible.builtin.include_vars:
+        file: "vars/cloudflare_svc_plus_dns.yml"
+
+    - name: Build target DNS records from inventory
+      ansible.builtin.set_fact:
+        cloudflare_dns_records: >-
+          {%- set records = [] -%}
+          {%- set source_specs = cloudflare_dns_source_hosts | default(cloudflare_dns_default_source_hosts, true) -%}
+          {%- set static_records = cloudflare_dns_static_records | default([], true) -%}
+          {%- set expanded_hosts = [] -%}
+          {%- for spec in source_specs -%}
+          {%-   for host in query('inventory_hostnames', spec) -%}
+          {%-     if host not in expanded_hosts -%}
+          {%-       set _ = expanded_hosts.append(host) -%}
+          {%-     endif -%}
+          {%-   endfor -%}
+          {%- endfor -%}
+          {%- for host in expanded_hosts -%}
+          {%- set host_data = hostvars[host] -%}
+          {%- set service_domains = (host_data.service_domains | default('') | split(',')) | map('trim') | reject('equalto', '') | list -%}
+          {%- for service_domain in service_domains -%}
+          {%-   set target_service_domain = service_domain | regex_replace(source_domain ~ '$', target_domain) -%}
+          {%-   set _ = records.append({
+                'type': 'A',
+                'name': target_service_domain,
+                'content': host_data.ansible_host,
+                'ttl': 1,
+                'proxied': false
+              }) -%}
+          {%- endfor -%}
+          {%- endfor -%}
+          {%- for static_record in static_records -%}
+          {%-   set target_static_name = static_record.name | regex_replace(source_domain ~ '$', target_domain) -%}
+          {%-   set target_static_content = static_record.content | regex_replace(source_domain ~ '$', target_domain) -%}
+          {%-   set _ = records.append({
+                'type': static_record.type,
+                'name': target_static_name,
+                'content': target_static_content,
+                'ttl': static_record.ttl | default(1),
+                'proxied': static_record.proxied | default(false)
+              }) -%}
+          {%- endfor -%}
+          {{ records | to_json | from_yaml }}
+
+    - name: Reconcile DNS records via cloudflare_dns role
+      ansible.builtin.include_role:
+        name: cloudflare_dns
+      vars:
+        cloudflare_zone_name: "{{ target_domain }}"
