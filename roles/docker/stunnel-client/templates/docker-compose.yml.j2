@@ -1,0 +1,28 @@
+services:
+  stunnel-client:
+    image: "{{ stunnel_client_image }}"
+    container_name: "{{ stunnel_client_container_name }}"
+    restart: unless-stopped
+    environment:
+      STUNNEL_SERVICE: "{{ stunnel_client_service_name }}"
+      STUNNEL_ACCEPT: "{{ stunnel_client_accept_port }}"
+      STUNNEL_CONNECT: "{{ stunnel_client_server_host }}:{{ stunnel_client_server_port }}"
+      STUNNEL_CRONTAB: ""
+    ports:
+      - "127.0.0.1:{{ stunnel_client_accept_port }}:{{ stunnel_client_accept_port }}"
+    volumes:
+      - {{ stunnel_client_config_file }}:/etc/stunnel/stunnel.conf:ro
+      - {{ stunnel_client_ca_file }}:/etc/stunnel/certs/ca-cert.pem:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pidof stunnel >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - shared_stunnel
+
+networks:
+  shared_stunnel:
+    external: true
+    name: {{ stunnel_client_shared_network }}
