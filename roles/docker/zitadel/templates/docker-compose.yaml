@@ -1,66 +1,87 @@
 services:
   zitadel:
-    extends:
-      service: zitadel-init
+    image: ${ZITADEL_IMAGE:-ghcr.io/zitadel/zitadel:latest}
     command: 'start-from-setup --masterkey "{{ zitadel_masterkey }}"'
     environment:
+      ZITADEL_EXTERNALDOMAIN: {{ zitadel_domain }}
       ZITADEL_EXTERNALPORT: 443
       ZITADEL_EXTERNALSECURE: true
       ZITADEL_TLS_ENABLED: false
+      ZITADEL_DATABASE_POSTGRES_HOST: {{ zitadel_db_host }}
+      ZITADEL_DATABASE_POSTGRES_PORT: {{ zitadel_db_port }}
+      ZITADEL_DATABASE_POSTGRES_DATABASE: {{ zitadel_db_name }}
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: {{ zitadel_db_user }}
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: {{ zitadel_db_password }}
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_DSN: "postgresql://{{ zitadel_db_user }}:{{ zitadel_db_password }}@{{ zitadel_db_host }}:{{ zitadel_db_port }}/{{ zitadel_db_name }}?sslmode=disable"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: zitadel-admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: "{{ zitadel_admin_password }}"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: false
+      ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /current-dir/login-client.pat
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_USERNAME: login-client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME: Automatically Initialized IAM Login Client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: '2029-01-01T00:00:00Z'
     networks:
       - app
       - cn-toolkit-shared
     ports:
       - "{{ zitadel_api_bind_host }}:{{ zitadel_api_port }}:8080"
-    depends_on:
-      zitadel-init:
-        condition: 'service_completed_successfully'
+    healthcheck:
+      test: [ "CMD", "/app/zitadel", "ready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - "{{ zitadel_workspace }}:/current-dir:rw"
+    deploy:
+      resources:
+        limits:
+          memory: 300M
 
   zitadel-init:
-    image: '${ZITADEL_IMAGE:-ghcr.io/zitadel/zitadel:latest}'
+    image: ${ZITADEL_IMAGE:-ghcr.io/zitadel/zitadel:latest}
     command: 'init'
     environment:
-      # Using an external domain other than localhost proofs, that the proxy configuration works.
-      # If Zitadel can't resolve a requests original host to this domain,
-      # it will return a 404 Instance not found error.
+      ZITADEL_DATABASE_POSTGRES_HOST: {{ zitadel_db_host }}
+      ZITADEL_DATABASE_POSTGRES_PORT: {{ zitadel_db_port }}
+      ZITADEL_DATABASE_POSTGRES_DATABASE: {{ zitadel_db_name }}
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: {{ zitadel_db_user }}
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: {{ zitadel_db_password }}
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_DSN: "postgresql://{{ zitadel_db_user }}:{{ zitadel_db_password }}@{{ zitadel_db_host }}:{{ zitadel_db_port }}/{{ zitadel_db_name }}?sslmode=disable"
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: {{ zitadel_db_admin_user }}
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: {{ zitadel_db_admin_password }}
       ZITADEL_EXTERNALDOMAIN: {{ zitadel_domain }}
-      # In case something doesn't work as expected,
-      # it can be handy to be able to read the access logs.
       ZITADEL_LOGSTORE_ACCESS_STDOUT_ENABLED: true
-      # For convenience, ZITADEL should not ask to change the initial admin users password.
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: zitadel-admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: "{{ zitadel_admin_password }}"
       ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: false
-      # database configuration
-      ZITADEL_DATABASE_POSTGRES_HOST: postgresql-svc-plus
-      ZITADEL_DATABASE_POSTGRES_PORT: 5432
-      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: zitadel_pw
-      # Set up a service account with IAM_LOGIN_CLIENT role and write the PAT to the file ./login-client.pat
       ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /current-dir/login-client.pat
       ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_USERNAME: login-client
       ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME: Automatically Initialized IAM Login Client
       ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: '2029-01-01T00:00:00Z'
-      # The master key is used to
     networks:
       - cn-toolkit-shared
     healthcheck:
       test: [ "CMD", "/app/zitadel", "ready" ]
-      interval: '10s'
-      timeout: '5s'
+      interval: 10s
+      timeout: 5s
       retries: 5
-      start_period: '10s'
+      start_period: 10s
     volumes:
       - "{{ zitadel_workspace }}:/current-dir:rw"
 
-
-
   login-external-tls:
     container_name: login-external-tls
-    restart: 'unless-stopped'
-    image: 'ghcr.io/zitadel/zitadel-login:latest'
+    restart: unless-stopped
+    image: ghcr.io/zitadel/zitadel-login:latest
     environment:
       - ZITADEL_API_URL=http://zitadel:8080
       - NEXT_PUBLIC_BASE_PATH=/ui/v2/login
       - ZITADEL_SERVICE_USER_TOKEN_FILE=/current-dir/login-client.pat
       - CUSTOM_REQUEST_HEADERS=Host:{{ zitadel_domain }}
+      - NODE_OPTIONS=--max-old-space-size=128
     volumes:
       - "{{ zitadel_workspace }}:/current-dir:ro"
     networks:
@@ -69,9 +90,14 @@ services:
       - "{{ zitadel_login_bind_host }}:{{ zitadel_login_port }}:3000"
     depends_on:
       zitadel:
-        condition: 'service_healthy'
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 200M
 
 networks:
   app:
+    name: zitadel_app
   cn-toolkit-shared:
     external: true
