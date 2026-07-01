@@ -665,7 +665,7 @@
 # (default on macOS single-host deploys), so /etc/caddy is never touched and no
 # caddy service is started/notified. Override with -e caddy_enabled=true.
 - name: Configure OpenClaw Caddy ingress
-  when: caddy_enabled | bool
+  when: caddy_enabled | default(false) | bool
   block:
     - name: Ensure Caddy fragment directory exists
       ansible.builtin.file:

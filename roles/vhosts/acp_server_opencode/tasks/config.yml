@@ -79,6 +79,29 @@
     - "{{ acp_opencode_home }}/.local"
     - "{{ acp_opencode_workdir }}"
 
+# Resolve the OpenCode CLI at deploy time instead of assuming a fixed path.
+# npm installs it wherever the active node prefix points (NodeSource -> /usr/bin
+# on Debian/Ubuntu, ~/.local/bin or Homebrew on macOS), so probe the real path
+# with the role PATH and fall back to the OS-aware default when not yet present.
+- name: Resolve OpenCode CLI binary path
+  ansible.builtin.shell: |
+    set -eu
+    export PATH="{{ acp_opencode_path }}:${PATH}"
+    command -v opencode || true
+  args:
+    executable: /bin/bash
+  register: acp_opencode_resolved_bin
+  changed_when: false
+
+- name: Use resolved OpenCode CLI binary path when present
+  ansible.builtin.set_fact:
+    acp_opencode_binary_path: "{{ acp_opencode_resolved_bin.stdout_lines[0] | trim }}"
+  when: acp_opencode_resolved_bin.stdout | default('') | trim | length > 0
+
+- name: Report effective OpenCode CLI binary path
+  ansible.builtin.debug:
+    msg: "OpenCode CLI binary resolved to: {{ acp_opencode_binary_path }}"
+
 - name: Deploy Caddy main file
   ansible.builtin.template:
     src: Caddyfile.j2

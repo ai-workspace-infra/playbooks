@@ -1,0 +1,25 @@
+# 动态从 Vault K/V (路径: kv/CICD) 抓取 S3 凭证
+# 优先使用 VAULT_JWT_TOKEN 进行 JWT 认证，若不存在则回退至 VAULT_TOKEN
+vault_s3_secret_query: >-
+  {{
+    lookup('community.hashi_vault.vault_kv2_get',
+      'CICD',
+      engine_mount_point='kv',
+      url='https://vault.svc.plus',
+      auth_method='jwt' if lookup('env', 'VAULT_JWT_TOKEN') else 'token',
+      jwt=lookup('env', 'VAULT_JWT_TOKEN') | default(omit, true),
+      token=lookup('env', 'VAULT_TOKEN') | default(omit, true)
+    ).secret
+  }}
+
+migration_s3_bucket: "{{ vault_s3_secret_query.TF_STATE_BUCKET }}"
+migration_s3_access_key: "{{ vault_s3_secret_query.TF_STATE_ACCESS_KEY }}"
+migration_s3_secret_key: "{{ vault_s3_secret_query.TF_STATE_SECRET_KEY }}"
+migration_s3_region: "{{ vault_s3_secret_query.TF_STATE_REGION }}"
+migration_s3_endpoint: "{{ vault_s3_secret_query.TF_STATE_ENDPOINT | regex_replace('^https?://', '') }}"
+
+gitea_s3_bucket: "{{ vault_s3_secret_query.TF_STATE_BUCKET }}"
+gitea_s3_access_key: "{{ vault_s3_secret_query.TF_STATE_ACCESS_KEY }}"
+gitea_s3_secret_key: "{{ vault_s3_secret_query.TF_STATE_SECRET_KEY }}"
+gitea_s3_region: "{{ vault_s3_secret_query.TF_STATE_REGION }}"
+gitea_s3_endpoint: "{{ vault_s3_secret_query.TF_STATE_ENDPOINT | regex_replace('^https?://', '') }}"

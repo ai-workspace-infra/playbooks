@@ -1,0 +1,31 @@
+---
+- name: Ensure Caddy conf.d directory exists
+  ansible.builtin.file:
+    path: /etc/caddy/conf.d
+    state: directory
+    mode: '0755'
+
+- name: Configure Caddy for tky-proxy in conf.d
+  ansible.builtin.copy:
+    dest: /etc/caddy/conf.d/tky-proxy.conf
+    content: |
+      tky-proxy.svc.plus {
+
+          @grpc {
+              path /split/*
+          }
+
+          handle @grpc {
+              reverse_proxy unix//dev/shm/xray.sock {
+                   transport http {
+                       versions h2c 2
+                   }
+              }
+          }
+
+          # Fallback/Default site content
+          respond "Agent Service Plus Node"
+      }
+    mode: '0644'
+  notify:
+    - Restart caddy

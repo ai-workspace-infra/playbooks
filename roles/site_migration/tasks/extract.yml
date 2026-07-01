@@ -1,0 +1,92 @@
+---
+- name: Set S3 Migration Prefix
+  ansible.builtin.set_fact:
+    s3_migration_prefix: "s3://{{ migration_s3_bucket }}/site_migration_{{ migration_flow.source.host | replace('.', '_') }}-{{ migration_flow.target.host | replace('.', '_') }}_{{ ansible_date_time.date | replace('-', '') }}"
+
+- name: Export AI Core PostgreSQL Databases to S3
+  ansible.builtin.shell: |
+    pg_dump "{{ item.0.connection_uri }}/{{ item.1 }}?sslmode=disable" | gzip | aws s3 cp - "{{ s3_migration_prefix }}/ai_core_db/{{ item.1 }}.sql.gz"
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  with_subelements:
+    - "{{ migration_flow.modules | selectattr('name', 'equalto', 'ai_core_db') | list }}"
+    - databases
+  when: migration_flow.modules | selectattr('name', 'equalto', 'ai_core_db') | list | length > 0
+
+- name: Export Zitadel PostgreSQL (Docker) - SKIPPED
+  ansible.builtin.debug:
+    msg: "Skipping Zitadel DB extraction as per user request (Fresh init)."
+  when: migration_flow.modules | selectattr('name', 'equalto', 'zitadel_db') | list | length > 0
+
+- name: Export Gitea PostgreSQL to S3
+  ansible.builtin.shell: |
+    sudo -u postgres pg_dumpall -p {{ item.pg_port }} | gzip | aws s3 cp - "{{ s3_migration_prefix }}/gitea_db/{{ item.name }}_db.sql.gz"
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list | length > 0
+
+- name: Sync Gitea Data Directory to S3 (Supports Resume)
+  ansible.builtin.command: |
+    aws s3 sync /var/lib/gitea/data/ "{{ s3_migration_prefix }}/gitea_data/" --no-progress
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list | length > 0
+
+- name: Archive and Upload Caddy Configurations to S3
+  ansible.builtin.shell: |
+    tar -czf - -C /etc/caddy conf.d | aws s3 cp - "{{ s3_migration_prefix }}/caddy_configs.tar.gz"
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'caddy_configs') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'caddy_configs') | list | length > 0
+- name: Sync QMD Data to S3 (Supports Resume)
+  ansible.builtin.shell: |
+    if [ -d "{{ item.1 }}" ]; then
+      aws s3 sync "{{ item.1 }}/" "{{ s3_migration_prefix }}/qmd_data/$(basename {{ item.1 }})/" --no-progress
+    fi
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  with_subelements:
+    - "{{ migration_flow.modules | selectattr('name', 'equalto', 'qmd_data') | list }}"
+    - paths
+  when: migration_flow.modules | selectattr('name', 'equalto', 'qmd_data') | list | length > 0
+
+- name: Sync Openclaw Workspace to S3 (Supports Resume)
+  ansible.builtin.shell: |
+    if [ -d "{{ item.1 }}" ]; then
+      aws s3 sync "{{ item.1 }}/" "{{ s3_migration_prefix }}/openclaw_workspace/" --no-progress
+    fi
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  with_subelements:
+    - "{{ migration_flow.modules | selectattr('name', 'equalto', 'openclaw_workspace') | list }}"
+    - paths
+  when: migration_flow.modules | selectattr('name', 'equalto', 'openclaw_workspace') | list | length > 0
+
+- name: Export and Upload Docker Images to S3
+  ansible.builtin.shell: |
+    # Only export running container images to save space
+    IMAGES=$(docker ps --format '{{.Image}}' | sort -u)
+    if [ -n "$IMAGES" ]; then
+      docker save $IMAGES | gzip | aws s3 cp - "{{ s3_migration_prefix }}/docker_images.tar.gz"
+    fi
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'docker_images') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'docker_images') | list | length > 0

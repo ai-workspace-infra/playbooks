@@ -1,0 +1,73 @@
+---
+# ------------------------------------------------------------------------------
+# 站点迁移声明式配置模板 (Defaults)
+# 支持全站数据流单向复制与环境域名动态改写 (Domain Parameterization)
+# ------------------------------------------------------------------------------
+
+migration_flow:
+  # 源环境配置 (提取数据的源头，例如线上生产环境)
+  source:
+    host: "install.svc.plus"
+    domain_base: "svc.plus"
+    ssh_user: "root"
+    backup_dir: "/var/backups/migration_export"
+  
+  # 目标环境配置 (加载数据的新环境)
+  destination:
+    # 以下变量通常由外部 IaC 流水线 (或命令 -e) 动态传入
+    host: "{{ target_host | default('localhost') }}"
+    domain_base: "{{ target_domain | default('onwalk.net') }}"
+    ssh_user: "root"
+    restore_dir: "/var/backups/migration_import"
+
+  # 定义需要跨环境迁移的独立业务数据模块
+  modules:
+    # 1. AI 核心组件数据库 (Port 15432)
+    - name: "ai_core_db"
+      type: "postgresql"
+      port: 15432
+      connection_uri: "postgres://svcplus_vps:CvpAhYwcX5RvqDAyWGwAfglAGHLfTQdl@127.0.0.1:15432"
+      databases: 
+        - "account"
+        - "litellm"
+        - "knowledge_db"
+    
+    # 2. Zitadel 认证库 (Docker)
+    - name: "zitadel_db"
+      type: "postgresql_docker"
+      container: "zitadel-db-1"
+      databases:
+        - "zitadel"
+    
+    # 3. Gitea 库与仓库物理文件 (Port 5434 + Data)
+    - name: "gitea_data"
+      type: "gitea"
+      pg_port: 5434
+      data_dirs: 
+        - "/var/lib/gitea/data"
+      
+    # 4. 全局 Caddy 路由配置文件
+    - name: "caddy_configs"
+      type: "file_sync"
+      paths: 
+        - "/etc/caddy/conf.d/"
+      # 开启后，会在目标环境导入前，自动将源域名的引用替换为目标域名
+      # 例如： sed 's/svc.plus/onwalk.net/g'
+      domain_rewrite: true
+
+    # 5. QMD 持久化数据
+    - name: "qmd_data"
+      type: "file_sync"
+      paths:
+        - "/Users/shenlan/.config/qmd"
+        - "/home/ubuntu/.config/qmd"
+
+    # 6. OpenClaw 工作空间
+    - name: "openclaw_workspace"
+      type: "file_sync"
+      paths:
+        - "/home/ubuntu/.openclaw/workspace"
+
+    # 7. 容器镜像 (Docker Images)
+    - name: "docker_images"
+      type: "docker_save"
