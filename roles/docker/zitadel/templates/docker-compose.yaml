@@ -9,21 +9,16 @@ services:
       ZITADEL_TLS_ENABLED: false
     networks:
       - app
-      - db
+      - cn-toolkit-shared
     ports:
       - "{{ zitadel_api_bind_host }}:{{ zitadel_api_port }}:8080"
     depends_on:
-      db:
-        condition: 'service_healthy'
       zitadel-init:
         condition: 'service_completed_successfully'
 
   zitadel-init:
     image: '${ZITADEL_IMAGE:-ghcr.io/zitadel/zitadel:latest}'
     command: 'init'
-    depends_on:
-      db:
-        condition: 'service_healthy'
     environment:
       # Using an external domain other than localhost proofs, that the proxy configuration works.
       # If Zitadel can't resolve a requests original host to this domain,
@@ -35,7 +30,8 @@ services:
       # For convenience, ZITADEL should not ask to change the initial admin users password.
       ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: false
       # database configuration
-      ZITADEL_DATABASE_POSTGRES_HOST: db
+      ZITADEL_DATABASE_POSTGRES_HOST: postgresql-svc-plus
+      ZITADEL_DATABASE_POSTGRES_PORT: 5432
       ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: zitadel_pw
       # Set up a service account with IAM_LOGIN_CLIENT role and write the PAT to the file ./login-client.pat
       ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /current-dir/login-client.pat
@@ -44,7 +40,7 @@ services:
       ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: '2029-01-01T00:00:00Z'
       # The master key is used to
     networks:
-      - db
+      - cn-toolkit-shared
     healthcheck:
       test: [ "CMD", "/app/zitadel", "ready" ]
       interval: '10s'
@@ -54,21 +50,7 @@ services:
     volumes:
       - "{{ zitadel_workspace }}:/current-dir:rw"
 
-  db:
-    restart: 'always'
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_PASSWORD: postgres
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready" ]
-      interval: 5s
-      timeout: 60s
-      retries: 10
-      start_period: 5s
-    networks:
-      - db
-    volumes:
-      - 'data:/var/lib/postgresql/data:rw'
+
 
   login-external-tls:
     container_name: login-external-tls
@@ -91,7 +73,5 @@ services:
 
 networks:
   app:
-  db:
-
-volumes:
-  data:
+  cn-toolkit-shared:
+    external: true
