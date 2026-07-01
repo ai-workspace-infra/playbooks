@@ -103,14 +103,28 @@
 # -------------------------------------------------------------------
 # 2. 如果未初始化，先清理所有可能失败的残留容器、状态
 # -------------------------------------------------------------------
-- name: Zitadel containers and Zitadel postgres volume  (cleanup)
+- name: Zitadel containers (cleanup)
   become: true
   shell: |
     docker compose -f {{ zitadel_workspace }}/docker-compose.yaml down || true
-    docker volume rm zitadel_data || true
   args:
     chdir: "{{ zitadel_workspace }}"
   when: not zitadel_initialized.stat.exists
+
+# -------------------------------------------------------------------
+# 2.5 确保在全局数据库中创建 Zitadel 的库和用户
+# -------------------------------------------------------------------
+- name: Create Zitadel database user via Docker
+  ansible.builtin.shell: |
+    docker exec postgresql-svc-plus psql -U postgres -tc "SELECT 1 FROM pg_roles WHERE rolname='zitadel'" | grep -q 1 || \
+    docker exec postgresql-svc-plus psql -U postgres -c "CREATE USER zitadel WITH PASSWORD 'zitadel_pw' LOGIN;"
+  changed_when: false
+
+- name: Create Zitadel database via Docker
+  ansible.builtin.shell: |
+    docker exec postgresql-svc-plus psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='zitadel'" | grep -q 1 || \
+    docker exec postgresql-svc-plus psql -U postgres -c "CREATE DATABASE zitadel OWNER zitadel ENCODING 'UTF8';"
+  changed_when: false
 
 # -------------------------------------------------------------------
 # 3. 执行第一次初始化（init + setup）

@@ -1,0 +1,17 @@
+---
+- name: Restart Gitea
+  ansible.builtin.systemd:
+    name: gitea
+    state: restarted
+    daemon_reload: yes
+
+- name: Restart Caddy
+  ansible.builtin.systemd:
+    name: caddy
+    state: restarted
+    daemon_reload: yes
+
+- name: Restart Zitadel Docker
+  ansible.builtin.shell: |
+    docker restart zitadel-db-1 || true
+    docker restart zitadel || true
