@@ -1,0 +1,162 @@
+---
+- name: Read Gitea DB password from Vault
+  delegate_to: localhost
+  become: false
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/kv/data/gitea.svc.plus"
+    headers:
+      X-Vault-Token: "{{ vault_token }}"
+    method: GET
+  register: gitea_vault_secret
+  run_once: true
+  check_mode: false
+  no_log: true
+
+- name: Set Gitea DB password fact
+  ansible.builtin.set_fact:
+    gitea_db_password: "{{ gitea_vault_secret.json.data.data.DB_PASSWORD }}"
+  no_log: true
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install required packages
+  ansible.builtin.apt:
+    name:
+      - curl
+      - wget
+      - git
+      - caddy
+    state: present
+
+- name: Stop and disable native PostgreSQL (Deprecated)
+  ansible.builtin.systemd:
+    name: postgresql
+    state: stopped
+    enabled: no
+  ignore_errors: true
+
+- name: Create Gitea database user via Docker
+  ansible.builtin.shell: |
+    docker exec postgresql-svc-plus psql -U postgres -tc "SELECT 1 FROM pg_roles WHERE rolname='{{ gitea_db_user }}'" | grep -q 1 || \
+    docker exec postgresql-svc-plus psql -U postgres -c "CREATE USER {{ gitea_db_user }} WITH PASSWORD '{{ gitea_db_password }}' LOGIN;"
+  changed_when: false
+  no_log: true
+
+- name: Ensure Gitea database user password matches Vault
+  ansible.builtin.shell: |
+    docker exec postgresql-svc-plus psql -U postgres -c "ALTER USER {{ gitea_db_user }} WITH PASSWORD '{{ gitea_db_password }}';"
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Create Gitea database via Docker
+  ansible.builtin.shell: |
+    docker exec postgresql-svc-plus psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='{{ gitea_db_name }}'" | grep -q 1 || \
+    docker exec postgresql-svc-plus psql -U postgres -c "CREATE DATABASE {{ gitea_db_name }} OWNER {{ gitea_db_user }} ENCODING 'UTF8';"
+  changed_when: false
+
+- name: Create git user
+  ansible.builtin.user:
+    name: git
+    system: yes
+    shell: /bin/bash
+    comment: 'Git Version Control'
+    create_home: yes
+    home: /home/git
+
+- name: Download Gitea binary
+  ansible.builtin.get_url:
+    url: "https://dl.gitea.com/gitea/1.22.6/gitea-1.22.6-linux-amd64"
+    dest: /usr/local/bin/gitea
+    mode: '0755'
+
+- name: Create Gitea directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: git
+    group: git
+    mode: '0750'
+  loop:
+    - /var/lib/gitea
+    - /var/lib/gitea/custom
+    - /var/lib/gitea/data
+    - /var/lib/gitea/data/lfs
+    - /var/lib/gitea/indexers
+    - /var/lib/gitea/log
+
+- name: Create Gitea config directory
+  ansible.builtin.file:
+    path: /etc/gitea
+    state: directory
+    owner: root
+    group: git
+    mode: '0770'
+
+- name: Read S3 secrets from Vault
+  delegate_to: localhost
+  become: false
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/kv/data/CICD"
+    headers:
+      X-Vault-Token: "{{ vault_token }}"
+    method: GET
+  register: cicd_vault_secret
+  run_once: true
+  check_mode: false
+  no_log: true
+
+- name: Set S3 environment facts
+  ansible.builtin.set_fact:
+    gitea_s3_bucket: "{{ cicd_vault_secret.json.data.data.TF_STATE_BUCKET }}"
+    gitea_s3_access_key: "{{ cicd_vault_secret.json.data.data.TF_STATE_ACCESS_KEY }}"
+    gitea_s3_secret_key: "{{ cicd_vault_secret.json.data.data.TF_STATE_SECRET_KEY }}"
+    gitea_s3_region: "{{ cicd_vault_secret.json.data.data.TF_STATE_REGION }}"
+    gitea_s3_endpoint: "{{ cicd_vault_secret.json.data.data.TF_STATE_ENDPOINT | regex_replace('^https?://', '') }}"
+  no_log: true
+
+- name: Deploy Gitea app.ini (S3 & DB Configuration)
+  ansible.builtin.template:
+    src: app.ini.j2
+    dest: /etc/gitea/app.ini
+    owner: root
+    group: git
+    mode: '0660'
+  notify:
+    - Restart gitea
+
+
+- name: Deploy Gitea systemd service
+  ansible.builtin.template:
+    src: gitea.service.j2
+    dest: /etc/systemd/system/gitea.service
+    mode: '0644'
+  notify:
+    - Reload systemd
+    - Restart gitea
+
+- name: Start and enable Gitea service
+  ansible.builtin.systemd:
+    name: gitea
+    enabled: yes
+    state: started
+
+- name: Ensure Caddy conf.d directory exists
+  ansible.builtin.file:
+    path: /etc/caddy/conf.d
+    state: directory
+    mode: '0755'
+
+- name: Configure Caddy for Gitea in conf.d
+  ansible.builtin.copy:
+    dest: /etc/caddy/conf.d/gitea.svc.plus.caddy
+    content: |
+      gitea.svc.plus {
+          reverse_proxy localhost:3001
+      }
+    mode: '0644'
+  notify:
+    - Restart caddy
