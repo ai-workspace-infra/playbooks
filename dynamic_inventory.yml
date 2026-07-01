@@ -8,7 +8,7 @@
         name: "{{ source_host }}"
         groups: migration_source
         ansible_user: "root"
-        ansible_ssh_private_key_file: "~/.ssh/id_deploy"
+        ansible_ssh_private_key_file: "~/.ssh/id_rsa"
       when: source_host is defined
 
     - name: Explicitly add target_host if provided
@@ -16,7 +16,7 @@
         name: "{{ target_host }}"
         groups: migration_target
         ansible_user: "root"
-        ansible_ssh_private_key_file: "~/.ssh/id_deploy"
+        ansible_ssh_private_key_file: "~/.ssh/id_rsa"
       when: target_host is defined
 
     - name: Map existing target to migration_target group if no explicit target_host
@@ -24,6 +24,6 @@
         name: "{{ item }}"
         groups: migration_target
         ansible_user: "root"
-        ansible_ssh_private_key_file: "~/.ssh/id_deploy"
+        ansible_ssh_private_key_file: "~/.ssh/id_rsa"
       loop: "{{ groups['all'] | default([]) }}"
       when: target_host is not defined and item != 'localhost'
