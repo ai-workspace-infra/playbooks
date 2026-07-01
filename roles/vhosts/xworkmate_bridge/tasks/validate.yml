@@ -4,7 +4,7 @@
   changed_when: false
   when: 
     - xworkmate_bridge_public_access | bool
-    - caddy_enabled | bool
+    - caddy_enabled | default(true) | bool
 
 - name: Read deployed xworkmate-bridge Caddy fragment
   ansible.builtin.command:
@@ -14,7 +14,7 @@
   no_log: true
   when: 
     - xworkmate_bridge_public_access | bool
-    - caddy_enabled | bool
+    - caddy_enabled | default(true) | bool
 
 - name: Read deployed xworkmate-bridge systemd unit
   ansible.builtin.command:
@@ -49,7 +49,7 @@
   no_log: true
   when: 
     - xworkmate_bridge_public_access | bool
-    - caddy_enabled | bool
+    - caddy_enabled | default(true) | bool
 
 - name: Assert Caddy and systemd use the same bridge token set
   ansible.builtin.assert:
@@ -79,7 +79,7 @@
   when: 
     - xworkmate_bridge_public_access | bool
     - ansible_os_family != 'Darwin' 
-    - caddy_enabled | bool
+    - caddy_enabled | default(true) | bool
 
 - name: Check xworkmate-bridge systemd service status
   ansible.builtin.systemd:
@@ -239,7 +239,7 @@
   changed_when: false
   loop: "{{ xworkmate_bridge_obsolete_caddy_fragment_paths }}"
   register: xworkmate_bridge_obsolete_fragments
-  when: caddy_enabled | bool
+  when: caddy_enabled | default(true) | bool
 
 - name: Assert deprecated ACP fragments were removed
   ansible.builtin.assert:
@@ -249,7 +249,7 @@
   loop: "{{ xworkmate_bridge_obsolete_fragments.results | default([]) }}"
   loop_control:
     label: "{{ item.item }}"
-  when: caddy_enabled | bool
+  when: caddy_enabled | default(true) | bool
 
 - name: Summarize xworkmate-bridge systemd ingress state
   ansible.builtin.debug:
