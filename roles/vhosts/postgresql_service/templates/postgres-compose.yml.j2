@@ -12,7 +12,7 @@ services:
       - {{ postgresql_service_postgres_init_scripts_dir }}:/docker-entrypoint-initdb.d:ro
       - {{ postgresql_service_postgres_config_file }}:/etc/postgresql/postgresql.conf:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-{{ postgresql_service_postgres_health_user }}} -h 127.0.0.1"]
+      test: ["CMD-SHELL", "PGPASSWORD=$${POSTGRES_PASSWORD} psql -qAt -U $${POSTGRES_USER:-{{ postgresql_service_postgres_health_user }}} -d $${POSTGRES_DB:-postgres} -h 127.0.0.1 -c 'SELECT 1' | grep -qx 1"]
       interval: 10s
       timeout: 5s
       retries: 5
