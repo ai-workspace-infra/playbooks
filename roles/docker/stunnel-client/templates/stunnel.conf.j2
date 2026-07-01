@@ -1,0 +1,17 @@
+foreground = yes
+debug = 5
+
+[{{ stunnel_client_service_name }}]
+client = yes
+accept = 0.0.0.0:{{ stunnel_client_accept_port }}
+connect = {{ stunnel_client_server_host }}:{{ stunnel_client_server_port }}
+delay = yes
+verifyChain = yes
+CAfile = /etc/stunnel/certs/ca-cert.pem
+checkHost = {{ stunnel_client_check_host }}
+socket = l:TCP_NODELAY=1
+socket = r:TCP_NODELAY=1
+socket = l:SO_KEEPALIVE=1
+socket = r:SO_KEEPALIVE=1
+TIMEOUTclose = 5
+TIMEOUTidle = 43200

@@ -1,0 +1,14 @@
+foreground = yes
+debug = 5
+
+[{{ stunnel_server_service_name }}]
+accept = 0.0.0.0:{{ stunnel_server_accept_port }}
+connect = {{ stunnel_server_postgres_host }}:{{ stunnel_server_postgres_port }}
+cert = /etc/stunnel/certs/server-cert.pem
+key = /etc/stunnel/certs/server-key.pem
+socket = l:TCP_NODELAY=1
+socket = r:TCP_NODELAY=1
+socket = l:SO_KEEPALIVE=1
+socket = r:SO_KEEPALIVE=1
+TIMEOUTclose = 5
+TIMEOUTidle = 43200
