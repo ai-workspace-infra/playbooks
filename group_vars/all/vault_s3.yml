@@ -1,14 +1,22 @@
-# 动态从 Vault K/V (路径: kv/CICD) 抓取 S3 凭证
-# 优先使用 VAULT_JWT_TOKEN 进行 JWT 认证，若不存在则回退至 VAULT_TOKEN
+# S3 凭证优先由 workflow 注入的 MIGRATION_S3_* 环境变量提供；
+# 若未注入，则回退到 Vault K/V (路径: kv/CICD) 动态抓取。
 vault_s3_secret_query: >-
   {{
-    lookup('community.hashi_vault.vault_kv2_get',
+    {
+      'TF_STATE_BUCKET': lookup('ansible.builtin.env', 'MIGRATION_S3_BUCKET') | default('', true),
+      'TF_STATE_ACCESS_KEY': lookup('ansible.builtin.env', 'MIGRATION_S3_ACCESS_KEY') | default('', true),
+      'TF_STATE_SECRET_KEY': lookup('ansible.builtin.env', 'MIGRATION_S3_SECRET_KEY') | default('', true),
+      'TF_STATE_REGION': lookup('ansible.builtin.env', 'MIGRATION_S3_REGION') | default('', true),
+      'TF_STATE_ENDPOINT': lookup('ansible.builtin.env', 'MIGRATION_S3_ENDPOINT') | default('', true)
+    }
+    if (lookup('ansible.builtin.env', 'MIGRATION_S3_BUCKET') | default('', true) | length > 0)
+    else lookup('community.hashi_vault.vault_kv2_get',
       'CICD',
       engine_mount_point='kv',
       url='https://vault.svc.plus',
-      auth_method='jwt' if lookup('env', 'VAULT_JWT_TOKEN') else 'token',
-      jwt=lookup('env', 'VAULT_JWT_TOKEN') | default(omit, true),
-      token=lookup('env', 'VAULT_TOKEN') | default(omit, true)
+      auth_method='jwt' if lookup('ansible.builtin.env', 'VAULT_JWT_TOKEN') else 'token',
+      jwt=lookup('ansible.builtin.env', 'VAULT_JWT_TOKEN') | default(omit, true),
+      token=lookup('ansible.builtin.env', 'VAULT_TOKEN') | default(omit, true)
     ).secret
   }}
 
