@@ -1,8 +1,15 @@
 ---
-- name: Ensure AWS CLI is installed for S3-backed migration
+- name: Ensure Python pip is available for AWS CLI bootstrap
   ansible.builtin.package:
-    name: awscli
+    name: python3-pip
     state: present
+  become: true
+
+- name: Install AWS CLI for S3-backed migration
+  ansible.builtin.pip:
+    name: awscli
+    executable: pip3
+    break_system_packages: true
   become: true
 
 - name: Set S3 Migration Prefix
