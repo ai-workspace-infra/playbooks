@@ -11,6 +11,10 @@ acp_opencode_workdir: "{{ ansible_env.HOME | default('/home/' + acp_opencode_ser
 # user-level npm global bin lives under ~/.local/bin; include Homebrew + system.
 acp_opencode_npm_global_bin: "{{ acp_opencode_home + '/.local/bin' if ansible_os_family == 'Darwin' else '/usr/bin' }}"
 acp_opencode_path: "{{ acp_opencode_npm_global_bin }}:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin"
+# OpenCode CLI binary the adapter spawns lazily (mirrors gemini/codex which use
+# {{ acp_X_npm_global_bin }}/<cli>). Was hardcoded to /usr/bin/opencode in the
+# unit template; use the resolved npm global bin so macOS (~/.local/bin) works too.
+acp_opencode_binary_path: "{{ acp_opencode_npm_global_bin }}/opencode"
 acp_opencode_listen_host: 127.0.0.1
 acp_opencode_listen_port: 38992
 acp_opencode_packages: []

@@ -1,0 +1,116 @@
+---
+- name: Set S3 Migration Prefix
+  ansible.builtin.set_fact:
+    s3_migration_prefix: "s3://{{ migration_s3_bucket }}/site_migration_{{ migration_flow.source.host | replace('.', '_') }}-{{ migration_flow.target.host | replace('.', '_') }}_{{ ansible_date_time.date | replace('-', '') }}"
+
+- name: Restore AI Core PostgreSQL Databases from S3
+  ansible.builtin.shell: |
+    aws s3 cp "{{ s3_migration_prefix }}/ai_core_db/{{ item.1 }}.sql.gz" - | gunzip -c | sed 's/{{ migration_flow.source.domain_base }}/{{ migration_flow.destination.domain_base }}/g' | psql "{{ item.0.connection_uri }}/{{ item.1 }}?sslmode=disable"
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  with_subelements:
+    - "{{ migration_flow.modules | selectattr('name', 'equalto', 'ai_core_db') | list }}"
+    - databases
+  when: migration_flow.modules | selectattr('name', 'equalto', 'ai_core_db') | list | length > 0
+
+- name: Restore Zitadel PostgreSQL (Docker) - SKIPPED (Fresh Init)
+  ansible.builtin.debug:
+    msg: "Skipping Zitadel DB restore as per user request (Fresh init)."
+  when: migration_flow.modules | selectattr('name', 'equalto', 'zitadel_db') | list | length > 0
+
+- name: Stop Gitea Service for data restore
+  ansible.builtin.systemd:
+    name: gitea
+    state: stopped
+  ignore_errors: yes
+
+- name: Restore Gitea PostgreSQL from S3 (Unified DB in Docker)
+  ansible.builtin.shell: |
+    aws s3 cp "{{ s3_migration_prefix }}/gitea_db/{{ item.name }}_db.sql.gz" - | gunzip -c | sed 's/{{ migration_flow.source.domain_base }}/{{ migration_flow.destination.domain_base }}/g' | docker exec -i postgresql-svc-plus psql -U postgres
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list | length > 0
+
+- name: Restore Gitea Data Directory from S3
+  ansible.builtin.command: |
+    aws s3 sync "{{ s3_migration_prefix }}/gitea_data/" /var/lib/gitea/data/ --no-progress
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'gitea_data') | list | length > 0
+  notify: Restart Gitea
+
+- name: Restore Caddy Configurations from S3
+  ansible.builtin.shell: |
+    aws s3 cp "{{ s3_migration_prefix }}/caddy_configs.tar.gz" - | tar -xzf - -C /etc/caddy
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'caddy_configs') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'caddy_configs') | list | length > 0
+  notify: Restart Caddy
+
+- name: Domain Rewrite for Caddy Configurations
+  ansible.builtin.shell: |
+    find /etc/caddy/conf.d -type f -exec sed -i 's/{{ migration_flow.source.domain_base }}/{{ migration_flow.destination.domain_base }}/g' {} +
+    # Rename files that contain the source domain in their filename
+    find /etc/caddy/conf.d -name "*{{ migration_flow.source.domain_base }}*" | while read f; do
+      new_f=$(echo "$f" | sed 's/{{ migration_flow.source.domain_base }}/{{ migration_flow.destination.domain_base }}/g')
+      mv "$f" "$new_f"
+    done
+  when: >
+    migration_flow.modules | selectattr('name', 'equalto', 'caddy_configs') | selectattr('domain_rewrite', 'defined') | selectattr('domain_rewrite', 'equalto', true) | list | length > 0
+  notify: Restart Caddy
+
+- name: Restore QMD Data Directory from S3
+  ansible.builtin.shell: |
+    # Create target directory
+    mkdir -p "{{ item.1 }}"
+    aws s3 sync "{{ s3_migration_prefix }}/qmd_data/$(basename {{ item.1 }})/" "{{ item.1 }}/" --no-progress
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  with_subelements:
+    - "{{ migration_flow.modules | selectattr('name', 'equalto', 'qmd_data') | list }}"
+    - paths
+  when: migration_flow.modules | selectattr('name', 'equalto', 'qmd_data') | list | length > 0
+
+- name: Restore Openclaw Workspace from S3
+  ansible.builtin.shell: |
+    mkdir -p "{{ item.1 }}"
+    aws s3 sync "{{ s3_migration_prefix }}/openclaw_workspace/" "{{ item.1 }}/" --no-progress
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  with_subelements:
+    - "{{ migration_flow.modules | selectattr('name', 'equalto', 'openclaw_workspace') | list }}"
+    - paths
+  when: migration_flow.modules | selectattr('name', 'equalto', 'openclaw_workspace') | list | length > 0
+
+- name: Restore Docker Images from S3
+  ansible.builtin.shell: |
+    # Check if the backup exists first
+    if aws s3 ls "{{ s3_migration_prefix }}/docker_images.tar.gz" >/dev/null 2>&1; then
+      aws s3 cp "{{ s3_migration_prefix }}/docker_images.tar.gz" - | gunzip -c | docker load
+    else
+      echo "No docker images archive found in S3, skipping."
+    fi
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ migration_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ migration_s3_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ migration_s3_region }}"
+  loop: "{{ migration_flow.modules | selectattr('name', 'equalto', 'docker_images') | list }}"
+  when: migration_flow.modules | selectattr('name', 'equalto', 'docker_images') | list | length > 0
+
+- name: Flush handlers to apply restarts immediately
+  ansible.builtin.meta: flush_handlers
