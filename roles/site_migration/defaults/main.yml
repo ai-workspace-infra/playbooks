@@ -54,3 +54,20 @@ migration_flow:
       # 开启后，会在目标环境导入前，自动将源域名的引用替换为目标域名
       # 例如： sed 's/svc.plus/onwalk.net/g'
       domain_rewrite: true
+
+    # 5. QMD 持久化数据
+    - name: "qmd_data"
+      type: "file_sync"
+      paths:
+        - "/Users/shenlan/.config/qmd"
+        - "/home/ubuntu/.config/qmd"
+
+    # 6. OpenClaw 工作空间
+    - name: "openclaw_workspace"
+      type: "file_sync"
+      paths:
+        - "/home/ubuntu/.openclaw/workspace"
+
+    # 7. 容器镜像 (Docker Images)
+    - name: "docker_images"
+      type: "docker_save"

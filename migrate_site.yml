@@ -9,13 +9,17 @@
 - name: Phase 1 - Extract Data from Source Environment
   hosts: migration_source
   become: yes
-  roles:
-    - role: site_migration
-      tasks_from: extract
+  tasks:
+    - name: Extract phase
+      import_role:
+        name: site_migration
+        tasks_from: extract
 
 - name: Phase 2 - Load Data into Target Environment and Rewrite Domains
   hosts: migration_target
   become: yes
-  roles:
-    - role: site_migration
-      tasks_from: load
+  tasks:
+    - name: Load phase
+      import_role:
+        name: site_migration
+        tasks_from: load

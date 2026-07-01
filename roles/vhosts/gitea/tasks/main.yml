@@ -70,6 +70,17 @@
     group: git
     mode: '0770'
 
+- name: Deploy Gitea app.ini (S3 Storage Config)
+  ansible.builtin.template:
+    src: app.ini.j2
+    dest: /var/lib/gitea/custom/conf/app.ini
+    owner: git
+    group: git
+    mode: '0640'
+  notify:
+    - Restart gitea
+
+
 - name: Deploy Gitea systemd service
   ansible.builtin.template:
     src: gitea.service.j2
