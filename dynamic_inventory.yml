@@ -1,0 +1,29 @@
+---
+- name: Dynamically Add Migration Hosts
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Add migration_source
+      ansible.builtin.add_host:
+        name: "{{ source_host }}"
+        groups: migration_source
+        ansible_user: "root"
+        ansible_ssh_private_key_file: "~/.ssh/id_deploy"
+      when: source_host is defined
+
+    - name: Explicitly add target_host if provided
+      ansible.builtin.add_host:
+        name: "{{ target_host }}"
+        groups: migration_target
+        ansible_user: "root"
+        ansible_ssh_private_key_file: "~/.ssh/id_deploy"
+      when: target_host is defined
+
+    - name: Map existing target to migration_target group if no explicit target_host
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: migration_target
+        ansible_user: "root"
+        ansible_ssh_private_key_file: "~/.ssh/id_deploy"
+      loop: "{{ groups['all'] | default([]) }}"
+      when: target_host is not defined and item != 'localhost'
