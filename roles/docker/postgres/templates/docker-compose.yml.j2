@@ -1,27 +1,32 @@
 services:
   postgres:
     image: "{{ postgresql_image }}"
-    container_name: "{{ postgresql_compose_project_name }}"
+    container_name: "{{ postgresql_container_name }}"
     restart: unless-stopped
 
-    env_file:
-      - "{{ postgresql_compose_env_file }}"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-{{ postgresql_admin_user }}}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-{{ postgresql_database }}}
+      PGDATA: /var/lib/postgresql/data/pgdata
 
     # PostgreSQL 只监听 localhost,通过 stunnel 提供外部访问
     # 不直接暴露端口,确保所有连接都经过 TLS 加密
     expose:
       - "5432"
     ports:
-      - "{{ postgresql_local_port }}:5432"
-      - "{{ postgresql_port }}:5432"
+      - "127.0.0.1:${PG_LOCAL_PORT:-{{ postgresql_local_port }}}:5432"
 
     volumes:
-      - "{{ postgresql_data_dir }}:/var/lib/postgresql/data"
+      - ${PG_DATA_PATH:-{{ postgresql_data_dir }}}:/var/lib/postgresql/data
       - ./init-scripts:/docker-entrypoint-initdb.d:ro
       - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro
 
+    # Optional: Override default command to use custom config
+    # command: postgres -c config_file=/etc/postgresql/postgresql.conf
+
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U {{ postgresql_admin_user }} -h 127.0.0.1" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-{{ postgresql_admin_user }}} -h 127.0.0.1" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -40,6 +45,38 @@ services:
           cpus: '1'
           memory: 1G
 
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: unless-stopped
+
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+    networks:
+      - postgres_network
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    profiles:
+      - admin
+
+volumes:
+  pgadmin_data:
+    driver: local
+
 networks:
   postgres_network:
+    name: {{ postgresql_compose_project_name }}_postgres_network
     driver: bridge

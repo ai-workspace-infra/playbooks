@@ -1,4 +1,22 @@
 ---
+- name: Read PostgreSQL admin password from Vault
+  delegate_to: localhost
+  become: false
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/kv/data/postgresql.svc.plus"
+    headers:
+      X-Vault-Token: "{{ vault_token }}"
+    method: GET
+  register: postgres_vault_secret
+  run_once: true
+  check_mode: false
+  no_log: true
+
+- name: Set PostgreSQL admin password fact
+  ansible.builtin.set_fact:
+    postgresql_admin_password: "{{ postgres_vault_secret.json.data.data.POSTGRES_PASSWORD }}"
+  no_log: true
+
 - name: Ensure Homebrew Docker and Colima are installed (macOS)
   ansible.builtin.command: brew install colima docker docker-compose
   environment:
@@ -40,14 +58,29 @@
   # macOS/Colima usually handles volume mounts with current user, but uid 999 is standard for postgres container
   ignore_errors: "{{ ansible_os_family == 'Darwin' }}"
 
-- name: Render PostgreSQL compose environment file
-  ansible.builtin.copy:
-    dest: "{{ postgresql_compose_env_file }}"
+- name: Ensure PostgreSQL .env file exists
+  ansible.builtin.file:
+    path: "{{ postgresql_compose_env_file }}"
+    state: touch
     mode: "0600"
-    content: |
-      POSTGRES_DB={{ postgresql_database }}
-      POSTGRES_USER={{ postgresql_admin_user }}
-      POSTGRES_PASSWORD={{ postgresql_admin_password }}
+
+- name: Update POSTGRES_USER in .env
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_compose_env_file }}"
+    regexp: '^POSTGRES_USER='
+    line: 'POSTGRES_USER={{ postgresql_admin_user }}'
+
+- name: Update POSTGRES_DB in .env
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_compose_env_file }}"
+    regexp: '^POSTGRES_DB='
+    line: 'POSTGRES_DB={{ postgresql_database }}'
+
+- name: Update POSTGRES_PASSWORD in .env
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_compose_env_file }}"
+    regexp: '^POSTGRES_PASSWORD='
+    line: 'POSTGRES_PASSWORD={{ postgresql_admin_password }}'
   no_log: true
 
 - name: Render PostgreSQL compose file
@@ -83,7 +116,7 @@
 
 - name: Validate PostgreSQL compose service
   ansible.builtin.command:
-    cmd: "docker exec {{ postgresql_compose_project_name }} pg_isready -U {{ postgresql_admin_user }} -d {{ postgresql_database }}"
+    cmd: "docker exec {{ postgresql_container_name }} pg_isready -U {{ postgresql_admin_user }} -d {{ postgresql_database }}"
   register: postgresql_compose_ready
   retries: 12
   delay: 5
@@ -91,3 +124,11 @@
   changed_when: false
   environment:
     PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+
+- name: Ensure PostgreSQL admin password matches Vault
+  ansible.builtin.command:
+    cmd: "docker exec {{ postgresql_container_name }} psql -U {{ postgresql_admin_user }} -d {{ postgresql_database }} -c \"ALTER USER {{ postgresql_admin_user }} WITH PASSWORD '{{ postgresql_admin_password }}';\""
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode
+  ignore_errors: true
