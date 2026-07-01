@@ -1,16 +1,21 @@
 ---
-postgresql_image: "ghcr.io/x-evor/images/postgresql:17"
-postgresql_compose_project_dir: "{{ '/opt/ai-workspace/postgres' if ansible_os_family != 'Darwin' else lookup('env', 'HOME') + '/ai-workspace-postgres' }}"
-postgresql_compose_project_name: "ai-workspace-postgres"
+postgresql_image: "postgres-extensions:{{ lookup('ansible.builtin.env', 'PG_MAJOR') | default('17', true) }}"
+postgresql_compose_project_dir: "{{ '/opt/cloud-neutral/postgresql.svc.plus/deploy/docker' if ansible_os_family != 'Darwin' else lookup('env', 'HOME') + '/ai-workspace-postgres' }}"
+postgresql_compose_project_name: "docker"
+postgresql_container_name: "postgresql-svc-plus"
 postgresql_compose_file: "{{ postgresql_compose_project_dir }}/docker-compose.yml"
 postgresql_compose_env_file: "{{ postgresql_compose_project_dir }}/.env"
-postgresql_data_dir: "{{ postgresql_compose_project_dir }}/data"
+postgresql_data_dir: "{{ lookup('ansible.builtin.env', 'PG_DATA_PATH') | default('/data', true) }}"
 
 postgresql_admin_user: postgres
-postgresql_admin_password: "changeme"
+postgresql_admin_password: ""
 postgresql_database: postgres
 postgresql_port: 5432
-postgresql_local_port: 15432
+postgresql_local_port: "{{ lookup('ansible.builtin.env', 'PG_LOCAL_PORT') | default('5432', true) }}"
 
 postgresql_container_uid: "999"
 postgresql_container_gid: "999"
+
+# Vault integration configuration
+vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default(lookup('ansible.builtin.env', 'VAULT_SERVER_URL') | default('https://vault.svc.plus', true), true) }}"
+vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN'), true) }}"
