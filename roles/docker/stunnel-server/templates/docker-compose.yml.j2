@@ -1,0 +1,29 @@
+services:
+  stunnel:
+    image: "{{ stunnel_server_image }}"
+    container_name: "{{ stunnel_server_container_name }}"
+    user: root
+    restart: unless-stopped
+    ports:
+      - "{{ stunnel_server_accept_port }}:{{ stunnel_server_accept_port }}"
+    volumes:
+      - {{ stunnel_server_config_file }}:/etc/stunnel/stunnel.conf:ro
+      - {{ stunnel_server_cert_file }}:/etc/stunnel/certs/server-cert.pem:ro
+      - {{ stunnel_server_key_file }}:/etc/stunnel/certs/server-key.pem:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pidof stunnel >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - shared_stunnel
+      - postgres_net
+
+networks:
+  shared_stunnel:
+    external: true
+    name: {{ stunnel_server_shared_network }}
+  postgres_net:
+    external: true
+    name: {{ stunnel_server_postgres_network }}

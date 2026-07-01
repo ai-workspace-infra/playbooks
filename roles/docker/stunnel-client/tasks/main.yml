@@ -1,0 +1,65 @@
+---
+- name: Ensure stunnel client directory exists
+  ansible.builtin.file:
+    path: "{{ stunnel_client_base_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check stunnel client CA certificate
+  ansible.builtin.stat:
+    path: "{{ stunnel_client_ca_file }}"
+  register: stunnel_client_ca
+
+- name: Require stunnel client CA certificate
+  ansible.builtin.assert:
+    that: stunnel_client_ca.stat.exists
+    fail_msg: "Missing trusted CA certificate: {{ stunnel_client_ca_file }}"
+
+- name: Ensure shared stunnel Docker network exists
+  ansible.builtin.command: docker network inspect "{{ stunnel_client_shared_network }}"
+  changed_when: false
+
+- name: Render stunnel client configuration
+  ansible.builtin.template:
+    src: stunnel.conf.j2
+    dest: "{{ stunnel_client_config_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: stunnel_client_config
+
+- name: Render stunnel client compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ stunnel_client_compose_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: stunnel_client_compose
+
+- name: Remove existing stunnel client container before compose adoption
+  ansible.builtin.command: docker rm -f "{{ stunnel_client_container_name }}"
+  register: stunnel_client_adoption
+  changed_when: stunnel_client_adoption.rc == 0
+  failed_when: false
+  when: not ansible_check_mode and (stunnel_client_config.changed or stunnel_client_compose.changed)
+
+- name: Reconcile stunnel client container
+  ansible.builtin.command: docker compose -f "{{ stunnel_client_compose_file }}" up -d --force-recreate
+  when: not ansible_check_mode and (stunnel_client_config.changed or stunnel_client_compose.changed)
+
+- name: Ensure stunnel client container is running
+  ansible.builtin.command: docker compose -f "{{ stunnel_client_compose_file }}" up -d
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Wait for stunnel client health
+  ansible.builtin.command: docker inspect --format={{ '{{' }}.State.Health.Status{{ '}}' }} "{{ stunnel_client_container_name }}"
+  register: stunnel_client_health
+  changed_when: false
+  retries: 12
+  delay: 5
+  until: stunnel_client_health.stdout | trim == 'healthy'
+  when: not ansible_check_mode
