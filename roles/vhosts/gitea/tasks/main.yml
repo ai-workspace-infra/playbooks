@@ -7,38 +7,30 @@
 - name: Install required packages
   ansible.builtin.apt:
     name:
-      - postgresql
-      - postgresql-contrib
-      - python3-psycopg2
       - curl
       - wget
       - git
       - caddy
     state: present
 
-- name: Start and enable PostgreSQL
+- name: Stop and disable native PostgreSQL (Deprecated)
   ansible.builtin.systemd:
     name: postgresql
-    state: started
-    enabled: yes
+    state: stopped
+    enabled: no
+  ignore_errors: true
 
-- name: Create Gitea database user
-  community.postgresql.postgresql_user:
-    name: gitea
-    password: gitea
-    role_attr_flags: LOGIN
-    login_port: 5434
-  become: yes
-  become_user: postgres
+- name: Create Gitea database user via Docker
+  ansible.builtin.shell: |
+    docker exec postgresql-svc-plus psql -U postgres -tc "SELECT 1 FROM pg_roles WHERE rolname='gitea'" | grep -q 1 || \
+    docker exec postgresql-svc-plus psql -U postgres -c "CREATE USER gitea WITH PASSWORD 'gitea' LOGIN;"
+  changed_when: false
 
-- name: Create Gitea database
-  community.postgresql.postgresql_db:
-    name: gitea
-    owner: gitea
-    encoding: UTF8
-    login_port: 5434
-  become: yes
-  become_user: postgres
+- name: Create Gitea database via Docker
+  ansible.builtin.shell: |
+    docker exec postgresql-svc-plus psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='gitea'" | grep -q 1 || \
+    docker exec postgresql-svc-plus psql -U postgres -c "CREATE DATABASE gitea OWNER gitea ENCODING 'UTF8';"
+  changed_when: false
 
 - name: Create git user
   ansible.builtin.user:
