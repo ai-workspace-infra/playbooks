@@ -12,7 +12,8 @@ accounts_service_shared_network: cn-toolkit-shared
 accounts_service_dns_servers:
   - 1.1.1.1
   - 8.8.8.8
-accounts_service_caddy_base_dir: "{{ '/opt/homebrew/etc/caddy' if ansible_os_family == 'Darwin' else '/etc/caddy' }}"
+accounts_service_caddy_root: "{{ caddy_config_dir | default('/etc/caddy', true) }}"
+accounts_service_caddy_base_dir: "{{ '/opt/homebrew/etc/caddy' if ansible_os_family == 'Darwin' else accounts_service_caddy_root }}"
 accounts_service_caddyfile_path: "{{ accounts_service_caddy_base_dir }}/Caddyfile"
 accounts_service_caddy_conf_dir: "{{ accounts_service_caddy_base_dir }}/conf.d"
 accounts_service_caddy_fragment_path: "{{ accounts_service_caddy_base_dir }}/conf.d/accounts.caddy"
@@ -42,6 +43,7 @@ accounts_service_env_defaults:
   XWORKMATE_VAULT_MOUNT: kv
   XWORKMATE_VAULT_NAMESPACE: ""
   XWORKMATE_VAULT_TOKEN: ""
+accounts_service_targets:
   - name: prod
     compose_dir: "{{ accounts_service_base_dir }}/prod"
     compose_file: "{{ accounts_service_base_dir }}/prod/docker-compose.yml"
@@ -50,3 +52,11 @@ accounts_service_env_defaults:
     legacy_env_file: /opt/cloud-neutral/accounts/accounts-51945b5-contabo/env/app.env
     container_name: accounts-managed-prod-contabo
     host_port: 18081
+  - name: preview
+    compose_dir: "{{ accounts_service_base_dir }}/preview"
+    compose_file: "{{ accounts_service_base_dir }}/preview/docker-compose.yml"
+    env_file: "{{ accounts_service_base_dir }}/preview/env/app.env"
+    config_file: "{{ accounts_service_base_dir }}/preview/config/account.yaml"
+    legacy_env_file: /opt/cloud-neutral/accounts/accounts-preview-51945b5-contabo/env/app.env
+    container_name: accounts-managed-preview-contabo
+    host_port: 28081
