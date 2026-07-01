@@ -1,0 +1,25 @@
+---
+# =============================================================================
+# 站点数据迁移主剧本 (migrate_site.yml)
+# 用法: ansible-playbook -i source_ip,target_ip migrate_site.yml
+# =============================================================================
+
+- import_playbook: dynamic_inventory.yml
+
+- name: Phase 1 - Extract Data from Source Environment
+  hosts: migration_source
+  become: yes
+  tasks:
+    - name: Extract phase
+      import_role:
+        name: site_migration
+        tasks_from: extract
+
+- name: Phase 2 - Load Data into Target Environment and Rewrite Domains
+  hosts: migration_target
+  become: yes
+  tasks:
+    - name: Load phase
+      import_role:
+        name: site_migration
+        tasks_from: load

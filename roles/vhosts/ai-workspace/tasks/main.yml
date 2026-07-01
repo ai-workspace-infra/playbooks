@@ -1,4 +1,35 @@
 ---
+- name: Ensure AI Workspace Caddy fragment directory exists
+  ansible.builtin.file:
+    path: "{{ ai_workspace_caddy_conf_dir }}"
+    state: directory
+    mode: "0755"
+  when: ai_workspace_manage_caddy | bool
+
+- name: Render install.svc.plus redirect fragment
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ ai_workspace_caddy_fragment_path }}"
+    mode: "0644"
+  register: ai_workspace_caddy_fragment
+  when: ai_workspace_manage_caddy | bool
+
+- name: Validate Caddy configuration
+  ansible.builtin.command: >-
+    caddy validate --config {{ ai_workspace_caddyfile_path }}
+  changed_when: false
+  when:
+    - ai_workspace_manage_caddy | bool
+    - ai_workspace_caddy_fragment.changed
+
+- name: Reload Caddy after updating install redirects
+  ansible.builtin.service:
+    name: caddy
+    state: reloaded
+  when:
+    - ai_workspace_manage_caddy | bool
+    - ai_workspace_caddy_fragment.changed
+
 # =============================================================================
 # Final deployment of the prebuilt XWorkspace Console runtime.
 #

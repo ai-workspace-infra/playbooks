@@ -9,9 +9,10 @@ User={{ acp_opencode_service_user }}
 Group={{ acp_opencode_service_group }}
 WorkingDirectory={{ acp_opencode_workdir }}
 Environment=HOME={{ acp_opencode_home }}
+Environment=PATH={{ acp_opencode_path }}
 Environment=TERM=xterm-256color
 Environment=OPENCODE_ADAPTER_ALLOWED_ORIGINS={{ acp_opencode_bridge_allowed_origins | join(',') }}
-ExecStart={{ acp_opencode_bridge_binary_path }} adapter opencode --listen {{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }} --opencode-bin /usr/bin/opencode --cwd {{ acp_opencode_workdir }}
+ExecStart={{ acp_opencode_bridge_binary_path }} adapter opencode --listen {{ acp_opencode_listen_host }}:{{ acp_opencode_listen_port }} --opencode-bin {{ acp_opencode_binary_path }} --cwd {{ acp_opencode_workdir }}
 Restart=always
 RestartSec=2
 
