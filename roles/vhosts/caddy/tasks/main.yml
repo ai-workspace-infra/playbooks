@@ -61,14 +61,14 @@
 
     - name: Ensure Caddy config directory exists
       ansible.builtin.file:
-        path: "{{ caddy_config_dir }}"
+        path: "{{ caddy_config_dir | default('/etc/caddy', true) }}"
         state: directory
         mode: '0755'
 
     - name: Deploy Caddyfile
       ansible.builtin.template:
         src: Caddyfile.j2
-        dest: "{{ caddy_config_dir }}/Caddyfile"
+        dest: "{{ caddy_config_dir | default('/etc/caddy', true) }}/Caddyfile"
         mode: '0644'
       notify: Reload caddy
 
