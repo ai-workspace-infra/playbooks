@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+cert_dir={{ stunnel_certs_dir | quote }}
+mkdir -p "${cert_dir}"
+
+if [[ -s "${cert_dir}/ca-cert.pem" && -s "${cert_dir}/ca-key.pem" && -s "${cert_dir}/server-cert.pem" && -s "${cert_dir}/server-key.pem" ]]; then
+  exit 0
+fi
+
+tmp_dir="$(mktemp -d "${cert_dir}/.generate.XXXXXX")"
+trap 'rm -rf "${tmp_dir}"' EXIT
+
+openssl req -x509 -new -nodes -newkey rsa:2048 -sha256 \
+  -days {{ stunnel_certs_valid_days }} \
+  -subj "/CN={{ stunnel_certs_ca_common_name }}" \
+  -keyout "${tmp_dir}/ca-key.pem" \
+  -out "${tmp_dir}/ca-cert.pem" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,keyCertSign,cRLSign"
+
+openssl req -new -nodes -newkey rsa:2048 -sha256 \
+  -subj "/CN={{ stunnel_certs_server_common_name }}" \
+  -keyout "${tmp_dir}/server-key.pem" \
+  -out "${tmp_dir}/server.csr"
+
+cat >"${tmp_dir}/server.ext" <<'EOF'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid,issuer
+subjectAltName={{ (stunnel_certs_server_dns_names | map('regex_replace', '^(.*)$', 'DNS:\\1') | list + stunnel_certs_server_ip_addresses | map('regex_replace', '^(.*)$', 'IP:\\1') | list) | join(',') }}
+EOF
+
+openssl x509 -req -sha256 \
+  -in "${tmp_dir}/server.csr" \
+  -CA "${tmp_dir}/ca-cert.pem" \
+  -CAkey "${tmp_dir}/ca-key.pem" \
+  -CAcreateserial \
+  -days {{ stunnel_certs_valid_days }} \
+  -extfile "${tmp_dir}/server.ext" \
+  -out "${tmp_dir}/server-cert.pem"
+
+openssl verify -CAfile "${tmp_dir}/ca-cert.pem" "${tmp_dir}/server-cert.pem"
+install -m 0600 "${tmp_dir}/ca-key.pem" "${cert_dir}/ca-key.pem"
+install -m 0600 "${tmp_dir}/server-key.pem" "${cert_dir}/server-key.pem"
+install -m 0644 "${tmp_dir}/ca-cert.pem" "${cert_dir}/ca-cert.pem"
+install -m 0644 "${tmp_dir}/server-cert.pem" "${cert_dir}/server-cert.pem"

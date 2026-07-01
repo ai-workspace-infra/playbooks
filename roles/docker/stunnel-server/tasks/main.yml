@@ -1,0 +1,71 @@
+---
+- name: Ensure stunnel server configuration directory exists
+  ansible.builtin.file:
+    path: "{{ stunnel_server_base_dir }}/conf"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Verify stunnel server certificate material exists
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ stunnel_server_cert_file }}"
+    - "{{ stunnel_server_key_file }}"
+  register: stunnel_server_certificate_files
+
+- name: Fail when stunnel server certificate material is missing
+  ansible.builtin.assert:
+    that: stunnel_server_certificate_files.results | map(attribute='stat.exists') | min
+    fail_msg: Run the roles/host/stunnel-certs role before deploying stunnel-server.
+
+- name: Ensure required stunnel server Docker networks exist
+  ansible.builtin.command: docker network inspect "{{ item }}"
+  loop:
+    - "{{ stunnel_server_shared_network }}"
+    - "{{ stunnel_server_postgres_network }}"
+  changed_when: false
+
+- name: Render stunnel server configuration
+  ansible.builtin.template:
+    src: stunnel.conf.j2
+    dest: "{{ stunnel_server_config_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: stunnel_server_config
+
+- name: Render stunnel server compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ stunnel_server_compose_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: stunnel_server_compose
+
+- name: Remove existing stunnel server container before compose adoption
+  ansible.builtin.command: docker rm -f "{{ stunnel_server_container_name }}"
+  register: stunnel_server_adoption
+  changed_when: stunnel_server_adoption.rc == 0
+  failed_when: false
+  when: not ansible_check_mode and (stunnel_server_config.changed or stunnel_server_compose.changed)
+
+- name: Reconcile stunnel server container
+  ansible.builtin.command: docker compose -f "{{ stunnel_server_compose_file }}" up -d --force-recreate
+  when: not ansible_check_mode and (stunnel_server_config.changed or stunnel_server_compose.changed)
+
+- name: Ensure stunnel server container is running
+  ansible.builtin.command: docker compose -f "{{ stunnel_server_compose_file }}" up -d
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Wait for stunnel server health
+  ansible.builtin.command: docker inspect --format={{ '{{' }}.State.Health.Status{{ '}}' }} "{{ stunnel_server_container_name }}"
+  register: stunnel_server_health
+  changed_when: false
+  retries: 12
+  delay: 5
+  until: stunnel_server_health.stdout | trim == 'healthy'
+  when: not ansible_check_mode
