@@ -1,4 +1,10 @@
 ---
+- name: Ensure AWS CLI is installed for S3-backed migration
+  ansible.builtin.package:
+    name: awscli
+    state: present
+  become: true
+
 - name: Set S3 Migration Prefix
   ansible.builtin.set_fact:
     s3_migration_prefix: "s3://{{ migration_s3_bucket }}/site_migration_{{ migration_flow.source.host | replace('.', '_') }}-{{ migration_flow.destination.host | replace('.', '_') }}_{{ ansible_date_time.date | replace('-', '') }}"
