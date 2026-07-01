@@ -2,7 +2,7 @@
 # Default deployment directory for Zitadel Docker stack
 zitadel_deploy_dir: /opt/zitadel
 zitadel_workspace: "{{ zitadel_deploy_dir }}"
-zitadel_domain: auth.svc.plus
+zitadel_domain: iam.svc.plus
 zitadel_masterkey: MasterkeyNeedsToHave32Characters
 zitadel_api_bind_host: 127.0.0.1
 zitadel_api_port: 19080
@@ -11,4 +11,17 @@ zitadel_login_port: 19081
 zitadel_caddy_base_dir: "{{ '/opt/homebrew/etc/caddy' if ansible_os_family == 'Darwin' else '/etc/caddy' }}"
 zitadel_caddyfile_path: "{{ zitadel_caddy_base_dir }}/Caddyfile"
 zitadel_caddy_conf_dir: "{{ zitadel_caddy_base_dir }}/conf.d"
-zitadel_caddy_fragment_path: "{{ zitadel_caddy_base_dir }}/conf.d/zitadel.caddy"
+zitadel_caddy_fragment_path: "{{ zitadel_caddy_base_dir }}/conf.d/{{ zitadel_domain }}.caddy"
+
+# Database configurations (connecting to the shared Postgres server)
+zitadel_db_host: postgresql-svc-plus
+zitadel_db_port: 5432
+zitadel_db_name: zitadeliam
+zitadel_db_user: zitadel
+zitadel_db_password: "{{ lookup('ansible.builtin.env', 'ZITADEL_DATABASE_POSTGRES_USER_PASSWORD') }}"
+zitadel_db_admin_user: postgres
+zitadel_db_admin_password: "{{ lookup('ansible.builtin.env', 'ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD') }}"
+
+# Vault integration configuration
+vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default(lookup('ansible.builtin.env', 'VAULT_SERVER_URL') | default('https://vault.svc.plus', true), true) }}"
+vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN'), true) }}"
