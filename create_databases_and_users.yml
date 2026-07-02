@@ -1,0 +1,67 @@
+---
+# =============================================================================
+# 自动化建库/建用户任务 (PostgreSQL 逻辑隔离)
+# 确保每个服务仅拥有自己独立库的独立账户，不越界使用 postgres 账号。
+# =============================================================================
+
+- name: Provision Dedicated PostgreSQL Databases and Users
+  hosts: all
+  become: yes
+  vars:
+    # 容器化部署的默认名称
+    pg_container: postgresql-svc-plus
+    pg_root_user: postgres
+    # 若配置了密码，可通过环境变量传入
+    pg_root_password: "{{ lookup('env', 'POSTGRES_PASSWORD') | default('postgres', true) }}"
+
+    # 业务数据库清单与对应专有用户
+    db_configs:
+      - db: account
+        user: account_user
+        password: "{{ lookup('env', 'ACCOUNT_PG_PASSWORD') | default('CHANGE_ME', true) }}"
+      - db: litellm
+        user: litellm_user
+        password: "{{ lookup('env', 'LITELLM_PG_PASSWORD') | default('CHANGE_ME', true) }}"
+      - db: rag
+        user: rag_user
+        password: "{{ lookup('env', 'RAG_PG_PASSWORD') | default('CHANGE_ME', true) }}"
+      - db: zitadel
+        user: zitadel_user
+        password: "{{ lookup('env', 'ZITADEL_PG_PASSWORD') | default('CHANGE_ME', true) }}"
+      - db: gitea
+        user: gitea_user
+        password: "{{ lookup('env', 'GITEA_PG_PASSWORD') | default('CHANGE_ME', true) }}"
+      - db: vault_storage
+        user: vault_storage
+        password: "{{ lookup('env', 'VAULT_PG_PASSWORD') | default('CHANGE_ME', true) }}"
+
+  tasks:
+    - name: Create dedicated users
+      ansible.builtin.command: >
+        docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -c "
+        DO \$\$
+        BEGIN
+          IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '{{ item.user }}') THEN
+            CREATE ROLE {{ item.user }} LOGIN PASSWORD '{{ item.password }}';
+          END IF;
+        END
+        \$\$;"
+      loop: "{{ db_configs }}"
+      register: create_user_results
+      changed_when: "'CREATE ROLE' in create_user_results.stdout | default('')"
+
+    - name: Create dedicated databases and assign owners
+      ansible.builtin.command: >
+        docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -tc "SELECT 1 FROM pg_database WHERE datname = '{{ item.db }}'"
+      loop: "{{ db_configs }}"
+      register: db_check_results
+      changed_when: false
+      failed_when: false
+
+    - name: Execute CREATE DATABASE if not exists
+      ansible.builtin.command: >
+        docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -c "CREATE DATABASE {{ item.item.db }} OWNER {{ item.item.user }} ENCODING 'UTF8';"
+      loop: "{{ db_check_results.results }}"
+      when: "item.stdout.strip() != '1'"
+      register: create_db_results
+      changed_when: true

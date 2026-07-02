@@ -1,7 +1,7 @@
 ---
-agent_skills_user: "{{ ansible_env.USER | default('ubuntu') }}"
+agent_skills_user: "{{ ansible_env.USER | default('ubuntu') if ansible_os_family == 'Darwin' else 'ubuntu' }}"
 agent_skills_group: "{{ 'staff' if ansible_os_family == 'Darwin' else agent_skills_user }}"
-agent_skills_home: "{{ ansible_env.HOME | default('/home/' + agent_skills_user) }}"
+agent_skills_home: "{{ ansible_env.HOME if ansible_os_family == 'Darwin' else '/home/' + agent_skills_user }}"
 
 # 规范化技能落地目录（canonical），始终在目标主机上。installer 直接装到这里，
 # core 技能 clone 后合并进来。本地/pull 与远程 controller 两种模型行为一致。
