@@ -1,0 +1,14 @@
+---
+# =============================================================================
+# Open Platform Infra 域: 恢复主剧本
+# 用法: ansible-playbook infra-platform-restore.yml
+# =============================================================================
+
+- import_playbook: dynamic_inventory.yml
+
+- name: Execute Offline Restore on Target Environment
+  hosts: migration_target
+  become: yes
+  roles:
+    - role: domain_infra_platform
+      tasks_from: load
