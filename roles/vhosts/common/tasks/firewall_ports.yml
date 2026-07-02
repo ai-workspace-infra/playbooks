@@ -9,15 +9,45 @@
     path: /usr/bin/firewall-cmd
   register: common_firewall_firewalld_binary
 
+- name: Common | define firewall ports to keep open
+  ansible.builtin.set_fact:
+    common_firewall_open_ports:
+      - { port: "{{ common_firewall.ssh_port | default(22) }}", protocol: tcp, comment: "{{ common_firewall.allow_comments.ssh | default('XWorkmate SSH') }}" }
+      - { port: "{{ common_firewall.http_port | default(80) }}", protocol: tcp, comment: "{{ common_firewall.allow_comments.http | default('XWorkmate HTTP') }}" }
+      - { port: "{{ common_firewall.https_port | default(443) }}", protocol: tcp, comment: "{{ common_firewall.allow_comments.https | default('XWorkmate HTTPS') }}" }
+  when:
+    - common_firewall.enabled | default(true) | bool
+    - common_firewall_ufw_binary.stat.exists | default(false)
+  become: true
+
+- name: Common | inspect existing UFW numbered rules
+  ansible.builtin.command: ufw status numbered
+  register: common_firewall_ufw_status_numbered
+  changed_when: false
+  failed_when: common_firewall_ufw_status_numbered.rc != 0
+  when:
+    - common_firewall.enabled | default(true) | bool
+    - common_firewall_ufw_binary.stat.exists | default(false)
+  become: true
+
+- name: Common | remove legacy UFW limit rules for SSH/HTTP/HTTPS
+  ansible.builtin.command: "ufw --force delete limit {{ item.port }}/{{ item.protocol }}"
+  register: common_firewall_ufw_delete_limit
+  changed_when: true
+  failed_when: false
+  loop: "{{ common_firewall_open_ports | default([]) }}"
+  when:
+    - common_firewall.enabled | default(true) | bool
+    - common_firewall_ufw_binary.stat.exists | default(false)
+    - common_firewall_ufw_status_numbered.stdout is search('(?im)limit\\s+' ~ (item.port | string) ~ '/' ~ item.protocol)
+  become: true
+
 - name: Common | allow SSH/HTTP/HTTPS through UFW
   ansible.builtin.command: "ufw allow {{ item.port }}/{{ item.protocol }}"
   register: common_firewall_ufw_allow
   changed_when: "'Skipping adding existing rule' not in (common_firewall_ufw_allow.stdout | default(''))"
   failed_when: common_firewall_ufw_allow.rc != 0
-  loop:
-    - { port: "{{ common_firewall.ssh_port | default(22) }}", protocol: tcp, comment: "{{ common_firewall.allow_comments.ssh | default('XWorkmate SSH') }}" }
-    - { port: "{{ common_firewall.http_port | default(80) }}", protocol: tcp, comment: "{{ common_firewall.allow_comments.http | default('XWorkmate HTTP') }}" }
-    - { port: "{{ common_firewall.https_port | default(443) }}", protocol: tcp, comment: "{{ common_firewall.allow_comments.https | default('XWorkmate HTTPS') }}" }
+  loop: "{{ common_firewall_open_ports | default([]) }}"
   when:
     - common_firewall.enabled | default(true) | bool
     - common_firewall_ufw_binary.stat.exists | default(false)
