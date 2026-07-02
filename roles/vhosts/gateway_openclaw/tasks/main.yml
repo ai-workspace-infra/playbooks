@@ -216,6 +216,66 @@
     - Run OpenClaw doctor
     - Restart openclaw
 
+- name: Inspect OpenClaw managed ACPX plugin
+  ansible.builtin.command:
+    cmd: "{{ gateway_openclaw_binary_path }} plugins inspect acpx --json"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_acpx_inspect
+  changed_when: false
+  failed_when: false
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Windows'
+
+- name: Install required OpenClaw managed ACPX plugin version
+  ansible.builtin.command:
+    cmd: >-
+      {{ gateway_openclaw_binary_path }} plugins install
+      {{ ('@openclaw/acpx@' ~ gateway_openclaw_required_version) | quote }}
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_acpx_install
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Windows'
+    - gateway_openclaw_acpx_inspect.rc | default(1) != 0
+  notify:
+    - Run OpenClaw doctor
+    - Restart openclaw
+
+- name: Upgrade OpenClaw managed ACPX plugin to gateway version
+  ansible.builtin.command:
+    cmd: "{{ gateway_openclaw_binary_path }} plugins update acpx"
+  environment:
+    HOME: "{{ gateway_openclaw_home }}"
+    PATH: "{{ gateway_openclaw_service_path }}"
+    OPENCLAW_NO_RESPAWN: "1"
+    NODE_COMPILE_CACHE: "{{ gateway_openclaw_compile_cache_dir }}"
+  become: true
+  become_user: "{{ gateway_openclaw_service_user }}"
+  register: gateway_openclaw_acpx_update
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Windows'
+    - gateway_openclaw_acpx_inspect.rc | default(1) == 0
+    - >-
+      ((gateway_openclaw_acpx_inspect.stdout | from_json).plugin.version | default(''))
+      != gateway_openclaw_required_version
+  notify:
+    - Run OpenClaw doctor
+    - Restart openclaw
+
 - name: Reset OpenClaw compile cache after package or plugin changes
   ansible.builtin.file:
     path: "{{ gateway_openclaw_compile_cache_dir }}"
@@ -236,6 +296,10 @@
       (gateway_openclaw_required_global_plugin_installs.changed | default(false))
       or
       (gateway_openclaw_removed_global_plugin_packages.changed | default(false))
+      or
+      (gateway_openclaw_acpx_install.changed | default(false))
+      or
+      (gateway_openclaw_acpx_update.changed | default(false))
 
 - name: Recreate OpenClaw compile cache after package or plugin changes
   ansible.builtin.file:
@@ -253,6 +317,10 @@
       (gateway_openclaw_required_global_plugin_installs.changed | default(false))
       or
       (gateway_openclaw_removed_global_plugin_packages.changed | default(false))
+      or
+      (gateway_openclaw_acpx_install.changed | default(false))
+      or
+      (gateway_openclaw_acpx_update.changed | default(false))
 
 - name: Refresh OpenClaw plugin registry
   ansible.builtin.command:
