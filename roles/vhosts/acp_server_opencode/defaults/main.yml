@@ -1,12 +1,12 @@
 ---
 acp_opencode_service_name: acp-opencode
-acp_opencode_runtime_user: "{{ ansible_env.USER | default('ubuntu') }}"
-acp_opencode_runtime_group: "{{ 'staff' if ansible_os_family == 'Darwin' else (ansible_env.USER | default('ubuntu')) }}"
-acp_opencode_runtime_home: "{{ ansible_env.HOME | default('/home/' + acp_opencode_runtime_user) }}"
-acp_opencode_service_user: "{{ ansible_env.USER | default('ubuntu') }}"
-acp_opencode_service_group: "{{ 'staff' if ansible_os_family == 'Darwin' else (ansible_env.USER | default('ubuntu')) }}"
-acp_opencode_home: "{{ ansible_env.HOME | default('/home/' + acp_opencode_service_user) }}"
-acp_opencode_workdir: "{{ ansible_env.HOME | default('/home/' + acp_opencode_service_user) }}/.opencode"
+acp_opencode_runtime_user: "{{ ansible_env.USER | default('ubuntu') if ansible_os_family == 'Darwin' else 'ubuntu' }}"
+acp_opencode_runtime_group: "{{ 'staff' if ansible_os_family == 'Darwin' else acp_opencode_runtime_user }}"
+acp_opencode_runtime_home: "{{ ansible_env.HOME if ansible_os_family == 'Darwin' else '/home/' + acp_opencode_runtime_user }}"
+acp_opencode_service_user: "{{ ansible_env.USER | default('ubuntu') if ansible_os_family == 'Darwin' else 'ubuntu' }}"
+acp_opencode_service_group: "{{ 'staff' if ansible_os_family == 'Darwin' else acp_opencode_service_user }}"
+acp_opencode_home: "{{ ansible_env.HOME if ansible_os_family == 'Darwin' else '/home/' + acp_opencode_service_user }}"
+acp_opencode_workdir: "{{ acp_opencode_home }}/.opencode"
 # PATH for the launchd/systemd service (mirrors gemini/codex). On macOS the
 # user-level npm global bin lives under ~/.local/bin; include Homebrew + system.
 acp_opencode_npm_global_bin: "{{ acp_opencode_home + '/.local/bin' if ansible_os_family == 'Darwin' else '/usr/bin' }}"
