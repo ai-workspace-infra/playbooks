@@ -60,6 +60,25 @@
     - vault_deploy_mode == "standalone"
     - ansible_os_family != 'Darwin'
 
+- name: Create Vault production configuration file
+  ansible.builtin.copy:
+    dest: "{{ vault_config_dir }}/vault.hcl"
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      storage "postgresql" {
+        connection_url = "postgres://vault_storage:{{ vault_pg_password | default('CHANGE_ME') }}@127.0.0.1:15432/vault_storage?sslmode=disable"
+      }
+
+      listener "tcp" {
+        address     = "127.0.0.1:8200"
+        tls_disable = true
+      }
+
+      api_addr = "https://vault.svc.plus"
+      ui = true
+
 - name: Deploy standalone Vault systemd service
   ansible.builtin.copy:
     dest: "/etc/systemd/system/{{ vault_service_name }}.service"
@@ -68,15 +87,14 @@
     mode: "0644"
     content: |
       [Unit]
-      Description=HashiCorp Vault standalone dev server
+      Description=HashiCorp Vault Server
       Documentation=https://developer.hashicorp.com/vault/docs
       After=network-online.target
       Wants=network-online.target
 
       [Service]
       Type=simple
-      Environment="VAULT_DEV_ROOT_TOKEN_ID={{ vault_server_root_access_token }}"
-      ExecStart={{ vault_binary_path }} server -dev -dev-listen-address={{ vault_listen_addr }} -dev-root-token-id={{ vault_server_root_access_token }}
+      ExecStart={{ vault_binary_path }} server -config={{ vault_config_dir }}/vault.hcl
       Restart=always
       RestartSec=5
       LimitNOFILE=65536

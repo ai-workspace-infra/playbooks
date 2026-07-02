@@ -1,0 +1,25 @@
+---
+# =============================================================================
+# Open Platform Infra 域: 迁移主剧本
+# 用法: ansible-playbook -i source_ip,target_ip infra-platform-migrate.yml
+# =============================================================================
+
+- import_playbook: dynamic_inventory.yml
+
+- name: Phase 1 - Extract Data from Source Environment
+  hosts: migration_source
+  become: yes
+  tasks:
+    - name: Extract Infra Platform Data
+      import_role:
+        name: domain_infra_platform
+        tasks_from: extract
+
+- name: Phase 2 - Load Data into Target Environment
+  hosts: migration_target
+  become: yes
+  tasks:
+    - name: Load Infra Platform Data
+      import_role:
+        name: domain_infra_platform
+        tasks_from: load
