@@ -1,6 +1,6 @@
 ---
-gateway_openclaw_service_user: "{{ ansible_env.USER | default('ubuntu') }}"
-gateway_openclaw_service_group: "{{ 'staff' if ansible_os_family == 'Darwin' else (ansible_env.USER | default('ubuntu')) }}"
+gateway_openclaw_service_user: "{{ ansible_env.USER | default('ubuntu') if ansible_os_family == 'Darwin' else 'ubuntu' }}"
+gateway_openclaw_service_group: "{{ 'staff' if ansible_os_family == 'Darwin' else gateway_openclaw_service_user }}"
 
 gateway_openclaw_domain: openclaw.svc.plus
 
@@ -17,7 +17,7 @@ gateway_openclaw_service_unit_path: "/etc/systemd/system/{{ gateway_openclaw_ser
 gateway_openclaw_service_uid: ""
 gateway_openclaw_user_service_unit_path: "{{ gateway_openclaw_home }}/.config/systemd/user/{{ gateway_openclaw_service_name }}.service"
 gateway_openclaw_profile_script_path: /etc/profile.d/openclaw-user-systemd.sh
-gateway_openclaw_home: "{{ ansible_env.HOME | default('/home/' + gateway_openclaw_service_user) }}"
+gateway_openclaw_home: "{{ ansible_env.HOME if ansible_os_family == 'Darwin' else '/home/' + gateway_openclaw_service_user }}"
 gateway_openclaw_binary_path: "{{ gateway_openclaw_home }}/.local/bin/openclaw"
 gateway_openclaw_install_dir: "{{ gateway_openclaw_home }}/.local/lib/node_modules/openclaw"
 gateway_openclaw_required_version: "2026.6.1"

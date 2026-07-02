@@ -1,8 +1,8 @@
 ---
 xworkmate_bridge_service_name: xworkmate-bridge
-xworkmate_bridge_service_user: "{{ ansible_env.USER | default('ubuntu') }}"
-xworkmate_bridge_service_group: "{{ 'staff' if ansible_os_family == 'Darwin' else (ansible_env.USER | default('ubuntu')) }}"
-xworkmate_bridge_service_home: "{{ ansible_env.HOME | default('/home/' + xworkmate_bridge_service_user) }}"
+xworkmate_bridge_service_user: "{{ ansible_env.USER | default('ubuntu') if ansible_os_family == 'Darwin' else 'ubuntu' }}"
+xworkmate_bridge_service_group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkmate_bridge_service_user }}"
+xworkmate_bridge_service_home: "{{ ansible_env.HOME if ansible_os_family == 'Darwin' else '/home/' + xworkmate_bridge_service_user }}"
 ai_workspace_auth_token: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN') | default('', true) }}"
 xworkmate_bridge_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default(lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_AUTH_TOKEN') | default(ai_workspace_auth_token, true), true) }}"
 xworkmate_bridge_review_auth_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_REVIEW_AUTH_TOKEN') | default('', true) }}"
