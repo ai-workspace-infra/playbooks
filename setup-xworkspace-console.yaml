@@ -7,13 +7,12 @@
     ansible.builtin.apt:
       lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(900) | int }}"
   vars:
-    # 跟随连接用户，与 xworkspace_console_home(ansible_env.HOME) 保持一致：
-    # 以 root 连接时 user=root/home=/root，避免 become_user=ubuntu 去 link /root
-    # 下的 unit 文件而报 "src does not exist"（root 家目录 700，ubuntu 无法进入）。
-    xworkspace_console_user: "{{ ansible_env.USER | default('ubuntu') }}"
+    # SSH/Ansible may connect as root, but deployed services must use a
+    # dedicated unprivileged runtime identity and must never persist in /root.
+    xworkspace_console_user: ubuntu
     xworkspace_console_public_access: false
     xworkspace_console_domain: workspace.svc.plus
-    xworkspace_console_home: "{{ ansible_env.HOME | default('/home/ubuntu') }}"
+    xworkspace_console_home: "/home/{{ xworkspace_console_user }}"
     xworkspace_console_root: "{{ xworkspace_console_home }}/.local/state/ai-workspace"
     xworkspace_console_repo_dir: "{{ xworkspace_console_home }}/xworkspace-console"
     xworkspace_console_runtime_archive: "{{ lookup('ansible.builtin.env', 'XWORKSPACE_CONSOLE_RUNTIME_ARCHIVE') | default('', true) }}"
