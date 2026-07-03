@@ -8,8 +8,8 @@
   hosts: all
   become: yes
   vars:
-    # 容器化部署的默认名称
-    pg_container: postgresql-svc-plus
+    # If neither is set via environment, we'll auto-detect
+    pg_container_default: "postgresql-svc-plus"
     pg_root_user: postgres
     # 若配置了密码，可通过环境变量传入
     pg_root_password: "{{ lookup('env', 'POSTGRES_PASSWORD') | default('postgres', true) }}"
@@ -17,6 +17,7 @@
     # 业务数据库清单与对应专有用户
     db_configs:
       - db: account
+
         user: account_user
         password: "{{ lookup('env', 'ACCOUNT_PG_PASSWORD') | default('CHANGE_ME', true) }}"
       - db: litellm
@@ -34,6 +35,17 @@
       - db: vault_storage
         user: vault_storage
         password: "{{ lookup('env', 'VAULT_PG_PASSWORD') | default('CHANGE_ME', true) }}"
+
+  pre_tasks:
+    - name: Detect running Postgres container
+      ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E 'postgresql-svc-plus|ai-workspace-postgres' | head -n 1"
+      register: detected_pg
+      changed_when: false
+      failed_when: false
+
+    - name: Set pg_container fact
+      ansible.builtin.set_fact:
+        pg_container: "{{ detected_pg.stdout if detected_pg.stdout else pg_container_default }}"
 
   tasks:
     - name: Create dedicated users
