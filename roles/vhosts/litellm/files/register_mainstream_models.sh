@@ -22,13 +22,18 @@ echo "[INFO] Using LiteLLM URL: $LITELLM_URL"
 
 # Aliases successfully registered, collected for the post-registration probe.
 REGISTERED=()
+# Aliases registered with mode=embedding (probed via /v1/embeddings instead).
+EMBED_REGISTERED=()
 
-# Function to add a model
+# Function to add a model. Optional 5th arg is the LiteLLM mode
+# ("chat" default, or "embedding" — embedding aliases are probed via
+# /v1/embeddings instead of a 1-token completion).
 add_model() {
     local alias_name="$1"
     local litellm_provider_model="$2"
     local api_key_env_var="$3"
     local api_base="${4:-}"
+    local mode="${5:-chat}"
 
     # Skip registration when the backing API key was not provided (empty env var).
     if [ -z "${!api_key_env_var:-}" ]; then
@@ -50,7 +55,7 @@ add_model() {
   },
   "model_info": {
     "id": "$alias_name",
-    "mode": "chat"
+    "mode": "$mode"
   }
 }
 EOF
@@ -65,7 +70,7 @@ EOF
   },
   "model_info": {
     "id": "$alias_name",
-    "mode": "chat"
+    "mode": "$mode"
   }
 }
 EOF
@@ -82,7 +87,7 @@ EOF
     http_code=$(echo "$response" | grep -Eo 'HTTP_CODE:[0-9]{3}' | cut -d':' -f2 || echo "000")
     if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
         echo "[SUCCESS] Model $alias_name added."
-        REGISTERED+=("$alias_name")
+        if [ "$mode" = "embedding" ]; then EMBED_REGISTERED+=("$alias_name"); else REGISTERED+=("$alias_name"); fi
     else
         echo "[INFO] Model $alias_name failed to add via /model/new (HTTP $http_code), attempting /model/update..."
         response=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$LITELLM_URL/model/update" \
@@ -92,7 +97,7 @@ EOF
         http_code=$(echo "$response" | grep -Eo 'HTTP_CODE:[0-9]{3}' | cut -d':' -f2 || echo "000")
         if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
             echo "[SUCCESS] Model $alias_name updated."
-            REGISTERED+=("$alias_name")
+            if [ "$mode" = "embedding" ]; then EMBED_REGISTERED+=("$alias_name"); else REGISTERED+=("$alias_name"); fi
         else
             echo "[ERROR] Failed to add/update model $alias_name. HTTP Code: $http_code"
             echo "Response: $response"
@@ -130,6 +135,28 @@ probe_model() {
     return 1
 }
 
+# Same idea as probe_model but for mode=embedding aliases: a real
+# /v1/embeddings call is the only proof the alias is callable.
+probe_embedding_model() {
+    local alias_name="$1"
+    local body http_code
+    body=$(curl -s -m 60 -w "\nHTTP_CODE:%{http_code}" \
+        -X POST "$LITELLM_URL/v1/embeddings" \
+        -H "Authorization: Bearer $LITELLM_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"model\":\"$alias_name\",\"input\":[\"ping\"]}") || true
+    http_code=$(echo "$body" | grep -Eo 'HTTP_CODE:[0-9]{3}' | cut -d':' -f2 || echo "000")
+    if [ "$http_code" = "200" ]; then
+        echo "PASS"
+        return 0
+    fi
+    local flat msg
+    flat=$(echo "$body" | sed 's/HTTP_CODE:[0-9]*//' | tr '\n' ' ')
+    msg=$(echo "$flat" | grep -Eo '"message":"[^"]*"' | head -1 | cut -d'"' -f4)
+    echo "FAIL $http_code $(echo "${msg:-$flat}" | cut -c1-90)"
+    return 1
+}
+
 if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
     echo "========================================="
     echo "Registering DeepSeek Models..."
@@ -156,6 +183,12 @@ if [ -n "${NVIDIA_API_KEY:-}" ]; then
     add_model "nvidia/minimax-m3" "openai/minimaxai/minimax-m3" "NVIDIA_API_KEY" "$NVIDIA_API_BASE"
     add_model "nvidia/qwen3.5" "openai/qwen/qwen3.5-397b-a17b" "NVIDIA_API_KEY" "$NVIDIA_API_BASE"
     add_model "nvidia/kimi-k2.6" "openai/moonshotai/kimi-k2.6" "NVIDIA_API_KEY" "$NVIDIA_API_BASE"
+    # Embedding model for X Memory Hub / semantic search consumers. bge-m3 is
+    # multilingual (strong Chinese retrieval), 1024-dim. Registered inline with
+    # the same key as the chat models — os.environ/NVIDIA_API_KEY references
+    # resolve against the proxy's own environment, which on macOS launchd
+    # deployments has drifted from the key used at registration time.
+    add_model "nvidia/bge-m3" "openai/baai/bge-m3" "NVIDIA_API_KEY" "$NVIDIA_API_BASE" "embedding"
 fi
 
 echo "========================================="
@@ -215,7 +248,7 @@ echo "You can check them at $LITELLM_URL/ui/?page=models"
 # on); set REGISTER_MODELS_VERIFY=0 to skip. A FAIL here is the real signal that
 # a fallback link is unhealthy even though it shows up in /v1/models.
 # =============================================================================
-if [ "${REGISTER_MODELS_VERIFY:-1}" != "0" ] && [ "${#REGISTERED[@]}" -gt 0 ]; then
+if [ "${REGISTER_MODELS_VERIFY:-1}" != "0" ] && [ "$(( ${#REGISTERED[@]} + ${#EMBED_REGISTERED[@]} ))" -gt 0 ]; then
     echo "========================================="
     echo "Verifying callability (1-token live probe per alias)..."
     echo "========================================="
@@ -234,8 +267,19 @@ if [ "${REGISTER_MODELS_VERIFY:-1}" != "0" ] && [ "${#REGISTERED[@]}" -gt 0 ]; t
             fail_list+=("$alias_name")
         fi
     done
+    for alias_name in "${EMBED_REGISTERED[@]}"; do
+        result="$(probe_embedding_model "$alias_name" || true)"
+        if [ "$result" = "PASS" ]; then
+            printf '  [PASS] %s (embedding)\n' "$alias_name"
+            pass_count=$((pass_count + 1))
+        else
+            printf '  [FAIL] %-28s %s\n' "$alias_name" "${result#FAIL }"
+            fail_count=$((fail_count + 1))
+            fail_list+=("$alias_name")
+        fi
+    done
     echo "-----------------------------------------"
-    echo "Callable: $pass_count   Unhealthy: $fail_count   (of ${#REGISTERED[@]} registered)"
+    echo "Callable: $pass_count   Unhealthy: $fail_count   (of $(( ${#REGISTERED[@]} + ${#EMBED_REGISTERED[@]} )) registered)"
     if [ "$fail_count" -gt 0 ]; then
         echo "Unhealthy aliases (registered but NOT callable): ${fail_list[*]}"
         echo "These appear in /v1/models but fail a real call — check upstream"
