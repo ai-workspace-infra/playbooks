@@ -25,15 +25,15 @@ accounts_service_caddy_sites:
 accounts_service_env_defaults:
   DB_HOST: stunnel-client
   DB_NAME: account
-  DB_PASSWORD: ""
+  DB_PASSWORD: "{{ lookup('ansible.builtin.env', 'ACCOUNT_PG_PASSWORD') | default('', true) }}"
   DB_PORT: "15432"
-  DB_USER: svcplus_vps
+  DB_USER: account_user
   BRIDGE_AUTH_TOKEN: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default('', true) }}"
   BRIDGE_REVIEW_AUTH_TOKEN: "{{ lookup('ansible.builtin.env', 'BRIDGE_REVIEW_AUTH_TOKEN') | default('', true) }}"
   BRIDGE_SERVER_URL: "{{ lookup('ansible.builtin.env', 'BRIDGE_SERVER_URL') | default('https://xworkmate-bridge.svc.plus', true) }}"
   INTERNAL_SERVICE_TOKEN: ""
-  POSTGRES_PASSWORD: ""
-  POSTGRES_USER: svcplus_vps
+  POSTGRES_PASSWORD: "{{ lookup('ansible.builtin.env', 'ACCOUNT_PG_PASSWORD') | default('', true) }}"
+  POSTGRES_USER: account_user
   SMTP_FROM: XControl Account <noreply@svc.plus>
   SMTP_HOST: smtp.qq.com
   SMTP_PASSWORD: ""
