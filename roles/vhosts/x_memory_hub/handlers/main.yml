@@ -1,0 +1,28 @@
+---
+- name: Reload X Memory Hub
+  ansible.builtin.command:
+    cmd: "systemctl --user restart {{ x_memory_hub_service_name }}.service"
+  environment:
+    HOME: "{{ x_memory_hub_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ x_memory_hub_service_uid }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ x_memory_hub_service_uid }}/bus"
+  become: true
+  become_user: "{{ x_memory_hub_user }}"
+  failed_when: false
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
+  listen: Restart X Memory Hub
+
+- name: Unload X Memory Hub on macOS
+  ansible.builtin.command: "launchctl unload {{ x_memory_hub_launch_agent_path }}"
+  failed_when: false
+  changed_when: false
+  when: ansible_system == 'Darwin'
+  listen: Restart X Memory Hub
+
+- name: Load X Memory Hub on macOS
+  ansible.builtin.command: "launchctl load -w {{ x_memory_hub_launch_agent_path }}"
+  changed_when: false
+  when: ansible_system == 'Darwin'
+  listen: Restart X Memory Hub

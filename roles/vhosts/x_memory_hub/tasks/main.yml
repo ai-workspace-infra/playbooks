@@ -1,0 +1,203 @@
+---
+- name: Assert X Memory Hub is supported on Debian or Darwin family
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family in ["Debian", "Darwin"]
+    fail_msg: "roles/vhosts/x_memory_hub currently supports Debian-based and Darwin hosts only."
+
+- name: Ensure X Memory Hub directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ x_memory_hub_user }}"
+    group: "{{ x_memory_hub_group }}"
+    mode: "0755"
+  loop:
+    - "{{ x_memory_hub_config_dir }}"
+    - "{{ x_memory_hub_source_dir | dirname }}"
+    - "{{ x_memory_hub_service_unit_path | dirname }}"
+
+- name: Resolve X Memory Hub service user uid
+  ansible.builtin.command:
+    cmd: "id -u {{ x_memory_hub_user }}"
+  register: x_memory_hub_service_uid_result
+  changed_when: false
+  when: ansible_os_family != 'Darwin'
+
+- name: Set X Memory Hub service user uid
+  ansible.builtin.set_fact:
+    x_memory_hub_service_uid: "{{ x_memory_hub_service_uid_result.stdout | trim }}"
+  when: ansible_os_family != 'Darwin'
+
+# ── PostgreSQL 库/账户/扩展（postgresql.svc.plus 容器内执行，幂等） ────────────
+- name: Detect running Postgres container
+  ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E 'postgresql-svc-plus|ai-workspace-postgres' | head -n 1"
+  register: x_memory_hub_detected_pg
+  changed_when: false
+  failed_when: false
+
+- name: Set Postgres container fact
+  ansible.builtin.set_fact:
+    x_memory_hub_pg_container: "{{ x_memory_hub_detected_pg.stdout if x_memory_hub_detected_pg.stdout else x_memory_hub_pg_container_default }}"
+
+- name: Check X Memory Hub database role
+  ansible.builtin.command: >
+    docker exec -i {{ x_memory_hub_pg_container }} psql -U {{ x_memory_hub_pg_root_user }} -tAc
+    "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ x_memory_hub_db_user }}'"
+  register: x_memory_hub_role_check
+  changed_when: false
+  failed_when: false
+
+- name: Create X Memory Hub database role
+  ansible.builtin.command: >
+    docker exec -i {{ x_memory_hub_pg_container }} psql -U {{ x_memory_hub_pg_root_user }} -c
+    "CREATE ROLE {{ x_memory_hub_db_user }} LOGIN PASSWORD '{{ x_memory_hub_db_password }}';"
+  when: x_memory_hub_role_check.stdout | default('') | trim != '1'
+
+- name: Check X Memory Hub database
+  ansible.builtin.command: >
+    docker exec -i {{ x_memory_hub_pg_container }} psql -U {{ x_memory_hub_pg_root_user }} -tAc
+    "SELECT 1 FROM pg_database WHERE datname = '{{ x_memory_hub_db_name }}'"
+  register: x_memory_hub_db_check
+  changed_when: false
+  failed_when: false
+
+- name: Create X Memory Hub database
+  ansible.builtin.command: >
+    docker exec -i {{ x_memory_hub_pg_container }} psql -U {{ x_memory_hub_pg_root_user }} -c
+    "CREATE DATABASE {{ x_memory_hub_db_name }} OWNER {{ x_memory_hub_db_user }};"
+  when: x_memory_hub_db_check.stdout | default('') | trim != '1'
+
+# pgvector 必需；pg_jieba/pg_trgm 由镜像提供，缺失时降级（Hub 迁移会退回 english 分词）。
+- name: Ensure X Memory Hub database extensions
+  ansible.builtin.command: >
+    docker exec -i {{ x_memory_hub_pg_container }} psql -U {{ x_memory_hub_pg_root_user }}
+    -d {{ x_memory_hub_db_name }} -c "CREATE EXTENSION IF NOT EXISTS {{ item.name }};"
+  loop:
+    - { name: vector, required: true }
+    - { name: pg_jieba, required: false }
+    - { name: pg_trgm, required: false }
+  register: x_memory_hub_ext_results
+  changed_when: "'CREATE EXTENSION' in (x_memory_hub_ext_results.stdout | default(''))"
+  failed_when: x_memory_hub_ext_results.rc != 0 and item.required
+
+# ── 源码检出与依赖 ─────────────────────────────────────────────────────────
+- name: Checkout X Memory Hub source
+  ansible.builtin.git:
+    repo: "{{ x_memory_hub_source_repo }}"
+    dest: "{{ x_memory_hub_source_dir }}"
+    version: "{{ x_memory_hub_version }}"
+    force: true
+  become: true
+  become_user: "{{ x_memory_hub_user }}"
+  register: x_memory_hub_source_checkout
+
+- name: Install X Memory Hub dependencies
+  ansible.builtin.command:
+    cmd: npm install --no-audit --no-fund
+    chdir: "{{ x_memory_hub_source_dir }}"
+  # Darwin 优先 Homebrew node（同 qmd 的 ABI 说明）；Linux PATH 不动。
+  environment:
+    PATH: "{{ '/opt/homebrew/bin:/usr/local/bin:' if ansible_os_family == 'Darwin' else '' }}{{ ansible_env.PATH }}"
+  become: true
+  become_user: "{{ x_memory_hub_user }}"
+  when: x_memory_hub_source_checkout.changed | default(false) or not ((x_memory_hub_source_dir ~ '/node_modules') is directory)
+
+- name: Deploy X Memory Hub environment
+  ansible.builtin.template:
+    src: x-memory-hub.env.j2
+    dest: "{{ x_memory_hub_env_path }}"
+    owner: "{{ x_memory_hub_user }}"
+    group: "{{ x_memory_hub_group }}"
+    mode: "0600"
+  diff: false
+  notify: Restart X Memory Hub
+
+# ── Linux：user systemd（同 qmd 模式） ────────────────────────────────────
+- name: Deploy X Memory Hub user systemd unit
+  ansible.builtin.template:
+    src: x-memory-hub.user.service.j2
+    dest: "{{ x_memory_hub_service_unit_path }}"
+    owner: "{{ x_memory_hub_user }}"
+    group: "{{ x_memory_hub_group }}"
+    mode: "0644"
+  register: x_memory_hub_user_service_unit
+  when: ansible_os_family != 'Darwin'
+
+- name: Enable X Memory Hub service user linger
+  ansible.builtin.command:
+    cmd: "loginctl enable-linger {{ x_memory_hub_user }}"
+    creates: "/var/lib/systemd/linger/{{ x_memory_hub_user }}"
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
+
+- name: Reload X Memory Hub user systemd manager
+  ansible.builtin.command:
+    cmd: systemctl --user daemon-reload
+  environment:
+    HOME: "{{ x_memory_hub_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ x_memory_hub_service_uid }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ x_memory_hub_service_uid }}/bus"
+  become: true
+  become_user: "{{ x_memory_hub_user }}"
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
+
+- name: Ensure X Memory Hub daemon is enabled and running
+  ansible.builtin.command:
+    cmd: >-
+      systemctl --user enable
+      {{ '--now' if not (x_memory_hub_user_service_unit.changed | default(false)) else '' }}
+      {{ x_memory_hub_service_name }}.service
+  environment:
+    HOME: "{{ x_memory_hub_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ x_memory_hub_service_uid }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ x_memory_hub_service_uid }}/bus"
+  become: true
+  become_user: "{{ x_memory_hub_user }}"
+  register: x_memory_hub_service_enable
+  changed_when: >-
+    'Created symlink' in (x_memory_hub_service_enable.stdout | default('')) or
+    'Created symlink' in (x_memory_hub_service_enable.stderr | default(''))
+  when:
+    - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
+
+- name: Restart X Memory Hub daemon after unit changes
+  ansible.builtin.command:
+    cmd: "systemctl --user restart {{ x_memory_hub_service_name }}.service"
+  environment:
+    HOME: "{{ x_memory_hub_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ x_memory_hub_service_uid }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ x_memory_hub_service_uid }}/bus"
+  become: true
+  become_user: "{{ x_memory_hub_user }}"
+  when:
+    - x_memory_hub_user_service_unit.changed | default(false) or x_memory_hub_source_checkout.changed | default(false)
+    - not ansible_check_mode
+    - ansible_os_family != 'Darwin'
+
+- name: Import macOS specific X Memory Hub tasks
+  ansible.builtin.import_tasks: macos.yml
+  when: ansible_os_family == 'Darwin'
+
+# ── 校验：/healthz 是活探针（不带 token 也应 200） ───────────────────────────
+- name: Wait for X Memory Hub health endpoint
+  ansible.builtin.uri:
+    url: "http://{{ x_memory_hub_host }}:{{ x_memory_hub_port }}/healthz"
+    status_code: 200
+  register: x_memory_hub_health
+  retries: 12
+  delay: 5
+  until: x_memory_hub_health.status | default(0) == 200
+  check_mode: false
+
+- name: Show X Memory Hub validation summary
+  ansible.builtin.debug:
+    msg:
+      - "X Memory Hub API: http://{{ x_memory_hub_host }}:{{ x_memory_hub_port }}"
+      - "Embedding model: {{ x_memory_hub_embed_model }} via {{ x_memory_hub_litellm_base_url }}"
+      - "Health: {{ x_memory_hub_health.json | default({}) }}"

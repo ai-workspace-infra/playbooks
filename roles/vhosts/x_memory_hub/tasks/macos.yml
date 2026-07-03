@@ -1,0 +1,26 @@
+---
+- name: Ensure X Memory Hub launchd directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ x_memory_hub_user }}"
+    group: "{{ x_memory_hub_group }}"
+    mode: "0755"
+  loop:
+    - "{{ x_memory_hub_launch_agent_path | dirname }}"
+    - "{{ x_memory_hub_log_dir }}"
+
+- name: Deploy X Memory Hub LaunchAgent
+  ansible.builtin.template:
+    src: x-memory-hub.plist.j2
+    dest: "{{ x_memory_hub_launch_agent_path }}"
+    owner: "{{ x_memory_hub_user }}"
+    group: "{{ x_memory_hub_group }}"
+    mode: "0644"
+  notify: Restart X Memory Hub
+
+- name: Ensure X Memory Hub LaunchAgent is loaded
+  ansible.builtin.command: "launchctl load -w {{ x_memory_hub_launch_agent_path }}"
+  register: x_memory_hub_launchctl_result
+  changed_when: false
+  failed_when: x_memory_hub_launchctl_result.rc != 0 and 'already loaded' not in x_memory_hub_launchctl_result.stderr

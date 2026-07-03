@@ -1,0 +1,41 @@
+---
+x_memory_hub_user: "{{ ansible_env.USER | default('ubuntu') if ansible_os_family == 'Darwin' else 'ubuntu' }}"
+x_memory_hub_group: "{{ 'staff' if ansible_os_family == 'Darwin' else x_memory_hub_user }}"
+x_memory_hub_home: "{{ ansible_env.HOME if ansible_os_family == 'Darwin' else '/home/' + x_memory_hub_user }}"
+
+# 开发版本：跟踪 main。发布后改为 pinned sha（同 qmd_version 约定）。
+x_memory_hub_source_repo: "https://github.com/ai-workspace-lab/X-Memory-Hub.git"
+x_memory_hub_version: "main"
+x_memory_hub_source_dir: "{{ x_memory_hub_home }}/.local/src/x-memory-hub"
+
+x_memory_hub_host: 127.0.0.1
+x_memory_hub_port: 8790
+x_memory_hub_config_dir: "{{ x_memory_hub_home }}/.config/x-memory-hub"
+x_memory_hub_env_path: "{{ x_memory_hub_config_dir }}/x-memory-hub.env"
+
+# PostgreSQL（postgresql.svc.plus 容器，随 setup-postgres-standalone 部署）
+x_memory_hub_pg_container_default: "postgresql-svc-plus"
+x_memory_hub_pg_root_user: postgres
+x_memory_hub_pg_host: 127.0.0.1
+x_memory_hub_pg_port: 15432
+x_memory_hub_db_name: x_memory_hub
+x_memory_hub_db_user: x_memory_hub
+# 未显式提供时退回统一认证 token，保证零配置部署也不会落成弱口令。
+x_memory_hub_db_password: >-
+  {{ lookup('ansible.builtin.env', 'X_MEMORY_HUB_PG_PASSWORD')
+     | default(lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN'), true) }}
+
+# 统一认证 + LiteLLM embedding 复用
+x_memory_hub_auth_token: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN') | default('', true) }}"
+x_memory_hub_litellm_base_url: "http://127.0.0.1:4000"
+x_memory_hub_embed_model: "nvidia/bge-m3"
+
+# 服务定义
+x_memory_hub_service_name: x-memory-hub
+x_memory_hub_service_unit_path: "{{ x_memory_hub_home }}/.config/systemd/user/{{ x_memory_hub_service_name }}.service"
+x_memory_hub_service_uid: ""
+x_memory_hub_launch_agent_label: plus.svc.xworkspace.x-memory-hub
+x_memory_hub_launch_agent_path: "{{ x_memory_hub_home }}/Library/LaunchAgents/{{ x_memory_hub_launch_agent_label }}.plist"
+x_memory_hub_log_dir: "{{ x_memory_hub_home }}/.local/state/xworkspace"
+x_memory_hub_stdout_path: "{{ x_memory_hub_log_dir }}/x-memory-hub.log"
+x_memory_hub_stderr_path: "{{ x_memory_hub_log_dir }}/x-memory-hub.err.log"

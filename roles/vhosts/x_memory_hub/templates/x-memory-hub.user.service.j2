@@ -1,0 +1,17 @@
+[Unit]
+Description=X Memory Hub (PostgreSQL-first MCP-compatible memory hub)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={{ x_memory_hub_source_dir }}
+Environment=HOME={{ x_memory_hub_home }}
+Environment=PATH={{ x_memory_hub_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile={{ x_memory_hub_env_path }}
+ExecStart=/usr/bin/env npm start
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

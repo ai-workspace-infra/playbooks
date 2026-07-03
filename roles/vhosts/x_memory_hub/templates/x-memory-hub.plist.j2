@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{{ x_memory_hub_launch_agent_label }}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+            set -a
+            source "{{ x_memory_hub_env_path }}"
+            set +a
+            cd "{{ x_memory_hub_source_dir }}"
+            exec npm start
+        </string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>WorkingDirectory</key>
+    <string>{{ x_memory_hub_source_dir }}</string>
+    <key>StandardOutPath</key>
+    <string>{{ x_memory_hub_stdout_path }}</string>
+    <key>StandardErrorPath</key>
+    <string>{{ x_memory_hub_stderr_path }}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>{{ x_memory_hub_home }}</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>
