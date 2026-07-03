@@ -4,6 +4,11 @@
 # 支持全站数据流单向复制与环境域名动态改写 (Domain Parameterization)
 # ------------------------------------------------------------------------------
 
+# 数据库凭据由 MIGRATION_PG_USER / MIGRATION_PG_PASSWORD 环境变量
+# (workflow 注入或 ansible-playbook -e) 提供，禁止在仓库中硬编码明文。
+migration_pg_user: "{{ lookup('ansible.builtin.env', 'MIGRATION_PG_USER') | default('svcplus_vps', true) }}"
+migration_pg_password: "{{ lookup('ansible.builtin.env', 'MIGRATION_PG_PASSWORD') | default('', true) }}"
+
 migration_flow:
   # 源环境配置 (提取数据的源头，例如线上生产环境)
   source:
@@ -26,7 +31,7 @@ migration_flow:
     - name: "ai_core_db"
       type: "postgresql"
       port: 15432
-      connection_uri: "postgres://svcplus_vps:***REMOVED-PG-PASSWORD***@127.0.0.1:15432"
+      connection_uri: "postgres://{{ migration_pg_user }}:{{ migration_pg_password }}@127.0.0.1:15432"
       databases: 
         - "account"
         - "litellm"
