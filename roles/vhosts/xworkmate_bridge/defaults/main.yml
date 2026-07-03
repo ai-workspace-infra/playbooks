@@ -68,6 +68,10 @@ xworkmate_bridge_domain: >-
 # When false, disables public Caddy access to XWorkmate Bridge.
 xworkmate_bridge_public_access: true
 
+# macOS native deploys do not provision a Caddy ingress at all; keep the role
+# local-only unless the caller explicitly enables Caddy.
+caddy_enabled: "{{ ansible_os_family != 'Darwin' }}"
+
 xworkmate_bridge_public_base_url: "https://{{ xworkmate_bridge_domain }}"
 xworkmate_bridge_service_domain: "{{ xworkmate_bridge_domain }}"
 xworkmate_bridge_service_public_base_url: "https://{{ xworkmate_bridge_domain }}"
