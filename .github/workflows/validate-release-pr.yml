@@ -11,6 +11,28 @@ permissions:
   pull-requests: read
 
 jobs:
+  sec-qa-gate:
+    name: Sec QA Gate (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout PR head (full history)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz" -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Run gitleaks detect
+        run: gitleaks detect -v --redact --exit-code 1
+
   validate-release-source:
     runs-on: ubuntu-latest
     if: startsWith(github.base_ref, 'release/')
