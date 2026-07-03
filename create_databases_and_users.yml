@@ -50,17 +50,21 @@
   tasks:
     - name: Create dedicated users
       ansible.builtin.command: >
-        docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -c "
-        DO \$\$
-        BEGIN
-          IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '{{ item.user }}') THEN
-            CREATE ROLE {{ item.user }} LOGIN PASSWORD '{{ item.password }}';
-          END IF;
-        END
-        \$\$;"
+        docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -tAc
+        "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ item.user }}'"
       loop: "{{ db_configs }}"
+      register: user_check_results
+      changed_when: false
+      failed_when: false
+
+    - name: Execute CREATE ROLE if not exists
+      ansible.builtin.command: >
+        docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -c
+        "CREATE ROLE {{ item.item.user }} LOGIN PASSWORD '{{ item.item.password }}';"
+      loop: "{{ user_check_results.results }}"
+      when: item.stdout.strip() != '1'
       register: create_user_results
-      changed_when: "'CREATE ROLE' in create_user_results.stdout | default('')"
+      changed_when: true
 
     - name: Create dedicated databases and assign owners
       ansible.builtin.command: >
