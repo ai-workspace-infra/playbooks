@@ -25,6 +25,12 @@
     - vault_deploy_mode == "standalone"
     - ansible_os_family != 'Darwin'
 
+- name: Skip local Vault install when using an existing Vault server
+  ansible.builtin.debug:
+    msg: "Using existing Vault server at {{ vault_admin_addr }}; skipping local Vault install."
+  when:
+    - vault_deploy_mode == "external"
+
 - name: Check standalone Vault binary
   ansible.builtin.command: "{{ vault_binary_path }} version"
   register: vault_binary_check
@@ -118,7 +124,9 @@
 
 - name: Import macOS specific Vault tasks
   ansible.builtin.import_tasks: macos.yml
-  when: ansible_os_family == 'Darwin'
+  when:
+    - ansible_os_family == 'Darwin'
+    - vault_deploy_mode == "standalone"
 
 - name: Wait for standalone Vault API
   ansible.builtin.uri:
@@ -137,7 +145,7 @@
   delay: 5
   changed_when: false
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "external"]
 
 - name: Bootstrap Vault admin userpass auth
   ansible.builtin.script: >-
@@ -153,5 +161,5 @@
   no_log: true
   when:
     - not ansible_check_mode
-    - vault_deploy_mode == "standalone" or inventory_hostname in groups.get(group, [])
+    - vault_deploy_mode in ["standalone", "external"] or inventory_hostname in groups.get(group, [])
     - vault_admin_init_enabled | bool
