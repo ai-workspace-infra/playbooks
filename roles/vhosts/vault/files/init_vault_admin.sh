@@ -161,22 +161,43 @@ fi
 # Resolve the admin's identity entity WITHOUT logging in. Once the login MFA
 # enforcement below exists, a userpass login is MFA-gated and returns no
 # entity_id (causing "missing entityID" on every re-run). Instead look up the
-# entity via its userpass entity-alias, creating the entity + alias on first run.
+# entity by name first, then fall back to the userpass entity-alias, creating
+# the entity + alias only when needed.
 entity_id=""
+entity_json="$(vault read -format=json "identity/entity/name/${USERNAME}" 2>/dev/null || true)"
+entity_id="$(printf '%s' "$entity_json" | jq -r '.data.id // empty')"
+
+if [[ -z "$entity_id" ]]; then
+  for alias_id in $(vault list -format=json identity/entity-alias/id 2>/dev/null | jq -r '.[]?'); do
+    alias_json="$(vault read -format=json "identity/entity-alias/id/${alias_id}" 2>/dev/null || true)"
+    alias_name="$(printf '%s' "$alias_json" | jq -r '.data.name // empty')"
+    alias_mount="$(printf '%s' "$alias_json" | jq -r '.data.mount_accessor // empty')"
+    if [[ "$alias_name" == "$USERNAME" && "$alias_mount" == "$userpass_accessor" ]]; then
+      entity_id="$(printf '%s' "$alias_json" | jq -r '.data.canonical_id // empty')"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$entity_id" ]]; then
+  entity_id="$(vault write -format=json identity/entity \
+    name="$USERNAME" \
+    policies="$POLICY_NAME" | jq -r '.data.id')"
+fi
+
+alias_exists=false
 for alias_id in $(vault list -format=json identity/entity-alias/id 2>/dev/null | jq -r '.[]?'); do
   alias_json="$(vault read -format=json "identity/entity-alias/id/${alias_id}" 2>/dev/null || true)"
   alias_name="$(printf '%s' "$alias_json" | jq -r '.data.name // empty')"
   alias_mount="$(printf '%s' "$alias_json" | jq -r '.data.mount_accessor // empty')"
   if [[ "$alias_name" == "$USERNAME" && "$alias_mount" == "$userpass_accessor" ]]; then
     entity_id="$(printf '%s' "$alias_json" | jq -r '.data.canonical_id // empty')"
+    alias_exists=true
     break
   fi
 done
 
-if [[ -z "$entity_id" ]]; then
-  entity_id="$(vault write -format=json identity/entity \
-    name="$USERNAME" \
-    policies="$POLICY_NAME" | jq -r '.data.id')"
+if [[ "$alias_exists" != true ]]; then
   vault write identity/entity-alias \
     name="$USERNAME" \
     canonical_id="$entity_id" \
