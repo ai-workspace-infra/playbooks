@@ -12,9 +12,12 @@
   check_mode: false
   no_log: true
 
-- name: Set Gitea DB password fact
+- name: Set Gitea secret facts
   ansible.builtin.set_fact:
     gitea_db_password: "{{ gitea_vault_secret.json.data.data.DB_PASSWORD }}"
+    gitea_lfs_jwt_secret: "{{ gitea_vault_secret.json.data.data.LFS_JWT_SECRET | default('') }}"
+    gitea_internal_token: "{{ gitea_vault_secret.json.data.data.INTERNAL_TOKEN | default('') }}"
+    gitea_oauth2_jwt_secret: "{{ gitea_vault_secret.json.data.data.OAUTH2_JWT_SECRET | default('') }}"
   no_log: true
 
 - name: Update apt cache
