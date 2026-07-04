@@ -13,63 +13,78 @@
   when: litellm_database_host | trim | length > 0
 
 - name: Create PostgreSQL user if not exists
-  ansible.builtin.shell: |
-    {% if litellm_database_provisioner == 'docker' %}
-    docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ litellm_database_user }}'" | grep -q 1 || \
-    docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -c "CREATE USER {{ litellm_database_user }};"
-    docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -c "ALTER USER {{ litellm_database_user }} WITH PASSWORD '{{ litellm_database_password | replace("'", "''") }}';"
-    {% else %}
-    psql -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ litellm_database_user }}'" | grep -q 1 || \
-    psql -d postgres -c "CREATE USER {{ litellm_database_user }};"
-    psql -d postgres -c "ALTER USER {{ litellm_database_user }} WITH PASSWORD '{{ litellm_database_password | replace("'", "''") }}';"
-    {% endif %}
+  ansible.builtin.shell:
+    cmd: |
+      {% if litellm_database_provisioner == 'docker' %}
+      docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ litellm_database_user }}'" | grep -q 1 || \
+      docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -c "CREATE USER {{ litellm_database_user }};"
+      docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -c "ALTER USER {{ litellm_database_user }} WITH PASSWORD '{{ litellm_database_password | replace("'", "''") }}';"
+      {% elif litellm_database_provisioner == 'external' %}
+      psql -h "{{ litellm_database_host }}" -p "{{ litellm_database_port }}" -U "{{ litellm_database_admin_user }}" -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ litellm_database_user }}'" | grep -q 1 || \
+      psql -h "{{ litellm_database_host }}" -p "{{ litellm_database_port }}" -U "{{ litellm_database_admin_user }}" -d postgres -c "CREATE USER {{ litellm_database_user }};"
+      psql -h "{{ litellm_database_host }}" -p "{{ litellm_database_port }}" -U "{{ litellm_database_admin_user }}" -d postgres -c "ALTER USER {{ litellm_database_user }} WITH PASSWORD '{{ litellm_database_password | replace("'", "''") }}';"
+      {% else %}
+      psql -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ litellm_database_user }}'" | grep -q 1 || \
+      psql -d postgres -c "CREATE USER {{ litellm_database_user }};"
+      psql -d postgres -c "ALTER USER {{ litellm_database_user }} WITH PASSWORD '{{ litellm_database_password | replace("'", "''") }}';"
+      {% endif %}
   args:
     executable: /bin/bash
   environment:
     PATH: "/opt/homebrew/opt/postgresql@16/bin:/usr/local/opt/postgresql@16/bin:{{ ansible_env.PATH }}"
+    PGPASSWORD: "{{ litellm_database_admin_password if litellm_database_provisioner == 'external' else '' }}"
   # On macOS Homebrew there is no `postgres` system user and no passwordless
   # sudo; the current user is the DB superuser, so run psql without escalation.
-  become: "{{ ansible_os_family != 'Darwin' }}"
+  become: "{{ ansible_os_family != 'Darwin' and litellm_database_provisioner != 'external' }}"
   become_user: "{{ 'root' if litellm_database_provisioner == 'docker' else 'postgres' }}"
   register: create_user_result
   changed_when: "'CREATE ROLE' in create_user_result.stdout | default('')"
   no_log: true
 
 - name: Create PostgreSQL database if not exists
-  ansible.builtin.shell: |
-    {% if litellm_database_provisioner == 'docker' %}
-    docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -tAc "SELECT 1 FROM pg_database WHERE datname='{{ litellm_database_name }}'" | grep -q 1 || \
-    docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -c "CREATE DATABASE {{ litellm_database_name }} OWNER {{ litellm_database_user }};"
-    {% else %}
-    psql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='{{ litellm_database_name }}'" | grep -q 1 || \
-    psql -d postgres -c "CREATE DATABASE {{ litellm_database_name }} OWNER {{ litellm_database_user }};"
-    {% endif %}
+  ansible.builtin.shell:
+    cmd: |
+      {% if litellm_database_provisioner == 'docker' %}
+      docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -tAc "SELECT 1 FROM pg_database WHERE datname='{{ litellm_database_name }}'" | grep -q 1 || \
+      docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -c "CREATE DATABASE {{ litellm_database_name }} OWNER {{ litellm_database_user }};"
+      {% elif litellm_database_provisioner == 'external' %}
+      psql -h "{{ litellm_database_host }}" -p "{{ litellm_database_port }}" -U "{{ litellm_database_admin_user }}" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='{{ litellm_database_name }}'" | grep -q 1 || \
+      psql -h "{{ litellm_database_host }}" -p "{{ litellm_database_port }}" -U "{{ litellm_database_admin_user }}" -d postgres -c "CREATE DATABASE {{ litellm_database_name }} OWNER {{ litellm_database_user }};"
+      {% else %}
+      psql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='{{ litellm_database_name }}'" | grep -q 1 || \
+      psql -d postgres -c "CREATE DATABASE {{ litellm_database_name }} OWNER {{ litellm_database_user }};"
+      {% endif %}
   args:
     executable: /bin/bash
   environment:
     PATH: "/opt/homebrew/opt/postgresql@16/bin:/usr/local/opt/postgresql@16/bin:{{ ansible_env.PATH }}"
+    PGPASSWORD: "{{ litellm_database_admin_password if litellm_database_provisioner == 'external' else '' }}"
   # On macOS Homebrew there is no `postgres` system user and no passwordless
   # sudo; the current user is the DB superuser, so run psql without escalation.
-  become: "{{ ansible_os_family != 'Darwin' }}"
+  become: "{{ ansible_os_family != 'Darwin' and litellm_database_provisioner != 'external' }}"
   become_user: "{{ 'root' if litellm_database_provisioner == 'docker' else 'postgres' }}"
   register: create_db_result
   changed_when: "'CREATE DATABASE' in create_db_result.stdout | default('')"
   no_log: true
 
 - name: Grant privileges on database to user
-  ansible.builtin.shell: |
-    {% if litellm_database_provisioner == 'docker' %}
-    docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -c "GRANT ALL PRIVILEGES ON DATABASE {{ litellm_database_name }} TO {{ litellm_database_user }};"
-    {% else %}
-    psql -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE {{ litellm_database_name }} TO {{ litellm_database_user }};"
-    {% endif %}
+  ansible.builtin.shell:
+    cmd: |
+      {% if litellm_database_provisioner == 'docker' %}
+      docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -c "GRANT ALL PRIVILEGES ON DATABASE {{ litellm_database_name }} TO {{ litellm_database_user }};"
+      {% elif litellm_database_provisioner == 'external' %}
+      psql -h "{{ litellm_database_host }}" -p "{{ litellm_database_port }}" -U "{{ litellm_database_admin_user }}" -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE {{ litellm_database_name }} TO {{ litellm_database_user }};"
+      {% else %}
+      psql -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE {{ litellm_database_name }} TO {{ litellm_database_user }};"
+      {% endif %}
   args:
     executable: /bin/bash
   environment:
     PATH: "/opt/homebrew/opt/postgresql@16/bin:/usr/local/opt/postgresql@16/bin:{{ ansible_env.PATH }}"
+    PGPASSWORD: "{{ litellm_database_admin_password if litellm_database_provisioner == 'external' else '' }}"
   # On macOS Homebrew there is no `postgres` system user and no passwordless
   # sudo; the current user is the DB superuser, so run psql without escalation.
-  become: "{{ ansible_os_family != 'Darwin' }}"
+  become: "{{ ansible_os_family != 'Darwin' and litellm_database_provisioner != 'external' }}"
   become_user: "{{ 'root' if litellm_database_provisioner == 'docker' else 'postgres' }}"
   changed_when: false
   no_log: true
@@ -77,26 +92,30 @@
 
 
 - name: Grant schema privileges to user
-  ansible.builtin.shell: |
-    {% if litellm_database_provisioner == 'docker' %}
-    docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -d {{ litellm_database_name }} <<'SQL'
-    {% else %}
-    psql -d {{ litellm_database_name }} <<'SQL'
-    {% endif %}
-      GRANT ALL ON SCHEMA public TO {{ litellm_database_user }};
-      ALTER SCHEMA public OWNER TO {{ litellm_database_user }};
-      GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ litellm_database_user }};
-      GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ litellm_database_user }};
-      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO {{ litellm_database_user }};
-      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO {{ litellm_database_user }};
-    SQL
+  ansible.builtin.shell:
+    cmd: |
+      {% if litellm_database_provisioner == 'docker' %}
+      docker exec -i {{ litellm_database_container_name }} psql -U {{ litellm_database_admin_user }} -d {{ litellm_database_name }} <<'SQL'
+      {% elif litellm_database_provisioner == 'external' %}
+      psql -h "{{ litellm_database_host }}" -p "{{ litellm_database_port }}" -U "{{ litellm_database_admin_user }}" -d {{ litellm_database_name }} <<'SQL'
+      {% else %}
+      psql -d {{ litellm_database_name }} <<'SQL'
+      {% endif %}
+        GRANT ALL ON SCHEMA public TO {{ litellm_database_user }};
+        ALTER SCHEMA public OWNER TO {{ litellm_database_user }};
+        GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ litellm_database_user }};
+        GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ litellm_database_user }};
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO {{ litellm_database_user }};
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO {{ litellm_database_user }};
+      SQL
   args:
     executable: /bin/bash
   environment:
     PATH: "/opt/homebrew/opt/postgresql@16/bin:/usr/local/opt/postgresql@16/bin:{{ ansible_env.PATH }}"
+    PGPASSWORD: "{{ litellm_database_admin_password if litellm_database_provisioner == 'external' else '' }}"
   # On macOS Homebrew there is no `postgres` system user and no passwordless
   # sudo; the current user is the DB superuser, so run psql without escalation.
-  become: "{{ ansible_os_family != 'Darwin' }}"
+  become: "{{ ansible_os_family != 'Darwin' and litellm_database_provisioner != 'external' }}"
   become_user: "{{ 'root' if litellm_database_provisioner == 'docker' else 'postgres' }}"
   changed_when: false
   no_log: true

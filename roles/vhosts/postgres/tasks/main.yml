@@ -2,8 +2,13 @@
 - name: Validate PostgreSQL deploy mode
   ansible.builtin.assert:
     that:
-      - postgresql_deploy_mode in ['compose', 'native']
-    fail_msg: "postgresql_deploy_mode must be either 'compose' or 'native'."
+      - postgresql_deploy_mode in ['compose', 'native', 'external']
+    fail_msg: "postgresql_deploy_mode must be 'compose', 'native', or 'external'."
+
+- name: Use external PostgreSQL service
+  ansible.builtin.debug:
+    msg: "postgresql_deploy_mode=external; skipping local PostgreSQL install/start."
+  when: postgresql_deploy_mode == 'external'
 
 - name: Deploy PostgreSQL with Docker Compose
   ansible.builtin.import_tasks: compose.yml
