@@ -10,50 +10,8 @@ observability.svc.plus {
         redir * /grafana/
     }
 
-    # VictoriaMetrics / Prometheus (指标接收与查询)
-    # The user specifies 8428, but our current prometheus binds to {{ observability_prometheus_port | default('9090') }}
-    # We will point it to 8428 per user instructions for future VM layout, or maybe prometheus port for now?
-    # I'll route it to 8428 as requested. (Since we have prometheus on 9090 right now, let me use 8428 and 9090 as fallback if VM isn't there? No, the user explicitly stated 127.0.0.1:8428 for VictoriaMetrics)
+    # VictoriaMetrics / Prometheus (指标接收与查询) - Currently Prometheus on 9090
     handle_path /ingest/metrics/* {
-        reverse_proxy 127.0.0.1:8428
-    }
-    handle_path /vmetrics/* {
-        reverse_proxy 127.0.0.1:8428
-    }
-
-    # VictoriaLogs / Loki (日志接收与查询)
-    handle_path /ingest/logs/* {
-        reverse_proxy 127.0.0.1:9428
-    }
-    handle_path /vlogs/* {
-        reverse_proxy 127.0.0.1:9428
-    }
-
-    # OpenTelemetry (分布式链路追踪)
-    handle_path /ingest/otlp/* {
-        reverse_proxy 127.0.0.1:4318
-    }
-    handle_path /vtraces/* {
-        reverse_proxy 127.0.0.1:10428
-    }
-
-    # Insight Workbench (数据分析台 - 计划废弃)
-    handle_path /insight/* {
-        reverse_proxy 127.0.0.1:8082
-    }
-
-    # VictoriaMetrics Alerting Engine (告警引擎)
-    handle_path /vmalert/* {
-        reverse_proxy 127.0.0.1:8880
-    }
-
-    # Alertmanager (告警路由分发)
-    handle_path /alertmgr/* {
-        reverse_proxy 127.0.0.1:9059
-    }
-
-    # Blackbox Exporter (网络与域名拨测)
-    handle_path /blackbox/* {
-        reverse_proxy 127.0.0.1:9115
+        reverse_proxy 127.0.0.1:{{ observability_prometheus_port | default('9090') }}
     }
 }
