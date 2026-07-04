@@ -10,13 +10,13 @@ type = "internal_metrics"
 
 [sources.xray_metrics]
 type = "prometheus_scrape"
-endpoints = ["http://127.0.0.1:8081/metrics"]
+endpoints = ["http://127.0.0.1:8081/scrape"]
 scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
 
 [sinks.prometheus_remote]
 type = "prometheus_remote_write"
 inputs = ["xray_metrics", "internal_metrics"]
-endpoint = "https://{{ observability_prometheus_domain | default('prometheus.svc.plus') }}/api/v1/write"
+endpoint = "https://observability.svc.plus/ingest/metrics/api/v1/write"
 
 # Batching to reduce request frequency
 [sinks.prometheus_remote.batch]
