@@ -1,0 +1,52 @@
+---
+- name: Determine Vector architecture
+  ansible.builtin.set_fact:
+    vector_arch: >-
+      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
+
+- name: Download Vector deb package
+  ansible.builtin.get_url:
+    url: "https://github.com/vectordotdev/vector/releases/download/v{{ vector_version }}/vector_{{ vector_version }}-1_{{ vector_arch }}.deb"
+    dest: "/tmp/vector_{{ vector_version }}.deb"
+    mode: '0644'
+
+- name: Install Vector from downloaded deb
+  ansible.builtin.apt:
+    deb: "/tmp/vector_{{ vector_version }}.deb"
+    state: present
+
+- name: Create Vector configuration directory
+  ansible.builtin.file:
+    path: "{{ vector_config_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Template Vector configuration
+  ansible.builtin.template:
+    src: vector.toml.j2
+    dest: "{{ vector_config_dir }}/vector.toml"
+    owner: "{{ vector_user }}"
+    group: "{{ vector_group }}"
+    mode: '0644'
+  notify: Restart vector
+
+- name: Create systemd override directory for Vector
+  ansible.builtin.file:
+    path: /etc/systemd/system/vector.service.d
+    state: directory
+    mode: '0755'
+
+- name: Apply Vector resource limits via systemd override
+  ansible.builtin.template:
+    src: vector.service.d_override.conf.j2
+    dest: /etc/systemd/system/vector.service.d/override.conf
+    mode: '0644'
+  notify:
+    - Reload systemd
+    - Restart vector
+
+- name: Enable and start Vector service
+  ansible.builtin.systemd:
+    name: vector
+    enabled: true
+    state: started

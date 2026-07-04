@@ -1,0 +1,37 @@
+# Vector Configuration optimized for low resource footprint
+[api]
+enabled = false # Disable API to save memory
+
+[global]
+threads = 1 # Restrict to a single thread to minimize CPU context switching
+
+[sources.internal_metrics]
+type = "internal_metrics"
+
+[sources.xray_metrics]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:8081/metrics"]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+
+[sinks.prometheus_remote]
+type = "prometheus_remote_write"
+inputs = ["xray_metrics", "internal_metrics"]
+endpoint = "https://{{ observability_prometheus_domain | default('prometheus.svc.plus') }}/api/v1/write"
+
+# Batching to reduce request frequency
+[sinks.prometheus_remote.batch]
+max_events = {{ vector_batch_max_events }}
+timeout_secs = {{ vector_batch_timeout }}
+
+# Network and retries
+[sinks.prometheus_remote.request]
+retry_attempts = -1 # Infinite retries with backoff
+retry_initial_backoff_secs = 2
+retry_max_duration_secs = 3600
+rate_limit_duration_secs = 1
+rate_limit_num = 10 # Rate limit to avoid burst bandwidth usage
+
+# Use memory buffer with strict limits
+[sinks.prometheus_remote.buffer]
+type = "memory"
+max_events = {{ vector_buffer_max_events }}

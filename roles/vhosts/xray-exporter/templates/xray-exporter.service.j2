@@ -1,15 +1,16 @@
 [Unit]
-Description={{ xray_exporter_service_description }}
+Description=Xray Exporter (Binary)
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory={{ xray_exporter_app_dir }}
-EnvironmentFile={{ xray_exporter_env_path }}
-ExecStart={{ xray_exporter_binary_path }}
-Restart=always
 User={{ xray_exporter_user }}
 Group={{ xray_exporter_group }}
+Environment="XRAY_STATS_URL={{ xray_exporter_stats_url }}"
+Environment="LISTEN_ADDR={{ xray_exporter_listen_addr }}"
+ExecStart={{ xray_exporter_binary_path }}
+Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
