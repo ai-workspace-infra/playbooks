@@ -10,34 +10,42 @@ observability.svc.plus {
         redir * /grafana/
     }
 
-    # VictoriaMetrics / Prometheus (指标接收与查询)
+    # ==========================================
+    # VictoriaMetrics / Prometheus
+    # ==========================================
+    # [接收] 指标数据写入 (Remote Write / Ingest)
     handle_path /ingest/metrics/* {
         reverse_proxy 127.0.0.1:{{ observability_prometheus_port | default('9090') }}
     }
+    # [查询] 指标数据读取 (Query / UI)
     handle_path /vmetrics/* {
         reverse_proxy 127.0.0.1:{{ observability_prometheus_port | default('9090') }}
     }
 
-    # VictoriaLogs / Loki (日志接收与查询)
+    # ==========================================
+    # VictoriaLogs / Loki
+    # ==========================================
+    # [接收] 日志数据写入 (Log Ingest)
     handle_path /ingest/logs/* {
         reverse_proxy 127.0.0.1:9428
     }
+    # [查询] 日志数据读取 (Query / UI)
     handle_path /vlogs/* {
         reverse_proxy 127.0.0.1:9428
     }
 
-    # OpenTelemetry (分布式链路追踪)
+    # ==========================================
+    # OpenTelemetry / Jaeger
+    # ==========================================
+    # [接收] 链路数据写入 (OTLP Ingest)
     handle_path /ingest/otlp/* {
         reverse_proxy 127.0.0.1:4318
     }
+    # [查询] 链路数据读取 (Trace Query / UI)
     handle_path /vtraces/* {
         reverse_proxy 127.0.0.1:10428
     }
 
-    # Insight Workbench (数据分析台 - 计划废弃)
-    handle_path /insight/* {
-        reverse_proxy 127.0.0.1:8082
-    }
 
     # VictoriaMetrics Alerting Engine (告警引擎)
     handle_path /vmalert/* {
