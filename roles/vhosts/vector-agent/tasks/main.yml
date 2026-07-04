@@ -21,6 +21,19 @@
     state: directory
     mode: '0755'
 
+- name: Remove default vector.yaml (if exists) to force toml
+  ansible.builtin.file:
+    path: /etc/vector/vector.yaml
+    state: absent
+  notify: Restart vector
+
+- name: Configure vector default environment
+  ansible.builtin.template:
+    src: vector.default.j2
+    dest: /etc/default/vector
+    mode: '0644'
+  notify: Restart vector
+
 - name: Template Vector configuration
   ansible.builtin.template:
     src: vector.toml.j2
