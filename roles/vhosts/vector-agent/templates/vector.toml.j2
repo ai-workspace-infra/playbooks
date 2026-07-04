@@ -17,6 +17,10 @@ type = "prometheus_remote_write"
 inputs = ["xray_metrics", "internal_metrics"]
 endpoint = "https://observability.svc.plus/ingest/metrics/api/v1/write"
 
+[sinks.prometheus_remote.tls]
+verify_certificate = false
+verify_hostname = false
+
 # Batching to reduce request frequency
 [sinks.prometheus_remote.batch]
 max_events = {{ vector_batch_max_events }}
