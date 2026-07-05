@@ -212,9 +212,15 @@
   when: postgresql_service_postgres_runtime_executable
 
 - name: Wait for postgres container health
-  ansible.builtin.command: >-
-    docker inspect --format={{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}unknown{{ '{{' }}end{{ '}}' }}
-    {{ postgresql_service_postgres_container_name }}
+  # argv form: the Go template contains spaces ({{ '{{' }}if .State.Health{{ '}}' }}),
+  # which the free-form command string would shlex-split into a broken
+  # --format={{ '{{' }}if argument ("template parsing error: unclosed action").
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - "--format={{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}unknown{{ '{{' }}end{{ '}}' }}"
+      - "{{ postgresql_service_postgres_container_name }}"
   register: postgresql_service_postgres_health
   changed_when: false
   retries: "{{ postgresql_service_postgres_wait_retries }}"
