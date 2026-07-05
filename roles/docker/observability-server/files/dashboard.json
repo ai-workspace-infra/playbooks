@@ -1261,7 +1261,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "irate(xray_traffic_downlink_bytes_total{job=~\"$job\",instance=~\"$instance\",dimension=\"user\"}[5m])",
+          "expr": "irate(xray_traffic_downlink_bytes_total{job=~\"$job\",instance=~\"$instance\",dimension=\"user\",target=~\"$user\"}[5m])",
           "interval": "",
           "legendFormat": "{{target}}",
           "refId": "A"
@@ -1357,7 +1357,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "irate(xray_traffic_uplink_bytes_total{job=~\"$job\",instance=~\"$instance\",dimension=\"user\"}[5m])",
+          "expr": "irate(xray_traffic_uplink_bytes_total{job=~\"$job\",instance=~\"$instance\",dimension=\"user\",target=~\"$user\"}[5m])",
           "interval": "",
           "legendFormat": "{{target}}",
           "refId": "A"
@@ -1403,6 +1403,84 @@
         "align": false,
         "alignLevel": null
       }
+    },
+    {
+      "type": "bargauge",
+      "title": "Total Download Traffic per User",
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(increase(xray_traffic_downlink_bytes_total{job=~\"$job\",instance=~\"$instance\",dimension=\"user\",target=~\"$user\"}[$__range])) by (target)",
+          "legendFormat": "{{target}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "decbytes",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "id": 34
+    },
+    {
+      "type": "bargauge",
+      "title": "Total Upload Traffic per User",
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(increase(xray_traffic_uplink_bytes_total{job=~\"$job\",instance=~\"$instance\",dimension=\"user\",target=~\"$user\"}[$__range])) by (target)",
+          "legendFormat": "{{target}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "decbytes",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "id": 35
     }
   ],
   "refresh": false,
@@ -1440,7 +1518,7 @@
         "definition": "query_result(count_over_time(xray_up{job=\"$job\"}[$__range]))",
         "hide": 0,
         "includeAll": true,
-        "label": "Instance",
+        "label": "Node (\u8282\u70b9)",
         "multi": true,
         "name": "instance",
         "options": [],
@@ -1454,6 +1532,30 @@
         "tagsQuery": "",
         "type": "query",
         "useTags": false
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "Prometheus",
+        "definition": "label_values(xray_traffic_downlink_bytes_total{dimension=\"user\"}, target)",
+        "description": "Select Xray User",
+        "error": null,
+        "hide": 0,
+        "includeAll": true,
+        "label": "User (\u7528\u6237)",
+        "multi": true,
+        "name": "user",
+        "options": [],
+        "query": "label_values(xray_traffic_downlink_bytes_total{dimension=\"user\"}, target)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
       }
     ]
   },

@@ -22,11 +22,15 @@
     - { src: 'grafana-provisioning-datasources.yml.j2', dest: 'grafana/provisioning/datasources/datasources.yml' }
     - { src: 'grafana-provisioning-dashboards.yml.j2', dest: 'grafana/provisioning/dashboards/dashboards.yml' }
 
-- name: Copy Grafana dashboard
+- name: Copy Grafana dashboards
   ansible.builtin.copy:
-    src: dashboard.json
-    dest: "{{ observability_dir }}/grafana/dashboards/dashboard.json"
+    src: "{{ item }}"
+    dest: "{{ observability_dir }}/grafana/dashboards/{{ item }}"
     mode: '0644'
+  loop:
+    - dashboard.json
+    - Node-Exporter-Dashboard.json
+    - process-exporter-dashboard-with-treemap.json
 
 - name: Launch XStream monitoring with Docker Compose
   ansible.builtin.command: docker compose up -d

@@ -11,20 +11,43 @@
     mode: '0755'
     owner: "{{ xray_exporter_user }}"
     group: "{{ xray_exporter_group }}"
-  notify: Restart xray-exporter-bin
+  notify: Restart xray-exporters
+
+- name: Stop and disable legacy xray-exporter services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop: "{{ xray_exporter_legacy_service_names }}"
+  failed_when: false
+
+- name: Remove legacy xray-exporter service files
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}.service"
+    state: absent
+  loop: "{{ xray_exporter_legacy_service_names }}"
+  notify: Restart xray-exporters
 
 - name: Install xray-exporter systemd service
   ansible.builtin.template:
     src: xray-exporter.service.j2
-    dest: "/etc/systemd/system/{{ xray_exporter_service_name }}.service"
+    dest: "/etc/systemd/system/{{ xray_exporter_instance.name }}.service"
     owner: root
     group: root
     mode: "0644"
-  notify: Restart xray-exporter-bin
+  loop: "{{ xray_exporter_instances }}"
+  loop_control:
+    loop_var: xray_exporter_instance
+    label: "{{ xray_exporter_instance.name }}"
+  notify: Restart xray-exporters
 
-- name: Enable and start xray-exporter-bin
+- name: Enable and start xray-exporter instances
   ansible.builtin.systemd:
-    name: "{{ xray_exporter_service_name }}"
+    name: "{{ xray_exporter_instance.name }}"
     enabled: true
     state: started
     daemon_reload: true
+  loop: "{{ xray_exporter_instances }}"
+  loop_control:
+    loop_var: xray_exporter_instance
+    label: "{{ xray_exporter_instance.name }}"

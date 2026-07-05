@@ -3,18 +3,22 @@
     url: >-
       https://github.com/prometheus/node_exporter/releases/download/v{{
       node_exporter_version | default('1.8.2') }}/node_exporter-{{
-      node_exporter_version | default('1.8.2') }}.linux-amd64.tar.gz
+      node_exporter_version | default('1.8.2') }}.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}.tar.gz
     dest: /tmp/node_exporter.tar.gz
     mode: "0644"
-  when: inventory_hostname in groups[group]
+  when:
+    - inventory_hostname in groups[group]
+    - not ansible_check_mode
 
 - name: Extract node_exporter
   ansible.builtin.unarchive:
     src: /tmp/node_exporter.tar.gz
     dest: /tmp
     remote_src: true
-    creates: "/tmp/node_exporter-{{ node_exporter_version | default('1.8.2') }}.linux-amd64"
-  when: inventory_hostname in groups[group]
+    creates: "/tmp/node_exporter-{{ node_exporter_version | default('1.8.2') }}.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+  when:
+    - inventory_hostname in groups[group]
+    - not ansible_check_mode
 
 - name: Ensure metrics-agent directory exists
   ansible.builtin.file:
@@ -23,25 +27,31 @@
     owner: root
     group: root
     mode: '0755'
-  when: inventory_hostname in groups[group]
+  when:
+    - inventory_hostname in groups[group]
+    - not ansible_check_mode
 
 - name: Install node_exporter binary
   ansible.builtin.copy:
-    src: "/tmp/node_exporter-{{ node_exporter_version | default('1.8.2') }}.linux-amd64/node_exporter"
+    src: "/tmp/node_exporter-{{ node_exporter_version | default('1.8.2') }}.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}/node_exporter"
     dest: /opt/metrics-agent/node_exporter
     mode: '0755'
     remote_src: true
-  when: inventory_hostname in groups[group]
+  when:
+    - inventory_hostname in groups[group]
+    - not ansible_check_mode
 
 - name: Remove node_exporter archive
   ansible.builtin.file:
     path: /tmp/node_exporter.tar.gz
     state: absent
-  when: inventory_hostname in groups[group]
+  when:
+    - inventory_hostname in groups[group]
+    - not ansible_check_mode
 
 - name: Cleanup extracted directory
   ansible.builtin.file:
-    path: "/tmp/node_exporter-{{ node_exporter_version | default('1.8.2') }}.linux-amd64"
+    path: "/tmp/node_exporter-{{ node_exporter_version | default('1.8.2') }}.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
     state: absent
   when: inventory_hostname in groups[group]
 

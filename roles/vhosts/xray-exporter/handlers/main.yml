@@ -1,5 +1,10 @@
 ---
-- name: Restart xray-exporter-bin
+- name: Restart xray-exporters
   ansible.builtin.systemd:
-    name: "{{ xray_exporter_service_name }}"
+    name: "{{ xray_exporter_instance.name }}"
     state: restarted
+    daemon_reload: true
+  loop: "{{ xray_exporter_instances }}"
+  loop_control:
+    loop_var: xray_exporter_instance
+    label: "{{ xray_exporter_instance.name }}"
