@@ -158,6 +158,8 @@
     group: "{{ agent_svc_plus_group }}"
     mode: "0644"
   when: xray_enabled | bool
+  tags:
+    - xray-runtime-config
 
 - name: Deploy TCP template
   ansible.builtin.template:
@@ -167,6 +169,23 @@
     group: "{{ agent_svc_plus_group }}"
     mode: "0644"
   when: xray_enabled | bool
+  tags:
+    - xray-runtime-config
+
+- name: Deploy Xray systemd services
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/etc/systemd/system/{{ item.unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { src: xray.service.j2, unit: xray.service }
+    - { src: xray-tcp.service.j2, unit: xray-tcp.service }
+  when: xray_enabled | bool
+  notify: Restart Xray services
+  tags:
+    - xray-runtime-config
 
 - name: Install agent systemd service
   ansible.builtin.template:

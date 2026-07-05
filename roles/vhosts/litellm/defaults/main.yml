@@ -99,14 +99,14 @@ litellm_api_caddy_strict_whitelist: false
 litellm_database_host: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_HOST') | default('127.0.0.1', true) }}"
 litellm_database_port: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_PORT') | default('5432', true) }}"
 litellm_database_sslmode: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_SSLMODE') | default('disable', true) }}"
-litellm_database_provisioner: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_PROVISIONER') | default('docker' if (postgresql_deploy_mode | default('compose')) == 'compose' else 'local', true) }}"
+litellm_database_provisioner: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_PROVISIONER') | default('docker' if (postgresql_deploy_mode | default('compose')) == 'compose' else ('external' if (postgresql_deploy_mode | default('compose')) == 'external' else 'local'), true) }}"
 litellm_database_container_name: "{{ postgresql_container_name | default('ai-workspace-postgres') }}"
 litellm_database_name: litellm
 litellm_database_user: litellm
 litellm_database_password_file: /root/.ai_workspace_litellm_database_password
 litellm_database_password: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_PASSWORD') | default(lookup('password', litellm_database_password_file ~ ' length=32 chars=ascii_letters,digits'), true) }}"
 litellm_database_admin_user: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_ADMIN_USER') | default('postgres', true) }}"
-litellm_database_admin_password: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_ADMIN_PASSWORD') | default('', true) }}"
+litellm_database_admin_password: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_ADMIN_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRESQL_ADMIN_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') | default('', true), true), true) }}"
 
 # Percent-encode the password for use inside the DATABASE_URL userinfo. The
 # shared auth token is `openssl rand -base64`, which can contain '/', '+' and

@@ -1,0 +1,15 @@
+---
+- name: Deploy Xray Exporter and Vector Agent
+  hosts:
+    - install.svc.plus
+    - tky-proxy.svc.plus
+  become: true
+  roles:
+    - vhosts/xray-exporter
+    - vhosts/vector-agent
+
+- name: Deploy Observability Server Stack (Prometheus & Grafana)
+  hosts: install.svc.plus
+  become: true
+  roles:
+    - docker/observability-server

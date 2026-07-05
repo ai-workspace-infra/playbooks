@@ -1,0 +1,66 @@
+observability.svc.plus {
+    # 自动走 Let's Encrypt / ZeroSSL 申请公共证书 (DNS已解析生效)
+
+    # Root redirects to Grafana
+    redir / /grafana/
+
+    # Grafana (可视化大盘面板)
+    handle /grafana/* {
+        reverse_proxy 127.0.0.1:{{ observability_grafana_port | default('3030') }}
+    }
+    handle /grafana {
+        redir * /grafana/
+    }
+
+    # ==========================================
+    # VictoriaMetrics / Prometheus
+    # ==========================================
+    # [接收] 指标数据写入 (Remote Write / Ingest)
+    handle_path /ingest/metrics/* {
+        reverse_proxy 127.0.0.1:{{ observability_prometheus_port | default('9090') }}
+    }
+    # [查询] 指标数据读取 (Query / UI)
+    handle_path /vmetrics/* {
+        reverse_proxy 127.0.0.1:{{ observability_prometheus_port | default('9090') }}
+    }
+
+    # ==========================================
+    # VictoriaLogs / Loki
+    # ==========================================
+    # [接收] 日志数据写入 (Log Ingest)
+    handle_path /ingest/logs/* {
+        reverse_proxy 127.0.0.1:9428
+    }
+    # [查询] 日志数据读取 (Query / UI)
+    handle_path /vlogs/* {
+        reverse_proxy 127.0.0.1:9428
+    }
+
+    # ==========================================
+    # OpenTelemetry / Jaeger
+    # ==========================================
+    # [接收] 链路数据写入 (OTLP Ingest)
+    handle_path /ingest/otlp/* {
+        reverse_proxy 127.0.0.1:4318
+    }
+    # [查询] 链路数据读取 (Trace Query / UI)
+    handle_path /vtraces/* {
+        reverse_proxy 127.0.0.1:10428
+    }
+
+
+    # VictoriaMetrics Alerting Engine (告警引擎)
+    handle_path /vmalert/* {
+        reverse_proxy 127.0.0.1:8880
+    }
+
+    # Alertmanager (告警路由分发)
+    handle_path /alertmgr/* {
+        reverse_proxy 127.0.0.1:9059
+    }
+
+    # Blackbox Exporter (网络与域名拨测)
+    handle_path /blackbox/* {
+        reverse_proxy 127.0.0.1:9115
+    }
+}

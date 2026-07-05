@@ -35,10 +35,12 @@
   register: x_memory_hub_detected_pg
   changed_when: false
   failed_when: false
+  when: x_memory_hub_pg_provisioner == 'docker'
 
 - name: Set Postgres container fact
   ansible.builtin.set_fact:
     x_memory_hub_pg_container: "{{ x_memory_hub_detected_pg.stdout if x_memory_hub_detected_pg.stdout else x_memory_hub_pg_container_default }}"
+  when: x_memory_hub_pg_provisioner == 'docker'
 
 - name: Check X Memory Hub database role
   ansible.builtin.command: >
@@ -47,12 +49,36 @@
   register: x_memory_hub_role_check
   changed_when: false
   failed_when: false
+  when: x_memory_hub_pg_provisioner == 'docker'
+
+- name: Check X Memory Hub database role via PostgreSQL TCP
+  ansible.builtin.command: >
+    psql -h {{ x_memory_hub_pg_host }} -p {{ x_memory_hub_pg_port }} -U {{ x_memory_hub_pg_root_user }} -d postgres -tAc
+    "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ x_memory_hub_db_user }}'"
+  register: x_memory_hub_role_check
+  changed_when: false
+  failed_when: false
+  environment:
+    PGPASSWORD: "{{ x_memory_hub_pg_root_password }}"
+  when: x_memory_hub_pg_provisioner == 'tcp'
 
 - name: Create X Memory Hub database role
   ansible.builtin.command: >
     docker exec -i {{ x_memory_hub_pg_container }} psql -U {{ x_memory_hub_pg_root_user }} -c
     "CREATE ROLE {{ x_memory_hub_db_user }} LOGIN PASSWORD '{{ x_memory_hub_db_password }}';"
-  when: x_memory_hub_role_check.stdout | default('') | trim != '1'
+  when:
+    - x_memory_hub_pg_provisioner == 'docker'
+    - x_memory_hub_role_check.stdout | default('') | trim != '1'
+
+- name: Create X Memory Hub database role via PostgreSQL TCP
+  ansible.builtin.command: >
+    psql -h {{ x_memory_hub_pg_host }} -p {{ x_memory_hub_pg_port }} -U {{ x_memory_hub_pg_root_user }} -d postgres -c
+    "CREATE ROLE {{ x_memory_hub_db_user }} LOGIN PASSWORD '{{ x_memory_hub_db_password }}';"
+  environment:
+    PGPASSWORD: "{{ x_memory_hub_pg_root_password }}"
+  when:
+    - x_memory_hub_pg_provisioner == 'tcp'
+    - x_memory_hub_role_check.stdout | default('') | trim != '1'
 
 - name: Check X Memory Hub database
   ansible.builtin.command: >
@@ -61,12 +87,36 @@
   register: x_memory_hub_db_check
   changed_when: false
   failed_when: false
+  when: x_memory_hub_pg_provisioner == 'docker'
+
+- name: Check X Memory Hub database via PostgreSQL TCP
+  ansible.builtin.command: >
+    psql -h {{ x_memory_hub_pg_host }} -p {{ x_memory_hub_pg_port }} -U {{ x_memory_hub_pg_root_user }} -d postgres -tAc
+    "SELECT 1 FROM pg_database WHERE datname = '{{ x_memory_hub_db_name }}'"
+  register: x_memory_hub_db_check
+  changed_when: false
+  failed_when: false
+  environment:
+    PGPASSWORD: "{{ x_memory_hub_pg_root_password }}"
+  when: x_memory_hub_pg_provisioner == 'tcp'
 
 - name: Create X Memory Hub database
   ansible.builtin.command: >
     docker exec -i {{ x_memory_hub_pg_container }} psql -U {{ x_memory_hub_pg_root_user }} -c
     "CREATE DATABASE {{ x_memory_hub_db_name }} OWNER {{ x_memory_hub_db_user }};"
-  when: x_memory_hub_db_check.stdout | default('') | trim != '1'
+  when:
+    - x_memory_hub_pg_provisioner == 'docker'
+    - x_memory_hub_db_check.stdout | default('') | trim != '1'
+
+- name: Create X Memory Hub database via PostgreSQL TCP
+  ansible.builtin.command: >
+    psql -h {{ x_memory_hub_pg_host }} -p {{ x_memory_hub_pg_port }} -U {{ x_memory_hub_pg_root_user }} -d postgres -c
+    "CREATE DATABASE {{ x_memory_hub_db_name }} OWNER {{ x_memory_hub_db_user }};"
+  environment:
+    PGPASSWORD: "{{ x_memory_hub_pg_root_password }}"
+  when:
+    - x_memory_hub_pg_provisioner == 'tcp'
+    - x_memory_hub_db_check.stdout | default('') | trim != '1'
 
 # pgvector 必需；pg_jieba/pg_trgm 由镜像提供，缺失时降级（Hub 迁移会退回 english 分词）。
 - name: Ensure X Memory Hub database extensions
@@ -80,6 +130,22 @@
   register: x_memory_hub_ext_results
   changed_when: "'CREATE EXTENSION' in (x_memory_hub_ext_results.stdout | default(''))"
   failed_when: x_memory_hub_ext_results.rc != 0 and item.required
+  when: x_memory_hub_pg_provisioner == 'docker'
+
+- name: Ensure X Memory Hub database extensions via PostgreSQL TCP
+  ansible.builtin.command: >
+    psql -h {{ x_memory_hub_pg_host }} -p {{ x_memory_hub_pg_port }} -U {{ x_memory_hub_pg_root_user }}
+    -d {{ x_memory_hub_db_name }} -c "CREATE EXTENSION IF NOT EXISTS {{ item.name }};"
+  loop:
+    - { name: vector, required: true }
+    - { name: pg_jieba, required: false }
+    - { name: pg_trgm, required: false }
+  register: x_memory_hub_ext_results
+  changed_when: "'CREATE EXTENSION' in (x_memory_hub_ext_results.stdout | default(''))"
+  failed_when: x_memory_hub_ext_results.rc != 0 and item.required
+  environment:
+    PGPASSWORD: "{{ x_memory_hub_pg_root_password }}"
+  when: x_memory_hub_pg_provisioner == 'tcp'
 
 # ── 源码检出与依赖 ─────────────────────────────────────────────────────────
 - name: Checkout X Memory Hub source

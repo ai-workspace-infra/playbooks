@@ -1,5 +1,6 @@
 ---
 postgresql_deploy_mode: compose
+postgresql_host: "{{ lookup('ansible.builtin.env', 'POSTGRESQL_HOST') | default('127.0.0.1', true) }}"
 postgresql_use_official_repo: false
 postgresql_package_dependencies:
   - ca-certificates
@@ -34,6 +35,6 @@ postgresql_data_dir: "{{ postgresql_compose_project_dir }}/data"
 postgresql_container_uid: "999"
 postgresql_container_gid: "999"
 postgresql_database: postgres
-postgresql_admin_user: postgres
+postgresql_admin_user: "{{ lookup('ansible.builtin.env', 'POSTGRESQL_ADMIN_USER') | default('postgres', true) }}"
 postgresql_admin_password_file: /root/.ai_workspace_postgres_password
-postgresql_admin_password: "{{ lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRESQL_PASSWORD') | default(lookup('password', postgresql_admin_password_file ~ ' length=32 chars=ascii_letters,digits'), true), true) }}"
+postgresql_admin_password: "{{ lookup('ansible.builtin.env', 'POSTGRESQL_ADMIN_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRESQL_PASSWORD') | default(lookup('password', postgresql_admin_password_file ~ ' length=32 chars=ascii_letters,digits'), true), true), true) }}"

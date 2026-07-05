@@ -4,6 +4,15 @@
     },
     "inbounds": [
         {
+            "listen": "127.0.0.1",
+            "port": {{ xray_xhttp_api_port }},
+            "protocol": "dokodemo-door",
+            "settings": {
+                "address": "127.0.0.1"
+            },
+            "tag": "api"
+        },
+        {
             "listen": "/dev/shm/xray.sock,0666",
             "protocol": "vless",
             "settings": {
@@ -39,6 +48,13 @@
         "domainStrategy": "AsIs",
         "rules": [
             {
+                "inboundTag": [
+                    "api"
+                ],
+                "outboundTag": "api",
+                "type": "field"
+            },
+            {
                 "type": "field",
                 "ip": [
                     "geoip:private"
@@ -46,5 +62,26 @@
                 "outboundTag": "blocked"
             }
         ]
+    },
+    "stats": {},
+    "api": {
+        "tag": "api",
+        "services": [
+            "StatsService"
+        ]
+    },
+    "policy": {
+        "levels": {
+            "0": {
+                "statsUserUplink": true,
+                "statsUserDownlink": true
+            }
+        },
+        "system": {
+            "statsInboundUplink": true,
+            "statsInboundDownlink": true,
+            "statsOutboundUplink": true,
+            "statsOutboundDownlink": true
+        }
     }
 }

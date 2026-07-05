@@ -1,0 +1,83 @@
+# Vector Configuration optimized for low resource footprint
+[api]
+enabled = false # Disable API to save memory
+
+
+
+[sources.internal_metrics]
+type = "internal_metrics"
+
+[sources.xray_xhttp_metrics]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:8080/scrape"]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+
+[sources.xray_tcp_metrics]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:8081/scrape"]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+
+[sources.node_metrics]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:9100/metrics"]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+
+[sources.process_metrics]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:9256/metrics"]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+
+[transforms.add_labels]
+type = "remap"
+inputs = ["internal_metrics", "node_metrics", "process_metrics"]
+source = '''
+.tags.instance = "{{ inventory_hostname }}"
+.tags.job = "xray"
+'''
+
+[transforms.add_xray_xhttp_labels]
+type = "remap"
+inputs = ["xray_xhttp_metrics"]
+source = '''
+.tags.instance = "{{ inventory_hostname }}"
+.tags.job = "xray"
+.tags.transport = "xhttp"
+'''
+
+[transforms.add_xray_tcp_labels]
+type = "remap"
+inputs = ["xray_tcp_metrics"]
+source = '''
+.tags.instance = "{{ inventory_hostname }}"
+.tags.job = "xray"
+.tags.transport = "tcp"
+'''
+
+[sinks.prometheus_remote]
+type = "prometheus_remote_write"
+inputs = ["add_labels", "add_xray_xhttp_labels", "add_xray_tcp_labels"]
+endpoint = "https://observability.svc.plus/ingest/metrics/api/v1/write"
+
+[sinks.prometheus_remote.tls]
+verify_certificate = false
+verify_hostname = false
+
+[sinks.prometheus_remote.healthcheck]
+enabled = false
+
+# Batching to reduce request frequency
+[sinks.prometheus_remote.batch]
+max_events = {{ vector_batch_max_events }}
+timeout_secs = {{ vector_batch_timeout }}
+
+# Network and retries
+[sinks.prometheus_remote.request]
+retry_initial_backoff_secs = 2
+retry_max_duration_secs = 3600
+rate_limit_duration_secs = 1
+rate_limit_num = 10 # Rate limit to avoid burst bandwidth usage
+
+# Use memory buffer with strict limits
+[sinks.prometheus_remote.buffer]
+type = "memory"
+max_events = {{ vector_buffer_max_events }}

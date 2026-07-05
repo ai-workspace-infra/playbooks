@@ -1,0 +1,41 @@
+version: '3.8'
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: xstream_prometheus
+    restart: always
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time={{ observability_retention_time }}'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-remote-write-receiver'
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:{{ observability_prometheus_port }}:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: xstream_grafana
+    restart: always
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_AUTH_BASIC_ENABLED=true
+      - GF_INSTALL_PLUGINS=marcusolsson-treemap-panel
+      - GF_SERVER_DOMAIN=observability.svc.plus
+      - GF_SERVER_ROOT_URL=https://observability.svc.plus/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:{{ observability_grafana_port }}:3000"
+
+volumes:
+  prometheus_data:
+  grafana_data:

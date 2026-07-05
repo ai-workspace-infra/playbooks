@@ -1,15 +1,14 @@
 [Unit]
-Description={{ xray_exporter_service_description }}
+Description={{ xray_exporter_instance.description }}
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory={{ xray_exporter_app_dir }}
-EnvironmentFile={{ xray_exporter_env_path }}
-ExecStart={{ xray_exporter_binary_path }}
-Restart=always
 User={{ xray_exporter_user }}
 Group={{ xray_exporter_group }}
+ExecStart={{ xray_exporter_binary_path }} -l {{ xray_exporter_instance.listen_addr }} -e {{ xray_exporter_instance.xray_api_addr }} -u -p /var/log/xray/access.log
+Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

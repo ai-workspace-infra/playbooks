@@ -1,25 +1,22 @@
 ---
-xray_exporter_source_dir: "{{ playbook_dir }}/../xray-exporter"
-xray_exporter_app_dir: "/opt/xray-exporter"
-xray_exporter_go_version: "1.25.1"
-xray_exporter_go_root: "/usr/local/go"
-xray_exporter_go_bin: "{{ xray_exporter_go_root }}/bin/go"
-xray_exporter_binary_name: "xray-exporter"
-xray_exporter_binary_path: "/usr/local/bin/{{ xray_exporter_binary_name }}"
-xray_exporter_service_name: "xray-exporter"
-xray_exporter_service_description: "xray-exporter service"
+xray_exporter_version: "v0.6.0"
+xray_exporter_listen_addr: "127.0.0.1:8080"
+xray_exporter_xray_api_addr: "127.0.0.1:18080"
+xray_exporter_binary_path: "/usr/local/bin/xray-exporter"
+xray_exporter_service_name: "xray-exporter-xhttp"
+xray_exporter_legacy_service_names:
+  - xray-exporter-bin
+xray_exporter_instances:
+  - name: "{{ xray_exporter_service_name }}"
+    description: "Xray Exporter (XHTTP)"
+    listen_addr: "{{ xray_exporter_listen_addr }}"
+    xray_api_addr: "{{ xray_exporter_xray_api_addr }}"
+  - name: xray-exporter-tcp
+    description: "Xray Exporter (TCP)"
+    listen_addr: "127.0.0.1:8081"
+    xray_api_addr: "127.0.0.1:18081"
 xray_exporter_user: "root"
 xray_exporter_group: "root"
-xray_exporter_env_dir: "/etc/default"
-xray_exporter_env_path: "{{ xray_exporter_env_dir }}/xray-exporter"
 
-xray_exporter_listen_addr: "127.0.0.1:8080"
-xray_exporter_scrape_interval: "1m"
-xray_exporter_node_id: "{{ xray_exporter_node_id_custom | default(inventory_hostname, true) }}"
-xray_exporter_env_name: "prod"
+# Wait, Xray Stats API URL configuration:
 xray_exporter_stats_url: "http://127.0.0.1:49227/debug/vars"
-xray_exporter_stats_token: ""
-xray_exporter_accounts_base_url: "https://accounts.svc.plus"
-xray_exporter_internal_service_token: ""
-xray_exporter_snapshot_store_path: "/var/lib/xray-exporter/snapshots.db"
-xray_exporter_snapshot_retention: "72h"

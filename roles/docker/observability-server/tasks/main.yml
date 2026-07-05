@@ -1,0 +1,46 @@
+---
+- name: Ensure XStream monitoring directory exists
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ observability_dir }}"
+    - "{{ observability_dir }}/prometheus"
+    - "{{ observability_dir }}/grafana/provisioning/datasources"
+    - "{{ observability_dir }}/grafana/provisioning/dashboards"
+    - "{{ observability_dir }}/grafana/dashboards"
+
+- name: Template Docker Compose and configs
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ observability_dir }}/{{ item.dest }}"
+    mode: '0644'
+  loop:
+    - { src: 'docker-compose.yml.j2', dest: 'docker-compose.yml' }
+    - { src: 'prometheus.yml.j2', dest: 'prometheus/prometheus.yml' }
+    - { src: 'grafana-provisioning-datasources.yml.j2', dest: 'grafana/provisioning/datasources/datasources.yml' }
+    - { src: 'grafana-provisioning-dashboards.yml.j2', dest: 'grafana/provisioning/dashboards/dashboards.yml' }
+
+- name: Copy Grafana dashboards
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ observability_dir }}/grafana/dashboards/{{ item }}"
+    mode: '0644'
+  loop:
+    - dashboard.json
+    - Node-Exporter-Dashboard.json
+    - process-exporter-dashboard-with-treemap.json
+
+- name: Launch XStream monitoring with Docker Compose
+  ansible.builtin.command: docker compose up -d
+  args:
+    chdir: "{{ observability_dir }}"
+
+- name: Template Caddy configuration for observability
+  ansible.builtin.template:
+    src: observability.caddy.j2
+    dest: "{{ observability_caddy_conf_dir }}/observability.caddy"
+    mode: '0644'
+    backup: yes
+  notify: Reload caddy

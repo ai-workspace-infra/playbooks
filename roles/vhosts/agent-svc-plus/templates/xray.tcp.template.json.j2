@@ -6,6 +6,13 @@
         "domainStrategy": "IPIfNonMatch",
         "rules": [
             {
+                "inboundTag": [
+                    "api"
+                ],
+                "outboundTag": "api",
+                "type": "field"
+            },
+            {
                 "type": "field",
                 "ip": [
                     "geoip:cn"
@@ -15,6 +22,15 @@
         ]
     },
     "inbounds": [
+        {
+            "listen": "127.0.0.1",
+            "port": {{ xray_tcp_api_port }},
+            "protocol": "dokodemo-door",
+            "settings": {
+                "address": "127.0.0.1"
+            },
+            "tag": "api"
+        },
         {
             "listen": "0.0.0.0",
             "port": 1443,
@@ -76,9 +92,22 @@
     "policy": {
         "levels": {
             "0": {
-                "handshake": 2,
-                "connIdle": 120
+                "statsUserUplink": true,
+                "statsUserDownlink": true
             }
+        },
+        "system": {
+            "statsInboundUplink": true,
+            "statsInboundDownlink": true,
+            "statsOutboundUplink": true,
+            "statsOutboundDownlink": true
         }
+    },
+    "stats": {},
+    "api": {
+        "tag": "api",
+        "services": [
+            "StatsService"
+        ]
     }
 }
