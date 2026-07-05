@@ -68,7 +68,9 @@
         psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -tAc
         "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ item.user }}'"
       loop: "{{ db_configs }}"
-      register: user_check_results
+      # 不能与 compose 分支共用 register 名: 被 skip 的任务同样会写 register,
+      # 会把已运行分支的结果覆盖成没有 stdout 的 skip 字典
+      register: user_check_results_tcp
       changed_when: false
       failed_when: false
       environment:
@@ -84,20 +86,20 @@
       changed_when: true
       when:
         - postgresql_deploy_mode == 'compose'
-        - item.stdout.strip() != '1'
+        - (item.stdout | default('')) | trim != '1'
 
     - name: Execute CREATE ROLE if not exists via PostgreSQL TCP
       ansible.builtin.command: >
         psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -c
         "CREATE ROLE {{ item.item.user }} LOGIN PASSWORD '{{ item.item.password }}';"
-      loop: "{{ user_check_results.results }}"
-      register: create_user_results
+      loop: "{{ user_check_results_tcp.results }}"
+      register: create_user_results_tcp
       changed_when: true
       environment:
         PGPASSWORD: "{{ pg_root_password }}"
       when:
         - postgresql_deploy_mode != 'compose'
-        - item.stdout.strip() != '1'
+        - (item.stdout | default('')) | trim != '1'
 
     - name: Create dedicated databases and assign owners
       ansible.builtin.command: >
@@ -112,7 +114,7 @@
       ansible.builtin.command: >
         psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = '{{ item.db }}'"
       loop: "{{ db_configs }}"
-      register: db_check_results
+      register: db_check_results_tcp
       changed_when: false
       failed_when: false
       environment:
@@ -127,16 +129,16 @@
       changed_when: true
       when:
         - postgresql_deploy_mode == 'compose'
-        - item.stdout.strip() != '1'
+        - (item.stdout | default('')) | trim != '1'
 
     - name: Execute CREATE DATABASE if not exists via PostgreSQL TCP
       ansible.builtin.command: >
         psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -c "CREATE DATABASE {{ item.item.db }} OWNER {{ item.item.user }} ENCODING 'UTF8';"
-      loop: "{{ db_check_results.results }}"
-      register: create_db_results
+      loop: "{{ db_check_results_tcp.results }}"
+      register: create_db_results_tcp
       changed_when: true
       environment:
         PGPASSWORD: "{{ pg_root_password }}"
       when:
         - postgresql_deploy_mode != 'compose'
-        - item.stdout.strip() != '1'
+        - (item.stdout | default('')) | trim != '1'
