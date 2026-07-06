@@ -14,8 +14,8 @@
     pg_root_host: "{{ lookup('env', 'POSTGRESQL_HOST') | default('127.0.0.1', true) }}"
     pg_root_port: "{{ lookup('env', 'POSTGRESQL_PORT') | default('5432', true) }}"
     pg_root_user: "{{ lookup('env', 'POSTGRESQL_ADMIN_USER') | default('postgres', true) }}"
-    # 若配置了密码，可通过环境变量传入
-    pg_root_password: "{{ lookup('env', 'POSTGRESQL_ADMIN_PASSWORD') | default(lookup('env', 'POSTGRES_PASSWORD') | default('postgres', true), true) }}"
+    # 若配置了密码，可通过环境变量传入，或从本地密码影子文件读取
+    pg_root_password: "{{ lookup('env', 'POSTGRESQL_ADMIN_PASSWORD') | default(lookup('env', 'POSTGRES_PASSWORD') | default(lookup('file', '/root/.ai_workspace_postgres_password', errors='ignore') | default('postgres', true), true), true) }}"
 
     # 业务数据库清单与对应专有用户
     db_configs:
