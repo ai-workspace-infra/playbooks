@@ -17,29 +17,71 @@
     # 若配置了密码，可通过环境变量传入，或从本地密码影子文件读取
     pg_root_password: "{{ lookup('env', 'POSTGRESQL_ADMIN_PASSWORD') | default(lookup('env', 'POSTGRES_PASSWORD') | default(lookup('file', '/root/.ai_workspace_postgres_password', errors='ignore') | default('postgres', true), true), true) }}"
 
-    # 业务数据库清单与对应专有用户
-    db_configs:
-      - db: account
+    vault_env_path: "{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}"
+    vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+    vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('', true) }}"
 
+    # 业务数据库清单与对应专有用户 (Passwords resolved in pre_tasks)
+    db_configs_raw:
+      - db: account
         user: account_user
-        password: "{{ lookup('env', 'ACCOUNT_PG_PASSWORD') | default('CHANGE_ME', true) }}"
+        env_var: 'ACCOUNT_PG_PASSWORD'
+        vault_key: 'account_pg_password'
       - db: litellm
         user: litellm_user
-        password: "{{ lookup('env', 'LITELLM_PG_PASSWORD') | default('CHANGE_ME', true) }}"
+        env_var: 'LITELLM_PG_PASSWORD'
+        vault_key: 'litellm_pg_password'
       - db: rag
         user: rag_user
-        password: "{{ lookup('env', 'RAG_PG_PASSWORD') | default('CHANGE_ME', true) }}"
+        env_var: 'RAG_PG_PASSWORD'
+        vault_key: 'rag_pg_password'
       - db: zitadel
         user: zitadel_user
-        password: "{{ lookup('env', 'ZITADEL_PG_PASSWORD') | default('CHANGE_ME', true) }}"
+        env_var: 'ZITADEL_PG_PASSWORD'
+        vault_key: 'zitadel_pg_password'
       - db: gitea
         user: gitea_user
-        password: "{{ lookup('env', 'GITEA_PG_PASSWORD') | default('CHANGE_ME', true) }}"
+        env_var: 'GITEA_PG_PASSWORD'
+        vault_key: 'gitea_pg_password'
       - db: vault_storage
         user: vault_storage
-        password: "{{ lookup('env', 'VAULT_PG_PASSWORD') | default('CHANGE_ME', true) }}"
+        env_var: 'VAULT_PG_PASSWORD'
+        vault_key: 'vault_pg_password'
+      - db: billing
+        user: billing_user
+        env_var: 'BILLING_PG_PASSWORD'
+        vault_key: 'billing_pg_password'
 
   pre_tasks:
+    - name: Try to read existing databases secrets from Vault
+      community.hashi_vault.vault_kv2_get:
+        url: "{{ vault_addr }}"
+        auth_method: token
+        token: "{{ vault_token }}"
+        path: "kv/data/{{ vault_env_path }}/databases"
+        engine_mount_point: "kv"
+      register: existing_vault_db_secrets
+      failed_when: false
+      when: vault_token | length > 0
+
+    - name: Resolve database passwords (Env > Vault > Auto-generate)
+      ansible.builtin.set_fact:
+        resolved_db_configs: >-
+          {%- set results = [] -%}
+          {%- set existing_secrets = existing_vault_db_secrets.secret | default({}) -%}
+          {%- for db in db_configs_raw -%}
+            {%- set env_pw = lookup('env', db.env_var) -%}
+            {%- set vault_pw = existing_secrets.get(db.vault_key, '') -%}
+            {%- if env_pw -%}
+              {%- set final_pw = env_pw -%}
+            {%- elif vault_pw -%}
+              {%- set final_pw = vault_pw -%}
+            {%- else -%}
+              {%- set final_pw = lookup('password', '/dev/null length=16 chars=ascii_letters,digits') -%}
+            {%- endif -%}
+            {%- set _ = results.append({'db': db.db, 'user': db.user, 'password': final_pw, 'vault_key': db.vault_key}) -%}
+          {%- endfor -%}
+          {{ results }}
     - name: Detect running Postgres container
       ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E '^(postgresql|postgresql-svc-plus|ai-workspace-postgres)$' | head -n 1"
       register: detected_pg
@@ -57,7 +99,7 @@
       ansible.builtin.command: >
         docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -tAc
         "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ item.user }}'"
-      loop: "{{ db_configs }}"
+      loop: "{{ resolved_db_configs }}"
       register: user_check_results
       changed_when: false
       failed_when: false
@@ -67,7 +109,7 @@
       ansible.builtin.command: >
         psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -tAc
         "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ item.user }}'"
-      loop: "{{ db_configs }}"
+      loop: "{{ resolved_db_configs }}"
       # 不能与 compose 分支共用 register 名: 被 skip 的任务同样会写 register,
       # 会把已运行分支的结果覆盖成没有 stdout 的 skip 字典
       register: user_check_results_tcp
@@ -104,7 +146,7 @@
     - name: Create dedicated databases and assign owners
       ansible.builtin.command: >
         docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -tc "SELECT 1 FROM pg_database WHERE datname = '{{ item.db }}'"
-      loop: "{{ db_configs }}"
+      loop: "{{ resolved_db_configs }}"
       register: db_check_results
       changed_when: false
       failed_when: false
@@ -113,7 +155,7 @@
     - name: Create dedicated databases and assign owners via PostgreSQL TCP
       ansible.builtin.command: >
         psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = '{{ item.db }}'"
-      loop: "{{ db_configs }}"
+      loop: "{{ resolved_db_configs }}"
       register: db_check_results_tcp
       changed_when: false
       failed_when: false
@@ -142,3 +184,23 @@
       when:
         - postgresql_deploy_mode != 'compose'
         - (item.stdout | default('')) | trim != '1'
+
+  post_tasks:
+    - name: Prepare Vault payload
+      ansible.builtin.set_fact:
+        db_vault_payload: >-
+          {%- set payload = {} -%}
+          {%- for item in resolved_db_configs -%}
+            {%- set _ = payload.update({item.vault_key: item.password}) -%}
+          {%- endfor -%}
+          {{ payload }}
+
+    - name: Securely write database passwords to Vault KV
+      community.hashi_vault.vault_write:
+        url: "{{ vault_addr }}"
+        auth_method: token
+        token: "{{ vault_token }}"
+        path: "kv/data/{{ vault_env_path }}/databases"
+        data: "{{ db_vault_payload }}"
+      when: vault_token | length > 0
+      no_log: true

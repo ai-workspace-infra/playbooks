@@ -1,4 +1,19 @@
 ---
+
+- name: Try to read databases secrets from Vault for Zitadel
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ vault_addr }}"
+    auth_method: token
+    token: "{{ vault_token }}"
+    path: "kv/data/{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}/databases"
+    engine_mount_point: "kv"
+  register: zitadel_existing_vault_db_secrets
+  failed_when: false
+  when: vault_token | length > 0
+
+- name: Set Zitadel DB password fact
+  ansible.builtin.set_fact:
+    zitadel_db_password_fact: "{{ lookup('env', 'ZITADEL_PG_PASSWORD') | default(zitadel_existing_vault_db_secrets.secret.zitadel_pg_password | default('CHANGE_ME', true), true) }}"
 - name: Read Zitadel admin password from Vault
   delegate_to: localhost
   become: false
@@ -91,9 +106,39 @@
   changed_when: false
 
 # -------------------------------------------------------------------
+
+- name: Try to read databases secrets from Vault for Zitadel
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ vault_addr }}"
+    auth_method: token
+    token: "{{ vault_token }}"
+    path: "kv/data/{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}/databases"
+    engine_mount_point: "kv"
+  register: zitadel_existing_vault_db_secrets
+  failed_when: false
+  when: vault_token | length > 0
+
+- name: Set Zitadel DB password fact
+  ansible.builtin.set_fact:
+    zitadel_db_password_fact: "{{ lookup('env', 'ZITADEL_PG_PASSWORD') | default(zitadel_existing_vault_db_secrets.secret.zitadel_pg_password | default('CHANGE_ME', true), true) }}"
 # 1. 判断 Zitadel 是否已经初始化 
 #    (是否已经生成 login-client.pat 或其它初始化标记)
 # -------------------------------------------------------------------
+
+- name: Try to read databases secrets from Vault for Zitadel
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ vault_addr }}"
+    auth_method: token
+    token: "{{ vault_token }}"
+    path: "kv/data/{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}/databases"
+    engine_mount_point: "kv"
+  register: zitadel_existing_vault_db_secrets
+  failed_when: false
+  when: vault_token | length > 0
+
+- name: Set Zitadel DB password fact
+  ansible.builtin.set_fact:
+    zitadel_db_password_fact: "{{ lookup('env', 'ZITADEL_PG_PASSWORD') | default(zitadel_existing_vault_db_secrets.secret.zitadel_pg_password | default('CHANGE_ME', true), true) }}"
 - name: Check if Zitadel initialized
   stat:
     path: "{{ zitadel_workspace }}/login-client.pat"
@@ -101,8 +146,38 @@
 
 
 # -------------------------------------------------------------------
+
+- name: Try to read databases secrets from Vault for Zitadel
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ vault_addr }}"
+    auth_method: token
+    token: "{{ vault_token }}"
+    path: "kv/data/{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}/databases"
+    engine_mount_point: "kv"
+  register: zitadel_existing_vault_db_secrets
+  failed_when: false
+  when: vault_token | length > 0
+
+- name: Set Zitadel DB password fact
+  ansible.builtin.set_fact:
+    zitadel_db_password_fact: "{{ lookup('env', 'ZITADEL_PG_PASSWORD') | default(zitadel_existing_vault_db_secrets.secret.zitadel_pg_password | default('CHANGE_ME', true), true) }}"
 # 2. 如果未初始化，先清理所有可能失败的残留容器、状态
 # -------------------------------------------------------------------
+
+- name: Try to read databases secrets from Vault for Zitadel
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ vault_addr }}"
+    auth_method: token
+    token: "{{ vault_token }}"
+    path: "kv/data/{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}/databases"
+    engine_mount_point: "kv"
+  register: zitadel_existing_vault_db_secrets
+  failed_when: false
+  when: vault_token | length > 0
+
+- name: Set Zitadel DB password fact
+  ansible.builtin.set_fact:
+    zitadel_db_password_fact: "{{ lookup('env', 'ZITADEL_PG_PASSWORD') | default(zitadel_existing_vault_db_secrets.secret.zitadel_pg_password | default('CHANGE_ME', true), true) }}"
 - name: Zitadel containers (cleanup)
   become: true
   shell: |
@@ -111,14 +186,6 @@
     chdir: "{{ zitadel_workspace }}"
   when: not zitadel_initialized.stat.exists
 
-# -------------------------------------------------------------------
-# 2.5 确保在全局数据库中创建 Zitadel 的库和用户
-# -------------------------------------------------------------------
-- name: Create Zitadel database user via Docker
-  ansible.builtin.shell: |
-    docker exec postgresql-svc-plus psql -U postgres -tc "SELECT 1 FROM pg_roles WHERE rolname='zitadel'" | grep -q 1 || \
-    docker exec postgresql-svc-plus psql -U postgres -c "CREATE USER zitadel WITH PASSWORD 'zitadel_pw' LOGIN;"
-  changed_when: false
 
 - name: Create Zitadel database via Docker
   ansible.builtin.shell: |
@@ -127,8 +194,38 @@
   changed_when: false
 
 # -------------------------------------------------------------------
+
+- name: Try to read databases secrets from Vault for Zitadel
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ vault_addr }}"
+    auth_method: token
+    token: "{{ vault_token }}"
+    path: "kv/data/{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}/databases"
+    engine_mount_point: "kv"
+  register: zitadel_existing_vault_db_secrets
+  failed_when: false
+  when: vault_token | length > 0
+
+- name: Set Zitadel DB password fact
+  ansible.builtin.set_fact:
+    zitadel_db_password_fact: "{{ lookup('env', 'ZITADEL_PG_PASSWORD') | default(zitadel_existing_vault_db_secrets.secret.zitadel_pg_password | default('CHANGE_ME', true), true) }}"
 # 3. 执行第一次初始化（init + setup）
 # -------------------------------------------------------------------
+
+- name: Try to read databases secrets from Vault for Zitadel
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ vault_addr }}"
+    auth_method: token
+    token: "{{ vault_token }}"
+    path: "kv/data/{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}/databases"
+    engine_mount_point: "kv"
+  register: zitadel_existing_vault_db_secrets
+  failed_when: false
+  when: vault_token | length > 0
+
+- name: Set Zitadel DB password fact
+  ansible.builtin.set_fact:
+    zitadel_db_password_fact: "{{ lookup('env', 'ZITADEL_PG_PASSWORD') | default(zitadel_existing_vault_db_secrets.secret.zitadel_pg_password | default('CHANGE_ME', true), true) }}"
 - name: Run Zitadel init (one-time)
   become: true
   shell: |
@@ -138,8 +235,38 @@
   when: not zitadel_initialized.stat.exists
 
 # -------------------------------------------------------------------
+
+- name: Try to read databases secrets from Vault for Zitadel
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ vault_addr }}"
+    auth_method: token
+    token: "{{ vault_token }}"
+    path: "kv/data/{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}/databases"
+    engine_mount_point: "kv"
+  register: zitadel_existing_vault_db_secrets
+  failed_when: false
+  when: vault_token | length > 0
+
+- name: Set Zitadel DB password fact
+  ansible.builtin.set_fact:
+    zitadel_db_password_fact: "{{ lookup('env', 'ZITADEL_PG_PASSWORD') | default(zitadel_existing_vault_db_secrets.secret.zitadel_pg_password | default('CHANGE_ME', true), true) }}"
 # 4. 启动正式 Zitadel stack（start-only）
 # -------------------------------------------------------------------
+
+- name: Try to read databases secrets from Vault for Zitadel
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ vault_addr }}"
+    auth_method: token
+    token: "{{ vault_token }}"
+    path: "kv/data/{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}/databases"
+    engine_mount_point: "kv"
+  register: zitadel_existing_vault_db_secrets
+  failed_when: false
+  when: vault_token | length > 0
+
+- name: Set Zitadel DB password fact
+  ansible.builtin.set_fact:
+    zitadel_db_password_fact: "{{ lookup('env', 'ZITADEL_PG_PASSWORD') | default(zitadel_existing_vault_db_secrets.secret.zitadel_pg_password | default('CHANGE_ME', true), true) }}"
 - name: Bring up Zitadel stack
   become: true
   command: docker compose -f {{ zitadel_workspace }}/docker-compose.yaml up -d --remove-orphans

@@ -2,8 +2,10 @@
 # Default database variables
 gitea_db_host: "127.0.0.1:5432"
 gitea_db_name: "gitea"
-gitea_db_user: "gitea"
+gitea_db_user: "gitea_user"
 
 # Vault integration configuration
 vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default(lookup('ansible.builtin.env', 'VAULT_SERVER_URL') | default('https://vault.svc.plus', true), true) }}"
 vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN'), true) }}"
+
+gitea_db_password: "{{ gitea_db_password_fact | default('CHANGE_ME') }}"
