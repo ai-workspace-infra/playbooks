@@ -114,28 +114,7 @@
     - name: Gather service facts
       ansible.builtin.service_facts:
 
-    - name: Assert host is bootstrapped with setup-proxy.sh services
-      ansible.builtin.assert:
-        that:
-          - "'xray.service' in ansible_facts.services"
-          - "'xray-tcp.service' in ansible_facts.services"
-          - "'caddy.service' in ansible_facts.services"
-        fail_msg: "Target host must already be bootstrapped by setup-proxy.sh (missing xray.service, xray-tcp.service, or caddy.service)."
-        success_msg: "Target host already has the setup-proxy.sh service layout."
-
-    - name: Assert setup-proxy.sh config paths exist
-      ansible.builtin.stat:
-        path: "{{ item }}"
-      loop:
-        - /etc/caddy/Caddyfile
-        - /usr/local/etc/xray/templates
-      register: agent_bootstrap_paths
-
-    - name: Validate setup-proxy.sh config paths are present
-      ansible.builtin.assert:
-        that:
-          - agent_bootstrap_paths.results | map(attribute='stat.exists') | min
-        fail_msg: "Target host is missing /etc/caddy/Caddyfile or /usr/local/etc/xray/templates. Run setup-proxy.sh first."
-        success_msg: "setup-proxy.sh config paths exist."
   roles:
+    - roles/vhosts/caddy
+    - roles/vhosts/tky-proxy
     - roles/vhosts/agent-svc-plus
