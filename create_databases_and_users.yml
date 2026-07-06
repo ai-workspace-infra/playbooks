@@ -156,6 +156,38 @@
           - postgresql_deploy_mode != 'compose'
           - (item.stdout | default('')) | trim != '1'
         no_log: true
+
+      # 角色若已存在 (例如 postgres 数据卷跨 run 存活下来), 上面的 CREATE ROLE
+      # 会被跳过, 密码永远停留在这个角色第一次被创建时的值, 与
+      # resolved_db_configs (Env > Vault > 自动生成解析出的当前值) 脱节, 导致
+      # 应用侧连接密码认证失败。这里对已存在的角色显式收敛一次密码。
+      - name: Reconcile password for pre-existing roles
+        ansible.builtin.command: >
+          docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -c
+          "ALTER ROLE {{ item.item.user }} PASSWORD '{{ item.item.password }}';"
+        loop: "{{ user_check_results.results }}"
+        register: sync_password_results
+        changed_when: true
+        when:
+          - postgresql_deploy_mode == 'compose'
+          - (item.stdout | default('')) | trim == '1'
+        no_log: true
+
+      - name: Reconcile password for pre-existing roles via PostgreSQL TCP
+        ansible.builtin.command:
+          cmd: >-
+            psql -h {{ pg_root_host }} -p {{ pg_root_port }}
+            -U {{ pg_root_user }} -d postgres
+            -c "ALTER ROLE {{ item.item.user }} PASSWORD '{{ item.item.password }}';"
+        environment:
+          PGPASSWORD: "{{ pg_root_password }}"
+        loop: "{{ user_check_results_tcp.results }}"
+        register: sync_password_results_tcp
+        changed_when: true
+        when:
+          - postgresql_deploy_mode != 'compose'
+          - (item.stdout | default('')) | trim == '1'
+        no_log: true
   
       - name: Create dedicated databases and assign owners
         ansible.builtin.command: >
