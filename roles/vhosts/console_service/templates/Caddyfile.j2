@@ -1,4 +1,7 @@
-{{ '{$SERVED_DOMAINS}' }} {
+{# 渲染时直接展开域名: caddy 由 systemd 运行, 没有 SERVED_DOMAINS 环境变量;
+   {$SERVED_DOMAINS} 占位符会展开为空键, caddy validate 报
+   "server block without any key is global configuration" #}
+{{ console_service_served_domains }} {
   encode zstd gzip
 
   reverse_proxy 127.0.0.1:{{ console_service_port }} {
