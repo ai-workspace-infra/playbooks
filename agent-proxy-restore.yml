@@ -1,0 +1,14 @@
+---
+# =============================================================================
+# Agent Proxy 域: 恢复主剧本
+# 用法: ansible-playbook agent-proxy-restore.yml
+# =============================================================================
+
+- import_playbook: dynamic_inventory.yml
+
+- name: Execute Offline Restore on Target Environment
+  hosts: migration_target
+  become: yes
+  roles:
+    - role: site_migration
+      tasks_from: load

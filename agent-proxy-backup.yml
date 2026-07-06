@@ -1,0 +1,14 @@
+---
+# =============================================================================
+# Agent Proxy 域: 备份主剧本
+# 用法: ansible-playbook agent-proxy-backup.yml
+# =============================================================================
+
+- import_playbook: dynamic_inventory.yml
+
+- name: Execute Cold Backup on Source Environment
+  hosts: migration_source
+  become: yes
+  roles:
+    - role: site_migration
+      tasks_from: extract

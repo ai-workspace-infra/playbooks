@@ -1,0 +1,25 @@
+---
+# =============================================================================
+# Agent Proxy 域: 迁移主剧本
+# 用法: ansible-playbook -i source_ip,target_ip agent-proxy-migrate.yml
+# =============================================================================
+
+- import_playbook: dynamic_inventory.yml
+
+- name: Phase 1 - Extract Data from Source Environment
+  hosts: migration_source
+  become: yes
+  tasks:
+    - name: Extract Agent Proxy Data
+      import_role:
+        name: site_migration
+        tasks_from: extract
+
+- name: Phase 2 - Load Data into Target Environment
+  hosts: migration_target
+  become: yes
+  tasks:
+    - name: Load Agent Proxy Data
+      import_role:
+        name: site_migration
+        tasks_from: load
