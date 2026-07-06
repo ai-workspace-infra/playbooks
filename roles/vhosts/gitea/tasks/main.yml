@@ -1,4 +1,19 @@
 ---
+
+- name: Try to read databases secrets from Vault for Gitea
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ vault_addr }}"
+    auth_method: token
+    token: "{{ vault_token }}"
+    path: "kv/data/{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}/databases"
+    engine_mount_point: "kv"
+  register: gitea_existing_vault_db_secrets
+  failed_when: false
+  when: vault_token | length > 0
+
+- name: Set Gitea DB password fact
+  ansible.builtin.set_fact:
+    gitea_db_password_fact: "{{ lookup('env', 'GITEA_PG_PASSWORD') | default(gitea_existing_vault_db_secrets.secret.gitea_pg_password | default('CHANGE_ME', true), true) }}"
 - name: Read Gitea DB password from Vault
   delegate_to: localhost
   become: false
@@ -14,7 +29,6 @@
 
 - name: Set Gitea secret facts
   ansible.builtin.set_fact:
-    gitea_db_password: "{{ gitea_vault_secret.json.data.data.DB_PASSWORD }}"
     gitea_lfs_jwt_secret: "{{ gitea_vault_secret.json.data.data.LFS_JWT_SECRET | default('') }}"
     gitea_internal_token: "{{ gitea_vault_secret.json.data.data.INTERNAL_TOKEN | default('') }}"
     gitea_oauth2_jwt_secret: "{{ gitea_vault_secret.json.data.data.OAUTH2_JWT_SECRET | default('') }}"
@@ -40,26 +54,6 @@
     state: stopped
     enabled: no
   ignore_errors: true
-
-- name: Create Gitea database user via Docker
-  ansible.builtin.shell: |
-    docker exec postgresql-svc-plus psql -U postgres -tc "SELECT 1 FROM pg_roles WHERE rolname='{{ gitea_db_user }}'" | grep -q 1 || \
-    docker exec postgresql-svc-plus psql -U postgres -c "CREATE USER {{ gitea_db_user }} WITH PASSWORD '{{ gitea_db_password }}' LOGIN;"
-  changed_when: false
-  no_log: true
-
-- name: Ensure Gitea database user password matches Vault
-  ansible.builtin.shell: |
-    docker exec postgresql-svc-plus psql -U postgres -c "ALTER USER {{ gitea_db_user }} WITH PASSWORD '{{ gitea_db_password }}';"
-  changed_when: false
-  no_log: true
-  when: not ansible_check_mode
-
-- name: Create Gitea database via Docker
-  ansible.builtin.shell: |
-    docker exec postgresql-svc-plus psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='{{ gitea_db_name }}'" | grep -q 1 || \
-    docker exec postgresql-svc-plus psql -U postgres -c "CREATE DATABASE {{ gitea_db_name }} OWNER {{ gitea_db_user }} ENCODING 'UTF8';"
-  changed_when: false
 
 - name: Create git user
   ansible.builtin.user:

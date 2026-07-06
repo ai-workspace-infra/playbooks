@@ -3,6 +3,10 @@
   gather_facts: true
   become: true
   vars:
+
+    vault_env_path: "{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}"
+    vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+    vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('', true) }}"
     agent_svc_plus_repo_url: >-
       {{ lookup('ansible.builtin.env', 'AGENT_REPO_URL')
          | default('https://github.com/x-evor/agent.svc.plus.git', true) }}
@@ -57,10 +61,49 @@
     xray_enabled: >-
       {{ lookup('ansible.builtin.env', 'AGENT_XRAY_ENABLED')
          | default(true, true) | bool }}
-    xray_uuid: >-
-      {{ lookup('ansible.builtin.env', 'XRAY_UUID')
-         | default('00000000-0000-0000-0000-000000000000', true) }}
   pre_tasks:
+
+    - name: Try to read agent-proxy secrets from Vault
+      community.hashi_vault.vault_kv2_get:
+        url: "{{ vault_addr }}"
+        auth_method: token
+        token: "{{ vault_token }}"
+        path: "kv/data/{{ vault_env_path }}/agent-proxy"
+        engine_mount_point: "kv"
+      register: existing_agent_proxy_secrets
+      failed_when: false
+      when: vault_token | length > 0
+      delegate_to: localhost
+      run_once: true
+
+    - name: Resolve XRAY_UUID
+      ansible.builtin.set_fact:
+        xray_uuid: >-
+          {%- set env_uuid = lookup('env', 'XRAY_UUID') -%}
+          {%- set vault_uuid = (existing_agent_proxy_secrets.secret | default({})).get('xray_uuid', '') -%}
+          {%- if env_uuid -%}
+            {{ env_uuid }}
+          {%- elif vault_uuid -%}
+            {{ vault_uuid }}
+          {%- else -%}
+            {{ 9999999999999999999999999 | random | to_uuid }}
+          {%- endif -%}
+      run_once: true
+
+    - name: Securely write XRAY_UUID to Vault KV if generated
+      community.hashi_vault.vault_write:
+        url: "{{ vault_addr }}"
+        auth_method: token
+        token: "{{ vault_token }}"
+        path: "kv/data/{{ vault_env_path }}/agent-proxy"
+        data:
+          xray_uuid: "{{ xray_uuid }}"
+      when: 
+        - vault_token | length > 0
+        - existing_agent_proxy_secrets.secret is not defined or existing_agent_proxy_secrets.secret.xray_uuid | default('') != xray_uuid
+      delegate_to: localhost
+      run_once: true
+      no_log: true
     - name: Validate INTERNAL_SERVICE_TOKEN is present
       ansible.builtin.assert:
         that:
