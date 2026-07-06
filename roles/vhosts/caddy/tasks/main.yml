@@ -12,7 +12,9 @@
         state: present
         update_cache: true
       when:
-        - "(ansible_facts['distribution'] == 'Debian' and (ansible_facts['distribution_version'] is version('13', '=='))) or (ansible_facts['distribution'] == 'Ubuntu' and (ansible_facts['distribution_version'] is version('24.04', '==')))"
+        # 用 major_version 比较: Debian 点位版本 (13.1) 和 trixie 预发布的
+        # distribution_version 对 version('13', '==') 都判 False, 会整体跳过安装
+        - "(ansible_facts['distribution'] == 'Debian' and (ansible_facts['distribution_major_version'] is version('13', '>='))) or (ansible_facts['distribution'] == 'Ubuntu' and (ansible_facts['distribution_version'] is version('24.04', '>=')))"
 
     - name: Ensure apt keyring directory exists
       ansible.builtin.file:
@@ -40,7 +42,7 @@
         state: present
       when:
         - ansible_facts['distribution'] == 'Debian'
-        - ansible_facts['distribution_version'] is version('13', '==')
+        - ansible_facts['distribution_major_version'] is version('13', '>=')
 
     - name: Add Caddy repository (Ubuntu)
       ansible.builtin.apt_repository:
@@ -49,7 +51,7 @@
         state: present
       when:
         - ansible_facts['distribution'] == 'Ubuntu'
-        - ansible_facts['distribution_version'] is version('24.04', '==')
+        - ansible_facts['distribution_version'] is version('24.04', '>=')
 
     - name: Install Caddy
       ansible.builtin.apt:
@@ -57,7 +59,9 @@
         state: present
         update_cache: true
       when:
-        - "(ansible_facts['distribution'] == 'Debian' and (ansible_facts['distribution_version'] is version('13', '=='))) or (ansible_facts['distribution'] == 'Ubuntu' and (ansible_facts['distribution_version'] is version('24.04', '==')))"
+        # 用 major_version 比较: Debian 点位版本 (13.1) 和 trixie 预发布的
+        # distribution_version 对 version('13', '==') 都判 False, 会整体跳过安装
+        - "(ansible_facts['distribution'] == 'Debian' and (ansible_facts['distribution_major_version'] is version('13', '>='))) or (ansible_facts['distribution'] == 'Ubuntu' and (ansible_facts['distribution_version'] is version('24.04', '>=')))"
 
     - name: Ensure Caddy config directory exists
       ansible.builtin.file:
