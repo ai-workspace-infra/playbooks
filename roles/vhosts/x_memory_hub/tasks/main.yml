@@ -46,7 +46,7 @@
   ansible.builtin.command: >
     docker exec -i {{ x_memory_hub_pg_container }} psql -U {{ x_memory_hub_pg_root_user }} -tAc
     "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ x_memory_hub_db_user }}'"
-  register: x_memory_hub_role_check
+  register: x_memory_hub_role_check_docker
   changed_when: false
   failed_when: false
   when: x_memory_hub_pg_provisioner == 'docker'
@@ -55,7 +55,7 @@
   ansible.builtin.command: >
     psql -h {{ x_memory_hub_pg_host }} -p {{ x_memory_hub_pg_port }} -U {{ x_memory_hub_pg_root_user }} -d postgres -tAc
     "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ x_memory_hub_db_user }}'"
-  register: x_memory_hub_role_check
+  register: x_memory_hub_role_check_tcp
   changed_when: false
   failed_when: false
   environment:
@@ -68,7 +68,7 @@
     "CREATE ROLE {{ x_memory_hub_db_user }} LOGIN PASSWORD '{{ x_memory_hub_db_password }}';"
   when:
     - x_memory_hub_pg_provisioner == 'docker'
-    - x_memory_hub_role_check.stdout | default('') | trim != '1'
+    - x_memory_hub_role_check_docker.stdout | default('') | trim != '1'
 
 - name: Create X Memory Hub database role via PostgreSQL TCP
   ansible.builtin.command: >
@@ -78,13 +78,13 @@
     PGPASSWORD: "{{ x_memory_hub_pg_root_password }}"
   when:
     - x_memory_hub_pg_provisioner == 'tcp'
-    - x_memory_hub_role_check.stdout | default('') | trim != '1'
+    - x_memory_hub_role_check_tcp.stdout | default('') | trim != '1'
 
 - name: Check X Memory Hub database
   ansible.builtin.command: >
     docker exec -i {{ x_memory_hub_pg_container }} psql -U {{ x_memory_hub_pg_root_user }} -tAc
     "SELECT 1 FROM pg_database WHERE datname = '{{ x_memory_hub_db_name }}'"
-  register: x_memory_hub_db_check
+  register: x_memory_hub_db_check_docker
   changed_when: false
   failed_when: false
   when: x_memory_hub_pg_provisioner == 'docker'
@@ -93,7 +93,7 @@
   ansible.builtin.command: >
     psql -h {{ x_memory_hub_pg_host }} -p {{ x_memory_hub_pg_port }} -U {{ x_memory_hub_pg_root_user }} -d postgres -tAc
     "SELECT 1 FROM pg_database WHERE datname = '{{ x_memory_hub_db_name }}'"
-  register: x_memory_hub_db_check
+  register: x_memory_hub_db_check_tcp
   changed_when: false
   failed_when: false
   environment:
@@ -106,7 +106,7 @@
     "CREATE DATABASE {{ x_memory_hub_db_name }} OWNER {{ x_memory_hub_db_user }};"
   when:
     - x_memory_hub_pg_provisioner == 'docker'
-    - x_memory_hub_db_check.stdout | default('') | trim != '1'
+    - x_memory_hub_db_check_docker.stdout | default('') | trim != '1'
 
 - name: Create X Memory Hub database via PostgreSQL TCP
   ansible.builtin.command: >
@@ -116,7 +116,7 @@
     PGPASSWORD: "{{ x_memory_hub_pg_root_password }}"
   when:
     - x_memory_hub_pg_provisioner == 'tcp'
-    - x_memory_hub_db_check.stdout | default('') | trim != '1'
+    - x_memory_hub_db_check_tcp.stdout | default('') | trim != '1'
 
 # pgvector 必需；pg_jieba/pg_trgm 由镜像提供，缺失时降级（Hub 迁移会退回 english 分词）。
 - name: Ensure X Memory Hub database extensions
@@ -127,9 +127,9 @@
     - { name: vector, required: true }
     - { name: pg_jieba, required: false }
     - { name: pg_trgm, required: false }
-  register: x_memory_hub_ext_results
-  changed_when: "'CREATE EXTENSION' in (x_memory_hub_ext_results.stdout | default(''))"
-  failed_when: x_memory_hub_ext_results.rc != 0 and item.required
+  register: x_memory_hub_ext_results_docker
+  changed_when: "'CREATE EXTENSION' in (x_memory_hub_ext_results_docker.stdout | default(''))"
+  failed_when: x_memory_hub_ext_results_docker.rc != 0 and item.required
   when: x_memory_hub_pg_provisioner == 'docker'
 
 - name: Ensure X Memory Hub database extensions via PostgreSQL TCP
@@ -140,9 +140,9 @@
     - { name: vector, required: true }
     - { name: pg_jieba, required: false }
     - { name: pg_trgm, required: false }
-  register: x_memory_hub_ext_results
-  changed_when: "'CREATE EXTENSION' in (x_memory_hub_ext_results.stdout | default(''))"
-  failed_when: x_memory_hub_ext_results.rc != 0 and item.required
+  register: x_memory_hub_ext_results_tcp
+  changed_when: "'CREATE EXTENSION' in (x_memory_hub_ext_results_tcp.stdout | default(''))"
+  failed_when: x_memory_hub_ext_results_tcp.rc != 0 and item.required
   environment:
     PGPASSWORD: "{{ x_memory_hub_pg_root_password }}"
   when: x_memory_hub_pg_provisioner == 'tcp'
