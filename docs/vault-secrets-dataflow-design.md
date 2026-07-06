@@ -111,3 +111,74 @@ postgresql_database_url: >-
 1. **流水线 JWT 友好**：支持 `VAULT_JWT_TOKEN` 动态身份绑定认证，完美对接 GitHub Actions 或 GitLab CI 等无秘钥流程。
 2. **外部注入优先**：如果容器化启动脚本（如 [setup-ai-workspace-all-in-one.sh](file:///Users/shenlan/workspaces/ai-workspace-lab/xworkspace-console/scripts/setup-ai-workspace-all-in-one.sh)）已经显式定义并导出了 `POSTGRESQL_DATABASE_URL` 环境变量，Ansible 将直接采用此变量，无需发起任何网络请求。
 3. **断网/本地降级**：在无 Vault 环境下（如纯本地单元测试），系统自动退回到使用单个变量组件拼接默认值的逻辑，保证单体 Role 的独立可测试性。
+
+---
+
+## 6. GitHub Actions OIDC 角色与策略配置 (UAT/Prod Environments)
+
+当流水线（如 `deploy-env-migration.yaml`）需要动态写入凭证（如为新部署的节点写入自动生成的 Xray UUID、各组件 PostgreSQL 密码）时，必须在 Vault 中配置允许更新特定路径的 JWT 鉴权角色和策略。
+
+**注意：切勿使用 GitHub Secrets 静态存储此类易变凭证。所有的凭证都应由 OIDC → Vault JWT 动态获取。**
+
+### 6.1 配置 Vault Policy
+
+Vault 管理员需要更新 `github-actions-site-migration-toolkit` 策略，以授予其写入 `kv/data/+/databases` 和 `kv/data/+/agent-proxy` 等按需生成的动态环境路径的权限：
+
+```hcl
+# 共享 CICD 键
+path "kv/data/CICD" {
+  capabilities = ["read"]
+}
+path "kv/metadata/CICD" {
+  capabilities = ["read", "list"]
+}
+
+# Web SaaS 域专属键
+path "kv/data/WEB_SAAS" {
+  capabilities = ["read"]
+}
+path "kv/metadata/WEB_SAAS" {
+  capabilities = ["read", "list"]
+}
+
+# 动态生成的环境凭证写入与读取权限 (以匹配 kv/data/uat/*, kv/data/prod/* 等)
+# 允许自动建库流水线创建、更新和读取数据库凭证
+path "kv/data/+/databases" {
+  capabilities = ["read", "create", "update", "patch"]
+}
+path "kv/metadata/+/databases" {
+  capabilities = ["read", "list"]
+}
+
+# 允许 Xray 代理服务写入与读取自动生成的 UUID
+path "kv/data/+/agent-proxy" {
+  capabilities = ["read", "create", "update", "patch"]
+}
+path "kv/metadata/+/agent-proxy" {
+  capabilities = ["read", "list"]
+}
+```
+
+### 6.2 配置 JWT Role
+
+Role 应绑定上述 Policy，并只信任本仓库的 Action：
+
+```bash
+vault write auth/jwt/role/github-actions-site-migration-toolkit - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "repository",
+  "bound_audiences": ["vault"],
+  "bound_claims_type": "glob",
+  "bound_claims": {
+    "repository": "ai-workspace-infra/site-migration-toolkit",
+    "sub": "repo:ai-workspace-infra/site-migration-toolkit:*"
+  },
+  "token_policies": ["github-actions-site-migration-toolkit"],
+  "token_ttl": "20m",
+  "token_max_ttl": "30m"
+}
+EOF
+```
+
+一旦部署上述 Policy 与 Role，流水线将自动通过 `vault_env_path` (如 `uat`) 进行上下文隔离存储，保障不同部署环境密钥生命周期的独立与安全性。
