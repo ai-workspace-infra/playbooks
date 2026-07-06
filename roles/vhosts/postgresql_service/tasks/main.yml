@@ -195,7 +195,7 @@
 - name: Remove existing postgres container before managed recreate
   ansible.builtin.shell: |
     set -euo pipefail
-    ids="$(docker ps -aq --filter name=^/{{ postgresql_service_postgres_container_name }}$)"
+    ids="$(for n in {{ ([postgresql_service_postgres_container_name] + postgresql_service_postgres_legacy_container_names) | join(' ') }}; do docker ps -aq --filter name=^/${n}$; done)"
     if [ -n "${ids}" ]; then
       docker rm -f ${ids}
     fi
@@ -239,7 +239,7 @@
 - name: Remove existing stunnel container before managed recreate
   ansible.builtin.shell: |
     set -euo pipefail
-    ids="$(docker ps -aq --filter name=^/{{ postgresql_service_stunnel_container_name }}$)"
+    ids="$(for n in {{ ([postgresql_service_stunnel_container_name] + postgresql_service_stunnel_legacy_container_names) | join(' ') }}; do docker ps -aq --filter name=^/${n}$; done)"
     if [ -n "${ids}" ]; then
       docker rm -f ${ids}
     fi

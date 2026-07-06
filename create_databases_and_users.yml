@@ -10,7 +10,7 @@
   vars:
     # If neither is set via environment, we'll auto-detect
     postgresql_deploy_mode: "{{ lookup('env', 'POSTGRESQL_DEPLOY_MODE') | default('compose', true) }}"
-    pg_container_default: "postgresql-svc-plus"
+    pg_container_default: "postgresql"
     pg_root_host: "{{ lookup('env', 'POSTGRESQL_HOST') | default('127.0.0.1', true) }}"
     pg_root_port: "{{ lookup('env', 'POSTGRESQL_PORT') | default('5432', true) }}"
     pg_root_user: "{{ lookup('env', 'POSTGRESQL_ADMIN_USER') | default('postgres', true) }}"
@@ -41,7 +41,7 @@
 
   pre_tasks:
     - name: Detect running Postgres container
-      ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E 'postgresql-svc-plus|ai-workspace-postgres' | head -n 1"
+      ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E '^(postgresql|postgresql-svc-plus|ai-workspace-postgres)$' | head -n 1"
       register: detected_pg
       changed_when: false
       failed_when: false
