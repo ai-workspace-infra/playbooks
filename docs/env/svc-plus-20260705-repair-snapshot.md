@@ -83,3 +83,28 @@ Vector 采用双源采集 Xray 指标：
 - 这版口径以 `svc-plus-20260705-repair-snapshot` 为准。
 - 旧的单实例 `xray-exporter-bin.service` 已废弃。
 - 这版配置的目标是让 XHTTP / TCP 两条链路可以独立启动、独立采集、独立观测。
+
+## install.svc.plus (xworkmate-bridge.svc.plus) 主机特例现状说明
+
+因宿主机环境上存在生产遗留问题与容器端口占用冲突，针对 `install.svc.plus` 进行了特例微调，避开了占用端口并修改了证书配置。具体现状如下：
+
+### 端口与服务变更
+1. **停止 billing-service**：
+   - 宿主机上的 `billing-service` 服务已被停止并禁用（`systemctl disable billing-service`），以释放 `127.0.0.1:8081` 端口给 `xray-exporter-tcp.service` 监听。
+2. **微调 XHTTP 侧 API 端口**：
+   - 宿主机上的 `console-c894924-contabo` 容器占用了 `127.0.0.1:18080`，因此将 `xray.service` (XHTTP) 的 API 端口微调为 `127.0.0.1:28080`。
+   - `xray-exporter-xhttp.service` 同步修改上游探测地址为 `127.0.0.1:28080`。
+3. **微调 TCP 侧 API 端口**：
+   - 宿主机上的 `accounts-managed-prod-contabo` 容器占用了 `127.0.0.1:18081`，因此将 `xray-tcp.service` (TCP) 的 API 端口微调为 `127.0.0.1:28081`。
+   - `xray-exporter-tcp.service` 同步修改上游探测地址为 `127.0.0.1:28081`。
+
+### 证书路径修正
+- `xray-tcp.service` 在该主机上加载的 TLS 证书路径修正为本地实际存在的 `xworkmate-bridge.svc.plus` 证书目录（`/var/lib/caddy/.local/share/caddy/certificates/.../xworkmate-bridge.svc.plus/`）。
+
+### 调整后在该主机的端口拓扑
+- `xray.service` (XHTTP API)：`127.0.0.1:28080`
+- `xray-exporter-xhttp.service` (指标服务)：监听 `127.0.0.1:8080`
+- `xray-tcp.service` (TCP API)：`127.0.0.1:28081`
+- `xray-exporter-tcp.service` (指标服务)：监听 `127.0.0.1:8081`
+- `vector.service` (指标抓取)：继续通过 `127.0.0.1:8080/scrape` 和 `127.0.0.1:8081/scrape` 正常抓取。
+
