@@ -94,113 +94,127 @@
         pg_container: "{{ detected_pg.stdout if detected_pg.stdout else pg_container_default }}"
       when: postgresql_deploy_mode == 'compose'
 
+    - name: Check if psql is available
+      ansible.builtin.command: which psql
+      register: psql_check
+      failed_when: false
+      changed_when: false
+      when: postgresql_deploy_mode != 'compose'
+
   tasks:
-    - name: Create dedicated users
-      ansible.builtin.command: >
-        docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -tAc
-        "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ item.user }}'"
-      loop: "{{ resolved_db_configs }}"
-      register: user_check_results
-      changed_when: false
-      failed_when: false
-      when: postgresql_deploy_mode == 'compose'
-
-    - name: Create dedicated users via PostgreSQL TCP
-      ansible.builtin.command: >
-        psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -tAc
-        "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ item.user }}'"
-      loop: "{{ resolved_db_configs }}"
-      # 不能与 compose 分支共用 register 名: 被 skip 的任务同样会写 register,
-      # 会把已运行分支的结果覆盖成没有 stdout 的 skip 字典
-      register: user_check_results_tcp
-      changed_when: false
-      failed_when: false
-      environment:
-        PGPASSWORD: "{{ pg_root_password }}"
-      when: postgresql_deploy_mode != 'compose'
-
-    - name: Execute CREATE ROLE if not exists
-      ansible.builtin.command: >
-        docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -c
-        "CREATE ROLE {{ item.item.user }} LOGIN PASSWORD '{{ item.item.password }}';"
-      loop: "{{ user_check_results.results }}"
-      register: create_user_results
-      changed_when: true
-      when:
-        - postgresql_deploy_mode == 'compose'
-        - (item.stdout | default('')) | trim != '1'
-
-    - name: Execute CREATE ROLE if not exists via PostgreSQL TCP
-      ansible.builtin.command: >
-        psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -c
-        "CREATE ROLE {{ item.item.user }} LOGIN PASSWORD '{{ item.item.password }}';"
-      loop: "{{ user_check_results_tcp.results }}"
-      register: create_user_results_tcp
-      changed_when: true
-      environment:
-        PGPASSWORD: "{{ pg_root_password }}"
-      when:
-        - postgresql_deploy_mode != 'compose'
-        - (item.stdout | default('')) | trim != '1'
-
-    - name: Create dedicated databases and assign owners
-      ansible.builtin.command: >
-        docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -tc "SELECT 1 FROM pg_database WHERE datname = '{{ item.db }}'"
-      loop: "{{ resolved_db_configs }}"
-      register: db_check_results
-      changed_when: false
-      failed_when: false
-      when: postgresql_deploy_mode == 'compose'
-
-    - name: Create dedicated databases and assign owners via PostgreSQL TCP
-      ansible.builtin.command: >
-        psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = '{{ item.db }}'"
-      loop: "{{ resolved_db_configs }}"
-      register: db_check_results_tcp
-      changed_when: false
-      failed_when: false
-      environment:
-        PGPASSWORD: "{{ pg_root_password }}"
-      when: postgresql_deploy_mode != 'compose'
-
-    - name: Execute CREATE DATABASE if not exists
-      ansible.builtin.command: >
-        docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -c "CREATE DATABASE {{ item.item.db }} OWNER {{ item.item.user }} ENCODING 'UTF8';"
-      loop: "{{ db_check_results.results }}"
-      register: create_db_results
-      changed_when: true
-      when:
-        - postgresql_deploy_mode == 'compose'
-        - (item.stdout | default('')) | trim != '1'
-
-    - name: Execute CREATE DATABASE if not exists via PostgreSQL TCP
-      ansible.builtin.command: >
-        psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -c "CREATE DATABASE {{ item.item.db }} OWNER {{ item.item.user }} ENCODING 'UTF8';"
-      loop: "{{ db_check_results_tcp.results }}"
-      register: create_db_results_tcp
-      changed_when: true
-      environment:
-        PGPASSWORD: "{{ pg_root_password }}"
-      when:
-        - postgresql_deploy_mode != 'compose'
-        - (item.stdout | default('')) | trim != '1'
-
-  post_tasks:
-    - name: Prepare Vault payload
-      ansible.builtin.set_fact:
-        db_vault_payload: >-
-          {%- set payload = {} -%}
-          {%- for item in resolved_db_configs -%}
-            {%- set _ = payload.update({item.vault_key: item.password}) -%}
-          {%- endfor -%}
-          {{ payload }}
-
-    - name: Securely write database passwords to Vault KV
-      community.hashi_vault.vault_write:
-        url: "{{ vault_addr }}"
-        auth_method: token
-        token: "{{ vault_token }}"
-        path: "kv/data/{{ vault_env_path }}/databases"
-        data: "{{ db_vault_payload }}"
-      when: vault_token | length > 0
-      no_log: true
+    - name: Conditional DB creation block
+      when: postgresql_deploy_mode == "compose" or (psql_check.rc | default(-1)) == 0
+      block:
+      - name: Create dedicated users
+        ansible.builtin.command: >
+          docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -tAc
+          "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ item.user }}'"
+        loop: "{{ resolved_db_configs }}"
+        register: user_check_results
+        changed_when: false
+        failed_when: false
+        when: postgresql_deploy_mode == 'compose'
+  
+      - name: Create dedicated users via PostgreSQL TCP
+        ansible.builtin.command: >
+          psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -tAc
+          "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ item.user }}'"
+        loop: "{{ resolved_db_configs }}"
+        # 不能与 compose 分支共用 register 名: 被 skip 的任务同样会写 register,
+        # 会把已运行分支的结果覆盖成没有 stdout 的 skip 字典
+        register: user_check_results_tcp
+        changed_when: false
+        failed_when: false
+        environment:
+          PGPASSWORD: "{{ pg_root_password }}"
+        when: postgresql_deploy_mode != 'compose'
+  
+      - name: Execute CREATE ROLE if not exists
+        ansible.builtin.command: >
+          docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -c
+          "CREATE ROLE {{ item.item.user }} LOGIN PASSWORD '{{ item.item.password }}';"
+        loop: "{{ user_check_results.results }}"
+        register: create_user_results
+        changed_when: true
+        when:
+          - postgresql_deploy_mode == 'compose'
+          - (item.stdout | default('')) | trim != '1'
+        no_log: true
+  
+      - name: Execute CREATE ROLE if not exists via PostgreSQL TCP
+        ansible.builtin.command:
+          cmd: >-
+            psql -h {{ pg_root_host }} -p {{ pg_root_port }}
+            -U {{ pg_root_user }} -d postgres
+            -c "CREATE ROLE {{ item.item.user }} LOGIN PASSWORD '{{ item.item.password }}';"
+        environment:
+          PGPASSWORD: "{{ pg_root_password }}"
+        loop: "{{ user_check_results_tcp.results }}"
+        register: create_user_results_tcp
+        changed_when: true
+        when:
+          - postgresql_deploy_mode != 'compose'
+          - (item.stdout | default('')) | trim != '1'
+        no_log: true
+  
+      - name: Create dedicated databases and assign owners
+        ansible.builtin.command: >
+          docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -tc "SELECT 1 FROM pg_database WHERE datname = '{{ item.db }}'"
+        loop: "{{ resolved_db_configs }}"
+        register: db_check_results
+        changed_when: false
+        failed_when: false
+        when: postgresql_deploy_mode == 'compose'
+  
+      - name: Create dedicated databases and assign owners via PostgreSQL TCP
+        ansible.builtin.command: >
+          psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = '{{ item.db }}'"
+        loop: "{{ resolved_db_configs }}"
+        register: db_check_results_tcp
+        changed_when: false
+        failed_when: false
+        environment:
+          PGPASSWORD: "{{ pg_root_password }}"
+        when: postgresql_deploy_mode != 'compose'
+  
+      - name: Execute CREATE DATABASE if not exists
+        ansible.builtin.command: >
+          docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -c "CREATE DATABASE {{ item.item.db }} OWNER {{ item.item.user }} ENCODING 'UTF8';"
+        loop: "{{ db_check_results.results }}"
+        register: create_db_results
+        changed_when: true
+        when:
+          - postgresql_deploy_mode == 'compose'
+          - (item.stdout | default('')) | trim != '1'
+  
+      - name: Execute CREATE DATABASE if not exists via PostgreSQL TCP
+        ansible.builtin.command: >
+          psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -c "CREATE DATABASE {{ item.item.db }} OWNER {{ item.item.user }} ENCODING 'UTF8';"
+        loop: "{{ db_check_results_tcp.results }}"
+        register: create_db_results_tcp
+        changed_when: true
+        environment:
+          PGPASSWORD: "{{ pg_root_password }}"
+        when:
+          - postgresql_deploy_mode != 'compose'
+          - (item.stdout | default('')) | trim != '1'
+  
+    post_tasks:
+      - name: Prepare Vault payload
+        ansible.builtin.set_fact:
+          db_vault_payload: >-
+            {%- set payload = {} -%}
+            {%- for item in resolved_db_configs -%}
+              {%- set _ = payload.update({item.vault_key: item.password}) -%}
+            {%- endfor -%}
+            {{ payload }}
+  
+      - name: Securely write database passwords to Vault KV
+        community.hashi_vault.vault_write:
+          url: "{{ vault_addr }}"
+          auth_method: token
+          token: "{{ vault_token }}"
+          path: "kv/data/{{ vault_env_path }}/databases"
+          data: "{{ db_vault_payload }}"
+        when: vault_token | length > 0
+        no_log: true
