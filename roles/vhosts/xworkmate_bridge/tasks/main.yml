@@ -296,7 +296,9 @@
             seen[$host]="$f"
           else
             # Keep the shorter (canonical) filename, remove the longer (dynamic) one
-            if [ ${#f} -lt ${#existing} ]; then
+            len_f=$(echo -n "$f" | wc -c)
+            len_existing=$(echo -n "$existing" | wc -c)
+            if [ "$len_f" -lt "$len_existing" ]; then
               rm -f "$existing"
               seen[$host]="$f"
             else
