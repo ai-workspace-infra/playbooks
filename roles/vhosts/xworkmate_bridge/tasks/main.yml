@@ -275,6 +275,45 @@
         mode: "0755"
       become: true
 
+    # Pre-validate: scan conf.d for stale dynamically-named fragments that define
+    # the same Caddy site as an existing static file (e.g. console.svc.plus).
+    # These orphaned files arise when a role is NOT re-run on a subsequent deploy
+    # and the old fragment remains alongside a newer static definition.
+    # We detect duplicates by extracting the site hostname from each *.caddy file
+    # and removing any file that declares a hostname already served by another file.
+    - name: Remove duplicate Caddy site definitions from conf.d
+      ansible.builtin.shell: |
+        set -euo pipefail
+        shopt -s nullglob
+        changed=0
+        declare -A seen
+        # First pass: register the canonical (shortest-named) file per hostname
+        for f in {{ xworkmate_bridge_caddy_conf_dir }}/*.caddy; do
+          host=$(awk 'NR==1{sub(/ \{.*/, ""); print; exit}' "$f" 2>/dev/null || true)
+          [ -z "$host" ] && continue
+          existing="${seen[$host]:-}"
+          if [ -z "$existing" ]; then
+            seen[$host]="$f"
+          else
+            # Keep the shorter (canonical) filename, remove the longer (dynamic) one
+            if [ ${#f} -lt ${#existing} ]; then
+              rm -f "$existing"
+              seen[$host]="$f"
+            else
+              rm -f "$f"
+            fi
+            changed=1
+          fi
+        done
+        [ "$changed" -eq 1 ] && echo changed || true
+      args:
+        executable: /bin/bash
+      register: xworkmate_bridge_caddy_dedup
+      changed_when: xworkmate_bridge_caddy_dedup.stdout | trim != ""
+      failed_when: false
+      when: ansible_os_family != 'Darwin'
+      become: true
+
     - name: Inspect Caddy main file attributes
       ansible.builtin.command:
         cmd: lsattr "{{ xworkmate_bridge_caddyfile_path }}"

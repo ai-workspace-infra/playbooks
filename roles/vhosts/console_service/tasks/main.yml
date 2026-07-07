@@ -113,14 +113,26 @@
     set -euo pipefail
     shopt -s nullglob
     current="{{ console_service_caddy_fragment_path }}"
-    for candidate in {{ console_service_caddy_conf_dir }}/console*.caddy {{ console_service_caddy_conf_dir }}/console*.caddy.bak*; do
-      if [ "$candidate" != "$current" ]; then
+    changed=0
+    # Match dynamically-named fragments (console-<hash>-<host>-<domain>.caddy) AND
+    # legacy static files (console.svc.plus.caddy, console-svc-plus.caddy, etc.)
+    for candidate in \
+        {{ console_service_caddy_conf_dir }}/console*.caddy \
+        {{ console_service_caddy_conf_dir }}/console*.caddy.bak* \
+        {{ console_service_caddy_conf_dir }}/{{ console_service_domain_slug }}.caddy \
+        {{ console_service_caddy_conf_dir }}/{{ console_service_canonical_domain }}.caddy; do
+      if [ "$candidate" != "$current" ] && [ -e "$candidate" ]; then
         rm -f "$candidate"
+        changed=1
       fi
     done
+    if [ "$changed" -eq 1 ]; then
+      echo changed
+    fi
   args:
     executable: /bin/bash
-  changed_when: true
+  register: console_service_caddy_cleanup
+  changed_when: console_service_caddy_cleanup.stdout | trim != ""
   when: console_service_manage_caddy | bool
   become: true
 
