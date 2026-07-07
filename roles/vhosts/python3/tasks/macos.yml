@@ -1,0 +1,7 @@
+---
+- name: Ensure hvac is installed for Ansible's Python environment on macOS
+  ansible.builtin.command:
+    cmd: "{{ ansible_python_interpreter | default('python3') }} -m pip install hvac --break-system-packages"
+  register: pip_install_hvac
+  changed_when: "'Successfully installed' in pip_install_hvac.stdout"
+  become: false
