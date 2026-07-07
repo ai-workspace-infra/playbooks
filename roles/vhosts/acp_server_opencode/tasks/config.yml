@@ -42,7 +42,7 @@
     url: "{{ lookup('env', 'GITHUB_PROXY') | default('', true) }}https://github.com/ai-workspace-lab/xworkmate-bridge/releases/latest/download/xworkmate-bridge-{{ ansible_system | lower }}-{{ 'amd64' if ansible_architecture in ['x86_64', 'amd64'] else 'arm64' }}.tar.gz"
     dest: "/tmp/xworkmate-bridge-opencode.tar.gz"
     mode: "0644"
-  when: not (acp_opencode_bridge_use_prebuilt | bool)
+  when: acp_opencode_bridge_use_prebuilt | bool
 
 - name: Extract XWorkmate Go ACP server binary for OpenCode
   ansible.builtin.unarchive:
@@ -55,6 +55,16 @@
     owner: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
     group: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0755"
+  become: true
+  when: acp_opencode_bridge_use_prebuilt | bool
+
+- name: Copy locally built XWorkmate Go ACP server binary for OpenCode
+  ansible.builtin.copy:
+    src: "{{ acp_opencode_bridge_local_binary_path }}"
+    dest: "{{ acp_opencode_bridge_binary_path }}"
+    mode: "0755"
+    owner: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
+    group: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
   become: true
   when: not (acp_opencode_bridge_use_prebuilt | bool)
 
