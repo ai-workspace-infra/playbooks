@@ -5,7 +5,7 @@ observability.svc.plus {
     redir / /grafana/
 
     # Grafana (可视化大盘面板)
-    handle /grafana/* {
+    handle_path /grafana/* {
         reverse_proxy 127.0.0.1:{{ observability_grafana_port | default('3030') }}
     }
     handle /grafana {
@@ -15,9 +15,9 @@ observability.svc.plus {
     # ==========================================
     # VictoriaMetrics / Prometheus
     # ==========================================
-    # [接收] 指标数据写入 (Remote Write / Ingest)
+    # [接收] 指标数据写入 (Remote Write) # VictoriaMetrics 写入入口
     handle_path /ingest/metrics/* {
-        reverse_proxy 127.0.0.1:{{ observability_prometheus_port | default('9090') }}
+        reverse_proxy 127.0.0.1:{{ observability_vmetrics_port | default('9090') }}
     }
     # [查询] 指标数据读取 (Query / UI)
     handle_path /vmetrics/* {

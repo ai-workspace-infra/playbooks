@@ -28,6 +28,16 @@
   loop: "{{ xray_exporter_legacy_service_names }}"
   notify: Restart xray-exporters
 
+- name: Remove immutable flag from existing service file if it exists
+  ansible.builtin.command: "chattr -i /etc/systemd/system/{{ xray_exporter_instance.name }}.service"
+  loop: "{{ xray_exporter_instances }}"
+  loop_control:
+    loop_var: xray_exporter_instance
+    label: "{{ xray_exporter_instance.name }}"
+  failed_when: false
+  changed_when: false
+
+
 - name: Install xray-exporter systemd service
   ansible.builtin.template:
     src: xray-exporter.service.j2
