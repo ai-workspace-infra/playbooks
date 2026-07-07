@@ -18,7 +18,8 @@
     pg_root_password: "{{ lookup('env', 'POSTGRESQL_ADMIN_PASSWORD') | default(lookup('env', 'POSTGRES_PASSWORD') | default(lookup('file', '/root/.ai_workspace_postgres_password', errors='ignore') | default('postgres', true), true), true) }}"
 
     vault_env_path: "{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}"
-    vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+    vault_deploy_mode: "{{ lookup('env', 'VAULT_DEPLOY_MODE') | default('standalone', true) }}"
+    vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default(('http://127.0.0.1:8200' if vault_deploy_mode != 'external' else 'https://vault.svc.plus'), true) }}"
     vault_token: "{{ lookup('env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('env', 'VAULT_TOKEN'), true) }}"
 
     # 业务数据库清单与对应专有用户 (Passwords resolved in pre_tasks)
