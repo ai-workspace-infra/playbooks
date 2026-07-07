@@ -241,13 +241,17 @@
         db_vault_payload: "{{ dict(resolved_db_configs | map(attribute='vault_key') | zip(resolved_db_configs | map(attribute='password'))) }}"
 
     - name: Securely write database passwords to Vault KV
-      community.hashi_vault.vault_write:
-        url: "{{ vault_addr }}"
-        auth_method: token
-        token: "{{ vault_token }}"
-        path: "kv/data/{{ vault_env_path }}/databases"
-        data:
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/kv/data/{{ vault_env_path }}/databases"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
           data: "{{ db_vault_payload }}"
+        status_code:
+          - 200
+          - 204
       when: vault_token | length > 0
       run_once: true
       delegate_to: localhost
