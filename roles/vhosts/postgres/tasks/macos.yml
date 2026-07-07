@@ -49,9 +49,9 @@
     DO \$\$
     BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ postgresql_admin_user }}') THEN
-        CREATE ROLE "{{ postgresql_admin_user }}" LOGIN PASSWORD '{{ postgresql_admin_password }}';
+        CREATE ROLE "{{ postgresql_admin_user }}" LOGIN SUPERUSER PASSWORD '{{ postgresql_admin_password }}';
       ELSE
-        ALTER ROLE "{{ postgresql_admin_user }}" LOGIN PASSWORD '{{ postgresql_admin_password }}';
+        ALTER ROLE "{{ postgresql_admin_user }}" LOGIN SUPERUSER PASSWORD '{{ postgresql_admin_password }}';
       END IF;
     END
     \$\$;
