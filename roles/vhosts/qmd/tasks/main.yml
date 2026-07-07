@@ -132,7 +132,7 @@
   # first builds the module for the wrong NODE_MODULE_VERSION and qmd aborts
   # with ERR_DLOPEN_FAILED. Linux PATH is left untouched.
   environment:
-    PATH: "{{ '/opt/homebrew/bin:/usr/local/bin:' if ansible_os_family == 'Darwin' else '' }}{{ ansible_env.PATH }}"
+    PATH: "{{ '/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:/usr/local/bin:' if ansible_os_family == 'Darwin' else '' }}{{ ansible_env.PATH }}"
   become: true
   become_user: "{{ qmd_user }}"
   when:
@@ -144,7 +144,7 @@
     cmd: npm run build
     chdir: "{{ qmd_source_dir }}"
   environment:
-    PATH: "{{ '/opt/homebrew/bin:/usr/local/bin:' if ansible_os_family == 'Darwin' else '' }}{{ ansible_env.PATH }}"
+    PATH: "{{ '/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:/usr/local/bin:' if ansible_os_family == 'Darwin' else '' }}{{ ansible_env.PATH }}"
   become: true
   become_user: "{{ qmd_user }}"
   when:
@@ -309,7 +309,7 @@
   # so it matches the ABI better-sqlite3 was built with (see npm tasks above),
   # instead of falling through to an nvm node and failing ERR_DLOPEN_FAILED.
   environment:
-    PATH: "{{ '/opt/homebrew/bin:/usr/local/bin:' if ansible_os_family == 'Darwin' else '' }}{{ ansible_env.PATH }}"
+    PATH: "{{ '/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:/usr/local/bin:' if ansible_os_family == 'Darwin' else '' }}{{ ansible_env.PATH }}"
     HOME: "{{ qmd_home }}"
     QMD_EMBED_API_BASE_URL: "{{ qmd_embed_api_base_url }}"
     QMD_EMBED_MODEL: "{{ qmd_embed_model }}"
