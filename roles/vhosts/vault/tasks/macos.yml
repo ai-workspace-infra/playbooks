@@ -38,9 +38,18 @@
     src: vault.plist.j2
     dest: "{{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.vault.plist"
     mode: "0644"
+  register: vault_plist
 
 - name: Start Vault on macOS
-  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.vault.plist"
+  ansible.builtin.shell: |
+    launchctl unload -w "{{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.vault.plist" 2>/dev/null || true
+    launchctl load -w "{{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.vault.plist"
+  when: vault_plist.changed
   register: launchctl_result
+  changed_when: true
+
+- name: Ensure Vault on macOS is started (idempotent)
+  ansible.builtin.command: "launchctl load -w {{ ansible_env.HOME }}/Library/LaunchAgents/plus.svc.xworkspace.vault.plist"
+  register: launchctl_start
   changed_when: false
-  failed_when: launchctl_result.rc != 0 and 'already loaded' not in launchctl_result.stderr
+  failed_when: launchctl_start.rc != 0 and 'already loaded' not in launchctl_start.stderr
