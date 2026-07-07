@@ -1,21 +1,77 @@
 version: '3.8'
 services:
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: xstream_prometheus
+  victoria-metrics:
+    image: victoriametrics/victoria-metrics:v1.101.0
+    container_name: xstream_victoriametrics
     restart: always
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time={{ observability_retention_time }}'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--web.enable-remote-write-receiver'
+      - '--storageDataPath=/vmetrics_data'
+      - '--retentionPeriod={{ observability_retention_time | default("30d") }}'
     volumes:
-      - ./prometheus:/etc/prometheus
-      - prometheus_data:/prometheus
+      - vmetrics_data:/vmetrics_data
     ports:
-      - "127.0.0.1:{{ observability_prometheus_port }}:9090"
+      - "127.0.0.1:{{ observability_prometheus_port | default('9090') }}:8428"
+
+  victoria-logs:
+    image: victoriametrics/victoria-logs:v0.31.0-victorialogs
+    container_name: xstream_victorialogs
+    restart: always
+    command:
+      - '--storageDataPath=/vlogs_data'
+      - '--retentionPeriod=1y'
+    volumes:
+      - vlogs_data:/vlogs_data
+    ports:
+      - "127.0.0.1:9428:9428"
+
+  victoria-traces:
+    image: victoriametrics/victoria-traces:v0.1.0
+    container_name: xstream_victoriatraces
+    restart: always
+    command:
+      - '--storageDataPath=/vtraces_data'
+      - '--retentionPeriod=1y'
+    volumes:
+      - vtraces_data:/vtraces_data
+    ports:
+      - "127.0.0.1:10428:8428" # Query/UI
+      - "127.0.0.1:4318:4318"  # OTLP HTTP
+      - "127.0.0.1:4317:4317"  # OTLP gRPC
+
+  vmalert:
+    image: victoriametrics/vmalert:v1.101.0
+    container_name: xstream_vmalert
+    restart: always
+    command:
+      - '--rule=/etc/vmalert/alerts.yml'
+      - '--datasource.url=http://victoria-metrics:8428'
+      - '--notifier.url=http://alertmanager:9093'
+      - '--remoteWrite.url=http://victoria-metrics:8428'
+      - '--remoteRead.url=http://victoria-metrics:8428'
+    volumes:
+      - ./vmalert:/etc/vmalert
+    ports:
+      - "127.0.0.1:8880:8880"
+    depends_on:
+      - victoria-metrics
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: xstream_alertmanager
+    restart: always
+    volumes:
+      - ./alertmanager:/etc/alertmanager
+    ports:
+      - "127.0.0.1:9059:9093"
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: xstream_blackbox
+    restart: always
+    volumes:
+      - ./blackbox:/etc/blackbox_exporter
+    ports:
+      - "127.0.0.1:9115:9115"
 
   grafana:
     image: grafana/grafana:latest
@@ -25,17 +81,19 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_AUTH_ANONYMOUS_ENABLED=false
       - GF_AUTH_BASIC_ENABLED=true
-      - GF_INSTALL_PLUGINS=marcusolsson-treemap-panel
+      - GF_INSTALL_PLUGINS=marcusolsson-treemap-panel,victoriametrics-logs-datasource
       - GF_SERVER_DOMAIN=observability.svc.plus
       - GF_SERVER_ROOT_URL=https://observability.svc.plus/grafana/
-      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_SERVER_SERVE_FROM_SUB_PATH=false
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
       - grafana_data:/var/lib/grafana
     ports:
-      - "127.0.0.1:{{ observability_grafana_port }}:3000"
+      - "127.0.0.1:{{ observability_grafana_port | default('3030') }}:3000"
 
 volumes:
-  prometheus_data:
+  vmetrics_data:
+  vlogs_data:
+  vtraces_data:
   grafana_data:

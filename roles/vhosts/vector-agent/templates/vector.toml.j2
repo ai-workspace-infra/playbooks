@@ -2,20 +2,11 @@
 [api]
 enabled = false # Disable API to save memory
 
-
-
+# ==========================================
+# 1. Metrics Collection
+# ==========================================
 [sources.internal_metrics]
 type = "internal_metrics"
-
-[sources.xray_xhttp_metrics]
-type = "prometheus_scrape"
-endpoints = ["http://127.0.0.1:8080/scrape"]
-scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
-
-[sources.xray_tcp_metrics]
-type = "prometheus_scrape"
-endpoints = ["http://127.0.0.1:8081/scrape"]
-scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
 
 [sources.node_metrics]
 type = "prometheus_scrape"
@@ -27,13 +18,16 @@ type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:9256/metrics"]
 scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
 
-[transforms.add_labels]
-type = "remap"
-inputs = ["internal_metrics", "node_metrics", "process_metrics"]
-source = '''
-.tags.instance = "{{ inventory_hostname }}"
-.tags.job = "xray"
-'''
+{% if inventory_hostname in groups.get('xray_exporter', []) %}
+[sources.xray_xhttp_metrics]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:8080/scrape"]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+
+[sources.xray_tcp_metrics]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:8081/scrape"]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
 
 [transforms.add_xray_xhttp_labels]
 type = "remap"
@@ -52,32 +46,97 @@ source = '''
 .tags.job = "xray"
 .tags.transport = "tcp"
 '''
+{% endif %}
+
+[transforms.add_labels]
+type = "remap"
+inputs = ["internal_metrics", "node_metrics", "process_metrics"]
+source = '''
+.tags.instance = "{{ inventory_hostname }}"
+.tags.job = "xray"
+'''
 
 [sinks.prometheus_remote]
 type = "prometheus_remote_write"
+{% if inventory_hostname in groups.get('xray_exporter', []) %}
 inputs = ["add_labels", "add_xray_xhttp_labels", "add_xray_tcp_labels"]
+{% else %}
+inputs = ["add_labels"]
+{% endif %}
+{% if inventory_hostname == 'install.svc.plus' %}
+endpoint = "http://127.0.0.1:9090/api/v1/write"
+{% else %}
 endpoint = "https://observability.svc.plus/ingest/metrics/api/v1/write"
-
+{% if vector_auth_user is defined and vector_auth_password is defined %}
+[sinks.prometheus_remote.auth]
+strategy = "basic"
+user = "{{ vector_auth_user }}"
+password = "{{ vector_auth_password }}"
+{% endif %}
+{% endif %}
 [sinks.prometheus_remote.tls]
 verify_certificate = false
 verify_hostname = false
-
 [sinks.prometheus_remote.healthcheck]
 enabled = false
-
-# Batching to reduce request frequency
 [sinks.prometheus_remote.batch]
-max_events = {{ vector_batch_max_events }}
-timeout_secs = {{ vector_batch_timeout }}
-
-# Network and retries
+max_events = {{ vector_batch_max_events | default('500') }}
+timeout_secs = {{ vector_batch_timeout | default('5') }}
 [sinks.prometheus_remote.request]
 retry_initial_backoff_secs = 2
 retry_max_duration_secs = 3600
 rate_limit_duration_secs = 1
-rate_limit_num = 10 # Rate limit to avoid burst bandwidth usage
-
-# Use memory buffer with strict limits
+rate_limit_num = 10
 [sinks.prometheus_remote.buffer]
 type = "memory"
-max_events = {{ vector_buffer_max_events }}
+max_events = {{ vector_buffer_max_events | default('1000') }}
+
+
+# ==========================================
+# 2. Logs Collection (VictoriaLogs)
+# ==========================================
+[sources.system_logs]
+type = "file"
+{% if inventory_hostname == 'install.svc.plus' %}
+include = ["/var/log/**/*.log", "/var/log/syslog", "/var/log/auth.log"]
+{% elif inventory_hostname == 'tky-proxy.svc.plus' %}
+include = ["/var/log/xray/error.log"]
+{% else %}
+include = ["/var/log/syslog", "/var/log/auth.log"]
+{% endif %}
+ignore_older_secs = 86400
+
+[transforms.process_logs]
+type = "remap"
+inputs = ["system_logs"]
+source = '''
+.instance = "{{ inventory_hostname }}"
+'''
+
+[sinks.victorialogs]
+type = "http"
+inputs = ["process_logs"]
+{% if inventory_hostname == 'install.svc.plus' %}
+uri = "http://127.0.0.1:9428/insert/jsonline?_msg_field=message&_stream_fields=instance,file"
+{% else %}
+uri = "https://observability.svc.plus/ingest/logs/insert/jsonline?_msg_field=message&_stream_fields=instance,file"
+{% if vector_auth_user is defined and vector_auth_password is defined %}
+[sinks.victorialogs.auth]
+strategy = "basic"
+user = "{{ vector_auth_user }}"
+password = "{{ vector_auth_password }}"
+{% endif %}
+{% endif %}
+encoding.codec = "json"
+[sinks.victorialogs.tls]
+verify_certificate = false
+verify_hostname = false
+[sinks.victorialogs.healthcheck]
+enabled = false
+
+# ==========================================
+# 3. Traces Collection (VictoriaTraces)
+# ==========================================
+# Note: The 'opentelemetry' sink is unsupported in the currently installed Vector version.
+# For tracing, applications should directly push OTLP data to the gateway:
+# https://observability.svc.plus/ingest/otlp/v1/traces
