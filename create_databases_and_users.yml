@@ -232,14 +232,13 @@
           - (item.stdout | default('')) | trim != '1'
   
   post_tasks:
+    - name: Debug vault token length and prefix
+      debug:
+        msg: "Token length: {{ vault_token | length }}, Prefix: {{ vault_token[:4] | default('none', true) }}, Env var 1: {{ lookup('env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') }}, Env var 2: {{ lookup('env', 'VAULT_TOKEN') }}"
+
     - name: Prepare Vault payload
       ansible.builtin.set_fact:
-        db_vault_payload: >-
-          {%- set payload = {} -%}
-          {%- for item in resolved_db_configs -%}
-            {%- set _ = payload.update({item.vault_key: item.password}) -%}
-          {%- endfor -%}
-          {{ payload }}
+        db_vault_payload: "{{ dict(resolved_db_configs | map(attribute='vault_key') | zip(resolved_db_configs | map(attribute='password'))) }}"
 
     - name: Securely write database passwords to Vault KV
       community.hashi_vault.vault_write:
