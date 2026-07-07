@@ -124,6 +124,10 @@ if ! vault auth list -format=json | jq -e 'has("userpass/")' >/dev/null; then
 fi
 vault auth tune -listing-visibility=unauth userpass/ >/dev/null
 
+if ! vault secrets list -format=json | jq -e 'has("kv/")' >/dev/null; then
+  vault secrets enable -version=2 kv >/dev/null
+fi
+
 tmp_policy="$(mktemp)"
 trap 'rm -f "$tmp_policy"' EXIT
 cat >"$tmp_policy" <<'POL'
