@@ -16,7 +16,7 @@
     HOMEBREW_API_DOMAIN: "{{ lookup('ansible.builtin.env', 'HOMEBREW_API_DOMAIN') | default('https://mirrors.ustc.edu.cn/homebrew-bottles/api', true) }}"
     HOMEBREW_BOTTLE_DOMAIN: "{{ lookup('ansible.builtin.env', 'HOMEBREW_BOTTLE_DOMAIN') | default('https://mirrors.ustc.edu.cn/homebrew-bottles', true) }}"
 
-- name: Ensure Homebrew {{ nodejs_homebrew_formula }} formula is installed
+- name: Ensure Homebrew {{ nodejs_homebrew_formula | default('node') }} formula is installed
   ansible.builtin.command: "{{ nodejs_homebrew_prefix }}/bin/brew install {{ nodejs_homebrew_formula }}"
   register: nodejs_brew_install
   changed_when: "'already installed' not in (nodejs_brew_install.stdout | lower) and 'already installed' not in (nodejs_brew_install.stderr | lower)"
@@ -28,7 +28,7 @@
     HOMEBREW_API_DOMAIN: "{{ lookup('ansible.builtin.env', 'HOMEBREW_API_DOMAIN') | default('https://mirrors.ustc.edu.cn/homebrew-bottles/api', true) }}"
     HOMEBREW_BOTTLE_DOMAIN: "{{ lookup('ansible.builtin.env', 'HOMEBREW_BOTTLE_DOMAIN') | default('https://mirrors.ustc.edu.cn/homebrew-bottles', true) }}"
 
-- name: Ensure {{ nodejs_homebrew_formula }} is linked as the default node
+- name: Ensure {{ nodejs_homebrew_formula | default('node') }} is linked as the default node
   ansible.builtin.command: "{{ nodejs_homebrew_prefix }}/bin/brew link --force --overwrite {{ nodejs_homebrew_formula }}"
   register: nodejs_brew_link
   changed_when: "'linking' in (nodejs_brew_link.stdout | lower)"
@@ -36,14 +36,14 @@
   environment:
     PATH: "{{ nodejs_homebrew_prefix }}/bin:/usr/local/bin:/usr/bin:/bin"
 
-- name: Prioritize {{ nodejs_homebrew_formula }} binaries in the default shell path
+- name: Prioritize {{ nodejs_homebrew_formula | default('node') }} binaries in the default shell path
   ansible.builtin.lineinfile:
     path: "{{ ansible_env.HOME }}/.zshrc"
     line: "export PATH=\"{{ nodejs_homebrew_prefix }}/opt/{{ nodejs_homebrew_formula }}/bin:$PATH\""
     insertafter: EOF
     create: true
 
-- name: Pin {{ nodejs_homebrew_formula }} to prevent automatic upgrades
+- name: Pin {{ nodejs_homebrew_formula | default('node') }} to prevent automatic upgrades
   ansible.builtin.command: "{{ nodejs_homebrew_prefix }}/bin/brew pin {{ nodejs_homebrew_formula }}"
   register: nodejs_brew_pin
   changed_when: "'pinned' in (nodejs_brew_pin.stdout | lower)"
