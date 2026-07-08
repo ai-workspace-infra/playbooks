@@ -27,15 +27,22 @@
         - _vault_token | length > 0
         - _vault_deploy_mode == "external"
 
-    - name: Resolve vault_pg_password (Env > Vault KV > password file > auto-generate)
+    - name: Read vault_pg_password shadow file from remote host
+      ansible.builtin.slurp:
+        src: /root/.ai_workspace_vault_pg_password
+      register: _vault_pg_shadow
+      failed_when: false
+      no_log: true
+
+    - name: Resolve vault_pg_password (Env > shadow file > Vault KV > auto-generate)
       ansible.builtin.set_fact:
         vault_pg_password: >-
           {%- set env_pw = lookup('env', 'VAULT_PG_PASSWORD') -%}
+          {%- set file_pw = (_vault_pg_shadow.content | default('') | b64decode | trim) if _vault_pg_shadow.content is defined else '' -%}
           {%- set vault_pw = (_existing_db_secrets.secret | default({})).get('vault_pg_password', '') -%}
-          {%- set file_pw = lookup('file', '/root/.ai_workspace_vault_pg_password', errors='ignore') | default('', true) -%}
           {%- if env_pw -%}{{ env_pw }}
-          {%- elif vault_pw -%}{{ vault_pw }}
           {%- elif file_pw -%}{{ file_pw }}
+          {%- elif vault_pw -%}{{ vault_pw }}
           {%- else -%}{{ lookup('password', '/dev/null length=16 chars=ascii_letters,digits') }}
           {%- endif -%}
       no_log: true
