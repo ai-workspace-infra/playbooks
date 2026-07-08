@@ -61,6 +61,23 @@
     enabled: true
     state: started
 
+# Native install never sets a password for the postgres superuser (only
+# peer-auth via the local unix socket works out of the box), but
+# create_databases_and_users.yml authenticates over TCP with PGPASSWORD.
+# Without this, every TCP-mode CREATE/ALTER ROLE call fails with
+# "password authentication failed for user postgres".
+- name: Set PostgreSQL admin (postgres) role password
+  become: true
+  become_user: postgres
+  ansible.builtin.shell: |
+    set -e
+    psql -d postgres -v ON_ERROR_STOP=1 <<SQL
+    ALTER ROLE "{{ postgresql_admin_user }}" PASSWORD '{{ postgresql_admin_password }}';
+    SQL
+  no_log: true
+  changed_when: true
+  when: postgresql_admin_password | length > 0
+
 - name: Gather facts for PostgreSQL configuration files
   ansible.builtin.stat:
     path: "{{ postgresql_conf_path }}"
