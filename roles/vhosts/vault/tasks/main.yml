@@ -133,6 +133,39 @@
     - vault_deploy_mode == "standalone"
     - ansible_os_family != 'Darwin'
 
+# Vault's "postgresql" storage backend does not create its own schema on
+# first connect (unlike most storage backends) -- HashiCorp's docs require
+# these two tables to exist before Vault ever starts, or it fails to bind
+# its listener at all (connection refused, no journal-visible reason
+# beyond a fast exit). vault_storage owns this database (created in
+# create_databases_and_users.yml), so it has full DDL rights over it.
+- name: Ensure Vault PostgreSQL storage schema exists
+  become: true
+  become_user: postgres
+  ansible.builtin.shell: |
+    set -e
+    psql -d vault_storage -v ON_ERROR_STOP=1 <<'SQL'
+    CREATE TABLE IF NOT EXISTS vault_kv_store (
+      parent_path TEXT COLLATE "C" NOT NULL,
+      path        TEXT COLLATE "C",
+      key         TEXT COLLATE "C",
+      value       BYTEA,
+      CONSTRAINT pkey PRIMARY KEY (path, key)
+    );
+    CREATE INDEX IF NOT EXISTS parent_path_idx ON vault_kv_store (parent_path);
+    CREATE TABLE IF NOT EXISTS vault_ha_locks (
+      ha_key      TEXT COLLATE "C" NOT NULL,
+      ha_identity TEXT COLLATE "C" NOT NULL,
+      ha_value    TEXT COLLATE "C",
+      valid_until TIMESTAMP WITH TIME ZONE NOT NULL,
+      CONSTRAINT ha_key PRIMARY KEY (ha_key)
+    );
+    SQL
+  changed_when: true
+  when:
+    - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+
 - name: Start standalone Vault service
   ansible.builtin.systemd:
     name: "{{ vault_service_name }}"
