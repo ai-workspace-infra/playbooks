@@ -83,6 +83,12 @@
             {%- set _ = results.append({'db': db.db, 'user': db.user, 'password': final_pw, 'vault_key': db.vault_key}) -%}
           {%- endfor -%}
           {{ results }}
+
+    - name: Export passwords as top-level facts
+      ansible.builtin.set_fact:
+        "{{ item.vault_key }}": "{{ item.password }}"
+      loop: "{{ resolved_db_configs }}"
+      no_log: true
     - name: Detect running Postgres container
       ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E '^(postgresql|postgresql-svc-plus|ai-workspace-postgres)$' | head -n 1"
       register: detected_pg
@@ -232,28 +238,4 @@
           - postgresql_deploy_mode != 'compose'
           - (item.stdout | default('')) | trim != '1'
   
-  post_tasks:
-    - name: Debug vault token length and prefix
-      debug:
-        msg: "Token length: {{ vault_token | length }}, Prefix: {{ vault_token[:4] | default('none', true) }}, Env var 1: {{ lookup('env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') }}, Env var 2: {{ lookup('env', 'VAULT_TOKEN') }}"
 
-    - name: Prepare Vault payload
-      ansible.builtin.set_fact:
-        db_vault_payload: "{{ dict(resolved_db_configs | map(attribute='vault_key') | zip(resolved_db_configs | map(attribute='password'))) }}"
-
-    - name: Securely write database passwords to Vault KV
-      ansible.builtin.uri:
-        url: "{{ vault_addr }}/v1/kv/data/{{ vault_env_path }}/databases"
-        method: POST
-        headers:
-          X-Vault-Token: "{{ vault_token }}"
-        body_format: json
-        body:
-          data: "{{ db_vault_payload }}"
-        status_code:
-          - 200
-          - 204
-      when: vault_token | length > 0
-      run_once: true
-      delegate_to: localhost
-      no_log: false
