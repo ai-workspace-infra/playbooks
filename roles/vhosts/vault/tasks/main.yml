@@ -98,8 +98,9 @@
       [Unit]
       Description=HashiCorp Vault Server
       Documentation=https://developer.hashicorp.com/vault/docs
-      After=network-online.target
+      After=network-online.target postgresql.service
       Wants=network-online.target
+      BindsTo=postgresql.service
 
       [Service]
       Type=simple
@@ -111,6 +112,23 @@
       [Install]
       WantedBy=multi-user.target
   no_log: true
+  when:
+    - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+
+- name: Flush pending handlers before starting Vault (ensures PostgreSQL restart completes)
+  ansible.builtin.meta: flush_handlers
+  when:
+    - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+
+- name: Wait for PostgreSQL to be ready before starting Vault
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ vault_pg_port | default('5432') | int }}"
+    state: started
+    timeout: 60
+    delay: 2
   when:
     - vault_deploy_mode == "standalone"
     - ansible_os_family != 'Darwin'
