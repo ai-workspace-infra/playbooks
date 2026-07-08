@@ -6,6 +6,50 @@
   module_defaults:
     ansible.builtin.apt:
       lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(900) | int }}"
+  vars:
+    _vault_deploy_mode: "{{ lookup('env', 'VAULT_DEPLOY_MODE') | default('standalone', true) }}"
+    _vault_token: "{{ lookup('env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('env', 'VAULT_TOKEN'), true) }}"
+    _vault_env_path: "{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}"
+    # Where to look for the Vault-internal Vault for pre-existing secrets
+    _vault_kv_addr: "{{ lookup('env', 'VAULT_ADDR') | default('http://127.0.0.1:8200', true) }}"
+  pre_tasks:
+    - name: Read existing vault_pg_password from Vault KV (when token is available and Vault is external)
+      community.hashi_vault.vault_kv2_get:
+        url: "{{ _vault_kv_addr }}"
+        auth_method: token
+        token: "{{ _vault_token }}"
+        path: "kv/data/{{ _vault_env_path }}/databases"
+        engine_mount_point: "kv"
+      register: _existing_db_secrets
+      failed_when: false
+      no_log: true
+      when:
+        - _vault_token | length > 0
+        - _vault_deploy_mode == "external"
+
+    - name: Resolve vault_pg_password (Env > Vault KV > password file > auto-generate)
+      ansible.builtin.set_fact:
+        vault_pg_password: >-
+          {%- set env_pw = lookup('env', 'VAULT_PG_PASSWORD') -%}
+          {%- set vault_pw = (_existing_db_secrets.secret | default({})).get('vault_pg_password', '') -%}
+          {%- set file_pw = lookup('file', '/root/.ai_workspace_vault_pg_password', errors='ignore') | default('', true) -%}
+          {%- if env_pw -%}{{ env_pw }}
+          {%- elif vault_pw -%}{{ vault_pw }}
+          {%- elif file_pw -%}{{ file_pw }}
+          {%- else -%}{{ lookup('password', '/dev/null length=16 chars=ascii_letters,digits') }}
+          {%- endif -%}
+      no_log: true
+
+    - name: Persist resolved vault_pg_password to shadow file for consistency
+      ansible.builtin.copy:
+        dest: /root/.ai_workspace_vault_pg_password
+        content: "{{ vault_pg_password }}"
+        mode: "0600"
+      no_log: true
+      when:
+        - vault_pg_password | length > 0
+        - vault_pg_password != 'CHANGE_ME'
+
   roles:
     - role: roles/vhosts/vault/
       tags: [vault]
