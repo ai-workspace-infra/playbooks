@@ -150,21 +150,46 @@
     - vault_deploy_mode == "standalone"
 
 - name: Wait for standalone Vault API
-  ansible.builtin.uri:
-    url: "{{ vault_admin_addr }}/v1/sys/health"
-    status_code:
-      - 200
-      - 429
-      - 472
-      - 473
-      - 501
-      - 503
-    return_content: true
-  register: vault_health
-  until: vault_health.status in [200, 429, 472, 473, 501, 503]
-  retries: 12
-  delay: 5
-  changed_when: false
+  block:
+    - name: Wait for standalone Vault API
+      ansible.builtin.uri:
+        url: "{{ vault_admin_addr }}/v1/sys/health"
+        status_code:
+          - 200
+          - 429
+          - 472
+          - 473
+          - 501
+          - 503
+        return_content: true
+      register: vault_health
+      until: vault_health.status in [200, 429, 472, 473, 501, 503]
+      retries: 12
+      delay: 5
+      changed_when: false
+  rescue:
+    - name: Collect Vault systemd status for diagnostics
+      ansible.builtin.command: "systemctl status {{ vault_service_name }} --no-pager -l"
+      register: vault_systemd_status
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family != 'Darwin'
+
+    - name: Collect Vault journal for diagnostics
+      ansible.builtin.command: "journalctl -u {{ vault_service_name }} -n 100 --no-pager"
+      register: vault_journal
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family != 'Darwin'
+
+    - name: Show Vault diagnostics
+      ansible.builtin.debug:
+        msg: "{{ (vault_systemd_status.stdout_lines | default([])) + ['--- journal ---'] + (vault_journal.stdout_lines | default([])) }}"
+      when: ansible_os_family != 'Darwin'
+
+    - name: Re-raise original Vault startup failure
+      ansible.builtin.fail:
+        msg: "Vault failed to become healthy after {{ vault_health.attempts | default('?') }} attempts; see diagnostics above."
   when:
     - vault_deploy_mode in ["standalone", "external"]
 
