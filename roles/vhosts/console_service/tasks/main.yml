@@ -108,6 +108,19 @@
   when: console_service_manage_caddy | bool
   become: true
 
+- name: Render console alias Caddy fragment
+  ansible.builtin.template:
+    src: console-alias.caddy.j2
+    dest: "{{ console_service_alias_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: console_service_alias_fragment
+  when:
+    - console_service_manage_caddy | bool
+    - console_service_alias_domain | trim | length > 0
+  become: true
+
 - name: Remove obsolete console Caddy fragments
   ansible.builtin.shell: |
     set -euo pipefail
@@ -136,12 +149,24 @@
   when: console_service_manage_caddy | bool
   become: true
 
+- name: Remove stale console alias Caddy fragment when alias is unset
+  ansible.builtin.file:
+    path: "{{ console_service_alias_caddy_fragment_path }}"
+    state: absent
+  when:
+    - console_service_manage_caddy | bool
+    - console_service_alias_domain | trim | length == 0
+  become: true
+
 - name: Validate Caddy config after updating console fragment
   ansible.builtin.command: caddy validate --config /etc/caddy/Caddyfile
   changed_when: false
   when:
     - console_service_manage_caddy | bool
     - not ansible_check_mode
+    - console_service_caddy_fragment.changed
+      or console_service_caddy_cleanup.changed
+      or (console_service_alias_fragment is defined and console_service_alias_fragment.changed)
 
 - name: Reload Caddy after updating console fragment
   ansible.builtin.service:
@@ -150,6 +175,9 @@
   when:
     - console_service_manage_caddy | bool
     - not ansible_check_mode
+    - console_service_caddy_fragment.changed
+      or console_service_caddy_cleanup.changed
+      or (console_service_alias_fragment is defined and console_service_alias_fragment.changed)
   become: true
 
 - name: Show console compose status
