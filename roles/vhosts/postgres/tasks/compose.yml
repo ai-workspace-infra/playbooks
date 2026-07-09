@@ -55,8 +55,8 @@
 - name: Render PostgreSQL compose environment
   ansible.builtin.copy:
     dest: "{{ postgresql_compose_env_file }}"
-    owner: root
-    group: root
+    owner: "{{ ansible_user_id if ansible_os_family == 'Darwin' else 'root' }}"
+    group: "{{ 'staff' if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0600"
     content: |
       POSTGRES_DB={{ postgresql_database }}
@@ -68,8 +68,8 @@
   ansible.builtin.template:
     src: postgres-compose.yml.j2
     dest: "{{ postgresql_compose_file }}"
-    owner: root
-    group: root
+    owner: "{{ ansible_user_id if ansible_os_family == 'Darwin' else 'root' }}"
+    group: "{{ 'staff' if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0644"
 
 - name: Validate PostgreSQL compose file
