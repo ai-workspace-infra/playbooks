@@ -10,6 +10,33 @@
     name: roles/vhosts/docker
   when: postgresql_docker_version.rc != 0
 
+- name: Inspect Docker daemon for PostgreSQL compose mode
+  ansible.builtin.command: docker info
+  register: postgresql_docker_info
+  changed_when: false
+  failed_when: false
+
+- name: Start Colima Docker daemon for PostgreSQL compose mode (macOS)
+  ansible.builtin.command: colima start
+  register: postgresql_colima_start
+  changed_when: >-
+    'already running' not in (postgresql_colima_start.stdout | default(''))
+    and 'already running' not in (postgresql_colima_start.stderr | default(''))
+  when:
+    - ansible_os_family == 'Darwin'
+    - postgresql_docker_info.rc != 0
+
+- name: Wait for Docker daemon after Colima start (macOS)
+  ansible.builtin.command: docker info
+  register: postgresql_docker_info_after_colima
+  changed_when: false
+  retries: 12
+  delay: 5
+  until: postgresql_docker_info_after_colima.rc == 0
+  when:
+    - ansible_os_family == 'Darwin'
+    - postgresql_docker_info.rc != 0
+
 - name: Materialize PostgreSQL admin password
   ansible.builtin.assert:
     that:
