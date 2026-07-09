@@ -1,0 +1,10 @@
+{{ item.domain }} {
+  encode zstd gzip
+
+  reverse_proxy {{ item.upstream | default('127.0.0.1:' ~ console_service_port) }} {
+    header_up Host {host}
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-For {remote_host}
+  }
+}

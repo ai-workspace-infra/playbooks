@@ -13,7 +13,7 @@ auth:
     refreshExpiry: "168h"
   oauth:
     redirectUrl: "${OAUTH_REDIRECT_URL}"
-    frontendUrl: "${OAUTH_FRONTEND_URL:-https://console.svc.plus}"
+    frontendUrl: "${OAUTH_FRONTEND_URL:-{{ accounts_service_frontend_url }}}"
     github:
       clientId: "${GITHUB_CLIENT_ID}"
       clientSecret: "${GITHUB_CLIENT_SECRET}"
@@ -27,19 +27,9 @@ server:
   writeTimeout: 15s
   publicUrl: "https://accounts.svc.plus"
   allowedOrigins:
-    - "https://dev.svc.plus"
-    - "https://dev-homepage.svc.plus"
-    - "https://www.svc.plus"
-    - "https://global-homepage.svc.plus"
-    - "https://accounts.svc.plus"
-    - "https://console.svc.plus"
-    - "https://localhost:8443"
-    - "http://localhost:8080"
-    - "http://127.0.0.1:8080"
-    - "http://localhost:3001"
-    - "http://127.0.0.1:3001"
-    - "http://localhost:3000"
-    - "http://127.0.0.1:3000"
+{% for origin in accounts_service_allowed_origins %}
+    - "{{ origin }}"
+{% endfor %}
   tls:
     enabled: false
     certFile: ""
