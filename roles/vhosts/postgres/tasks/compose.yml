@@ -48,9 +48,9 @@
   ansible.builtin.file:
     path: "{{ postgresql_data_dir }}"
     state: directory
-    owner: "{{ postgresql_container_uid }}"
-    group: "{{ postgresql_container_gid }}"
-    mode: "0700"
+    owner: "{{ ansible_user_id if ansible_os_family == 'Darwin' else postgresql_container_uid }}"
+    group: "{{ 'staff' if ansible_os_family == 'Darwin' else postgresql_container_gid }}"
+    mode: "{{ '0755' if ansible_os_family == 'Darwin' else '0700' }}"
 
 - name: Render PostgreSQL compose environment
   ansible.builtin.copy:
