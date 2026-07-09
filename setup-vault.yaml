@@ -12,6 +12,10 @@
     _vault_env_path: "{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}"
     # Where to look for the Vault-internal Vault for pre-existing secrets
     _vault_kv_addr: "{{ lookup('env', 'VAULT_ADDR') | default('http://127.0.0.1:8200', true) }}"
+    _vault_pg_shadow_file: >-
+      {{ (ansible_env.HOME ~ '/.ai_workspace_vault_pg_password')
+         if ansible_os_family == 'Darwin'
+         else '/root/.ai_workspace_vault_pg_password' }}
   pre_tasks:
     - name: Read existing vault_pg_password from Vault KV (when token is available and Vault is external)
       community.hashi_vault.vault_kv2_get:
@@ -29,7 +33,7 @@
 
     - name: Read vault_pg_password shadow file from remote host
       ansible.builtin.slurp:
-        src: /root/.ai_workspace_vault_pg_password
+        src: "{{ _vault_pg_shadow_file }}"
       register: _vault_pg_shadow
       failed_when: false
       no_log: true
@@ -49,7 +53,7 @@
 
     - name: Persist resolved vault_pg_password to shadow file for consistency
       ansible.builtin.copy:
-        dest: /root/.ai_workspace_vault_pg_password
+        dest: "{{ _vault_pg_shadow_file }}"
         content: "{{ vault_pg_password }}"
         mode: "0600"
       no_log: true

@@ -1,27 +1,32 @@
 ---
+- name: Normalize PostgreSQL deploy mode
+  ansible.builtin.set_fact:
+    postgresql_deploy_mode_effective: >-
+      {{ 'native' if (postgresql_deploy_mode | default('native')) == 'standalone' else (postgresql_deploy_mode | default('native')) }}
+
 - name: Validate PostgreSQL deploy mode
   ansible.builtin.assert:
     that:
-      - postgresql_deploy_mode in ['compose', 'native', 'external']
+      - postgresql_deploy_mode_effective in ['compose', 'native', 'external']
     fail_msg: "postgresql_deploy_mode must be 'compose', 'native', or 'external'."
 
 - name: Use external PostgreSQL service
   ansible.builtin.debug:
     msg: "postgresql_deploy_mode=external; skipping local PostgreSQL install/start."
-  when: postgresql_deploy_mode == 'external'
+  when: postgresql_deploy_mode_effective == 'external'
 
 - name: Deploy PostgreSQL with Docker Compose
   ansible.builtin.import_tasks: compose.yml
-  when: postgresql_deploy_mode == 'compose'
+  when: postgresql_deploy_mode_effective == 'compose'
 
 - name: Deploy PostgreSQL natively (Linux)
   ansible.builtin.import_tasks: native.yml
   when:
-    - postgresql_deploy_mode == 'native'
+    - postgresql_deploy_mode_effective == 'native'
     - ansible_os_family != 'Darwin'
 
 - name: Deploy PostgreSQL natively (macOS)
   ansible.builtin.import_tasks: macos.yml
   when:
-    - postgresql_deploy_mode == 'native'
+    - postgresql_deploy_mode_effective == 'native'
     - ansible_os_family == 'Darwin'
