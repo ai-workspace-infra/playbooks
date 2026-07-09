@@ -226,6 +226,20 @@
   when:
     - vault_deploy_mode in ["standalone", "external"]
 
+- name: Ensure Vault KV v2 secrets engine is enabled
+  ansible.builtin.command: >-
+    bash -lc '
+    if ! vault secrets list -format=json | jq -e "has(\"kv/\")" >/dev/null; then
+      vault secrets enable -version=2 kv >/dev/null
+    fi'
+  environment:
+    PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH }}"
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+    VAULT_TOKEN: "{{ vault_server_root_access_token }}"
+  changed_when: false
+  when:
+    - vault_deploy_mode in ["standalone", "external"]
+
 - name: Bootstrap Vault admin userpass auth
   ansible.builtin.script: >-
     files/init_vault_admin.sh
