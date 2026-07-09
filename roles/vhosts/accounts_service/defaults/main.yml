@@ -22,6 +22,8 @@ accounts_service_caddy_sites:
       - accounts.svc.plus
     default_forwarded_host: svc.plus
     upstream: 127.0.0.1:18081
+accounts_service_frontend_url: "{{ lookup('ansible.builtin.vars', 'ACCOUNTS_FRONTEND_URL', default=lookup('ansible.builtin.env', 'ACCOUNTS_FRONTEND_URL') | default('https://console.svc.plus', true)) }}"
+accounts_service_allowed_origins: "{{ lookup('ansible.builtin.vars', 'ACCOUNTS_ALLOWED_ORIGINS', default=lookup('ansible.builtin.env', 'ACCOUNTS_ALLOWED_ORIGINS') | default(['https://dev.svc.plus', 'https://dev-homepage.svc.plus', 'https://www.svc.plus', 'https://svc.plus', 'https://global-homepage.svc.plus', 'https://www.xworkmate.com', 'https://xworkmate.com', 'https://accounts.svc.plus', 'https://console.svc.plus', 'https://console.xworkmate.com', 'https://localhost:8443', 'http://localhost:8080', 'http://127.0.0.1:8080', 'http://localhost:3001', 'http://127.0.0.1:3001', 'http://localhost:3000', 'http://127.0.0.1:3000'], true)) }}"
 accounts_service_env_defaults:
   DB_HOST: stunnel-client
   DB_NAME: account

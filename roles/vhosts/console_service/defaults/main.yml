@@ -8,6 +8,8 @@ console_service_release_id: "{{ lookup('env', 'RELEASE_ID') | default(lookup('pi
 console_service_hostname: "{{ inventory_hostname | default(ansible_facts['hostname']) | default('unknown-host', true) }}"
 console_service_canonical_domain: "{{ lookup('ansible.builtin.vars', 'CANONICAL_DOMAIN', default=lookup('ansible.builtin.env', 'CANONICAL_DOMAIN') | default('console.svc.plus', true)) }}"
 console_service_served_domains: "{{ lookup('ansible.builtin.vars', 'SERVED_DOMAINS', default=lookup('ansible.builtin.env', 'SERVED_DOMAINS') | default(console_service_canonical_domain, true)) }}"
+console_service_proxy_sites: "{{ lookup('ansible.builtin.vars', 'CONSOLE_SERVICE_PROXY_SITES', default=lookup('ansible.builtin.env', 'CONSOLE_SERVICE_PROXY_SITES') | default([{'domain': console_service_canonical_domain, 'upstream': '127.0.0.1:' ~ console_service_port}], true)) }}"
+console_service_redirect_rules: "{{ lookup('ansible.builtin.vars', 'CONSOLE_SERVICE_REDIRECT_RULES', default=lookup('ansible.builtin.env', 'CONSOLE_SERVICE_REDIRECT_RULES') | default([], true)) }}"
 console_service_domain: "{{ console_service_canonical_domain }}"
 console_service_domain_slug: "{{ console_service_canonical_domain | replace('.', '-') }}"
 console_service_alias_domain: "{{ lookup('ansible.builtin.vars', 'ALIAS_DOMAIN', default=lookup('ansible.builtin.env', 'ALIAS_DOMAIN') | default('', true)) }}"
