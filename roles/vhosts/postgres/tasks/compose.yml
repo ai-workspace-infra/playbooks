@@ -37,8 +37,8 @@
   ansible.builtin.file:
     path: "{{ postgresql_compose_project_dir }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ ansible_user_id if ansible_os_family == 'Darwin' else 'root' }}"
+    group: "{{ 'staff' if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0755"
 
 # 数据目录归容器内 postgres uid（默认 999），而非 root：否则重跑时这个 file

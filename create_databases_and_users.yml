@@ -10,6 +10,9 @@
   vars:
     # If neither is set via environment, we'll auto-detect
     postgresql_deploy_mode: "{{ lookup('env', 'POSTGRESQL_DEPLOY_MODE') | default('native', true) }}"
+    postgresql_deploy_mode_effective: >-
+      {{ 'native' if (lookup('env', 'POSTGRESQL_DEPLOY_MODE') | default('native', true)) == 'standalone'
+         else (lookup('env', 'POSTGRESQL_DEPLOY_MODE') | default('native', true)) }}
     pg_container_default: "postgresql"
     pg_root_host: "{{ lookup('env', 'POSTGRESQL_HOST') | default('127.0.0.1', true) }}"
     pg_root_port: "{{ lookup('env', 'POSTGRESQL_PORT') | default('5432', true) }}"
@@ -21,6 +24,10 @@
     vault_deploy_mode: "{{ lookup('env', 'VAULT_DEPLOY_MODE') | default('standalone', true) }}"
     vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default(('http://127.0.0.1:8200' if vault_deploy_mode != 'external' else 'https://vault.svc.plus'), true) }}"
     vault_token: "{{ lookup('env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('env', 'VAULT_TOKEN'), true) }}"
+    vault_pg_shadow_file: >-
+      {{ (ansible_env.HOME ~ '/.ai_workspace_vault_pg_password')
+         if ansible_os_family == 'Darwin'
+         else '/root/.ai_workspace_vault_pg_password' }}
 
     # 业务数据库清单与对应专有用户 (Passwords resolved in pre_tasks)
     db_configs_raw:
@@ -92,7 +99,7 @@
 
     - name: Persist vault_pg_password to shadow file (read by setup-vault.yaml)
       ansible.builtin.copy:
-        dest: /root/.ai_workspace_vault_pg_password
+        dest: "{{ vault_pg_shadow_file }}"
         content: "{{ vault_pg_password }}"
         mode: "0600"
       no_log: true
@@ -105,24 +112,24 @@
       register: detected_pg
       changed_when: false
       failed_when: false
-      when: postgresql_deploy_mode == 'compose'
+      when: postgresql_deploy_mode_effective == 'compose'
 
 
     - name: Set pg_container fact
       ansible.builtin.set_fact:
         pg_container: "{{ detected_pg.stdout if detected_pg.stdout else pg_container_default }}"
-      when: postgresql_deploy_mode == 'compose'
+      when: postgresql_deploy_mode_effective == 'compose'
 
     - name: Check if psql is available
       ansible.builtin.command: which psql
       register: psql_check
       failed_when: false
       changed_when: false
-      when: postgresql_deploy_mode != 'compose'
+      when: postgresql_deploy_mode_effective != 'compose'
 
   tasks:
     - name: Conditional DB creation block
-      when: postgresql_deploy_mode == "compose" or (psql_check.rc | default(-1)) == 0
+      when: postgresql_deploy_mode_effective == "compose" or (psql_check.rc | default(-1)) == 0
       block:
       - name: Create dedicated users
         ansible.builtin.command: >
@@ -132,7 +139,7 @@
         register: user_check_results
         changed_when: false
         failed_when: false
-        when: postgresql_deploy_mode == 'compose'
+        when: postgresql_deploy_mode_effective == 'compose'
   
       - name: Create dedicated users via PostgreSQL TCP
         ansible.builtin.command: >
@@ -146,7 +153,7 @@
         failed_when: false
         environment:
           PGPASSWORD: "{{ pg_root_password }}"
-        when: postgresql_deploy_mode != 'compose'
+        when: postgresql_deploy_mode_effective != 'compose'
   
       - name: Execute CREATE ROLE if not exists
         ansible.builtin.command: >
@@ -156,7 +163,7 @@
         register: create_user_results
         changed_when: true
         when:
-          - postgresql_deploy_mode == 'compose'
+          - postgresql_deploy_mode_effective == 'compose'
           - (item.stdout | default('')) | trim != '1'
         no_log: true
   
@@ -172,7 +179,7 @@
         register: create_user_results_tcp
         changed_when: true
         when:
-          - postgresql_deploy_mode != 'compose'
+          - postgresql_deploy_mode_effective != 'compose'
           - (item.stdout | default('')) | trim != '1'
         no_log: true
 
@@ -188,7 +195,7 @@
         register: sync_password_results
         changed_when: true
         when:
-          - postgresql_deploy_mode == 'compose'
+          - postgresql_deploy_mode_effective == 'compose'
           - (item.stdout | default('')) | trim == '1'
         no_log: true
 
@@ -204,7 +211,7 @@
         register: sync_password_results_tcp
         changed_when: true
         when:
-          - postgresql_deploy_mode != 'compose'
+          - postgresql_deploy_mode_effective != 'compose'
           - (item.stdout | default('')) | trim == '1'
         no_log: true
   
@@ -215,7 +222,7 @@
         register: db_check_results
         changed_when: false
         failed_when: false
-        when: postgresql_deploy_mode == 'compose'
+        when: postgresql_deploy_mode_effective == 'compose'
   
       - name: Create dedicated databases and assign owners via PostgreSQL TCP
         ansible.builtin.command: >
@@ -226,7 +233,7 @@
         failed_when: false
         environment:
           PGPASSWORD: "{{ pg_root_password }}"
-        when: postgresql_deploy_mode != 'compose'
+        when: postgresql_deploy_mode_effective != 'compose'
   
       - name: Execute CREATE DATABASE if not exists
         ansible.builtin.command: >
@@ -235,7 +242,7 @@
         register: create_db_results
         changed_when: true
         when:
-          - postgresql_deploy_mode == 'compose'
+          - postgresql_deploy_mode_effective == 'compose'
           - (item.stdout | default('')) | trim != '1'
   
       - name: Execute CREATE DATABASE if not exists via PostgreSQL TCP
@@ -247,7 +254,6 @@
         environment:
           PGPASSWORD: "{{ pg_root_password }}"
         when:
-          - postgresql_deploy_mode != 'compose'
+          - postgresql_deploy_mode_effective != 'compose'
           - (item.stdout | default('')) | trim != '1'
   
-
