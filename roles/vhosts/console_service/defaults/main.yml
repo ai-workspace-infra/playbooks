@@ -10,10 +10,12 @@ console_service_canonical_domain: "{{ lookup('ansible.builtin.vars', 'CANONICAL_
 console_service_served_domains: "{{ lookup('ansible.builtin.vars', 'SERVED_DOMAINS', default=lookup('ansible.builtin.env', 'SERVED_DOMAINS') | default(console_service_canonical_domain, true)) }}"
 console_service_domain: "{{ console_service_canonical_domain }}"
 console_service_domain_slug: "{{ console_service_canonical_domain | replace('.', '-') }}"
+console_service_alias_domain: "{{ lookup('ansible.builtin.vars', 'ALIAS_DOMAIN', default=lookup('ansible.builtin.env', 'ALIAS_DOMAIN') | default('', true)) }}"
 console_service_caddy_base_dir: "{{ '/opt/homebrew/etc/caddy' if ansible_os_family == 'Darwin' else '/etc/caddy' }}"
 console_service_caddy_conf_dir: "{{ console_service_caddy_base_dir }}/conf.d"
 console_service_caddy_fragment_name: "{{ console_service_server_name }}-{{ console_service_release_id }}-{{ console_service_hostname }}-{{ console_service_domain_slug }}.caddy"
-console_service_caddy_fragment_path: "{{ console_service_caddy_conf_dir }}/{{ console_service_caddy_fragment_name }}"
+console_service_caddy_fragment_path: "{{ console_service_caddy_conf_dir }}/{{ console_service_canonical_domain }}.caddy"
+console_service_alias_caddy_fragment_path: "{{ console_service_caddy_conf_dir }}/{{ console_service_alias_domain if (console_service_alias_domain | trim | length > 0) else 'console-alias' }}.caddy"
 console_service_obsolete_caddy_fragment_patterns:
   - "{{ console_service_caddy_base_dir }}/conf.d/console.caddy"
   - "{{ console_service_caddy_base_dir }}/conf.d/console-svc-plus.caddy"
