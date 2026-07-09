@@ -80,6 +80,24 @@
     - x_memory_hub_pg_provisioner == 'tcp'
     - x_memory_hub_role_check_tcp.stdout | default('') | trim != '1'
 
+- name: Reconcile X Memory Hub database role password
+  ansible.builtin.command: >
+    docker exec -i {{ x_memory_hub_pg_container }} psql -U {{ x_memory_hub_pg_root_user }} -c
+    "ALTER ROLE {{ x_memory_hub_db_user }} PASSWORD '{{ x_memory_hub_db_password }}';"
+  changed_when: false
+  no_log: true
+  when: x_memory_hub_pg_provisioner == 'docker'
+
+- name: Reconcile X Memory Hub database role password via PostgreSQL TCP
+  ansible.builtin.command: >
+    psql -h {{ x_memory_hub_pg_host }} -p {{ x_memory_hub_pg_port }} -U {{ x_memory_hub_pg_root_user }} -d postgres -c
+    "ALTER ROLE {{ x_memory_hub_db_user }} PASSWORD '{{ x_memory_hub_db_password }}';"
+  environment:
+    PGPASSWORD: "{{ x_memory_hub_pg_root_password }}"
+  changed_when: false
+  no_log: true
+  when: x_memory_hub_pg_provisioner == 'tcp'
+
 - name: Check X Memory Hub database
   ansible.builtin.command: >
     docker exec -i {{ x_memory_hub_pg_container }} psql -U {{ x_memory_hub_pg_root_user }} -tAc
@@ -249,6 +267,9 @@
 - name: Import macOS specific X Memory Hub tasks
   ansible.builtin.import_tasks: macos.yml
   when: ansible_os_family == 'Darwin'
+
+- name: Apply X Memory Hub service changes before validation
+  ansible.builtin.meta: flush_handlers
 
 # ── 校验：/healthz 是活探针（不带 token 也应 200） ───────────────────────────
 - name: Wait for X Memory Hub health endpoint
