@@ -30,7 +30,9 @@ postgresql_compose_project_dir: >-
 postgresql_compose_file: "{{ postgresql_compose_project_dir }}/docker-compose.yml"
 postgresql_compose_env_file: "{{ postgresql_compose_project_dir }}/postgres.env"
 postgresql_compose_project_name: ai-workspace-postgres
-postgresql_image: "postgres:17.7"
+# X Memory Hub requires the pgvector extension; the standard postgres image
+# does not ship its vector.control file.
+postgresql_image: "pgvector/pgvector:pg17"
 postgresql_container_name: ai-workspace-postgres
 postgresql_data_dir: "{{ postgresql_compose_project_dir }}/data"
 # 官方 postgres 镜像内 postgres 用户的 uid/gid（17.x 为 999）。数据目录必须归
