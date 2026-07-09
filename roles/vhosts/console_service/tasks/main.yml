@@ -128,49 +128,6 @@
     - console_service_redirect_rules | length > 0
   become: true
 
-- name: Discover console Caddy fragments
-  ansible.builtin.find:
-    paths: "{{ console_service_caddy_conf_dir }}"
-    patterns:
-      - "console*.caddy"
-      - "console*.caddy.bak*"
-    file_type: file
-  register: console_service_caddy_fragments
-  when: console_service_manage_caddy | bool
-  become: true
-
-- name: Build desired console Caddy fragment paths
-  ansible.builtin.set_fact:
-    console_service_desired_caddy_fragment_paths: >-
-      {{
-        (
-          console_service_proxy_sites
-          | map(attribute='domain')
-          | map('regex_replace', '^(.*)$', console_service_caddy_conf_dir ~ '/\\1.caddy')
-          | list
-        )
-        +
-        (
-          console_service_redirect_rules
-          | map(attribute='source')
-          | map('regex_replace', '^(.*)$', console_service_caddy_conf_dir ~ '/\\1.caddy')
-          | list
-        )
-      }}
-  when: console_service_manage_caddy | bool
-  become: true
-
-- name: Remove obsolete console Caddy fragments
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: absent
-  loop: "{{ console_service_caddy_fragments.files | default([]) }}"
-  when:
-    - console_service_manage_caddy | bool
-    - item.path not in console_service_desired_caddy_fragment_paths
-  register: console_service_caddy_cleanup
-  become: true
-
 - name: Remove stale console alias Caddy fragment when alias is unset
   ansible.builtin.file:
     path: "{{ console_service_alias_caddy_fragment_path }}"
@@ -189,7 +146,6 @@
     - >
       (console_service_proxy_fragments is changed)
       or (console_service_redirect_fragments is defined and console_service_redirect_fragments is changed)
-      or (console_service_caddy_cleanup is defined and console_service_caddy_cleanup is changed)
 
 - name: Reload Caddy after updating console fragment
   ansible.builtin.service:
@@ -201,7 +157,6 @@
     - >
       (console_service_proxy_fragments is changed)
       or (console_service_redirect_fragments is defined and console_service_redirect_fragments is changed)
-      or (console_service_caddy_cleanup is defined and console_service_caddy_cleanup is changed)
   become: true
 
 - name: Show console compose status
