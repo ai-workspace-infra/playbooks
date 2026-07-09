@@ -13,7 +13,7 @@ x_memory_hub_port: 8790
 x_memory_hub_config_dir: "{{ x_memory_hub_home }}/.config/x-memory-hub"
 x_memory_hub_env_path: "{{ x_memory_hub_config_dir }}/x-memory-hub.env"
 
-# PostgreSQL（compose 时默认走 postgresql.svc.plus/stunnel；native/external 时默认走本机 5432）
+# PostgreSQL（本机 compose/native 默认连接宿主机映射的 5432；external 可显式覆盖）
 x_memory_hub_pg_container_default: "postgresql-svc-plus"
 x_memory_hub_pg_provisioner: "{{ 'docker' if (postgresql_deploy_mode | default('compose')) == 'compose' else 'tcp' }}"
 x_memory_hub_pg_root_user: "{{ lookup('ansible.builtin.env', 'POSTGRESQL_ADMIN_USER') | default('postgres', true) }}"
@@ -26,7 +26,7 @@ x_memory_hub_pg_host: >-
 x_memory_hub_pg_port: >-
   {{ lookup('ansible.builtin.env', 'X_MEMORY_HUB_PG_PORT')
      | default(lookup('ansible.builtin.env', 'POSTGRESQL_PORT')
-       | default('15432' if (postgresql_deploy_mode | default('compose')) == 'compose' else '5432', true), true) }}
+       | default('5432', true), true) }}
 x_memory_hub_db_name: x_memory_hub
 x_memory_hub_db_user: x_memory_hub
 # 未显式提供时退回统一认证 token，保证零配置部署也不会落成弱口令。
