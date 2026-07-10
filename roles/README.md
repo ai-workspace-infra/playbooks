@@ -31,3 +31,9 @@ This document clarifies what should live under `/playbooks/roles/` for host-leve
 - `dl_inference_node/`: tensorRT/cuDNN dependencies and runtime checks for Triton/LMDeploy nodes.
 
 Helm-delivered components should live under `playbooks/roles/charts/` or the repo’s Helm release structure and include Spark/Flink Operators, Kafka/Redpanda/MinIO, Ray Cluster, Triton, vLLM/LMDeploy, MLflow, and JupyterHub.
+
+## Other host-local roles
+Not every role under `roles/vhosts/` fits the data-platform tiers above. For
+example, `vhosts/macos_migration/` backs up/restores/migrates a personal
+macOS developer machine's apps, Homebrew, and directories across OS
+versions/CPU architectures — see its own README for details.
