@@ -41,6 +41,15 @@ accounts_service_env_defaults:
   SMTP_PASSWORD: ""
   SMTP_PORT: "587"
   SMTP_USERNAME: ""
+  # CI env names use the OAUTH_GITHUB_* prefix because GitHub Actions forbids
+  # secrets/env starting with GITHUB_; the container env keeps GITHUB_CLIENT_*.
+  AUTH_TOKEN_PUBLIC_TOKEN: "{{ lookup('ansible.builtin.env', 'AUTH_TOKEN_PUBLIC_TOKEN') | default('', true) }}"
+  AUTH_TOKEN_REFRESH_SECRET: "{{ lookup('ansible.builtin.env', 'AUTH_TOKEN_REFRESH_SECRET') | default('', true) }}"
+  AUTH_TOKEN_ACCESS_SECRET: "{{ lookup('ansible.builtin.env', 'AUTH_TOKEN_ACCESS_SECRET') | default('', true) }}"
+  GITHUB_CLIENT_ID: "{{ lookup('ansible.builtin.env', 'OAUTH_GITHUB_CLIENT_ID') | default('', true) }}"
+  GITHUB_CLIENT_SECRET: "{{ lookup('ansible.builtin.env', 'OAUTH_GITHUB_CLIENT_SECRET') | default('', true) }}"
+  GOOGLE_CLIENT_ID: "{{ lookup('ansible.builtin.env', 'OAUTH_GOOGLE_CLIENT_ID') | default('', true) }}"
+  GOOGLE_CLIENT_SECRET: "{{ lookup('ansible.builtin.env', 'OAUTH_GOOGLE_CLIENT_SECRET') | default('', true) }}"
   XWORKMATE_VAULT_ADDR: https://vault.svc.plus
   XWORKMATE_VAULT_MOUNT: kv
   XWORKMATE_VAULT_NAMESPACE: ""
