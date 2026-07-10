@@ -1,0 +1,336 @@
+---
+- name: Import Darwin assertion
+  ansible.builtin.import_tasks: assert_darwin.yml
+
+- name: Read macOS product version
+  ansible.builtin.command: sw_vers -productVersion
+  changed_when: false
+  register: macos_migration_sw_vers
+
+# A `date` lookup, not ansible_date_time: this repo's ansible.cfg enables
+# fact_caching (jsonfile, 1h timeout), so ansible_date_time can be reused from
+# a stale gather across separate playbook runs within that window — every
+# backup taken in the same hour would get the same name and silently
+# overwrite the last one. The lookup always runs fresh; set_fact then freezes
+# it so later references in this run don't re-invoke it.
+- name: Freeze backup subdirectory (macOS version + date) for this run
+  ansible.builtin.set_fact:
+    macos_migration_backup_subdir: >-
+      {{ macos_migration_sw_vers.stdout | trim }}-{{ lookup('pipe', 'date +%Y%m%d') }}
+  when: macos_migration_backup_subdir | length == 0
+
+- name: Freeze backup timestamp/name for this run
+  ansible.builtin.set_fact:
+    macos_migration_backup_name: "macos-migration-{{ lookup('pipe', 'date +%Y%m%dT%H%M%S') }}"
+  when: macos_migration_backup_name | length == 0
+
+- name: Ensure backup subdirectory exists
+  ansible.builtin.file:
+    path: "{{ macos_migration_backup_root }}/{{ macos_migration_backup_subdir }}"
+    state: directory
+    mode: "0700"
+
+- name: Discover installed app bundles
+  ansible.builtin.find:
+    paths: "{{ macos_migration_applications_dir }}"
+    patterns: "*.app"
+    file_type: directory
+    recurse: false
+  register: macos_migration_discovered_apps
+  when: macos_migration_apps_auto_discover | bool
+
+- name: Resolve final app capture list (auto-discover + manual, minus excludes)
+  ansible.builtin.set_fact:
+    macos_migration_apps_resolved: >-
+      {{
+        ((macos_migration_discovered_apps.files | default([]) | map(attribute='path') | map('basename') | list)
+         if (macos_migration_apps_auto_discover | bool) else [])
+        | union(macos_migration_apps)
+        | difference(macos_migration_apps_exclude)
+        | unique | sort
+      }}
+
+- name: Reset resolved directories accumulator
+  ansible.builtin.set_fact:
+    macos_migration_directories_resolved: []
+
+- name: Merge per-directory rsync excludes with the global default list
+  ansible.builtin.set_fact:
+    macos_migration_directories_resolved: >-
+      {{ macos_migration_directories_resolved + [
+           item | combine({'rsync_excludes': macos_migration_directories_exclude + (item.excludes | default([]))})
+         ] }}
+  loop: "{{ macos_migration_directories }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Stat requested directories
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  loop: "{{ macos_migration_directories_resolved }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: macos_migration_dir_stats
+
+- name: Warn about missing directories
+  ansible.builtin.debug:
+    msg: "Skipping missing path: {{ item.item.name }} ({{ item.item.path }})"
+  loop: "{{ macos_migration_dir_stats.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: not (item.stat.exists | default(false))
+
+# du can't account for --exclude, so a directory entry with excludes needs
+# its own excludes-aware estimate — otherwise the pre-flight check would
+# still demand space for the full node_modules/build/etc it's about to skip,
+# defeating the point of excluding them. `rsync -an --stats` reports the
+# post-filter "Total file size" without writing anything (dry-run).
+- name: Estimate directory payload size with excludes applied
+  ansible.builtin.shell: |
+    rsync -an --stats --no-specials \
+      {{ item.item.rsync_excludes | map('regex_replace', '^(.*)$', "--exclude='\1'") | join(' ') }} \
+      {{ item.item.path }}{{ '/' if item.stat.isdir else '' }} {{ macos_migration_backup_root }}/ 2>/dev/null \
+      | awk -F': ' '/^Total file size:/ {gsub(/[^0-9]/,"",$2); print $2}'
+  args:
+    executable: /bin/bash
+  loop: "{{ macos_migration_dir_stats.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  register: macos_migration_dir_size_results
+  changed_when: false
+  when: item.stat.exists | default(false)
+
+- name: Sum directory payload size into KB
+  ansible.builtin.set_fact:
+    macos_migration_directories_payload_kb: >-
+      {{ ((macos_migration_dir_size_results.results | default([])
+          | rejectattr('skipped', 'defined')
+          | map(attribute='stdout')
+          | select('match', '^[0-9]+$')
+          | map('int') | sum) / 1024) | round(0, 'ceil') | int }}
+
+- name: Check Homebrew is available
+  ansible.builtin.command: brew --version
+  changed_when: false
+  failed_when: false
+  register: macos_migration_brew_check
+  when: macos_migration_brew_capture_mode != 'none'
+
+- name: Resolve Homebrew prefix for full directory capture
+  ansible.builtin.command: brew --prefix
+  changed_when: false
+  register: macos_migration_brew_prefix_result
+  when:
+    - macos_migration_brew_capture_mode in ['directory', 'both']
+    - (macos_migration_brew_check.rc | default(1)) == 0
+
+- name: Set resolved Homebrew prefix fact
+  ansible.builtin.set_fact:
+    macos_migration_brew_prefix_resolved: >-
+      {{ macos_migration_brew_prefix
+         if macos_migration_brew_prefix | length > 0
+         else (macos_migration_brew_prefix_result.stdout | default('') | trim) }}
+  when:
+    - macos_migration_brew_capture_mode in ['directory', 'both']
+    - (macos_migration_brew_check.rc | default(1)) == 0
+
+# The Homebrew prefix directory (Cellar/Caskroom/downloads) can dwarf
+# everything else in the backup, so it must be counted in the space estimate
+# *before* the pre-flight check below, not just apps/directories.
+- name: Build absolute app bundle paths for space estimate
+  ansible.builtin.set_fact:
+    macos_migration_backup_app_paths: >-
+      {{ (macos_migration_apps_resolved
+          | map('regex_replace', '^(.*)$', macos_migration_applications_dir ~ '/' ~ '\1')
+          | list)
+         if macos_migration_apps_capture_mode == 'copy' else [] }}
+    macos_migration_backup_brew_dir_paths: >-
+      {{ [macos_migration_brew_prefix_resolved]
+         if (macos_migration_brew_capture_mode in ['directory', 'both'] and (macos_migration_brew_prefix_resolved | default('') | length > 0))
+         else [] }}
+
+- name: Combine payload paths for space estimate
+  ansible.builtin.set_fact:
+    # Directories are sized separately above (excludes-aware, via
+    # macos_migration_directories_payload_kb) and fed in as extra_kb below —
+    # du here would ignore excludes and overcount them.
+    macos_migration_backup_payload_paths: >-
+      {{ macos_migration_backup_app_paths + macos_migration_backup_brew_dir_paths }}
+
+- name: Pre-flight disk space check
+  ansible.builtin.include_tasks: preflight.yml
+  vars:
+    macos_migration_preflight_paths: "{{ macos_migration_backup_payload_paths }}"
+    macos_migration_preflight_dest: "{{ macos_migration_backup_root }}"
+    macos_migration_preflight_label: "macOS backup"
+    macos_migration_preflight_extra_kb: "{{ macos_migration_directories_payload_kb }}"
+
+- name: Create backup staging directories
+  ansible.builtin.file:
+    path: "{{ macos_migration_backup_dir }}/{{ item }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - apps
+    - directories
+
+- name: Capture Homebrew Brewfile (taps, brews, casks, mas)
+  ansible.builtin.command:
+    cmd: "brew bundle dump --force --file={{ macos_migration_backup_dir }}/{{ macos_migration_brewfile_name }}"
+  changed_when: true
+  when:
+    - macos_migration_brew_capture_mode in ['bundle', 'both']
+    - (macos_migration_brew_check.rc | default(1)) == 0
+
+- name: Copy full Homebrew directory into backup staging
+  ansible.builtin.command:
+    cmd: "ditto {{ macos_migration_brew_prefix_resolved }} {{ macos_migration_backup_dir }}/homebrew"
+  changed_when: true
+  when:
+    - macos_migration_brew_capture_mode in ['directory', 'both']
+    - macos_migration_brew_prefix_resolved | default('') | length > 0
+
+- name: Stat requested app bundles
+  ansible.builtin.stat:
+    path: "{{ macos_migration_applications_dir }}/{{ item }}"
+  loop: "{{ macos_migration_apps_resolved }}"
+  register: macos_migration_app_stats
+  when: macos_migration_apps_capture_mode == 'copy'
+
+- name: Warn about missing app bundles
+  ansible.builtin.debug:
+    msg: "Skipping missing app bundle: {{ item.item }}"
+  loop: "{{ macos_migration_app_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - macos_migration_apps_capture_mode == 'copy'
+    - not (item.stat.exists | default(false))
+
+- name: Copy app bundles into backup staging
+  ansible.builtin.command:
+    cmd: "ditto {{ macos_migration_applications_dir }}/{{ item.item }} {{ macos_migration_backup_dir }}/apps/{{ item.item }}"
+  loop: "{{ macos_migration_app_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - macos_migration_apps_capture_mode == 'copy'
+    - item.stat.exists | default(false)
+  changed_when: true
+
+- name: Copy directories into backup staging
+  ansible.builtin.command:
+    # rsync, not ditto: ditto hard-fails ("Operation not supported on
+    # socket") on live Unix-domain sockets, which real dotfile dirs commonly
+    # contain (e.g. ~/.ssh/agent/ from a running ssh-agent). --no-specials
+    # skips those (and any FIFOs/devices) instead of erroring — they're
+    # runtime artifacts of a live process, not meaningfully restorable
+    # anyway, and deep staging paths can exceed the ~104-byte Unix socket
+    # path limit even when rsync does try to recreate them. --exclude flags
+    # come from macos_migration_directories_exclude (+ any per-entry
+    # excludes) — see the matching estimate step above that keeps the
+    # pre-flight check in sync with what's actually skipped here. Trailing
+    # slashes make a directory source's *contents* land at dest (matching
+    # ditto's SRC-becomes-DST semantics); a plain file source/dest needs no
+    # trailing slash.
+    cmd: >-
+      rsync -a --no-specials
+      {{ item.item.rsync_excludes | map('regex_replace', '^(.*)$', "--exclude='\1'") | join(' ') }}
+      {{ item.item.path }}{{ '/' if item.stat.isdir else '' }}
+      {{ macos_migration_backup_dir }}/directories/{{ item.item.name }}{{ '/' if item.stat.isdir else '' }}
+  loop: "{{ macos_migration_dir_stats.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.stat.exists | default(false)
+  register: macos_migration_dir_copy_results
+  changed_when: true
+  # rc 23/24 = rsync's "partial transfer, some source files vanished/changed
+  # mid-copy" — expected and non-fatal for a live app's directory (e.g.
+  # ~/.codex's SQLite WAL sidecar files rewritten by a running process
+  # while rsync reads them). Anything else is a real failure.
+  failed_when: macos_migration_dir_copy_results.rc not in [0, 23, 24]
+
+- name: Warn about live/vanished files skipped during directory copy
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.item.item.name }}: some files changed or vanished mid-copy
+      (likely an actively-written log/database from a running process,
+      e.g. ~/.codex's SQLite WAL files) and were skipped — the rest of the
+      directory copied fine.
+  loop: "{{ macos_migration_dir_copy_results.results }}"
+  loop_control:
+    label: "{{ item.item.item.name }}"
+  when:
+    - item.rc is defined
+    - item.rc in [23, 24]
+
+- name: Build backup manifest
+  ansible.builtin.set_fact:
+    macos_migration_manifest:
+      created_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+      hostname: "{{ ansible_facts.hostname | default('') }}"
+      macos_version: "{{ macos_migration_sw_vers.stdout | default('') | trim }}"
+      arch: "{{ ansible_facts.architecture | default('') }}"
+      applications_dir: "{{ macos_migration_applications_dir }}"
+      apps: "{{ macos_migration_apps_resolved }}"
+      apps_capture_mode: "{{ macos_migration_apps_capture_mode }}"
+      directories: "{{ macos_migration_directories_resolved }}"
+      brew_capture_mode: "{{ macos_migration_brew_capture_mode }}"
+      brew_bundle_captured: "{{ (macos_migration_brew_capture_mode in ['bundle', 'both']) and ((macos_migration_brew_check.rc | default(1)) == 0) }}"
+      brewfile: "{{ macos_migration_brewfile_name if (macos_migration_brew_capture_mode in ['bundle', 'both']) else '' }}"
+      brew_directory_captured: >-
+        {{ (macos_migration_brew_capture_mode in ['directory', 'both'])
+           and (macos_migration_brew_prefix_resolved | default('') | length > 0) }}
+      brew_prefix: "{{ macos_migration_brew_prefix_resolved | default('') }}"
+
+- name: Write backup manifest
+  ansible.builtin.copy:
+    dest: "{{ macos_migration_backup_dir }}/manifest.json"
+    content: "{{ macos_migration_manifest | to_nice_json }}\n"
+    mode: "0600"
+
+- name: Archive backup staging directory
+  ansible.builtin.command:
+    cmd: >-
+      tar -czf {{ macos_migration_backup_archive }}
+      -C {{ macos_migration_backup_root }}/{{ macos_migration_backup_subdir }}
+      {{ macos_migration_backup_name }}
+  changed_when: true
+
+# A captured source tree can be read-only (e.g. an installed skill/package
+# dir shipped dr-xr-xr-x), and rsync -a faithfully preserves that in the
+# staging copy — which then blocks deleting it (removing an entry needs
+# write on its *parent* dir, not just ownership). Loosen only the disposable
+# staging copy, after the archive is already written, so the archived
+# permissions and the real source are both left untouched.
+- name: Ensure backup staging directory is writable before cleanup
+  ansible.builtin.file:
+    path: "{{ macos_migration_backup_dir }}"
+    mode: u+w
+    recurse: true
+
+- name: Remove backup staging directory
+  ansible.builtin.file:
+    path: "{{ macos_migration_backup_dir }}"
+    state: absent
+
+- name: Stat final backup archive
+  ansible.builtin.stat:
+    path: "{{ macos_migration_backup_archive }}"
+  register: macos_migration_backup_archive_stat
+
+- name: Show backup summary
+  ansible.builtin.debug:
+    msg:
+      - "Backup archive: {{ macos_migration_backup_archive }}"
+      - "Size: {{ ((macos_migration_backup_archive_stat.stat.size | default(0)) / 1048576) | round(2) }} MiB"
+      - "macOS: {{ macos_migration_manifest.macos_version }} ({{ macos_migration_manifest.arch }})"
+      - >-
+        Apps: {{ macos_migration_apps_resolved | length }}
+        (mode={{ macos_migration_apps_capture_mode }}, auto_discover={{ macos_migration_apps_auto_discover | bool }})
+      - "Directories captured: {{ macos_migration_directories_resolved | length }}"
+      - >-
+        Homebrew: mode={{ macos_migration_manifest.brew_capture_mode }}
+        bundle={{ macos_migration_manifest.brew_bundle_captured }}
+        directory={{ macos_migration_manifest.brew_directory_captured }}
+        ({{ macos_migration_manifest.brew_prefix }})

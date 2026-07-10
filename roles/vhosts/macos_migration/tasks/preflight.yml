@@ -1,0 +1,84 @@
+---
+# Reusable disk-space pre-check, included with:
+#   macos_migration_preflight_paths: <list of source paths to size via du>
+#   macos_migration_preflight_dest:  <dir whose filesystem free space is checked>
+#   macos_migration_preflight_label: <string used in task names/messages>
+#   macos_migration_preflight_extra_kb: <optional, default 0 — pre-computed KB
+#     to add on top of the du-based total, e.g. an rsync --exclude-aware
+#     estimate for entries du can't account for excludes on>
+
+- name: "{{ macos_migration_preflight_label }} | Ensure destination directory exists for space check"
+  ansible.builtin.file:
+    path: "{{ macos_migration_preflight_dest }}"
+    state: directory
+    mode: "0700"
+
+- name: "{{ macos_migration_preflight_label }} | Write path manifest for sizing"
+  ansible.builtin.copy:
+    dest: "/tmp/.macos_migration_preflight_paths_{{ 999999 | random }}"
+    mode: "0600"
+    content: |
+      {% for p in macos_migration_preflight_paths %}
+      {{ p }}
+      {% endfor %}
+  register: macos_migration_preflight_manifest
+  when: not (macos_migration_skip_space_check | bool)
+
+- name: "{{ macos_migration_preflight_label }} | Estimate payload size"
+  ansible.builtin.shell: |
+    total=0
+    while IFS= read -r p; do
+      [ -z "$p" ] && continue
+      if [ -e "$p" ]; then
+        sz=$(du -sk "$p" 2>/dev/null | awk '{print $1}')
+        total=$((total + ${sz:-0}))
+      fi
+    done < "{{ macos_migration_preflight_manifest.dest }}"
+    echo "$total"
+  args:
+    executable: /bin/bash
+  register: macos_migration_preflight_size
+  changed_when: false
+  when: not (macos_migration_skip_space_check | bool)
+
+- name: "{{ macos_migration_preflight_label }} | Check available space on destination filesystem"
+  ansible.builtin.shell: |
+    df -k "{{ macos_migration_preflight_dest }}" | tail -1 | awk '{print $4}'
+  args:
+    executable: /bin/bash
+  register: macos_migration_preflight_free
+  changed_when: false
+  when: not (macos_migration_skip_space_check | bool)
+
+- name: "{{ macos_migration_preflight_label }} | Clean up sizing manifest"
+  ansible.builtin.file:
+    path: "{{ macos_migration_preflight_manifest.dest }}"
+    state: absent
+  when: not (macos_migration_skip_space_check | bool)
+
+- name: "{{ macos_migration_preflight_label }} | Compute payload/free space in KB"
+  ansible.builtin.set_fact:
+    macos_migration_preflight_payload_kb: >-
+      {{ (macos_migration_preflight_size.stdout | default('0') | trim | int)
+         + (macos_migration_preflight_extra_kb | default(0) | int) }}
+    macos_migration_preflight_free_kb: "{{ macos_migration_preflight_free.stdout | default('0') | trim | int }}"
+  when: not (macos_migration_skip_space_check | bool)
+
+- name: "{{ macos_migration_preflight_label }} | Assert sufficient free space"
+  ansible.builtin.assert:
+    that:
+      - >-
+        macos_migration_preflight_free_kb | int >=
+        (macos_migration_preflight_payload_kb | int * macos_migration_min_free_space_ratio) | int
+    fail_msg: >-
+      Not enough free space for {{ macos_migration_preflight_label }} at {{ macos_migration_preflight_dest }}:
+      payload ~{{ (macos_migration_preflight_payload_kb | int / 1048576) | round(2) }} GiB,
+      required ~{{ ((macos_migration_preflight_payload_kb | int * macos_migration_min_free_space_ratio) / 1048576) | round(2) }} GiB
+      (ratio {{ macos_migration_min_free_space_ratio }}), only
+      {{ (macos_migration_preflight_free_kb | int / 1048576) | round(2) }} GiB available.
+      Free up space, point macos_migration_backup_root/macos_migration_restore_archive at a larger volume,
+      or set macos_migration_skip_space_check: true to override.
+    success_msg: >-
+      {{ macos_migration_preflight_label }}: payload ~{{ (macos_migration_preflight_payload_kb | int / 1048576) | round(2) }} GiB,
+      {{ (macos_migration_preflight_free_kb | int / 1048576) | round(2) }} GiB free at {{ macos_migration_preflight_dest }}.
+  when: not (macos_migration_skip_space_check | bool)
