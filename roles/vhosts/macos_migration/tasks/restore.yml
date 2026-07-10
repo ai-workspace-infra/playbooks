@@ -1,0 +1,302 @@
+---
+- name: Import Darwin assertion
+  ansible.builtin.import_tasks: assert_darwin.yml
+
+- name: Assert restore archive is configured
+  ansible.builtin.assert:
+    that:
+      - macos_migration_restore_archive | length > 0
+    fail_msg: >-
+      macos_migration_restore_archive must point to a backup archive produced by
+      tasks_from: backup.yml, e.g. -e macos_migration_restore_archive=/path/to/macos-migration-*.tar.gz
+
+- name: Stat restore archive
+  ansible.builtin.stat:
+    path: "{{ macos_migration_restore_archive }}"
+  register: macos_migration_restore_archive_stat
+
+- name: Fail when restore archive is missing
+  ansible.builtin.assert:
+    that:
+      - macos_migration_restore_archive_stat.stat.exists | default(false)
+    fail_msg: "Restore archive not found: {{ macos_migration_restore_archive }}"
+
+- name: Pre-flight disk space check
+  ansible.builtin.include_tasks: preflight.yml
+  vars:
+    macos_migration_preflight_paths:
+      - "{{ macos_migration_restore_archive }}"
+    macos_migration_preflight_dest: "{{ ansible_env.HOME }}"
+    macos_migration_preflight_label: "macOS restore"
+    # Estimate off the compressed archive size (source dirs no longer exist
+    # locally), so use a larger buffer to cover extraction + copy-out.
+    macos_migration_min_free_space_ratio: "{{ macos_migration_restore_min_free_space_ratio }}"
+
+- name: Set restore staging directory
+  ansible.builtin.set_fact:
+    macos_migration_restore_staging_dir: "/tmp/macos_migration_restore_{{ 999999 | random }}"
+
+- name: Create restore staging directory
+  ansible.builtin.file:
+    path: "{{ macos_migration_restore_staging_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Extract backup archive
+  ansible.builtin.command:
+    cmd: "tar -xzf {{ macos_migration_restore_archive }} -C {{ macos_migration_restore_staging_dir }} --strip-components=1"
+  changed_when: true
+
+- name: Read backup manifest
+  ansible.builtin.slurp:
+    path: "{{ macos_migration_restore_staging_dir }}/manifest.json"
+  register: macos_migration_restore_manifest_raw
+
+- name: Parse backup manifest
+  ansible.builtin.set_fact:
+    macos_migration_restore_manifest: "{{ macos_migration_restore_manifest_raw.content | b64decode | from_json }}"
+
+- name: Read local macOS product version
+  ansible.builtin.command: sw_vers -productVersion
+  changed_when: false
+  register: macos_migration_local_sw_vers
+
+- name: Warn on cross-version/cross-arch restore
+  ansible.builtin.debug:
+    msg: >-
+      Restoring a backup taken on macOS {{ macos_migration_restore_manifest.macos_version }}
+      ({{ macos_migration_restore_manifest.arch }}) onto macOS
+      {{ macos_migration_local_sw_vers.stdout | trim }} ({{ ansible_facts.architecture }}).
+      Copied app bundles built for a different CPU architecture may need Rosetta
+      or a fresh install via Homebrew/App Store instead.
+  when: >-
+    macos_migration_restore_manifest.arch != ansible_facts.architecture
+    or macos_migration_restore_manifest.macos_version != (macos_migration_local_sw_vers.stdout | trim)
+
+- name: Warn on cross-arch full Homebrew directory restore
+  ansible.builtin.debug:
+    msg: >-
+      This backup's Homebrew directory ({{ macos_migration_restore_manifest.brew_prefix }})
+      was captured on {{ macos_migration_restore_manifest.arch }}, but this machine is
+      {{ ansible_facts.architecture }}. Its compiled Cellar/Caskroom binaries will NOT run
+      here — reinstall via `brew bundle` (macos_migration_brew_capture_mode: bundle/both)
+      instead of restoring the "directory" capture.
+  when:
+    - macos_migration_restore_manifest.brew_directory_captured | default(false)
+    - macos_migration_restore_manifest.arch != ansible_facts.architecture
+
+- name: Restore Homebrew packages from Brewfile
+  ansible.builtin.command:
+    cmd: "brew bundle install --file={{ macos_migration_restore_staging_dir }}/{{ macos_migration_restore_manifest.brewfile }}"
+  register: macos_migration_brew_bundle_result
+  changed_when: "'Homebrew Bundle complete, 0 fetched' not in (macos_migration_brew_bundle_result.stdout | default(''))"
+  when:
+    - macos_migration_restore_run_brew_bundle | bool
+    - macos_migration_restore_manifest.brew_bundle_captured | default(false)
+
+- name: Stat Homebrew prefix restore destination
+  ansible.builtin.stat:
+    path: "{{ macos_migration_restore_manifest.brew_prefix }}"
+  register: macos_migration_restore_brew_dest_stat
+  when: macos_migration_restore_manifest.brew_directory_captured | default(false)
+
+- name: Skip existing Homebrew directory when not overwriting
+  ansible.builtin.debug:
+    msg: >-
+      Skipping existing Homebrew directory (macos_migration_restore_overwrite=false):
+      {{ macos_migration_restore_manifest.brew_prefix }}
+  when:
+    - macos_migration_restore_manifest.brew_directory_captured | default(false)
+    - macos_migration_restore_brew_dest_stat.stat.exists | default(false)
+    - not (macos_migration_restore_overwrite | bool)
+
+- name: Remove existing Homebrew directory before overwrite
+  ansible.builtin.file:
+    path: "{{ macos_migration_restore_manifest.brew_prefix }}"
+    state: absent
+  when:
+    - macos_migration_restore_manifest.brew_directory_captured | default(false)
+    - macos_migration_restore_brew_dest_stat.stat.exists | default(false)
+    - macos_migration_restore_overwrite | bool
+
+- name: Stat Homebrew prefix parent directory
+  ansible.builtin.stat:
+    path: "{{ macos_migration_restore_manifest.brew_prefix | dirname }}"
+  register: macos_migration_restore_brew_parent_stat
+  when: macos_migration_restore_manifest.brew_directory_captured | default(false)
+
+# The Homebrew prefix's parent (e.g. /opt on Apple Silicon) is root-owned by
+# default on a machine that has never had Homebrew installed; creating it for
+# the first time needs elevated rights, same as the official Homebrew
+# installer does. Only escalate when it's actually missing — most machines
+# already have /opt or /usr/local, and become:true would otherwise demand a
+# sudo password on every restore even when nothing needs creating.
+- name: Ensure Homebrew prefix parent directory exists
+  ansible.builtin.file:
+    path: "{{ macos_migration_restore_manifest.brew_prefix | dirname }}"
+    state: directory
+    mode: "0755"
+  become: true
+  when:
+    - macos_migration_restore_manifest.brew_directory_captured | default(false)
+    - not (macos_migration_restore_brew_parent_stat.stat.exists | default(false))
+    - (not (macos_migration_restore_brew_dest_stat.stat.exists | default(false))) or (macos_migration_restore_overwrite | bool)
+
+- name: Restore full Homebrew directory
+  ansible.builtin.command:
+    cmd: "ditto {{ macos_migration_restore_staging_dir }}/homebrew {{ macos_migration_restore_manifest.brew_prefix }}"
+  changed_when: true
+  when:
+    - macos_migration_restore_manifest.brew_directory_captured | default(false)
+    - (not (macos_migration_restore_brew_dest_stat.stat.exists | default(false))) or (macos_migration_restore_overwrite | bool)
+
+- name: Report app inventory (list mode — no binaries to restore)
+  ansible.builtin.debug:
+    msg:
+      - "This backup only recorded app names (macos_migration_apps_capture_mode: list), no binaries were copied."
+      - "Reinstall via Homebrew/App Store as needed: {{ macos_migration_restore_manifest.apps | default([]) | join(', ') }}"
+  when:
+    - (macos_migration_restore_manifest.apps_capture_mode | default('copy')) == 'list'
+    - macos_migration_restore_manifest.apps | default([]) | length > 0
+
+- name: Stat restore destination app bundles
+  ansible.builtin.stat:
+    path: "{{ macos_migration_applications_dir }}/{{ item }}"
+  loop: "{{ macos_migration_restore_manifest.apps | default([]) }}"
+  register: macos_migration_restore_app_dest_stats
+  when: (macos_migration_restore_manifest.apps_capture_mode | default('copy')) == 'copy'
+
+- name: Skip existing app bundles when not overwriting
+  ansible.builtin.debug:
+    msg: "Skipping existing app (macos_migration_restore_overwrite=false): {{ item.item }}"
+  loop: "{{ macos_migration_restore_app_dest_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - (macos_migration_restore_manifest.apps_capture_mode | default('copy')) == 'copy'
+    - item.stat.exists | default(false)
+    - not (macos_migration_restore_overwrite | bool)
+
+- name: Remove existing app bundles before overwrite
+  ansible.builtin.file:
+    path: "{{ macos_migration_applications_dir }}/{{ item.item }}"
+    state: absent
+  loop: "{{ macos_migration_restore_app_dest_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - (macos_migration_restore_manifest.apps_capture_mode | default('copy')) == 'copy'
+    - item.stat.exists | default(false)
+    - macos_migration_restore_overwrite | bool
+
+- name: Restore app bundles
+  ansible.builtin.command:
+    cmd: "ditto {{ macos_migration_restore_staging_dir }}/apps/{{ item.item }} {{ macos_migration_applications_dir }}/{{ item.item }}"
+  loop: "{{ macos_migration_restore_app_dest_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - (macos_migration_restore_manifest.apps_capture_mode | default('copy')) == 'copy'
+    - not (item.stat.exists | default(false)) or (macos_migration_restore_overwrite | bool)
+  changed_when: true
+
+- name: Stat restore destination directories
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  loop: "{{ macos_migration_restore_manifest.directories | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: macos_migration_restore_dir_dest_stats
+
+- name: Skip existing directories when not overwriting
+  ansible.builtin.debug:
+    msg: "Skipping existing path (macos_migration_restore_overwrite=false): {{ item.item.name }} ({{ item.item.path }})"
+  loop: "{{ macos_migration_restore_dir_dest_stats.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when:
+    - item.stat.exists | default(false)
+    - not (macos_migration_restore_overwrite | bool)
+
+- name: Remove existing directories before overwrite
+  ansible.builtin.file:
+    path: "{{ item.item.path }}"
+    state: absent
+  loop: "{{ macos_migration_restore_dir_dest_stats.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when:
+    - item.stat.exists | default(false)
+    - macos_migration_restore_overwrite | bool
+
+- name: Ensure parent directories exist for restored paths
+  ansible.builtin.file:
+    path: "{{ item.item.path | dirname }}"
+    state: directory
+    # No mode: this parent (e.g. /tmp, ~/Library/...) commonly already exists
+    # and may be owned by root or carry sticky/special bits (/tmp is
+    # 1777-root); forcing a mode here would try to chmod paths this user
+    # doesn't own and fail the whole restore. Omitting mode only sets
+    # permissions when the directory is actually being created.
+  loop: "{{ macos_migration_restore_dir_dest_stats.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when:
+    - not (item.stat.exists | default(false)) or (macos_migration_restore_overwrite | bool)
+
+- name: Stat staged directory sources
+  ansible.builtin.stat:
+    path: "{{ macos_migration_restore_staging_dir }}/directories/{{ item.item.name }}"
+  loop: "{{ macos_migration_restore_dir_dest_stats.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  register: macos_migration_restore_dir_src_stats
+  when:
+    - not (item.stat.exists | default(false)) or (macos_migration_restore_overwrite | bool)
+
+- name: Restore directories
+  ansible.builtin.command:
+    # rsync --no-specials, not ditto — see the matching comment in
+    # backup.yml; a captured dotfile dir can carry live sockets that ditto
+    # refuses to recreate and that can exceed the Unix socket path limit
+    # once nested under the staging tree anyway.
+    cmd: >-
+      rsync -a --no-specials {{ macos_migration_restore_staging_dir }}/directories/{{ item.item.item.name }}{{ '/' if item.stat.isdir else '' }}
+      {{ item.item.item.path }}{{ '/' if item.stat.isdir else '' }}
+  loop: "{{ macos_migration_restore_dir_src_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.item.name }}"
+  when:
+    - item.skipped is not defined
+    - not (item.item.stat.exists | default(false)) or (macos_migration_restore_overwrite | bool)
+  changed_when: true
+
+# Same reasoning as backup.yml's matching task: a captured tree can be
+# read-only (e.g. dr-xr-xr-x), `tar -x` preserves that in the extracted
+# staging copy, and that blocks deleting it afterward.
+- name: Ensure restore staging directory is writable before cleanup
+  ansible.builtin.file:
+    path: "{{ macos_migration_restore_staging_dir }}"
+    mode: u+w
+    recurse: true
+
+- name: Cleanup restore staging directory
+  ansible.builtin.file:
+    path: "{{ macos_migration_restore_staging_dir }}"
+    state: absent
+
+- name: Show restore summary
+  ansible.builtin.debug:
+    msg:
+      - "Restored from: {{ macos_migration_restore_archive }}"
+      - "Source macOS: {{ macos_migration_restore_manifest.macos_version }} ({{ macos_migration_restore_manifest.arch }})"
+      - >-
+        Apps: {{ macos_migration_restore_manifest.apps | default([]) | length }}
+        (mode={{ macos_migration_restore_manifest.apps_capture_mode | default('copy') }})
+      - "Directories restored: {{ macos_migration_restore_manifest.directories | default([]) | length }}"
+      - >-
+        Brew bundle installed: {{ (macos_migration_restore_run_brew_bundle | bool)
+        and (macos_migration_restore_manifest.brew_bundle_captured | default(false)) }}
+      - >-
+        Brew directory restored: {{ macos_migration_restore_manifest.brew_directory_captured | default(false) }}
+        ({{ macos_migration_restore_manifest.brew_prefix | default('') }})

@@ -1,0 +1,38 @@
+---
+# Pulls an already-produced backup archive from a source Mac (run
+# tasks_from: backup.yml there first) and restores it locally — for moving
+# apps/directories/Brewfile straight from an old Mac to a new one.
+
+- name: Import Darwin assertion
+  ansible.builtin.import_tasks: assert_darwin.yml
+
+- name: Assert migration source is configured
+  ansible.builtin.assert:
+    that:
+      - macos_migration_source_host | length > 0
+      - macos_migration_source_archive | length > 0
+    fail_msg: >-
+      macos_migration_source_host and macos_migration_source_archive must be set, e.g.:
+      -e macos_migration_source_host=old-mac.local
+      -e macos_migration_source_archive=/Users/me/.local/state/xworkspace/macos-migration/macos-migration-20260101T000000.tar.gz
+      (produce it by running tasks_from: backup.yml on the source Mac first).
+
+- name: Ensure local backup root exists
+  ansible.builtin.file:
+    path: "{{ macos_migration_backup_root }}"
+    state: directory
+    mode: "0700"
+
+- name: Pull backup archive from source Mac
+  ansible.posix.synchronize:
+    src: "{{ macos_migration_source_user }}@{{ macos_migration_source_host }}:{{ macos_migration_source_archive }}"
+    dest: "{{ macos_migration_backup_root }}/"
+    mode: pull
+    use_ssh_args: yes
+
+- name: Point restore at the pulled archive
+  ansible.builtin.set_fact:
+    macos_migration_restore_archive: "{{ macos_migration_backup_root }}/{{ macos_migration_source_archive | basename }}"
+
+- name: Run restore from the pulled archive
+  ansible.builtin.import_tasks: restore.yml
