@@ -84,6 +84,30 @@
       value: "{{ accounts_service_env_defaults.BRIDGE_SERVER_URL }}"
   no_log: true
 
+- name: Ensure managed auth/oauth env is present for {{ accounts_service_target.name }}
+  ansible.builtin.lineinfile:
+    path: "{{ accounts_service_target.env_file }}"
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+    state: present
+    insertafter: '^IMAGE='
+  loop:
+    - key: AUTH_TOKEN_PUBLIC_TOKEN
+      value: "{{ accounts_service_env_defaults.AUTH_TOKEN_PUBLIC_TOKEN }}"
+    - key: AUTH_TOKEN_REFRESH_SECRET
+      value: "{{ accounts_service_env_defaults.AUTH_TOKEN_REFRESH_SECRET }}"
+    - key: AUTH_TOKEN_ACCESS_SECRET
+      value: "{{ accounts_service_env_defaults.AUTH_TOKEN_ACCESS_SECRET }}"
+    - key: GITHUB_CLIENT_ID
+      value: "{{ accounts_service_env_defaults.GITHUB_CLIENT_ID }}"
+    - key: GITHUB_CLIENT_SECRET
+      value: "{{ accounts_service_env_defaults.GITHUB_CLIENT_SECRET }}"
+    - key: GOOGLE_CLIENT_ID
+      value: "{{ accounts_service_env_defaults.GOOGLE_CLIENT_ID }}"
+    - key: GOOGLE_CLIENT_SECRET
+      value: "{{ accounts_service_env_defaults.GOOGLE_CLIENT_SECRET }}"
+  no_log: true
+
 - name: Render managed account config for {{ accounts_service_target.name }}
   ansible.builtin.template:
     src: account.yaml.j2

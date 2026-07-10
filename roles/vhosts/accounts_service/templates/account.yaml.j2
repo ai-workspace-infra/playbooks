@@ -3,23 +3,27 @@ mode: "server-agent"
 log:
   level: info
 
+# NOTE: this file is rendered twice: Jinja by Ansible, then envsubst inside
+# the container entrypoint. envsubst does NOT support ${VAR:-default} syntax
+# (it would leak through literally) — use plain ${VAR} and Jinja defaults only.
 auth:
   enable: true
   token:
-    publicToken: "${AUTH_TOKEN_PUBLIC_TOKEN:-xcontrol-public-token-2024}"
-    refreshSecret: "${AUTH_TOKEN_REFRESH_SECRET:-xcontrol-refresh-secret-2024}"
-    accessSecret: "${AUTH_TOKEN_ACCESS_SECRET:-xcontrol-access-secret-2024}"
+    publicToken: "${AUTH_TOKEN_PUBLIC_TOKEN}"
+    refreshSecret: "${AUTH_TOKEN_REFRESH_SECRET}"
+    accessSecret: "${AUTH_TOKEN_ACCESS_SECRET}"
     accessExpiry: "1h"
     refreshExpiry: "168h"
   oauth:
-    redirectUrl: "${OAUTH_REDIRECT_URL}"
-    frontendUrl: "${OAUTH_FRONTEND_URL:-{{ accounts_service_frontend_url }}}"
+    frontendUrl: "{{ accounts_service_frontend_url }}"
     github:
       clientId: "${GITHUB_CLIENT_ID}"
       clientSecret: "${GITHUB_CLIENT_SECRET}"
+      redirectUrl: "https://accounts.svc.plus/api/auth/oauth/callback/github"
     google:
       clientId: "${GOOGLE_CLIENT_ID}"
       clientSecret: "${GOOGLE_CLIENT_SECRET}"
+      redirectUrl: "https://accounts.svc.plus/api/auth/oauth/callback/google"
 
 server:
   addr: ":8080"
