@@ -13,7 +13,10 @@ accounts_service_dns_servers:
   - 1.1.1.1
   - 8.8.8.8
 accounts_service_caddy_root: "{{ caddy_config_dir | default('/etc/caddy', true) }}"
-accounts_service_caddy_base_dir: "{{ '/opt/homebrew/etc/caddy' if ansible_os_family == 'Darwin' else accounts_service_caddy_root }}"
+# gather_facts is false in deploy_accounts_svc_plus.yml, so ansible_os_family
+# is undefined on the CI deploy; default('') falls through to the Linux path
+# (the Darwin branch still works when facts are gathered, e.g. all-in-one).
+accounts_service_caddy_base_dir: "{{ '/opt/homebrew/etc/caddy' if (ansible_os_family | default('')) == 'Darwin' else accounts_service_caddy_root }}"
 accounts_service_caddyfile_path: "{{ accounts_service_caddy_base_dir }}/Caddyfile"
 accounts_service_caddy_conf_dir: "{{ accounts_service_caddy_base_dir }}/conf.d"
 accounts_service_caddy_fragment_path: "{{ accounts_service_caddy_base_dir }}/conf.d/accounts.caddy"
