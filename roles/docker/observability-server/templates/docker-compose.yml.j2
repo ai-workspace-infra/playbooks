@@ -7,8 +7,10 @@ services:
     command:
       - '--storageDataPath=/vmetrics_data'
       - '--retentionPeriod={{ observability_retention_time | default("30d") }}'
+      - '-promscrape.config=/prometheus/prometheus.yml'
     volumes:
       - vmetrics_data:/vmetrics_data
+      - ./prometheus:/prometheus
     ports:
       - "127.0.0.1:{{ observability_prometheus_port | default('9090') }}:8428"
 
@@ -84,13 +86,46 @@ services:
       - GF_INSTALL_PLUGINS=marcusolsson-treemap-panel,victoriametrics-logs-datasource
       - GF_SERVER_DOMAIN=observability.svc.plus
       - GF_SERVER_ROOT_URL=https://observability.svc.plus/grafana/
-      - GF_SERVER_SERVE_FROM_SUB_PATH=false
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
       - grafana_data:/var/lib/grafana
     ports:
       - "127.0.0.1:{{ observability_grafana_port | default('3030') }}:3000"
+
+  opencost-exporter-aws:
+    build: https://github.com/stacklio/opencost-exporter.git
+    container_name: xstream_opencost_exporter_aws
+    restart: always
+    env_file:
+      - .env
+    command:
+      - '/app/opencost-exporter'
+      - '--bucket=${AWS_REPORT_BUCKET}'
+      - '--report=${AWS_REPORT_NAME}'
+    ports:
+      - "127.0.0.1:9200:9100"
+
+  opencost-exporter-gcp:
+    image: alpine:latest
+    container_name: xstream_opencost_exporter_gcp
+    restart: always
+    env_file:
+      - .env
+    command: ["tail", "-f", "/dev/null"] # Placeholder pending specific GCP exporter image
+    ports:
+      - "127.0.0.1:9201:9100"
+
+  opencost-exporter-azure:
+    image: alpine:latest
+    container_name: xstream_opencost_exporter_azure
+    restart: always
+    env_file:
+      - .env
+    command: ["tail", "-f", "/dev/null"] # Placeholder pending specific Azure exporter image
+    ports:
+      - "127.0.0.1:9202:9100"
 
 volumes:
   vmetrics_data:

@@ -11,6 +11,20 @@
     - "{{ observability_dir }}/grafana/provisioning/dashboards"
     - "{{ observability_dir }}/grafana/dashboards"
 
+- name: Read FinOps S3 secrets from Vault
+  delegate_to: localhost
+  become: false
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/kv/data/observability/finops"
+    headers:
+      X-Vault-Token: "{{ vault_token }}"
+    method: GET
+  register: finops_vault_secret
+  run_once: true
+  check_mode: false
+  no_log: true
+  ignore_errors: true
+
 - name: Template Docker Compose and configs
   ansible.builtin.template:
     src: "{{ item.src }}"
@@ -18,6 +32,7 @@
     mode: '0644'
   loop:
     - { src: 'docker-compose.yml.j2', dest: 'docker-compose.yml' }
+    - { src: '.env.j2', dest: '.env' }
     - { src: 'prometheus.yml.j2', dest: 'prometheus/prometheus.yml' }
     - { src: 'grafana-provisioning-datasources.yml.j2', dest: 'grafana/provisioning/datasources/datasources.yml' }
     - { src: 'grafana-provisioning-dashboards.yml.j2', dest: 'grafana/provisioning/dashboards/dashboards.yml' }
