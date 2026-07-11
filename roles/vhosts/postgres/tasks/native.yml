@@ -55,6 +55,22 @@
   when:
     - ansible_os_family == 'Debian'
 
+- name: Detect installed PostgreSQL version
+  ansible.builtin.shell: |
+    psql --version | awk '{print $3}' | cut -d. -f1
+  register: pg_version_detect
+  changed_when: false
+  when:
+    - ansible_os_family == 'Debian'
+
+- name: Install PostgreSQL extra packages (pgvector)
+  ansible.builtin.apt:
+    name: "postgresql-{{ pg_version_detect.stdout | trim }}-pgvector"
+    state: present
+  when:
+    - ansible_os_family == 'Debian'
+    - pg_version_detect.stdout is defined and pg_version_detect.stdout | trim | length > 0
+
 - name: Ensure PostgreSQL service is enabled and started
   ansible.builtin.systemd:
     name: "{{ postgresql_service_name }}"
