@@ -28,7 +28,13 @@
           {%- endfor -%}
           {%- for host in expanded_hosts -%}
           {%- set host_data = hostvars[host] -%}
-          {%- set service_domains = (host_data.service_domains | default('') | split(',')) | map('trim') | reject('equalto', '') | list -%}
+          {%- set raw_domains = host_data.service_domains | default('', true) -%}
+          {%- if raw_domains is string -%}
+          {%-   set domain_list = raw_domains | split(',') -%}
+          {%- else -%}
+          {%-   set domain_list = raw_domains -%}
+          {%- endif -%}
+          {%- set service_domains = domain_list | map('trim') | reject('equalto', '') | list -%}
           {%- for service_domain in service_domains -%}
           {%-   set target_service_domain = service_domain | regex_replace(source_domain ~ '$', target_domain) -%}
           {%-   set _ = records.append({
