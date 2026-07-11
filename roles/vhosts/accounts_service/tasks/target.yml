@@ -108,6 +108,22 @@
       value: "{{ accounts_service_env_defaults.GOOGLE_CLIENT_SECRET }}"
   no_log: true
 
+- name: Ensure managed stripe env is present for {{ accounts_service_target.name }}
+  ansible.builtin.lineinfile:
+    path: "{{ accounts_service_target.env_file }}"
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+    state: present
+    insertafter: '^IMAGE='
+  loop:
+    - key: STRIPE_SECRET_KEY
+      value: "{{ accounts_service_env_defaults.STRIPE_SECRET_KEY }}"
+    - key: STRIPE_WEBHOOK_SECRET
+      value: "{{ accounts_service_env_defaults.STRIPE_WEBHOOK_SECRET }}"
+    - key: STRIPE_ALLOWED_PRICE_IDS
+      value: "{{ accounts_service_env_defaults.STRIPE_ALLOWED_PRICE_IDS }}"
+  no_log: true
+
 - name: Render managed account config for {{ accounts_service_target.name }}
   ansible.builtin.template:
     src: account.yaml.j2

@@ -57,6 +57,11 @@ accounts_service_env_defaults:
   GITHUB_CLIENT_SECRET: "{{ lookup('ansible.builtin.env', 'OAUTH_GITHUB_CLIENT_SECRET') | default('', true) }}"
   GOOGLE_CLIENT_ID: "{{ lookup('ansible.builtin.env', 'OAUTH_GOOGLE_CLIENT_ID') | default('', true) }}"
   GOOGLE_CLIENT_SECRET: "{{ lookup('ansible.builtin.env', 'OAUTH_GOOGLE_CLIENT_SECRET') | default('', true) }}"
+  # Stripe billing (accounts reads these straight from container env via
+  # os.Getenv; empty values keep Stripe endpoints in stripe_not_configured).
+  STRIPE_SECRET_KEY: "{{ lookup('ansible.builtin.env', 'STRIPE_SECRET_KEY') | default('', true) }}"
+  STRIPE_WEBHOOK_SECRET: "{{ lookup('ansible.builtin.env', 'STRIPE_WEBHOOK_SECRET') | default('', true) }}"
+  STRIPE_ALLOWED_PRICE_IDS: "{{ lookup('ansible.builtin.env', 'STRIPE_ALLOWED_PRICE_IDS') | default('', true) }}"
   XWORKMATE_VAULT_ADDR: https://vault.svc.plus
   XWORKMATE_VAULT_MOUNT: kv
   XWORKMATE_VAULT_NAMESPACE: ""
