@@ -27,6 +27,7 @@ The fix adds defensive checks to identify the variable type:
 
 ## Related
 - GHA Run: 29151750477
+- Playbooks PR: #124
 - Conversation: `2f521e13-c13e-4df8-b2d9-cd8883afff30`
 
 ## Verification

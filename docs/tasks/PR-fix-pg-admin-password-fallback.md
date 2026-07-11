@@ -27,6 +27,7 @@ The fix adds a robust fallback mechanism to both `defaults/main.yml` files:
 
 ## Related
 - GHA Run: 29150998510
+- Playbooks PR: #120
 - Conversation: `2f521e13-c13e-4df8-b2d9-cd8883afff30`
 
 ## Verification
