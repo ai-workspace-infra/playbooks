@@ -19,7 +19,11 @@ accounts_service_caddy_root: "{{ caddy_config_dir | default('/etc/caddy', true) 
 accounts_service_caddy_base_dir: "{{ '/opt/homebrew/etc/caddy' if (ansible_os_family | default('')) == 'Darwin' else accounts_service_caddy_root }}"
 accounts_service_caddyfile_path: "{{ accounts_service_caddy_base_dir }}/Caddyfile"
 accounts_service_caddy_conf_dir: "{{ accounts_service_caddy_base_dir }}/conf.d"
-accounts_service_caddy_fragment_path: "{{ accounts_service_caddy_base_dir }}/conf.d/accounts.caddy"
+# Host convention is <domain>.svc.plus.caddy; the old short name accounts.caddy
+# collided with a pre-existing accounts.svc.plus.caddy (ambiguous site
+# definition) — the legacy path below is removed by a cleanup task.
+accounts_service_caddy_fragment_path: "{{ accounts_service_caddy_base_dir }}/conf.d/accounts.svc.plus.caddy"
+accounts_service_caddy_legacy_fragment_path: "{{ accounts_service_caddy_base_dir }}/conf.d/accounts.caddy"
 accounts_service_caddy_sites:
   - server_names:
       - accounts.svc.plus
