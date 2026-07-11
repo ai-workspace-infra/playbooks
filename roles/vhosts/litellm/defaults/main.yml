@@ -106,7 +106,7 @@ litellm_database_user: litellm
 litellm_database_password_file: /root/.ai_workspace_litellm_database_password
 litellm_database_password: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_PASSWORD') | default(lookup('password', litellm_database_password_file ~ ' length=32 chars=ascii_letters,digits'), true) }}"
 litellm_database_admin_user: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_ADMIN_USER') | default('postgres', true) }}"
-litellm_database_admin_password: "{{ lookup('ansible.builtin.env', 'LITELLM_DATABASE_ADMIN_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRESQL_ADMIN_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') | default('', true), true), true) }}"
+litellm_database_admin_password: "{{ postgresql_admin_password | default(lookup('ansible.builtin.env', 'LITELLM_DATABASE_ADMIN_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRESQL_ADMIN_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') | default(lookup('file', '/root/.ai_workspace_postgres_password', errors='ignore') | default(lookup('file', (ansible_env.HOME | default('/home/ubuntu')) ~ '/.ai_workspace_postgres_password', errors='ignore') | default('', true), true), true), true), true), true) }}"
 
 # Percent-encode the password for use inside the DATABASE_URL userinfo. The
 # shared auth token is `openssl rand -base64`, which can contain '/', '+' and

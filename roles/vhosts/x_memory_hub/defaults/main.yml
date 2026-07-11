@@ -18,8 +18,12 @@ x_memory_hub_pg_container_default: "postgresql-svc-plus"
 x_memory_hub_pg_provisioner: "{{ 'docker' if (postgresql_deploy_mode | default('compose')) == 'compose' else 'tcp' }}"
 x_memory_hub_pg_root_user: "{{ lookup('ansible.builtin.env', 'POSTGRESQL_ADMIN_USER') | default('postgres', true) }}"
 x_memory_hub_pg_root_password: >-
-  {{ lookup('ansible.builtin.env', 'POSTGRESQL_ADMIN_PASSWORD')
-     | default(lookup('ansible.builtin.env', 'POSTGRES_PASSWORD'), true) }}
+  {{ postgresql_admin_password
+     | default(lookup('ansible.builtin.env', 'POSTGRESQL_ADMIN_PASSWORD')
+       | default(lookup('ansible.builtin.env', 'POSTGRES_PASSWORD')
+         | default(lookup('file', '/root/.ai_workspace_postgres_password', errors='ignore')
+           | default(lookup('file', (ansible_env.HOME | default('/home/ubuntu')) ~ '/.ai_workspace_postgres_password', errors='ignore')
+             | default('postgres', true), true), true), true), true) }}
 x_memory_hub_pg_host: >-
   {{ lookup('ansible.builtin.env', 'X_MEMORY_HUB_PG_HOST')
      | default(lookup('ansible.builtin.env', 'POSTGRESQL_HOST') | default('127.0.0.1', true), true) }}
