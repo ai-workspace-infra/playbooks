@@ -229,6 +229,118 @@
   when:
     - vault_deploy_mode in ["standalone", "external"]
 
+- name: Check if vault_init.json exists
+  ansible.builtin.stat:
+    path: "{{ vault_config_dir }}/vault_init.json"
+  register: vault_init_file
+  when:
+    - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+
+- name: Check Vault initialization status
+  ansible.builtin.command: vault operator init -status
+  environment:
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+  register: vault_init_status
+  failed_when: false
+  changed_when: false
+  when:
+    - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+
+- name: Reset Vault tables if initialized without key file (lost keys)
+  become: true
+  become_user: postgres
+  ansible.builtin.shell: |
+    psql -d vault_storage -c "TRUNCATE TABLE vault_kv_store; TRUNCATE TABLE vault_ha_locks;"
+  when:
+    - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+    - vault_init_status.rc == 0
+    - not vault_init_file.stat.exists
+
+- name: Re-check Vault initialization status after reset
+  ansible.builtin.command: vault operator init -status
+  environment:
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+  register: vault_init_status_after_reset
+  failed_when: false
+  changed_when: false
+  when:
+    - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+    - vault_init_status.rc == 0
+    - not vault_init_file.stat.exists
+
+- name: Initialize Vault (first run)
+  ansible.builtin.command: vault operator init -key-shares=1 -key-threshold=1 -format=json
+  environment:
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+  register: vault_new_init
+  when:
+    - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+    - (vault_init_status_after_reset.rc | default(vault_init_status.rc)) == 2
+  no_log: true
+
+- name: Save Vault initialization keys to host
+  ansible.builtin.copy:
+    dest: "{{ vault_config_dir }}/vault_init.json"
+    content: "{{ vault_new_init.stdout }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+    - vault_new_init.stdout is defined
+  no_log: true
+
+- name: Load Vault unseal keys from file
+  ansible.builtin.slurp:
+    src: "{{ vault_config_dir }}/vault_init.json"
+  register: vault_init_slurp
+  when:
+    - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+
+- name: Check if Vault is sealed
+  ansible.builtin.command: vault status -format=json
+  environment:
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+  register: vault_status_json
+  failed_when: false
+  changed_when: false
+  when:
+    - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+
+- name: Unseal Vault
+  ansible.builtin.command: "vault operator unseal {{ ((vault_init_slurp.content | b64decode | from_json).unseal_keys_b64)[0] }}"
+  environment:
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+  when:
+    - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+    - vault_init_slurp.content is defined
+    - (vault_status_json.stdout | default('{}') | from_json).sealed | default(true) | bool
+  no_log: true
+
+- name: Create unified root token alias in Vault
+  ansible.builtin.shell: |
+    export VAULT_TOKEN="{{ ((vault_init_slurp.content | b64decode | from_json).root_token) }}"
+    vault token create -id="{{ vault_server_root_access_token }}" -policy="root" -orphan || true
+  environment:
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+    PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH }}"
+  when:
+    - vault_deploy_mode == "standalone"
+    - ansible_os_family != 'Darwin'
+    - vault_init_slurp.content is defined
+    - vault_server_root_access_token | trim | length > 0
+  no_log: true
+
+
 - name: Ensure Vault KV v2 secrets engine is enabled
   ansible.builtin.command: >-
     bash -lc '
