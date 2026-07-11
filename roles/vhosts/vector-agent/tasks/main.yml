@@ -4,6 +4,11 @@
     vector_arch: >-
       {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
 
+- name: Load Blackbox probe defaults
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/roles/vhosts/blackbox_exporter/defaults/main.yml"
+    name: blackbox_exporter_role_defaults
+
 - name: Download Vector deb package
   ansible.builtin.get_url:
     url: "https://github.com/vectordotdev/vector/releases/download/v{{ vector_version }}/vector_{{ vector_version }}-1_{{ vector_arch }}.deb"

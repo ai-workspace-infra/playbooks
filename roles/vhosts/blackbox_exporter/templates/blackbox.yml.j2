@@ -1,4 +1,14 @@
 modules:
+  https_ssl:
+    prober: http
+    timeout: 15s
+    http:
+      method: GET
+      # TLS handshake failures still cause probe_success to be 0. Redirects and
+      # protected endpoints remain valid certificate-expiry targets.
+      valid_status_codes: [200, 301, 302, 307, 308, 401, 403, 404]
+      preferred_ip_protocol: ip4
+
   http_dl_download:
     prober: http
     timeout: 5s

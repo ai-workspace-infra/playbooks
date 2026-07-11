@@ -56,12 +56,36 @@ source = '''
 .tags.job = "xray"
 '''
 
+{% set ssl_targets = blackbox_ssl_targets | default(blackbox_exporter_role_defaults.blackbox_ssl_targets | default([])) %}
+{% for target in ssl_targets %}
+{% set target_id = target.name | regex_replace('[^A-Za-z0-9_]', '_') %}
+[sources.blackbox_{{ target_id }}_ssl]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:9115/probe?module=https_ssl&target={{ target.url | urlencode }}"]
+scrape_interval_secs = 60
+scrape_timeout_secs = 20
+
+[transforms.blackbox_{{ target_id }}_labels]
+type = "remap"
+inputs = ["blackbox_{{ target_id }}_ssl"]
+source = '''
+.tags.instance = "{{ inventory_hostname }}"
+.tags.job = "blackbox"
+.tags.module = "https_ssl"
+.tags.company = "svc.plus"
+.tags.project = "svc.plus"
+.tags.env = "production"
+.tags.name = "{{ target.name }}"
+.tags.target = "{{ target.url }}"
+'''
+{% endfor %}
+
 [sinks.prometheus_remote]
 type = "prometheus_remote_write"
 {% if inventory_hostname in groups.get('xray_exporter', []) %}
-inputs = ["add_labels", "add_xray_xhttp_labels", "add_xray_tcp_labels"]
+inputs = ["add_labels", "add_xray_xhttp_labels", "add_xray_tcp_labels"{% for target in ssl_targets %}, "blackbox_{{ target.name | regex_replace('[^A-Za-z0-9_]', '_') }}_labels"{% endfor %}]
 {% else %}
-inputs = ["add_labels"]
+inputs = ["add_labels"{% for target in ssl_targets %}, "blackbox_{{ target.name | regex_replace('[^A-Za-z0-9_]', '_') }}_labels"{% endfor %}]
 {% endif %}
 {% if inventory_hostname == 'install.svc.plus' %}
 endpoint = "http://127.0.0.1:9090/api/v1/write"

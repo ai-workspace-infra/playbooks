@@ -6,10 +6,16 @@
     mode: '0755'
   loop:
     - "{{ observability_dir }}"
+    - "{{ observability_dir }}/blackbox"
     - "{{ observability_dir }}/prometheus"
     - "{{ observability_dir }}/grafana/provisioning/datasources"
     - "{{ observability_dir }}/grafana/provisioning/dashboards"
     - "{{ observability_dir }}/grafana/dashboards"
+
+- name: Load Blackbox probe defaults
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/roles/vhosts/blackbox_exporter/defaults/main.yml"
+    name: blackbox_exporter_role_defaults
 
 - name: Read FinOps S3 secrets from Vault
   delegate_to: localhost
@@ -34,6 +40,7 @@
     - { src: 'docker-compose.yml.j2', dest: 'docker-compose.yml' }
     - { src: '.env.j2', dest: '.env' }
     - { src: 'prometheus.yml.j2', dest: 'prometheus/prometheus.yml' }
+    - { src: "{{ playbook_dir }}/roles/vhosts/blackbox_exporter/templates/blackbox.yml.j2", dest: 'blackbox/config.yml' }
     - { src: 'grafana-provisioning-datasources.yml.j2', dest: 'grafana/provisioning/datasources/datasources.yml' }
     - { src: 'grafana-provisioning-dashboards.yml.j2', dest: 'grafana/provisioning/dashboards/dashboards.yml' }
 
