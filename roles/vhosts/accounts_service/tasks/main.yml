@@ -16,6 +16,13 @@
     mode: "0755"
   become: true
 
+- name: Remove legacy accounts Caddy fragment (renamed to accounts.svc.plus.caddy)
+  ansible.builtin.file:
+    path: "{{ accounts_service_caddy_legacy_fragment_path }}"
+    state: absent
+  notify: Reload caddy
+  become: true
+
 - name: Deploy managed accounts Caddy fragment
   ansible.builtin.template:
     src: accounts-site.caddy.j2
