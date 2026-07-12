@@ -62,10 +62,16 @@ accounts_service_env_defaults:
   STRIPE_SECRET_KEY: "{{ lookup('ansible.builtin.env', 'STRIPE_SECRET_KEY') | default('', true) }}"
   STRIPE_WEBHOOK_SECRET: "{{ lookup('ansible.builtin.env', 'STRIPE_WEBHOOK_SECRET') | default('', true) }}"
   STRIPE_ALLOWED_PRICE_IDS: "{{ lookup('ansible.builtin.env', 'STRIPE_ALLOWED_PRICE_IDS') | default('', true) }}"
-  XWORKMATE_VAULT_ADDR: https://vault.svc.plus
-  XWORKMATE_VAULT_MOUNT: kv
-  XWORKMATE_VAULT_NAMESPACE: ""
-  XWORKMATE_VAULT_TOKEN: ""
+  # Vault-backed xworkmate secrets. The deploy pipeline mints a fresh
+  # XWORKMATE_VAULT_TOKEN per run (accounts "Mint Runtime Vault Token" step,
+  # orphan periodic token, policy xworkmate-accounts) and passes it in via env.
+  # An empty token is never written to the host so a working value is not
+  # clobbered — see the "Ensure managed xworkmate vault env" task in
+  # tasks/target.yml.
+  XWORKMATE_VAULT_ADDR: "{{ lookup('ansible.builtin.env', 'XWORKMATE_VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+  XWORKMATE_VAULT_MOUNT: "{{ lookup('ansible.builtin.env', 'XWORKMATE_VAULT_MOUNT') | default('kv', true) }}"
+  XWORKMATE_VAULT_NAMESPACE: "{{ lookup('ansible.builtin.env', 'XWORKMATE_VAULT_NAMESPACE') | default('', true) }}"
+  XWORKMATE_VAULT_TOKEN: "{{ lookup('ansible.builtin.env', 'XWORKMATE_VAULT_TOKEN') | default('', true) }}"
 accounts_service_targets:
   - name: prod
     compose_dir: "{{ accounts_service_base_dir }}/prod"
