@@ -82,6 +82,45 @@
       value: "{{ accounts_service_env_defaults.BRIDGE_REVIEW_AUTH_TOKEN }}"
     - key: BRIDGE_SERVER_URL
       value: "{{ accounts_service_env_defaults.BRIDGE_SERVER_URL }}"
+    - key: XWORKMATE_BRIDGE_SERVER_URL
+      value: "{{ accounts_service_env_defaults.XWORKMATE_BRIDGE_SERVER_URL }}"
+  no_log: true
+
+# The env file is seeded once from the legacy deployment and never re-rendered,
+# so every key that must track pipeline secrets needs an explicit lineinfile
+# below. XWORKMATE_VAULT_TOKEN previously had no such task: the legacy token
+# stayed in app.env after it was revoked and every sync failed with Vault 403
+# ("bridge auth token is unavailable" in the app). The accounts deploy pipeline
+# now mints a fresh token every run and passes it via env, so this task rotates
+# the host token on each deploy.
+- name: Warn when XWORKMATE_VAULT_TOKEN is not provided for {{ accounts_service_target.name }}
+  ansible.builtin.debug:
+    msg: >-
+      XWORKMATE_VAULT_TOKEN is empty; keeping the existing value in
+      {{ accounts_service_target.env_file }}. If xworkmate sync fails with
+      "bridge auth token is unavailable", run the accounts deploy pipeline
+      (which mints and injects a fresh token) or set the value manually.
+  when: (accounts_service_env_defaults.XWORKMATE_VAULT_TOKEN | trim) == ''
+
+- name: Ensure managed xworkmate vault env is present for {{ accounts_service_target.name }}
+  ansible.builtin.lineinfile:
+    path: "{{ accounts_service_target.env_file }}"
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+    state: present
+    insertafter: '^IMAGE='
+  loop:
+    - key: XWORKMATE_VAULT_ADDR
+      value: "{{ accounts_service_env_defaults.XWORKMATE_VAULT_ADDR }}"
+    - key: XWORKMATE_VAULT_MOUNT
+      value: "{{ accounts_service_env_defaults.XWORKMATE_VAULT_MOUNT }}"
+    - key: XWORKMATE_VAULT_NAMESPACE
+      value: "{{ accounts_service_env_defaults.XWORKMATE_VAULT_NAMESPACE }}"
+    - key: XWORKMATE_VAULT_TOKEN
+      value: "{{ accounts_service_env_defaults.XWORKMATE_VAULT_TOKEN }}"
+  # Skip empty values so a deploy without the secret never blanks a working
+  # token (namespace is legitimately empty and simply keeps the seeded line).
+  when: (item.value | trim) != ''
   no_log: true
 
 - name: Ensure managed auth/oauth env is present for {{ accounts_service_target.name }}
