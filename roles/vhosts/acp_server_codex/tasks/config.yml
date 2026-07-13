@@ -38,6 +38,13 @@
   changed_when: true
   become: true
 
+- name: Ensure Codex bridge binary destination directory exists
+  ansible.builtin.file:
+    path: "{{ acp_codex_bridge_binary_path | dirname }}"
+    state: directory
+    mode: "0755"
+  become: true
+
 - name: Download XWorkmate Bridge release archive
   ansible.builtin.get_url:
     url: "{{ lookup('env', 'GITHUB_PROXY') | default('', true) }}https://github.com/ai-workspace-lab/xworkmate-bridge/releases/latest/download/xworkmate-bridge-{{ ansible_system | lower }}-{{ 'amd64' if ansible_architecture in ['x86_64', 'amd64'] else 'arm64' }}.tar.gz"
