@@ -39,6 +39,15 @@
   changed_when: true
   become: true
 
+- name: Ensure Hermes bridge binary destination directory exists
+  ansible.builtin.file:
+    path: "{{ acp_hermes_bridge_binary_path | dirname }}"
+    state: directory
+    owner: "{{ omit if ansible_os_family == 'Darwin' else acp_hermes_service_user }}"
+    group: "{{ omit if ansible_os_family == 'Darwin' else acp_hermes_service_group }}"
+    mode: "0755"
+  become: "{{ ansible_os_family != 'Darwin' }}"
+
 - name: Upload XWorkmate Go ACP adapter binary for Hermes
   ansible.builtin.copy:
     src: "{{ acp_hermes_bridge_local_binary_path }}"

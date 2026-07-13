@@ -37,6 +37,13 @@
   changed_when: true
   become: true
 
+- name: Ensure OpenCode bridge binary destination directory exists
+  ansible.builtin.file:
+    path: "{{ acp_opencode_bridge_binary_path | dirname }}"
+    state: directory
+    mode: "0755"
+  become: "{{ ansible_os_family != 'Darwin' }}"
+
 - name: Download XWorkmate Bridge release archive for OpenCode
   ansible.builtin.get_url:
     url: "https://github.com/ai-workspace-lab/xworkmate-bridge/releases/latest/download/xworkmate-bridge-{{ ansible_system | lower }}-{{ 'amd64' if ansible_architecture in ['x86_64', 'amd64'] else 'arm64' }}.tar.gz"
@@ -55,7 +62,7 @@
     owner: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
     group: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0755"
-  become: true
+  become: "{{ ansible_os_family != 'Darwin' }}"
   when: not (acp_opencode_bridge_use_prebuilt | bool)
 
 - name: Restore immutable flag on OpenCode bridge binary

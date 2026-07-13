@@ -16,7 +16,7 @@ acp_gemini_bridge_local_build_dir: "{{ playbook_dir }}/.artifacts/acp_gemini"
 acp_gemini_bridge_local_binary_path: "{{ acp_gemini_bridge_local_build_dir }}/xworkmate-go-core"
 acp_gemini_bridge_build_goos: "{{ 'darwin' if ansible_os_family == 'Darwin' else 'linux' }}"
 acp_gemini_bridge_build_goarch: "{{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}"
-acp_gemini_bridge_binary_path: /usr/local/bin/xworkmate-go-core
+acp_gemini_bridge_binary_path: "{{ acp_gemini_home + '/.local/bin/xworkmate-go-core' if ansible_os_family == 'Darwin' else '/usr/local/bin/xworkmate-go-core' }}"
 acp_gemini_bridge_use_prebuilt: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_USE_PREBUILT_BRIDGE') | default('false', true) | bool }}"
 acp_gemini_listen_host: 127.0.0.1
 acp_gemini_listen_port: 8791
