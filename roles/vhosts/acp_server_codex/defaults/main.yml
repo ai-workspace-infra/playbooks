@@ -7,7 +7,8 @@ acp_codex_service_user: "{{ acp_codex_runtime_user }}"
 acp_codex_service_group: "{{ acp_codex_runtime_group }}"
 acp_codex_workdir: "{{ acp_codex_runtime_home }}"
 acp_codex_shell: /bin/bash
-acp_codex_npm_global_bin: "{{ acp_codex_runtime_home + '/.local/bin' if ansible_os_family == 'Darwin' else '/usr/bin' }}"
+# nodejs stores user-level global npm packages under ~/.local/lib/npm on macOS.
+acp_codex_npm_global_bin: "{{ acp_codex_runtime_home + '/.local/lib/npm/bin' if ansible_os_family == 'Darwin' else '/usr/bin' }}"
 acp_codex_binary_path: "{{ acp_codex_npm_global_bin }}/codex"
 acp_codex_path: "{{ acp_codex_npm_global_bin }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 acp_codex_listen_host: 127.0.0.1
