@@ -33,7 +33,9 @@
 
 - name: Configure document runtime
   ansible.builtin.include_tasks: docs.yml
-  when: ai_agent_runtime_docs_enabled | bool
+  when: >-
+    (ai_agent_runtime_docs_enabled | bool) or
+    (ai_agent_runtime_texlive_enabled | bool)
 
 - name: Configure font runtime
   ansible.builtin.include_tasks: fonts.yml
