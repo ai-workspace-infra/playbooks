@@ -36,7 +36,14 @@
     - ansible_os_family != 'Darwin'
     - "'i' in (acp_codex_bridge_binary_attrs.stdout | default(''))"
   changed_when: true
-  become: true
+  become: "{{ ansible_os_family != 'Darwin' }}"
+
+- name: Ensure Codex bridge binary destination directory exists
+  ansible.builtin.file:
+    path: "{{ acp_codex_bridge_binary_path | dirname }}"
+    state: directory
+    mode: "0755"
+  become: "{{ ansible_os_family != 'Darwin' }}"
 
 - name: Download XWorkmate Bridge release archive
   ansible.builtin.get_url:
@@ -56,7 +63,7 @@
     owner: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
     group: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0755"
-  become: true
+  become: "{{ ansible_os_family != 'Darwin' }}"
   when: not (acp_codex_bridge_use_prebuilt | bool)
 
 - name: Restore immutable flag on Codex bridge binary
