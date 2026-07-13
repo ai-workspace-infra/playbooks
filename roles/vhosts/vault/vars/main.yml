@@ -2,7 +2,9 @@ group: master
 namespace: vault
 # When false, disables the Ingress for public access.
 vault_public_access: false
-vault_deploy_mode: "{{ lookup('ansible.builtin.env', 'VAULT_DEPLOY_MODE') | default('kubernetes', true) }}"
+# `native` is the installer-facing name for a Vault process managed on this host.
+# The role historically calls that implementation `standalone`.
+vault_deploy_mode: "{{ lookup('ansible.builtin.env', 'VAULT_DEPLOY_MODE') | default('kubernetes', true) | lower | regex_replace('^native$', 'standalone') }}"
 vault_version: "{{ lookup('ansible.builtin.env', 'VAULT_VERSION') | default('1.21.4', true) }}"
 vault_listen_addr: 127.0.0.1:8200
 vault_service_name: vault
