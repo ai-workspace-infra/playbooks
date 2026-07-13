@@ -175,10 +175,14 @@
 # `--resume-retries`. Upgrade pip first so the resilient download flags used by
 # the dependency install below are always available.
 - name: Ensure recent pip in the LiteLLM environment
-  ansible.builtin.pip:
-    name: pip
-    state: latest
-    executable: "{{ litellm_pip_executable }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ litellm_python_executable }}"
+      - -m
+      - pip
+      - install
+      - --upgrade
+      - pip
   environment:
     PIP_CACHE_DIR: "{{ litellm_pip_cache_dir }}"
     PIP_DEFAULT_TIMEOUT: "120"
@@ -236,18 +240,19 @@
       }}
 
 - name: Ensure LiteLLM and DB dependencies are installed
-  ansible.builtin.pip:
-    name:
+  ansible.builtin.command:
+    argv:
+      - "{{ litellm_python_executable }}"
+      - -m
+      - pip
+      - install
+      - --retries
+      - "{{ litellm_pip_retries }}"
+      - --resume-retries
+      - "{{ litellm_pip_resume_retries }}"
       - "{{ litellm_package_spec }}"
-      - "prisma"
-      - "psycopg2-binary"
-    executable: "{{ litellm_pip_executable }}"
-    state: present
-    # litellm[proxy] pulls large wheels (e.g. polars-runtime ~46MB) that often
-    # break mid-stream on slow/mirrored links with IncompleteRead. --retries
-    # reconnects and --resume-retries continues a partial download instead of
-    # restarting it, so a flaky connection no longer fails the whole deploy.
-    extra_args: "--retries {{ litellm_pip_retries }} --resume-retries {{ litellm_pip_resume_retries }}"
+      - prisma
+      - psycopg2-binary
   environment:
     PIP_CACHE_DIR: "{{ litellm_pip_cache_dir }}"
     PIP_DEFAULT_TIMEOUT: "{{ litellm_pip_timeout }}"
