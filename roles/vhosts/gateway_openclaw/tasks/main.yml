@@ -378,6 +378,35 @@
     - "'i' in (gateway_openclaw_config_attrs.stdout | default(''))"
   changed_when: true
 
+- name: Inspect legacy OpenClaw auth profiles on macOS
+  ansible.builtin.stat:
+    path: "{{ gateway_openclaw_auth_profiles_path }}"
+  register: gateway_openclaw_auth_profiles_stat
+  no_log: true
+  when: ansible_os_family == 'Darwin'
+
+- name: Back up legacy OpenClaw auth profiles on macOS
+  ansible.builtin.copy:
+    src: "{{ gateway_openclaw_auth_profiles_path }}"
+    dest: "{{ gateway_openclaw_auth_profiles_backup_path }}"
+    remote_src: true
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0600"
+  no_log: true
+  when:
+    - ansible_os_family == 'Darwin'
+    - gateway_openclaw_auth_profiles_stat.stat.exists | default(false)
+
+- name: Remove legacy OpenClaw auth profiles on macOS
+  ansible.builtin.file:
+    path: "{{ gateway_openclaw_auth_profiles_path }}"
+    state: absent
+  notify: Restart openclaw
+  when:
+    - ansible_os_family == 'Darwin'
+    - gateway_openclaw_auth_profiles_stat.stat.exists | default(false)
+
 - name: Deploy OpenClaw gateway JSON config
   ansible.builtin.template:
     src: openclaw.json.j2
