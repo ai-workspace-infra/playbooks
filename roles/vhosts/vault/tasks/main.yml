@@ -22,8 +22,14 @@
     state: present
     update_cache: true
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
+
+- name: Skip local Vault install when using an existing Vault server
+  ansible.builtin.debug:
+    msg: "Using existing Vault server at {{ vault_admin_addr }}; skipping local Vault install."
+  when:
+    - vault_deploy_mode == "external"
 
 - name: Check standalone Vault binary
   ansible.builtin.command: "{{ vault_binary_path }} version"
@@ -31,7 +37,7 @@
   changed_when: false
   failed_when: false
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Download standalone Vault release
@@ -41,7 +47,7 @@
     remote_src: true
     mode: "0755"
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
     - vault_binary_check.rc != 0 or (vault_binary_check.stdout | default('')) is not search(vault_version)
   become: true
@@ -57,7 +63,7 @@
     - "{{ vault_config_dir }}"
     - "{{ vault_data_dir }}"
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Create Vault production configuration file
@@ -68,7 +74,7 @@
     mode: "0600"
     content: |
       storage "postgresql" {
-        connection_url = "postgres://vault_storage:{{ vault_pg_password | default('CHANGE_ME') }}@127.0.0.1:15432/vault_storage?sslmode=disable"
+        connection_url = "postgres://vault_storage:{{ vault_pg_password | default('CHANGE_ME') }}@127.0.0.1:{{ vault_pg_port | default('5432') }}/vault_storage?sslmode=disable"
       }
 
       listener "tcp" {
@@ -78,6 +84,9 @@
 
       api_addr = "https://vault.svc.plus"
       ui = true
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
 
 - name: Deploy standalone Vault systemd service
   ansible.builtin.copy:
@@ -89,8 +98,9 @@
       [Unit]
       Description=HashiCorp Vault Server
       Documentation=https://developer.hashicorp.com/vault/docs
-      After=network-online.target
+      After=network-online.target postgresql.service
       Wants=network-online.target
+      BindsTo=postgresql.service
 
       [Service]
       Type=simple
@@ -103,7 +113,60 @@
       WantedBy=multi-user.target
   no_log: true
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+
+- name: Flush pending handlers before starting Vault (ensures PostgreSQL restart completes)
+  ansible.builtin.meta: flush_handlers
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+
+- name: Wait for PostgreSQL to be ready before starting Vault
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ vault_pg_port | default('5432') | int }}"
+    state: started
+    timeout: 60
+    delay: 2
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+
+# Vault's "postgresql" storage backend does not create its own schema on
+# first connect (unlike most storage backends) -- HashiCorp's docs require
+# these two tables to exist before Vault ever starts, or it fails to bind
+# its listener at all (connection refused, no journal-visible reason
+# beyond a fast exit). vault_storage owns this database (created in
+# create_databases_and_users.yml), so it has full DDL rights over it.
+- name: Ensure Vault PostgreSQL storage schema exists
+  become: true
+  become_user: postgres
+  ansible.builtin.shell: |
+    set -e
+    psql -d vault_storage -v ON_ERROR_STOP=1 <<'SQL'
+    CREATE TABLE IF NOT EXISTS vault_kv_store (
+      parent_path TEXT COLLATE "C" NOT NULL,
+      path        TEXT COLLATE "C",
+      key         TEXT COLLATE "C",
+      value       BYTEA,
+      CONSTRAINT pkey PRIMARY KEY (path, key)
+    );
+    ALTER TABLE vault_kv_store OWNER TO vault_storage;
+    CREATE INDEX IF NOT EXISTS parent_path_idx ON vault_kv_store (parent_path);
+    ALTER INDEX parent_path_idx OWNER TO vault_storage;
+    CREATE TABLE IF NOT EXISTS vault_ha_locks (
+      ha_key      TEXT COLLATE "C" NOT NULL,
+      ha_identity TEXT COLLATE "C" NOT NULL,
+      ha_value    TEXT COLLATE "C",
+      valid_until TIMESTAMP WITH TIME ZONE NOT NULL,
+      CONSTRAINT ha_key PRIMARY KEY (ha_key)
+    );
+    ALTER TABLE vault_ha_locks OWNER TO vault_storage;
+    SQL
+  changed_when: true
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Start standalone Vault service
@@ -113,31 +176,184 @@
     state: restarted
     daemon_reload: true
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Import macOS specific Vault tasks
   ansible.builtin.import_tasks: macos.yml
-  when: ansible_os_family == 'Darwin'
+  when:
+    - ansible_os_family == 'Darwin'
+    - vault_deploy_mode in ["standalone", "native"]
 
 - name: Wait for standalone Vault API
-  ansible.builtin.uri:
-    url: "{{ vault_admin_addr }}/v1/sys/health"
-    status_code:
-      - 200
-      - 429
-      - 472
-      - 473
-      - 501
-      - 503
-    return_content: true
-  register: vault_health
-  until: vault_health.status in [200, 429, 472, 473, 501, 503]
-  retries: 12
-  delay: 5
+  block:
+    - name: Wait for standalone Vault API
+      ansible.builtin.uri:
+        url: "{{ vault_admin_addr }}/v1/sys/health"
+        status_code:
+          - 200
+          - 429
+          - 472
+          - 473
+          - 501
+          - 503
+        return_content: true
+      register: vault_health
+      until: vault_health.status in [200, 429, 472, 473, 501, 503]
+      retries: 12
+      delay: 5
+      changed_when: false
+  rescue:
+    - name: Collect Vault systemd status for diagnostics
+      ansible.builtin.command: "systemctl status {{ vault_service_name }} --no-pager -l"
+      register: vault_systemd_status
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family != 'Darwin'
+
+    - name: Collect Vault journal for diagnostics
+      ansible.builtin.command: "journalctl -u {{ vault_service_name }} -n 100 --no-pager"
+      register: vault_journal
+      changed_when: false
+      failed_when: false
+      when: ansible_os_family != 'Darwin'
+
+    - name: Show Vault diagnostics
+      ansible.builtin.debug:
+        msg: "{{ (vault_systemd_status.stdout_lines | default([])) + ['--- journal ---'] + (vault_journal.stdout_lines | default([])) }}"
+      when: ansible_os_family != 'Darwin'
+
+    - name: Re-raise original Vault startup failure
+      ansible.builtin.fail:
+        msg: "Vault failed to become healthy after {{ vault_health.attempts | default('?') }} attempts; see diagnostics above."
+  when:
+    - vault_deploy_mode in ["standalone", "external"]
+
+- name: Check if vault_init.json exists
+  ansible.builtin.stat:
+    path: "{{ vault_config_dir }}/vault_init.json"
+  register: vault_init_file
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+
+- name: Check Vault initialization status
+  ansible.builtin.command: vault operator init -status
+  environment:
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+  register: vault_init_status
+  failed_when: false
   changed_when: false
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+
+- name: Reset Vault tables if initialized without key file (lost keys)
+  become: true
+  become_user: postgres
+  ansible.builtin.shell: |
+    psql -d vault_storage -c "TRUNCATE TABLE vault_kv_store; TRUNCATE TABLE vault_ha_locks;"
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+    - vault_init_status.rc == 0
+    - not vault_init_file.stat.exists
+
+- name: Re-check Vault initialization status after reset
+  ansible.builtin.command: vault operator init -status
+  environment:
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+  register: vault_init_status_after_reset
+  failed_when: false
+  changed_when: false
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+    - vault_init_status.rc == 0
+    - not vault_init_file.stat.exists
+
+- name: Initialize Vault (first run)
+  ansible.builtin.command: vault operator init -key-shares=1 -key-threshold=1 -format=json
+  environment:
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+  register: vault_new_init
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+    - (vault_init_status_after_reset.rc | default(vault_init_status.rc)) == 2
+  no_log: true
+
+- name: Save Vault initialization keys to host
+  ansible.builtin.copy:
+    dest: "{{ vault_config_dir }}/vault_init.json"
+    content: "{{ vault_new_init.stdout }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+    - vault_new_init.stdout is defined
+  no_log: true
+
+- name: Load Vault unseal keys from file
+  ansible.builtin.slurp:
+    src: "{{ vault_config_dir }}/vault_init.json"
+  register: vault_init_slurp
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+
+- name: Check if Vault is sealed
+  ansible.builtin.command: vault status -format=json
+  environment:
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+  register: vault_status_json
+  failed_when: false
+  changed_when: false
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+
+- name: Unseal Vault
+  ansible.builtin.command: "vault operator unseal {{ ((vault_init_slurp.content | b64decode | from_json).unseal_keys_b64)[0] }}"
+  environment:
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+    - vault_init_slurp.content is defined
+    - (vault_status_json.stdout | default('{}') | from_json).sealed | default(true) | bool
+  no_log: true
+
+- name: Create unified root token alias in Vault
+  ansible.builtin.shell: |
+    export VAULT_TOKEN="{{ ((vault_init_slurp.content | b64decode | from_json).root_token) }}"
+    vault token create -id="{{ vault_server_root_access_token }}" -policy="root" -orphan || true
+  environment:
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+    PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH }}"
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+    - vault_init_slurp.content is defined
+    - vault_server_root_access_token | trim | length > 0
+  no_log: true
+
+
+- name: Ensure Vault KV v2 secrets engine is enabled
+  ansible.builtin.command: >-
+    bash -lc '
+    if ! vault secrets list -format=json | jq -e "has(\"kv/\")" >/dev/null; then
+      vault secrets enable -version=2 kv >/dev/null
+    fi'
+  environment:
+    PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH }}"
+    VAULT_ADDR: "{{ vault_admin_addr }}"
+    VAULT_TOKEN: "{{ vault_server_root_access_token }}"
+  changed_when: false
+  when:
+    - vault_deploy_mode in ["standalone", "external"]
 
 - name: Bootstrap Vault admin userpass auth
   ansible.builtin.script: >-
@@ -153,5 +369,5 @@
   no_log: true
   when:
     - not ansible_check_mode
-    - vault_deploy_mode == "standalone" or inventory_hostname in groups.get(group, [])
+    - vault_deploy_mode in ["standalone", "external"] or inventory_hostname in groups.get(group, [])
     - vault_admin_init_enabled | bool
