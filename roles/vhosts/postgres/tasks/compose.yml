@@ -10,6 +10,57 @@
     name: roles/vhosts/docker
   when: postgresql_docker_version.rc != 0
 
+- name: Inspect Docker daemon for PostgreSQL compose mode
+  ansible.builtin.command: docker info
+  register: postgresql_docker_info
+  changed_when: false
+  failed_when: false
+
+- name: Start Colima Docker daemon for PostgreSQL compose mode (macOS)
+  ansible.builtin.command: colima start
+  register: postgresql_colima_start
+  changed_when: >-
+    'already running' not in (postgresql_colima_start.stdout | default(''))
+    and 'already running' not in (postgresql_colima_start.stderr | default(''))
+  when:
+    - ansible_os_family == 'Darwin'
+    - postgresql_docker_info.rc != 0
+
+- name: Wait for Docker daemon after Colima start (macOS)
+  ansible.builtin.command: docker info
+  register: postgresql_docker_info_after_colima
+  changed_when: false
+  retries: 12
+  delay: 5
+  until: postgresql_docker_info_after_colima.rc == 0
+  when:
+    - ansible_os_family == 'Darwin'
+    - postgresql_docker_info.rc != 0
+
+- name: Detect Docker Compose v2 command
+  ansible.builtin.command: docker compose version
+  register: postgresql_docker_compose_v2
+  changed_when: false
+  failed_when: false
+
+- name: Detect standalone Docker Compose command
+  ansible.builtin.command: docker-compose version
+  register: postgresql_docker_compose_v1
+  changed_when: false
+  failed_when: false
+  when: postgresql_docker_compose_v2.rc != 0
+
+- name: Select available Docker Compose command
+  ansible.builtin.set_fact:
+    postgresql_compose_command: >-
+      {{ 'docker compose' if postgresql_docker_compose_v2.rc == 0 else 'docker-compose' }}
+
+- name: Assert Docker Compose is available
+  ansible.builtin.assert:
+    that:
+      - postgresql_docker_compose_v2.rc == 0 or (postgresql_docker_compose_v1.rc | default(1)) == 0
+    fail_msg: Docker Compose is required for postgresql_deploy_mode=compose.
+
 - name: Materialize PostgreSQL admin password
   ansible.builtin.assert:
     that:
@@ -37,8 +88,8 @@
   ansible.builtin.file:
     path: "{{ postgresql_compose_project_dir }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ ansible_user_id if ansible_os_family == 'Darwin' else 'root' }}"
+    group: "{{ 'staff' if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0755"
 
 # 数据目录归容器内 postgres uid（默认 999），而非 root：否则重跑时这个 file
@@ -48,15 +99,15 @@
   ansible.builtin.file:
     path: "{{ postgresql_data_dir }}"
     state: directory
-    owner: "{{ postgresql_container_uid }}"
-    group: "{{ postgresql_container_gid }}"
-    mode: "0700"
+    owner: "{{ ansible_user_id if ansible_os_family == 'Darwin' else postgresql_container_uid }}"
+    group: "{{ 'staff' if ansible_os_family == 'Darwin' else postgresql_container_gid }}"
+    mode: "{{ '0755' if ansible_os_family == 'Darwin' else '0700' }}"
 
 - name: Render PostgreSQL compose environment
   ansible.builtin.copy:
     dest: "{{ postgresql_compose_env_file }}"
-    owner: root
-    group: root
+    owner: "{{ ansible_user_id if ansible_os_family == 'Darwin' else 'root' }}"
+    group: "{{ 'staff' if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0600"
     content: |
       POSTGRES_DB={{ postgresql_database }}
@@ -68,19 +119,19 @@
   ansible.builtin.template:
     src: postgres-compose.yml.j2
     dest: "{{ postgresql_compose_file }}"
-    owner: root
-    group: root
+    owner: "{{ ansible_user_id if ansible_os_family == 'Darwin' else 'root' }}"
+    group: "{{ 'staff' if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0644"
 
 - name: Validate PostgreSQL compose file
   ansible.builtin.command:
-    cmd: "docker compose -f {{ postgresql_compose_file }} config --quiet"
+    cmd: "{{ postgresql_compose_command }} -f {{ postgresql_compose_file }} config --quiet"
     chdir: "{{ postgresql_compose_project_dir }}"
   changed_when: false
 
 - name: Start PostgreSQL compose service
   ansible.builtin.command:
-    cmd: "docker compose -f {{ postgresql_compose_file }} -p {{ postgresql_compose_project_name }} up -d --remove-orphans"
+    cmd: "{{ postgresql_compose_command }} -f {{ postgresql_compose_file }} -p {{ postgresql_compose_project_name }} up -d --remove-orphans"
     chdir: "{{ postgresql_compose_project_dir }}"
   register: postgresql_compose_up
   changed_when: >-
