@@ -130,15 +130,52 @@
   changed_when: false
 
 - name: Start PostgreSQL compose service
-  ansible.builtin.command:
-    cmd: "{{ postgresql_compose_command }} -f {{ postgresql_compose_file }} -p {{ postgresql_compose_project_name }} up -d --remove-orphans"
-    chdir: "{{ postgresql_compose_project_dir }}"
-  register: postgresql_compose_up
-  changed_when: >-
-    'Started' in (postgresql_compose_up.stdout | default('')) or
-    'Created' in (postgresql_compose_up.stdout | default('')) or
-    'Recreated' in (postgresql_compose_up.stdout | default('')) or
-    'Pulled' in (postgresql_compose_up.stdout | default(''))
+  block:
+    - name: Start PostgreSQL compose service
+      ansible.builtin.command:
+        cmd: "{{ postgresql_compose_command }} -f {{ postgresql_compose_file }} -p {{ postgresql_compose_project_name }} up -d --remove-orphans"
+        chdir: "{{ postgresql_compose_project_dir }}"
+      register: postgresql_compose_up
+      changed_when: >-
+        'Started' in (postgresql_compose_up.stdout | default('')) or
+        'Created' in (postgresql_compose_up.stdout | default('')) or
+        'Recreated' in (postgresql_compose_up.stdout | default('')) or
+        'Pulled' in (postgresql_compose_up.stdout | default(''))
+  rescue:
+    - name: Require a macOS Compose resource conflict for recovery
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == 'Darwin'
+          - postgresql_compose_up.stderr is search('network with name')
+          - postgresql_compose_up.stderr is search('container name')
+        fail_msg: >-
+          PostgreSQL Compose failed for a reason other than a stale macOS
+          container/network conflict; preserving the original failure.
+
+    # Colima can retain resources from an interrupted first compose run. The
+    # database data is a host bind mount, so this only removes stale metadata.
+    - name: Remove stale PostgreSQL container on macOS
+      ansible.builtin.command: "docker rm -f {{ postgresql_container_name }}"
+      register: postgresql_stale_container_removal
+      changed_when: postgresql_stale_container_removal.rc == 0
+      failed_when: false
+
+    - name: Remove stale PostgreSQL network on macOS
+      ansible.builtin.command: "docker network rm {{ postgresql_compose_project_name }}_default"
+      register: postgresql_stale_network_removal
+      changed_when: postgresql_stale_network_removal.rc == 0
+      failed_when: false
+
+    - name: Retry PostgreSQL compose service after macOS recovery
+      ansible.builtin.command:
+        cmd: "{{ postgresql_compose_command }} -f {{ postgresql_compose_file }} -p {{ postgresql_compose_project_name }} up -d --remove-orphans"
+        chdir: "{{ postgresql_compose_project_dir }}"
+      register: postgresql_compose_up
+      changed_when: >-
+        'Started' in (postgresql_compose_up.stdout | default('')) or
+        'Created' in (postgresql_compose_up.stdout | default('')) or
+        'Recreated' in (postgresql_compose_up.stdout | default('')) or
+        'Pulled' in (postgresql_compose_up.stdout | default(''))
 
 - name: Validate PostgreSQL compose service
   ansible.builtin.command:
