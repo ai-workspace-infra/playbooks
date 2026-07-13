@@ -12,3 +12,35 @@
     APT_LISTCHANGES_FRONTEND: none
   become: true
   when: ansible_os_family != 'Darwin'
+
+- name: Install Pandoc on macOS
+  ansible.builtin.command: >-
+    {{ '/opt/homebrew/bin/brew' if ansible_facts['architecture'] in ['arm64', 'aarch64'] else '/usr/local/bin/brew' }}
+    install pandoc
+  register: ai_agent_runtime_pandoc_install
+  changed_when: "'already installed' not in (ai_agent_runtime_pandoc_install.stdout | lower) and 'already installed' not in (ai_agent_runtime_pandoc_install.stderr | lower)"
+  failed_when: ai_agent_runtime_pandoc_install.rc != 0 and 'already installed' not in (ai_agent_runtime_pandoc_install.stdout | lower) and 'already installed' not in (ai_agent_runtime_pandoc_install.stderr | lower)
+  environment:
+    HOMEBREW_NO_AUTO_UPDATE: "1"
+    HOMEBREW_NO_INSTALL_CLEANUP: "1"
+  when: ansible_os_family == 'Darwin'
+
+- name: Install BasicTeX on macOS
+  ansible.builtin.command: >-
+    {{ '/opt/homebrew/bin/brew' if ansible_facts['architecture'] in ['arm64', 'aarch64'] else '/usr/local/bin/brew' }}
+    install --cask basictex
+  register: ai_agent_runtime_basictex_install
+  changed_when: "'already installed' not in (ai_agent_runtime_basictex_install.stdout | lower) and 'already installed' not in (ai_agent_runtime_basictex_install.stderr | lower)"
+  failed_when: ai_agent_runtime_basictex_install.rc != 0 and 'already installed' not in (ai_agent_runtime_basictex_install.stdout | lower) and 'already installed' not in (ai_agent_runtime_basictex_install.stderr | lower)
+  environment:
+    HOMEBREW_NO_AUTO_UPDATE: "1"
+    HOMEBREW_NO_INSTALL_CLEANUP: "1"
+  when: ansible_os_family == 'Darwin'
+
+- name: Add BasicTeX binaries to the macOS shell path
+  ansible.builtin.lineinfile:
+    path: "{{ ansible_env.HOME }}/.zshrc"
+    line: 'export PATH="/Library/TeX/texbin:$PATH"'
+    insertafter: EOF
+    create: true
+  when: ansible_os_family == 'Darwin'
