@@ -22,7 +22,7 @@
     state: present
     update_cache: true
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Skip local Vault install when using an existing Vault server
@@ -37,7 +37,7 @@
   changed_when: false
   failed_when: false
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Download standalone Vault release
@@ -47,7 +47,7 @@
     remote_src: true
     mode: "0755"
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
     - vault_binary_check.rc != 0 or (vault_binary_check.stdout | default('')) is not search(vault_version)
   become: true
@@ -63,7 +63,7 @@
     - "{{ vault_config_dir }}"
     - "{{ vault_data_dir }}"
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Create Vault production configuration file
@@ -85,7 +85,7 @@
       api_addr = "https://vault.svc.plus"
       ui = true
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Deploy standalone Vault systemd service
@@ -113,13 +113,13 @@
       WantedBy=multi-user.target
   no_log: true
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Flush pending handlers before starting Vault (ensures PostgreSQL restart completes)
   ansible.builtin.meta: flush_handlers
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Wait for PostgreSQL to be ready before starting Vault
@@ -130,7 +130,7 @@
     timeout: 60
     delay: 2
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 # Vault's "postgresql" storage backend does not create its own schema on
@@ -166,7 +166,7 @@
     SQL
   changed_when: true
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Start standalone Vault service
@@ -176,14 +176,14 @@
     state: restarted
     daemon_reload: true
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Import macOS specific Vault tasks
   ansible.builtin.import_tasks: macos.yml
   when:
     - ansible_os_family == 'Darwin'
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
 
 - name: Wait for standalone Vault API
   block:
@@ -234,7 +234,7 @@
     path: "{{ vault_config_dir }}/vault_init.json"
   register: vault_init_file
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Check Vault initialization status
@@ -245,7 +245,7 @@
   failed_when: false
   changed_when: false
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Reset Vault tables if initialized without key file (lost keys)
@@ -254,7 +254,7 @@
   ansible.builtin.shell: |
     psql -d vault_storage -c "TRUNCATE TABLE vault_kv_store; TRUNCATE TABLE vault_ha_locks;"
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
     - vault_init_status.rc == 0
     - not vault_init_file.stat.exists
@@ -267,7 +267,7 @@
   failed_when: false
   changed_when: false
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
     - vault_init_status.rc == 0
     - not vault_init_file.stat.exists
@@ -278,7 +278,7 @@
     VAULT_ADDR: "{{ vault_admin_addr }}"
   register: vault_new_init
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
     - (vault_init_status_after_reset.rc | default(vault_init_status.rc)) == 2
   no_log: true
@@ -291,7 +291,7 @@
     group: root
     mode: "0600"
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
     - vault_new_init.stdout is defined
   no_log: true
@@ -301,7 +301,7 @@
     src: "{{ vault_config_dir }}/vault_init.json"
   register: vault_init_slurp
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Check if Vault is sealed
@@ -312,7 +312,7 @@
   failed_when: false
   changed_when: false
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
 - name: Unseal Vault
@@ -320,7 +320,7 @@
   environment:
     VAULT_ADDR: "{{ vault_admin_addr }}"
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
     - vault_init_slurp.content is defined
     - (vault_status_json.stdout | default('{}') | from_json).sealed | default(true) | bool
@@ -334,7 +334,7 @@
     VAULT_ADDR: "{{ vault_admin_addr }}"
     PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH }}"
   when:
-    - vault_deploy_mode == "standalone"
+    - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
     - vault_init_slurp.content is defined
     - vault_server_root_access_token | trim | length > 0
