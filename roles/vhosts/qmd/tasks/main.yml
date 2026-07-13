@@ -316,6 +316,9 @@
   become: true
   become_user: "{{ qmd_user }}"
   register: qmd_status
+  retries: "{{ 12 if ansible_os_family == 'Darwin' else 1 }}"
+  delay: 2
+  until: qmd_status.rc == 0
   changed_when: false
   check_mode: false
 
