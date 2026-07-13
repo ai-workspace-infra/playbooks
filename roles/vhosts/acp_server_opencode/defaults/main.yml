@@ -7,13 +7,10 @@ acp_opencode_service_user: "{{ ansible_env.USER | default('ubuntu') if ansible_o
 acp_opencode_service_group: "{{ 'staff' if ansible_os_family == 'Darwin' else acp_opencode_service_user }}"
 acp_opencode_home: "{{ ansible_env.HOME if ansible_os_family == 'Darwin' else '/home/' + acp_opencode_service_user }}"
 acp_opencode_workdir: "{{ acp_opencode_home }}/.opencode"
-# PATH for the launchd/systemd service (mirrors gemini/codex). On macOS the
-# user-level npm global bin lives under ~/.local/bin; include Homebrew + system.
-acp_opencode_npm_global_bin: "{{ acp_opencode_home + '/.local/bin' if ansible_os_family == 'Darwin' else '/usr/bin' }}"
+# nodejs stores user-level global npm packages under ~/.local/lib/npm on macOS.
+acp_opencode_npm_global_bin: "{{ acp_opencode_home + '/.local/lib/npm/bin' if ansible_os_family == 'Darwin' else '/usr/bin' }}"
 acp_opencode_path: "{{ acp_opencode_npm_global_bin }}:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin"
-# OpenCode CLI binary the adapter spawns lazily (mirrors gemini/codex which use
-# {{ acp_X_npm_global_bin }}/<cli>). Was hardcoded to /usr/bin/opencode in the
-# unit template; use the resolved npm global bin so macOS (~/.local/bin) works too.
+# OpenCode CLI binary the adapter spawns lazily.
 acp_opencode_binary_path: "{{ acp_opencode_npm_global_bin }}/opencode"
 acp_opencode_listen_host: 127.0.0.1
 acp_opencode_listen_port: 38992
