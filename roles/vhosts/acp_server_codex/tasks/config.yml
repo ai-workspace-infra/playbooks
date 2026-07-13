@@ -73,7 +73,7 @@
     mode: "0755"
     owner: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
     group: "{{ omit if ansible_os_family == 'Darwin' else 'root' }}"
-  become: true
+  become: "{{ ansible_os_family != 'Darwin' }}"
   when: not (acp_codex_bridge_use_prebuilt | bool)
 
 - name: Restore immutable flag on Codex bridge binary
