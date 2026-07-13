@@ -37,6 +37,30 @@
     - ansible_os_family == 'Darwin'
     - postgresql_docker_info.rc != 0
 
+- name: Detect Docker Compose v2 command
+  ansible.builtin.command: docker compose version
+  register: postgresql_docker_compose_v2
+  changed_when: false
+  failed_when: false
+
+- name: Detect standalone Docker Compose command
+  ansible.builtin.command: docker-compose version
+  register: postgresql_docker_compose_v1
+  changed_when: false
+  failed_when: false
+  when: postgresql_docker_compose_v2.rc != 0
+
+- name: Select available Docker Compose command
+  ansible.builtin.set_fact:
+    postgresql_compose_command: >-
+      {{ 'docker compose' if postgresql_docker_compose_v2.rc == 0 else 'docker-compose' }}
+
+- name: Assert Docker Compose is available
+  ansible.builtin.assert:
+    that:
+      - postgresql_docker_compose_v2.rc == 0 or (postgresql_docker_compose_v1.rc | default(1)) == 0
+    fail_msg: Docker Compose is required for postgresql_deploy_mode=compose.
+
 - name: Materialize PostgreSQL admin password
   ansible.builtin.assert:
     that:
@@ -101,13 +125,13 @@
 
 - name: Validate PostgreSQL compose file
   ansible.builtin.command:
-    cmd: "docker compose -f {{ postgresql_compose_file }} config --quiet"
+    cmd: "{{ postgresql_compose_command }} -f {{ postgresql_compose_file }} config --quiet"
     chdir: "{{ postgresql_compose_project_dir }}"
   changed_when: false
 
 - name: Start PostgreSQL compose service
   ansible.builtin.command:
-    cmd: "docker compose -f {{ postgresql_compose_file }} -p {{ postgresql_compose_project_name }} up -d --remove-orphans"
+    cmd: "{{ postgresql_compose_command }} -f {{ postgresql_compose_file }} -p {{ postgresql_compose_project_name }} up -d --remove-orphans"
     chdir: "{{ postgresql_compose_project_dir }}"
   register: postgresql_compose_up
   changed_when: >-
