@@ -11,4 +11,49 @@
     DEBIAN_FRONTEND: noninteractive
     APT_LISTCHANGES_FRONTEND: none
   become: true
-  when: ansible_os_family != 'Darwin'
+  when:
+    - ansible_os_family == 'Debian'
+    - ai_agent_runtime_docs_enabled | bool
+
+- name: Install TeX Live packages on Debian
+  ansible.builtin.apt:
+    name: "{{ ai_agent_runtime_texlive_packages }}"
+    state: present
+    update_cache: true
+    install_recommends: false
+    lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(900) | int }}"
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+  when:
+    - ansible_os_family == 'Debian'
+    - ai_agent_runtime_texlive_enabled | bool
+
+- name: Install Pandoc on macOS
+  ansible.builtin.command: >-
+    {{ '/opt/homebrew/bin/brew' if ansible_facts['architecture'] in ['arm64', 'aarch64'] else '/usr/local/bin/brew' }}
+    install pandoc
+  register: ai_agent_runtime_pandoc_install
+  changed_when: "'already installed' not in (ai_agent_runtime_pandoc_install.stdout | lower) and 'already installed' not in (ai_agent_runtime_pandoc_install.stderr | lower)"
+  failed_when: ai_agent_runtime_pandoc_install.rc != 0 and 'already installed' not in (ai_agent_runtime_pandoc_install.stdout | lower) and 'already installed' not in (ai_agent_runtime_pandoc_install.stderr | lower)
+  environment:
+    HOMEBREW_NO_AUTO_UPDATE: "1"
+    HOMEBREW_NO_INSTALL_CLEANUP: "1"
+  when:
+    - ansible_os_family == 'Darwin'
+    - ai_agent_runtime_docs_enabled | bool
+
+- name: Install TeX Live on macOS
+  ansible.builtin.command: >-
+    {{ '/opt/homebrew/bin/brew' if ansible_facts['architecture'] in ['arm64', 'aarch64'] else '/usr/local/bin/brew' }}
+    install texlive
+  register: ai_agent_runtime_texlive_install
+  changed_when: "'already installed' not in (ai_agent_runtime_texlive_install.stdout | lower) and 'already installed' not in (ai_agent_runtime_texlive_install.stderr | lower)"
+  failed_when: ai_agent_runtime_texlive_install.rc != 0 and 'already installed' not in (ai_agent_runtime_texlive_install.stdout | lower) and 'already installed' not in (ai_agent_runtime_texlive_install.stderr | lower)
+  environment:
+    HOMEBREW_NO_AUTO_UPDATE: "1"
+    HOMEBREW_NO_INSTALL_CLEANUP: "1"
+  when:
+    - ansible_os_family == 'Darwin'
+    - ai_agent_runtime_texlive_enabled | bool
