@@ -122,7 +122,7 @@ postgresql_database_url: >-
 
 ### 6.1 配置 Vault Policy
 
-Vault 管理员需要更新 `github-actions-site-migration-toolkit` 策略，以授予其写入 `kv/data/+/databases` 和 `kv/data/+/agent-proxy` 等按需生成的动态环境路径的权限：
+Vault 管理员需要更新 `github-actions-platform-ops-toolkit-sit/uat/prod` 独立策略，以授予其写入 `kv/data/+/databases` 和 `kv/data/+/agent-proxy` 等按需生成的动态环境路径的权限：
 
 ```hcl
 # 共享 CICD 键
@@ -161,20 +161,20 @@ path "kv/metadata/+/agent-proxy" {
 
 ### 6.2 配置 JWT Role
 
-Role 应绑定上述 Policy，并只信任本仓库的 Action：
+Role 应绑定上述 Policy，并只信任本仓库的 Action。注意，此时需为不同的环境（如 `uat`）创建单独的 Role：
 
 ```bash
-vault write auth/jwt/role/github-actions-site-migration-toolkit - <<'EOF'
+vault write auth/jwt/role/github-actions-platform-ops-toolkit-uat - <<'EOF'
 {
   "role_type": "jwt",
   "user_claim": "repository",
   "bound_audiences": ["vault"],
   "bound_claims_type": "glob",
   "bound_claims": {
-    "repository": "ai-workspace-infra/site-migration-toolkit",
-    "sub": "repo:ai-workspace-infra/site-migration-toolkit:*"
+    "repository": "ai-workspace-infra/platform-ops-toolkit",
+    "sub": "repo:ai-workspace-infra/platform-ops-toolkit:ref:refs/heads/main"
   },
-  "token_policies": ["github-actions-site-migration-toolkit"],
+  "token_policies": ["github-actions-platform-ops-toolkit-uat"],
   "token_ttl": "20m",
   "token_max_ttl": "30m"
 }
