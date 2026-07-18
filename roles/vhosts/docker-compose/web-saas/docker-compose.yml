@@ -1,0 +1,151 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17}
+    container_name: web-saas-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "PGPASSWORD=$${POSTGRES_PASSWORD} psql -qAt -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-postgres} -h 127.0.0.1 -c 'SELECT 1' | grep -qx 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - web_saas_network
+
+  stunnel-server:
+    image: ${STUNNEL_SERVER_IMAGE:-ghcr.io/x-evor/stunnel-server:2330d36}
+    container_name: web-saas-stunnel-server
+    user: root
+    restart: unless-stopped
+    ports:
+      - "${STUNNEL_ACCEPT_PORT:-15432}:15432"
+    volumes:
+      - ./config/stunnel-server.conf:/etc/stunnel/stunnel.conf:ro
+      - ./certs/server-cert.pem:/etc/stunnel/certs/server-cert.pem:ro
+      - ./certs/server-key.pem:/etc/stunnel/certs/server-key.pem:ro
+    networks:
+      - web_saas_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  stunnel-client:
+    image: ${STUNNEL_CLIENT_IMAGE:-ghcr.io/x-evor/stunnel-client:latest}
+    container_name: web-saas-stunnel-client
+    restart: unless-stopped
+    environment:
+      STUNNEL_SERVICE: "postgres"
+      STUNNEL_ACCEPT: "5432"
+      STUNNEL_CONNECT: "stunnel-server:15432"
+      STUNNEL_CRONTAB: ""
+    volumes:
+      - ./config/stunnel-client.conf:/etc/stunnel/stunnel.conf:ro
+      - ./certs/ca-cert.pem:/etc/stunnel/certs/ca-cert.pem:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pidof stunnel >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - web_saas_network
+    depends_on:
+      - stunnel-server
+
+  accounts:
+    image: ${ACCOUNTS_IMAGE:-ghcr.io/x-evor/accounts:70c6a3f8}
+    container_name: web-saas-accounts
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: "18081"
+      DATABASE_URL: ${ACCOUNTS_DATABASE_URL:-postgres://postgres:${POSTGRES_PASSWORD}@stunnel-client:5432/account?sslmode=disable}
+    volumes:
+      - ./config/account.yaml:/etc/xcontrol/account.template.yaml:ro
+    networks:
+      - web_saas_network
+    depends_on:
+      stunnel-client:
+        condition: service_healthy
+
+  billing:
+    image: ${BILLING_IMAGE:-ghcr.io/ai-workspace-services/billing-service:latest}
+    container_name: web-saas-billing
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      BILLING_SERVICE_LISTEN_ADDR: "0.0.0.0:8081"
+      DATABASE_URL: ${BILLING_DATABASE_URL:-postgres://svcplus_vps:${BILLING_DB_PASSWORD}@stunnel-client:5432/account?sslmode=disable}
+    networks:
+      - web_saas_network
+    depends_on:
+      stunnel-client:
+        condition: service_healthy
+
+  console-assets:
+    image: ${CONSOLE_IMAGE:-ghcr.io/ai-workspace-services/console:latest}
+    container_name: web-saas-console-assets
+    restart: "no"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        rm -rf /assets/_next /assets/chunks /assets/public
+        mkdir -p /assets /assets/public
+        cp -R /app/dashboard/static/. /assets/ || true
+        cp -R /app/dashboard/public/. /assets/public || true
+    volumes:
+      - console_static:/assets
+
+  console:
+    image: ${CONSOLE_IMAGE:-ghcr.io/ai-workspace-services/console:latest}
+    container_name: web-saas-console
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+    volumes:
+      - console_static:/app/dashboard/.next/static:ro
+    networks:
+      - web_saas_network
+    depends_on:
+      - console-assets
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: web-saas-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - web_saas_network
+    depends_on:
+      - accounts
+      - billing
+      - console
+
+networks:
+  web_saas_network:
+    name: cn-toolkit-shared
+    driver: bridge
+
+volumes:
+  postgres_data:
+  console_static:
+  caddy_data:
+  caddy_config:
