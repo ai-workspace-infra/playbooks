@@ -1,0 +1,89 @@
+services:
+  gitea:
+    image: ${GITEA_IMAGE:-gitea/gitea:1.22}
+    container_name: infra-gitea
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+    volumes:
+      - gitea_data:/data
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:2222:22"
+    networks:
+      - infra_network
+
+  zitadel:
+    image: ${ZITADEL_IMAGE:-ghcr.io/zitadel/zitadel:latest}
+    container_name: infra-zitadel
+    restart: unless-stopped
+    command: ["start-from-init", "--masterkey", "${ZITADEL_MASTERKEY}"]
+    env_file:
+      - .env
+    volumes:
+      - zitadel_data:/machinekey
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - infra_network
+
+  victoriametrics:
+    image: ${VM_IMAGE:-victoriametrics/victoria-metrics:v1.101.0}
+    container_name: infra-victoriametrics
+    restart: unless-stopped
+    command:
+      - "-storageDataPath=/storage"
+      - "-retentionPeriod=1y"
+    volumes:
+      - vm_data:/storage
+    ports:
+      - "127.0.0.1:8428:8428"
+    networks:
+      - infra_network
+
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:11.1.0}
+    container_name: infra-grafana
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    networks:
+      - infra_network
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: infra-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - infra_network
+    depends_on:
+      - gitea
+      - zitadel
+      - grafana
+
+networks:
+  infra_network:
+    name: cn-toolkit-shared
+    driver: bridge
+
+volumes:
+  gitea_data:
+  zitadel_data:
+  vm_data:
+  grafana_data:
+  caddy_data:
+  caddy_config:

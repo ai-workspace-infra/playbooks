@@ -1,0 +1,119 @@
+services:
+  xworkspace-console:
+    image: ${XWORKSPACE_CONSOLE_IMAGE:-ghcr.io/ai-workspace/xworkspace-console:latest}
+    container_name: ai-workspace-console
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - ai_workspace_network
+
+  xworkmate-bridge:
+    image: ${XWORKMATE_BRIDGE_IMAGE:-ghcr.io/ai-workspace/xworkmate-bridge:latest}
+    container_name: ai-workspace-bridge
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - ai_workspace_network
+
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17}
+    container_name: ai-workspace-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - ai_workspace_network
+
+  vault:
+    image: ${VAULT_IMAGE:-hashicorp/vault:latest}
+    container_name: ai-workspace-vault
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    env_file:
+      - .env
+    environment:
+      VAULT_ADDR: "http://127.0.0.1:8200"
+      VAULT_API_ADDR: "http://127.0.0.1:8200"
+    volumes:
+      - vault_data:/vault/file
+      - ./config/vault.json:/vault/config/vault.json
+    command: server -config=/vault/config/vault.json
+    ports:
+      - "127.0.0.1:8200:8200"
+    networks:
+      - ai_workspace_network
+
+  litellm:
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:main-latest}
+    container_name: ai-workspace-litellm
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./config/litellm_config.yaml:/app/config.yaml
+    command: [ "--config", "/app/config.yaml" ]
+    ports:
+      - "127.0.0.1:4000:4000"
+    networks:
+      - ai_workspace_network
+
+  qmd:
+    image: ${QMD_IMAGE:-ghcr.io/ai-workspace/qmd:latest}
+    container_name: ai-workspace-qmd
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - ai_workspace_network
+
+  x-memory-hub:
+    image: ${X_MEMORY_HUB_IMAGE:-ghcr.io/ai-workspace/x-memory-hub:latest}
+    container_name: ai-workspace-x-memory-hub
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8001:8001"
+    networks:
+      - ai_workspace_network
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: ai-workspace-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - ai_workspace_network
+    depends_on:
+      - xworkspace-console
+      - xworkmate-bridge
+
+networks:
+  ai_workspace_network:
+    name: cn-toolkit-shared
+    driver: bridge
+
+volumes:
+  postgres_data:
+  vault_data:
+  caddy_data:
+  caddy_config:
