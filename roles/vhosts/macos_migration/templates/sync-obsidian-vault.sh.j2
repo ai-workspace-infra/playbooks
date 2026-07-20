@@ -1,0 +1,70 @@
+#!/bin/bash
+set -euo pipefail
+
+state_dir="{{ macos_migration_google_drive_state_dir }}"
+marker="{{ macos_migration_google_drive_initial_sync_marker }}"
+workdir="{{ macos_migration_google_drive_bisync_workdir }}"
+lock_dir="${state_dir}/sync.lock"
+
+# Do not let a slow scheduled run race a manual invocation.
+if ! mkdir "${lock_dir}" 2>/dev/null; then
+  exit 0
+fi
+trap 'rmdir "${lock_dir}"' EXIT
+
+copy_args=(
+  --create-empty-src-dirs
+  --transfers "{{ macos_migration_google_drive_transfers }}"
+  --checkers "{{ macos_migration_google_drive_checkers }}"
+  --stats "{{ macos_migration_google_drive_progress_interval }}"
+  --stats-one-line
+  --stats-log-level NOTICE
+{% for pattern in macos_migration_google_drive_excludes %}
+  --exclude '{{ pattern }}'
+{% endfor %}
+  --log-file "{{ macos_migration_google_drive_log_path }}"
+  --log-level INFO
+)
+
+# A manually invoked script owns a terminal, so rclone can render its native
+# progress view. The LaunchAgent and Ansible async task have no TTY; they use
+# the 5-second one-line stats written to rclone.log instead.
+if [ -t 1 ] && [ -t 2 ]; then
+  copy_args+=(--progress)
+fi
+
+case "{{ macos_migration_google_drive_sync_mode }}" in
+  push)
+    "{{ macos_migration_google_drive_rclone_binary }}" copy \
+      "{{ macos_migration_google_drive_source }}" \
+      "{{ macos_migration_google_drive_destination }}" "${copy_args[@]}"
+    ;;
+  pull)
+    "{{ macos_migration_google_drive_rclone_binary }}" copy \
+      "{{ macos_migration_google_drive_destination }}" \
+      "{{ macos_migration_google_drive_source }}" "${copy_args[@]}"
+    ;;
+  bidirectional)
+    mkdir -p "${workdir}"
+    bisync_args=(
+      bisync
+      "{{ macos_migration_google_drive_source }}"
+      "{{ macos_migration_google_drive_destination }}"
+      --workdir "${workdir}"
+      --check-access
+      --resilient
+      --recover
+      --conflict-resolve newer
+      "${copy_args[@]}"
+    )
+
+    # rclone bisync requires an initial resync before it has state listings.
+    # `--resync` defaults to path1, seeding Drive from this Mac once only.
+    if [ ! -f "${marker}" ]; then
+      "{{ macos_migration_google_drive_rclone_binary }}" "${bisync_args[@]}" --resync
+      touch "${marker}"
+    else
+      "{{ macos_migration_google_drive_rclone_binary }}" "${bisync_args[@]}"
+    fi
+    ;;
+esac

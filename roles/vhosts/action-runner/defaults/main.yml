@@ -5,10 +5,14 @@ runner_labels: "self-hosted,ubuntu,iac-runner"
 
 # GitHub
 github_org_repo: ""
-github_runner_token: ""
 github_runner_version: "2.321.0"
 
 # Gitea
 gitea_instance_url: "https://gitea.svc.plus"
-gitea_runner_token: ""
 gitea_runner_version: "0.2.10"
+
+# Vault Configuration
+vault_env_path: "{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}"
+vault_deploy_mode: "{{ lookup('env', 'VAULT_DEPLOY_MODE') | default('standalone', true) }}"
+vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default(('http://127.0.0.1:8200' if vault_deploy_mode != 'external' else 'https://vault.svc.plus'), true) }}"
+vault_token: "{{ lookup('env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('env', 'VAULT_TOKEN') | default('', true), true) }}"
