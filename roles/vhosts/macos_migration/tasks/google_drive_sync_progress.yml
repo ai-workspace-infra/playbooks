@@ -1,0 +1,35 @@
+---
+# This task file includes itself while the rclone async job is running.  Each
+# iteration deliberately emits the latest rclone stats line before checking
+# completion, so normal Ansible output shows useful transfer progress.
+- name: Wait for next Google Drive sync progress update
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: Read latest Google Drive sync progress
+  ansible.builtin.shell: >-
+    if [ -f {{ macos_migration_google_drive_log_path | quote }} ]; then
+      tail -n 1 {{ macos_migration_google_drive_log_path | quote }};
+    fi
+  args:
+    executable: /bin/bash
+  changed_when: false
+  register: macos_migration_google_drive_progress_line
+
+- name: Show latest Google Drive sync progress
+  ansible.builtin.debug:
+    msg: >-
+      {{ macos_migration_google_drive_progress_line.stdout | default('')
+         | trim | default('Waiting for rclone to start...', true) }}
+
+- name: Check Google Drive sync completion
+  ansible.builtin.async_status:
+    jid: "{{ macos_migration_google_drive_sync_job_id }}"
+  register: macos_migration_google_drive_sync_status
+  changed_when: false
+
+- name: Continue showing Google Drive sync progress
+  ansible.builtin.include_tasks: google_drive_sync_progress.yml
+  vars:
+    macos_migration_google_drive_sync_job_id: "{{ macos_migration_google_drive_sync_job_id }}"
+  when: not (macos_migration_google_drive_sync_status.finished | default(false) | bool)

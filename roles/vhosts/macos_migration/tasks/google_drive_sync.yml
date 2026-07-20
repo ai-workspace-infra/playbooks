@@ -1,0 +1,121 @@
+---
+- name: Import Darwin assertion
+  ansible.builtin.import_tasks: assert_darwin.yml
+
+- name: Assert Obsidian Vault source exists
+  ansible.builtin.stat:
+    path: "{{ macos_migration_google_drive_source }}"
+  register: macos_migration_google_drive_source_stat
+
+- name: Require an existing Obsidian Vault source
+  ansible.builtin.assert:
+    that:
+      - macos_migration_google_drive_source_stat.stat.isdir | default(false)
+    fail_msg: >-
+      Obsidian Vault source does not exist: {{ macos_migration_google_drive_source }}.
+      Override macos_migration_google_drive_source if the Vault is elsewhere.
+
+- name: Assert rclone is installed
+  ansible.builtin.stat:
+    path: "{{ macos_migration_google_drive_rclone_binary }}"
+  register: macos_migration_google_drive_rclone_stat
+
+- name: Require rclone executable
+  ansible.builtin.assert:
+    that:
+      - macos_migration_google_drive_rclone_stat.stat.exists | default(false)
+      - macos_migration_google_drive_rclone_stat.stat.executable | default(false)
+    fail_msg: >-
+      rclone was not found at {{ macos_migration_google_drive_rclone_binary }}.
+      Install/configure rclone first, or override macos_migration_google_drive_rclone_binary.
+
+- name: Read configured rclone remotes
+  ansible.builtin.command:
+    cmd: "{{ macos_migration_google_drive_rclone_binary }} listremotes"
+  changed_when: false
+  check_mode: false
+  register: macos_migration_google_drive_remotes
+
+- name: Require configured Google Drive rclone remote
+  ansible.builtin.assert:
+    that:
+      - macos_migration_google_drive_remote in macos_migration_google_drive_remotes.stdout_lines
+    fail_msg: >-
+      rclone remote {{ macos_migration_google_drive_remote }} is not configured for this user.
+      Complete `rclone config` locally; do not put OAuth credentials in Ansible variables.
+
+- name: Require a supported Google Drive sync mode
+  ansible.builtin.assert:
+    that:
+      - macos_migration_google_drive_sync_mode in ['push', 'pull', 'bidirectional']
+    fail_msg: >-
+      macos_migration_google_drive_sync_mode must be push, pull, or bidirectional;
+      received {{ macos_migration_google_drive_sync_mode }}.
+
+- name: Ensure Google Drive sync state directory exists
+  ansible.builtin.file:
+    path: "{{ macos_migration_google_drive_state_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Check whether the initial bidirectional sync completed
+  ansible.builtin.stat:
+    path: "{{ macos_migration_google_drive_initial_sync_marker }}"
+  register: macos_migration_google_drive_initial_sync_marker_stat
+
+- name: Install Obsidian Vault Google Drive sync script
+  ansible.builtin.template:
+    src: sync-obsidian-vault.sh.j2
+    dest: "{{ macos_migration_google_drive_script_path }}"
+    mode: "0700"
+
+- name: Start Obsidian Vault Google Drive sync asynchronously
+  ansible.builtin.command:
+    cmd: "{{ macos_migration_google_drive_script_path }}"
+  async: "{{ macos_migration_google_drive_async_timeout }}"
+  poll: 0
+  register: macos_migration_google_drive_sync_job
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Show Obsidian Vault Google Drive sync progress
+  ansible.builtin.include_tasks: google_drive_sync_progress.yml
+  vars:
+    macos_migration_google_drive_sync_job_id: "{{ macos_migration_google_drive_sync_job.ansible_job_id }}"
+  when: not ansible_check_mode
+
+- name: Confirm initial bidirectional sync state
+  ansible.builtin.stat:
+    path: "{{ macos_migration_google_drive_initial_sync_marker }}"
+  register: macos_migration_google_drive_initial_sync_marker_after
+
+- name: Install Obsidian Vault Google Drive LaunchAgent
+  ansible.builtin.template:
+    src: obsidian-google-drive-sync.plist.j2
+    dest: "{{ macos_migration_google_drive_launch_agent_path }}"
+    mode: "0644"
+  when: macos_migration_google_drive_schedule_enabled | bool
+
+- name: Load Obsidian Vault Google Drive LaunchAgent
+  ansible.builtin.command:
+    cmd: "launchctl load -w {{ macos_migration_google_drive_launch_agent_path }}"
+  register: macos_migration_google_drive_launchctl
+  changed_when: false
+  failed_when: >-
+    macos_migration_google_drive_launchctl.rc != 0 and
+    'already loaded' not in macos_migration_google_drive_launchctl.stderr
+  when: macos_migration_google_drive_schedule_enabled | bool
+
+- name: Show Google Drive sync summary
+  ansible.builtin.debug:
+    msg:
+      - "Synced: {{ macos_migration_google_drive_source }}"
+      - "Mode: {{ macos_migration_google_drive_sync_mode }}"
+      - "Google Drive destination: {{ macos_migration_google_drive_destination }}"
+      - >-
+        Initial local-to-Drive bidirectional seed completed:
+        {{ macos_migration_google_drive_initial_sync_marker_after.stat.exists | default(false) }}
+        (only applicable to bidirectional mode)
+      - >-
+        Scheduled every {{ macos_migration_google_drive_schedule_seconds }} seconds:
+        {{ macos_migration_google_drive_schedule_enabled | bool }}

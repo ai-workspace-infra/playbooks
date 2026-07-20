@@ -4,3 +4,13 @@
     name: act_runner
     state: restarted
     daemon_reload: yes
+- name: restart github_runner
+  ansible.builtin.systemd:
+    name: github-runner
+    state: restarted
+    daemon_reload: yes
+    scope: user
+  become: yes
+  become_user: runner
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ runner_uid.stdout | default('1000') }}"

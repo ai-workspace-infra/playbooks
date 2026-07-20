@@ -31,6 +31,29 @@
         owner: runner
         group: runner
 
+    - name: Fetch Action Runner token from Vault
+      community.hashi_vault.vault_kv2_get:
+        url: "{{ vault_addr }}"
+        auth_method: token
+        token: "{{ vault_token }}"
+        path: "kv/data/{{ vault_env_path }}/action-runner"
+        engine_mount_point: "kv"
+      register: vault_action_runner_secret
+      failed_when: false
+      when: vault_token | length > 0
+      delegate_to: localhost
+      run_once: true
+
+    - name: Set Runner Token Fact
+      ansible.builtin.set_fact:
+        resolved_runner_token: "{{ lookup('env', 'GITHUB_RUNNER_TOKEN') | default(vault_action_runner_secret.secret.TOKEN | default('', true), true) }}"
+      no_log: true
+
+    - name: Fail if Runner Token is not available
+      ansible.builtin.fail:
+        msg: "GitHub Runner token is required but not found in env or Vault."
+      when: resolved_runner_token | length == 0
+
     - name: Check if already configured
       ansible.builtin.stat:
         path: /home/runner/actions-runner/.runner
@@ -39,7 +62,7 @@
     - name: Configure GitHub runner
       ansible.builtin.command: >
         ./config.sh --url https://github.com/{{ github_org_repo }}
-        --token {{ github_runner_token }}
+        --token {{ resolved_runner_token }}
         --name {{ runner_name }}
         --labels {{ runner_labels }}
         --unattended
@@ -49,22 +72,47 @@
       become_user: runner
       when: not github_runner_config.stat.exists
 
-    - name: Check if service is installed
-      ansible.builtin.stat:
-        path: /etc/systemd/system/actions.runner.*
-      register: github_runner_svc
+    - name: Get runner UID
+      ansible.builtin.command: id -u runner
+      register: runner_uid
+      changed_when: false
 
-    - name: Install GitHub runner service
-      ansible.builtin.command: ./svc.sh install runner
-      args:
-        chdir: /home/runner/actions-runner
-      when: not github_runner_config.stat.exists
+    - name: Enable systemd lingering for runner user
+      ansible.builtin.command: loginctl enable-linger runner
+      become: yes
 
-    - name: Start GitHub runner service
-      ansible.builtin.command: ./svc.sh start
-      args:
-        chdir: /home/runner/actions-runner
-      when: not github_runner_config.stat.exists
+    - name: Ensure systemd user directory exists
+      ansible.builtin.file:
+        path: /home/runner/.config/systemd/user
+        state: directory
+        owner: runner
+        group: runner
+        mode: '0755'
+      become: yes
+      become_user: runner
+
+    - name: Create GitHub runner user service
+      ansible.builtin.template:
+        src: github-runner.service.j2
+        dest: /home/runner/.config/systemd/user/github-runner.service
+        owner: runner
+        group: runner
+        mode: '0644'
+      become: yes
+      become_user: runner
+      notify: restart github_runner
+
+    - name: Enable and start GitHub runner service (Rootless)
+      ansible.builtin.systemd:
+        name: github-runner
+        state: started
+        enabled: yes
+        daemon_reload: yes
+        scope: user
+      become: yes
+      become_user: runner
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ runner_uid.stdout }}"
   when: runner_engine == 'github'
 
 - name: Setup Gitea act_runner
