@@ -1,0 +1,114 @@
+---
+- name: Ensure docker group exists
+  ansible.builtin.group:
+    name: docker
+    state: present
+
+- name: Create runner user
+  ansible.builtin.user:
+    name: runner
+    state: present
+    create_home: yes
+    groups: docker
+    append: yes
+  when: runner_engine == 'github'
+
+- name: Setup GitHub Actions Runner
+  block:
+    - name: Create runner directory
+      ansible.builtin.file:
+        path: /home/runner/actions-runner
+        state: directory
+        owner: runner
+        group: runner
+        mode: '0755'
+
+    - name: Download GitHub runner
+      ansible.builtin.unarchive:
+        src: "https://github.com/actions/runner/releases/download/v{{ github_runner_version }}/actions-runner-linux-x64-{{ github_runner_version }}.tar.gz"
+        dest: /home/runner/actions-runner
+        remote_src: yes
+        owner: runner
+        group: runner
+
+    - name: Check if already configured
+      ansible.builtin.stat:
+        path: /home/runner/actions-runner/.runner
+      register: github_runner_config
+
+    - name: Configure GitHub runner
+      ansible.builtin.command: >
+        ./config.sh --url https://github.com/{{ github_org_repo }}
+        --token {{ github_runner_token }}
+        --name {{ runner_name }}
+        --labels {{ runner_labels }}
+        --unattended
+      args:
+        chdir: /home/runner/actions-runner
+      become: yes
+      become_user: runner
+      when: not github_runner_config.stat.exists
+
+    - name: Check if service is installed
+      ansible.builtin.stat:
+        path: /etc/systemd/system/actions.runner.*
+      register: github_runner_svc
+
+    - name: Install GitHub runner service
+      ansible.builtin.command: ./svc.sh install runner
+      args:
+        chdir: /home/runner/actions-runner
+      when: not github_runner_config.stat.exists
+
+    - name: Start GitHub runner service
+      ansible.builtin.command: ./svc.sh start
+      args:
+        chdir: /home/runner/actions-runner
+      when: not github_runner_config.stat.exists
+  when: runner_engine == 'github'
+
+- name: Setup Gitea act_runner
+  block:
+    - name: Download Gitea act_runner
+      ansible.builtin.get_url:
+        url: "https://dl.gitea.com/act_runner/{{ gitea_runner_version }}/act_runner-{{ gitea_runner_version }}-linux-amd64"
+        dest: /usr/local/bin/act_runner
+        mode: '0755'
+
+    - name: Create working directory
+      ansible.builtin.file:
+        path: /opt/act_runner
+        state: directory
+        mode: '0755'
+
+    - name: Check if already registered
+      ansible.builtin.stat:
+        path: /opt/act_runner/.runner
+      register: gitea_runner_config
+
+    - name: Register Gitea runner
+      ansible.builtin.command: >
+        act_runner register
+        --instance {{ gitea_instance_url }}
+        --token {{ gitea_runner_token }}
+        --name {{ runner_name }}
+        --labels {{ runner_labels }}
+        --no-interactive
+      args:
+        chdir: /opt/act_runner
+      when: not gitea_runner_config.stat.exists
+
+    - name: Create act_runner systemd service
+      ansible.builtin.template:
+        src: act_runner.service.j2
+        dest: /etc/systemd/system/act_runner.service
+        mode: '0644'
+      notify: restart act_runner
+
+    - name: Enable and start act_runner service
+      ansible.builtin.systemd:
+        name: act_runner
+        state: started
+        enabled: yes
+        daemon_reload: yes
+  when: runner_engine == 'gitea'
