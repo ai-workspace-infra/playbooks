@@ -139,12 +139,57 @@
 # its listener at all (connection refused, no journal-visible reason
 # beyond a fast exit). vault_storage owns this database (created in
 # create_databases_and_users.yml), so it has full DDL rights over it.
+- name: Detect whether PostgreSQL runs on the host or in a container
+  # web-saas 单机部署里 PostgreSQL 跑在容器中, 宿主机没有 postgres 这个 OS
+  # 用户, 直接 become_user: postgres 会以 "sudo: unknown user postgres" 失败。
+  # 这里解析出一个统一的 psql 前缀, 两种拓扑都能用。
+  become: true
+  ansible.builtin.shell: |
+    set -o pipefail
+    if command -v docker >/dev/null 2>&1 \
+       && docker ps --format '{{ "{{" }}.Names{{ "}}" }}' | grep -qx '{{ vault_postgres_container_name }}'; then
+      echo container
+    elif id -u postgres >/dev/null 2>&1; then
+      echo host
+    else
+      echo none
+    fi
+  args:
+    executable: /bin/bash
+  register: vault_postgres_topology
+  changed_when: false
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+
+- name: Fail when no reachable PostgreSQL was found for Vault storage
+  # 不要静默跳过: storage schema 没建起来, Vault 起来也是坏的。
+  ansible.builtin.fail:
+    msg: >-
+      Vault storage needs PostgreSQL, but neither a running container named
+      '{{ vault_postgres_container_name }}' nor a host 'postgres' user was found.
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+    - vault_postgres_topology.stdout | default('none') | trim == 'none'
+
+- name: Resolve the psql command prefix for Vault storage
+  ansible.builtin.set_fact:
+    vault_psql_cmd: >-
+      {{
+        ('docker exec -i -u postgres ' ~ vault_postgres_container_name ~ ' psql')
+        if (vault_postgres_topology.stdout | default('') | trim) == 'container'
+        else 'psql'
+      }}
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+
 - name: Ensure Vault PostgreSQL storage schema exists
   become: true
-  become_user: postgres
   ansible.builtin.shell: |
     set -e
-    psql -d vault_storage -v ON_ERROR_STOP=1 <<'SQL'
+    {{ vault_psql_cmd }} -d vault_storage -v ON_ERROR_STOP=1 <<'SQL'
     CREATE TABLE IF NOT EXISTS vault_kv_store (
       parent_path TEXT COLLATE "C" NOT NULL,
       path        TEXT COLLATE "C",
@@ -250,9 +295,8 @@
 
 - name: Reset Vault tables if initialized without key file (lost keys)
   become: true
-  become_user: postgres
   ansible.builtin.shell: |
-    psql -d vault_storage -c "TRUNCATE TABLE vault_kv_store; TRUNCATE TABLE vault_ha_locks;"
+    {{ vault_psql_cmd }} -d vault_storage -c "TRUNCATE TABLE vault_kv_store; TRUNCATE TABLE vault_ha_locks;"
   when:
     - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
