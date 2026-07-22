@@ -107,29 +107,46 @@
         - vault_pg_password is defined
         - vault_pg_password | length > 0
 
+    # 探测无条件执行。此前两个探测各自被 postgresql_deploy_mode_effective 门控,
+    # 而该变量在未显式传入 POSTGRESQL_DEPLOY_MODE 时默认 'native' —— 于是容器探测
+    # 被跳过、宿主机又没有 psql, 条件块整体为假, 13 个任务全部 skipped、failed=0、
+    # 步骤报绿, 而一个库都没有建。
     - name: Detect running Postgres container
       ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E '^(postgresql|postgresql-svc-plus|ai-workspace-postgres)$' | head -n 1"
       register: detected_pg
       changed_when: false
       failed_when: false
-      when: postgresql_deploy_mode_effective == 'compose'
 
-
-    - name: Set pg_container fact
-      ansible.builtin.set_fact:
-        pg_container: "{{ detected_pg.stdout if detected_pg.stdout else pg_container_default }}"
-      when: postgresql_deploy_mode_effective == 'compose'
-
-    - name: Check if psql is available
+    - name: Check if psql is available on the host
       ansible.builtin.command: which psql
       register: psql_check
       failed_when: false
       changed_when: false
-      when: postgresql_deploy_mode_effective != 'compose'
 
-  tasks:
+    # 显式传入的 POSTGRESQL_DEPLOY_MODE 优先; 否则按实际探测结果判定。
+    - name: Resolve effective PostgreSQL topology
+      ansible.builtin.set_fact:
+        pg_topology: >-
+          {{ 'compose' if (lookup('env', 'POSTGRESQL_DEPLOY_MODE') == 'compose'
+                           or (detected_pg.stdout | default('') | trim) != '')
+             else ('native' if (psql_check.rc | default(-1)) == 0 else 'none') }}
+        pg_container: "{{ (detected_pg.stdout | default('') | trim) or pg_container_default }}"
+
+    # 探测不到可用 PostgreSQL 时必须失败。跳过会让建库整体静默不执行, 而后续
+    # 依赖这些库的步骤(如 Vault storage schema)才在很远处报 "database ... does
+    # not exist" —— 真正的原因已经被甩在几步之外。
+    - name: Fail when no reachable PostgreSQL was found
+      ansible.builtin.fail:
+        msg: >-
+          No reachable PostgreSQL: neither a running container
+          (postgresql / postgresql-svc-plus / ai-workspace-postgres) nor a host psql
+          binary was found. These databases would have been silently skipped:
+          {{ resolved_db_configs | map(attribute='db') | join(', ') }}
+      when: pg_topology == 'none'
+
+
     - name: Conditional DB creation block
-      when: postgresql_deploy_mode_effective == "compose" or (psql_check.rc | default(-1)) == 0
+      when: pg_topology in ['compose', 'native']
       block:
       - name: Create dedicated users
         ansible.builtin.command: >
@@ -139,7 +156,7 @@
         register: user_check_results
         changed_when: false
         failed_when: false
-        when: postgresql_deploy_mode_effective == 'compose'
+        when: pg_topology == 'compose'
   
       - name: Create dedicated users via PostgreSQL TCP
         ansible.builtin.command: >
@@ -153,7 +170,7 @@
         failed_when: false
         environment:
           PGPASSWORD: "{{ pg_root_password }}"
-        when: postgresql_deploy_mode_effective != 'compose'
+        when: pg_topology != 'compose'
   
       - name: Execute CREATE ROLE if not exists
         ansible.builtin.command: >
@@ -163,7 +180,7 @@
         register: create_user_results
         changed_when: true
         when:
-          - postgresql_deploy_mode_effective == 'compose'
+          - pg_topology == 'compose'
           - (item.stdout | default('')) | trim != '1'
         no_log: true
   
@@ -179,7 +196,7 @@
         register: create_user_results_tcp
         changed_when: true
         when:
-          - postgresql_deploy_mode_effective != 'compose'
+          - pg_topology != 'compose'
           - (item.stdout | default('')) | trim != '1'
         no_log: true
 
@@ -195,7 +212,7 @@
         register: sync_password_results
         changed_when: true
         when:
-          - postgresql_deploy_mode_effective == 'compose'
+          - pg_topology == 'compose'
           - (item.stdout | default('')) | trim == '1'
         no_log: true
 
@@ -211,7 +228,7 @@
         register: sync_password_results_tcp
         changed_when: true
         when:
-          - postgresql_deploy_mode_effective != 'compose'
+          - pg_topology != 'compose'
           - (item.stdout | default('')) | trim == '1'
         no_log: true
   
@@ -222,7 +239,7 @@
         register: db_check_results
         changed_when: false
         failed_when: false
-        when: postgresql_deploy_mode_effective == 'compose'
+        when: pg_topology == 'compose'
   
       - name: Create dedicated databases and assign owners via PostgreSQL TCP
         ansible.builtin.command: >
@@ -233,7 +250,7 @@
         failed_when: false
         environment:
           PGPASSWORD: "{{ pg_root_password }}"
-        when: postgresql_deploy_mode_effective != 'compose'
+        when: pg_topology != 'compose'
   
       - name: Execute CREATE DATABASE if not exists
         ansible.builtin.command: >
@@ -242,7 +259,7 @@
         register: create_db_results
         changed_when: true
         when:
-          - postgresql_deploy_mode_effective == 'compose'
+          - pg_topology == 'compose'
           - (item.stdout | default('')) | trim != '1'
   
       - name: Execute CREATE DATABASE if not exists via PostgreSQL TCP
@@ -254,6 +271,6 @@
         environment:
           PGPASSWORD: "{{ pg_root_password }}"
         when:
-          - postgresql_deploy_mode_effective != 'compose'
+          - pg_topology != 'compose'
           - (item.stdout | default('')) | trim != '1'
   
