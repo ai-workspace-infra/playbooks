@@ -66,6 +66,15 @@
     - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
+- name: Detect PostgreSQL systemd unit for Vault service ordering
+  ansible.builtin.command: systemctl show postgresql.service --property=LoadState --value
+  register: vault_postgresql_systemd_unit
+  changed_when: false
+  failed_when: false
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+
 - name: Create Vault production configuration file
   ansible.builtin.copy:
     dest: "{{ vault_config_dir }}/vault.hcl"
@@ -98,9 +107,9 @@
       [Unit]
       Description=HashiCorp Vault Server
       Documentation=https://developer.hashicorp.com/vault/docs
-      After=network-online.target{% if (postgresql_deploy_mode | default('native') | string | lower) in ['native', 'standalone'] %} postgresql.service{% endif %}
+      After=network-online.target{% if vault_postgresql_systemd_unit.stdout | default('') | trim == 'loaded' %} postgresql.service{% endif %}
       Wants=network-online.target
-      {% if (postgresql_deploy_mode | default('native') | string | lower) in ['native', 'standalone'] %}BindsTo=postgresql.service{% endif %}
+      {% if vault_postgresql_systemd_unit.stdout | default('') | trim == 'loaded' %}BindsTo=postgresql.service{% endif %}
 
       [Service]
       Type=simple
