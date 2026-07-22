@@ -333,7 +333,12 @@
   when:
     - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
-    - (vault_init_status_after_reset.rc | default(vault_init_status.rc)) == 2
+    # Resetting the storage tables removes the initialization state, but
+    # `vault operator init -status` is not consistent across storage backends
+    # immediately after the reset. The reset condition is already the explicit
+    # signal that a fresh initialization is required.
+    - vault_init_status.rc == 0
+    - not vault_init_file.stat.exists
   no_log: true
 
 - name: Save Vault initialization keys to host
