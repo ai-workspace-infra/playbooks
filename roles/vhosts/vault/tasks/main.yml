@@ -98,9 +98,9 @@
       [Unit]
       Description=HashiCorp Vault Server
       Documentation=https://developer.hashicorp.com/vault/docs
-      After=network-online.target postgresql.service
+      After=network-online.target{% if (postgresql_deploy_mode | default('native') | string | lower) in ['native', 'standalone'] %} postgresql.service{% endif %}
       Wants=network-online.target
-      BindsTo=postgresql.service
+      {% if (postgresql_deploy_mode | default('native') | string | lower) in ['native', 'standalone'] %}BindsTo=postgresql.service{% endif %}
 
       [Service]
       Type=simple
