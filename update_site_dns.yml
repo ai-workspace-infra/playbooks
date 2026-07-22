@@ -63,4 +63,7 @@
       ansible.builtin.include_role:
         name: cloudflare_dns
       vars:
-        cloudflare_zone_name: "{{ target_domain }}"
+        # 必须用 cloudflare_dns_zone_name: role 读的是带 _dns_ 的变量名。
+        # 传成 cloudflare_zone_name 不会报错, 而是让 role 回落到 defaults
+        # 里的 svc.plus, 把 UAT/灾备记录写进生产 zone。
+        cloudflare_dns_zone_name: "{{ target_domain }}"
