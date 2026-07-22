@@ -312,6 +312,31 @@
     - vault_init_status.rc == 0
     - not vault_init_file.stat.exists
 
+- name: Restart Vault after clearing storage state
+  become: true
+  ansible.builtin.systemd:
+    name: "{{ vault_service_name }}"
+    state: restarted
+    daemon_reload: true
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+    - vault_init_status.rc == 0
+    - not vault_init_file.stat.exists
+
+- name: Wait for Vault API after storage reset
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 8200
+    state: started
+    timeout: 60
+    delay: 2
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+    - vault_init_status.rc == 0
+    - not vault_init_file.stat.exists
+
 - name: Re-check Vault initialization status after reset
   ansible.builtin.command: vault operator init -status
   environment:
