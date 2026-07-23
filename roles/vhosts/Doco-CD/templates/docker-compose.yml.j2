@@ -9,7 +9,9 @@ services:
       - "{{ doco_cd_metrics_port }}:9120"
     environment:
       TZ: {{ doco_cd_timezone | quote }}
+{% if doco_cd_git_access_token | trim | length > 0 %}
       GIT_ACCESS_TOKEN: {{ doco_cd_git_access_token | quote }}
+{% endif %}
 {% if doco_cd_enable_webhook | bool %}
       WEBHOOK_SECRET: {{ doco_cd_webhook_secret | quote }}
 {% endif %}
