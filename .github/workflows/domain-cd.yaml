@@ -1,0 +1,27 @@
+name: Domain CD Runtime
+on:
+  workflow_call:
+    inputs:
+      domain: {required: true, type: string}
+      playbook: {required: true, type: string}
+      target_host: {required: true, type: string}
+      deploy_env: {required: true, type: string}
+permissions: {contents: read, id-token: write}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Authenticate to Vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: https://vault.svc.plus
+          method: jwt
+          role: github-actions-playbooks-${{ inputs.deploy_env }}
+          jwtGithubAudience: vault
+      - name: Validate domain delivery request
+        env:
+          DOMAIN: ${{ inputs.domain }}
+          PLAYBOOK: ${{ inputs.playbook }}
+          TARGET_HOST: ${{ inputs.target_host }}
+        run: .github/scripts/domain-cd-validate.sh

@@ -11,3 +11,20 @@
   when:
     - acp_hermes_packages | default([]) | length > 0
     - ansible_os_family == 'Debian'
+
+- name: Ensure Hermes Agent work directory exists
+  ansible.builtin.file:
+    path: "{{ acp_hermes_workdir }}"
+    state: directory
+    owner: "{{ acp_hermes_service_user }}"
+    group: "{{ acp_hermes_service_group }}"
+    mode: "0755"
+
+- name: Install Hermes Agent in the rootless Python environment
+  ansible.builtin.pip:
+    name: "{{ acp_hermes_pip_package }}"
+    virtualenv: "{{ acp_hermes_workdir }}/venv"
+    virtualenv_command: "{{ acp_hermes_python_binary }} -m venv"
+    state: present
+  become: true
+  become_user: "{{ acp_hermes_service_user }}"
