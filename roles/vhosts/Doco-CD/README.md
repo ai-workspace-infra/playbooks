@@ -4,9 +4,12 @@ Deploys [Doco-CD](https://doco.cd/latest/Getting-Started/) with Docker Compose.
 
 ## Inputs
 
-- `doco_cd_git_access_token`: Git access token. The default reads
-  `DOCO_CD_GIT_ACCESS_TOKEN`, then `kv/CICD` field
-  `DOCO_CD_GIT_ACCESS_TOKEN` from Vault KV v2.
+- `doco_cd_git_access_token`: **optional** Git access token, only needed for
+  private repositories. The default reads `DOCO_CD_GIT_ACCESS_TOKEN`, then
+  `kv/CICD` field `DOCO_CD_GIT_ACCESS_TOKEN` from Vault KV v2. When empty,
+  `GIT_ACCESS_TOKEN` is omitted from the rendered compose file entirely —
+  public repositories need no credential, and requiring one would block the
+  deployment on a secret that does not exist.
 - `doco_cd_vault_addr`: Vault address, defaulting to `VAULT_ADDR` or
   `https://vault.svc.plus`.
 - `doco_cd_vault_jwt_token` / `doco_cd_vault_token`: short-lived Vault

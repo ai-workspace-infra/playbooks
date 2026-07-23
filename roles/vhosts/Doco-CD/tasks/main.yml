@@ -33,15 +33,18 @@
          | default(doco_cd_vault_secret.secret.DOCO_CD_GIT_ACCESS_TOKEN | default('', true), true) }}
   no_log: true
 
-- name: Validate Doco-CD credentials and webhook settings
+# Git 访问 token 是可选的: 公开仓库不需要它, 强制要求会让部署卡在一个
+# 根本不存在的凭据上。私有仓库才需要, 那时给 DOCO_CD_GIT_ACCESS_TOKEN
+# 即可。webhook secret 则不同 —— 一旦开了 webhook, 没有 secret 就是把
+# 一个能触发部署的端点无鉴权暴露出去, 必须要求。
+- name: Validate Doco-CD webhook settings
   ansible.builtin.assert:
     that:
-      - doco_cd_git_access_token | trim | length > 0
       - not (doco_cd_enable_webhook | bool) or (doco_cd_webhook_secret | trim | length > 0)
     fail_msg: >-
-      Set DOCO_CD_GIT_ACCESS_TOKEN (or doco_cd_git_access_token). If
-      doco_cd_enable_webhook is true, also set DOCO_CD_WEBHOOK_SECRET
-      (or doco_cd_webhook_secret).
+      doco_cd_enable_webhook is true, so DOCO_CD_WEBHOOK_SECRET (or
+      doco_cd_webhook_secret) must be set -- an unauthenticated webhook
+      endpoint lets anyone trigger a deployment.
 
 - name: Render Doco-CD Docker Compose file
   ansible.builtin.template:
