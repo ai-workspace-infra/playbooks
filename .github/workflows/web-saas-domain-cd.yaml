@@ -4,10 +4,12 @@ on:
     inputs:
       target_host: {required: true, type: string}
       deploy_env: {required: true, type: string}
+      deploy_tag: {required: false, type: string, default: ''}
   workflow_dispatch:
     inputs:
       target_host: {required: true, type: string}
       deploy_env: {required: true, type: choice, options: [sit, uat, prod]}
+      deploy_tag: {required: false, type: string, default: ''}
 permissions: {contents: read, id-token: write}
 jobs:
   deploy:
@@ -17,3 +19,4 @@ jobs:
       playbook: setup-Doco-CD.yaml
       target_host: ${{ inputs.target_host }}
       deploy_env: ${{ inputs.deploy_env }}
+      deploy_tag: ${{ inputs.deploy_tag }}
