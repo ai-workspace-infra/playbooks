@@ -1,0 +1,19 @@
+name: Agent Proxy Domain CD
+on:
+  workflow_call:
+    inputs:
+      target_host: {required: true, type: string}
+      deploy_env: {required: true, type: string}
+  workflow_dispatch:
+    inputs:
+      target_host: {required: true, type: string}
+      deploy_env: {required: true, type: choice, options: [sit, uat, prod]}
+permissions: {contents: read, id-token: write}
+jobs:
+  deploy:
+    uses: ./.github/workflows/domain-cd.yaml
+    with:
+      domain: agent-proxy
+      playbook: setup-agent-proxy-domain.yml
+      target_host: ${{ inputs.target_host }}
+      deploy_env: ${{ inputs.deploy_env }}
