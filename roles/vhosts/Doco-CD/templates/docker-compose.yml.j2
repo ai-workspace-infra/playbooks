@@ -1,0 +1,32 @@
+---
+services:
+  app:
+    container_name: {{ doco_cd_container_name }}
+    image: {{ doco_cd_image }}
+    restart: unless-stopped
+    ports:
+      - "{{ doco_cd_webhook_port }}:80"
+      - "{{ doco_cd_metrics_port }}:9120"
+    environment:
+      TZ: {{ doco_cd_timezone | quote }}
+      GIT_ACCESS_TOKEN: {{ doco_cd_git_access_token | quote }}
+{% if doco_cd_enable_webhook | bool %}
+      WEBHOOK_SECRET: {{ doco_cd_webhook_secret | quote }}
+{% endif %}
+{% if doco_cd_poll_config | length > 0 %}
+      POLL_CONFIG: {{ doco_cd_poll_config | to_nice_yaml(indent=2, width=120) | quote }}
+{% endif %}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - data:/data
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/doco-cd", "healthcheck"]
+      start_period: 15s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  data:

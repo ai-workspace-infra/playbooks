@@ -1,0 +1,110 @@
+---
+- name: Ensure Doco-CD directory exists
+  ansible.builtin.file:
+    path: "{{ doco_cd_base_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Read Doco-CD credentials from Vault KV CICD
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ doco_cd_vault_addr }}"
+    auth_method: "{{ 'jwt' if doco_cd_vault_jwt_token | length > 0 else 'token' }}"
+    jwt: "{{ doco_cd_vault_jwt_token if doco_cd_vault_jwt_token | length > 0 else omit }}"
+    token: "{{ doco_cd_vault_token if doco_cd_vault_jwt_token | length == 0 else omit }}"
+    path: "{{ doco_cd_vault_path }}"
+    engine_mount_point: kv
+  register: doco_cd_vault_secret
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  no_log: true
+  failed_when: false
+  when:
+    - doco_cd_git_access_token | trim | length == 0
+    - doco_cd_vault_jwt_token | trim | length > 0 or doco_cd_vault_token | trim | length > 0
+
+- name: Resolve Doco-CD Git access token
+  ansible.builtin.set_fact:
+    doco_cd_git_access_token: >-
+      {{ lookup('ansible.builtin.env', 'DOCO_CD_GIT_ACCESS_TOKEN')
+         | default(doco_cd_vault_secret.secret.DOCO_CD_GIT_ACCESS_TOKEN | default('', true), true) }}
+  no_log: true
+
+- name: Validate Doco-CD credentials and webhook settings
+  ansible.builtin.assert:
+    that:
+      - doco_cd_git_access_token | trim | length > 0
+      - not (doco_cd_enable_webhook | bool) or (doco_cd_webhook_secret | trim | length > 0)
+    fail_msg: >-
+      Set DOCO_CD_GIT_ACCESS_TOKEN (or doco_cd_git_access_token). If
+      doco_cd_enable_webhook is true, also set DOCO_CD_WEBHOOK_SECRET
+      (or doco_cd_webhook_secret).
+
+- name: Render Doco-CD Docker Compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ doco_cd_compose_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Validate Doco-CD Docker Compose file
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ doco_cd_project_name }}"
+      - -f
+      - "{{ doco_cd_compose_file }}"
+      - config
+  args:
+    chdir: "{{ doco_cd_base_dir }}"
+  changed_when: false
+
+- name: Pull Doco-CD image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ doco_cd_project_name }}"
+      - -f
+      - "{{ doco_cd_compose_file }}"
+      - pull
+  args:
+    chdir: "{{ doco_cd_base_dir }}"
+  when: doco_cd_pull_image | bool
+
+- name: Start Doco-CD
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ doco_cd_project_name }}"
+      - -f
+      - "{{ doco_cd_compose_file }}"
+      - up
+      - -d
+      - --remove-orphans
+  args:
+    chdir: "{{ doco_cd_base_dir }}"
+
+- name: Show Doco-CD status
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ doco_cd_project_name }}"
+      - -f
+      - "{{ doco_cd_compose_file }}"
+      - ps
+  args:
+    chdir: "{{ doco_cd_base_dir }}"
+  changed_when: false

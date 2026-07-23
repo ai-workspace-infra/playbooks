@@ -1,0 +1,20 @@
+---
+doco_cd_base_dir: /opt/doco-cd
+doco_cd_compose_file: "{{ doco_cd_base_dir }}/docker-compose.yml"
+doco_cd_project_name: doco-cd
+doco_cd_image: ghcr.io/kimdre/doco-cd:latest
+doco_cd_container_name: doco-cd
+doco_cd_timezone: Europe/Berlin
+doco_cd_webhook_port: 80
+doco_cd_metrics_port: 9120
+doco_cd_git_access_token: "{{ lookup('ansible.builtin.env', 'DOCO_CD_GIT_ACCESS_TOKEN') | default('', true) }}"
+doco_cd_webhook_secret: "{{ lookup('ansible.builtin.env', 'DOCO_CD_WEBHOOK_SECRET') | default('', true) }}"
+doco_cd_enable_webhook: false
+doco_cd_poll_config: []
+doco_cd_pull_image: true
+
+# Vault KV v2: kv/CICD. CI should provide a short-lived VAULT_JWT_TOKEN via OIDC.
+doco_cd_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+doco_cd_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
+doco_cd_vault_jwt_token: "{{ lookup('ansible.builtin.env', 'VAULT_JWT_TOKEN') | default('', true) }}"
+doco_cd_vault_path: CICD
