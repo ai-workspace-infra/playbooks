@@ -6,6 +6,10 @@ on:
       playbook: {required: true, type: string}
       target_host: {required: true, type: string}
       deploy_env: {required: true, type: string}
+      # 部署版本标识。调用方必须显式给出要部署的版本, CD 不在部署时
+      # 自己去 main 找或重新构建。先设为可选以便调用方分批接入, 待
+      # platform-ops-toolkit 全量传参后收紧为 required。
+      deploy_tag: {required: false, type: string, default: ''}
 permissions: {contents: read, id-token: write}
 jobs:
   deploy:
@@ -24,4 +28,6 @@ jobs:
           DOMAIN: ${{ inputs.domain }}
           PLAYBOOK: ${{ inputs.playbook }}
           TARGET_HOST: ${{ inputs.target_host }}
+          DEPLOY_ENV: ${{ inputs.deploy_env }}
+          DEPLOY_TAG: ${{ inputs.deploy_tag }}
         run: .github/scripts/domain-cd-validate.sh
