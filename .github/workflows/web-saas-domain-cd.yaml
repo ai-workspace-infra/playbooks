@@ -16,7 +16,10 @@ jobs:
     uses: ./.github/workflows/domain-cd.yaml
     with:
       domain: web-saas
-      playbook: setup-Doco-CD.yaml
+      playbook: setup-web-saas-domain.yml
+      # 这次发布要推进哪些镜像。基础组件(postgres / stunnel / caddy)不随
+      # 业务发布走 deploy_tag, 它们钉在验证过的版本上单独升级, 所以不列。
+      managed_images: ACCOUNTS_IMAGE BILLING_IMAGE CONSOLE_IMAGE
       target_host: ${{ inputs.target_host }}
       deploy_env: ${{ inputs.deploy_env }}
       deploy_tag: ${{ inputs.deploy_tag }}

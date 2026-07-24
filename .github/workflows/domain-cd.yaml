@@ -10,6 +10,10 @@ on:
       # 自己去 main 找或重新构建。先设为可选以便调用方分批接入, 待
       # platform-ops-toolkit 全量传参后收紧为 required。
       deploy_tag: {required: false, type: string, default: ''}
+      # 本次发布要推进哪些镜像变量(空格分隔), 对应 gitops 仓
+      # compose/<domain>/.env.<env> 里的键名。为空表示该域尚未接入
+      # compose 交付。
+      managed_images: {required: false, type: string, default: ''}
 permissions: {contents: read, id-token: write}
 jobs:
   deploy:
@@ -19,19 +23,33 @@ jobs:
       # github.repository/github.ref 是调用方(toolkit)的, 不是本仓库的 ——
       # 这两个 context 字段属于触发这次 run 的顶层仓库, 不随 workflow_call
       # 链路切换。checkout 不显式指定 repository/ref 就会去 checkout
-      # toolkit, 而 .github/scripts/domain-cd-validate.sh 只存在于本仓库,
-      # 表现是 exit 127 "No such file or directory"。
+      # toolkit, 而 .github/scripts/ 下的脚本只存在于本仓库, 表现是
+      # exit 127 "No such file or directory"。
       - uses: actions/checkout@v7
         with:
           repository: ai-workspace-infra/playbooks
           ref: main
+
       - name: Authenticate to Vault
+        id: vault
         uses: hashicorp/vault-action@v4
         with:
           url: https://vault.svc.plus
           method: jwt
           role: github-actions-playbooks-${{ inputs.deploy_env }}
           jwtGithubAudience: vault
+          # gitops 仓是公开的, 读取不需要凭据 —— Doco-CD 在主机上拉取时
+          # 就没有任何 token。这里的 token 只用于 CD 侧的**写入**(推送新
+          # 的镜像 tag)。
+          #
+          # ignoreNotFound 是必须的: vault-action 对缺失的键会直接硬失败,
+          # 那会让整个 job 死在 Load Vault secrets 这一步, 报一个与真实
+          # 原因无关的错。缺失时这里拿到空串, 由下面的发布步骤给出指名
+          # 道姓的错误。
+          ignoreNotFound: true
+          secrets: |
+            kv/data/CICD/${{ inputs.deploy_env }} GITOPS_TOKEN | GITOPS_TOKEN
+
       - name: Validate domain delivery request
         env:
           DOMAIN: ${{ inputs.domain }}
@@ -40,3 +58,35 @@ jobs:
           DEPLOY_ENV: ${{ inputs.deploy_env }}
           DEPLOY_TAG: ${{ inputs.deploy_tag }}
         run: .github/scripts/domain-cd-validate.sh
+
+      # 这一步就是部署。把 deploy_tag 写进 gitops 仓的
+      # compose/<domain>/.env.<env>, 目标主机上的 Doco-CD 轮询到新 commit
+      # 后自行收敛。git 提交历史即部署历史。
+      #
+      # 在此之前这个 workflow 校验完输入就结束 —— job 报绿而什么都没部署,
+      # 正是这条交付链一直在对付的假绿。
+      - name: Publish deploy tag to GitOps
+        if: inputs.managed_images != '' && inputs.deploy_tag != ''
+        env:
+          DOMAIN: ${{ inputs.domain }}
+          DEPLOY_ENV: ${{ inputs.deploy_env }}
+          DEPLOY_TAG: ${{ inputs.deploy_tag }}
+          MANAGED_IMAGES: ${{ inputs.managed_images }}
+          GITOPS_REPO: ai-workspace-infra/gitops
+          GITOPS_TOKEN: ${{ steps.vault.outputs.GITOPS_TOKEN }}
+        run: .github/scripts/domain-cd-publish-tag.sh
+
+      # 上一步被跳过时说明该域尚未接入 compose 交付, 或调用方没给
+      # deploy_tag。两种情况都不该以绿色收场 —— 那就是"job 成功但什么都
+      # 没部署"。
+      - name: Fail when nothing was deployed
+        if: inputs.managed_images == '' || inputs.deploy_tag == ''
+        env:
+          DOMAIN: ${{ inputs.domain }}
+          MANAGED_IMAGES: ${{ inputs.managed_images }}
+          DEPLOY_TAG: ${{ inputs.deploy_tag }}
+        run: |
+          echo "::error::Nothing was deployed for domain '${DOMAIN}'." >&2
+          echo "managed_images='${MANAGED_IMAGES}' deploy_tag='${DEPLOY_TAG}'" >&2
+          echo "A domain wrapper must declare managed_images, and the caller must pass deploy_tag." >&2
+          exit 1

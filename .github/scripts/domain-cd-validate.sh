@@ -5,6 +5,6 @@ set -euo pipefail
 : "${TARGET_HOST:?TARGET_HOST is required}"
 test -f "${PLAYBOOK}"
 case "${DOMAIN}:${PLAYBOOK}" in
-  web-saas:setup-Doco-CD.yaml|ai-workspace:setup-ai-workspace-rootless.yml|agent-proxy:setup-agent-proxy-domain.yml|open-platform:setup-open-platform-domain.yml) ;;
+  web-saas:setup-web-saas-domain.yml|ai-workspace:setup-ai-workspace-rootless.yml|agent-proxy:setup-agent-proxy-domain.yml|open-platform:setup-open-platform-domain.yml) ;;
   *) echo "Unsupported domain/playbook mapping: ${DOMAIN}:${PLAYBOOK}" >&2; exit 1 ;;
 esac
