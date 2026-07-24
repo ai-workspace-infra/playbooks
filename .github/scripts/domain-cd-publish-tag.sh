@@ -15,7 +15,15 @@ set -euo pipefail
 workdir="$(mktemp -d)"
 trap 'rm -rf "${workdir}"' EXIT
 
-git clone --depth 1 --quiet "https://x-access-token:${GITOPS_TOKEN:?GITOPS_TOKEN is required}@github.com/${GITOPS_REPO}.git" "${workdir}/gitops"
+# gitops 仓公开, 读不需要凭据; 但推送需要。缺 token 就在这里指名道姓
+# 地失败, 而不是让 vault-action 在几步之前抛一个看不出原因的错。
+if [ -z "${GITOPS_TOKEN:-}" ]; then
+  echo "::error::GITOPS_TOKEN is empty. Publishing a deploy tag writes to ${GITOPS_REPO}, which needs a token even though the repo is public." >&2
+  echo "Create a fine-grained PAT scoped to ${GITOPS_REPO} with Contents: Read and write, and store it at kv/data/CICD/${DEPLOY_ENV} under the key GITOPS_TOKEN." >&2
+  exit 1
+fi
+
+git clone --depth 1 --quiet "https://x-access-token:${GITOPS_TOKEN}@github.com/${GITOPS_REPO}.git" "${workdir}/gitops"
 cd "${workdir}/gitops"
 
 env_file="compose/${DOMAIN}/.env.${DEPLOY_ENV}"

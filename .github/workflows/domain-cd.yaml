@@ -38,6 +38,15 @@ jobs:
           method: jwt
           role: github-actions-playbooks-${{ inputs.deploy_env }}
           jwtGithubAudience: vault
+          # gitops 仓是公开的, 读取不需要凭据 —— Doco-CD 在主机上拉取时
+          # 就没有任何 token。这里的 token 只用于 CD 侧的**写入**(推送新
+          # 的镜像 tag)。
+          #
+          # ignoreNotFound 是必须的: vault-action 对缺失的键会直接硬失败,
+          # 那会让整个 job 死在 Load Vault secrets 这一步, 报一个与真实
+          # 原因无关的错。缺失时这里拿到空串, 由下面的发布步骤给出指名
+          # 道姓的错误。
+          ignoreNotFound: true
           secrets: |
             kv/data/CICD/${{ inputs.deploy_env }} GITOPS_TOKEN | GITOPS_TOKEN
 
