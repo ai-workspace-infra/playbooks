@@ -46,6 +46,55 @@
       doco_cd_webhook_secret) must be set -- an unauthenticated webhook
       endpoint lets anyone trigger a deployment.
 
+# compose 文件把 /root/.docker/config.json 挂进容器, 好让 Doco-CD 用宿主机
+# 的 registry 凭据拉私有镜像。但这个文件从来没有人创建 —— 而 bind mount
+# 的源路径不存在时, Docker 会**自动建一个目录**顶上, 于是宿主机上出现:
+#
+#   WARNING: Error parsing config file (/root/.docker/config.json):
+#            read /root/.docker/config.json: is a directory
+#
+# 之后每一次 docker 命令都带着这条警告, 且容器里拿到的是个空目录而不是
+# 凭据 —— 私有镜像一律拉不动, 但 Doco-CD 自身是公开镜像, 照样 healthy,
+# 所以从容器状态上完全看不出问题。
+- name: Remove the placeholder directory Docker creates for a missing config.json
+  ansible.builtin.file:
+    path: /root/.docker/config.json
+    state: absent
+  when: doco_cd_registry_username | trim | length > 0
+  register: doco_cd_config_cleanup
+
+- name: Log into the container registry for Doco-CD
+  ansible.builtin.shell: |
+    set -euo pipefail
+    printf '%s' '{{ doco_cd_registry_password }}' \
+      | docker login {{ doco_cd_registry_server }} \
+          -u '{{ doco_cd_registry_username }}' --password-stdin
+  args:
+    executable: /bin/bash
+  no_log: true
+  when:
+    - doco_cd_registry_username | trim | length > 0
+    - doco_cd_registry_password | trim | length > 0
+
+# 断言登录确实产出了一个**文件**。跳过这一步的判据只有"没给凭据",
+# 而不是"登录失败" —— 后者必须红。
+- name: Assert the registry credentials landed as a file
+  ansible.builtin.stat:
+    path: /root/.docker/config.json
+  register: doco_cd_docker_config
+  when: doco_cd_registry_username | trim | length > 0
+
+- name: Fail when config.json is still not a regular file
+  ansible.builtin.fail:
+    msg: >-
+      /root/.docker/config.json is
+      {{ 'a directory' if doco_cd_docker_config.stat.isdir | default(false) else 'missing' }}
+      after docker login. Doco-CD would mount it as an empty directory and
+      silently fail to pull private images while still reporting healthy.
+  when:
+    - doco_cd_registry_username | trim | length > 0
+    - not (doco_cd_docker_config.stat.exists | default(false)) or (doco_cd_docker_config.stat.isdir | default(false))
+
 - name: Render Doco-CD Docker Compose file
   ansible.builtin.template:
     src: docker-compose.yml.j2

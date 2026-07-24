@@ -13,6 +13,14 @@ doco_cd_enable_webhook: false
 doco_cd_poll_config: []
 doco_cd_pull_image: true
 
+# Registry 凭据。compose 把 /root/.docker/config.json 挂进 Doco-CD 容器,
+# 这几个变量负责先把那个文件真正造出来 —— 缺了它, Docker 会用一个自动
+# 创建的空目录顶上, 私有镜像静默拉不动。
+# 空值 = 只拉公开镜像, 跳过 login(不是错误)。
+doco_cd_registry_server: "{{ lookup('ansible.builtin.env', 'GHCR_REGISTRY') | default('ghcr.io', true) }}"
+doco_cd_registry_username: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') | default('', true) }}"
+doco_cd_registry_password: "{{ lookup('ansible.builtin.env', 'GHCR_PASSWORD') | default('', true) }}"
+
 # Vault KV v2: kv/CICD. CI should provide a short-lived VAULT_JWT_TOKEN via OIDC.
 doco_cd_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
 doco_cd_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
