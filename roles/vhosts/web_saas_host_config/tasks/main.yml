@@ -1,0 +1,116 @@
+---
+# 断言放在最前面。这些值缺失时下游不会崩 —— postgres 会带着空口令正常
+# 启动, accounts 会正常监听, 部署报绿, 直到有人第一次尝试登录才发现。
+# 那正是这条交付链一直在对付的静默失败, 所以这里必须先失败。
+- name: Assert required web-saas secrets are present
+  ansible.builtin.assert:
+    that:
+      - web_saas_host_config_secrets[item] | default('') | trim | length > 0
+    fail_msg: >-
+      {{ item }} is empty. It is injected from Vault by the delivery pipeline;
+      an empty value would deploy a stack that starts cleanly and then fails
+      at first use.
+  loop: "{{ web_saas_host_config_required_secrets }}"
+  no_log: true
+
+- name: Assert stunnel TLS material is present
+  ansible.builtin.assert:
+    that:
+      - web_saas_host_config_ca_cert_b64 | trim | length > 0
+      - web_saas_host_config_server_cert_b64 | trim | length > 0
+      - web_saas_host_config_server_key_b64 | trim | length > 0
+    fail_msg: >-
+      WEB_SAAS_STUNNEL_{CA_CERT,SERVER_CERT,SERVER_KEY}_B64 must all be set.
+      Without them the compose stack mounts three nonexistent paths, which
+      docker turns into empty directories rather than an error.
+  no_log: true
+
+- name: Assert public domains are set
+  ansible.builtin.assert:
+    that:
+      - web_saas_host_config_console_domain | trim | length > 0
+      - web_saas_host_config_accounts_domain | trim | length > 0
+    fail_msg: >-
+      WEB_SAAS_CONSOLE_DOMAIN and WEB_SAAS_ACCOUNTS_DOMAIN must be set —
+      Caddy needs them to request certificates and to route by host.
+
+- name: Ensure web-saas host config directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ web_saas_host_config_base_dir }}"
+    - "{{ web_saas_host_config_config_dir }}"
+
+# 证书目录比其余部分严格一格: 里面有私钥。
+- name: Ensure web-saas certs directory exists
+  ansible.builtin.file:
+    path: "{{ web_saas_host_config_certs_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Render web-saas secrets env file
+  ansible.builtin.template:
+    src: secrets.env.j2
+    dest: "{{ web_saas_host_config_secrets_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Write stunnel TLS material
+  ansible.builtin.copy:
+    content: "{{ item.value | b64decode }}"
+    dest: "{{ web_saas_host_config_certs_dir }}/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {name: ca-cert.pem, value: "{{ web_saas_host_config_ca_cert_b64 }}", mode: "0644"}
+    - {name: server-cert.pem, value: "{{ web_saas_host_config_server_cert_b64 }}", mode: "0644"}
+    - {name: server-key.pem, value: "{{ web_saas_host_config_server_key_b64 }}", mode: "0600"}
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
+- name: Render web-saas config files
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ web_saas_host_config_config_dir }}/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - {src: postgresql.conf.j2, dest: postgresql.conf}
+    - {src: stunnel-server.conf.j2, dest: stunnel-server.conf}
+    - {src: stunnel-client.conf.j2, dest: stunnel-client.conf}
+    - {src: account.yaml.j2, dest: account.yaml}
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: Render web-saas Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ web_saas_host_config_caddyfile }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+# 预先建好共享网络并保持幂等, 让它的存在不依赖某一次 compose 的执行顺序。
+# 用 command 而非 community.docker.docker_network: 那个集合本仓从未使用,
+# 也没有 requirements.yml 声明它, 引入等于给每台 controller 加一个装不上
+# 就静默换路径的依赖。
+- name: Check for the shared Docker network
+  ansible.builtin.command: docker network inspect "{{ web_saas_host_config_shared_network }}"
+  register: web_saas_host_config_network_inspect
+  changed_when: false
+  failed_when: false
+
+- name: Create the shared Docker network when missing
+  ansible.builtin.command: docker network create "{{ web_saas_host_config_shared_network }}"
+  when: web_saas_host_config_network_inspect.rc != 0

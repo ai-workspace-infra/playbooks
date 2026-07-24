@@ -1,0 +1,89 @@
+---
+# 这个角色只负责 web-saas 那套 compose 栈的**主机侧**输入: 机密、配置、
+# 证书。compose 文件本身不在这里 —— 它在 ai-workspace-infra/gitops 的
+# compose/web-saas/, 由 Doco-CD 拉取。
+#
+# 分工的判据是"谁来管版本": 镜像 tag 由 git 追踪(gitops 仓 .env.<env>),
+# 口令与证书由 Vault 追踪。两者混在一起就会出现"改个 tag 要动证书"或者
+# "证书轮换触发一次业务发布"。
+web_saas_host_config_base_dir: /etc/xcontrol/web-saas
+web_saas_host_config_config_dir: "{{ web_saas_host_config_base_dir }}/config"
+web_saas_host_config_certs_dir: "{{ web_saas_host_config_base_dir }}/certs"
+web_saas_host_config_secrets_file: "{{ web_saas_host_config_base_dir }}/secrets.env"
+web_saas_host_config_caddyfile: "{{ web_saas_host_config_base_dir }}/Caddyfile"
+
+# 必须与 gitops 仓 compose/web-saas/docker-compose.yml 的 networks 块一致。
+web_saas_host_config_shared_network: docker_shared_network
+
+# compose 栈里 stunnel-server 对外暴露的端口, 与 gitops 仓
+# compose/web-saas/.env.uat 的 STUNNEL_ACCEPT_PORT 必须一致。
+web_saas_host_config_stunnel_accept_port: 15432
+web_saas_host_config_stunnel_service_name: postgres-tls-server
+# stunnel-client 连的是 compose 网络内的服务名, 不是主机地址。
+web_saas_host_config_stunnel_client_connect_host: stunnel-server
+web_saas_host_config_stunnel_client_accept_port: 5432
+web_saas_host_config_stunnel_check_host: ""
+
+# 对外站点。console 与 accounts 共用一台主机, 由 Caddy 按域名分流。
+web_saas_host_config_console_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_CONSOLE_DOMAIN') | default('', true) }}"
+web_saas_host_config_accounts_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_ACCOUNTS_DOMAIN') | default('', true) }}"
+
+# 机密。全部来自环境变量, 由流水线经 Vault OIDC 注入 —— 角色自己不连
+# Vault, 也不在仓库里保存任何默认值。缺失时由 tasks 里的断言明确报错,
+# 而不是渲染出一个空口令让 postgres 起来却谁也连不上。
+web_saas_host_config_secrets:
+  POSTGRES_USER: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_POSTGRES_USER') | default('postgres', true) }}"
+  POSTGRES_PASSWORD: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_POSTGRES_PASSWORD') | default('', true) }}"
+  POSTGRES_DB: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_POSTGRES_DB') | default('postgres', true) }}"
+
+  ACCOUNT_PG_PASSWORD: "{{ lookup('ansible.builtin.env', 'ACCOUNT_PG_PASSWORD') | default('', true) }}"
+  BILLING_DB_PASSWORD: "{{ lookup('ansible.builtin.env', 'BILLING_DB_PASSWORD') | default('', true) }}"
+
+  # accounts 与 billing 都经 stunnel-client 连库, 所以 host 是容器名。
+  DATABASE_URL: "postgres://{{ lookup('ansible.builtin.env', 'ACCOUNT_PG_USER') | default('account_user', true) }}:{{ lookup('ansible.builtin.env', 'ACCOUNT_PG_PASSWORD') | default('', true) }}@stunnel-client:5432/account?sslmode=disable"
+
+  AUTH_TOKEN_PUBLIC_TOKEN: "{{ lookup('ansible.builtin.env', 'AUTH_TOKEN_PUBLIC_TOKEN') | default('', true) }}"
+  AUTH_TOKEN_REFRESH_SECRET: "{{ lookup('ansible.builtin.env', 'AUTH_TOKEN_REFRESH_SECRET') | default('', true) }}"
+  AUTH_TOKEN_ACCESS_SECRET: "{{ lookup('ansible.builtin.env', 'AUTH_TOKEN_ACCESS_SECRET') | default('', true) }}"
+
+  GITHUB_CLIENT_ID: "{{ lookup('ansible.builtin.env', 'OAUTH_GITHUB_CLIENT_ID') | default('', true) }}"
+  GITHUB_CLIENT_SECRET: "{{ lookup('ansible.builtin.env', 'OAUTH_GITHUB_CLIENT_SECRET') | default('', true) }}"
+  GOOGLE_CLIENT_ID: "{{ lookup('ansible.builtin.env', 'OAUTH_GOOGLE_CLIENT_ID') | default('', true) }}"
+  GOOGLE_CLIENT_SECRET: "{{ lookup('ansible.builtin.env', 'OAUTH_GOOGLE_CLIENT_SECRET') | default('', true) }}"
+
+  INTERNAL_SERVICE_TOKEN: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}"
+
+# 这些键为空就让部署失败。它们不是"可选配置", 是没有就跑不起来的东西 ——
+# 空口令会让 postgres 正常启动、accounts 正常启动, 然后在第一次登录时才
+# 暴露问题, 那时 job 早已报绿。
+web_saas_host_config_required_secrets:
+  - POSTGRES_PASSWORD
+  - ACCOUNT_PG_PASSWORD
+  - AUTH_TOKEN_PUBLIC_TOKEN
+  - AUTH_TOKEN_REFRESH_SECRET
+  - AUTH_TOKEN_ACCESS_SECRET
+
+# TLS 证书。stunnel 用自签 CA, 三份 PEM 由流水线从 Vault 取出后经环境
+# 变量传入(base64, 避免换行在 env 里被破坏)。
+web_saas_host_config_ca_cert_b64: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_STUNNEL_CA_CERT_B64') | default('', true) }}"
+web_saas_host_config_server_cert_b64: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_STUNNEL_SERVER_CERT_B64') | default('', true) }}"
+web_saas_host_config_server_key_b64: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_STUNNEL_SERVER_KEY_B64') | default('', true) }}"
+
+web_saas_host_config_postgres_conf:
+  listen_addresses: "*"
+  port: 5432
+  max_connections: 100
+  shared_buffers: 256MB
+  effective_cache_size: 1GB
+  maintenance_work_mem: 64MB
+  work_mem: 16MB
+  wal_buffers: 16MB
+  min_wal_size: 1GB
+  max_wal_size: 4GB
+  checkpoint_completion_target: 0.9
+  random_page_cost: 1.1
+  log_destination: stderr
+  log_line_prefix: "%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h "
+  log_timezone: UTC
+  log_min_duration_statement: 1000
+  timezone: UTC
