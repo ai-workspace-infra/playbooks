@@ -1,0 +1,29 @@
+---
+# web-saas 域的主机装配。
+#
+# 部署职责在这里一分为二, 判据是"谁来管版本":
+#
+#   本 playbook  —— 机密、配置、证书、Doco-CD 自身。由 Vault 管版本。
+#   Doco-CD      —— compose 栈与镜像 tag。由 git 管版本(ai-workspace-infra/gitops
+#                   的 compose/web-saas/.env.<env>, git log 即部署历史)。
+#
+# 分开的理由: 混在一起就会变成"改个镜像 tag 要动证书", 或者反过来
+# "轮换一次证书触发一次业务发布"。
+- name: Configure web-saas host and hand deployment to Doco-CD
+  hosts: "{{ web_saas_hosts | default('web_saas') }}"
+  become: true
+  gather_facts: true
+  vars:
+    # Doco-CD 轮询 gitops 仓。60s 是在"改完 tag 多久能看到"和"对 GitHub
+    # API 的请求量"之间取的值 —— 一次 git ls-remote 很轻, 但 180s 的默认
+    # 值会让一次 UAT 验证多等三分钟。
+    doco_cd_poll_config:
+      - url: https://github.com/ai-workspace-infra/gitops.git
+        reference: main
+        interval: 60
+    # webhook 需要一个共享 secret(第 ③ 层环境业务密钥)与 CD 侧的 HMAC
+    # 签名。轮询不需要任何新凭据, 所以先走轮询; 要压到秒级再开 webhook。
+    doco_cd_enable_webhook: false
+  roles:
+    - roles/vhosts/web_saas_host_config
+    - roles/vhosts/Doco-CD

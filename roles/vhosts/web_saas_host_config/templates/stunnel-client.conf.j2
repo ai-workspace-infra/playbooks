@@ -1,0 +1,20 @@
+# Managed by Ansible: roles/vhosts/web_saas_host_config
+foreground = yes
+debug = 5
+
+[{{ web_saas_host_config_stunnel_service_name }}]
+client = yes
+accept = 0.0.0.0:{{ web_saas_host_config_stunnel_client_accept_port }}
+connect = {{ web_saas_host_config_stunnel_client_connect_host }}:{{ web_saas_host_config_stunnel_accept_port }}
+delay = yes
+verifyChain = yes
+CAfile = /etc/stunnel/certs/ca-cert.pem
+{% if web_saas_host_config_stunnel_check_host | trim | length > 0 %}
+checkHost = {{ web_saas_host_config_stunnel_check_host }}
+{% endif %}
+socket = l:TCP_NODELAY=1
+socket = r:TCP_NODELAY=1
+socket = l:SO_KEEPALIVE=1
+socket = r:SO_KEEPALIVE=1
+TIMEOUTclose = 5
+TIMEOUTidle = 43200

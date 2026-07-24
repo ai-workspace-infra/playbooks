@@ -1,0 +1,16 @@
+# Managed by Ansible: roles/vhosts/web_saas_host_config
+foreground = yes
+debug = 5
+
+[{{ web_saas_host_config_stunnel_service_name }}]
+accept = 0.0.0.0:{{ web_saas_host_config_stunnel_accept_port }}
+{# compose 网络内 postgres 的服务名即主机名 #}
+connect = postgres:{{ web_saas_host_config_postgres_conf.port }}
+cert = /etc/stunnel/certs/server-cert.pem
+key = /etc/stunnel/certs/server-key.pem
+socket = l:TCP_NODELAY=1
+socket = r:TCP_NODELAY=1
+socket = l:SO_KEEPALIVE=1
+socket = r:SO_KEEPALIVE=1
+TIMEOUTclose = 5
+TIMEOUTidle = 43200

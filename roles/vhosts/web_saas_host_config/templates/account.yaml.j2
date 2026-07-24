@@ -1,0 +1,54 @@
+{# Managed by Ansible: roles/vhosts/web_saas_host_config
+
+   本文件被渲染两次: 先 Jinja(这里), 再由容器 entrypoint 里的 envsubst。
+   envsubst 不支持 ${VAR:-default} —— 那种写法会原样漏进最终文件。所以
+   变量一律写朴素 ${VAR}, 需要默认值就在 Jinja 这一层给。 #}
+mode: "server-agent"
+
+log:
+  level: info
+
+auth:
+  enable: true
+  token:
+    publicToken: "${AUTH_TOKEN_PUBLIC_TOKEN}"
+    refreshSecret: "${AUTH_TOKEN_REFRESH_SECRET}"
+    accessSecret: "${AUTH_TOKEN_ACCESS_SECRET}"
+    accessExpiry: "1h"
+    refreshExpiry: "168h"
+  oauth:
+    frontendUrl: "https://{{ web_saas_host_config_console_domain }}"
+    github:
+      clientId: "${GITHUB_CLIENT_ID}"
+      clientSecret: "${GITHUB_CLIENT_SECRET}"
+      redirectUrl: "https://{{ web_saas_host_config_accounts_domain }}/api/auth/oauth/callback/github"
+    google:
+      clientId: "${GOOGLE_CLIENT_ID}"
+      clientSecret: "${GOOGLE_CLIENT_SECRET}"
+      redirectUrl: "https://{{ web_saas_host_config_accounts_domain }}/api/auth/oauth/callback/google"
+
+server:
+  addr: ":18081"
+  readTimeout: 15s
+  writeTimeout: 15s
+  publicUrl: "https://{{ web_saas_host_config_accounts_domain }}"
+  allowedOrigins:
+    - "https://{{ web_saas_host_config_console_domain }}"
+    - "https://{{ web_saas_host_config_accounts_domain }}"
+  tls:
+    enabled: false
+    certFile: ""
+    keyFile: ""
+    caFile: ""
+    clientCAFile: ""
+    redirectHttp: false
+
+store:
+  driver: "postgres"
+  {# 经 stunnel-client 连库: 容器名即主机名, 端口是 client 的 accept 端口 #}
+  dsn: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@stunnel-client:{{ web_saas_host_config_stunnel_client_accept_port }}/account?sslmode=disable"
+  maxOpenConns: 30
+  maxIdleConns: 10
+
+session:
+  ttl: 24h

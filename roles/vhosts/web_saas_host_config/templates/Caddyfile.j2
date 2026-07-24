@@ -1,0 +1,30 @@
+{# Managed by Ansible: roles/vhosts/web_saas_host_config
+
+   这个 Caddy 跑在 compose 栈里(容器 web-saas-caddy), 与主机上那个
+   systemd caddy 是两回事 —— 不要把本文件和 roles/vhosts/caddy 的
+   /etc/caddy/Caddyfile 混淆。upstream 一律写 compose 网络内的服务名。 #}
+{
+	admin off
+}
+
+https://{{ web_saas_host_config_console_domain }} {
+	encode zstd gzip
+
+	# accounts 的 API 前缀先分流, 否则会被 console 的兜底规则吃掉。
+	handle /api/auth/* {
+		reverse_proxy accounts:18081 {
+			header_up X-Forwarded-Host {host}
+		}
+	}
+
+	handle {
+		reverse_proxy console:3000
+	}
+}
+
+https://{{ web_saas_host_config_accounts_domain }} {
+	encode zstd gzip
+	reverse_proxy accounts:18081 {
+		header_up X-Forwarded-Host {host}
+	}
+}
