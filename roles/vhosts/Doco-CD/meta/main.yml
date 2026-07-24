@@ -1,0 +1,13 @@
+---
+# Doco-CD 整个角色就是"渲染一份 compose 文件再把它拉起来", 没有 Docker
+# Engine 就一步都走不了 —— 表现是 docker compose 那一步报
+# [Errno 2] No such file or directory: b'docker'。
+#
+# 写成 role 依赖而不是在 setup-Doco-CD.yaml 里多加一个 role, 是因为这条
+# 约束属于角色本身: 无论哪个 playbook 引用 Doco-CD, 它都需要 Docker。
+#
+# 必须写全 vhosts/ 前缀。只写 `docker` 也能解析成功, 但会命中 roles/docker
+# —— 那是个命名空间目录, 不是角色, 展开后只有 2 个任务而不是 20 个, 且
+# 不会报错。校验方式: ansible-playbook setup-Doco-CD.yaml --list-tasks
+dependencies:
+  - role: vhosts/docker
