@@ -6,7 +6,7 @@ This role reconciles the current production shape:
 
 - local PostgreSQL container on `127.0.0.1:5432`
 - public TLS tunnel via `stunnel` on `0.0.0.0:5433`
-- shared Docker network `cn-toolkit-shared`
+- shared Docker network `docker_shared_network`
 
 Primary entrypoint:
 
