@@ -30,25 +30,22 @@ jobs:
           repository: ai-workspace-infra/playbooks
           ref: main
 
-      - name: Authenticate to Vault
-        id: vault
-        uses: hashicorp/vault-action@v4
-        with:
-          url: https://vault.svc.plus
-          method: jwt
-          role: github-actions-playbooks-${{ inputs.deploy_env }}
-          jwtGithubAudience: vault
-          # gitops 仓是公开的, 读取不需要凭据 —— Doco-CD 在主机上拉取时
-          # 就没有任何 token。这里的 token 只用于 CD 侧的**写入**(推送新
-          # 的镜像 tag)。
-          #
-          # ignoreNotFound 是必须的: vault-action 对缺失的键会直接硬失败,
-          # 那会让整个 job 死在 Load Vault secrets 这一步, 报一个与真实
-          # 原因无关的错。缺失时这里拿到空串, 由下面的发布步骤给出指名
-          # 道姓的错误。
-          ignoreNotFound: true
-          secrets: |
-            kv/data/CICD/${{ inputs.deploy_env }} GITOPS_TOKEN | GITOPS_TOKEN
+      # gitops 仓是公开的, 读取不需要凭据 —— Doco-CD 在主机上拉取时就没有
+      # 任何 token。GITOPS_TOKEN 只用于 CD 侧的**写入**(推送新的镜像
+      # tag), 是否存在由发布脚本自己判断是否致命, 这里只负责"缺就给空"。
+      #
+      # 不用 hashicorp/vault-action 直接读: kv/data/CICD/<env> 这个路径本身
+      # 存在(装着 VULTR_API_KEY 等), 只是缺 GITOPS_TOKEN 这个键 ——
+      # vault-action 的 ignoreNotFound 只在整个路径 404 时生效, 路径存在、
+      # 单个键缺失照样以 "No match data was found" 硬失败, 与
+      # platform-ops-toolkit 的 databases/web-saas 两次"存在但缺键"是
+      # 同一类问题。认证走 GitHub OIDC -> Vault JWT role, 与其余步骤一致。
+      - name: Load GitOps token (optional)
+        env:
+          VAULT_ADDR: https://vault.svc.plus
+          VAULT_ROLE: github-actions-playbooks-${{ inputs.deploy_env }}
+          VAULT_KV_BASE: kv/data/CICD/${{ inputs.deploy_env }}
+        run: .github/scripts/domain-cd-load-gitops-token.sh
 
       - name: Validate domain delivery request
         env:
@@ -73,7 +70,7 @@ jobs:
           DEPLOY_TAG: ${{ inputs.deploy_tag }}
           MANAGED_IMAGES: ${{ inputs.managed_images }}
           GITOPS_REPO: ai-workspace-infra/gitops
-          GITOPS_TOKEN: ${{ steps.vault.outputs.GITOPS_TOKEN }}
+          GITOPS_TOKEN: ${{ env.GITOPS_TOKEN }}
         run: .github/scripts/domain-cd-publish-tag.sh
 
       # 上一步被跳过时说明该域尚未接入 compose 交付, 或调用方没给
