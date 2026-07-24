@@ -15,7 +15,16 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      # 跨仓 workflow_call (platform-ops-toolkit uses: playbooks/...@main) 下,
+      # github.repository/github.ref 是调用方(toolkit)的, 不是本仓库的 ——
+      # 这两个 context 字段属于触发这次 run 的顶层仓库, 不随 workflow_call
+      # 链路切换。checkout 不显式指定 repository/ref 就会去 checkout
+      # toolkit, 而 .github/scripts/domain-cd-validate.sh 只存在于本仓库,
+      # 表现是 exit 127 "No such file or directory"。
       - uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-infra/playbooks
+          ref: main
       - name: Authenticate to Vault
         uses: hashicorp/vault-action@v4
         with:
