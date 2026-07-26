@@ -105,12 +105,20 @@
 # 用 command 而非 community.docker.docker_network: 那个集合本仓从未使用,
 # 也没有 requirements.yml 声明它, 引入等于给每台 controller 加一个装不上
 # 就静默换路径的依赖。
-- name: Check for the shared Docker network
-  ansible.builtin.command: docker network inspect "{{ web_saas_host_config_shared_network }}"
+# 两张网都必须在 compose 之前存在: compose 里它们都是 external: true,
+# 意味着 compose 不会创建、只会查找, 缺失时整个 stack 部署失败。
+- name: Check for the required Docker networks
+  ansible.builtin.command: docker network inspect "{{ item }}"
   register: web_saas_host_config_network_inspect
   changed_when: false
   failed_when: false
+  loop:
+    - "{{ web_saas_host_config_shared_network }}"
+    - "{{ web_saas_host_config_postgres_network }}"
 
-- name: Create the shared Docker network when missing
-  ansible.builtin.command: docker network create "{{ web_saas_host_config_shared_network }}"
-  when: web_saas_host_config_network_inspect.rc != 0
+- name: Create the required Docker networks when missing
+  ansible.builtin.command: docker network create "{{ item.item }}"
+  when: item.rc != 0
+  loop: "{{ web_saas_host_config_network_inspect.results }}"
+  loop_control:
+    label: "{{ item.item }}"

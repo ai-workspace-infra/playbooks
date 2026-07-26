@@ -14,6 +14,11 @@ web_saas_host_config_caddyfile: "{{ web_saas_host_config_base_dir }}/Caddyfile"
 
 # 必须与 gitops 仓 compose/web-saas/docker-compose.yml 的 networks 块一致。
 web_saas_host_config_shared_network: docker_shared_network
+# postgres 与 stunnel-server 之间的专用网络。compose 把它声明为
+# external: true —— 只有 stunnel-server 同时接入两张网, 业务服务够不到
+# postgres, 必须走 TLS 隧道。external 意味着 compose 不会创建它, 缺失时
+# 部署直接失败, 所以这里负责建。
+web_saas_host_config_postgres_network: docker_web_saas_postgres_network
 
 # compose 栈里 stunnel-server 对外暴露的端口, 与 gitops 仓
 # compose/web-saas/.env.uat 的 STUNNEL_ACCEPT_PORT 必须一致。
