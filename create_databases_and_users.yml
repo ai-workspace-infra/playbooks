@@ -112,10 +112,7 @@
     # 被跳过、宿主机又没有 psql, 条件块整体为假, 13 个任务全部 skipped、failed=0、
     # 步骤报绿, 而一个库都没有建。
     - name: Detect running Postgres container
-      ansible.builtin.shell: >-
-        docker ps --format '{{ '{{' }}.Names{{ '}}' }}'
-        | grep -E '^(postgresql|postgresql-svc-plus|ai-workspace-postgres|web-saas-postgresql|web-saas-postgres)$'
-        | head -n 1
+      ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E '^web-saas-postgresql$'"
       register: detected_pg
       changed_when: false
       failed_when: false
@@ -141,10 +138,9 @@
     - name: Fail when no reachable PostgreSQL was found
       ansible.builtin.fail:
         msg: >-
-          No reachable PostgreSQL: neither a running container
-          (postgresql / postgresql-svc-plus / ai-workspace-postgres /
-          web-saas-postgresql / web-saas-postgres) nor a host psql
-          binary was found. These databases would have been silently skipped:
+          No reachable PostgreSQL: neither the required web-saas-postgresql
+          container nor a host psql binary was found. These databases would
+          have been silently skipped:
           {{ resolved_db_configs | map(attribute='db') | join(', ') }}
       when: pg_topology == 'none'
 
