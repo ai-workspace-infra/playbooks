@@ -20,14 +20,12 @@ web_saas_host_config_shared_network: docker_shared_network
 # 部署直接失败, 所以这里负责建。
 web_saas_host_config_postgres_network: docker_web_saas_postgres_network
 
-# compose 栈里 stunnel-server 对外暴露的端口, 与 gitops 仓
-# compose/web-saas/.env.uat 的 STUNNEL_ACCEPT_PORT 必须一致。
-web_saas_host_config_stunnel_accept_port: 15432
+# compose 栈里 stunnel-server 对外暴露的 TLS 端口。
+web_saas_host_config_stunnel_accept_port: 15433
 web_saas_host_config_stunnel_service_name: postgres-tls-server
 # stunnel-client 连的是 compose 网络内的服务名, 不是主机地址。
 web_saas_host_config_stunnel_client_connect_host: stunnel-server
-# 15432 = 走代理(stunnel), 5432 = 直连。两端都用 15432 让端口本身
-# 表达"这条连接是加密的", 而不必去查配置才知道。
+# 15432 是应用侧 stunnel-client 端口；15433 是 stunnel-server 的 TLS 端口。
 web_saas_host_config_stunnel_client_accept_port: 15432
 web_saas_host_config_stunnel_check_host: ""
 

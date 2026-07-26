@@ -23,7 +23,7 @@ services:
     user: root
     restart: unless-stopped
     ports:
-      - "${STUNNEL_ACCEPT_PORT:-15432}:15432"
+      - "${STUNNEL_SERVER_PORT:-15433}:15433"
     volumes:
       - ./config/stunnel-server.conf:/etc/stunnel/stunnel.conf:ro
       - ./certs/server-cert.pem:/etc/stunnel/certs/server-cert.pem:ro
@@ -39,9 +39,9 @@ services:
     container_name: web-saas-stunnel-client
     restart: unless-stopped
     environment:
-      STUNNEL_SERVICE: "postgres"
-      STUNNEL_ACCEPT: "5432"
-      STUNNEL_CONNECT: "stunnel-server:15432"
+      STUNNEL_SERVICE: "postgres-tls-server"
+      STUNNEL_ACCEPT: "15432"
+      STUNNEL_CONNECT: "stunnel-server:15433"
       STUNNEL_CRONTAB: ""
     volumes:
       - ./config/stunnel-client.conf:/etc/stunnel/stunnel.conf:ro
@@ -65,7 +65,7 @@ services:
       - .env
     environment:
       PORT: "18081"
-      DATABASE_URL: ${ACCOUNTS_DATABASE_URL:-postgres://postgres:${POSTGRES_PASSWORD}@stunnel-client:5432/account?sslmode=disable}
+      DATABASE_URL: ${ACCOUNTS_DATABASE_URL:-postgres://postgres:${POSTGRES_PASSWORD}@stunnel-client:15432/account?sslmode=disable}
     volumes:
       - ./config/account.yaml:/etc/xcontrol/account.template.yaml:ro
     networks:
@@ -82,7 +82,7 @@ services:
       - .env
     environment:
       BILLING_SERVICE_LISTEN_ADDR: "0.0.0.0:8081"
-      DATABASE_URL: ${BILLING_DATABASE_URL:-postgres://svcplus_vps:${BILLING_DB_PASSWORD}@stunnel-client:5432/account?sslmode=disable}
+      DATABASE_URL: ${BILLING_DATABASE_URL:-postgres://svcplus_vps:${BILLING_DB_PASSWORD}@stunnel-client:15432/account?sslmode=disable}
     networks:
       - web_saas_network
     depends_on:
