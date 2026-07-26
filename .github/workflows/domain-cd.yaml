@@ -1,4 +1,6 @@
 name: Domain CD Runtime
+# Pull-only boundary: this workflow may validate and observe delivery only.
+# It MUST NOT push, commit, or otherwise mutate the GitOps repository.
 on:
   workflow_call:
     inputs:
@@ -14,7 +16,7 @@ on:
       # compose/<domain>/.env.<env> 里的键名。为空表示该域尚未接入
       # compose 交付。
       managed_images: {required: false, type: string, default: ''}
-permissions: {contents: read, id-token: write}
+permissions: {contents: read}
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -30,23 +32,6 @@ jobs:
           repository: ai-workspace-infra/playbooks
           ref: main
 
-      # gitops 仓是公开的, 读取不需要凭据 —— Doco-CD 在主机上拉取时就没有
-      # 任何 token。GITOPS_TOKEN 只用于 CD 侧的**写入**(推送新的镜像
-      # tag), 是否存在由发布脚本自己判断是否致命, 这里只负责"缺就给空"。
-      #
-      # 不用 hashicorp/vault-action 直接读: kv/data/CICD/<env> 这个路径本身
-      # 存在(装着 VULTR_API_KEY 等), 只是缺 GITOPS_TOKEN 这个键 ——
-      # vault-action 的 ignoreNotFound 只在整个路径 404 时生效, 路径存在、
-      # 单个键缺失照样以 "No match data was found" 硬失败, 与
-      # platform-ops-toolkit 的 databases/web-saas 两次"存在但缺键"是
-      # 同一类问题。认证走 GitHub OIDC -> Vault JWT role, 与其余步骤一致。
-      - name: Load GitOps token (optional)
-        env:
-          VAULT_ADDR: https://vault.svc.plus
-          VAULT_ROLE: github-actions-playbooks-${{ inputs.deploy_env }}
-          VAULT_KV_BASE: kv/data/CICD/${{ inputs.deploy_env }}
-        run: .github/scripts/domain-cd-load-gitops-token.sh
-
       - name: Validate domain delivery request
         env:
           DOMAIN: ${{ inputs.domain }}
@@ -56,34 +41,10 @@ jobs:
           DEPLOY_TAG: ${{ inputs.deploy_tag }}
         run: .github/scripts/domain-cd-validate.sh
 
-      # 这一步就是部署。把 deploy_tag 写进 gitops 仓的
-      # compose/<domain>/.env.<env>, 目标主机上的 Doco-CD 轮询到新 commit
-      # 后自行收敛。git 提交历史即部署历史。
-      #
-      # 在此之前这个 workflow 校验完输入就结束 —— job 报绿而什么都没部署,
-      # 正是这条交付链一直在对付的假绿。
-      - name: Publish deploy tag to GitOps
-        if: inputs.managed_images != '' && inputs.deploy_tag != ''
+      - name: Confirm pull-only CD boundary
         env:
           DOMAIN: ${{ inputs.domain }}
           DEPLOY_ENV: ${{ inputs.deploy_env }}
+          TARGET_HOST: ${{ inputs.target_host }}
           DEPLOY_TAG: ${{ inputs.deploy_tag }}
-          MANAGED_IMAGES: ${{ inputs.managed_images }}
-          GITOPS_REPO: ai-workspace-infra/gitops
-          GITOPS_TOKEN: ${{ env.GITOPS_TOKEN }}
-        run: .github/scripts/domain-cd-publish-tag.sh
-
-      # 上一步被跳过时说明该域尚未接入 compose 交付, 或调用方没给
-      # deploy_tag。两种情况都不该以绿色收场 —— 那就是"job 成功但什么都
-      # 没部署"。
-      - name: Fail when nothing was deployed
-        if: inputs.managed_images == '' || inputs.deploy_tag == ''
-        env:
-          DOMAIN: ${{ inputs.domain }}
-          MANAGED_IMAGES: ${{ inputs.managed_images }}
-          DEPLOY_TAG: ${{ inputs.deploy_tag }}
-        run: |
-          echo "::error::Nothing was deployed for domain '${DOMAIN}'." >&2
-          echo "managed_images='${MANAGED_IMAGES}' deploy_tag='${DEPLOY_TAG}'" >&2
-          echo "A domain wrapper must declare managed_images, and the caller must pass deploy_tag." >&2
-          exit 1
+        run: .github/scripts/domain-cd-confirm-pull-only.sh

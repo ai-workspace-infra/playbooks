@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# 把 deploy_tag 写进 gitops 仓的 compose/<domain>/.env.<env>, 提交并推送。
-# Doco-CD 在目标主机上轮询该仓库(60s), 拉到新 commit 即部署。
+# 手动把 deploy_tag 写进 gitops 仓的 compose/<domain>/.env.<env>, 提交并推送。
+# 该脚本不由 CD runtime 调用；Doco-CD 在目标主机上轮询该仓库(60s),
+# 拉到新 commit 即部署。
+# 禁止在任何 CD workflow 中调用本脚本；GitOps 写入必须是显式的发布者动作。
 #
-# 这一步就是"部署"本身: 版本轴是 git ref, 提交历史即部署历史。CD 不在
-# 部署时决定版本 —— deploy_tag 由调用方显式给出。
+# 这一步是 GitOps 发布者动作: 版本轴是 git ref, 提交历史即部署历史。
+# CD 不在部署时决定版本 —— deploy_tag 由手动调用方显式给出。
 set -euo pipefail
 
 : "${DOMAIN:?DOMAIN is required}"
@@ -23,7 +25,28 @@ if [ -z "${GITOPS_TOKEN:-}" ]; then
   exit 1
 fi
 
-git clone --depth 1 --quiet "https://x-access-token:${GITOPS_TOKEN}@github.com/${GITOPS_REPO}.git" "${workdir}/gitops"
+# Do not put the token in the clone URL. Besides leaking through process listings
+# and debug output, GitHub's error message then hides whether the token can write
+# the target repository. GIT_ASKPASS keeps the credential out of the URL.
+askpass="${workdir}/git-askpass.sh"
+cat > "${askpass}" <<'EOF'
+#!/usr/bin/env sh
+case "$1" in
+  *Username*) printf '%s\n' "x-access-token" ;;
+  *Password*) printf '%s\n' "${GITOPS_TOKEN}" ;;
+  *) printf '\n' ;;
+esac
+EOF
+chmod 700 "${askpass}"
+export GIT_ASKPASS="${askpass}"
+export GIT_TERMINAL_PROMPT=0
+
+if ! git clone --depth 1 --quiet "https://github.com/${GITOPS_REPO}.git" "${workdir}/gitops"; then
+  echo "::error::Unable to read ${GITOPS_REPO} with GITOPS_TOKEN." >&2
+  echo "The repository may be public for reads, but publishing requires a token belonging to an account or GitHub App with Contents: Read and write on ${GITOPS_REPO}." >&2
+  echo "Update kv/data/CICD/${DEPLOY_ENV}.GITOPS_TOKEN; do not rely on the repository being public." >&2
+  exit 1
+fi
 cd "${workdir}/gitops"
 
 env_file="compose/${DOMAIN}/.env.${DEPLOY_ENV}"
@@ -72,7 +95,11 @@ git commit --quiet -m "deploy(${DOMAIN}/${DEPLOY_ENV}): ${DEPLOY_TAG}
 
 Published by ${GITHUB_REPOSITORY:-unknown}@${GITHUB_RUN_ID:-unknown}.
 Doco-CD polls this repository and applies the change on the target host."
-git push --quiet origin HEAD:main
+if ! git push --quiet origin HEAD:main; then
+  echo "::error::GitOps clone succeeded but push to ${GITOPS_REPO}:main was rejected." >&2
+  echo "Grant the Vault GITOPS_TOKEN Contents: Read and write (and bypass rulesets only if the repository requires it)." >&2
+  exit 1
+fi
 
 echo "Published ${DEPLOY_TAG} to ${GITOPS_REPO}/${env_file}"
 echo "Doco-CD polls every 60s; the target host will converge within that window."
