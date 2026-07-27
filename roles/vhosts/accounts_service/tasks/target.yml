@@ -239,3 +239,14 @@
   ansible.builtin.command: docker compose -f "{{ accounts_service_target.compose_file }}" up -d --force-recreate --remove-orphans
   args:
     chdir: "{{ accounts_service_target.compose_dir }}"
+
+- name: Render post-setup script for {{ accounts_service_target.name }}
+  ansible.builtin.template:
+    src: postsetup.sh.j2
+    dest: "{{ accounts_service_target.compose_dir }}/postsetup.sh"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Run post-setup for {{ accounts_service_target.name }}
+  ansible.builtin.command: sh "{{ accounts_service_target.compose_dir }}/postsetup.sh"

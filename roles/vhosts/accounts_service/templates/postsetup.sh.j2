@@ -1,0 +1,53 @@
+#!/bin/bash
+set -euo pipefail
+
+# Synchronize the bootstrap password into the managed env file before
+# re-creating the compose app. This keeps the deployed host in sync with the
+# password that the workflow just fetched from Vault.
+env_file="{{ accounts_service_base_dir }}/prod/env/app.env"
+tmp_file="${env_file}.tmp.$$"
+schema_file="/tmp/accounts-schema.sql"
+trap 'rm -f "${tmp_file}" "${schema_file}"' EXIT
+
+install -m 0600 /dev/null "${tmp_file}"
+if [[ -f "${env_file}" ]]; then
+  awk '!/^ROOT_BOOTSTRAP_PASSWORD=/' "${env_file}" > "${tmp_file}"
+fi
+printf 'ROOT_BOOTSTRAP_PASSWORD=%s\n' "{{ lookup('ansible.builtin.env', 'ROOT_BOOTSTRAP_PASSWORD') }}" >> "${tmp_file}"
+chown root:root "${tmp_file}"
+mv -f "${tmp_file}" "${env_file}"
+
+curl -fsSL https://raw.githubusercontent.com/ai-workspace-services/accounts/main/sql/schema.sql -o "${schema_file}"
+
+if ! docker exec -i postgresql psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'account'" | grep -q 1; then
+  docker exec -i postgresql psql -U postgres -c 'CREATE DATABASE account;'
+fi
+
+if ! docker exec -i postgresql psql -U postgres -d account -tAc "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'" | grep -q 1; then
+  docker exec -i postgresql psql -U postgres -d account -v ON_ERROR_STOP=1 -f "${schema_file}"
+  echo "account baseline schema applied"
+else
+  echo "account schema already present; skipping baseline init"
+fi
+
+container_id="$(docker ps --filter "label=com.docker.compose.service=accounts" --format '{{.ID}}' | head -n1)"
+project_dir=""
+config_files=""
+if [[ -n "${container_id}" ]]; then
+  project_dir="$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' "${container_id}" 2>/dev/null || true)"
+  config_files="$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' "${container_id}" 2>/dev/null || true)"
+fi
+
+if [[ -n "${project_dir}" && -n "${config_files}" ]]; then
+  IFS=',' read -r -a compose_files <<< "${config_files}"
+  compose_args=()
+  for compose_file in "${compose_files[@]}"; do
+    compose_args+=( -f "${compose_file}" )
+  done
+  docker compose "${compose_args[@]}" up -d --force-recreate accounts
+else
+  echo "::error::Could not resolve Compose metadata for the running accounts service; refusing to leave the new bootstrap password unapplied." >&2
+  exit 1
+fi
+
+echo "ROOT_BOOTSTRAP_PASSWORD synchronized and accounts recreated on {{ inventory_hostname }}."
