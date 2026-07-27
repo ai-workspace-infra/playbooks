@@ -1,6 +1,8 @@
 {% for site in accounts_service_caddy_sites %}
 {{ site.server_names | join(', ') }} {
   encode zstd gzip
+  @sensitive_paths path_regexp sensitive_paths ^/(?:\.env(?:\.[^/]+)?|backend/\.env(?:\.[^/]+)?|application/\.env(?:\.[^/]+)?|functions/\.env(?:\.[^/]+)?|api/\.env(?:\.[^/]+)?|.*\.bak|.*\.backup|.*\.old|.*\.orig|.*~|.*\.pem|.*\.key|.*\.crt|.*\.p12|.*\.pfx|.*\.sqlite(?:3)?|.*\.db|.*\.sql|.*id_rsa(?:\.pub)?|.*authorized_keys|.*\.git(?:/.*)?)(?:/.*)?$
+  respond @sensitive_paths 404
   map {http.request.header.X-Forwarded-Host} {accounts_forwarded_host} {
     "" {{ site.default_forwarded_host | default("") }}
     default {http.request.header.X-Forwarded-Host}
