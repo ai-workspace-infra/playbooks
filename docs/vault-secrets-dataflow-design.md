@@ -133,6 +133,9 @@ path "kv/metadata/CICD" {
   capabilities = ["read", "list"]
 }
 
+# `ROOT_BOOTSTRAP_PASSWORD` 作为系统 admin 的初始化凭据，也统一放在
+# kv/data/CICD，供 accounts 的首次 root 引导读取；不要拆到服务专属路径。
+
 # Web SaaS 域专属键
 path "kv/data/WEB_SAAS" {
   capabilities = ["read"]

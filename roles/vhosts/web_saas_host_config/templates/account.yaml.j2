@@ -46,7 +46,9 @@ server:
 store:
   driver: "postgres"
   # All business services use the local TLS tunnel, including single-node deployments.
-  dsn: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@stunnel-client:15432/account?sslmode=disable"
+  # Use libpq key=value DSN so passwords containing /, +, or = are not
+  # interpreted as URI syntax by the Go URL parser.
+  dsn: "host=stunnel-client port=15432 dbname=account user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} sslmode=disable"
   maxOpenConns: 30
   maxIdleConns: 10
 
