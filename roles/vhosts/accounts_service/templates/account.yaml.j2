@@ -44,7 +44,8 @@ server:
 
 store:
   driver: "postgres"
-  dsn: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable"
+  # Use libpq key=value DSN so passwords may contain /, +, = without URL parsing issues.
+  dsn: "host=${DB_HOST} port=${DB_PORT} dbname=${DB_NAME} user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} sslmode=disable"
   maxOpenConns: 30
   maxIdleConns: 10
 

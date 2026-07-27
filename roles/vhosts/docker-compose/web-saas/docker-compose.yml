@@ -64,10 +64,12 @@ services:
     env_file:
       - .env
     environment:
-      PORT: "18081"
+      PORT: "8080"
+      CONFIG_PATH: "/tmp/account.yaml"
+      CONFIG_TEMPLATE: "/app/config/account.yaml"
       DATABASE_URL: ${ACCOUNTS_DATABASE_URL:-postgres://postgres:${POSTGRES_PASSWORD}@stunnel-client:15432/account?sslmode=disable}
     volumes:
-      - ./config/account.yaml:/etc/xcontrol/account.template.yaml:ro
+      - ./config/account.yaml:/app/config/account.yaml:ro
     networks:
       - web_saas_network
     depends_on:

@@ -28,7 +28,7 @@ auth:
       redirectUrl: "https://{{ web_saas_host_config_accounts_domain }}/api/auth/oauth/callback/google"
 
 server:
-  addr: ":18081"
+  addr: ":8080"
   readTimeout: 15s
   writeTimeout: 15s
   publicUrl: "https://{{ web_saas_host_config_accounts_domain }}"
@@ -45,9 +45,10 @@ server:
 
 store:
   driver: "postgres"
-  # 经 stunnel-client 连库: 容器名即主机名。端口用 15432 —— 约定是
-  # 15432=走代理(stunnel), 5432=直连, 端口本身就区分了走哪条路。
-  dsn: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@stunnel-client:{{ web_saas_host_config_stunnel_client_accept_port }}/account?sslmode=disable"
+  # All business services use the local TLS tunnel, including single-node deployments.
+  # Use libpq key=value DSN so passwords containing /, +, or = are not
+  # interpreted as URI syntax by the Go URL parser.
+  dsn: "host=stunnel-client port=15432 dbname=account user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} sslmode=disable"
   maxOpenConns: 30
   maxIdleConns: 10
 
