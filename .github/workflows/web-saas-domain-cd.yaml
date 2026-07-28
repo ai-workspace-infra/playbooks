@@ -20,6 +20,12 @@ jobs:
       # 这次发布要推进哪些镜像。基础组件(postgres / stunnel / caddy)不随
       # 业务发布走 deploy_tag, 它们钉在验证过的版本上单独升级, 所以不列。
       managed_images: ACCOUNTS_IMAGE BILLING_IMAGE CONSOLE_IMAGE
+      # console 与 accounts 是 web-saas 栈里两个独立的对外站点(Caddyfile 各
+      # 有一个 https:// 块), 两个都要观测: 2026-07-28 出现过 accounts 起来
+      # 了(502 说明 vhost 在)、console 连证书都没有的分裂状态, 只盯一个会漏。
+      observe_urls: >-
+        https://console-${{ inputs.deploy_env }}.onwalk.net/
+        https://accounts-${{ inputs.deploy_env }}.onwalk.net/
       target_host: ${{ inputs.target_host }}
       deploy_env: ${{ inputs.deploy_env }}
       deploy_tag: ${{ inputs.deploy_tag }}
