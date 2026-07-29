@@ -90,7 +90,7 @@ inputs = ["add_labels"{% for target in ssl_targets %}, "blackbox_{{ target.name 
 {% if inventory_hostname == 'install.svc.plus' %}
 endpoint = "http://127.0.0.1:9090/api/v1/write"
 {% else %}
-endpoint = "https://observability.svc.plus/ingest/metrics/api/v1/write"
+endpoint = "{{ vector_observability_endpoint | default('https://observability.svc.plus') }}/ingest/metrics/api/v1/write"
 {% if vector_auth_user is defined and vector_auth_password is defined %}
 [sinks.prometheus_remote.auth]
 strategy = "basic"
@@ -143,7 +143,7 @@ inputs = ["process_logs"]
 {% if inventory_hostname == 'install.svc.plus' %}
 uri = "http://127.0.0.1:9428/insert/jsonline?_msg_field=message&_stream_fields=instance,file"
 {% else %}
-uri = "https://observability.svc.plus/ingest/logs/insert/jsonline?_msg_field=message&_stream_fields=instance,file"
+uri = "{{ vector_observability_endpoint | default('https://observability.svc.plus') }}/ingest/logs/insert/jsonline?_msg_field=message&_stream_fields=instance,file"
 {% if vector_auth_user is defined and vector_auth_password is defined %}
 [sinks.victorialogs.auth]
 strategy = "basic"
