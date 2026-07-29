@@ -101,6 +101,27 @@
     group: root
     mode: "0644"
 
+# 0600 而不是 Caddyfile 的 0644: 这里面是一个能改整个 zone 解析的 token。
+- name: Render Caddy env file (Cloudflare DNS token)
+  ansible.builtin.template:
+    src: caddy.env.j2
+    dest: "{{ web_saas_host_config_caddy_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+# 走 DNS-01 时把模式和泛域名打出来。签发模式是"证书为什么签不出来"排查的
+# 第一个岔路口, 而它由一个 token 在不在悄悄决定 —— 不打出来的话, 现场只能
+# 看到"没有证书", 看不出它当时到底在试哪条路。
+- name: Report ACME issuance mode
+  ansible.builtin.debug:
+    msg: >-
+      web-saas Caddy ACME mode:
+      {{ 'DNS-01 (cloudflare), wildcard ' ~ web_saas_host_config_wildcard_domain
+         if (web_saas_host_config_acme_dns_enabled | bool)
+         else 'HTTP-01 per-domain (CLOUDFLARE_DNS_API_TOKEN not set) — requires DNS to already point here' }}
+
 # 预先建好共享网络并保持幂等, 让它的存在不依赖某一次 compose 的执行顺序。
 # 用 command 而非 community.docker.docker_network: 那个集合本仓从未使用,
 # 也没有 requirements.yml 声明它, 引入等于给每台 controller 加一个装不上
