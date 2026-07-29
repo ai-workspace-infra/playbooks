@@ -144,6 +144,9 @@ inputs = ["process_logs"]
 uri = "http://127.0.0.1:9428/insert/jsonline?_msg_field=message&_stream_fields=instance,file"
 {% else %}
 uri = "{{ vector_observability_endpoint | default('https://observability.svc.plus') }}/ingest/logs/insert/jsonline?_msg_field=message&_stream_fields=instance,file"
+{% endif %}
+encoding.codec = "json"
+{% if inventory_hostname != 'install.svc.plus' %}
 {% if vector_auth_user is defined and vector_auth_password is defined %}
 [sinks.victorialogs.auth]
 strategy = "basic"
@@ -151,7 +154,6 @@ user = "{{ vector_auth_user }}"
 password = "{{ vector_auth_password }}"
 {% endif %}
 {% endif %}
-encoding.codec = "json"
 [sinks.victorialogs.tls]
 verify_certificate = false
 verify_hostname = false
