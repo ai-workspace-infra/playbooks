@@ -1,0 +1,43 @@
+---
+- name: Setup observability agent
+  hosts: all
+  user: root
+  become: yes
+  gather_facts: yes
+  tasks:
+    - name: Include observability-agent role
+      ansible.builtin.include_role:
+        name: charts/observability-agent
+      vars:
+        group: all
+        namespace: monitoring
+        deepflowserverip: "{{ observability_deepflow_server_ip | default('10.146.0.8') }}"
+        deepflowk8sclusterid: "{{ observability_deepflow_cluster_id | default('d-kqjofXyZbg') }}"
+      when: observability_deepflow_server_ip is defined and observability_deepflow_server_ip != ''
+
+- name: Deploy Base Probes and Vector Agent
+  hosts: all
+  become: yes
+  tasks:
+    - name: Include node_exporter role
+      ansible.builtin.import_role:
+        name: vhosts/node_exporter
+
+    - name: Include process_exporter role
+      ansible.builtin.import_role:
+        name: vhosts/process_exporter
+
+    - name: Check if xray process exists
+      ansible.builtin.command: pgrep -x xray
+      register: xray_process_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Include xray-exporter role
+      ansible.builtin.import_role:
+        name: vhosts/xray-exporter
+      when: xray_process_check.rc == 0
+
+    - name: Include vector-agent role
+      ansible.builtin.import_role:
+        name: vhosts/vector-agent
