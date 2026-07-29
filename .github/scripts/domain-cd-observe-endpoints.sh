@@ -21,6 +21,27 @@ fi
 timeout_seconds="${OBSERVE_TIMEOUT_SECONDS:-300}"
 poll_seconds="${OBSERVE_POLL_SECONDS:-15}"
 
+# DNS 切换之前, 公网记录可能还指着旧主机(甚至指着一台已经销毁的机器), 那时候
+# 直接打域名量到的是别人, 探测结果毫无意义 —— 而且失败得像"新主机没起来"。
+# 给定 OBSERVE_RESOLVE_IP 时用 --resolve 把域名钉到本次部署的那台机器上,
+# 这样 observe 测的始终是"我刚部署的这台", 与 DNS 是否已经切换无关。
+resolve_args=()
+if [[ -n "${OBSERVE_RESOLVE_IP:-}" ]]; then
+  echo "Pinning observed hostnames to ${OBSERVE_RESOLVE_IP} (pre-DNS-cutover safe)."
+fi
+
+curl_for() {
+  local url="$1"
+  local -a args=(-sS -o /dev/null -w '%{http_code}' -L --max-time 15)
+  if [[ -n "${OBSERVE_RESOLVE_IP:-}" ]]; then
+    local host="${url#*://}"
+    host="${host%%/*}"
+    host="${host%%:*}"
+    args+=(--resolve "${host}:443:${OBSERVE_RESOLVE_IP}" --resolve "${host}:80:${OBSERVE_RESOLVE_IP}")
+  fi
+  curl "${args[@]}" "${url}" 2>/dev/null
+}
+
 # Doco-CD 是轮询式的, 镜像还要现拉, 所以给一个窗口而不是一次定生死。
 #
 # 窗口按 URL 各算各的, 不能所有 URL 共用一个 deadline: 共用的话第一个
@@ -36,7 +57,7 @@ for url in ${OBSERVE_URLS}; do
   while :; do
     # 分开取 http_code 与 curl 自身退出码: TLS 握手失败时 http_code 是 000,
     # 与"连上了但 502"是两种完全不同的故障, 合并成一个数字会把它们抹平。
-    code="$(curl -sS -o /dev/null -w '%{http_code}' -L --max-time 15 "${url}" 2>/dev/null)" || code="000"
+    code="$(curl_for "${url}")" || code="000"
     if [[ "${code}" =~ ^[23] ]]; then
       ok=true
       last="${code}"

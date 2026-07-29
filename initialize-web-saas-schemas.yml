@@ -1,0 +1,110 @@
+---
+# =============================================================================
+# web-saas 业务库的 baseline schema 初始化 (幂等)
+#
+# create_databases_and_users.yml 只建库和建角色, 不建表。accounts 服务启动时
+# 只会自动建 7 张表(tenants / tenant_domains / tenant_memberships /
+# admin_settings / sandbox_bindings / homepage_video_settings /
+# xworkmate_profiles), 但 users / sessions / identities / rbac_* /
+# subscriptions / overlay_* 这套 baseline 要靠外部灌入。缺了它, accounts 起来
+# 就是 `relation "users" does not exist (SQLSTATE 42P01)` 无限重启, Caddy 对外
+# 表现成 502 —— 2026-07-28 每一台新主机都栽在这里。
+#
+# 这段逻辑本来就存在, 在 roles/vhosts/accounts_service/templates/postsetup.sh.j2
+# 里, 但那个 role 不在 setup-web-saas-domain.yml 的 roles 列表里(web-saas 域只
+# 装 web_saas_host_config + Doco-CD), 所以从来没在这条链路上跑过; 而且它写死
+# 了容器名 postgresql(实际是 web-saas-postgresql)。这里把它接回 web-saas 链路
+# 并修正容器名。
+#
+# 幂等判据是"users 表在不在", 与 postsetup.sh.j2 一致: 在就跳过, 不在才灌。
+# 因此可以每次部署都跑, 反复执行不会破坏已有数据。
+# =============================================================================
+- name: Initialize web-saas baseline schemas
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    # schema 要跟部署的镜像同版本。deploy_tag 为空时才退回 main ——
+    # 用 main 配一个旧 tag 的镜像, 是"表结构比代码新"的经典事故。
+    accounts_schema_ref: "{{ lookup('ansible.builtin.env', 'ACCOUNTS_SCHEMA_REF') | default('', true) or 'main' }}"
+    accounts_schema_url: >-
+      https://raw.githubusercontent.com/ai-workspace-services/accounts/{{ accounts_schema_ref }}/sql/schema.sql
+    pg_container_default: web-saas-postgresql
+
+  tasks:
+    # 与 create_databases_and_users.yml 同样的探测方式: 探不到就显式失败,
+    # 不静默跳过。跳过等于把"没初始化"伪装成"初始化过了"。
+    - name: Detect running Postgres container
+      ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E '^web-saas-postgresql$'"
+      register: detected_pg
+      changed_when: false
+      failed_when: false
+
+    - name: Fail when the web-saas Postgres container is not running
+      ansible.builtin.fail:
+        msg: >-
+          web-saas-postgresql container not found on {{ inventory_hostname }}.
+          Refusing to report schema initialization as done when no database
+          was reachable.
+      when: (detected_pg.stdout | default('') | trim) == ''
+
+    - name: Resolve Postgres container name
+      ansible.builtin.set_fact:
+        pg_container: "{{ (detected_pg.stdout | default('') | trim) or pg_container_default }}"
+
+    - name: Check whether the account baseline schema is already present
+      ansible.builtin.command: >-
+        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
+        "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'"
+      register: users_table_check
+      changed_when: false
+      failed_when: false
+
+    - name: Fetch the account baseline schema matching the deployed ref
+      ansible.builtin.get_url:
+        url: "{{ accounts_schema_url }}"
+        dest: /tmp/accounts-schema.sql
+        mode: "0600"
+        force: true
+      when: (users_table_check.stdout | default('') | trim) != '1'
+
+    # ON_ERROR_STOP=1 很关键: 没有它 psql 会带着报错跑完并 exit 0,
+    # 半截 schema 照样报成功。
+    - name: Apply the account baseline schema
+      ansible.builtin.shell: >-
+        set -o pipefail &&
+        docker exec -i {{ pg_container }} psql -U postgres -d account
+        -v ON_ERROR_STOP=1 -f - < /tmp/accounts-schema.sql
+      args:
+        executable: /bin/bash
+      when: (users_table_check.stdout | default('') | trim) != '1'
+      register: schema_apply
+
+    - name: Remove the downloaded schema file
+      ansible.builtin.file:
+        path: /tmp/accounts-schema.sql
+        state: absent
+      when: (users_table_check.stdout | default('') | trim) != '1'
+
+    # 灌完必须复验。前一步 exit 0 只说明 psql 没报错, 不说明 users 真的建出来了
+    # (例如 schema 文件被 CDN 截断成 0 字节时, psql 也会安静地成功)。
+    - name: Verify the account baseline schema is present
+      ansible.builtin.command: >-
+        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
+        "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'"
+      register: users_table_verify
+      changed_when: false
+
+    - name: Fail when the schema still is not present after applying it
+      ansible.builtin.fail:
+        msg: >-
+          account baseline schema still missing after applying
+          {{ accounts_schema_url }} — refusing to report success.
+      when: (users_table_verify.stdout | default('') | trim) != '1'
+
+    - name: Report schema state
+      ansible.builtin.debug:
+        msg: >-
+          account baseline schema
+          {{ 'already present; skipped' if (users_table_check.stdout | default('') | trim) == '1'
+             else 'applied from ' ~ accounts_schema_url }}
