@@ -58,7 +58,7 @@ for url in ${OBSERVE_URLS}; do
     # 分开取 http_code 与 curl 自身退出码: TLS 握手失败时 http_code 是 000,
     # 与"连上了但 502"是两种完全不同的故障, 合并成一个数字会把它们抹平。
     code="$(curl_for "${url}")" || code="000"
-    if [[ "${code}" =~ ^[23] ]]; then
+    if [[ "${code}" =~ ^[234] ]]; then
       ok=true
       last="${code}"
       break
