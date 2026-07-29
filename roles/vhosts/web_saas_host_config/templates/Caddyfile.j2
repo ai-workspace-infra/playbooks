@@ -2,11 +2,62 @@
 
    这个 Caddy 跑在 compose 栈里(容器 web-saas-caddy), 与主机上那个
    systemd caddy 是两回事 —— 不要把本文件和 roles/vhosts/caddy 的
-   /etc/caddy/Caddyfile 混淆。upstream 一律写 compose 网络内的服务名。 #}
+   /etc/caddy/Caddyfile 混淆。upstream 一律写 compose 网络内的服务名。
+
+   两种签发模式:
+     DNS-01 (有 CLOUDFLARE_DNS_API_TOKEN): 一个泛域名 site block, 按 host
+       分流。DNS-01 不需要 A 记录已经指向本机, 所以"先部署、后切 DNS"的
+       顺序下也签得出证书; 且三个子域共用一张 *.<base> 证书。
+     HTTP-01 (没有 token): 退回逐域名 site block, 与历史行为一致。
+       这条路径要求 DNS 已经指过来, 否则签不出证书。
+
+   DNS-01 需要 caddy-dns/cloudflare 模块 —— 官方 caddy 镜像不含它, 用的是
+   ghcr.io/ai-workspace-infra/caddy-cloudflare(artifacts 仓构建)。 #}
 {
 	admin off
 }
 
+{% if web_saas_host_config_acme_dns_enabled | bool %}
+{{ web_saas_host_config_wildcard_domain }} {
+	tls {
+		dns cloudflare {env.CLOUDFLARE_DNS_API_TOKEN}
+	}
+
+	encode zstd gzip
+
+	{# handle 块互斥且按书写顺序求值, 所以最具体的匹配必须写在最前面:
+	   console 域下的 /api/auth/* 要先被摘走, 否则会被 console 的兜底吃掉
+	   —— 与改造前那条注释是同一个约束, 只是从"路径优先"变成"域名+路径"。 #}
+	@console_auth {
+		host {{ web_saas_host_config_console_domain }}
+		path /api/auth/*
+	}
+	handle @console_auth {
+		reverse_proxy accounts:8080 {
+			header_up X-Forwarded-Host {host}
+		}
+	}
+
+	@accounts host {{ web_saas_host_config_accounts_domain }}
+	handle @accounts {
+		reverse_proxy accounts:8080 {
+			header_up X-Forwarded-Host {host}
+		}
+	}
+
+	@console host {{ web_saas_host_config_console_domain }}
+	handle @console {
+		reverse_proxy console:3000
+	}
+
+	{# 泛域名会把 <base> 下所有子域都揽进来, 包括本机并不打算服务的那些。
+	   没有兜底它们会落在所有 handle 之外、拿到一个空响应; 显式 abort 让
+	   "这个域名本机不服务"成为一个明确结果而不是一个可疑的空白页。 #}
+	handle {
+		abort
+	}
+}
+{% else %}
 https://{{ web_saas_host_config_console_domain }} {
 	encode zstd gzip
 
@@ -28,3 +79,4 @@ https://{{ web_saas_host_config_accounts_domain }} {
 		header_up X-Forwarded-Host {host}
 	}
 }
+{% endif %}

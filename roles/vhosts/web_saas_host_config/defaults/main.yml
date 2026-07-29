@@ -11,6 +11,11 @@ web_saas_host_config_config_dir: "{{ web_saas_host_config_base_dir }}/config"
 web_saas_host_config_certs_dir: "{{ web_saas_host_config_base_dir }}/certs"
 web_saas_host_config_secrets_file: "{{ web_saas_host_config_base_dir }}/secrets.env"
 web_saas_host_config_caddyfile: "{{ web_saas_host_config_base_dir }}/Caddyfile"
+# Caddy 单独一个 env 文件, 不共用 secrets.env。secrets.env 被 postgres /
+# accounts / billing / console 四个服务同时 env_file 引用, 而 Cloudflare DNS
+# token 能改整个 zone 的解析 —— 没有理由让业务容器拿到它。这里按最小权限
+# 单独发一份, gitops 侧只把它挂给 caddy。
+web_saas_host_config_caddy_env_file: "{{ web_saas_host_config_base_dir }}/caddy.env"
 
 # 必须与 gitops 仓 compose/web-saas/docker-compose.yml 的 networks 块一致。
 web_saas_host_config_shared_network: docker_shared_network
@@ -32,6 +37,25 @@ web_saas_host_config_stunnel_check_host: ""
 # 对外站点。console 与 accounts 共用一台主机, 由 Caddy 按域名分流。
 web_saas_host_config_console_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_CONSOLE_DOMAIN') | default('', true) }}"
 web_saas_host_config_accounts_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_ACCOUNTS_DOMAIN') | default('', true) }}"
+
+# Cloudflare DNS API token, 用于 ACME DNS-01。给了它就走 DNS-01 + 泛域名证书,
+# 没给就退回原来的 HTTP-01 逐域名签发。
+#
+# 为什么要 DNS-01: web-saas 的交付顺序是"先部署新主机、最后才切 DNS", 而
+# HTTP-01 要求域名 A 记录已经指向本机 —— 切换之前必然签不出证书。DNS-01 不看
+# A 记录, 还能签泛域名: 一张 *.<base> 覆盖 console/accounts/postgresql-saas
+# 所有子域, 每次重建的签发次数从 3 张降到 1 张。
+#
+# 注意 Let's Encrypt 的"同一组域名 5 次/周"仍然成立, 泛域名只是把分母变小;
+# 真正做到无限次重建要靠证书持久化(平台侧从 Vault 恢复 caddy_data)。
+web_saas_host_config_cloudflare_dns_api_token: "{{ lookup('ansible.builtin.env', 'CLOUDFLARE_DNS_API_TOKEN') | default('', true) }}"
+web_saas_host_config_acme_dns_enabled: "{{ (web_saas_host_config_cloudflare_dns_api_token | trim | length > 0) }}"
+
+# 泛域名从 console 域名推导: console-uat.onwalk.net -> *.onwalk.net。
+# 允许显式覆盖, 以防将来 console 与 accounts 不在同一个 zone。
+web_saas_host_config_wildcard_domain: >-
+  {{ lookup('ansible.builtin.env', 'WEB_SAAS_WILDCARD_DOMAIN') | default('', true)
+     or ('*.' ~ (web_saas_host_config_console_domain.split('.')[1:] | join('.'))) }}
 
 # 机密。全部来自环境变量, 由流水线经 Vault OIDC 注入 —— 角色自己不连
 # Vault, 也不在仓库里保存任何默认值。缺失时由 tasks 里的断言明确报错,
