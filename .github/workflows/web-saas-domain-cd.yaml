@@ -5,11 +5,16 @@ on:
       target_host: {required: true, type: string}
       deploy_env: {required: true, type: string}
       deploy_tag: {required: false, type: string, default: ''}
+      # observe_urls: 空格分隔的 URL 列表, 由调用方控制何时做健康检查。
+      # 默认空 = 部署阶段只做 pull-only 验证, 不轮询公网 URL(DNS 尚未切换时
+      # 公网 URL 无法到达新主机)。调用方应在 switch_dns 之后再传入 URL 做最终观测。
+      observe_urls: {required: false, type: string, default: ''}
   workflow_dispatch:
     inputs:
       target_host: {required: true, type: string}
       deploy_env: {required: true, type: choice, options: [sit, uat, prod]}
       deploy_tag: {required: false, type: string, default: ''}
+      observe_urls: {required: false, type: string, default: ''}
 permissions: {contents: read, id-token: write}
 jobs:
   deploy:
@@ -20,12 +25,10 @@ jobs:
       # 这次发布要推进哪些镜像。基础组件(postgres / stunnel / caddy)不随
       # 业务发布走 deploy_tag, 它们钉在验证过的版本上单独升级, 所以不列。
       managed_images: ACCOUNTS_IMAGE BILLING_IMAGE CONSOLE_IMAGE
-      # console 与 accounts 是 web-saas 栈里两个独立的对外站点(Caddyfile 各
-      # 有一个 https:// 块), 两个都要观测: 2026-07-28 出现过 accounts 起来
-      # 了(502 说明 vhost 在)、console 连证书都没有的分裂状态, 只盯一个会漏。
-      observe_urls: >-
-        https://console-${{ inputs.deploy_env }}.onwalk.net/
-        https://accounts-${{ inputs.deploy_env }}.onwalk.net/
+      # console 与 accounts 是 web-saas 栈里两个独立的对外站点。
+      # observe_urls 由调用方注入: platform-ops 在 switch_dns 完成后的 observe
+      # 阶段才传入, 部署阶段传空跳过(DNS 还没切, 新主机公网不可达)。
+      observe_urls: ${{ inputs.observe_urls }}
       target_host: ${{ inputs.target_host }}
       deploy_env: ${{ inputs.deploy_env }}
       deploy_tag: ${{ inputs.deploy_tag }}
