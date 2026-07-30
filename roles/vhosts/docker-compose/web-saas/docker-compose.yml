@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:17}
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE must be set}
     container_name: web-saas-postgres
     restart: unless-stopped
     env_file:
@@ -18,7 +18,7 @@ services:
       - web_saas_network
 
   stunnel-server:
-    image: ${STUNNEL_SERVER_IMAGE:-ghcr.io/x-evor/stunnel-server:2330d36}
+    image: ${STUNNEL_SERVER_IMAGE:?STUNNEL_SERVER_IMAGE must be set}
     container_name: web-saas-stunnel-server
     user: root
     restart: unless-stopped
@@ -35,7 +35,7 @@ services:
         condition: service_healthy
 
   stunnel-client:
-    image: ${STUNNEL_CLIENT_IMAGE:-ghcr.io/x-evor/stunnel-client:latest}
+    image: ${STUNNEL_CLIENT_IMAGE:?STUNNEL_CLIENT_IMAGE must be set}
     container_name: web-saas-stunnel-client
     restart: unless-stopped
     environment:
@@ -58,7 +58,7 @@ services:
       - stunnel-server
 
   accounts:
-    image: ${ACCOUNTS_IMAGE:-ghcr.io/x-evor/accounts:70c6a3f8}
+    image: ${ACCOUNTS_IMAGE:?ACCOUNTS_IMAGE must be set}
     container_name: web-saas-accounts
     restart: unless-stopped
     env_file:
@@ -77,7 +77,7 @@ services:
         condition: service_healthy
 
   billing:
-    image: ${BILLING_IMAGE:-ghcr.io/ai-workspace-services/billing-service:latest}
+    image: ${BILLING_IMAGE:?BILLING_IMAGE must be set}
     container_name: web-saas-billing
     restart: unless-stopped
     env_file:
@@ -92,7 +92,7 @@ services:
         condition: service_healthy
 
   console-assets:
-    image: ${CONSOLE_IMAGE:-ghcr.io/ai-workspace-services/console:latest}
+    image: ${CONSOLE_IMAGE:?CONSOLE_IMAGE must be set}
     container_name: web-saas-console-assets
     restart: "no"
     command:
@@ -108,7 +108,7 @@ services:
       - console_static:/assets
 
   console:
-    image: ${CONSOLE_IMAGE:-ghcr.io/ai-workspace-services/console:latest}
+    image: ${CONSOLE_IMAGE:?CONSOLE_IMAGE must be set}
     container_name: web-saas-console
     restart: unless-stopped
     env_file:

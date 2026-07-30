@@ -20,9 +20,9 @@ fi
 
 echo "Requested deployment ref: ${DEPLOY_TAG}"
 
-if [[ -z "${MANAGED_IMAGES:-}" ]]; then
-  echo "::warning::${DOMAIN} has no managed_images wired to this reusable workflow yet — cannot verify '${DEPLOY_TAG}' is actually what gitops will deploy. Not a pass, just unverifiable."
-  exit 0
+if [[ -z "${MANAGED_IMAGES:-}" && -z "${PINNED_IMAGES:-}" ]]; then
+  echo "::error::${DOMAIN} has no managed or pinned images wired to this reusable workflow; refusing an unverifiable deployment." >&2
+  exit 1
 fi
 
 env_url="https://raw.githubusercontent.com/${GITOPS_REPO}/${GITOPS_BRANCH}/${GITOPS_ENV_PATH}"
@@ -33,7 +33,7 @@ if ! curl -fsSL "${env_url}" -o "${env_file}"; then
 fi
 
 mismatches=()
-for var in ${MANAGED_IMAGES}; do
+for var in ${MANAGED_IMAGES:-}; do
   line="$(grep -E "^${var}=" "${env_file}" || true)"
   if [[ -z "${line}" ]]; then
     mismatches+=("${var}: not set in ${GITOPS_ENV_PATH}")
@@ -43,6 +43,18 @@ for var in ${MANAGED_IMAGES}; do
   actual_tag="${image_ref##*:}"
   if [[ "${actual_tag}" != "${DEPLOY_TAG}" ]]; then
     mismatches+=("${var}: gitops pins '${actual_tag}', requested '${DEPLOY_TAG}'")
+  fi
+done
+
+for var in ${PINNED_IMAGES:-}; do
+  line="$(grep -E "^${var}=" "${env_file}" || true)"
+  if [[ -z "${line}" ]]; then
+    mismatches+=("${var}: not set in ${GITOPS_ENV_PATH}")
+    continue
+  fi
+  image_ref="${line#*=}"
+  if [[ "${image_ref}" == *":latest" || "${image_ref}" != *":"* && "${image_ref}" != *"@sha256:"* ]]; then
+    mismatches+=("${var}: must use an explicit non-latest tag or digest, got '${image_ref}'")
   fi
 done
 
@@ -56,3 +68,6 @@ if [[ "${#mismatches[@]}" -gt 0 ]]; then
 fi
 
 echo "Confirmed: gitops ${GITOPS_ENV_PATH} already pins every managed image to '${DEPLOY_TAG}'."
+if [[ -n "${PINNED_IMAGES:-}" ]]; then
+  echo "Confirmed: every pinned infrastructure image is explicitly versioned and non-latest."
+fi
