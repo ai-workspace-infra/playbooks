@@ -1,3 +1,10 @@
 ---
 - import_playbook: deploy_xray_proxy_server.yml
+  vars:
+    # The generated CMDB uses the domain-level group.  Keep the role-specific
+    # defaults for standalone invocations, but make the domain entrypoint
+    # explicit so Ansible cannot silently report "no hosts matched".
+    agent_service_hosts: agent_proxy
 - import_playbook: deploy_xray_exporter.yml
+  vars:
+    xray_exporter_hosts: agent_proxy
