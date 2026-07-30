@@ -16,6 +16,9 @@ on:
       # compose/<domain>/.env.<env> 里的键名。为空表示该域尚未接入
       # compose 交付。
       managed_images: {required: false, type: string, default: ''}
+      # 固定基础设施镜像（空格分隔）。这些镜像不一定与业务 deploy_tag 同名，
+      # 但必须在 GitOps 中声明为不可变 tag 或 digest，绝不能回退到 latest。
+      pinned_images: {required: false, type: string, default: ''}
       # 本域对外应当可服务的 URL(空格分隔)。confirm-pull-only 只能证明
       # gitops 写对了 tag, 证明不了 Doco-CD 真的 reconcile 过; 少了这一项
       # 该域就只能"请求交付"而无法"观测交付", job 会在容器没起来时报绿。
@@ -52,6 +55,7 @@ jobs:
           TARGET_HOST: ${{ inputs.target_host }}
           DEPLOY_TAG: ${{ inputs.deploy_tag }}
           MANAGED_IMAGES: ${{ inputs.managed_images }}
+          PINNED_IMAGES: ${{ inputs.pinned_images }}
         run: .github/scripts/domain-cd-confirm-pull-only.sh
 
       - name: Observe delivery reached the running service
