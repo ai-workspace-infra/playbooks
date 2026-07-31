@@ -57,6 +57,22 @@ web_saas_host_config_wildcard_domain: >-
   {{ lookup('ansible.builtin.env', 'WEB_SAAS_WILDCARD_DOMAIN') | default('', true)
      or ('*.' ~ (web_saas_host_config_console_domain.split('.')[1:] | join('.'))) }}
 
+# 平台侧从 Vault 恢复下来的泛域名证书落盘位置(见 platform-ops-toolkit 的
+# platform-ops_deploy_base_restore-caddy-certs.sh 的 DOMAIN_TLS_DIR)。
+#
+# 只要这两个文件在, Caddy 就直接用它们提供 TLS, 完全不碰 ACME —— 这才是
+# "泛域名证书在有效期内可以无限次复用"真正落地的地方。在此之前, 恢复步骤
+# 把证书写到了磁盘上, 而 Caddyfile 仍然渲染成 ACME 模式, 于是证书躺在那里
+# 没人用, Caddy 照旧去签、照旧撞 429(2026-07-31 run 30623661870 就是如此:
+# 日志显示 "Reusing backed-up certificates ... 88 day(s) left", 主机上
+# /etc/xcontrol/tls/onwalk.net/current/ 五个文件俱全, 而 caddy_data 里一张
+# 证书都没有)。
+web_saas_host_config_domain_tls_dir: >-
+  {{ lookup('ansible.builtin.env', 'DOMAIN_TLS_DIR') | default('', true)
+     or ('/etc/xcontrol/tls/' ~ (web_saas_host_config_console_domain.split('.')[1:] | join('.'))) }}
+web_saas_host_config_domain_tls_fullchain: "{{ web_saas_host_config_domain_tls_dir }}/current/fullchain.pem"
+web_saas_host_config_domain_tls_key: "{{ web_saas_host_config_domain_tls_dir }}/current/key.pem"
+
 # 机密。全部来自环境变量, 由流水线经 Vault OIDC 注入 —— 角色自己不连
 # Vault, 也不在仓库里保存任何默认值。缺失时由 tasks 里的断言明确报错,
 # 而不是渲染出一个空口令让 postgres 起来却谁也连不上。

@@ -93,6 +93,25 @@
   loop_control:
     label: "{{ item.dest }}"
 
+# 平台侧的证书恢复步骤排在本 role 之前, 所以这里能看到它落下来的文件。
+# 两个都在才算数: 只有证书没有私钥(或反过来)时 Caddy 起不来, 而那种半截状态
+# 应该退回 ACME, 而不是渲染出一份指向缺失文件的配置。
+- name: Check for a restored wildcard certificate on disk
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: web_saas_host_config_restored_tls
+  loop:
+    - "{{ web_saas_host_config_domain_tls_fullchain }}"
+    - "{{ web_saas_host_config_domain_tls_key }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Decide how Caddy obtains TLS
+  ansible.builtin.set_fact:
+    web_saas_host_config_use_restored_tls: >-
+      {{ web_saas_host_config_restored_tls.results
+         | map(attribute='stat.exists') | select | list | length == 2 }}
+
 - name: Render web-saas Caddyfile
   ansible.builtin.template:
     src: Caddyfile.j2

@@ -17,11 +17,21 @@
 	admin off
 }
 
-{% if web_saas_host_config_acme_dns_enabled | bool %}
+{% if (web_saas_host_config_use_restored_tls | default(false) | bool) or (web_saas_host_config_acme_dns_enabled | bool) %}
 {{ web_saas_host_config_wildcard_domain }} {
+{% if web_saas_host_config_use_restored_tls | default(false) | bool %}
+	{# 从 Vault 恢复下来的泛域名证书就在磁盘上, 直接指过去 —— 这条路完全不碰
+	   ACME, 所以重建多少次都不消耗 Let's Encrypt 的签发额度。这才是"有效期内
+	   无限复用"真正落地的地方: 不是"让 Caddy 发现证书已在"(那要求伪造它的
+	   内部目录布局, 换个版本就对不上), 而是根本不给它签发的机会。
+	   证书临近到期时平台侧会主动跳过恢复, 磁盘上没有文件, 这里自动退回
+	   下面的 ACME 分支去签新的。 #}
+	tls {{ web_saas_host_config_domain_tls_fullchain }} {{ web_saas_host_config_domain_tls_key }}
+{% else %}
 	tls {
 		dns cloudflare {env.CLOUDFLARE_DNS_API_TOKEN}
 	}
+{% endif %}
 
 	encode zstd gzip
 
