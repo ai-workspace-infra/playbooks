@@ -119,6 +119,8 @@
     owner: root
     group: root
     mode: "0644"
+  # Caddy 只在启动时读配置; 改了文件不重启, 容器会一直跑旧的那份。
+  notify: web-saas caddy config changed
 
 # 0600 而不是 Caddyfile 的 0644: 这里面是一个能改整个 zone 解析的 token。
 - name: Render Caddy env file (Cloudflare DNS token)
@@ -129,6 +131,8 @@
     group: root
     mode: "0600"
   no_log: true
+  # token 也是启动时读进进程环境的, 换了同样要重启才生效。
+  notify: web-saas caddy config changed
 
 # 走 DNS-01 时把模式和泛域名打出来。签发模式是"证书为什么签不出来"排查的
 # 第一个岔路口, 而它由一个 token 在不在悄悄决定 —— 不打出来的话, 现场只能
