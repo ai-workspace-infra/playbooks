@@ -1,0 +1,30 @@
+---
+# Caddyfile 与 caddy.env 都是 bind mount 进容器的。文件内容一改, 容器里立刻
+# 就能看到新内容 —— 但 Caddy 只在**启动时**读一次配置, 之后不会再看。而
+# Doco-CD 只在 compose 定义/镜像/env 变化时才重建容器, 一个被挂载的文件改了
+# 内容不触发它做任何事。
+#
+# 结果就是 2026-07-31 run 30629233143 那种情况: 磁盘上的 Caddyfile 已经是
+#   tls /etc/xcontrol/tls/onwalk.net/current/fullchain.pem ...
+# 而容器还在跑 24 分钟前那份 ACME 配置, 继续去撞 429。每一步都成功, 证书也
+# 确实恢复到位了, 就是没人让 Caddy 重新读一遍。
+#
+# 用 restart 而不是 `caddy reload`: Caddyfile 里写了 `admin off`, 而 reload
+# 走的正是 admin API, 关掉之后 reload 无从下手。restart 对反向代理来说是一次
+# 亚秒级中断, 换取"配置一定生效"是划算的。
+- name: Restart web-saas Caddy
+  # 首次部署时 Doco-CD 可能还没把容器拉起来, 那时没有东西可重启, 也不需要 ——
+  # 容器稍后启动时自然会读到新配置。所以容器不存在不是错误。
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if [ -n "$(docker ps -q --filter name='^web-saas-caddy$')" ]; then
+      docker restart web-saas-caddy >/dev/null
+      echo restarted
+    else
+      echo "web-saas-caddy is not running yet; it will pick up the new config when Doco-CD starts it"
+    fi
+  args:
+    executable: /bin/bash
+  register: web_saas_host_config_caddy_restart
+  changed_when: "'restarted' in web_saas_host_config_caddy_restart.stdout"
+  listen: web-saas caddy config changed
