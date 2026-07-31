@@ -107,13 +107,16 @@
         - vault_pg_password is defined
         - vault_pg_password | length > 0
 
-    # 探测无条件执行。此前两个探测各自被 postgresql_deploy_mode_effective 门控,
-    # 而该变量在未显式传入 POSTGRESQL_DEPLOY_MODE 时默认 'native' —— 于是容器探测
-    # 被跳过、宿主机又没有 psql, 条件块整体为假, 13 个任务全部 skipped、failed=0、
-    # 步骤报绿, 而一个库都没有建。
+    # 探测运行中的 Postgres 容器。
+    # 当显式声明为 compose 模式时，它可能正在被另一个并行的 GitOps (Doco-CD) 进程
+    # 异步拉起。此时我们给予最多 3 分钟的重试等待时间，避免刚触发部署就因为容器还
+    # 没启动而宣告失败。
     - name: Detect running Postgres container
       ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E '^web-saas-postgresql$'"
       register: detected_pg
+      until: detected_pg.stdout != "" or lookup('env', 'POSTGRESQL_DEPLOY_MODE') != 'compose'
+      retries: 36
+      delay: 5
       changed_when: false
       failed_when: false
 
