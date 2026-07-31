@@ -25,19 +25,13 @@
 
 	encode zstd gzip
 
-	{# handle 块互斥且按书写顺序求值, 所以最具体的匹配必须写在最前面:
-	   console 域下的 /api/auth/* 要先被摘走, 否则会被 console 的兜底吃掉
-	   —— 与改造前那条注释是同一个约束, 只是从"路径优先"变成"域名+路径"。 #}
-	@console_auth {
-		host {{ web_saas_host_config_console_domain }}
-		path /api/auth/*
-	}
-	handle @console_auth {
-		reverse_proxy accounts:8080 {
-			header_up X-Forwarded-Host {host}
-		}
-	}
-
+	{# console 域下的 /api/auth/* 必须留给 console 自己 —— 它不是 accounts 的
+	   API 前缀, 而是 Next 的 BFF 路由(src/app/api/auth/**)。BFF 做两件 Go 服务
+	   做不到的事: 把浏览器的 xc_session cookie 翻成 Authorization: Bearer, 以及
+	   把 BFF 路径翻成 Go 路径(/mfa/setup → /mfa/totp/provision)。曾经这里有一条
+	   把该前缀转给 accounts:8080 的规则, 结果 MFA 绑定四个端点全废(setup 404、
+	   status/disable 401、verify 语义错) —— 见 docs/cases/runbooks/。
+	   console 自己要访问 accounts 时走 authUrl(accounts-uat 这个 vhost), 不靠本域。 #}
 	@accounts host {{ web_saas_host_config_accounts_domain }}
 	handle @accounts {
 		reverse_proxy accounts:8080 {
@@ -61,13 +55,8 @@
 https://{{ web_saas_host_config_console_domain }} {
 	encode zstd gzip
 
-	# accounts 的 API 前缀先分流, 否则会被 console 的兜底规则吃掉。
-	handle /api/auth/* {
-		reverse_proxy accounts:8080 {
-			header_up X-Forwarded-Host {host}
-		}
-	}
-
+	# /api/auth/* 不做分流: 那是 console 自己的 Next BFF 路由, 不是 accounts 的
+	# API 前缀。理由同 DNS-01 分支上面那段注释。
 	handle {
 		reverse_proxy console:3000
 	}
