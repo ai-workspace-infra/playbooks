@@ -86,6 +86,11 @@ web_saas_host_config_secrets:
 
   INTERNAL_SERVICE_TOKEN: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}"
 
+  ACCOUNT_SERVICE_URL: "{{ lookup('ansible.builtin.env', 'ACCOUNT_SERVICE_URL') | default('https://' ~ web_saas_host_config_accounts_domain, true) }}"
+  NEXT_PUBLIC_ACCOUNT_SERVICE_URL: "{{ lookup('ansible.builtin.env', 'NEXT_PUBLIC_ACCOUNT_SERVICE_URL') | default('https://' ~ web_saas_host_config_accounts_domain, true) }}"
+  SERVER_SERVICE_URL: "{{ lookup('ansible.builtin.env', 'SERVER_SERVICE_URL') | default('https://' ~ web_saas_host_config_console_domain ~ '/api', true) }}"
+  NEXT_PUBLIC_SERVER_SERVICE_URL: "{{ lookup('ansible.builtin.env', 'NEXT_PUBLIC_SERVER_SERVICE_URL') | default('https://' ~ web_saas_host_config_console_domain ~ '/api', true) }}"
+
 # 这些键为空就让部署失败。它们不是"可选配置", 是没有就跑不起来的东西 ——
 # 空口令会让 postgres 正常启动、accounts 正常启动, 然后在第一次登录时才
 # 暴露问题, 那时 job 早已报绿。
