@@ -38,6 +38,11 @@
     agent_tls_cert_name: >-
       {{ lookup('ansible.builtin.env', 'AGENT_TLS_CERT_NAME')
          | default(agent_id, true) }}
+    agent_domain_tls_dir: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_DOMAIN_TLS_DIR')
+         | default('/etc/xcontrol/tls/svc.plus', true) }}
+    agent_tls_source_cert_path: "{{ agent_domain_tls_dir }}/current/fullchain.pem"
+    agent_tls_source_key_path: "{{ agent_domain_tls_dir }}/current/key.pem"
     agent_controller_url: >-
       {{ lookup('ansible.builtin.env', 'AGENT_CONTROLLER_URL')
          | default('https://accounts.svc.plus', true) }}
