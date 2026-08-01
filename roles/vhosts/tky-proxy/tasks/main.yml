@@ -5,27 +5,15 @@
     state: directory
     mode: '0755'
 
-- name: Configure Caddy for tky-proxy in conf.d
-  ansible.builtin.copy:
-    dest: /etc/caddy/conf.d/tky-proxy.conf
-    content: |
-      tky-proxy.svc.plus {
-
-          @grpc {
-              path /split/*
-          }
-
-          handle @grpc {
-              reverse_proxy unix//dev/shm/xray.sock {
-                   transport http {
-                       versions h2c 2
-                   }
-              }
-          }
-
-          # Fallback/Default site content
-          respond "Agent Service Plus Node"
-      }
+- name: Configure Caddy for agent proxy domains in conf.d
+  ansible.builtin.template:
+    src: tky-proxy.conf.j2
+    dest: /etc/caddy/conf.d/tky-proxy.caddy
     mode: '0644'
   notify:
     - Restart caddy
+
+- name: Remove legacy ignored Caddy configuration
+  ansible.builtin.file:
+    path: /etc/caddy/conf.d/tky-proxy.conf
+    state: absent
