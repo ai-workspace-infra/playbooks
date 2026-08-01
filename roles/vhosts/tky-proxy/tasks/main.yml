@@ -1,4 +1,48 @@
 ---
+- name: Verify Vault-restored public TLS material is available
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ agent_tls_source_cert_path }}"
+    - "{{ agent_tls_source_key_path }}"
+  register: agent_tls_source_files
+
+- name: Require Vault-restored public TLS material before configuring Caddy
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+      - item.stat.size | int > 0
+    fail_msg: >-
+      Vault-restored TLS material {{ item.item }} is missing. Refusing to fall
+      back to ACME for agent-proxy; restore the web-saas domain certificate
+      first so repeated rebuilds do not consume ACME issuance quota.
+  loop: "{{ agent_tls_source_files.results }}"
+
+- name: Ensure agent-proxy Caddy TLS directory exists
+  ansible.builtin.file:
+    path: /etc/caddy/tls
+    state: directory
+    owner: caddy
+    group: caddy
+    mode: "0750"
+
+- name: Stage Vault-restored certificate for the system Caddy user
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    owner: caddy
+    group: caddy
+    mode: "{{ item.mode }}"
+  loop:
+    - src: "{{ agent_tls_source_cert_path }}"
+      dest: "{{ agent_tls_cert_path }}"
+      mode: "0644"
+    - src: "{{ agent_tls_source_key_path }}"
+      dest: "{{ agent_tls_key_path }}"
+      mode: "0640"
+
 - name: Ensure Caddy conf.d directory exists
   ansible.builtin.file:
     path: /etc/caddy/conf.d
