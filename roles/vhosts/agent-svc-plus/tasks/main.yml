@@ -278,6 +278,31 @@
   tags:
     - xray-runtime-config
 
+- name: Install agent systemd service
+  ansible.builtin.template:
+    src: agent-svc-plus.service.j2
+    dest: "/etc/systemd/system/{{ agent_svc_plus_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart agent-svc-plus
+
+- name: Enable and start agent-svc-plus
+  ansible.builtin.systemd:
+    name: "{{ agent_svc_plus_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for agent-generated Xray runtime configuration
+  ansible.builtin.wait_for:
+    path: "{{ item }}"
+    timeout: 60
+  loop:
+    - "{{ xray_config_path }}"
+    - "{{ xray_tcp_config_path }}"
+  when: xray_enabled | bool
+
 - name: Validate Xray configuration before starting services
   ansible.builtin.command: "{{ xray_binary_path }} run -test -config {{ item }}"
   environment:
@@ -298,19 +323,3 @@
     - xray.service
     - xray-tcp.service
   when: xray_enabled | bool
-
-- name: Install agent systemd service
-  ansible.builtin.template:
-    src: agent-svc-plus.service.j2
-    dest: "/etc/systemd/system/{{ agent_svc_plus_service_name }}.service"
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Restart agent-svc-plus
-
-- name: Enable and start agent-svc-plus
-  ansible.builtin.systemd:
-    name: "{{ agent_svc_plus_service_name }}"
-    enabled: true
-    state: started
-    daemon_reload: true
