@@ -72,9 +72,13 @@ source = '''
 .tags.instance = "{{ inventory_hostname }}"
 .tags.job = "blackbox"
 .tags.module = "https_ssl"
-.tags.company = "svc.plus"
-.tags.project = "svc.plus"
-.tags.env = "production"
+{# company/project/env 原本写死成 svc.plus + production。UAT 主机因此把自己的
+   指标当成生产数据送进集中式可观测, 在看板上与真生产无法区分。这三个标签
+   必须跟着被探测的环境走 —— sink 仍然是同一个 observability.svc.plus, 那是
+   有意的集中收集, 区分靠标签而不是靠分开的后端。 #}
+.tags.company = "{{ blackbox_probe_domain_base | default('svc.plus') }}"
+.tags.project = "{{ blackbox_probe_domain_base | default('svc.plus') }}"
+.tags.env = "{{ blackbox_probe_env | default('production') }}"
 .tags.name = "{{ target.name }}"
 .tags.target = "{{ target.url }}"
 '''
