@@ -1,0 +1,16 @@
+{{ tky_proxy_domains | join(' ') }} {
+
+    @xhttp {
+        path /split/*
+    }
+
+    handle @xhttp {
+        reverse_proxy unix//dev/shm/xray.sock {
+            transport http {
+                versions h2c 2
+            }
+        }
+    }
+
+    respond "Agent Service Plus Node"
+}
