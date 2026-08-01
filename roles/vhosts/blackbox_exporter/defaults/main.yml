@@ -14,16 +14,43 @@ blackbox_download_base_url: "https://dl.svc.plus/prometheus/blackbox_exporter"
 blackbox_tmp_dir: "/tmp"
 dl_business_host: "dl.svc.plus"
 
+# 被探测的域名后缀。生产是 svc.plus; uat/sit 由流水线经 TARGET_DOMAIN_BASE
+# 传入(onwalk.net), 从而只探测本环境自己的站点。
+#
+# 为什么要参数化: 这份默认值原本写死成 svc.plus 的五个生产站点, 于是每台 uat
+# 主机都在按 60s 周期对生产端点(accounts/console/www.svc.plus 等)发真实
+# HTTPS 探测请求, 并把结果打上 company/project=svc.plus、env=production 的标签
+# 送进集中式可观测 —— 生产看板上因此混入了实际属于 uat 的机器, 而且分辨不出来。
+# 2026-08-01 在 agent-proxy.onwalk.net 上发现。
+blackbox_probe_domain_base: >-
+  {{ lookup('ansible.builtin.env', 'TARGET_DOMAIN_BASE') | default('svc.plus', true) }}
+
+# 环境名同样不能写死。它会成为指标上的 env 标签, 写死 production 等于让 uat
+# 的数据在看板上冒充生产。
+blackbox_probe_env: >-
+  {{ lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('production', true) }}
+
+# 站点在各环境的命名不同: 生产是 console.svc.plus, 非生产是 console-uat.onwalk.net。
+blackbox_probe_env_suffix: "{{ '' if blackbox_probe_domain_base == 'svc.plus' else '-' ~ blackbox_probe_env }}"
+
 # HTTPS endpoints probed for availability and certificate expiry. Vector reads
 # these defaults when it renders its Prometheus scrape configuration.
-blackbox_ssl_targets:
-  - name: "jp-xhttp.svc.plus"
-    url: "https://jp-xhttp.svc.plus"
-  - name: "tky-proxy.svc.plus"
-    url: "https://tky-proxy.svc.plus"
-  - name: "www.svc.plus"
-    url: "https://www.svc.plus"
-  - name: "console.svc.plus"
-    url: "https://console.svc.plus"
-  - name: "accounts.svc.plus"
-    url: "https://accounts.svc.plus"
+#
+# jp-xhttp / tky-proxy 是生产独有的代理节点, 非生产环境没有对应物, 所以只在
+# 域名后缀为 svc.plus 时才探测 —— 否则会去探一堆不存在的主机名。
+blackbox_ssl_targets: >-
+  {{
+    (
+      [
+        {'name': 'jp-xhttp.'  ~ blackbox_probe_domain_base, 'url': 'https://jp-xhttp.'  ~ blackbox_probe_domain_base},
+        {'name': 'tky-proxy.' ~ blackbox_probe_domain_base, 'url': 'https://tky-proxy.' ~ blackbox_probe_domain_base},
+        {'name': 'www.'       ~ blackbox_probe_domain_base, 'url': 'https://www.'       ~ blackbox_probe_domain_base}
+      ] if blackbox_probe_domain_base == 'svc.plus' else []
+    )
+    + [
+        {'name': 'console'  ~ blackbox_probe_env_suffix ~ '.' ~ blackbox_probe_domain_base,
+         'url':  'https://console'  ~ blackbox_probe_env_suffix ~ '.' ~ blackbox_probe_domain_base},
+        {'name': 'accounts' ~ blackbox_probe_env_suffix ~ '.' ~ blackbox_probe_domain_base,
+         'url':  'https://accounts' ~ blackbox_probe_env_suffix ~ '.' ~ blackbox_probe_domain_base}
+      ]
+  }}
