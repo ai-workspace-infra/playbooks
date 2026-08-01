@@ -303,6 +303,12 @@
     - "{{ xray_tcp_config_path }}"
   when: xray_enabled | bool
 
+- name: Wait for Caddy-managed agent certificate before validating Xray
+  ansible.builtin.wait_for:
+    path: "/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/{{ agent_tls_cert_name }}/{{ agent_tls_cert_name }}.crt"
+    timeout: 300
+  when: xray_enabled | bool
+
 - name: Validate Xray configuration before starting services
   ansible.builtin.command: "{{ xray_binary_path }} run -test -config {{ item }}"
   environment:
