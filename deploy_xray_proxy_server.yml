@@ -41,6 +41,17 @@
     agent_controller_url: >-
       {{ lookup('ansible.builtin.env', 'AGENT_CONTROLLER_URL')
          | default('https://accounts.svc.plus', true) }}
+    # A newly provisioned replica is bootstrapped before public DNS is cut over.
+    # The controller URL must keep its real hostname for TLS/SNI, while the
+    # temporary address below lets the agent reach this run's web-saas host.
+    agent_controller_ip: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_CONTROLLER_IP')
+         | default('', true) }}
+    agent_controller_host: >-
+      {{ agent_controller_url
+         | regex_replace('^https?://', '')
+         | regex_replace('/.*$', '')
+         | regex_replace(':.*$', '') }}
     tky_proxy_domains:
       - >-
         {{ lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN')
@@ -117,6 +128,18 @@
 
     - name: Gather service facts
       ansible.builtin.service_facts:
+
+    - name: Pin controller hostname to this run's web-saas host before DNS cutover
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^[[:space:]]*[^#[:space:]]+[[:space:]]+{{ agent_controller_host | regex_escape() }}[[:space:]]+# platform-ops temporary agent controller$'
+        line: "{{ agent_controller_ip }} {{ agent_controller_host }} # platform-ops temporary agent controller"
+        state: present
+        create: true
+        mode: "0644"
+      when:
+        - agent_controller_ip | length > 0
+        - agent_controller_host | length > 0
 
   roles:
     - roles/vhosts/caddy
