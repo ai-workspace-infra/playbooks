@@ -2,6 +2,17 @@
 
     tls {{ agent_tls_cert_path }} {{ agent_tls_key_path }}
 
+    # Billing 从 web-saas 节点通过 HTTPS 拉取 Exporter window snapshots。
+    # handle_path 去掉外部前缀后再转给本机两个 exporter 实例；8080/8081
+    # 不需要对公网开放，Bearer token 继续由 Billing 透传给 exporter。
+    handle_path /xray-exporter/xhttp/* {
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    handle_path /xray-exporter/tcp/* {
+        reverse_proxy 127.0.0.1:8081
+    }
+
     @xhttp {
         path /split/*
     }

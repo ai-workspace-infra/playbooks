@@ -54,6 +54,22 @@
 		reverse_proxy console:3000
 	}
 
+	{# agent.svc.plus 在 agent-proxy 节点上周期性触发 Billing 的采集/对账任务。
+	   这个入口只在域名和 agent CIDR 都由部署流水线提供时生成, 并且 Caddy
+	   在入口处再做一次源 IP 限制。Billing 仍然是唯一写 PostgreSQL 的服务。 #}
+{% if web_saas_host_config_billing_domain | trim | length > 0 and web_saas_host_config_billing_allowed_cidrs | trim | length > 0 %}
+	@billing host {{ web_saas_host_config_billing_domain }}
+	handle @billing {
+		@billing_agent remote_ip {{ web_saas_host_config_billing_allowed_cidrs }}
+		handle @billing_agent {
+			reverse_proxy billing:8081 {
+				header_up X-Forwarded-Host {host}
+			}
+		}
+		respond "billing ingress is restricted to agent-proxy" 403
+	}
+{% endif %}
+
 	{# 泛域名会把 <base> 下所有子域都揽进来, 包括本机并不打算服务的那些。
 	   没有兜底它们会落在所有 handle 之外、拿到一个空响应; 显式 abort 让
 	   "这个域名本机不服务"成为一个明确结果而不是一个可疑的空白页。 #}
@@ -78,4 +94,17 @@ https://{{ web_saas_host_config_accounts_domain }} {
 		header_up X-Forwarded-Host {host}
 	}
 }
+
+{% if web_saas_host_config_billing_domain | trim | length > 0 and web_saas_host_config_billing_allowed_cidrs | trim | length > 0 %}
+https://{{ web_saas_host_config_billing_domain }} {
+	encode zstd gzip
+	@billing_agent remote_ip {{ web_saas_host_config_billing_allowed_cidrs }}
+	handle @billing_agent {
+		reverse_proxy billing:8081 {
+			header_up X-Forwarded-Host {host}
+		}
+	}
+	respond "billing ingress is restricted to agent-proxy" 403
+}
+{% endif %}
 {% endif %}

@@ -43,6 +43,17 @@ compose 里这些路径**必须是绝对的**:Doco-CD 每次部署都把 gitops 
 - `AUTH_TOKEN_PUBLIC_TOKEN`、`AUTH_TOKEN_REFRESH_SECRET`、`AUTH_TOKEN_ACCESS_SECRET`
 - `WEB_SAAS_STUNNEL_{CA_CERT,SERVER_CERT,SERVER_KEY}_B64`(base64,避免换行在 env 里被破坏)
 - `WEB_SAAS_CONSOLE_DOMAIN`、`WEB_SAAS_ACCOUNTS_DOMAIN`
+
+**可选的跨节点 Billing 入口**:
+
+- `WEB_SAAS_BILLING_DOMAIN`：例如 `billing-uat.onwalk.net`。
+- `WEB_SAAS_BILLING_ALLOWED_CIDRS`：允许触发 Billing job 的 agent-proxy 源地址，
+  例如 `167.179.64.91/32`。
+
+只有这两个值同时非空时，Caddy 才会渲染 Billing 站点；否则不会把
+`/v1/jobs/*` 暴露到公网。agent-proxy 的 `billing.baseURL` 必须使用该 HTTPS 域名，
+而不是 web-saas 容器内的 `127.0.0.1:8081`。Billing 仍然负责从 Exporter 读取快照并
+独占写入共用 PostgreSQL，Caddy 只承载 agent 的调度触发请求。
 - `EXPORTER_SOURCES_JSON`：Billing 采集的一个或多个远端 xray-exporter 来源；必须使用
   可从 web-saas 主机访问的地址，不能填 exporter 所在主机上的 `127.0.0.1`
 
