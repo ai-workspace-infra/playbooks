@@ -43,8 +43,19 @@ compose 里这些路径**必须是绝对的**:Doco-CD 每次部署都把 gitops 
 - `AUTH_TOKEN_PUBLIC_TOKEN`、`AUTH_TOKEN_REFRESH_SECRET`、`AUTH_TOKEN_ACCESS_SECRET`
 - `WEB_SAAS_STUNNEL_{CA_CERT,SERVER_CERT,SERVER_KEY}_B64`(base64,避免换行在 env 里被破坏)
 - `WEB_SAAS_CONSOLE_DOMAIN`、`WEB_SAAS_ACCOUNTS_DOMAIN`
+- `EXPORTER_SOURCES_JSON`：Billing 采集的一个或多个远端 xray-exporter 来源；必须使用
+  可从 web-saas 主机访问的地址，不能填 exporter 所在主机上的 `127.0.0.1`
 
-**可选**:`BILLING_DB_PASSWORD`、`OAUTH_{GITHUB,GOOGLE}_CLIENT_{ID,SECRET}`、
+Exporter 运行时默认下载线上兼容基线 `compassvpn/xray-exporter:v0.6.0`。
+UAT 验证自定义构建时，可通过 `XRAY_EXPORTER_RELEASE_REPOSITORY` 和
+`XRAY_EXPORTER_VERSION` 覆盖发布仓库与 tag；未设置时不改变现有生产下载路径。
+
+启用 Billing snapshot 时，Exporter 通过 `INTERNAL_SERVICE_TOKEN`、
+`ACCOUNTS_BASE_URL` 和 `EXPORTER_NODE_ID` 从 Accounts 做身份映射，并在同一
+HTTP 服务上提供 Bearer 保护的 `/v1/snapshots/*`。Prometheus 的 `/scrape`
+路径保持原有行为，供 Vector/Observability/Grafana 使用。
+
+**可选**:`EXPORTER_BASE_URL`（仅旧单源兼容）、`BILLING_DB_PASSWORD`、`OAUTH_{GITHUB,GOOGLE}_CLIENT_{ID,SECRET}`、
 `INTERNAL_SERVICE_TOKEN`
 
 可选键缺失不会让部署失败(见 `platform-ops-toolkit`

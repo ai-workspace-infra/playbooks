@@ -6,7 +6,8 @@ After=network.target
 Type=simple
 User={{ xray_exporter_user }}
 Group={{ xray_exporter_group }}
-ExecStart={{ xray_exporter_binary_path }} -l {{ xray_exporter_instance.listen_addr }} -e {{ xray_exporter_instance.xray_api_addr }} -u -p /var/log/xray/access.log
+EnvironmentFile=-{{ xray_exporter_env_file }}
+ExecStart={{ xray_exporter_binary_path }} -l {{ xray_exporter_instance.listen_addr }} -e {{ xray_exporter_instance.xray_api_addr }} -u -p /var/log/xray/access.log --node-id {{ xray_exporter_instance.node_id }} --snapshot-store-path {{ xray_exporter_instance.snapshot_store_path }}
 Restart=always
 RestartSec=10
 

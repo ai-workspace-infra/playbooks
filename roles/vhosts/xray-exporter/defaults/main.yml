@@ -1,5 +1,6 @@
 ---
 xray_exporter_version: "v0.6.0"
+xray_exporter_release_repository: "compassvpn/xray-exporter"
 xray_exporter_listen_addr: "127.0.0.1:8080"
 xray_exporter_xray_api_addr: "127.0.0.1:18080"
 xray_exporter_tcp_listen_addr: "127.0.0.1:8081"
@@ -13,12 +14,24 @@ xray_exporter_instances:
     description: "Xray Exporter (XHTTP)"
     listen_addr: "{{ xray_exporter_listen_addr }}"
     xray_api_addr: "{{ xray_exporter_xray_api_addr }}"
+    node_id: "{{ xray_exporter_node_id }}-xhttp"
+    snapshot_store_path: "{{ xray_exporter_snapshot_store_dir }}/xhttp-snapshots.json"
   - name: xray-exporter-tcp
     description: "Xray Exporter (TCP)"
     listen_addr: "{{ xray_exporter_tcp_listen_addr }}"
     xray_api_addr: "{{ xray_exporter_tcp_xray_api_addr }}"
+    node_id: "{{ xray_exporter_node_id }}-tcp"
+    snapshot_store_path: "{{ xray_exporter_snapshot_store_dir }}/tcp-snapshots.json"
 xray_exporter_user: "root"
 xray_exporter_group: "root"
+xray_exporter_env_file: "/etc/xray-exporter.env"
+xray_exporter_node_id: "{{ inventory_hostname }}"
+xray_exporter_env_name: "prod"
+xray_exporter_accounts_base_url: "https://accounts.svc.plus"
+xray_exporter_internal_service_token: ""
+xray_exporter_snapshot_store_dir: "/var/lib/xray-exporter"
+xray_exporter_snapshot_retention: "72h"
+xray_exporter_snapshot_interval: "1m"
 
 # Wait, Xray Stats API URL configuration:
 xray_exporter_stats_url: "http://127.0.0.1:49227/debug/vars"

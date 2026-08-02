@@ -6,11 +6,29 @@
 
 - name: Download xray-exporter binary
   ansible.builtin.get_url:
-    url: "https://github.com/compassvpn/xray-exporter/releases/download/{{ xray_exporter_version }}/xray-exporter-linux-{{ xray_exporter_arch }}"
+    url: "https://github.com/{{ xray_exporter_release_repository }}/releases/download/{{ xray_exporter_version }}/xray-exporter-linux-{{ xray_exporter_arch }}"
     dest: "{{ xray_exporter_binary_path }}"
     mode: '0755'
     owner: "{{ xray_exporter_user }}"
     group: "{{ xray_exporter_group }}"
+  notify: Restart xray-exporters
+
+- name: Ensure xray-exporter snapshot store directory exists
+  ansible.builtin.file:
+    path: "{{ xray_exporter_snapshot_store_dir }}"
+    state: directory
+    owner: "{{ xray_exporter_user }}"
+    group: "{{ xray_exporter_group }}"
+    mode: "0750"
+
+- name: Render xray-exporter runtime environment
+  ansible.builtin.template:
+    src: xray-exporter.env.j2
+    dest: "{{ xray_exporter_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
   notify: Restart xray-exporters
 
 - name: Stop and disable legacy xray-exporter services
