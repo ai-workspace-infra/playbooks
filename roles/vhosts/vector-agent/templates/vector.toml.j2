@@ -115,7 +115,9 @@ max_events = 1
 timeout_secs = 5
 [sinks.billing_snapshot_ingest.buffer]
 type = "disk"
-max_size = 268435456
+# Vector's disk-buffer metadata requires a few bytes beyond the nominal
+# 256 MiB payload boundary.
+max_size = 268435488
 {% endif %}
 
 [sinks.prometheus_remote]
