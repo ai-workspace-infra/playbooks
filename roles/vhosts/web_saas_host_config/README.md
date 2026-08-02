@@ -43,8 +43,10 @@ compose 里这些路径**必须是绝对的**:Doco-CD 每次部署都把 gitops 
 - `AUTH_TOKEN_PUBLIC_TOKEN`、`AUTH_TOKEN_REFRESH_SECRET`、`AUTH_TOKEN_ACCESS_SECRET`
 - `WEB_SAAS_STUNNEL_{CA_CERT,SERVER_CERT,SERVER_KEY}_B64`(base64,避免换行在 env 里被破坏)
 - `WEB_SAAS_CONSOLE_DOMAIN`、`WEB_SAAS_ACCOUNTS_DOMAIN`
+- `EXPORTER_SOURCES_JSON`：Billing 采集的一个或多个远端 xray-exporter 来源；必须使用
+  可从 web-saas 主机访问的地址，不能填 exporter 所在主机上的 `127.0.0.1`
 
-**可选**:`BILLING_DB_PASSWORD`、`OAUTH_{GITHUB,GOOGLE}_CLIENT_{ID,SECRET}`、
+**可选**:`EXPORTER_BASE_URL`（仅旧单源兼容）、`BILLING_DB_PASSWORD`、`OAUTH_{GITHUB,GOOGLE}_CLIENT_{ID,SECRET}`、
 `INTERNAL_SERVICE_TOKEN`
 
 可选键缺失不会让部署失败(见 `platform-ops-toolkit`
