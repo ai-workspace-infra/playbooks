@@ -34,6 +34,14 @@
       WEB_SAAS_CONSOLE_DOMAIN and WEB_SAAS_ACCOUNTS_DOMAIN must be set —
       Caddy needs them to request certificates and to route by host.
 
+- name: Report Billing external ingress mode
+  ansible.builtin.debug:
+    msg: >-
+      Billing external ingress:
+      {{ 'enabled for ' ~ web_saas_host_config_billing_domain ~ ', allowed CIDRs ' ~ web_saas_host_config_billing_allowed_cidrs
+         if (web_saas_host_config_billing_domain | trim | length > 0 and web_saas_host_config_billing_allowed_cidrs | trim | length > 0)
+         else 'disabled — WEB_SAAS_BILLING_DOMAIN and WEB_SAAS_BILLING_ALLOWED_CIDRS are both required' }}
+
 - name: Ensure web-saas host config directories exist
   ansible.builtin.file:
     path: "{{ item }}"
