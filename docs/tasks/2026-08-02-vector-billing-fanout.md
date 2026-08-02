@@ -21,6 +21,11 @@ The UAT `agent-svc-plus` Xray instances expose Stats APIs on
 `127.0.0.1:28080` and `127.0.0.1:28181`. Exporter addresses are now explicit
 and remain overrideable with `XRAY_EXPORTER_XRAY_API_ADDR` and
 `XRAY_EXPORTER_TCP_XRAY_API_ADDR` for hosts with the legacy layout.
+
+The Billing HTTP sink uses a disk buffer. Vector requires the configured
+`max_size` to be at least `268435488` bytes, so the buffer is set just above
+the 256 MiB boundary; otherwise Vector keeps restarting and never sends
+accepted snapshots.
 VECTOR_SNAPSHOT_URL=http://127.0.0.1:8686
 BILLING_INGEST_MODE=push
 INTERNAL_SERVICE_TOKEN=<Vault injected shared token>
