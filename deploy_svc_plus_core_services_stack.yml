@@ -94,7 +94,11 @@
     billing_service_exporter_base_url: >-
       {{ lookup('ansible.builtin.env', 'EXPORTER_BASE_URL')
          | default(hostvars['localhost'].stack_env_map.EXPORTER_BASE_URL
-         | default('http://127.0.0.1:8080', true), true) }}
+         | default('', true), true) }}
+    billing_service_ingest_mode: >-
+      {{ lookup('ansible.builtin.env', 'BILLING_INGEST_MODE')
+         | default(hostvars['localhost'].stack_env_map.BILLING_INGEST_MODE
+         | default('push', true), true) }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
          | default('billing-service,xworkmate-bridge,xray-exporter,agent,accounts,stunnel-client,apisix,console', true) }}

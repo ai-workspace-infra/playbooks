@@ -54,9 +54,9 @@
 		reverse_proxy console:3000
 	}
 
-	{# agent.svc.plus 在 agent-proxy 节点上周期性触发 Billing 的采集/对账任务。
-	   这个入口只在域名和 agent CIDR 都由部署流水线提供时生成, 并且 Caddy
-	   在入口处再做一次源 IP 限制。Billing 仍然是唯一写 PostgreSQL 的服务。 #}
+	{# agent-proxy/Vector 通过这个入口投递 Billing 快照。域名和 agent CIDR
+	   都由部署流水线提供时才生成, Caddy 先做源 IP 限制, Billing ingest
+	   再用与 Accounts 相同的 INTERNAL_SERVICE_TOKEN 做 Bearer 认证。 #}
 {% if web_saas_host_config_billing_domain | trim | length > 0 and web_saas_host_config_billing_allowed_cidrs | trim | length > 0 %}
 	@billing host {{ web_saas_host_config_billing_domain }}
 	handle @billing {

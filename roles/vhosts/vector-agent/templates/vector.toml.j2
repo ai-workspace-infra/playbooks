@@ -84,6 +84,39 @@ source = '''
 '''
 {% endfor %}
 
+{% if vector_billing_ingest_enabled | bool and inventory_hostname in groups.get('xray_exporter', []) %}
+# Normalized snapshots are pushed by xray-exporter and fan out through Vector
+# to Billing. Grafana continues to receive the Prometheus stream below.
+[sources.xray_snapshot_input]
+type = "http_server"
+address = "{{ vector_billing_ingest_address }}"
+decoding.codec = "json"
+
+[sinks.billing_snapshot_ingest]
+type = "http"
+inputs = ["xray_snapshot_input"]
+uri = "{{ vector_billing_ingest_url }}"
+method = "post"
+encoding.codec = "json"
+[sinks.billing_snapshot_ingest.request]
+headers.Authorization = "Bearer {{ vector_billing_ingest_token }}"
+retry_initial_backoff_secs = 2
+retry_max_duration_secs = 3600
+rate_limit_duration_secs = 1
+rate_limit_num = 10
+[sinks.billing_snapshot_ingest.tls]
+verify_certificate = false
+verify_hostname = false
+[sinks.billing_snapshot_ingest.healthcheck]
+enabled = false
+[sinks.billing_snapshot_ingest.batch]
+max_events = 1
+timeout_secs = 5
+[sinks.billing_snapshot_ingest.buffer]
+type = "disk"
+max_size = 268435456
+{% endif %}
+
 [sinks.prometheus_remote]
 type = "prometheus_remote_write"
 {% if inventory_hostname in groups.get('xray_exporter', []) %}
