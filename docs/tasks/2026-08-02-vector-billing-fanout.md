@@ -8,6 +8,19 @@ Set these only for the UAT observability-agent deployment:
 VECTOR_BILLING_INGEST_ENABLED=true
 VECTOR_BILLING_INGEST_ADDRESS=127.0.0.1:8686
 VECTOR_BILLING_INGEST_URL=https://billing-uat.onwalk.net/v1/ingest/snapshots
+
+## UAT host-group and Stats API correction
+
+The generated UAT inventory puts the agent host in `agent_proxy`; it is not
+guaranteed to be present in the legacy `xray_exporter` group. The Vector
+template therefore uses the same local `pgrep -x xray` signal that gates the
+exporter role, while retaining the legacy group as a fallback for standalone
+inventory runs.
+
+The UAT `agent-svc-plus` Xray instances expose Stats APIs on
+`127.0.0.1:28080` and `127.0.0.1:28181`. Exporter addresses are now explicit
+and remain overrideable with `XRAY_EXPORTER_XRAY_API_ADDR` and
+`XRAY_EXPORTER_TCP_XRAY_API_ADDR` for hosts with the legacy layout.
 VECTOR_SNAPSHOT_URL=http://127.0.0.1:8686
 BILLING_INGEST_MODE=push
 INTERNAL_SERVICE_TOKEN=<Vault injected shared token>
