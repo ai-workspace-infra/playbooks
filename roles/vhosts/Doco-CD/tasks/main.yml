@@ -137,13 +137,27 @@
     chdir: "{{ doco_cd_base_dir }}"
   changed_when: false
 
+- name: Resolve Doco-CD data volume mountpoint
+  ansible.builtin.command:
+    argv:
+      - docker
+      - volume
+      - inspect
+      - --format
+      - "{{ '{{' }}.Mountpoint{{ '}}' }}"
+      - "{{ doco_cd_project_name }}_data"
+  register: doco_cd_data_volume
+  changed_when: false
+  failed_when: false
+
 - name: Locate Doco-CD Git cache repositories
-  ansible.builtin.find:
-    paths: "/var/lib/docker/volumes/{{ doco_cd_project_name }}_data/_data"
-    patterns: ".git"
-    file_type: directory
-    recurse: true
+  ansible.builtin.shell: >-
+    find {{ doco_cd_data_volume.stdout | trim | quote }}
+    -type d -name .git -print
+  args:
+    executable: /bin/bash
   register: doco_cd_git_cache_dirs
+  changed_when: false
   failed_when: false
 
 - name: Validate Doco-CD Git cache refs
@@ -154,19 +168,22 @@
       - "{{ item.path | dirname }}"
       - show-ref
       - --head
-  loop: "{{ doco_cd_git_cache_dirs.files | default([]) }}"
+  loop: "{{ doco_cd_git_cache_dirs.stdout_lines | default([]) }}"
+  loop_control:
+    label: "{{ item | dirname }}"
+  when: item | trim | length > 0
   register: doco_cd_git_cache_checks
   changed_when: false
   failed_when: false
 
 - name: Remove only corrupted Doco-CD Git cache repositories
   ansible.builtin.file:
-    path: "{{ item.item.path | dirname }}"
+    path: "{{ item.item | dirname }}"
     state: absent
   loop: "{{ doco_cd_git_cache_checks.results | default([]) }}"
   when:
     - item.rc | int != 0
-    - (item.item.path | dirname) is match('/var/lib/docker/volumes/[^/]+_data/_data/.+')
+    - (item.item | dirname) is match('/var/lib/docker/volumes/[^/]+_data/_data/.+')
 
 - name: Pull Doco-CD image
   ansible.builtin.command:
