@@ -34,7 +34,12 @@
          | default('', true) }}
     xray_exporter_vector_snapshot_url: >-
       {{ lookup('ansible.builtin.env', 'VECTOR_SNAPSHOT_URL')
-         | default('', true) }}
+         | default(
+             ('http://' ~ vector_billing_ingest_address)
+             if (vector_billing_ingest_enabled | bool)
+             else '',
+             true
+           ) }}
     xray_exporter_internal_service_token: >-
       {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
          | default('', true) }}
