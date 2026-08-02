@@ -11,6 +11,8 @@ VECTOR_BILLING_INGEST_URL=https://billing-uat.onwalk.net/v1/ingest/snapshots
 VECTOR_SNAPSHOT_URL=http://127.0.0.1:8686
 BILLING_INGEST_MODE=push
 INTERNAL_SERVICE_TOKEN=<Vault injected shared token>
+WEB_SAAS_BILLING_DOMAIN=billing-uat.onwalk.net
+WEB_SAAS_BILLING_ALLOWED_CIDRS=167.179.64.91/32
 ```
 
 The Vector source is loopback-only. The external Billing Caddy route remains
