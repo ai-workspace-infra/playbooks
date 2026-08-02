@@ -18,7 +18,8 @@ type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:9256/metrics"]
 scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
 
-{% if inventory_hostname in groups.get('xray_exporter', []) %}
+{% set xray_exporter_enabled = vector_xray_exporter_enabled | default(inventory_hostname in groups.get('xray_exporter', []), true) | bool %}
+{% if xray_exporter_enabled %}
 [sources.xray_xhttp_metrics]
 type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:8080/scrape"]
@@ -84,7 +85,7 @@ source = '''
 '''
 {% endfor %}
 
-{% if vector_billing_ingest_enabled | bool and inventory_hostname in groups.get('xray_exporter', []) %}
+{% if vector_billing_ingest_enabled | bool and xray_exporter_enabled %}
 # Normalized snapshots are pushed by xray-exporter and fan out through Vector
 # to Billing. Grafana continues to receive the Prometheus stream below.
 [sources.xray_snapshot_input]
@@ -119,7 +120,7 @@ max_size = 268435456
 
 [sinks.prometheus_remote]
 type = "prometheus_remote_write"
-{% if inventory_hostname in groups.get('xray_exporter', []) %}
+{% if xray_exporter_enabled %}
 inputs = ["add_labels", "add_xray_xhttp_labels", "add_xray_tcp_labels"{% for target in ssl_targets %}, "blackbox_{{ target.name | regex_replace('[^A-Za-z0-9_]', '_') }}_labels"{% endfor %}]
 {% else %}
 inputs = ["add_labels"{% for target in ssl_targets %}, "blackbox_{{ target.name | regex_replace('[^A-Za-z0-9_]', '_') }}_labels"{% endfor %}]

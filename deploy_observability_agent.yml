@@ -38,6 +38,11 @@
     xray_exporter_internal_service_token: >-
       {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
          | default('', true) }}
+    # The observability play is invoked on the generated `agent_proxy` group,
+    # not the legacy `xray_exporter` inventory group.  The process check is
+    # the authoritative signal for this host and is also what gates the
+    # exporter role below.
+    vector_xray_exporter_enabled: "{{ xray_process_check.rc | default(1) == 0 }}"
   tasks:
     - name: Include node_exporter role
       ansible.builtin.import_role:
