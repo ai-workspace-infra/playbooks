@@ -7,6 +7,10 @@
     # 默认值，实际由 GHA 注入 (-e target_domain=onwalk.net -e source_domain=svc.plus)
     target_domain: "svc.plus"
     source_domain: "svc.plus"
+    # Optional environment-rendered aliases.  This is used by non-production
+    # delivery to map service names such as console/accounts/billing to the
+    # current web_saas host without relying on production source domains.
+    cloudflare_dns_alias_records: []
   tasks:
     - name: Load static DNS definitions
       ansible.builtin.include_vars:
@@ -57,7 +61,22 @@
                 'proxied': static_record.proxied | default(false)
               }) -%}
           {%- endfor -%}
-          {{ records | to_json | from_yaml }}
+          {%- for alias in cloudflare_dns_alias_records -%}
+          {%-   for host in query('inventory_hostnames', alias.source_group | default('all')) -%}
+          {%-     set host_data = hostvars[host] -%}
+          {%-     set _ = records.append({
+                'type': 'A',
+                'name': alias.name,
+                'content': host_data.ansible_host,
+                'ttl': alias.ttl | default(1),
+                'proxied': alias.proxied | default(false)
+              }) -%}
+          {%-   endfor -%}
+          {%- endfor -%}
+          {# Keep one deterministic A record per name when an alias also
+             exists in service_domains or static records. #}
+          {%- set deduplicated = records | unique(attribute='name') | list -%}
+          {{ deduplicated | to_json | from_yaml }}
 
     - name: Reconcile DNS records via cloudflare_dns role
       ansible.builtin.include_role:
