@@ -241,6 +241,50 @@
     mode: "0600"
   notify: Restart agent-svc-plus
 
+- name: Ensure Xray access log directory exists
+  ansible.builtin.file:
+    path: "{{ xray_access_log_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: xray_enabled | bool
+
+- name: Ensure shared Xray access log group exists
+  ansible.builtin.group:
+    name: "{{ xray_access_log_group }}"
+    state: present
+  when: xray_enabled | bool
+
+- name: Grant XHTTP Xray service access to the shared log group
+  ansible.builtin.user:
+    name: "{{ xray_xhttp_service_user }}"
+    groups:
+      - "{{ xray_access_log_group }}"
+    append: true
+  notify: Restart Xray services
+  when: xray_enabled | bool
+
+- name: Grant TCP Xray service access to the shared log group
+  ansible.builtin.user:
+    name: "{{ xray_tcp_service_user }}"
+    groups:
+      - "{{ xray_access_log_group }}"
+    append: true
+  notify: Restart Xray services
+  when: xray_enabled | bool
+
+- name: Ensure Xray access log is writable by both Xray services
+  ansible.builtin.file:
+    path: "{{ xray_access_log_path }}"
+    state: touch
+    owner: root
+    group: "{{ xray_access_log_group }}"
+    mode: "0660"
+    access_time: preserve
+    modification_time: preserve
+  when: xray_enabled | bool
+
 - name: Deploy XHTTP template
   ansible.builtin.template:
     src: xray.xhttp.template.json.j2
