@@ -20,6 +20,24 @@
   become: yes
   vars:
     group: all
+    vector_billing_ingest_enabled: >-
+      {{ lookup('ansible.builtin.env', 'VECTOR_BILLING_INGEST_ENABLED')
+         | default(false, true) | bool }}
+    vector_billing_ingest_address: >-
+      {{ lookup('ansible.builtin.env', 'VECTOR_BILLING_INGEST_ADDRESS')
+         | default('127.0.0.1:8686', true) }}
+    vector_billing_ingest_url: >-
+      {{ lookup('ansible.builtin.env', 'VECTOR_BILLING_INGEST_URL')
+         | default('', true) }}
+    vector_billing_ingest_token: >-
+      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
+         | default('', true) }}
+    xray_exporter_vector_snapshot_url: >-
+      {{ lookup('ansible.builtin.env', 'VECTOR_SNAPSHOT_URL')
+         | default('', true) }}
+    xray_exporter_internal_service_token: >-
+      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
+         | default('', true) }}
   tasks:
     - name: Include node_exporter role
       ansible.builtin.import_role:
@@ -43,3 +61,13 @@
     - name: Include vector-agent role
       ansible.builtin.import_role:
         name: vhosts/vector-agent
+
+    - name: Validate Vector Billing fan-out contract
+      ansible.builtin.assert:
+        that:
+          - vector_billing_ingest_url | trim | length > 0
+          - vector_billing_ingest_token | trim | length > 0
+        fail_msg: >-
+          VECTOR_BILLING_INGEST_URL and INTERNAL_SERVICE_TOKEN are required
+          when VECTOR_BILLING_INGEST_ENABLED=true.
+      when: vector_billing_ingest_enabled | bool

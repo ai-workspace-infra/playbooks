@@ -113,6 +113,7 @@ web_saas_host_config_secrets:
   # into the GitOps compose file.
   EXPORTER_BASE_URL: "{{ lookup('ansible.builtin.env', 'EXPORTER_BASE_URL') | default('', true) }}"
   EXPORTER_SOURCES_JSON: "{{ lookup('ansible.builtin.env', 'EXPORTER_SOURCES_JSON') | default('', true) }}"
+  BILLING_INGEST_MODE: "{{ lookup('ansible.builtin.env', 'BILLING_INGEST_MODE') | default('push', true) }}"
 
   ACCOUNT_SERVICE_URL: "{{ lookup('ansible.builtin.env', 'ACCOUNT_SERVICE_URL') | default('https://' ~ web_saas_host_config_accounts_domain, true) }}"
   NEXT_PUBLIC_ACCOUNT_SERVICE_URL: "{{ lookup('ansible.builtin.env', 'NEXT_PUBLIC_ACCOUNT_SERVICE_URL') | default('https://' ~ web_saas_host_config_accounts_domain, true) }}"
@@ -129,7 +130,6 @@ web_saas_host_config_required_secrets:
   - AUTH_TOKEN_PUBLIC_TOKEN
   - AUTH_TOKEN_REFRESH_SECRET
   - AUTH_TOKEN_ACCESS_SECRET
-  - EXPORTER_SOURCES_JSON
 
 # TLS 证书。stunnel 用自签 CA, 三份 PEM 由流水线从 Vault 取出后经环境
 # 变量传入(base64, 避免换行在 env 里被破坏)。
