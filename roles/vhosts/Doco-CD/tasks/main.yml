@@ -118,6 +118,56 @@
     chdir: "{{ doco_cd_base_dir }}"
   changed_when: false
 
+# Doco-CD keeps cloned Git repositories in its persistent data volume.  A
+# failed fetch can leave zero-value refs behind; the container remains healthy
+# but every poll then fails with "ref file is empty" and the last application
+# revision stays deployed forever.  Repair only the affected Git cache.  Do
+# not remove the volume: it may contain state for other Doco-CD jobs.
+- name: Stop Doco-CD before validating its Git cache
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ doco_cd_project_name }}"
+      - -f
+      - "{{ doco_cd_compose_file }}"
+      - down
+  args:
+    chdir: "{{ doco_cd_base_dir }}"
+  changed_when: false
+
+- name: Locate Doco-CD Git cache repositories
+  ansible.builtin.find:
+    paths: "/var/lib/docker/volumes/{{ doco_cd_project_name }}_data/_data"
+    patterns: ".git"
+    file_type: directory
+    recurse: true
+  register: doco_cd_git_cache_dirs
+  failed_when: false
+
+- name: Validate Doco-CD Git cache refs
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ item.path | dirname }}"
+      - show-ref
+      - --head
+  loop: "{{ doco_cd_git_cache_dirs.files | default([]) }}"
+  register: doco_cd_git_cache_checks
+  changed_when: false
+  failed_when: false
+
+- name: Remove only corrupted Doco-CD Git cache repositories
+  ansible.builtin.file:
+    path: "{{ item.item.path | dirname }}"
+    state: absent
+  loop: "{{ doco_cd_git_cache_checks.results | default([]) }}"
+  when:
+    - item.rc | int != 0
+    - (item.item.path | dirname) is match('/var/lib/docker/volumes/[^/]+_data/_data/.+')
+
 - name: Pull Doco-CD image
   ansible.builtin.command:
     argv:
