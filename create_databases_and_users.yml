@@ -208,9 +208,24 @@
       # resolved_db_configs (Env > Vault > 自动生成解析出的当前值) 脱节, 导致
       # 应用侧连接密码认证失败。这里对已存在的角色显式收敛一次密码。
       - name: Reconcile password for pre-existing roles
-        ansible.builtin.command: >
-          docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -c
-          "ALTER ROLE {{ item.item.user }} PASSWORD '{{ item.item.password }}';"
+        ansible.builtin.command:
+          argv:
+            - docker
+            - exec
+            - -i
+            - "{{ pg_container }}"
+            - psql
+            - -v
+            - ON_ERROR_STOP=1
+            - -v
+            - "role_name={{ item.item.user }}"
+            - -v
+            - "role_password={{ item.item.password }}"
+            - -c
+            - >-
+              DO $$ BEGIN
+              EXECUTE format('ALTER ROLE %I PASSWORD %L', :'role_name', :'role_password');
+              END $$;
         loop: "{{ user_check_results.results }}"
         register: sync_password_results
         changed_when: true
@@ -218,6 +233,38 @@
           - pg_topology == 'compose'
           - (item.stdout | default('')) | trim == '1'
         no_log: true
+
+      # The role reconciliation above must be checked through PostgreSQL TCP,
+      # not only through the local postgres socket.  The applications reach
+      # this container through stunnel and pg_hba applies password auth on the
+      # TCP path; a successful ALTER ROLE alone is not a useful deployment
+      # contract if the role password or quoting is wrong.
+      - name: Verify dedicated role TCP authentication
+        ansible.builtin.command:
+          argv:
+            - docker
+            - exec
+            - -i
+            - -e
+            - "PGPASSWORD={{ item.item.password }}"
+            - "{{ pg_container }}"
+            - psql
+            - -h
+            - 127.0.0.1
+            - -U
+            - "{{ item.item.user }}"
+            - -d
+            - "{{ item.item.db }}"
+            - -tAc
+            - SELECT 1
+        loop: "{{ user_check_results.results }}"
+        register: role_auth_results
+        changed_when: false
+        failed_when: >-
+          item.rc | default(1) != 0 or
+          (item.stdout | default('') | trim) != '1'
+        no_log: true
+        when: pg_topology == 'compose'
 
       - name: Reconcile password for pre-existing roles via PostgreSQL TCP
         ansible.builtin.command:
