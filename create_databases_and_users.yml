@@ -55,10 +55,9 @@
         user: vault_storage
         env_var: 'VAULT_PG_PASSWORD'
         vault_key: 'vault_pg_password'
-      - db: billing
-        user: billing_user
-        env_var: 'BILLING_PG_PASSWORD'
-        vault_key: 'billing_pg_password'
+      # Billing and Accounts intentionally share the account database and
+      # account_user. Do not create a second billing role or database: the
+      # canonical credential is kv/data/<env>/databases.account_pg_password.
 
   pre_tasks:
     - name: Try to read existing databases secrets from Vault
@@ -223,9 +222,7 @@
             - "role_password={{ item.item.password }}"
             - -c
             - >-
-              DO $$ BEGIN
-              EXECUTE format('ALTER ROLE %I PASSWORD %L', :'role_name', :'role_password');
-              END $$;
+              SELECT format('ALTER ROLE %I PASSWORD %L', :'role_name', :'role_password') \gexec
         loop: "{{ user_check_results.results }}"
         register: sync_password_results
         changed_when: true
