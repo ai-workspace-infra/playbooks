@@ -70,7 +70,13 @@
     - name: Include xray-exporter role
       ansible.builtin.import_role:
         name: vhosts/xray-exporter
-      when: xray_process_check.rc == 0
+      when:
+        - xray_process_check.rc == 0
+        # The agent-proxy domain owns its exporter instances and their
+        # transport-specific API endpoints. Reapplying the generic monitoring
+        # defaults here races that domain job and rewrites 28080/28181 back to
+        # the legacy 18080/18081 endpoints.
+        - "'agent_proxy' not in group_names"
 
     - name: Include vector-agent role
       ansible.builtin.import_role:
