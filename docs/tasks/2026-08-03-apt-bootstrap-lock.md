@@ -14,10 +14,14 @@ UAT `console-uat.onwalk.net` 的 Bootstrap 在安装 Docker 依赖期间耗时�
 
 - `apt-daily.service`
 - `apt-daily-upgrade.service`
-- `unattended-upgrades.service`
 - `apt-listchanges.service`
 
-这只停止本次已运行的后台任务，不永久修改系统 timer 策略。Debian/Ubuntu 的 Docker apt 操作统一设置 `lock_timeout`（默认 900 秒），并使用非交互的 `APT_LISTCHANGES_FRONTEND=none`，为短暂锁竞争提供可控等待。
+这只停止本次已运行的后台任务，不永久修改系统 timer 策略。常驻的
+`unattended-upgrades.service` 不纳入停止列表，因为 Debian 上它通常是
+`unattended-upgrade-shutdown --wait-for-signal`，不是包管理锁持有者，停止它反而
+会让 Bootstrap 等待服务退出。Debian/Ubuntu 的 Docker apt 操作统一设置
+`lock_timeout`（默认 900 秒），并使用非交互的 `APT_LISTCHANGES_FRONTEND=none`，
+为短暂锁竞争提供可控等待。
 
 ## 验证
 
