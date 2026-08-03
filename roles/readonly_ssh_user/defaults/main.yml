@@ -109,3 +109,17 @@ readonly_ssh_user_sudo_commands: >-
     if readonly_ssh_user_profile == 'audit'
     else readonly_ssh_user_sudo_commands_readonly
   }}
+
+# Optional PostgreSQL binding. Disabled by default so creating an SSH audit
+# account never changes a database unless the caller explicitly opts in.
+readonly_ssh_user_manage_postgresql: false
+readonly_ssh_user_postgresql_container_name: web-saas-postgresql
+readonly_ssh_user_postgresql_admin_user: postgres
+readonly_ssh_user_postgresql_admin_password: ""
+readonly_ssh_user_postgresql_password: ""
+readonly_ssh_user_postgresql_role: "{{ readonly_ssh_user_name }}"
+readonly_ssh_user_postgresql_host: 127.0.0.1
+readonly_ssh_user_postgresql_port: 5432
+readonly_ssh_user_postgresql_databases: []
+readonly_ssh_user_postgresql_default_privilege_owners:
+  - postgres

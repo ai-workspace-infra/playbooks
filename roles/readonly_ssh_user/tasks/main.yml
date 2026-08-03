@@ -112,3 +112,7 @@
       {{ readonly_ssh_user_name }} ALL=(root) {{ 'NOPASSWD:' if readonly_ssh_user_sudo_nopasswd else '' }} {{ readonly_ssh_user_effective_sudo_commands | join(', ') }}
   notify: validate sudoers
   when: readonly_ssh_user_manage_sudoers
+
+- name: Bind Linux identity to PostgreSQL read-only role
+  ansible.builtin.include_tasks: postgresql.yml
+  when: readonly_ssh_user_manage_postgresql | bool

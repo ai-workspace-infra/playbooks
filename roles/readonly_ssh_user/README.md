@@ -83,6 +83,53 @@ For the default hardening mode used for `readonly`, the intended model is:
 - `readonly_ssh_user_allow_agent_forwarding`: default `false`
 - `readonly_ssh_user_force_command`: optional forced command
 
+## Optional PostgreSQL binding
+
+Set `readonly_ssh_user_manage_postgresql: true` only when the deployment
+explicitly supplies a Vault-managed PostgreSQL password and database list. The
+role then uses the same normalized name for the Linux account and PostgreSQL
+role (for example, `readonly`), while keeping the SSH private key separate
+from the database credential.
+
+The PostgreSQL role is constrained to `LOGIN`, `CONNECT`, schema `USAGE`, and
+`SELECT` on existing and configured future tables/sequences. It is explicitly
+non-superuser, cannot create databases or roles, and does not receive sudo.
+
+Example for an audit/migration account. The supplied public key may be the
+same public key used by `root`; it is installed only for this unprivileged
+account and does not grant root access:
+
+```yaml
+readonly_ssh_user_name: readonly
+readonly_ssh_user_profile: audit
+readonly_ssh_user_authorized_keys:
+  - "ssh-ed25519 AAAA..."
+readonly_ssh_user_manage_postgresql: true
+readonly_ssh_user_postgresql_password: "{{ vault_tky_proxy_pg_password }}"
+readonly_ssh_user_postgresql_admin_password: "{{ account_pg_password }}"
+readonly_ssh_user_postgresql_databases:
+  - postgres
+  - account
+  - gitea
+  - litellm
+  - rag
+  - vault_storage
+  - zitadel
+readonly_ssh_user_postgresql_default_privilege_owners:
+  - postgres
+  - account_user
+  - gitea_user
+  - litellm_user
+  - rag_user
+  - vault_storage
+  - zitadel_user
+```
+
+The binding is disabled by default. Never put either password or a private SSH
+key in Git. For a containerized PostgreSQL deployment, the role executes the
+grant through the detected container; for native PostgreSQL it uses `psql` over
+the configured host and port.
+
 ## Example playbook
 
 ```yaml
