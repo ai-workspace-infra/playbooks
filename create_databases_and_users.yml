@@ -60,12 +60,19 @@
       # canonical credential is kv/data/<env>/databases.account_pg_password.
 
   pre_tasks:
+    # path 是相对 engine_mount_point 的, 不能带 mount 前缀, kv2 也不能带
+    # /data/ (见 community.hashi_vault.vault_kv2_get 文档)。写成
+    # "kv/data/<env>/databases" 会被拼成 kv/data/kv/data/<env>/databases,
+    # 404 后被下面的 failed_when: false 吞掉, 于是所有库密码都静默落到
+    # "自动生成" 分支 —— 这正是 UAT 六个角色 (account_user / litellm_user /
+    # rag_user / zitadel_user / gitea_user / vault_storage) 密码集体漂移的
+    # 根因。目标 secret 仍是 kv/data/<env>/databases。
     - name: Try to read existing databases secrets from Vault
       community.hashi_vault.vault_kv2_get:
         url: "{{ vault_addr }}"
         auth_method: token
         token: "{{ vault_token }}"
-        path: "kv/data/{{ vault_env_path }}/databases"
+        path: "{{ vault_env_path }}/databases"
         engine_mount_point: "kv"
       register: existing_vault_db_secrets
       failed_when: false
