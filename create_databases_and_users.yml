@@ -231,38 +231,6 @@
           - (item.stdout | default('')) | trim == '1'
         no_log: true
 
-      # The role reconciliation above must be checked through PostgreSQL TCP,
-      # not only through the local postgres socket.  The applications reach
-      # this container through stunnel and pg_hba applies password auth on the
-      # TCP path; a successful ALTER ROLE alone is not a useful deployment
-      # contract if the role password or quoting is wrong.
-      - name: Verify dedicated role TCP authentication
-        ansible.builtin.command:
-          argv:
-            - docker
-            - exec
-            - -i
-            - -e
-            - "PGPASSWORD={{ item.item.password }}"
-            - "{{ pg_container }}"
-            - psql
-            - -h
-            - 127.0.0.1
-            - -U
-            - "{{ item.item.user }}"
-            - -d
-            - "{{ item.item.db }}"
-            - -tAc
-            - SELECT 1
-        loop: "{{ user_check_results.results }}"
-        register: role_auth_results
-        changed_when: false
-        failed_when: >-
-          item.rc | default(1) != 0 or
-          (item.stdout | default('') | trim) != '1'
-        no_log: true
-        when: pg_topology == 'compose'
-
       - name: Reconcile password for pre-existing roles via PostgreSQL TCP
         ansible.builtin.command:
           cmd: >-
@@ -320,4 +288,40 @@
         when:
           - pg_topology != 'compose'
           - (item.stdout | default('')) | trim != '1'
+
+      # The role reconciliation above must be checked through PostgreSQL TCP,
+      # not only through the local postgres socket.  This check intentionally
+      # runs after database creation: on a fresh compose deployment the role
+      # may be created before its database, so validating against item.db
+      # earlier would report a false authentication failure (database does
+      # not exist).  The applications reach this container through stunnel and
+      # pg_hba applies password auth on the TCP path; a successful ALTER ROLE
+      # alone is not a useful deployment contract if the role password or
+      # quoting is wrong.
+      - name: Verify dedicated role TCP authentication
+        ansible.builtin.command:
+          argv:
+            - docker
+            - exec
+            - -i
+            - -e
+            - "PGPASSWORD={{ item.item.password }}"
+            - "{{ pg_container }}"
+            - psql
+            - -h
+            - 127.0.0.1
+            - -U
+            - "{{ item.item.user }}"
+            - -d
+            - "{{ item.item.db }}"
+            - -tAc
+            - SELECT 1
+        loop: "{{ user_check_results.results }}"
+        register: role_auth_results
+        changed_when: false
+        failed_when: >-
+          item.rc | default(1) != 0 or
+          (item.stdout | default('') | trim) != '1'
+        no_log: true
+        when: pg_topology == 'compose'
   
