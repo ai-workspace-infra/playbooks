@@ -5,3 +5,14 @@
 
 # The channel used when configuring Docker repositories.
 docker_channel: stable
+
+# Fresh Debian/Ubuntu images may still be running apt-daily, unattended-upgrades,
+# or apt-listchanges while the host is being bootstrapped.  Stop an already
+# running background job before Docker packages are changed, then let apt's
+# native lock handling wait for any remaining short-lived holder.
+docker_apt_lock_timeout: 900
+docker_apt_background_services:
+  - apt-daily.service
+  - apt-daily-upgrade.service
+  - unattended-upgrades.service
+  - apt-listchanges.service

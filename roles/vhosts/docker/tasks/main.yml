@@ -1,4 +1,7 @@
 ---
+- name: Coordinate Debian package manager before Docker installation
+  ansible.builtin.import_tasks: apt_preflight.yml
+
 - name: Detect supported platform
   ansible.builtin.set_fact:
     docker_platform: >-
@@ -47,6 +50,10 @@
           - lsb-release
         state: present
         update_cache: true
+        lock_timeout: "{{ docker_apt_lock_timeout | int }}"
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+        APT_LISTCHANGES_FRONTEND: none
 
     - name: Ensure apt keyring directory exists
       ansible.builtin.file:
@@ -84,6 +91,10 @@
           - docker-compose-plugin
         state: present
         update_cache: true
+        lock_timeout: "{{ docker_apt_lock_timeout | int }}"
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+        APT_LISTCHANGES_FRONTEND: none
 
 - name: Install Docker on Debian
   when: docker_platform == 'debian'
@@ -97,6 +108,10 @@
           - lsb-release
         state: present
         update_cache: true
+        lock_timeout: "{{ docker_apt_lock_timeout | int }}"
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+        APT_LISTCHANGES_FRONTEND: none
 
     - name: Ensure apt keyring directory exists
       ansible.builtin.file:
@@ -134,6 +149,10 @@
           - docker-compose-plugin
         state: present
         update_cache: true
+        lock_timeout: "{{ docker_apt_lock_timeout | int }}"
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+        APT_LISTCHANGES_FRONTEND: none
 
 - name: Install Docker on Rocky Linux
   when: docker_platform == 'rocky'
