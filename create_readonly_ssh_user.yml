@@ -9,7 +9,10 @@
     ansible_password: "{{ lookup('env', 'BOOTSTRAP_ROOT_PASSWORD') | default(omit, true) }}"
     ansible_become_password: "{{ lookup('env', 'BOOTSTRAP_BECOME_PASSWORD') | default(omit, true) }}"
 
+    # The generic normalized identity is intentionally `readonly`; it is valid
+    # both as a Linux account and as a PostgreSQL role.
     readonly_ssh_user_name: "{{ lookup('env', 'READONLY_SSH_USER_NAME') | default('readonly', true) }}"
+    readonly_ssh_user_comment: "Payment audit and migration read-only user"
     readonly_ssh_user_profile: "{{ lookup('env', 'READONLY_SSH_USER_PROFILE') | default('readonly', true) }}"
     readonly_ssh_user_password_hash: "{{ lookup('env', 'READONLY_SSH_USER_PASSWORD_HASH') | default('', true) }}"
     readonly_ssh_user_lock_password: "{{ lookup('env', 'READONLY_SSH_LOCK_PASSWORD') | default('true', true) | bool }}"
@@ -20,6 +23,20 @@
         if lookup('env', 'READONLY_SSH_USER_PUBLIC_KEY') | default('', true) | length > 0
         else []
       }}
+
+    # PostgreSQL integration is opt-in. The DB password must be supplied by
+    # Vault/Ansible vars and is never derived from or equal to the SSH key.
+    readonly_ssh_user_manage_postgresql: "{{ lookup('env', 'READONLY_SSH_MANAGE_POSTGRESQL') | default('false', true) | bool }}"
+    readonly_ssh_user_postgresql_container_name: "{{ lookup('env', 'READONLY_SSH_POSTGRES_CONTAINER') | default('web-saas-postgresql', true) }}"
+    readonly_ssh_user_postgresql_admin_user: "{{ lookup('env', 'READONLY_SSH_POSTGRES_ADMIN_USER') | default('postgres', true) }}"
+    readonly_ssh_user_postgresql_admin_password: "{{ lookup('env', 'READONLY_SSH_POSTGRES_ADMIN_PASSWORD') | default('', true) }}"
+    readonly_ssh_user_postgresql_password: "{{ lookup('env', 'READONLY_SSH_POSTGRES_PASSWORD') | default('', true) }}"
+    readonly_ssh_user_postgresql_databases: >-
+      {{ (lookup('env', 'READONLY_SSH_POSTGRES_DATABASES') | default('account,gitea,litellm,rag,vault_storage,zitadel,postgres', true)).split(',')
+         | map('trim') | reject('equalto', '') | list }}
+    readonly_ssh_user_postgresql_default_privilege_owners: >-
+      {{ (lookup('env', 'READONLY_SSH_POSTGRES_DEFAULT_PRIVILEGE_OWNERS') | default('postgres,account_user,gitea_user,litellm_user,rag_user,vault_storage,zitadel_user', true)).split(',')
+         | map('trim') | reject('equalto', '') | list }}
 
   roles:
     - role: readonly_ssh_user

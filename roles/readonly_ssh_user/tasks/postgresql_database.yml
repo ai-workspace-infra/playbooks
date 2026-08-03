@@ -1,0 +1,68 @@
+---
+- name: Apply read-only privileges to database
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - -i
+      - "{{ readonly_ssh_user_postgresql_container_name }}"
+      - psql
+      - -v
+      - ON_ERROR_STOP=1
+      - -U
+      - "{{ readonly_ssh_user_postgresql_admin_user }}"
+      - -d
+      - "{{ readonly_database_name }}"
+      - -c
+      - >-
+        GRANT CONNECT ON DATABASE {{ readonly_database_name }} TO {{ readonly_ssh_user_postgresql_role }};
+        REVOKE CREATE ON SCHEMA public FROM {{ readonly_ssh_user_postgresql_role }};
+        GRANT USAGE ON SCHEMA public TO {{ readonly_ssh_user_postgresql_role }};
+        REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM {{ readonly_ssh_user_postgresql_role }};
+        GRANT SELECT ON ALL TABLES IN SCHEMA public TO {{ readonly_ssh_user_postgresql_role }};
+        REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM {{ readonly_ssh_user_postgresql_role }};
+        GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO {{ readonly_ssh_user_postgresql_role }};
+        {% for owner in readonly_ssh_user_postgresql_default_privilege_owners %}
+        ALTER DEFAULT PRIVILEGES FOR ROLE {{ owner }} IN SCHEMA public REVOKE ALL ON TABLES FROM {{ readonly_ssh_user_postgresql_role }};
+        ALTER DEFAULT PRIVILEGES FOR ROLE {{ owner }} IN SCHEMA public GRANT SELECT ON TABLES TO {{ readonly_ssh_user_postgresql_role }};
+        ALTER DEFAULT PRIVILEGES FOR ROLE {{ owner }} IN SCHEMA public REVOKE ALL ON SEQUENCES FROM {{ readonly_ssh_user_postgresql_role }};
+        ALTER DEFAULT PRIVILEGES FOR ROLE {{ owner }} IN SCHEMA public GRANT SELECT ON SEQUENCES TO {{ readonly_ssh_user_postgresql_role }};
+        {% endfor %}
+  environment:
+    PGPASSWORD: "{{ readonly_ssh_user_postgresql_admin_password }}"
+  no_log: true
+  when: readonly_postgresql_topology == 'compose'
+
+- name: Apply read-only privileges to native database
+  ansible.builtin.command:
+    argv:
+      - psql
+      - -v
+      - ON_ERROR_STOP=1
+      - -h
+      - "{{ readonly_ssh_user_postgresql_host }}"
+      - -p
+      - "{{ readonly_ssh_user_postgresql_port }}"
+      - -U
+      - "{{ readonly_ssh_user_postgresql_admin_user }}"
+      - -d
+      - "{{ readonly_database_name }}"
+      - -c
+      - >-
+        GRANT CONNECT ON DATABASE {{ readonly_database_name }} TO {{ readonly_ssh_user_postgresql_role }};
+        REVOKE CREATE ON SCHEMA public FROM {{ readonly_ssh_user_postgresql_role }};
+        GRANT USAGE ON SCHEMA public TO {{ readonly_ssh_user_postgresql_role }};
+        REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM {{ readonly_ssh_user_postgresql_role }};
+        GRANT SELECT ON ALL TABLES IN SCHEMA public TO {{ readonly_ssh_user_postgresql_role }};
+        REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM {{ readonly_ssh_user_postgresql_role }};
+        GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO {{ readonly_ssh_user_postgresql_role }};
+        {% for owner in readonly_ssh_user_postgresql_default_privilege_owners %}
+        ALTER DEFAULT PRIVILEGES FOR ROLE {{ owner }} IN SCHEMA public REVOKE ALL ON TABLES FROM {{ readonly_ssh_user_postgresql_role }};
+        ALTER DEFAULT PRIVILEGES FOR ROLE {{ owner }} IN SCHEMA public GRANT SELECT ON TABLES TO {{ readonly_ssh_user_postgresql_role }};
+        ALTER DEFAULT PRIVILEGES FOR ROLE {{ owner }} IN SCHEMA public REVOKE ALL ON SEQUENCES FROM {{ readonly_ssh_user_postgresql_role }};
+        ALTER DEFAULT PRIVILEGES FOR ROLE {{ owner }} IN SCHEMA public GRANT SELECT ON SEQUENCES TO {{ readonly_ssh_user_postgresql_role }};
+        {% endfor %}
+  environment:
+    PGPASSWORD: "{{ readonly_ssh_user_postgresql_admin_password }}"
+  no_log: true
+  when: readonly_postgresql_topology == 'native'

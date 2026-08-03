@@ -1,0 +1,93 @@
+---
+- name: Validate PostgreSQL read-only binding inputs
+  ansible.builtin.assert:
+    that:
+      - readonly_ssh_user_postgresql_password | length > 0
+      - readonly_ssh_user_postgresql_databases | length > 0
+      - readonly_ssh_user_postgresql_role is match('^[a-z_][a-z0-9_]*$')
+      - (readonly_ssh_user_postgresql_databases | select('match', '^[a-z_][a-z0-9_]*$') | list | length) == (readonly_ssh_user_postgresql_databases | length)
+      - (readonly_ssh_user_postgresql_default_privilege_owners | select('match', '^[a-z_][a-z0-9_]*$') | list | length) == (readonly_ssh_user_postgresql_default_privilege_owners | length)
+    fail_msg: >-
+      PostgreSQL binding requires a Vault-provided password, at least one
+      database, and a normalized role name matching ^[a-z_][a-z0-9_]*$.
+
+- name: Detect PostgreSQL container for read-only binding
+  ansible.builtin.command:
+    argv:
+      - docker
+      - ps
+      - --format
+      - "{{ '{{' }}.Names{{ '}}' }}"
+  register: readonly_postgresql_containers
+  changed_when: false
+  failed_when: false
+
+- name: Resolve PostgreSQL binding topology
+  ansible.builtin.set_fact:
+    readonly_postgresql_topology: >-
+      {{ 'compose' if readonly_ssh_user_postgresql_container_name in
+         (readonly_postgresql_containers.stdout_lines | default([])) else 'native' }}
+
+- name: Create/update read-only PostgreSQL role in compose database
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - -i
+      - "{{ readonly_ssh_user_postgresql_container_name }}"
+      - psql
+      - -v
+      - ON_ERROR_STOP=1
+      - -U
+      - "{{ readonly_ssh_user_postgresql_admin_user }}"
+      - -d
+      - postgres
+      - -c
+      - >-
+        DO $role$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ readonly_ssh_user_postgresql_role }}') THEN
+          CREATE ROLE {{ readonly_ssh_user_postgresql_role }} LOGIN PASSWORD '{{ readonly_ssh_user_postgresql_password }}';
+        ELSE
+          ALTER ROLE {{ readonly_ssh_user_postgresql_role }} LOGIN PASSWORD '{{ readonly_ssh_user_postgresql_password }}';
+        END IF;
+        ALTER ROLE {{ readonly_ssh_user_postgresql_role }} NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+        END $role$;
+  environment:
+    PGPASSWORD: "{{ readonly_ssh_user_postgresql_admin_password }}"
+  no_log: true
+  when: readonly_postgresql_topology == 'compose'
+
+- name: Create/update read-only PostgreSQL role in native database
+  ansible.builtin.command:
+    argv:
+      - psql
+      - -v
+      - ON_ERROR_STOP=1
+      - -h
+      - "{{ readonly_ssh_user_postgresql_host }}"
+      - -p
+      - "{{ readonly_ssh_user_postgresql_port }}"
+      - -U
+      - "{{ readonly_ssh_user_postgresql_admin_user }}"
+      - -d
+      - postgres
+      - -c
+      - >-
+        DO $role$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ readonly_ssh_user_postgresql_role }}') THEN
+          CREATE ROLE {{ readonly_ssh_user_postgresql_role }} LOGIN PASSWORD '{{ readonly_ssh_user_postgresql_password }}';
+        ELSE
+          ALTER ROLE {{ readonly_ssh_user_postgresql_role }} LOGIN PASSWORD '{{ readonly_ssh_user_postgresql_password }}';
+        END IF;
+        ALTER ROLE {{ readonly_ssh_user_postgresql_role }} NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+        END $role$;
+  environment:
+    PGPASSWORD: "{{ readonly_ssh_user_postgresql_admin_password }}"
+  no_log: true
+  when: readonly_postgresql_topology == 'native'
+
+- name: Grant database and schema read-only privileges
+  ansible.builtin.include_tasks: postgresql_database.yml
+  loop: "{{ readonly_ssh_user_postgresql_databases }}"
+  loop_control:
+    loop_var: readonly_database_name
