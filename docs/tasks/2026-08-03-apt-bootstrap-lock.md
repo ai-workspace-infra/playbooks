@@ -33,3 +33,16 @@ UAT `console-uat.onwalk.net` 的 Bootstrap 在安装 Docker 依赖期间耗时�
 2. DB Init 是否能继续执行 `Create Web SaaS databases and roles` 与 `Initialize Web SaaS baseline schemas`；
 3. Vault token 读取是否保持成功，避免回退到随机密码；
 4. Accounts 是否停止因 `users` 表不存在而重启。
+
+## 第二次 UAT 失败与微调
+
+在使用 `playbooks_ref=main` 的 UAT run `30785772759` 中，apt 锁问题已不再
+是失败原因，但新建 PostgreSQL 容器存在启动竞态：容器内 Unix socket 已经能
+查询数据库，TCP `127.0.0.1:5432` 尚未稳定。`Verify dedicated role TCP
+authentication` 因没有显式 TCP readiness gate 而反复等待，最终失败并额外耗时
+约 4 分 39 秒。
+
+因此在同一修复 PR 中将数据库存在性检查改为 TCP，并在角色校验前增加
+`pg_isready -h 127.0.0.1 -p 5432` 的幂等等待，同时为所有 TCP 查询设置
+`PGCONNECT_TIMEOUT=5`。这样启动未就绪时会等待明确的 readiness 条件，不再把
+连接竞态误报为密码错误或拖延到默认连接超时。

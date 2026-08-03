@@ -214,6 +214,8 @@
             - docker
             - exec
             - -i
+            - -e
+            - PGCONNECT_TIMEOUT=5
             - "{{ pg_container }}"
             - psql
             - -U
@@ -322,8 +324,14 @@
             - docker
             - exec
             - -i
+            - -e
+            - PGCONNECT_TIMEOUT=5
             - "{{ pg_container }}"
             - psql
+            - -h
+            - 127.0.0.1
+            - -p
+            - "5432"
             - -U
             - "{{ pg_root_user }}"
             - -d
@@ -339,6 +347,35 @@
         until:
           - database_ready_results.rc | default(1) == 0
           - (database_ready_results.stdout | default('') | trim) == '1'
+        when: pg_topology == 'compose'
+        no_log: true
+
+      # The database existence query above must use the same TCP path as the
+      # application and the final role check.  A Unix-socket query can succeed
+      # while PostgreSQL is still bringing up its TCP listener, which turns the
+      # next task into a slow, misleading authentication failure on fresh
+      # compose deployments.
+      - name: Wait for PostgreSQL TCP listener to become ready
+        ansible.builtin.command:
+          argv:
+            - docker
+            - exec
+            - -i
+            - -e
+            - PGCONNECT_TIMEOUT=5
+            - "{{ pg_container }}"
+            - pg_isready
+            - -h
+            - 127.0.0.1
+            - -p
+            - "5432"
+            - -d
+            - postgres
+        register: pg_tcp_ready
+        changed_when: false
+        retries: 30
+        delay: 2
+        until: pg_tcp_ready.rc | default(1) == 0
         when: pg_topology == 'compose'
         no_log: true
 
@@ -359,6 +396,7 @@
             - -i
             - -e
             - "PGPASSWORD={{ item.item.password }}"
+            - PGCONNECT_TIMEOUT=5
             - "{{ pg_container }}"
             - psql
             - -h
