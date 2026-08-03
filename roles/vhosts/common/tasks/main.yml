@@ -96,3 +96,23 @@
   ansible.builtin.import_tasks: addons/gpu.yml
   when: gpu_enable | default(false) | bool
   tags: [gpu, nvidia]
+
+# The shared common role is an opt-in entrypoint only.  This prevents every
+# host that consumes common from receiving an SSH/database identity by
+# accident, while allowing UAT audit/migration hosts to enable one declaratively.
+- name: Common | optional readonly SSH audit identity
+  ansible.builtin.include_role:
+    name: readonly_ssh_user
+  vars:
+    readonly_ssh_user_name: "{{ common_readonly_ssh_user_name }}"
+    readonly_ssh_user_profile: "{{ common_readonly_ssh_user_profile }}"
+    readonly_ssh_user_comment: "{{ common_readonly_ssh_user_comment }}"
+    readonly_ssh_user_authorized_keys: "{{ common_readonly_ssh_user_authorized_keys }}"
+    readonly_ssh_user_manage_sshd: "{{ common_readonly_ssh_user_manage_sshd }}"
+    readonly_ssh_user_manage_postgresql: "{{ common_readonly_ssh_user_manage_postgresql }}"
+    readonly_ssh_user_postgresql_password: "{{ common_readonly_ssh_user_postgresql_password }}"
+    readonly_ssh_user_postgresql_admin_password: "{{ common_readonly_ssh_user_postgresql_admin_password }}"
+    readonly_ssh_user_postgresql_databases: "{{ common_readonly_ssh_user_postgresql_databases }}"
+    readonly_ssh_user_postgresql_default_privilege_owners: "{{ common_readonly_ssh_user_postgresql_default_privilege_owners }}"
+  when: common_readonly_ssh_user_enabled | default(false) | bool
+  tags: [security, readonly_ssh]
