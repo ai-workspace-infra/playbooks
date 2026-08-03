@@ -118,6 +118,12 @@
         path: "kv/data/{{ vault_env_path }}/agent-proxy"
         data:
           xray_uuid: "{{ xray_uuid }}"
+      # This task is delegated to the controller.  Explicitly use the same
+      # interpreter that launched ansible-playbook so the hvac installed by
+      # the runner bootstrap is available; automatic localhost discovery can
+      # otherwise select /usr/bin/python3 from a different environment.
+      vars:
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
       when: 
         - vault_token | length > 0
         - existing_agent_proxy_secrets.secret is not defined or existing_agent_proxy_secrets.secret.xray_uuid | default('') != xray_uuid
