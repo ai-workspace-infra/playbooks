@@ -84,12 +84,13 @@
   pre_tasks:
 
     - name: Try to read agent-proxy secrets from Vault
-      community.hashi_vault.vault_kv2_get:
-        url: "{{ vault_addr }}"
-        auth_method: token
-        token: "{{ vault_token }}"
-        path: "kv/data/{{ vault_env_path }}/agent-proxy"
-        engine_mount_point: "kv"
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/kv/data/{{ vault_env_path }}/agent-proxy"
+        method: GET
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        status_code: [200, 404]
+        return_content: true
       register: existing_agent_proxy_secrets
       failed_when: false
       when: vault_token | length > 0
@@ -100,7 +101,7 @@
       ansible.builtin.set_fact:
         xray_uuid: >-
           {%- set env_uuid = lookup('env', 'XRAY_UUID') -%}
-          {%- set vault_uuid = (existing_agent_proxy_secrets.secret | default({})).get('xray_uuid', '') -%}
+          {%- set vault_uuid = (((existing_agent_proxy_secrets.json | default({})).get('data', {})).get('data', {})).get('xray_uuid', '') -%}
           {%- if env_uuid -%}
             {{ env_uuid }}
           {%- elif vault_uuid -%}
@@ -111,22 +112,21 @@
       run_once: true
 
     - name: Securely write XRAY_UUID to Vault KV if generated
-      community.hashi_vault.vault_write:
-        url: "{{ vault_addr }}"
-        auth_method: token
-        token: "{{ vault_token }}"
-        path: "kv/data/{{ vault_env_path }}/agent-proxy"
-        data:
-          xray_uuid: "{{ xray_uuid }}"
-      # This task is delegated to the controller.  Explicitly use the same
-      # interpreter that launched ansible-playbook so the hvac installed by
-      # the runner bootstrap is available; automatic localhost discovery can
-      # otherwise select /usr/bin/python3 from a different environment.
-      vars:
-        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/kv/data/{{ vault_env_path }}/agent-proxy"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          data:
+            xray_uuid: "{{ xray_uuid }}"
+        status_code: [200, 204]
+        return_content: false
       when: 
         - vault_token | length > 0
-        - existing_agent_proxy_secrets.secret is not defined or existing_agent_proxy_secrets.secret.xray_uuid | default('') != xray_uuid
+        - (((existing_agent_proxy_secrets.json | default({})).get('data', {})).get('data', {})).get('xray_uuid', '') != xray_uuid
       delegate_to: localhost
       run_once: true
       no_log: true
