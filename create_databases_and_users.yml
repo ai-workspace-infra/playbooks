@@ -159,6 +159,7 @@
         changed_when: false
         failed_when: false
         when: pg_topology == 'compose'
+        no_log: true
   
       - name: Create dedicated users via PostgreSQL TCP
         ansible.builtin.command: >
@@ -173,6 +174,7 @@
         environment:
           PGPASSWORD: "{{ pg_root_password }}"
         when: pg_topology != 'compose'
+        no_log: true
   
       - name: Execute CREATE ROLE if not exists
         ansible.builtin.command: >
@@ -255,6 +257,7 @@
         changed_when: false
         failed_when: false
         when: pg_topology == 'compose'
+        no_log: true
   
       - name: Create dedicated databases and assign owners via PostgreSQL TCP
         ansible.builtin.command: >
@@ -266,6 +269,7 @@
         environment:
           PGPASSWORD: "{{ pg_root_password }}"
         when: pg_topology != 'compose'
+        no_log: true
   
       - name: Execute CREATE DATABASE if not exists
         ansible.builtin.command: >
@@ -276,6 +280,7 @@
         when:
           - pg_topology == 'compose'
           - (item.stdout | default('')) | trim != '1'
+        no_log: true
   
       - name: Execute CREATE DATABASE if not exists via PostgreSQL TCP
         ansible.builtin.command: >
@@ -288,6 +293,37 @@
         when:
           - pg_topology != 'compose'
           - (item.stdout | default('')) | trim != '1'
+        no_log: true
+
+      # Docker/PostgreSQL startup and the first application connection can
+      # overlap during a fresh UAT bootstrap.  Do not run the role check until
+      # every target database is queryable; otherwise a transient "database
+      # does not exist" is misreported as a password failure.
+      - name: Wait for dedicated databases to become queryable
+        ansible.builtin.command:
+          argv:
+            - docker
+            - exec
+            - -i
+            - "{{ pg_container }}"
+            - psql
+            - -U
+            - "{{ pg_root_user }}"
+            - -d
+            - postgres
+            - -tAc
+            - "SELECT 1 FROM pg_database WHERE datname = '{{ item.db }}'"
+        loop: "{{ resolved_db_configs }}"
+        register: database_ready_results
+        changed_when: false
+        failed_when: false
+        retries: 12
+        delay: 2
+        until:
+          - database_ready_results.rc | default(1) == 0
+          - (database_ready_results.stdout | default('') | trim) == '1'
+        when: pg_topology == 'compose'
+        no_log: true
 
       # The role reconciliation above must be checked through PostgreSQL TCP,
       # not only through the local postgres socket.  This check intentionally
@@ -322,6 +358,8 @@
         failed_when: >-
           item.rc | default(1) != 0 or
           (item.stdout | default('') | trim) != '1'
+        retries: 3
+        delay: 2
         no_log: true
         when: pg_topology == 'compose'
   
