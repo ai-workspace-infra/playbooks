@@ -71,6 +71,19 @@
       failed_when: false
       when: vault_token | length > 0
 
+    # 这次读取是 failed_when: false 的, 失败会静默退回自动生成分支。不把它显式
+    # 说出来, 现象就只剩下"某天服务连不上库", 根因隔着好几层。
+    - name: Warn when the Vault databases secret could not be read
+      ansible.builtin.debug:
+        msg: >-
+          Vault read of kv/data/{{ vault_env_path }}/databases failed or
+          returned nothing; database passwords will fall back to environment
+          variables, then to freshly generated values. Pre-existing roles will
+          not be reconciled to a generated value (the play fails instead).
+      when:
+        - vault_token | length > 0
+        - (existing_vault_db_secrets.secret | default({})) | length == 0
+
     - name: Resolve database passwords (Env > Vault > Auto-generate)
       ansible.builtin.set_fact:
         resolved_db_configs: >-
@@ -81,12 +94,15 @@
             {%- set vault_pw = existing_secrets.get(db.vault_key, '') -%}
             {%- if env_pw -%}
               {%- set final_pw = env_pw -%}
+              {%- set pw_source = 'env' -%}
             {%- elif vault_pw -%}
               {%- set final_pw = vault_pw -%}
+              {%- set pw_source = 'vault' -%}
             {%- else -%}
               {%- set final_pw = lookup('password', '/dev/null length=16 chars=ascii_letters,digits') -%}
+              {%- set pw_source = 'generated' -%}
             {%- endif -%}
-            {%- set _ = results.append({'db': db.db, 'user': db.user, 'password': final_pw, 'vault_key': db.vault_key}) -%}
+            {%- set _ = results.append({'db': db.db, 'user': db.user, 'password': final_pw, 'vault_key': db.vault_key, 'source': pw_source}) -%}
           {%- endfor -%}
           {{ results }}
 
@@ -203,6 +219,40 @@
           - pg_topology != 'compose'
           - (item.stdout | default('')) | trim != '1'
         no_log: true
+
+      # 收敛已存在角色的密码前, 先挡住"用自动生成的密码去改一个已在用的角色"。
+      #
+      # 密码解析顺序是 Env > Vault > 自动生成。自动生成出来的值不会写回 Vault,
+      # 也不会传给应用容器 —— 容器的密码来自部署侧的 ACCOUNT_DB_PASSWORD (Vault)。
+      # 因此一旦 Vault 读取返回空 (token 缺失 / 路径不对 / 键不存在), 下面的
+      # reconcile 就会把数据库角色改成一个只有本次 run 知道的随机密码, 而所有
+      # 正在运行的服务仍然拿着旧密码 —— 认证全线失败, 且现象要等到下一次新建
+      # 连接才浮现 (连接池里的旧连接还能用一段时间, 掩盖问题)。
+      #
+      # 加入 reconcile 之前这只是"不同步", 加入之后升级成"主动改坏", 所以这里
+      # 必须硬失败而不是继续。新建角色 (CREATE ROLE 分支) 不受影响: 那时还没有
+      # 任何消费者持有旧密码, 自动生成是安全的。
+      - name: Refuse to reconcile a pre-existing role with a generated password
+        ansible.builtin.fail:
+          msg: >-
+            Refusing to reset the password of pre-existing role(s)
+            {{ generated_pw_existing_roles | join(', ') }} to a freshly
+            generated value. No password was supplied via environment or
+            Vault, so the new value would be known only to this run while
+            running services keep the old one. Supply the credential via the
+            role's env var or kv/data/{{ vault_env_path }}/databases, then
+            re-run.
+        vars:
+          generated_pw_existing_roles: >-
+            {{ ((user_check_results.results | default([]))
+                + (user_check_results_tcp.results | default([])))
+               | selectattr('item', 'defined')
+               | selectattr('stdout', 'defined')
+               | selectattr('stdout', 'search', '^1$')
+               | map(attribute='item')
+               | selectattr('source', 'equalto', 'generated')
+               | map(attribute='user') | list }}
+        when: generated_pw_existing_roles | length > 0
 
       # 角色若已存在 (例如 postgres 数据卷跨 run 存活下来), 上面的 CREATE ROLE
       # 会被跳过, 密码永远停留在这个角色第一次被创建时的值, 与
