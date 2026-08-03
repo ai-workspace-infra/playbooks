@@ -226,9 +226,8 @@
             - "role_name={{ item.item.user }}"
             - -v
             - "role_password={{ item.item.password }}"
-            - -c
-            - >-
-              SELECT format('ALTER ROLE %I PASSWORD %L', :'role_name', :'role_password') \gexec
+          stdin: >-
+            SELECT format('ALTER ROLE %I PASSWORD %L', :'role_name', :'role_password') \gexec
         loop: "{{ user_check_results.results }}"
         register: sync_password_results
         changed_when: true
@@ -239,10 +238,24 @@
 
       - name: Reconcile password for pre-existing roles via PostgreSQL TCP
         ansible.builtin.command:
-          cmd: >-
-            psql -h {{ pg_root_host }} -p {{ pg_root_port }}
-            -U {{ pg_root_user }} -d postgres
-            -c "ALTER ROLE {{ item.item.user }} PASSWORD '{{ item.item.password }}';"
+          argv:
+            - psql
+            - -h
+            - "{{ pg_root_host }}"
+            - -p
+            - "{{ pg_root_port }}"
+            - -U
+            - "{{ pg_root_user }}"
+            - -d
+            - postgres
+            - -v
+            - ON_ERROR_STOP=1
+            - -v
+            - "role_name={{ item.item.user }}"
+            - -v
+            - "role_password={{ item.item.password }}"
+          stdin: >-
+            SELECT format('ALTER ROLE %I PASSWORD %L', :'role_name', :'role_password') \gexec
         environment:
           PGPASSWORD: "{{ pg_root_password }}"
         loop: "{{ user_check_results_tcp.results }}"
