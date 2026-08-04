@@ -1,13 +1,13 @@
 ---
 - name: Setup observability agent
   hosts: all
-  # 新机器在部署期间往往正在跑 cloud-init / unattended-upgrades, 它们持有
-  # dpkg 前端锁几十秒到几分钟。任何 apt 任务撞上就会立刻失败并中止整个部署
-  # (r8 即因此在 vector 安装处中断, 导致 xray / exporter / vector 全未安装)。
-  # 在 play 层统一给 apt 一个等待窗口, 免得逐个任务补; 单个任务仍可自行覆盖。
+  # 兜底用的短等待窗口。首次启动的收敛由 deploy_base 的
+  # common_wait_for_host_init.sh 统一负责(它在 bootstrap 前等 cloud-init 与
+  # unattended-upgrades 退出), 所以到这里锁通常已经放开; 这里只覆盖那之后
+  # 偶发的短暂占用, 不需要很长。单个任务仍可自行覆盖。
   module_defaults:
     ansible.builtin.apt:
-      lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(900) | int }}"
+      lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
   user: root
   become: yes
   gather_facts: yes
@@ -24,13 +24,13 @@
 
 - name: Deploy Base Probes and Vector Agent
   hosts: all
-  # 新机器在部署期间往往正在跑 cloud-init / unattended-upgrades, 它们持有
-  # dpkg 前端锁几十秒到几分钟。任何 apt 任务撞上就会立刻失败并中止整个部署
-  # (r8 即因此在 vector 安装处中断, 导致 xray / exporter / vector 全未安装)。
-  # 在 play 层统一给 apt 一个等待窗口, 免得逐个任务补; 单个任务仍可自行覆盖。
+  # 兜底用的短等待窗口。首次启动的收敛由 deploy_base 的
+  # common_wait_for_host_init.sh 统一负责(它在 bootstrap 前等 cloud-init 与
+  # unattended-upgrades 退出), 所以到这里锁通常已经放开; 这里只覆盖那之后
+  # 偶发的短暂占用, 不需要很长。单个任务仍可自行覆盖。
   module_defaults:
     ansible.builtin.apt:
-      lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(900) | int }}"
+      lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
   become: yes
   vars:
     group: all
