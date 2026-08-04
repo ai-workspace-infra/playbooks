@@ -436,6 +436,32 @@
         when: pg_topology == 'compose'
         no_log: true
 
+      # Resolve the container's own address on the postgres network. The
+      # verification below must not dial 127.0.0.1: the shipped pg_hba grants
+      # "host all all 127.0.0.1/32 trust", so a loopback connection succeeds
+      # without ever presenting the password and the check proves nothing.
+      # Applications arrive over the docker network (via stunnel) and match
+      # the "host all all all scram-sha-256" rule instead, which is the path
+      # worth asserting.
+      - name: Resolve the postgres container address for the auth check
+        ansible.builtin.command:
+          argv:
+            - docker
+            - inspect
+            - "{{ pg_container }}"
+            - --format
+            - '{{ "{{" }}range .NetworkSettings.Networks{{ "}}" }}{{ "{{" }}.IPAddress{{ "}}" }} {{ "{{" }}end{{ "}}" }}'
+        register: pg_container_ip_raw
+        changed_when: false
+        when: pg_topology == 'compose'
+
+      - name: Select the first postgres container address
+        ansible.builtin.set_fact:
+          pg_container_probe_host: >-
+            {{ (pg_container_ip_raw.stdout | default('') | trim).split(' ')
+               | reject('equalto', '') | first | default('') }}
+        when: pg_topology == 'compose'
+
       # The role reconciliation above must be checked through PostgreSQL TCP,
       # not only through the local postgres socket.  This check intentionally
       # runs after database creation: on a fresh compose deployment the role
@@ -458,7 +484,7 @@
             - "{{ pg_container }}"
             - psql
             - -h
-            - 127.0.0.1
+            - "{{ pg_container_probe_host }}"
             - -U
             - "{{ item.item.user }}"
             - -d
@@ -468,9 +494,17 @@
         loop: "{{ user_check_results.results }}"
         register: role_auth_results
         changed_when: false
+        # failed_when must judge *this* psql attempt. It previously read
+        # item.rc / item.stdout, which are the fields of the loop item -- the
+        # result of the earlier role-existence probe, not of the connection
+        # being verified. Two consequences, both seen in UAT:
+        #   * a genuine auth failure was masked, because the probe's rc was 0;
+        #   * on a fresh database every role is newly created, so the probe's
+        #     stdout is empty rather than '1' and the check failed for all
+        #     roles at once, aborting the play before the schema was seeded.
         failed_when: >-
-          item.rc | default(1) != 0 or
-          (item.stdout | default('') | trim) != '1'
+          role_auth_results.rc | default(1) != 0 or
+          (role_auth_results.stdout | default('') | trim) != '1'
         retries: 3
         delay: 2
         no_log: true
