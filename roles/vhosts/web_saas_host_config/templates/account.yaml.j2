@@ -48,7 +48,13 @@ store:
   # All business services use the local TLS tunnel, including single-node deployments.
   # Use libpq key=value DSN so passwords containing /, +, or = are not
   # interpreted as URI syntax by the Go URL parser.
-  dsn: "host=stunnel-client port=15432 dbname=account user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} sslmode=disable"
+  #
+  # 这里必须是 account_user, 不是 postgres。用超级用户连库不只是权限过大:
+  # 它还会掩盖建表属主/授权的缺陷 —— accounts 以 postgres 跑得好好的, 同库的
+  # billing 以 account_user 连进来就是
+  #   permission denied for table traffic_stat_checkpoints (SQLSTATE 42501)。
+  # 两个服务走同一个角色, 权限问题才会在第一个服务上就暴露出来。
+  dsn: "host=stunnel-client port=15432 dbname=account user=${ACCOUNT_PG_USER} password=${ACCOUNT_PG_PASSWORD} sslmode=disable"
   maxOpenConns: 30
   maxIdleConns: 10
 
