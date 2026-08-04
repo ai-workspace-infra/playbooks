@@ -19,6 +19,11 @@ web_saas_host_config_vault_token: >-
 web_saas_host_config_vault_env_path: >-
   {{ lookup('ansible.builtin.env', 'VAULT_ENV_PATH') | default('uat', true) }}
 
+# 业务库的专用角色。accounts 与 billing 都用它 —— 没有理由让任何业务服务
+# 拿 postgres 超级用户连库。
+web_saas_host_config_account_pg_user: >-
+  {{ lookup('ansible.builtin.env', 'ACCOUNT_PG_USER') | default('account_user', true) }}
+
 # Vault 是事实源; 只有显式设置了环境变量才覆盖它。
 web_saas_host_config_account_pg_password: >-
   {{ lookup('ansible.builtin.env', 'ACCOUNT_PG_PASSWORD')
@@ -113,6 +118,7 @@ web_saas_host_config_secrets:
   # kv/data/CICD and injected by the platform-ops workflow.
   ROOT_BOOTSTRAP_PASSWORD: "{{ lookup('ansible.builtin.env', 'ROOT_BOOTSTRAP_PASSWORD') | default('', true) }}"
 
+  ACCOUNT_PG_USER: "{{ web_saas_host_config_account_pg_user }}"
   ACCOUNT_PG_PASSWORD: "{{ web_saas_host_config_account_pg_password }}"
   # Billing and Accounts use the same account database/role. Keep the
   # legacy variable name for compose compatibility, but never source a
@@ -120,7 +126,7 @@ web_saas_host_config_secrets:
   BILLING_DB_PASSWORD: "{{ web_saas_host_config_account_pg_password }}"
 
   # accounts 与 billing 都经 stunnel-client 连库, 所以 host 是容器名。
-  DATABASE_URL: "postgres://{{ lookup('ansible.builtin.env', 'ACCOUNT_PG_USER') | default('account_user', true) }}:{{ web_saas_host_config_account_pg_password }}@stunnel-client:15432/account?sslmode=disable"
+  DATABASE_URL: "postgres://{{ web_saas_host_config_account_pg_user }}:{{ web_saas_host_config_account_pg_password }}@stunnel-client:15432/account?sslmode=disable"
 
   AUTH_TOKEN_PUBLIC_TOKEN: "{{ lookup('ansible.builtin.env', 'AUTH_TOKEN_PUBLIC_TOKEN') | default('', true) }}"
   AUTH_TOKEN_REFRESH_SECRET: "{{ lookup('ansible.builtin.env', 'AUTH_TOKEN_REFRESH_SECRET') | default('', true) }}"
