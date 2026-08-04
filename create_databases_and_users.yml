@@ -77,6 +77,8 @@
       register: existing_vault_db_secrets
       failed_when: false
       when: vault_token | length > 0
+      delegate_to: localhost
+      become: false
 
     # 这次读取是 failed_when: false 的, 失败会静默退回自动生成分支。不把它显式
     # 说出来, 现象就只剩下"某天服务连不上库", 根因隔着好几层。
