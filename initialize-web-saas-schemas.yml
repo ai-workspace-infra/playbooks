@@ -145,6 +145,19 @@
               END, r.nspname, r.relname, '{{ account_pg_user }}');
           END LOOP;
         END $$;
+        -- pgmq 是 accounts 的 billing_events 队列, 装在自己的 schema 里, 属主
+        -- 是 postgres。accounts 换成 account_user 之后, 不补这一段的话
+        -- pgmq.create()/pgmq.send() 会被拒, 队列静默降级 —— 本次改动不该让一个
+        -- 本来在工作的功能退化。扩展没装就跳过: 它是可选的, 代码里也只 warn。
+        DO $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pgmq') THEN
+            EXECUTE 'GRANT USAGE, CREATE ON SCHEMA pgmq TO {{ account_pg_user }}';
+            EXECUTE 'GRANT ALL ON ALL TABLES IN SCHEMA pgmq TO {{ account_pg_user }}';
+            EXECUTE 'GRANT ALL ON ALL SEQUENCES IN SCHEMA pgmq TO {{ account_pg_user }}';
+            EXECUTE 'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgmq TO {{ account_pg_user }}';
+          END IF;
+        END $$;
         SQL
       args:
         executable: /bin/bash
