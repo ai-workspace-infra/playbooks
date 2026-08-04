@@ -19,6 +19,14 @@
   ansible.builtin.apt:
     deb: "/tmp/vector_{{ vector_version }}.deb"
     state: present
+    # 等 dpkg 前端锁, 不要一撞上就失败。新机器在部署期间通常正在跑
+    # cloud-init / unattended-upgrades, 二者持锁几十秒到几分钟很常见。
+    # 这里不加的话, 该任务会以
+    #   "dpkg frontend lock was locked by /usr/bin/apt-get process with pid N"
+    # 直接中止整个 agent-proxy 部署 —— xray / exporter / vector 一个都装不上。
+    # apt 模块对 deb: 安装会把这个值转成 -o DPkg::Lock::Timeout=<n>, 所以
+    # 它对这条路径同样生效。
+    lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(900) | int }}"
 
 - name: Create Vector configuration directory
   ansible.builtin.file:
