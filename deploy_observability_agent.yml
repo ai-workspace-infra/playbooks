@@ -1,6 +1,13 @@
 ---
 - name: Setup observability agent
   hosts: all
+  # 新机器在部署期间往往正在跑 cloud-init / unattended-upgrades, 它们持有
+  # dpkg 前端锁几十秒到几分钟。任何 apt 任务撞上就会立刻失败并中止整个部署
+  # (r8 即因此在 vector 安装处中断, 导致 xray / exporter / vector 全未安装)。
+  # 在 play 层统一给 apt 一个等待窗口, 免得逐个任务补; 单个任务仍可自行覆盖。
+  module_defaults:
+    ansible.builtin.apt:
+      lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(900) | int }}"
   user: root
   become: yes
   gather_facts: yes
@@ -17,6 +24,13 @@
 
 - name: Deploy Base Probes and Vector Agent
   hosts: all
+  # 新机器在部署期间往往正在跑 cloud-init / unattended-upgrades, 它们持有
+  # dpkg 前端锁几十秒到几分钟。任何 apt 任务撞上就会立刻失败并中止整个部署
+  # (r8 即因此在 vector 安装处中断, 导致 xray / exporter / vector 全未安装)。
+  # 在 play 层统一给 apt 一个等待窗口, 免得逐个任务补; 单个任务仍可自行覆盖。
+  module_defaults:
+    ansible.builtin.apt:
+      lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(900) | int }}"
   become: yes
   vars:
     group: all
