@@ -1,4 +1,37 @@
 ---
+# 数据库口令的唯一事实源是 Vault kv/data/<env>/databases —— 与
+# create_databases_and_users.yml 建角色时读的是同一个 secret 的同一个 key。
+#
+# 在此之前这里只读环境变量, 于是同一个口令有两条互不相干的来源: 角色密码
+# 来自 playbook 读的 Vault, secrets.env 来自 workflow 传进来的环境变量。
+# 两者一旦不一致, postgres 与容器就会各持一份, 而且症状被 pg_hba 的
+# "127.0.0.1 trust" 掩盖 —— 本机检查全绿, 应用经 stunnel 走 scram 才失败。
+#
+# 读取失败不在这里终止: 下面的必填断言会因为空值而失败, 那里的报错更具体。
+- name: Read web-saas database credentials from Vault
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ web_saas_host_config_vault_addr }}"
+    auth_method: token
+    token: "{{ web_saas_host_config_vault_token }}"
+    path: "{{ web_saas_host_config_vault_env_path }}/databases"
+    engine_mount_point: "kv"
+  register: web_saas_host_config_vault_databases
+  failed_when: false
+  no_log: true
+  when: web_saas_host_config_vault_token | trim | length > 0
+
+- name: Warn when the Vault databases secret could not be read
+  ansible.builtin.debug:
+    msg: >-
+      Vault read of kv/data/{{ web_saas_host_config_vault_env_path }}/databases
+      returned nothing; database credentials fall back to environment
+      variables. If those are also empty the required-secret assertion below
+      fails rather than rendering an env file that starts and then breaks at
+      first use.
+  when:
+    - web_saas_host_config_vault_token | trim | length > 0
+    - (web_saas_host_config_vault_databases.secret | default({})) | length == 0
+
 # 断言放在最前面。这些值缺失时下游不会崩 —— postgres 会带着空口令正常
 # 启动, accounts 会正常监听, 部署报绿, 直到有人第一次尝试登录才发现。
 # 那正是这条交付链一直在对付的静默失败, 所以这里必须先失败。
