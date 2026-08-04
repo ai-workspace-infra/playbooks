@@ -126,6 +126,8 @@
         docker exec -i {{ pg_container }} psql -U postgres -d account \
           -v ON_ERROR_STOP=1 -f - <<'SQL'
         GRANT USAGE, CREATE ON SCHEMA public TO {{ account_pg_user }};
+        -- 表在前。serial / identity 的序列归属跟着所属表走, 表一改属主它们
+        -- 就跟着改了, 所以这一轮结束后剩下的序列基本都已经是对的。
         DO $$
         DECLARE r record;
         BEGIN
@@ -133,16 +135,40 @@
             SELECT c.relkind, n.nspname, c.relname
             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE n.nspname = 'public'
-              AND c.relkind IN ('r', 'p', 'S', 'v', 'm')
+              AND c.relkind IN ('r', 'p', 'v', 'm')
               AND pg_get_userbyid(c.relowner) <> '{{ account_pg_user }}'
           LOOP
             EXECUTE format('ALTER %s %I.%I OWNER TO %I',
               CASE r.relkind
-                WHEN 'S' THEN 'SEQUENCE'
                 WHEN 'v' THEN 'VIEW'
                 WHEN 'm' THEN 'MATERIALIZED VIEW'
                 ELSE 'TABLE'
               END, r.nspname, r.relname, '{{ account_pg_user }}');
+          END LOOP;
+        END $$;
+        -- 再收独立序列 —— 只收独立的。被列"拥有"的序列 Postgres 直接拒绝单独
+        -- 改属主:
+        --   cannot change owner of sequence "sandbox_bindings_id_seq"
+        --   DETAIL: Sequence ... is linked to table "sandbox_bindings".
+        -- 它们没有独立属主可言, 上一轮改表时已经带过去了。
+        DO $$
+        DECLARE r record;
+        BEGIN
+          FOR r IN
+            SELECT n.nspname, c.relname
+            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relkind = 'S'
+              AND pg_get_userbyid(c.relowner) <> '{{ account_pg_user }}'
+              AND NOT EXISTS (
+                SELECT 1 FROM pg_depend d
+                WHERE d.classid = 'pg_class'::regclass
+                  AND d.objid = c.oid
+                  AND d.refclassid = 'pg_class'::regclass
+                  AND d.deptype IN ('a', 'i'))
+          LOOP
+            EXECUTE format('ALTER SEQUENCE %I.%I OWNER TO %I',
+              r.nspname, r.relname, '{{ account_pg_user }}');
           END LOOP;
         END $$;
         SQL
