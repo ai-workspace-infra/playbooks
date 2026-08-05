@@ -4,14 +4,34 @@
     xray_exporter_arch: >-
       {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
 
-- name: Download xray-exporter binary
+- name: Download primary xray-exporter binary
   ansible.builtin.get_url:
     url: "https://github.com/{{ xray_exporter_release_repository }}/releases/download/{{ xray_exporter_version }}/xray-exporter-linux-{{ xray_exporter_arch }}"
     dest: "{{ xray_exporter_binary_path }}"
     mode: '0755'
     owner: "{{ xray_exporter_user }}"
     group: "{{ xray_exporter_group }}"
+  register: xray_exporter_primary_download
+  ignore_errors: true
   notify: Restart xray-exporters
+
+- name: Download fallback xray-exporter binary if primary release asset is unavailable
+  ansible.builtin.get_url:
+    url: "https://github.com/{{ xray_exporter_fallback_release_repository | default('compassvpn/xray-exporter') }}/releases/download/{{ xray_exporter_fallback_version | default('v0.6.0') }}/xray-exporter-linux-{{ xray_exporter_arch }}"
+    dest: "{{ xray_exporter_binary_path }}"
+    mode: '0755'
+    owner: "{{ xray_exporter_user }}"
+    group: "{{ xray_exporter_group }}"
+  register: xray_exporter_fallback_download
+  when: xray_exporter_primary_download is failed
+  ignore_errors: true
+  notify: Restart xray-exporters
+
+- name: Verify xray-exporter binary presence
+  ansible.builtin.stat:
+    path: "{{ xray_exporter_binary_path }}"
+  register: xray_exporter_binary_stat
+  failed_when: not xray_exporter_binary_stat.stat.exists
 
 - name: Ensure xray-exporter snapshot store directory exists
   ansible.builtin.file:
