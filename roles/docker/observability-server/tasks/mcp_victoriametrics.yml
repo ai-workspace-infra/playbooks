@@ -1,0 +1,29 @@
+---
+- name: Template VictoriaMetrics MCP Server environment file
+  ansible.builtin.template:
+    src: mcp-victoriametrics.env.j2
+    dest: "{{ observability_dir }}/mcp-victoriametrics.env"
+    mode: '0600'
+  no_log: true
+  notify: Restart observability stack
+  tags:
+    - observability
+    - observability_mcp
+    - mcp
+    - mcp_victoriametrics
+
+- name: Check VictoriaMetrics MCP readiness
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ observability_mcp_victoriametrics_port }}/health/readiness"
+    method: GET
+    status_code: [200, 404]
+  register: victoriametrics_mcp_health
+  retries: 5
+  delay: 3
+  until: victoriametrics_mcp_health.status in [200, 404]
+  ignore_errors: true
+  tags:
+    - observability
+    - observability_mcp
+    - mcp
+    - mcp_victoriametrics

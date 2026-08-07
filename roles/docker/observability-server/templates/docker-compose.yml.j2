@@ -127,8 +127,63 @@ services:
     ports:
       - "127.0.0.1:9202:9100"
 
+{% if observability_mcp_enabled | default(true) | bool %}
+{% if observability_mcp_grafana_enabled | default(true) | bool %}
+  mcp-grafana:
+    image: {{ observability_mcp_grafana_image | default('ghcr.io/grafana/mcp-grafana:latest') }}
+    container_name: xstream_mcp_grafana
+    restart: always
+    env_file:
+      - mcp-grafana.env
+    ports:
+      - "{{ observability_mcp_bind_address | default('127.0.0.1') }}:{{ observability_mcp_grafana_port | default(8000) }}:{{ observability_mcp_grafana_port | default(8000) }}"
+    depends_on:
+      - grafana
+{% endif %}
+
+{% if observability_mcp_victoriametrics_enabled | default(true) | bool %}
+  mcp-victoriametrics:
+    image: {{ observability_mcp_victoriametrics_image | default('ghcr.io/victoriametrics/mcp-victoriametrics:latest') }}
+    container_name: xstream_mcp_victoriametrics
+    restart: always
+    env_file:
+      - mcp-victoriametrics.env
+    ports:
+      - "{{ observability_mcp_bind_address | default('127.0.0.1') }}:{{ observability_mcp_victoriametrics_port | default(8080) }}:{{ observability_mcp_victoriametrics_port | default(8080) }}"
+    depends_on:
+      - victoria-metrics
+{% endif %}
+
+{% if observability_mcp_victorialogs_enabled | default(false) | bool %}
+  mcp-victorialogs:
+    image: {{ observability_mcp_victorialogs_image | default('ghcr.io/victoriametrics/mcp-victorialogs:latest') }}
+    container_name: xstream_mcp_victorialogs
+    restart: always
+    env_file:
+      - mcp-victorialogs.env
+    ports:
+      - "{{ observability_mcp_bind_address | default('127.0.0.1') }}:{{ observability_mcp_victorialogs_port | default(8081) }}:{{ observability_mcp_victorialogs_port | default(8081) }}"
+    depends_on:
+      - victoria-logs
+{% endif %}
+
+{% if observability_mcp_victoriatraces_enabled | default(false) | bool %}
+  mcp-victoriatraces:
+    image: {{ observability_mcp_victoriatraces_image | default('ghcr.io/victoriametrics/mcp-victoriatraces:latest') }}
+    container_name: xstream_mcp_victoriatraces
+    restart: always
+    env_file:
+      - mcp-victoriatraces.env
+    ports:
+      - "{{ observability_mcp_bind_address | default('127.0.0.1') }}:{{ observability_mcp_victoriatraces_port | default(8082) }}:{{ observability_mcp_victoriatraces_port | default(8082) }}"
+    depends_on:
+      - victoria-traces
+{% endif %}
+{% endif %}
+
 volumes:
   vmetrics_data:
   vlogs_data:
   vtraces_data:
   grafana_data:
+
