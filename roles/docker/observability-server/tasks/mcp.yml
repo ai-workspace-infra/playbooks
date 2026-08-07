@@ -1,0 +1,36 @@
+---
+- name: Configure Grafana MCP Server
+  ansible.builtin.include_tasks: mcp_grafana.yml
+  when: observability_mcp_grafana_enabled | default(true) | bool
+  tags:
+    - observability
+    - observability_mcp
+    - mcp
+    - mcp_grafana
+
+- name: Configure VictoriaMetrics MCP Server
+  ansible.builtin.include_tasks: mcp_victoriametrics.yml
+  when: observability_mcp_victoriametrics_enabled | default(true) | bool
+  tags:
+    - observability
+    - observability_mcp
+    - mcp
+    - mcp_victoriametrics
+
+- name: Configure VictoriaLogs MCP Server
+  ansible.builtin.include_tasks: mcp_victorialogs.yml
+  when: observability_mcp_victorialogs_enabled | default(false) | bool
+  tags:
+    - observability
+    - observability_mcp
+    - mcp
+    - mcp_victorialogs
+
+- name: Configure VictoriaTraces MCP Server
+  ansible.builtin.include_tasks: mcp_victoriatraces.yml
+  when: observability_mcp_victoriatraces_enabled | default(false) | bool
+  tags:
+    - observability
+    - observability_mcp
+    - mcp
+    - mcp_victoriatraces

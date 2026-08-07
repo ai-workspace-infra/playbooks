@@ -63,4 +63,42 @@ observability.svc.plus {
     handle_path /blackbox/* {
         reverse_proxy 127.0.0.1:9115
     }
+
+    # ==========================================
+    # Model Context Protocol (MCP) Server Ingress
+    # ==========================================
+{% if observability_mcp_enabled | default(true) | bool %}
+{% if observability_mcp_auth_enabled | default(false) | bool and observability_mcp_basic_auth_password_hash | default('') != '' %}
+    handle /mcp/* {
+        basicauth {
+            {{ observability_mcp_basic_auth_user | default('mcp_agent') }} {{ observability_mcp_basic_auth_password_hash }}
+        }
+    }
+{% endif %}
+
+{% if observability_mcp_grafana_enabled | default(true) | bool %}
+    handle_path /mcp/grafana/* {
+        reverse_proxy 127.0.0.1:{{ observability_mcp_grafana_port | default(8000) }}
+    }
+{% endif %}
+
+{% if observability_mcp_victoriametrics_enabled | default(true) | bool %}
+    handle_path /mcp/victoriametrics/* {
+        reverse_proxy 127.0.0.1:{{ observability_mcp_victoriametrics_port | default(8080) }}
+    }
+{% endif %}
+
+{% if observability_mcp_victorialogs_enabled | default(false) | bool %}
+    handle_path /mcp/victorialogs/* {
+        reverse_proxy 127.0.0.1:{{ observability_mcp_victorialogs_port | default(8081) }}
+    }
+{% endif %}
+
+{% if observability_mcp_victoriatraces_enabled | default(false) | bool %}
+    handle_path /mcp/victoriatraces/* {
+        reverse_proxy 127.0.0.1:{{ observability_mcp_victoriatraces_port | default(8082) }}
+    }
+{% endif %}
+{% endif %}
 }
+

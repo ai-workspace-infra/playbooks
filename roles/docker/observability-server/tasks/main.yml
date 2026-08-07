@@ -54,6 +54,14 @@
     - Node-Exporter-Dashboard.json
     - process-exporter-dashboard-with-treemap.json
 
+- name: Include MCP Server tasks
+  ansible.builtin.include_tasks: mcp.yml
+  when: observability_mcp_enabled | default(true) | bool
+  tags:
+    - observability
+    - observability_mcp
+    - mcp
+
 - name: Launch XStream monitoring with Docker Compose
   ansible.builtin.command: docker compose up -d --remove-orphans
   args:
@@ -66,3 +74,4 @@
     mode: '0644'
     backup: yes
   notify: Reload caddy
+

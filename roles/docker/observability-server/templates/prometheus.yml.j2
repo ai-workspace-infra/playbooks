@@ -17,3 +17,30 @@ scrape_configs:
   - job_name: 'azure-costs'
     static_configs:
       - targets: ['opencost-exporter-azure:9100']
+
+{% if observability_mcp_enabled | default(true) | bool %}
+{% if observability_mcp_grafana_enabled | default(true) | bool %}
+  - job_name: 'mcp-grafana'
+    static_configs:
+      - targets: ['mcp-grafana:{{ observability_mcp_grafana_port | default(8000) }}']
+{% endif %}
+
+{% if observability_mcp_victoriametrics_enabled | default(true) | bool %}
+  - job_name: 'mcp-victoriametrics'
+    static_configs:
+      - targets: ['mcp-victoriametrics:{{ observability_mcp_victoriametrics_port | default(8080) }}']
+{% endif %}
+
+{% if observability_mcp_victorialogs_enabled | default(false) | bool %}
+  - job_name: 'mcp-victorialogs'
+    static_configs:
+      - targets: ['mcp-victorialogs:{{ observability_mcp_victorialogs_port | default(8081) }}']
+{% endif %}
+
+{% if observability_mcp_victoriatraces_enabled | default(false) | bool %}
+  - job_name: 'mcp-victoriatraces'
+    static_configs:
+      - targets: ['mcp-victoriatraces:{{ observability_mcp_victoriatraces_port | default(8082) }}']
+{% endif %}
+{% endif %}
+
