@@ -43,6 +43,11 @@
     - { src: "{{ playbook_dir }}/roles/vhosts/blackbox_exporter/templates/blackbox.yml.j2", dest: 'blackbox/config.yml' }
     - { src: 'grafana-provisioning-datasources.yml.j2', dest: 'grafana/provisioning/datasources/datasources.yml' }
     - { src: 'grafana-provisioning-dashboards.yml.j2', dest: 'grafana/provisioning/dashboards/dashboards.yml' }
+  notify: Restart observability stack
+  tags:
+    - observability
+    - observability_mcp
+    - mcp
 
 - name: Copy Grafana dashboards
   ansible.builtin.copy:
@@ -53,6 +58,7 @@
     - dashboard.json
     - Node-Exporter-Dashboard.json
     - process-exporter-dashboard-with-treemap.json
+    - homepage-navigation.json
 
 - name: Include MCP Server tasks
   ansible.builtin.include_tasks: mcp.yml
@@ -66,6 +72,10 @@
   ansible.builtin.command: docker compose up -d --remove-orphans
   args:
     chdir: "{{ observability_dir }}"
+  tags:
+    - observability
+    - observability_mcp
+    - mcp
 
 - name: Template Caddy configuration for observability
   ansible.builtin.template:
@@ -74,4 +84,8 @@
     mode: '0644'
     backup: yes
   notify: Reload caddy
+  tags:
+    - observability
+    - observability_mcp
+    - mcp
 
