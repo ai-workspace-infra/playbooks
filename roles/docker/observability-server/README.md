@@ -51,7 +51,7 @@ flowchart LR
 | 服务组件 | 容器服务名 | 宿主机/监听端口 | 访问/查询路径 | 默认状态 |
 | :--- | :--- | :--- | :--- | :--- |
 | **Grafana MCP Server** | `xstream_mcp_grafana` | `127.0.0.1:8000` | `/mcp/grafana` | 默认启用 |
-| **VictoriaMetrics MCP Server** | `xstream_mcp_victoriametrics` | `127.0.0.1:8080` | `/mcp/victoriametrics` | 默认启用 |
+| **VictoriaMetrics MCP Server** | `xstream_mcp_victoriametrics` | `127.0.0.1:8088` | `/mcp/victoriametrics` | 默认启用 |
 | **VictoriaLogs MCP Server** | `xstream_mcp_victorialogs` | `127.0.0.1:8081` | `/mcp/victorialogs` | 默认禁用 |
 | **VictoriaTraces MCP Server** | `xstream_mcp_victoriatraces` | `127.0.0.1:8082` | `/mcp/victoriatraces` | 默认禁用 |
 
@@ -72,7 +72,7 @@ observability_mcp_basic_auth_password_hash: ""
 
 # Grafana MCP Server
 observability_mcp_grafana_enabled: true
-observability_mcp_grafana_image: "ghcr.io/grafana/mcp-grafana:latest"
+observability_mcp_grafana_image: "grafana/mcp-grafana:latest"
 observability_mcp_grafana_port: 8000
 observability_mcp_grafana_transport: "streamable-http"
 observability_mcp_grafana_disable_write: true
@@ -82,7 +82,7 @@ observability_mcp_grafana_service_account_token: ""
 # VictoriaMetrics MCP Server
 observability_mcp_victoriametrics_enabled: true
 observability_mcp_victoriametrics_image: "ghcr.io/victoriametrics/mcp-victoriametrics:latest"
-observability_mcp_victoriametrics_port: 8080
+observability_mcp_victoriametrics_port: 8088
 observability_mcp_victoriametrics_mode: "http"
 observability_mcp_victoriametrics_entrypoint: "http://victoria-metrics:8428"
 observability_mcp_victoriametrics_instance_type: "cluster"
