@@ -30,6 +30,9 @@
     accounts_schema_url: >-
       https://raw.githubusercontent.com/ai-workspace-services/accounts/{{ accounts_schema_ref }}/sql/schema.sql
     pg_container_default: web-saas-postgresql
+    # 与 create_databases_and_users.yml 和 web_saas_host_config 用的是同一个
+    # 角色名。accounts 和 billing 都经这个角色连库。
+    account_pg_user: "{{ lookup('ansible.builtin.env', 'ACCOUNT_PG_USER') | default('account_user', true) }}"
 
   tasks:
     # 与 create_databases_and_users.yml 同样的探测方式: 探不到就显式失败,
@@ -101,6 +104,104 @@
           account baseline schema still missing after applying
           {{ accounts_schema_url }} — refusing to report success.
       when: (users_table_verify.stdout | default('') | trim) != '1'
+
+    # schema 是以 -U postgres 灌的, 所以每张表的属主都是 postgres, 而
+    # account_user 一张也访问不到。accounts 之前看不出问题, 是因为它自己也用
+    # postgres 连库; billing 老老实实用 DATABASE_URL 里的 account_user, 于是
+    # 第一次写入就是
+    #   permission denied for table traffic_stat_checkpoints (SQLSTATE 42501)
+    # —— 部署全绿, 用量却永远是 0。
+    #
+    # 不放在上面的 when 里: 这一步要对存量主机也生效, 而存量主机的 users 表早
+    # 就在了, 灌 schema 那步会被跳过。下面两条都是幂等的 —— 属主已经对的对象
+    # 会被跳过, GRANT 重复执行没有代价 —— 所以每次部署重跑一遍是安全的。
+    #
+    # 改属主而不是只 GRANT: 只给 SELECT/INSERT/UPDATE/DELETE 的话, accounts 与
+    # billing 启动时的建表和迁移(ALTER TABLE / CREATE INDEX)照样会被拒 —— DDL
+    # 只有属主能做。把 public 下的对象交给 account_user, 这两个服务才真正拥有
+    # 自己的库; 同时以后由它们新建的表天然就归它们, 不需要再靠默认权限兜。
+    - name: Hand the account schema to the account role
+      ansible.builtin.shell: |
+        set -eo pipefail
+        docker exec -i {{ pg_container }} psql -U postgres -d account \
+          -v ON_ERROR_STOP=1 -f - <<'SQL'
+        GRANT USAGE, CREATE ON SCHEMA public TO {{ account_pg_user }};
+        -- 表在前。serial / identity 的序列归属跟着所属表走, 表一改属主它们
+        -- 就跟着改了, 所以这一轮结束后剩下的序列基本都已经是对的。
+        DO $$
+        DECLARE r record;
+        BEGIN
+          FOR r IN
+            SELECT c.relkind, n.nspname, c.relname
+            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relkind IN ('r', 'p', 'v', 'm')
+              AND pg_get_userbyid(c.relowner) <> '{{ account_pg_user }}'
+          LOOP
+            EXECUTE format('ALTER %s %I.%I OWNER TO %I',
+              CASE r.relkind
+                WHEN 'v' THEN 'VIEW'
+                WHEN 'm' THEN 'MATERIALIZED VIEW'
+                ELSE 'TABLE'
+              END, r.nspname, r.relname, '{{ account_pg_user }}');
+          END LOOP;
+        END $$;
+        -- 再收独立序列 —— 只收独立的。被列"拥有"的序列 Postgres 直接拒绝单独
+        -- 改属主:
+        --   cannot change owner of sequence "sandbox_bindings_id_seq"
+        --   DETAIL: Sequence ... is linked to table "sandbox_bindings".
+        -- 它们没有独立属主可言, 上一轮改表时已经带过去了。
+        DO $$
+        DECLARE r record;
+        BEGIN
+          FOR r IN
+            SELECT n.nspname, c.relname
+            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relkind = 'S'
+              AND pg_get_userbyid(c.relowner) <> '{{ account_pg_user }}'
+              AND NOT EXISTS (
+                SELECT 1 FROM pg_depend d
+                WHERE d.classid = 'pg_class'::regclass
+                  AND d.objid = c.oid
+                  AND d.refclassid = 'pg_class'::regclass
+                  AND d.deptype IN ('a', 'i'))
+          LOOP
+            EXECUTE format('ALTER SEQUENCE %I.%I OWNER TO %I',
+              r.nspname, r.relname, '{{ account_pg_user }}');
+          END LOOP;
+        END $$;
+        SQL
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    # 复验和灌 schema 那步同一个道理: GRANT 成功不等于应用真的连得上。
+    #
+    # 探针用 users 而不是某张 billing 表: billing 的表由 billing 容器自己建, 而
+    # 容器要等本 playbook 之后的 compose 才起来 —— 拿它当探针会在全新主机上必然
+    # 失败。users 由上一步刚验过存在, 且与 billing 表同属 public schema、同一批
+    # GRANT, 它通就代表这批授权生效了。
+    #
+    # 走 -h 127.0.0.1 而不是本地 socket: socket 那条 pg_hba 规则是 peer, 容器里
+    # 是 root, 会以"角色不匹配"失败, 与权限无关。127.0.0.1 是 trust, 正好只检
+    # 验权限 —— 口令那一面由 create_databases_and_users.yml 经 scram 单独验过。
+    - name: Verify the account role can read the account schema
+      ansible.builtin.command: >-
+        docker exec -i {{ pg_container }} psql -h 127.0.0.1 -U {{ account_pg_user }}
+        -d account -tAc "SELECT count(*) FROM users"
+      register: account_user_access
+      changed_when: false
+      failed_when: false
+
+    - name: Fail when the account role still cannot read the account schema
+      ansible.builtin.fail:
+        msg: >-
+          {{ account_pg_user }} still cannot read the users table after granting:
+          {{ account_user_access.stderr | default('') | trim }}
+          Both accounts and billing connect through this role, so leaving this
+          broken means the stack deploys green and then writes nothing.
+      when: account_user_access.rc != 0
 
     - name: Report schema state
       ansible.builtin.debug:
