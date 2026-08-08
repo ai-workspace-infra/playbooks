@@ -139,6 +139,13 @@ web_saas_host_config_secrets:
 
   INTERNAL_SERVICE_TOKEN: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}"
 
+  # Stripe 密钥归 Vault kv/billing-service, 与本角色其余密钥不同源 ——
+  # 那个 KV 是计费域专用, 按 SANDBOX_/PROD_ 前缀存两套。留空时 accounts
+  # 自己的 stripe 客户端会软性 disabled(见 accounts api/stripe.go
+  # enabled()), 不阻塞其余服务启动, 所以不放进下面的 required_secrets。
+  STRIPE_SECRET_KEY: "{{ lookup('ansible.builtin.env', 'STRIPE_SECRET_KEY') | default('', true) }}"
+  STRIPE_WEBHOOK_SECRET: "{{ lookup('ansible.builtin.env', 'STRIPE_WEBHOOK_SECRET') | default('', true) }}"
+
   # Billing must receive its exporter source list from the deployment
   # environment. Keeping this in the host-rendered env file allows UAT to
   # point at one or more remote agent-proxy exporters without baking topology
