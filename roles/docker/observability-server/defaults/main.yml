@@ -85,3 +85,9 @@ observability_mcp_victoriatraces_bearer_token: ""
 observability_snapshot_rate_limit_events: 10
 observability_snapshot_rate_limit_window: "1m"
 observability_console_backend_port: 8080
+# 服务器上安装的 caddy v2.11.4 是官方原版二进制,没有编译 caddy-ratelimit 插件,
+# `rate_limit {}` 指令会导致 `caddy reload` 直接失败(而失败会被 ignore_errors 吞掉,
+# 表现为"部署显示成功但配置其实没生效")。默认关闭限流子句,只保留转发本身,
+# 待改用 xcaddy 构建带插件的二进制、或换用 Caddy 原生 `rate_limit` app(2.11 起内置的
+# 那个不同语法版本)后再打开。
+observability_snapshot_rate_limit_enabled: false

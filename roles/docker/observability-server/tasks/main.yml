@@ -11,6 +11,12 @@
     - "{{ observability_dir }}/grafana/provisioning/datasources"
     - "{{ observability_dir }}/grafana/provisioning/dashboards"
     - "{{ observability_dir }}/grafana/dashboards"
+    - "{{ observability_dir }}/grafana/provisioning/alerting"
+  tags:
+    - observability
+    - observability_alerting
+    - observability_mcp
+    - mcp
 
 - name: Load Blackbox probe defaults
   ansible.builtin.include_vars:
@@ -48,6 +54,31 @@
     - observability
     - observability_mcp
     - mcp
+
+- name: Provision Grafana built-in alerting rules
+  ansible.builtin.template:
+    src: grafana-provisioning-alerting.yml.j2
+    dest: "{{ observability_dir }}/grafana/provisioning/alerting/rules.yml"
+    mode: '0644'
+  when: observability_alerting_enabled | default(true) | bool
+  notify:
+    - Restart observability stack
+    - Restart grafana
+  tags:
+    - observability
+    - observability_alerting
+
+- name: Remove Grafana alerting provisioning when disabled
+  ansible.builtin.file:
+    path: "{{ observability_dir }}/grafana/provisioning/alerting/rules.yml"
+    state: absent
+  when: not (observability_alerting_enabled | default(true) | bool)
+  notify:
+    - Restart observability stack
+    - Restart grafana
+  tags:
+    - observability
+    - observability_alerting
 
 - name: Copy Grafana dashboards
   ansible.builtin.copy:
@@ -91,3 +122,30 @@
     - observability_mcp
     - mcp
 
+# ---------------------------------------------------------------------------
+# 部署后健康校验。
+# 背景:Grafana 的 alerting provisioning 只在启动时加载,一条非法规则会让
+# Grafana 直接启动失败;而此前所有任务都会照常报成功,部署结果呈现"假绿"。
+# 这里强制 flush handlers 让重启先发生,再确认 Grafana 真的活着。
+# ---------------------------------------------------------------------------
+- name: Flush handlers before verifying Grafana
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify Grafana is healthy after provisioning
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ observability_grafana_port | default('3030') }}/api/health"
+    method: GET
+    return_content: true
+    status_code: 200
+  register: observability_grafana_health
+  retries: 12
+  delay: 5
+  until:
+    - observability_grafana_health.status == 200
+    - (observability_grafana_health.json.database | default('')) == 'ok'
+  failed_when: >-
+    observability_grafana_health.status != 200
+    or (observability_grafana_health.json.database | default('')) != 'ok'
+  tags:
+    - observability
+    - observability_alerting

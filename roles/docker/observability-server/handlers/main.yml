@@ -10,3 +10,10 @@
   args:
     chdir: "{{ observability_dir }}"
 
+# Grafana 的 alerting provisioning 只在启动时加载,
+# 而 `docker compose up -d` 不会重建配置未变的 grafana 容器,
+# 因此告警规则变更必须显式重启 grafana 才会生效。
+- name: Restart grafana
+  ansible.builtin.command: docker compose restart grafana
+  args:
+    chdir: "{{ observability_dir }}"
