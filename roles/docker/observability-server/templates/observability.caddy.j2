@@ -49,19 +49,36 @@ observability.svc.plus {
     }
 
 
-    # VictoriaMetrics Alerting Engine (告警引擎)
+{% if observability_vmalert_enabled | default(false) | bool %}
+    # VictoriaMetrics Alerting Engine (告警引擎) —— 仅在回退到独立告警链路时启用
     handle_path /vmalert/* {
         reverse_proxy 127.0.0.1:8880
     }
 
-    # Alertmanager (告警路由分发)
+    # Alertmanager (告警路由分发) —— 仅在回退到独立告警链路时启用
     handle_path /alertmgr/* {
         reverse_proxy 127.0.0.1:9059
     }
+{% endif %}
 
     # Blackbox Exporter (网络与域名拨测)
     handle_path /blackbox/* {
         reverse_proxy 127.0.0.1:9115
+    }
+
+    # ==========================================
+    # Telemetry Snapshots Export (流式压缩 & 带宽限制)
+    # ==========================================
+    handle /v1/telemetry/snapshots/export {
+        encode gzip zstd
+        rate_limit {
+            zone snapshot_export_limit {
+                key static
+                events {{ observability_snapshot_rate_limit_events | default(10) }}
+                window {{ observability_snapshot_rate_limit_window | default('1m') }}
+            }
+        }
+        reverse_proxy 127.0.0.1:{{ observability_console_backend_port | default('8080') }}
     }
 
     # ==========================================

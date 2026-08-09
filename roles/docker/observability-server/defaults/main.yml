@@ -15,6 +15,31 @@ observability_caddy_conf_dir: "/etc/caddy/conf.d"
 observability_grafana_domain: "grafana.svc.plus"
 observability_prometheus_domain: "prometheus.svc.plus"
 
+# ---------------------------------------------------------------------------
+# 告警:默认使用 Grafana 内置统一告警 (Unified Alerting)
+# 规则由 templates/grafana-provisioning-alerting.yml.j2 配置化下发,
+# Grafana 自带 Alertmanager,因此 vmalert / alertmanager 两个容器默认不部署。
+# ---------------------------------------------------------------------------
+observability_alerting_enabled: true
+observability_alerting_folder: "Observability Alerts"
+observability_alerting_interval: "1m"
+# 指标数据源 uid,需与 grafana-provisioning-datasources.yml.j2 中的 VictoriaMetrics 保持一致
+observability_alerting_metrics_ds_uid: "victoriametrics"
+observability_alerting_contact_point: "obs-default"
+# 留空则不下发 contactPoints / policies,仅评估并在 Grafana 内展示告警状态,不外发通知
+observability_alerting_webhook_url: ""
+# 告警阈值
+observability_alerting_cpu_threshold: 85
+observability_alerting_mem_threshold: 90
+observability_alerting_disk_threshold: 85
+observability_alerting_stale_seconds: 300
+observability_alerting_ssl_days: 14
+
+# 旧告警链路 (vmalert + Alertmanager):默认关闭,改由 Grafana 内置告警承担。
+# 如需回退到独立的 vmalert/Alertmanager,置为 true 并自行提供 vmalert/alerts.yml
+# 与 alertmanager/alertmanager.yml —— 注意本 role 目前不生成这两个配置文件。
+observability_vmalert_enabled: false
+
 # MCP Server Global Settings
 observability_mcp_enabled: true
 observability_mcp_network: "observability"
@@ -38,7 +63,8 @@ observability_mcp_victoriametrics_image: "ghcr.io/victoriametrics/mcp-victoriame
 observability_mcp_victoriametrics_port: 8088
 observability_mcp_victoriametrics_mode: "http"
 observability_mcp_victoriametrics_entrypoint: "http://victoria-metrics:8428"
-observability_mcp_victoriametrics_instance_type: "cluster"
+# 本 role 部署的是单机版 VictoriaMetrics (victoria-metrics:v1.101.0 单体镜像),不是 cluster 组件 (vminsert/vmselect/vmstorage)
+observability_mcp_victoriametrics_instance_type: "single"
 observability_mcp_victoriametrics_bearer_token: ""
 
 # VictoriaLogs MCP Server
@@ -55,3 +81,7 @@ observability_mcp_victoriatraces_port: 8082
 observability_mcp_victoriatraces_entrypoint: "http://victoria-traces:10428"
 observability_mcp_victoriatraces_bearer_token: ""
 
+# Telemetry Snapshot Export & Traffic Control
+observability_snapshot_rate_limit_events: 10
+observability_snapshot_rate_limit_window: "1m"
+observability_console_backend_port: 8080
