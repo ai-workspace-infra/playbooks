@@ -1,0 +1,145 @@
+---
+# Grafana 内置统一告警 (Unified Alerting) 规则,由 Ansible 配置化下发。
+# 取代 vmalert + Alertmanager 两个容器:Grafana 自带 Alertmanager,规则在此声明即生效。
+# 所有表达式均已对线上 VictoriaMetrics 实测有数据。
+#
+# 注意:边缘 Vector agent 把所有推送指标统一打了 job="xray" 标签,
+# 因此所有主机类规则一律按 instance 聚合,不能按 job 过滤。
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: edge-nodes
+    folder: "{{ observability_alerting_folder }}"
+    interval: {{ observability_alerting_interval }}
+    rules:
+{% macro rule(uid, title, expr, op, threshold, for_, severity, summary, stage) %}
+      - uid: {{ uid }}
+        title: {{ title }}
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: {{ observability_alerting_metrics_ds_uid }}
+            model:
+              editorMode: code
+              expr: '{{ expr }}'
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              legendFormat: __auto
+              range: false
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [{{ threshold }}]
+                    type: {{ op }}
+                  operator:
+                    type: and
+                  query:
+                    params: [B]
+                  reducer:
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        noDataState: NoData
+        execErrState: Error
+        for: {{ for_ }}
+        annotations:
+          summary: "{{ summary }}"
+        labels:
+          severity: {{ severity }}
+          stage: {{ stage }}
+        isPaused: false
+{% endmacro %}
+{{ rule('obs-host-cpu-high', '主机 CPU 使用率过高',
+        '100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)',
+        'gt', observability_alerting_cpu_threshold, '5m', 'warning',
+        '{{ $labels.instance }} CPU 使用率持续高于 ' ~ observability_alerting_cpu_threshold ~ '%',
+        'collect') }}
+{{ rule('obs-host-mem-high', '主机内存使用率过高',
+        '(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100',
+        'gt', observability_alerting_mem_threshold, '5m', 'warning',
+        '{{ $labels.instance }} 内存使用率持续高于 ' ~ observability_alerting_mem_threshold ~ '%',
+        'collect') }}
+{{ rule('obs-host-disk-high', '根分区磁盘使用率过高',
+        '100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100)',
+        'gt', observability_alerting_disk_threshold, '10m', 'warning',
+        '{{ $labels.instance }} 根分区使用率高于 ' ~ observability_alerting_disk_threshold ~ '%',
+        'collect') }}
+{{ rule('obs-edge-agent-stale', '边缘 Agent 失联',
+        'time() - max by (instance) (node_time_seconds)',
+        'gt', observability_alerting_stale_seconds, '5m', 'critical',
+        '{{ $labels.instance }} 已超过 ' ~ observability_alerting_stale_seconds ~ ' 秒没有上报指标,Vector 管道可能中断',
+        'collect') }}
+{{ rule('obs-xray-probe-down', 'xray 探针 DOWN',
+        'xray_up', 'lt', 1, '5m', 'critical',
+        '{{ $labels.instance }} 的 xray 探针 ({{ $labels.transport }}) 处于 DOWN 状态',
+        'collect') }}
+
+  - orgId: 1
+    name: ingest-pipeline
+    folder: "{{ observability_alerting_folder }}"
+    interval: {{ observability_alerting_interval }}
+    rules:
+{{ rule('obs-vector-buffer-backlog', 'Vector 缓冲区积压',
+        'sum by (instance, component_id) (vector_buffer_byte_size)',
+        'gt', 0, '10m', 'warning',
+        '{{ $labels.instance }} 的 {{ $labels.component_id }} sink 缓冲持续积压,后端写入或网络可能异常',
+        'ingest') }}
+{{ rule('obs-vector-errors', 'Vector 组件错误',
+        'sum by (instance) (rate(vector_component_errors_total[5m]))',
+        'gt', 0, '5m', 'warning',
+        '{{ $labels.instance }} 的 Vector 管道正在产生错误',
+        'ingest') }}
+
+  - orgId: 1
+    name: endpoints
+    folder: "{{ observability_alerting_folder }}"
+    interval: {{ observability_alerting_interval }}
+    rules:
+{{ rule('obs-probe-failed', '站点探测失败',
+        'probe_success', 'lt', 1, '5m', 'critical',
+        '{{ $labels.name }} 探测失败 (target {{ $labels.target }})',
+        'store') }}
+{{ rule('obs-ssl-expiring', 'SSL 证书即将过期',
+        '(probe_ssl_earliest_cert_expiry - time()) / 86400',
+        'lt', observability_alerting_ssl_days, '1h', 'warning',
+        '{{ $labels.name }} 的证书剩余不足 ' ~ observability_alerting_ssl_days ~ ' 天',
+        'store') }}
+
+{% if observability_alerting_webhook_url | default('') != '' %}
+contactPoints:
+  - orgId: 1
+    name: {{ observability_alerting_contact_point }}
+    receivers:
+      - uid: obs-webhook
+        type: webhook
+        disableResolveMessage: false
+        settings:
+          url: {{ observability_alerting_webhook_url }}
+          httpMethod: POST
+
+policies:
+  - orgId: 1
+    receiver: {{ observability_alerting_contact_point }}
+    group_by: ['grafana_folder', 'alertname']
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+{% endif %}

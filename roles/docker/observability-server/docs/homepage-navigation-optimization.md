@@ -1,43 +1,119 @@
-# 平台导航首页(homepage-navigation)优化 Spec
+# 平台导航与总览 (Navigation Homepage) 设计说明
 
 对应文件:[files/homepage-navigation.json](../files/homepage-navigation.json)
-基准:`observability.svc.plus/grafana` 线上实际运行的 Docker Compose 栈(`playbooks/roles/docker/observability-server`),不是 Pigsty 模板。
+线上地址:`https://observability.svc.plus/grafana/d/homepage-navigation/`
 
-## 背景:之前的方向走偏了
+## 设计依据
 
-首页最初的结构(IaaS→PaaS→SaaS、计算/存储/网络、控制面/集群/DB/缓存、代理/请求)是从 Pigsty 的仪表盘模板搬过来的,但线上这套栈实际只是一个轻量 Docker Compose 栈:VictoriaMetrics / VictoriaLogs / VictoriaTraces + Grafana + vmalert/Alertmanager + FinOps 成本采集器 + 面向 AI Agent 的 MCP Server(见 [README.md](../README.md))——没有 PGSQL/NODE/REDIS/MINIO 这类服务舰队,也没有对应的分类仪表盘。按 Pigsty 结构做的 tag 过滤 dashlist 会一直是空的。这一版把首页结构改成贴合这套栈实际有什么。
+视觉语言参考 [Pigsty demo homepage](https://demo.pigsty.io/ui/d/pigsty/pigsty)(彩色背景磁贴 + 大号实例网格 + 右侧仪表盘目录 + 顶部 tag 下拉导航);信息架构来自 [observability-server-core 博客](https://console.svc.plus/blogs/03-observability/observability-server-core.zh) 的四段式流水线:
 
-## 现在实际有什么(全部来自本 role 自己的模板文件,不是猜的)
+```
+COLLECT 采集  →  INGEST 接入  →  STORE 存储  →  AI DIAGNOSE 智能诊断
+```
 
-- **容器**(`templates/docker-compose.yml.j2`):victoria-metrics、victoria-logs、victoria-traces、vmalert、alertmanager、blackbox-exporter、grafana、opencost-exporter-aws(真的在采集)、opencost-exporter-gcp / opencost-exporter-azure(占位容器,`command: tail -f /dev/null`,注释写着"Placeholder pending specific exporter image")、mcp-grafana / mcp-victoriametrics(默认开启)、mcp-victorialogs / mcp-victoriatraces(默认关闭)。
-- **Prometheus scrape job**(`templates/prometheus.yml.j2`):`prometheus`(自监控)、`aws-costs`、`gcp-costs`、`azure-costs`、`mcp-grafana`、`mcp-victoriametrics`、`mcp-victorialogs`、`mcp-victoriatraces`。**没有** `pgsql`/`redis`/`node`/`nginx`/`minio` 之类的 job。
-- **对外路径**(`templates/observability.caddy.j2`):`/grafana/`、`/vmetrics/`、`/vlogs/`、`/vtraces/`、`/vmalert/`、`/alertmgr/`、`/blackbox/`、`/mcp/grafana/`、`/mcp/victoriametrics/`(其余两个 MCP 路径视开关而定)。
-- **已经在跑的仪表盘**(`files/` 目录,只有这 3 个 + 首页自己):`dashboard.json`(标题 "Xray Dashboard",无 tag)、`Node-Exporter-Dashboard.json`(通用主机监控,社区模板)、`process-exporter-dashboard-with-treemap.json`(进程监控 treemap)。没有任何分类 tag 体系。
+首页即按这四段组织,不再使用此前从 Pigsty 模板搬来、与本平台实际部署对应不上的 IaaS / PaaS / SaaS 分层。
 
-## 变更清单
+## 数据基准:全部查询已对线上 VictoriaMetrics 实测
 
-1. **顶部导航链接**:原来的 PGSQL/NODE/INFRA/Module 下拉过滤的 tag,在线上这 3 个真实仪表盘里一个都不存在,下拉出来全是空的。改成一个 `全部仪表盘` 下拉(`tags: []`),始终和实际已上传的仪表盘同步,不需要维护 tag 映射。
-2. **首页 Hero 区文案**:去掉"IaaS→PaaS→SaaS / 计算·存储·网络"这类 Pigsty 措辞,改成描述这套栈实际在做的事(VictoriaMetrics/Logs/Traces + Grafana,给 AI Agent 提供只读查询接口),3 个胶囊换成:观测数据 / 告警与拨测 / MCP 接入。
-3. **"平台脉搏"三个面板换成查真实 job**(原来的 `Open Platform OBS v1.0`/`Modules`/`Instances` 三个面板全部删除,因为它们查的 `up{job="pgsql"}` 等在线上没有对应采集目标,大概率一直空着):
-   - **MCP Server 状态**:`sum(up{job="mcp-grafana"})` / `mcp-victoriametrics` / `mcp-victorialogs` / `mcp-victoriatraces`,链接到对应 `/mcp/<name>/` 路径。VictoriaLogs / VictoriaTraces 的 MCP 默认关闭,对应方块默认 No Data 是预期行为。
-   - **成本采集 & 自监控**:`sum(up{job="prometheus"})`(自监控)+ `aws-costs`/`gcp-costs`/`azure-costs`。GCP / Azure 的采集器是占位容器,会一直 Down,这是已知状态不是故障(见下面"发现但本次未动")。
-   - **Firing Alerts**:保留不动。它查询的 `ALERTS{alertstate="firing"}` 是 vmalert 通过 `--remoteWrite.url` 主动推送进 VictoriaMetrics 的,不依赖 scrape job,链路本身是通的,不受这次改动影响。
-4. **"IaaS资源/PaaS服务/业务监控"三个大区块整体删除**,换成一个"组件与仪表盘"区块:
-   - **组件入口**:VictoriaMetrics / VictoriaLogs / VictoriaTraces / vmalert / Alertmanager / Blackbox Exporter 6 个纯导航方块,直接链到各自的 `/vmetrics/`、`/vlogs/`、`/vtraces/`、`/vmalert/`、`/alertmgr/`、`/blackbox/` 路径。这几个组件目前没有各自独立的 `up` 指标,方块常亮不代表健康,面板 description 里已注明。
-   - **全部仪表盘**:一个不带 tag 过滤的 dashlist,把 `dashboard.json`/`Node-Exporter-Dashboard.json`/`process-exporter-dashboard-with-treemap.json` 都列出来。现在只有 3 个仪表盘,不分类反而更诚实;以后仪表盘多起来、真的需要分区时再加 tag 过滤。
-5. **删除未被任何查询引用的模板变量 `interval`**(死配置)。
-6. 首页总高度从原来的 62 行降到 21 行。
+**重要前提**:本平台的指标并非来自 Prometheus scrape,而是边缘 Vector agent 经 `/ingest/metrics/` **remote-write 推送**。实测 `up{}` 只有 2 条序列且均为 0(见"已知缺口"),因此**首页所有面板都不依赖 `up` 指标**。
 
-## 发现但本次未动(记录一下,不属于"面板优化"范围,需要你决定要不要修)
+实测确认的活跃数据源(3 台主机,数据新鲜度 2–11 秒):
 
-- `prometheus.yml.j2` 里 `job_name: prometheus` 的采集目标是 `localhost:9090`,但 VictoriaMetrics 容器本身监听的是 8428(datasource 配置和 docker-compose 端口映射都是 8428);9090 只是宿主机侧的端口映射,容器内部并不监听这个端口。这个自监控 job 大概率一直抓取失败,"成本采集 & 自监控"面板里的"自监控"方块目前会显示 Down——这不是这次改动引入的,是已有配置里的问题,要不要顺手修可以再定。
-- `opencost-exporter-gcp` / `opencost-exporter-azure` 是占位容器,还没接真实的 GCP/Azure 成本采集逻辑,对应方块会一直 Down,是已知未完成状态。
+| 主机 | node | vector | process | xray |
+| --- | --- | --- | --- | --- |
+| `console-uat.onwalk.net` | ✅ | ✅ | ✅ 37 进程组 | — |
+| `install.svc.plus` | ✅ | ✅ | ✅ 148 进程组 | ✅ tcp/xhttp |
+| `tky-proxy.svc.plus` | ✅ | ✅ | ✅ 59 进程组 | ✅ tcp/xhttp |
 
-## 依据来源
+另有 `blackbox` job 提供 5 个 HTTPS 探测目标(accounts / console / jp-xhttp / tky-proxy / www.svc.plus)。
 
-本次所有改动依据均来自这个 role 自己的模板文件,不再参考 `ai-workspace-infra/observability/`(那是另一套没有实际部署的 Pigsty fork,和线上跑的不是一回事):
+> ⚠ **标签陷阱**:Vector agent 把 **所有** 推送的指标(node / vector / namedprocess / xray)统一打上了 `job="xray"`。这是 agent 侧的标签配置问题。因此首页查询一律按 `instance` 聚合,**绝不能按 `job` 过滤 node 指标**,否则语义完全错误。
 
-- 容器清单 → `templates/docker-compose.yml.j2`
-- 真实 scrape job → `templates/prometheus.yml.j2`
-- 对外路径 → `templates/observability.caddy.j2`
-- 已部署仪表盘及其 tag → `files/dashboard.json` / `files/Node-Exporter-Dashboard.json` / `files/process-exporter-dashboard-with-treemap.json`
+## 顶部导航
+
+Pigsty 风格的下拉导航。**每个下拉的 tag 都已在对应 dashboard JSON 中实际标注并验证非空** —— 直接照搬 Pigsty 的 `PGSQL / NODE / INFRA / Module` 会全部落空,因为本平台并没有那些仪表盘。
+
+| 入口 | 类型 | 过滤 / 目标 | 实际命中 |
+| --- | --- | --- | --- |
+| 采集 | 下拉 | tag `COLLECT` | Node Exporter、process exporter |
+| 业务 | 下拉 | tag `BU` | Xray Dashboard |
+| 全部仪表盘 | 下拉 | 无过滤 | 全部 4 个 |
+| Metrics | 直链 | `/vmetrics/vmui/` | — |
+| Logs | 直链 | `/vlogs/select/vmui/` | — |
+| 告警 | 直链 | `/grafana/alerting/list` | — |
+
+为此给已部署的仪表盘补了分层 tag:`Node-Exporter-Dashboard` 与 `process-exporter` 加 `COLLECT`/`NODE`,`dashboard.json`(Xray Dashboard)加 `BU`/`XRAY`。
+
+## 面板结构
+
+| 区块 | 面板 | 数据来源 | 实测 |
+| --- | --- | --- | --- |
+| — | 总览导航 | 静态 HTML,四段流水线示意 | — |
+| 平台脉搏 | 快速入口 | 纯导航磁贴 | — |
+| 平台脉搏 | 采集器 | 各 exporter 覆盖主机数,按 instance 去重 | 5 项均有值 |
+| 平台脉搏 | 边缘节点 | 每主机 CPU%,area sparkline,可下钻主机详情 | 3 series |
+| 平台脉搏 | 仪表盘 | dashlist,不做 tag 过滤 | — |
+| 01 COLLECT | CPU / 内存 使用率 | `node_cpu_seconds_total` / `node_memory_*` | 各 3 series |
+| 01 COLLECT | 根分区磁盘 | `node_filesystem_*{mountpoint="/"}` | 3 series |
+| 01 COLLECT | xray 探针 | `xray_up`,按 transport,0/1 映射 DOWN/UP | 4 series |
+| 02 INGEST | Vector 出口事件速率 | `vector_component_sent_events_total` | 3 series |
+| 02 INGEST | Vector 缓冲积压 | `vector_buffer_byte_size` | 4 series |
+| 02 INGEST | Vector 错误率 | `vector_component_errors_total` | 1 series |
+| 03 STORE | 存储引擎与网关 | 纯导航磁贴 | — |
+| 03 STORE | SSL 证书剩余 | `probe_ssl_earliest_cert_expiry` | 5 series |
+| 03 STORE | Firing Alerts | Grafana 原生 `alertlist` 面板 | 见下 |
+| 04 AI DIAGNOSE | MCP 服务入口 | 纯导航磁贴,4 个 MCP 适配器 | — |
+| 04 AI DIAGNOSE | MCP 能力说明 | 静态 HTML,含安全边界说明 | — |
+
+所有 PromQL 查询均已逐条打到线上 VictoriaMetrics 验证返回非空。
+
+### 设计取舍
+
+- **纯导航磁贴明确标注**:快速入口 / 存储引擎 / MCP 三个面板用 `expr: 1` 常亮,panel description 里写明"不代表健康状态"。避免用户误以为绿色 = 健康 —— 这几个组件目前确实没有被纳入采集。
+- **`origin_prometheus` 变量接上了**:所有面板 datasource 改为 `${origin_prometheus}`,此前该变量是声明了但没有任何面板引用的死配置。
+- **删除 `interval` 变量**:同样是无人引用的死配置。
+
+## 告警:改用 Grafana 内置统一告警
+
+原方案是 vmalert + Alertmanager 两个容器,但实测 **vmalert 加载了 0 个规则组** —— 本 role 既未创建 `vmalert/` `alertmanager/` 目录也未生成配置文件,却以 `--rule=/etc/vmalert/alerts.yml` 启动容器,告警链路从来就没通过。
+
+现改为 **Grafana 内置统一告警**(Grafana 自带 Alertmanager),规则由 Ansible 配置化下发,不再需要那两个容器:
+
+- 规则模板:[templates/grafana-provisioning-alerting.yml.j2](../templates/grafana-provisioning-alerting.yml.j2) → 落到 `grafana/provisioning/alerting/rules.yml`
+- 首页 `Firing Alerts` 面板改用 Grafana 原生 `alertlist` 类型(原来查 `ALERTS{}` 是 vmalert 的概念,Grafana 内置告警不会往数据源写这个序列)
+- `vmalert` / `alertmanager` 容器与对应的 Caddy 路由 `/vmalert/` `/alertmgr/` 均由 `observability_vmalert_enabled`(默认 `false`)门控,已从栈中移除,服务数 12 → 10
+
+### 已下发的 9 条规则
+
+| 组 | 规则 | 条件 | for | 级别 |
+| --- | --- | --- | --- | --- |
+| edge-nodes | 主机 CPU 使用率过高 | > 85% | 5m | warning |
+| edge-nodes | 主机内存使用率过高 | > 90% | 5m | warning |
+| edge-nodes | 根分区磁盘使用率过高 | > 85% | 10m | warning |
+| edge-nodes | 边缘 Agent 失联 | 无上报 > 300s | 5m | critical |
+| edge-nodes | xray 探针 DOWN | `xray_up < 1` | 5m | critical |
+| ingest-pipeline | Vector 缓冲区积压 | > 0 bytes | 10m | warning |
+| ingest-pipeline | Vector 组件错误 | 错误率 > 0 | 5m | warning |
+| endpoints | 站点探测失败 | `probe_success < 1` | 5m | critical |
+| endpoints | SSL 证书即将过期 | < 14 天 | 1h | warning |
+
+阈值全部通过 `defaults/main.yml` 中的 `observability_alerting_*` 变量配置。
+
+### 通知外发
+
+默认 `observability_alerting_webhook_url` 为空 → **不下发 contactPoints / policies,仅评估并在 Grafana 内展示告警状态,不外发通知**。配置该变量后会自动生成 webhook 联络点与通知策略。
+
+### 两个部署侧的坑(已修)
+
+1. **Grafana 的 alerting provisioning 只在启动时加载**,而 `docker compose up -d` 不会重建配置未变的 grafana 容器。新增 `Restart grafana` handler,告警规则变更时显式 `docker compose restart grafana`。
+2. **建目录任务原本没有打 tag**,导致 `--tags observability` 运行时整个被跳过,新增的 `provisioning/alerting` 目录建不出来、模板下发直接失败。已给该任务补上 tags。
+
+## 已知缺口(预览骨架已留位,待后续接入)
+
+1. **scrape 侧基本全灭** —— `up{}` 仅存 2 条且均为 0:
+   - `job="prometheus"` 抓 `localhost:9090`,但 VictoriaMetrics 容器内实际监听 **8428**(9090 只是宿主机侧端口映射),配置错误;
+   - `job="aws-costs"` 抓 `opencost-exporter-aws:9100`,同样 DOWN。
+   - 模板中声明的 `gcp-costs` / `azure-costs` / `mcp-*` 四个 job 在线上**完全不存在**(label values 里查不到),说明 VictoriaMetrics 未重载 promscrape 配置,或这些 target 从未成功注册。
+2. **GCP / Azure 成本采集器仍是占位容器** —— `command: tail -f /dev/null`,注释写着 "Placeholder pending specific exporter image"。
+3. **MCP / Victoria 三兄弟自监控指标未接入** —— 上线后可把对应的纯导航磁贴升级为带健康状态。
+4. **Vector agent 标签污染** —— 所有推送指标被统一打上 `job="xray"`,建议在 agent 侧 VRL 里按来源正确赋值 `job`,否则后续任何按 job 的聚合都会出错。

@@ -71,6 +71,7 @@ observability.svc.plus {
     # ==========================================
     handle /v1/telemetry/snapshots/export {
         encode gzip zstd
+{% if observability_snapshot_rate_limit_enabled | default(false) | bool %}
         rate_limit {
             zone snapshot_export_limit {
                 key static
@@ -78,6 +79,7 @@ observability.svc.plus {
                 window {{ observability_snapshot_rate_limit_window | default('1m') }}
             }
         }
+{% endif %}
         reverse_proxy 127.0.0.1:{{ observability_console_backend_port | default('8080') }}
     }
 
