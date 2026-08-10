@@ -60,10 +60,10 @@ flowchart LR
 ### 2.2 Model Context Protocol (MCP) Server 阵列 Endpoints
 | MCP 服务组件 | 容器服务名 | 宿主机端口 | Caddy 统一网关路径 (Legacy & AI Standard) | 默认状态 |
 | :--- | :--- | :--- | :--- | :--- |
-| **Grafana MCP Server** | `xstream_mcp_grafana` | `127.0.0.1:8000` | `/mcp/grafana/`<br>`/mcp/v1/grafana/` | 默认启用 |
-| **VictoriaMetrics MCP Server** | `xstream_mcp_victoriametrics` | `127.0.0.1:8088` | `/mcp/victoriametrics/`<br>`/mcp/v1/metrics/` | 默认启用 |
-| **VictoriaLogs MCP Server** | `xstream_mcp_victorialogs` | `127.0.0.1:8081` | `/mcp/victorialogs/`<br>`/mcp/v1/logs/` | 默认启用 |
-| **VictoriaTraces MCP Server** | `xstream_mcp_victoriatraces` | `127.0.0.1:8082` | `/mcp/victoriatraces/`<br>`/mcp/v1/traces/` | 默认启用 |
+| **Grafana MCP Server** | `xstream_mcp_grafana` | `127.0.0.1:8000` | `/mcp/grafana/mcp`<br>`/mcp/v1/grafana/mcp` | 默认启用 |
+| **VictoriaMetrics MCP Server** | `xstream_mcp_victoriametrics` | `127.0.0.1:8088` | `/mcp/victoriametrics/mcp`<br>`/mcp/v1/metrics/mcp` | 默认启用 |
+| **VictoriaLogs MCP Server** | `xstream_mcp_victorialogs` | `127.0.0.1:8081` | `/mcp/victorialogs/mcp`<br>`/mcp/v1/logs/mcp` | 默认关闭（8081 由 xray-exporter 占用） |
+| **VictoriaTraces MCP Server** | `xstream_mcp_victoriatraces` | `127.0.0.1:8082` | `/mcp/victoriatraces/mcp`<br>`/mcp/v1/traces/mcp` | 默认启用 |
 
 ---
 
@@ -88,6 +88,7 @@ observability_mcp_grafana_transport: "streamable-http"
 observability_mcp_grafana_disable_write: true
 observability_mcp_grafana_url: "http://grafana:3000"
 observability_mcp_grafana_service_account_token: ""
+observability_mcp_grafana_allowed_hosts: "observability.svc.plus,127.0.0.1,127.0.0.1:8000,localhost,localhost:8000"
 
 # VictoriaMetrics MCP Server
 observability_mcp_victoriametrics_enabled: true
@@ -98,7 +99,7 @@ observability_mcp_victoriametrics_entrypoint: "http://victoria-metrics:8428"
 observability_mcp_victoriametrics_instance_type: "cluster"
 observability_mcp_victoriametrics_bearer_token: ""
 
-# VictoriaLogs MCP Server
+# VictoriaLogs MCP Server（默认关闭，避免与 xray-exporter 的 8081 端口冲突）
 observability_mcp_victorialogs_enabled: false
 observability_mcp_victorialogs_image: "ghcr.io/victoriametrics/mcp-victorialogs:latest"
 observability_mcp_victorialogs_port: 8081
@@ -159,7 +160,7 @@ ansible-playbook playbooks/deploy_observability.yml --tags mcp_grafana,mcp_victo
 手动验证命令：
 ```bash
 # 验证 Grafana MCP
-curl -i http://127.0.0.1:8000/health/readiness
+curl -i https://observability.svc.plus/mcp/grafana/mcp
 
 # 验证 VictoriaMetrics MCP
 curl -i http://127.0.0.1:8080/health/readiness
@@ -179,19 +180,19 @@ curl -i https://observability.svc.plus/mcp/grafana
   "mcpServers": {
     "grafana": {
       "transport": "streamable-http",
-      "url": "https://observability.svc.plus/mcp/grafana"
+      "url": "https://observability.svc.plus/mcp/grafana/mcp"
     },
     "victoriametrics": {
       "transport": "streamable-http",
-      "url": "https://observability.svc.plus/mcp/victoriametrics"
+      "url": "https://observability.svc.plus/mcp/victoriametrics/mcp"
     },
     "victorialogs": {
       "transport": "streamable-http",
-      "url": "https://observability.svc.plus/mcp/victorialogs"
+      "url": "https://observability.svc.plus/mcp/victorialogs/mcp"
     },
     "victoriatraces": {
       "transport": "streamable-http",
-      "url": "https://observability.svc.plus/mcp/victoriatraces"
+      "url": "https://observability.svc.plus/mcp/victoriatraces/mcp"
     }
   }
 }
