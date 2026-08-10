@@ -54,7 +54,7 @@ flowchart LR
 | **Grafana UI** | `xstream_grafana` | `127.0.0.1:3030` | `https://observability.svc.plus/grafana/` | 统一可视化大盘面板与告警管理 |
 | **VictoriaMetrics (Metrics)** | `xstream_victoriametrics` | `127.0.0.1:9090` | 写入: `/ingest/metrics/*`<br>查询: `/vmetrics/*` | Prometheus 协议指标数据 Remote Write 接收与 MetricsQL 查询 |
 | **VictoriaLogs (Logs)** | `xstream_victorialogs` | `127.0.0.1:9428` | 写入: `/ingest/logs/*`<br>查询: `/vlogs/*` | JSON Lines 日志流式写入与 LogsQL 高基数检索 |
-| **VictoriaTraces (Traces)** | `xstream_victoriatraces` | `127.0.0.1:10428`<br>`:4318` / `:4317` | OTLP 写入: `/ingest/otlp/*`<br>查询: `/vtraces/*` | OpenTelemetry (OTLP gRPC/HTTP) 链路接收与 TraceQL 查询 |
+| **VictoriaTraces (Traces)** | `xstream_victoriatraces` | `127.0.0.1:10428` | OTLP/HTTP 写入: `/ingest/otlp/v1/traces` → `/insert/opentelemetry/v1/traces`<br>查询: `/vtraces/*` | OpenTelemetry (OTLP/HTTP) 链路接收与 TraceQL 查询 |
 | **Blackbox Exporter** | `xstream_blackbox` | `127.0.0.1:9115` | `/blackbox/*` | 网络、域名、HTTP/TCP 探针拨测 |
 
 ### 2.2 Model Context Protocol (MCP) Server 阵列 Endpoints
