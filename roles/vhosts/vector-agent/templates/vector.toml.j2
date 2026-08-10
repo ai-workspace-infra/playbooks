@@ -49,7 +49,7 @@ source = '''
 '''
 {% endif %}
 
-{% set postgres_exporter_enabled = vector_postgres_exporter_enabled | default(false) | bool %}
+{% set postgres_exporter_enabled = vector_postgres_exporter_enabled_effective | default(vector_postgres_exporter_enabled | default(false)) | bool %}
 {% if postgres_exporter_enabled %}
 [sources.postgres_metrics]
 type = "prometheus_scrape"
