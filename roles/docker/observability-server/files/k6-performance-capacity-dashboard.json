@@ -26,21 +26,26 @@
   "templating": {
     "list": [
       {
+        "current": { "selected": true, "text": "UAT", "value": "uat" },
+        "hide": 0,
+        "includeAll": true,
+        "label": "Environment",
+        "name": "environment",
+        "options": [
+          { "selected": false, "text": "SIT", "value": "sit" },
+          { "selected": true, "text": "UAT", "value": "uat" },
+          { "selected": false, "text": "PROD", "value": "prod" }
+        ],
+        "query": "sit,uat,prod",
+        "type": "custom"
+      },
+      {
         "current": { "selected": true, "text": "victoriametrics", "value": "victoriametrics" },
         "hide": 0,
         "label": "Metrics DS",
         "name": "DS_METRICS",
         "options": [],
         "query": "prometheus",
-        "type": "datasource"
-      },
-      {
-        "current": { "selected": true, "text": "victoriatraces", "value": "victoriatraces" },
-        "hide": 0,
-        "label": "Traces DS",
-        "name": "DS_TRACES",
-        "options": [],
-        "query": "jaeger",
         "type": "datasource"
       },
       {
@@ -53,18 +58,13 @@
         "type": "datasource"
       },
       {
-        "current": { "selected": true, "text": "uat", "value": "uat" },
+        "current": { "selected": true, "text": "victoriatraces", "value": "victoriatraces" },
         "hide": 0,
-        "includeAll": true,
-        "label": "Environment",
-        "name": "environment",
-        "options": [
-          { "selected": false, "text": "sit", "value": "sit" },
-          { "selected": true, "text": "uat", "value": "uat" },
-          { "selected": false, "text": "prod", "value": "prod" }
-        ],
-        "query": "sit,uat,prod",
-        "type": "custom"
+        "label": "Traces DS",
+        "name": "DS_TRACES",
+        "options": [],
+        "query": "jaeger",
+        "type": "datasource"
       },
       {
         "current": { "selected": true, "text": "All", "value": ["$__all"] },
@@ -460,15 +460,35 @@
       ]
     },
     {
+      "datasource": { "type": "victoriametrics-logs-datasource", "uid": "$DS_LOGS" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 50 },
+      "id": 23,
+      "options": {
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLines": false
+      },
+      "targets": [
+        {
+          "datasource": { "type": "victoriametrics-logs-datasource", "uid": "$DS_LOGS" },
+          "expr": "{instance=$target_instance}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Target Environment Logs (Trace ID / Test ID When Present)",
+      "type": "logs"
+    },
+    {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 59 },
       "id": 12,
       "title": "Bottleneck Analysis & Trace-to-Logs Correlation",
       "type": "row"
     },
     {
       "datasource": { "type": "jaeger", "uid": "$DS_TRACES" },
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 51 },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 60 },
       "id": 13,
       "options": { "nodeGraph": { "enabled": true } },
       "title": "Slow Trace Spans Explorer (VictoriaTraces APM)",

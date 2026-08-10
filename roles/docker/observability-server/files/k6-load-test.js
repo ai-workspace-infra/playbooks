@@ -1,6 +1,12 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
+import tempo from 'https://jslib.k6.io/http-instrumentation-tempo/1.0.1/index.js';
+
+// Propagate a unique W3C trace context through the environment ingress and
+// downstream services. The application must have OpenTelemetry tracing
+// enabled for the request to become a stored VictoriaTraces span.
+tempo.instrumentHTTP({ propagator: 'w3c' });
 
 const TARGET_ENV = __ENV.TARGET_ENV || 'uat';
 const TEST_PROFILE = __ENV.K6_TEST_PROFILE || 'smoke';
