@@ -1,16 +1,5 @@
 ---
-- name: Deploy Xray Exporter and Vector Agent
-  hosts:
-    - install.svc.plus
-    - tky-proxy.svc.plus
-  become: true
-  roles:
-    - vhosts/xray-exporter
-    - vhosts/vector-agent
-
-- name: Deploy Observability Server Stack (Prometheus & Grafana)
-  hosts: "{{ observability_server_hosts | default('install.svc.plus') }}"
-  become: true
-  roles:
-    - docker/observability-server
-
+# Backward-compatible combined entrypoint. New deployments should call the
+# agent and server playbooks independently when only one side is changing.
+- import_playbook: deploy_observability_agent.yml
+- import_playbook: deploy_observability_server.yml
