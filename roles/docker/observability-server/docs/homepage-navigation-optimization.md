@@ -5,13 +5,13 @@
 
 ## 设计依据
 
-视觉语言参考 [Pigsty demo homepage](https://demo.pigsty.io/ui/d/pigsty/pigsty)(彩色背景磁贴 + 大号实例网格 + 右侧仪表盘目录 + 顶部 tag 下拉导航);信息架构来自 [observability-server-core 博客](https://console.svc.plus/blogs/03-observability/observability-server-core.zh) 的四段式流水线:
+视觉语言参考 [Pigsty demo homepage](https://demo.pigsty.io/ui/d/pigsty/pigsty)(彩色背景磁贴 + 大号实例网格 + 右侧仪表盘目录 + 顶部 tag 下拉导航);信息架构按排障路径整理为六类:
 
 ```
-COLLECT 采集  →  INGEST 接入  →  STORE 存储  →  AI DIAGNOSE 智能诊断
+环境  →  资源  →  指标  →  日志  →  链路  →  告警
 ```
 
-首页即按这四段组织,不再使用此前从 Pigsty 模板搬来、与本平台实际部署对应不上的 IaaS / PaaS / SaaS 分层。
+首页保留原有 Grafana 顶部按钮样式、下拉菜单和总览区,只调整菜单标签与仪表盘分类,不改变现有面板布局。
 
 ## 数据基准:全部查询已对线上 VictoriaMetrics 实测
 
@@ -35,20 +35,20 @@ Pigsty 风格的下拉导航。**每个下拉的 tag 都已在对应 dashboard J
 
 | 入口 | 类型 | 过滤 / 目标 | 实际命中 |
 | --- | --- | --- | --- |
-| 采集 | 下拉 | tag `COLLECT` | Node Exporter、process exporter |
-| 业务 | 下拉 | tag `BU` | Xray Dashboard |
-| 全部仪表盘 | 下拉 | 无过滤 | 全部 4 个 |
-| Metrics | 直链 | `/vmetrics/vmui/` | — |
-| Logs | 直链 | `/vlogs/select/vmui/` | — |
-| 告警 | 直链 | `/grafana/alerting/list` | — |
+| 环境 | 下拉 | tag `ENVIRONMENT` | k6 多环境压测看板 |
+| 资源 | 下拉 | tag `RESOURCE` | Node、process、PostgreSQL、Blackbox |
+| 指标 | 下拉 | tag `METRICS` | Node、process、PostgreSQL、Xray、k6、Blackbox |
+| 日志 | 下拉 | tag `LOGS` | VictoriaLogs Overview |
+| 链路 | 下拉 | tag `TRACES` | VictoriaTraces APM、k6 端到端压测 |
+| 告警 | 直链 | `/grafana/alerting/list` | Grafana 内置统一告警 |
 
-为此给已部署的仪表盘补了分层 tag:`Node-Exporter-Dashboard` 与 `process-exporter` 加 `COLLECT`/`NODE`,`dashboard.json`(Xray Dashboard)加 `BU`/`XRAY`。
+为此给已部署的仪表盘补了导航 tag:资源类面板使用 `RESOURCE`,指标类面板使用 `METRICS`,k6 使用 `ENVIRONMENT`/`TRACES`,日志与链路面板分别使用 `LOGS`/`TRACES`,并保留原有业务与采集 tag。
 
 ## 面板结构
 
 | 区块 | 面板 | 数据来源 | 实测 |
 | --- | --- | --- | --- |
-| — | 总览导航 | 静态 HTML,四段流水线示意 | — |
+| — | 总览导航 | 静态 HTML,六类排障路径示意 | — |
 | 平台脉搏 | 快速入口 | 纯导航磁贴 | — |
 | 平台脉搏 | 采集器 | 各 exporter 覆盖主机数,按 instance 去重 | 5 项均有值 |
 | 平台脉搏 | 边缘节点 | 每主机 CPU%,area sparkline,可下钻主机详情 | 3 series |
