@@ -147,7 +147,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "(1 - sum(rate(k6_http_reqs_total{status=~\"[45]..\",environment=~\"$environment\",testid=~\"$testid\"}[1m])) / sum(rate(k6_http_reqs_total{environment=~\"$environment\",testid=~\"$testid\"}[1m]))) * 100",
+          "expr": "(1 - (sum(rate(k6_http_reqs_total{status=~\"[45]..\",environment=~\"$environment\",testid=~\"$testid\"}[1m])) or vector(0)) / sum(rate(k6_http_reqs_total{environment=~\"$environment\",testid=~\"$testid\"}[1m]))) * 100",
           "legendFormat": "Success %",
           "refId": "A"
         }
