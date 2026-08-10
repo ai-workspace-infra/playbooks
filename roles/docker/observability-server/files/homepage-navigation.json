@@ -21,7 +21,7 @@
       }
     ]
   },
-  "description": "Open Platform OBS 平台导航与总览：环境 → 资源 → 指标 → 日志 → 链路 → 告警",
+  "description": "Open Platform OBS 平台总览：环境、Cloud Resources、业务负载、性能压测与可观测性闭环",
   "editable": true,
   "graphTooltip": 1,
   "id": null,
@@ -39,7 +39,7 @@
       },
       "transparent": true,
       "options": {
-        "content": "\n<div style=\"padding:6px 2px 2px 2px;font-family:inherit;\">\n  <div style=\"font-size:23px;font-weight:800;line-height:1.15;\">平台导航与总览</div>\n  <div style=\"font-size:12px;opacity:.72;margin-top:4px;line-height:1.45;\">环境 &rarr; 资源 &rarr; 指标 &rarr; 日志 &rarr; 链路 &rarr; 告警</div>\n</div>\n",
+        "content": "\n<div style=\"padding:6px 2px 2px 2px;font-family:inherit;\">\n  <div style=\"font-size:23px;font-weight:800;line-height:1.15;\">Platform Cloud Resources Watch</div>\n  <div style=\"font-size:12px;opacity:.72;margin-top:4px;line-height:1.45;\">环境 &rarr; 资源 &rarr; 业务负载 &rarr; 性能压测 &rarr; 指标 / 日志 / 链路 / 告警</div>\n</div>\n",
         "mode": "html"
       }
     },
@@ -2240,6 +2240,170 @@
         "content": "\n<div style=\"padding:6px 4px;font-family:inherit;font-size:12px;line-height:1.6;\">\n  <div style=\"font-weight:800;font-size:13px;margin-bottom:6px;\">AI 排障闭环:指标定位 &rarr; 日志取证 &rarr; 链路归因 &rarr; 告警确认</div>\n  <div style=\"opacity:.78;\">\n    <b>Metric Tool</b> 自然语言 &rarr; MetricsQL 查趋势 &middot;\n    <b>Log Tool</b> LogsQL 捞异常日志,时间戳自动对齐 &middot;\n    <b>Trace Tool</b> 解析 OTLP 上下文定位慢调用 &middot;\n    <b>Grafana Tool</b> 读 AlertManager 告警并关联面板。\n  </div>\n  <div style=\"margin-top:10px;padding:8px 10px;border-radius:8px;background:rgba(219,110,55,.10);border:1px solid rgba(219,110,55,.35);\">\n    <b>安全边界</b>：AI 有读权限,永远碰不到写入面。写入与查询两套独立 Token,叠加内网 IP 白名单与 127.0.0.1 本地绑定,三层纵深。\n  </div>\n  <div style=\"margin-top:8px;opacity:.55;font-size:11px;\">\n    <b>已接入</b>：Grafana 内置统一告警,9 条规则由 Ansible 配置化下发,已替代 vmalert + Alertmanager 两个容器。<br/>\n    <b>待接入</b>：① MCP 与 Victoria 三兄弟自监控指标；② GCP / Azure 成本采集器(仍是占位容器)。上线后对应纯导航磁贴将升级为带健康状态。\n  </div>\n</div>\n",
         "mode": "html"
       }
+    },
+    {
+      "id": 23,
+      "type": "row",
+      "title": "05 · PLATFORM CLOUD RESOURCES WATCH 平台总览",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 49 }
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "Monitored Instances",
+      "description": "当前被 node-exporter 观测到的主机实例数。",
+      "datasource": { "type": "prometheus", "uid": "${DS_METRICS}" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 50 },
+      "fieldConfig": { "defaults": { "color": { "mode": "background" }, "unit": "short" }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name" },
+      "targets": [{ "refId": "A", "expr": "count(count by (instance) (node_cpu_seconds_total))", "legendFormat": "Instances", "instant": true, "range": false }]
+    },
+    {
+      "id": 25,
+      "type": "stat",
+      "title": "Resource Nodes",
+      "description": "同时提供主机资源指标的节点数。",
+      "datasource": { "type": "prometheus", "uid": "${DS_METRICS}" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 50 },
+      "fieldConfig": { "defaults": { "color": { "mode": "background" }, "unit": "short" }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name" },
+      "targets": [{ "refId": "A", "expr": "count(count by (instance) (node_memory_MemTotal_bytes))", "legendFormat": "Resource nodes", "instant": true, "range": false }]
+    },
+    {
+      "id": 26,
+      "type": "stat",
+      "title": "Service-bearing Nodes",
+      "description": "运行并上报命名进程指标的节点数，用于观察业务承载面。",
+      "datasource": { "type": "prometheus", "uid": "${DS_METRICS}" },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 50 },
+      "fieldConfig": { "defaults": { "color": { "mode": "background" }, "unit": "short" }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name" },
+      "targets": [{ "refId": "A", "expr": "count(count by (instance) (namedprocess_namegroup_num_procs))", "legendFormat": "Service nodes", "instant": true, "range": false }]
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "Business Endpoints",
+      "description": "Blackbox 探针覆盖的业务入口数量。",
+      "datasource": { "type": "prometheus", "uid": "${DS_METRICS}" },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 50 },
+      "fieldConfig": { "defaults": { "color": { "mode": "background" }, "unit": "short" }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name" },
+      "targets": [{ "refId": "A", "expr": "count(count by (instance) (probe_success))", "legendFormat": "Endpoints", "instant": true, "range": false }]
+    },
+    {
+      "id": 28,
+      "type": "row",
+      "title": "06 · BUSINESS LOAD & PERFORMANCE 业务负载与性能压测",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 }
+    },
+    {
+      "id": 29,
+      "type": "stat",
+      "title": "Business Load RPS",
+      "description": "当前环境 k6 端到端请求吞吐。",
+      "datasource": { "type": "prometheus", "uid": "${DS_METRICS}" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 56 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "reduceOptions": { "calcs": ["max"], "fields": "", "values": false }, "textMode": "value_and_name" },
+      "targets": [{ "refId": "A", "expr": "sum(rate(k6_http_reqs_total{environment=~\"$environment\"}[5m]))", "legendFormat": "RPS" }]
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "Load Success Rate",
+      "description": "业务压测请求的 2xx/3xx 成功率。",
+      "datasource": { "type": "prometheus", "uid": "${DS_METRICS}" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 56 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "unit": "percent", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 95 }, { "color": "green", "value": 99 }] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name" },
+      "targets": [{ "refId": "A", "expr": "(1 - (sum(rate(k6_http_reqs_total{status=~\"[45]..\",environment=~\"$environment\"}[5m])) or vector(0)) / clamp_min(sum(rate(k6_http_reqs_total{environment=~\"$environment\"}[5m])), 1e-9)) * 100", "legendFormat": "Success %" }]
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "p95 Load Latency",
+      "description": "当前环境业务请求的 p95 延迟。",
+      "datasource": { "type": "prometheus", "uid": "${DS_METRICS}" },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 56 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "unit": "ms", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 300 }, { "color": "red", "value": 500 }] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name" },
+      "targets": [{ "refId": "A", "expr": "max(k6_http_req_duration_p95{environment=~\"$environment\"})", "legendFormat": "p95" }]
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "Active Virtual Users",
+      "description": "当前压测并发 VU 数。",
+      "datasource": { "type": "prometheus", "uid": "${DS_METRICS}" },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 56 },
+      "fieldConfig": { "defaults": { "color": { "mode": "background" }, "unit": "short" }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name" },
+      "targets": [{ "refId": "A", "expr": "sum(k6_vus)", "legendFormat": "VUs" }]
+    },
+    {
+      "id": 33,
+      "type": "row",
+      "title": "07 · CLOUD RESOURCES WATCH 云资源健康",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 61 }
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "CPU Pressure by Instance",
+      "description": "Cloud resource watch: 主机 CPU 压力。",
+      "datasource": { "type": "prometheus", "uid": "${DS_METRICS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 62 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "percent" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "refId": "A", "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "legendFormat": "{{instance}}" }]
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "Memory Pressure by Instance",
+      "description": "Cloud resource watch: 主机内存压力。",
+      "datasource": { "type": "prometheus", "uid": "${DS_METRICS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 62 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "percent" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "refId": "A", "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100", "legendFormat": "{{instance}}" }]
+    },
+    {
+      "id": 36,
+      "type": "row",
+      "title": "08 · EDGE & BUSINESS TRAFFIC 边缘与业务流量",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 70 }
+    },
+    {
+      "id": 37,
+      "type": "timeseries",
+      "title": "Xray Business Traffic",
+      "description": "边缘业务流量趋势，用于观察业务负载与入口承载。",
+      "datasource": { "type": "prometheus", "uid": "${DS_METRICS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 71 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "Bps" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "refId": "A", "expr": "sum by (instance) (rate(xray_traffic_uplink_bytes_total[5m]) + rate(xray_traffic_downlink_bytes_total[5m]))", "legendFormat": "{{instance}}" }]
+    },
+    {
+      "id": 38,
+      "type": "timeseries",
+      "title": "Business Endpoint Latency",
+      "description": "公网业务入口探测延迟，用于发现 Caddy/API 链路退化。",
+      "datasource": { "type": "prometheus", "uid": "${DS_METRICS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 71 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "refId": "A", "expr": "avg by (instance) (probe_duration_seconds)", "legendFormat": "{{instance}}" }]
     }
   ],
   "schemaVersion": 39,

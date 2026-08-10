@@ -35,14 +35,14 @@ Pigsty 风格的下拉导航。**每个下拉的 tag 都已在对应 dashboard J
 
 | 入口 | 类型 | 过滤 / 目标 | 实际命中 |
 | --- | --- | --- | --- |
-| 环境 | 折叠 | tag `ENVIRONMENT` | k6 多环境压测看板 |
-| 资源 | 折叠 | tag `RESOURCE` | Node、process、PostgreSQL、Blackbox |
-| 指标 | 折叠 | tag `METRICS` | Node、process、PostgreSQL、Xray、k6、Blackbox |
-| 日志 | 折叠 | tag `LOGS` | VictoriaLogs Overview |
-| 链路 | 折叠 | tag `TRACES` | VictoriaTraces APM、k6 端到端压测 |
-| 告警 | 直链 | `/grafana/alerting/list` | Grafana 内置统一告警 |
+| 环境 | 变量选择器 | `environment` | SIT / UAT / PROD 上下文 |
+| 指标 | 变量选择器 | `DS_METRICS` | VictoriaMetrics |
+| 日志 | 变量选择器 | `DS_LOGS` | VictoriaLogs |
+| 链路 | 变量选择器 | `DS_TRACES` | VictoriaTraces |
+| 告警 | 变量选择器 | `alert_state` | All / Firing / Pending / Normal |
+| 资源 | 变量选择器 | `target_instance` | 主机实例 All / 多选 |
 
-为此给已部署的仪表盘补了导航 tag:资源类面板使用 `RESOURCE`,指标类面板使用 `METRICS`,k6 使用 `ENVIRONMENT`/`TRACES`,日志与链路面板分别使用 `LOGS`/`TRACES`,并保留原有业务与采集 tag。首页删除顶部导航按钮,只显示 `Environment`、`Metrics`、`Logs`、`Traces`、`告警`、`Resource` 六个变量选择器。
+为此给已部署的仪表盘补了导航 tag:资源类面板使用 `RESOURCE`,指标类面板使用 `METRICS`,k6 使用 `ENVIRONMENT`/`TRACES`,日志与链路面板分别使用 `LOGS`/`TRACES`,并保留原有业务与采集 tag。首页删除顶部导航按钮,只显示 `Environment`、`Metrics`、`Logs`、`Traces`、`告警`、`Resource` 六个变量选择器。原有监控面板全部保留,新增平台整体 Cloud Resources Watch、业务负载、性能压测和边缘业务流量视角。
 
 ### 首页变量选择器
 
@@ -56,6 +56,17 @@ Grafana 原生变量直接显示在首页顶部:
 | Logs DS | 数据源 | VictoriaLogs | k6 / 日志看板使用的 VictoriaLogs 数据源 |
 | Traces DS | 数据源 | VictoriaTraces | k6 / APM 看板使用的 Jaeger 数据源 |
 | 告警 | 自定义 | All | 告警状态筛选上下文 |
+
+### 平台整体视角
+
+新增区块不替换原有面板,从现有布局末尾继续追加:
+
+| 区块 | 关注点 | 主要数据 |
+| --- | --- | --- |
+| Platform Cloud Resources Watch | 平台覆盖、资源节点、服务承载节点、业务入口覆盖 | node-exporter、process-exporter、blackbox |
+| Business Load & Performance | 业务负载 RPS、成功率、p95、当前 VU | k6 `k6_http_*`、`k6_vus` |
+| Cloud Resources Watch | 各实例 CPU / 内存压力 | `node_cpu_seconds_total`、`node_memory_*` |
+| Edge & Business Traffic | Xray 业务流量、入口探测延迟 | `xray_traffic_*`、`probe_duration_seconds` |
 
 ## 面板结构
 
