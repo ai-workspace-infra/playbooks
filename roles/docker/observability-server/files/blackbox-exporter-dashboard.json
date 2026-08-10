@@ -279,7 +279,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
-          "expr": "probe_success{target=~\"$target\"}",
+          "expr": "max by (name, target, env) (probe_success{target=~\"$target\"})",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -287,7 +287,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
-          "expr": "probe_http_status_code{target=~\"$target\"}",
+          "expr": "max by (name, target, env) (probe_http_status_code{target=~\"$target\"})",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -295,7 +295,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
-          "expr": "probe_duration_seconds{target=~\"$target\"} * 1000",
+          "expr": "avg by (name, target, env) (probe_duration_seconds{target=~\"$target\"} * 1000)",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -303,7 +303,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
-          "expr": "(probe_ssl_earliest_cert_expiry{target=~\"$target\"} - time()) / 86400",
+          "expr": "min by (name, target, env) ((probe_ssl_earliest_cert_expiry{target=~\"$target\"} - time()) / 86400)",
           "format": "table",
           "instant": true,
           "legendFormat": "",
