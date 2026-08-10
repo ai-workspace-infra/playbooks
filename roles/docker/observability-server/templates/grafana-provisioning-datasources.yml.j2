@@ -16,6 +16,7 @@ datasources:
           name: traceID
 
   - name: VictoriaLogs
+    uid: victorialogs
     type: victoriametrics-logs-datasource
     access: proxy
     url: http://victoria-logs:9428
@@ -25,5 +26,20 @@ datasources:
     uid: victoriatraces
     type: jaeger
     access: proxy
-    url: http://victoria-traces:8428
+    url: http://victoria-traces:10428
     editable: false
+    jsonData:
+      tracesToLogs:
+        datasourceUid: victorialogs
+        tags: ['job', 'instance', 'pod', 'container', 'service.name']
+        mappedTags: [{ key: 'service.name', value: 'app' }]
+        mapTagNamesEnabled: true
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: true
+        filterBySpanID: false
+      tracesToMetrics:
+        datasourceUid: victoriametrics
+        tags: [{ key: 'service.name', value: 'job' }, { key: 'instance', value: 'instance' }]
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
