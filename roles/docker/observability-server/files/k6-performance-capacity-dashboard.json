@@ -194,7 +194,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "max(k6_vus{environment=~\"$environment\",testid=~\"$testid\"})",
+          "expr": "max(k6_vus_max{testid=~\"$testid\"})",
           "legendFormat": "VUs",
           "refId": "A"
         }
@@ -228,7 +228,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "sum(k6_vus{environment=~\"$environment\",testid=~\"$testid\"})",
+          "expr": "sum(k6_vus{testid=~\"$testid\"})",
           "legendFormat": "Virtual Users (VUs)",
           "refId": "B"
         }
@@ -471,7 +471,7 @@
       "targets": [
         {
           "datasource": { "type": "victoriametrics-logs-datasource", "uid": "$DS_LOGS" },
-          "expr": "{instance=$target_instance}",
+          "expr": "{instance=~\"$target_instance\"}",
           "queryType": "instant",
           "refId": "A"
         }
@@ -491,6 +491,7 @@
       "gridPos": { "h": 12, "w": 24, "x": 0, "y": 60 },
       "id": 13,
       "options": { "nodeGraph": { "enabled": true } },
+      "description": "Displays server-side spans when Caddy/API services export OTLP to VictoriaTraces. k6 only propagates W3C trace context; it does not create server spans.",
       "title": "Slow Trace Spans Explorer (VictoriaTraces APM)",
       "type": "jaeger"
     }
