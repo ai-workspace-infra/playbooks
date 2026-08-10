@@ -42,7 +42,19 @@ Pigsty 风格的下拉导航。**每个下拉的 tag 都已在对应 dashboard J
 | 链路 | 下拉 | tag `TRACES` | VictoriaTraces APM、k6 端到端压测 |
 | 告警 | 直链 | `/grafana/alerting/list` | Grafana 内置统一告警 |
 
-为此给已部署的仪表盘补了导航 tag:资源类面板使用 `RESOURCE`,指标类面板使用 `METRICS`,k6 使用 `ENVIRONMENT`/`TRACES`,日志与链路面板分别使用 `LOGS`/`TRACES`,并保留原有业务与采集 tag。
+为此给已部署的仪表盘补了导航 tag:资源类面板使用 `RESOURCE`,指标类面板使用 `METRICS`,k6 使用 `ENVIRONMENT`/`TRACES`,日志与链路面板分别使用 `LOGS`/`TRACES`,并保留原有业务与采集 tag。首页同时提供 `Environment`、`Resource`、`Metrics DS`、`Logs DS`、`Traces DS` 选择器,点击分类入口时保留这些变量。
+
+### 首页统一选择器
+
+顶部导航下方保留 Grafana 原生变量选择器的视觉和交互模式:
+
+| 选择器 | 类型 | 默认值 | 用途 |
+| --- | --- | --- | --- |
+| Environment | 自定义 | UAT | 传递 SIT / UAT / PROD 压测上下文 |
+| Resource | 查询 | All | 选择目标主机实例 |
+| Metrics DS | 数据源 | VictoriaMetrics | 首页与指标看板使用的 Prometheus 数据源 |
+| Logs DS | 数据源 | VictoriaLogs | k6 / 日志看板使用的 VictoriaLogs 数据源 |
+| Traces DS | 数据源 | VictoriaTraces | k6 / APM 看板使用的 Jaeger 数据源 |
 
 ## 面板结构
 
@@ -70,7 +82,7 @@ Pigsty 风格的下拉导航。**每个下拉的 tag 都已在对应 dashboard J
 ### 设计取舍
 
 - **纯导航磁贴明确标注**:快速入口 / 存储引擎 / MCP 三个面板用 `expr: 1` 常亮,panel description 里写明"不代表健康状态"。避免用户误以为绿色 = 健康 —— 这几个组件目前确实没有被纳入采集。
-- **`origin_prometheus` 变量接上了**:所有面板 datasource 改为 `${origin_prometheus}`,此前该变量是声明了但没有任何面板引用的死配置。
+- **统一选择器接上了**:首页面板使用 `${DS_METRICS}`,并提供与 k6 / VictoriaTraces 看板一致的 `Environment`、`Metrics DS`、`Logs DS`、`Traces DS` 与 `Resource` 选择器;分类入口会带上当前变量。
 - **删除 `interval` 变量**:同样是无人引用的死配置。
 
 ## 告警:改用 Grafana 内置统一告警
