@@ -18,6 +18,13 @@ scrape_configs:
     static_configs:
       - targets: ['opencost-exporter-azure:9100']
 
+  # VictoriaTraces runtime and ingestion metrics back the APM overview panels.
+  # Trace data remains in VictoriaTraces; only its low-cardinality self-metrics
+  # are scraped into VictoriaMetrics.
+  - job_name: 'victoria-traces'
+    static_configs:
+      - targets: ['victoria-traces:10428']
+
 {% if observability_mcp_enabled | default(true) | bool %}
 {% if observability_mcp_grafana_enabled | default(true) | bool %}
   - job_name: 'mcp-grafana'
@@ -43,4 +50,3 @@ scrape_configs:
       - targets: ['mcp-victoriatraces:{{ observability_mcp_victoriatraces_port | default(8082) }}']
 {% endif %}
 {% endif %}
-

@@ -104,7 +104,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "sum(rate(victoriatraces_spans_created_total[5m])) or sum(rate(victoriatraces_rows_inserted_total[5m])) or vector(0)",
+          "expr": "sum(rate(vt_rows_ingested_total{job=\"victoria-traces\",type=\"opentelemetry_traces_protobuf\"}[5m])) or vector(0)",
           "legendFormat": "Spans Inserted/s",
           "refId": "A"
         }
@@ -125,7 +125,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "victoriatraces_data_size_bytes or victoriatraces_active_merges_total or vector(0)",
+          "expr": "sum(vt_data_size_bytes{job=\"victoria-traces\"}) or vector(0)",
           "legendFormat": "Storage Bytes",
           "refId": "A"
         }

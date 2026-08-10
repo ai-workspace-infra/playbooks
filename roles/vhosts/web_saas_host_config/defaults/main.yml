@@ -44,6 +44,12 @@ web_saas_host_config_caddyfile: "{{ web_saas_host_config_base_dir }}/Caddyfile"
 # token 能改整个 zone 的解析 —— 没有理由让业务容器拿到它。这里按最小权限
 # 单独发一份, gitops 侧只把它挂给 caddy。
 web_saas_host_config_caddy_env_file: "{{ web_saas_host_config_base_dir }}/caddy.env"
+# Caddy exports gRPC OTLP locally; the collector translates it to the public
+# HTTP/protobuf VictoriaTraces ingress. Keeping the collector inside the
+# compose network avoids exposing an unauthenticated OTLP listener.
+web_saas_host_config_otel_collector_config: "{{ web_saas_host_config_config_dir }}/otel-collector.yaml"
+web_saas_host_config_otel_sampling_ratio: "{{ lookup('ansible.builtin.env', 'OTEL_TRACES_SAMPLER_ARG') | default('0.05', true) }}"
+web_saas_host_config_otel_resource_attributes: "deployment.environment={{ web_saas_host_config_vault_env_path }}"
 
 # 必须与 gitops 仓 compose/web-saas/docker-compose.yml 的 networks 块一致。
 web_saas_host_config_shared_network: docker_shared_network

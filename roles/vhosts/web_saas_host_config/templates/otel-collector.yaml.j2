@@ -1,0 +1,31 @@
+# Managed by Ansible. This collector is private to the web-saas Docker network:
+# Caddy sends OTLP/gRPC to it, while applications may use the public HTTPS
+# OTLP/HTTP endpoint directly. Batch + 64 MiB guard keep the proxy path small.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 64
+    spike_limit_mib: 16
+  batch:
+    send_batch_size: 128
+    timeout: 2s
+
+exporters:
+  otlphttp/victoriatraces:
+    traces_endpoint: https://observability.svc.plus/ingest/otlp/v1/traces
+
+service:
+  telemetry:
+    metrics:
+      level: none
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/victoriatraces]
