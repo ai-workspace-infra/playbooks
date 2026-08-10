@@ -11,8 +11,11 @@ tempo.instrumentHTTP({ propagator: 'w3c' });
 const TARGET_ENV = __ENV.TARGET_ENV || 'uat';
 const TEST_PROFILE = __ENV.K6_TEST_PROFILE || 'smoke';
 const TEST_ID = __ENV.K6_TEST_ID || 'local-k6-run';
-const DURATION_SELECTION = __ENV.K6_DURATION || 'profile';
-const MAX_VUS_SELECTION = __ENV.K6_MAX_VUS || 'profile';
+// Keep these names outside k6's built-in K6_* option namespace. Names such as
+// K6_DURATION and K6_MAX_VUS are interpreted by k6 itself and can override
+// the scenario configuration exported below.
+const DURATION_SELECTION = __ENV.LOAD_DURATION || 'profile';
+const MAX_VUS_SELECTION = __ENV.LOAD_MAX_VUS || 'profile';
 
 if (!['sit', 'uat', 'prod'].includes(TARGET_ENV)) {
   throw new Error(`Unsupported TARGET_ENV: ${TARGET_ENV}`);
