@@ -34,6 +34,15 @@
   become: yes
   vars:
     group: all
+    vector_auth_user: >-
+      {{ lookup('ansible.builtin.env', 'VECTOR_AUTH_USER')
+         | default('', true) }}
+    vector_auth_password: >-
+      {{ lookup('ansible.builtin.env', 'VECTOR_AUTH_PASSWORD')
+         | default('', true) }}
+    vector_local_observability_enabled: >-
+      {{ lookup('ansible.builtin.env', 'VECTOR_LOCAL_OBSERVABILITY_ENABLED')
+         | default('false', true) | bool }}
     vector_billing_ingest_enabled: >-
       {{ lookup('ansible.builtin.env', 'VECTOR_BILLING_INGEST_ENABLED')
          | default(false, true) | bool }}
@@ -72,21 +81,19 @@
       ignore_errors: true
       changed_when: false
 
-    - name: Check if PostgreSQL database or exporter exists on target host
-      ansible.builtin.shell: >-
-        pgrep -x postgres >/dev/null 2>&1 ||
-        ss -tulpn | grep -qE ':5432|:15432|:9187' ||
-        (command -v docker >/dev/null 2>&1 && docker ps --format '{{ '{{' }}.Names{{ '}}' }}' 2>/dev/null | grep -qE 'postgres|postgresql|postgresql_exporter')
-      register: postgres_process_check
-      ignore_errors: true
-      changed_when: false
-
     - name: Resolve desired Xray exporter telemetry state
       ansible.builtin.set_fact:
         vector_xray_exporter_enabled: >-
           {{ 'agent_proxy' in group_names or xray_process_check.rc == 0 }}
-        vector_postgres_exporter_enabled: >-
-          {{ postgres_process_check.rc == 0 }}
+
+    # PostgreSQL exporter owns its own affinity detection. It is included for
+    # every host so PostgreSQL nodes get the exporter automatically, while
+    # non-PostgreSQL nodes are left untouched and report a clean skip.
+    - name: Include postgres-exporter role
+      ansible.builtin.import_role:
+        name: vhosts/postgres_exporter
+      tags:
+        - postgres_exporter
 
     # A newly provisioned agent_proxy reaches this play before the native Xray
     # deployment job. Render Vector's scrape and HTTP fan-out sources from CMDB
@@ -106,6 +113,8 @@
     - name: Include vector-agent role
       ansible.builtin.import_role:
         name: vhosts/vector-agent
+      tags:
+        - vector_agent
 
     - name: Validate Vector Billing fan-out contract
       ansible.builtin.assert:

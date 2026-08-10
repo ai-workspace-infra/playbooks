@@ -1,0 +1,408 @@
+---
+- name: Initialize PostgreSQL exporter affinity facts
+  ansible.builtin.set_fact:
+    postgres_exporter_enabled_effective: false
+    vector_postgres_exporter_enabled: false
+    postgres_exporter_affinity_detected: false
+    postgres_exporter_postgres_container_name: ""
+    postgres_exporter_database_port: "{{ postgres_exporter_database_port_default | int }}"
+  when: inventory_hostname in groups[group | default('all')]
+
+- name: Detect native PostgreSQL process
+  ansible.builtin.command: pgrep -x postgres
+  register: postgres_exporter_native_process
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_enabled | bool
+
+- name: Detect PostgreSQL listening port
+  ansible.builtin.shell: >-
+    set -o pipefail &&
+    ss -lntH 2>/dev/null |
+    awk '$4 ~ /:5432$/ { print 5432; exit }
+         $4 ~ /:15432$/ { print 15432; exit }'
+  args:
+    executable: /bin/bash
+  register: postgres_exporter_listening_port
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_enabled | bool
+
+- name: Detect running PostgreSQL Docker container
+  ansible.builtin.shell: >-
+    set -o pipefail &&
+    docker ps --format '{{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Image{{ '}}' }}' 2>/dev/null |
+    awk -F '\t' '$2 ~ /(postgres|postgis|pgvector)/ { print $1; exit }'
+  args:
+    executable: /bin/bash
+  register: postgres_exporter_docker_container
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_enabled | bool
+
+- name: Normalize PostgreSQL exporter detection results
+  ansible.builtin.set_fact:
+    postgres_exporter_native_process_ok: >-
+      {{ (postgres_exporter_native_process.rc | default(1) | int) == 0 }}
+    postgres_exporter_listening_port_value: >-
+      {{ postgres_exporter_listening_port.stdout | default('') | trim }}
+    postgres_exporter_docker_container_name_detected: >-
+      {{ postgres_exporter_docker_container.stdout | default('') | trim }}
+
+- name: Resolve PostgreSQL exporter affinity
+  ansible.builtin.set_fact:
+    postgres_exporter_affinity_detected: >-
+      {{ postgres_exporter_native_process_ok | bool
+         or (postgres_exporter_listening_port_value | length > 0)
+         or (postgres_exporter_docker_container_name_detected | length > 0) }}
+    postgres_exporter_postgres_container_name: >-
+      {{ postgres_exporter_docker_container_name_detected }}
+    postgres_exporter_database_port: >-
+      {{ postgres_exporter_listening_port_value
+         if (postgres_exporter_listening_port_value | length > 0)
+         else (postgres_exporter_database_port_default | int) }}
+  when: inventory_hostname in groups[group | default('all')]
+
+- name: Report PostgreSQL exporter affinity skip
+  ansible.builtin.debug:
+    msg: "Skipping postgres_exporter: no local PostgreSQL process, listener, or container was detected."
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - not (postgres_exporter_affinity_detected | default(false) | bool)
+
+- name: Validate PostgreSQL exporter credentials for port-only detection
+  ansible.builtin.assert:
+    that:
+      - postgres_exporter_database_password | length > 0
+    fail_msg: >-
+      PostgreSQL was detected on {{ inventory_hostname }}, but no
+      POSTGRESQL_ADMIN_PASSWORD/POSTGRES_PASSWORD was supplied for exporter
+      user provisioning. Refusing to install an unconfigured exporter.
+  no_log: true
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+    - postgres_exporter_postgres_container_name | default('') | trim | length == 0
+    - not (postgres_exporter_native_process_ok | default(false) | bool)
+
+- name: Ensure PostgreSQL exporter group exists
+  ansible.builtin.group:
+    name: "{{ postgres_exporter_group }}"
+    system: true
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+
+- name: Ensure PostgreSQL exporter user exists
+  ansible.builtin.user:
+    name: "{{ postgres_exporter_user }}"
+    group: "{{ postgres_exporter_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+
+- name: Ensure PostgreSQL exporter directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ postgres_exporter_binary_dir }}"
+    - "{{ postgres_exporter_config_dir }}"
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+
+- name: Download PostgreSQL exporter archive
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/prometheus-community/postgres_exporter/releases/download/v{{ postgres_exporter_version }}/postgres_exporter-{{ postgres_exporter_version }}.linux-{{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}.tar.gz
+    dest: "/tmp/postgres_exporter-{{ postgres_exporter_version }}.tar.gz"
+    mode: "0644"
+    checksum: "{{ postgres_exporter_checksum | default(omit, true) }}"
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+    - not ansible_check_mode
+
+- name: Extract PostgreSQL exporter archive
+  ansible.builtin.unarchive:
+    src: "/tmp/postgres_exporter-{{ postgres_exporter_version }}.tar.gz"
+    dest: /tmp
+    remote_src: true
+    creates: >-
+      /tmp/postgres_exporter-{{ postgres_exporter_version }}.linux-{{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}/postgres_exporter
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+    - not ansible_check_mode
+
+- name: Install PostgreSQL exporter binary
+  ansible.builtin.copy:
+    src: >-
+      /tmp/postgres_exporter-{{ postgres_exporter_version }}.linux-{{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}/postgres_exporter
+    dest: "{{ postgres_exporter_binary_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+  notify: Restart postgres exporter
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+    - not ansible_check_mode
+
+- name: Remove PostgreSQL exporter archive and extracted directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/tmp/postgres_exporter-{{ postgres_exporter_version }}.tar.gz"
+    - >-
+      /tmp/postgres_exporter-{{ postgres_exporter_version }}.linux-{{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+    - not ansible_check_mode
+
+- name: Inspect persisted PostgreSQL exporter password
+  ansible.builtin.stat:
+    path: "{{ postgres_exporter_password_file }}"
+  register: postgres_exporter_password_file_stat
+  no_log: true
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+
+- name: Read persisted PostgreSQL exporter password
+  ansible.builtin.slurp:
+    src: "{{ postgres_exporter_password_file }}"
+  register: postgres_exporter_password_file_content
+  no_log: true
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+    - postgres_exporter_password_file_stat.stat.exists
+
+- name: Resolve PostgreSQL exporter password
+  ansible.builtin.set_fact:
+    postgres_exporter_password: >-
+      {{ postgres_exporter_monitoring_password
+         if postgres_exporter_monitoring_password | trim | length > 0
+         else ((postgres_exporter_password_file_content.content | default('') | b64decode | trim)
+               if postgres_exporter_password_file_stat.stat.exists
+               else lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits')) }}
+  no_log: true
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+
+- name: Persist PostgreSQL exporter password
+  ansible.builtin.copy:
+    dest: "{{ postgres_exporter_password_file }}"
+    content: "{{ postgres_exporter_password }}\n"
+    owner: "{{ postgres_exporter_user }}"
+    group: "{{ postgres_exporter_group }}"
+    mode: "0600"
+  no_log: true
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+
+- name: Provision exporter monitoring role inside PostgreSQL container
+  ansible.builtin.shell: |
+    set -euo pipefail
+    docker exec --user postgres -i {{ postgres_exporter_postgres_container_name | quote }} \
+      psql -d {{ postgres_exporter_database_name | quote }} -v ON_ERROR_STOP=1 \
+      --set=exporter_password={{ postgres_exporter_password | quote }} <<'SQL'
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ postgres_exporter_group_name }}') THEN
+        CREATE ROLE {{ postgres_exporter_group_name }} LOGIN;
+      END IF;
+    END
+    $$;
+    ALTER ROLE {{ postgres_exporter_group_name }} WITH LOGIN PASSWORD :'exporter_password';
+    ALTER ROLE {{ postgres_exporter_group_name }} SET SEARCH_PATH TO postgres_exporter,pg_catalog;
+    GRANT pg_monitor TO {{ postgres_exporter_group_name }};
+    DO $$
+    DECLARE database_name text;
+    BEGIN
+      FOR database_name IN
+        SELECT datname FROM pg_database
+        WHERE datallowconn AND NOT datistemplate
+      LOOP
+        EXECUTE format('GRANT CONNECT ON DATABASE %I TO {{ postgres_exporter_group_name }}', database_name);
+      END LOOP;
+    END
+    $$;
+    SQL
+  args:
+    executable: /bin/bash
+  register: postgres_exporter_role_provision_container
+  changed_when: false
+  no_log: true
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+    - postgres_exporter_postgres_container_name | default('') | trim | length > 0
+    - not ansible_check_mode
+
+- name: Provision exporter monitoring role on native PostgreSQL
+  become: true
+  become_user: postgres
+  ansible.builtin.shell: |
+    set -euo pipefail
+    psql -d {{ postgres_exporter_database_name | quote }} -v ON_ERROR_STOP=1 \
+      --set=exporter_password={{ postgres_exporter_password | quote }} <<'SQL'
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ postgres_exporter_group_name }}') THEN
+        CREATE ROLE {{ postgres_exporter_group_name }} LOGIN;
+      END IF;
+    END
+    $$;
+    ALTER ROLE {{ postgres_exporter_group_name }} WITH LOGIN PASSWORD :'exporter_password';
+    ALTER ROLE {{ postgres_exporter_group_name }} SET SEARCH_PATH TO postgres_exporter,pg_catalog;
+    GRANT pg_monitor TO {{ postgres_exporter_group_name }};
+    DO $$
+    DECLARE database_name text;
+    BEGIN
+      FOR database_name IN
+        SELECT datname FROM pg_database
+        WHERE datallowconn AND NOT datistemplate
+      LOOP
+        EXECUTE format('GRANT CONNECT ON DATABASE %I TO {{ postgres_exporter_group_name }}', database_name);
+      END LOOP;
+    END
+    $$;
+    SQL
+  register: postgres_exporter_role_provision_native
+  changed_when: false
+  no_log: true
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+    - postgres_exporter_postgres_container_name | default('') | trim | length == 0
+    - postgres_exporter_native_process_ok | default(false) | bool
+    - not ansible_check_mode
+
+- name: Provision exporter monitoring role over local PostgreSQL TCP
+  ansible.builtin.shell: |
+    set -euo pipefail
+    PGPASSWORD={{ postgres_exporter_database_password | quote }} \
+      psql -h 127.0.0.1 -p {{ postgres_exporter_database_port }} \
+      -U {{ postgres_exporter_database_user | quote }} \
+      -d {{ postgres_exporter_database_name | quote }} -v ON_ERROR_STOP=1 \
+      --set=exporter_password={{ postgres_exporter_password | quote }} <<'SQL'
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ postgres_exporter_group_name }}') THEN
+        CREATE ROLE {{ postgres_exporter_group_name }} LOGIN;
+      END IF;
+    END
+    $$;
+    ALTER ROLE {{ postgres_exporter_group_name }} WITH LOGIN PASSWORD :'exporter_password';
+    ALTER ROLE {{ postgres_exporter_group_name }} SET SEARCH_PATH TO postgres_exporter,pg_catalog;
+    GRANT pg_monitor TO {{ postgres_exporter_group_name }};
+    DO $$
+    DECLARE database_name text;
+    BEGIN
+      FOR database_name IN
+        SELECT datname FROM pg_database
+        WHERE datallowconn AND NOT datistemplate
+      LOOP
+        EXECUTE format('GRANT CONNECT ON DATABASE %I TO {{ postgres_exporter_group_name }}', database_name);
+      END LOOP;
+    END
+    $$;
+    SQL
+  args:
+    executable: /bin/bash
+  register: postgres_exporter_role_provision_tcp
+  changed_when: false
+  no_log: true
+  environment:
+    PGPASSWORD: "{{ postgres_exporter_database_password }}"
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+    - postgres_exporter_postgres_container_name | default('') | trim | length == 0
+    - not (postgres_exporter_native_process_ok | default(false) | bool)
+    - not ansible_check_mode
+
+- name: Render PostgreSQL exporter environment
+  ansible.builtin.template:
+    src: postgres_exporter.env.j2
+    dest: "{{ postgres_exporter_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart postgres exporter
+  no_log: true
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+
+- name: Render PostgreSQL exporter systemd unit
+  ansible.builtin.template:
+    src: postgres-exporter.service.j2
+    dest: "/etc/systemd/system/{{ postgres_exporter_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart postgres exporter
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+
+- name: Enable and start PostgreSQL exporter
+  ansible.builtin.systemd:
+    name: "{{ postgres_exporter_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  register: postgres_exporter_service
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+    - not ansible_check_mode
+
+- name: Wait for PostgreSQL exporter metrics endpoint
+  ansible.builtin.uri:
+    url: "http://{{ postgres_exporter_bind_address }}:{{ postgres_exporter_port }}/metrics"
+    method: GET
+    status_code: 200
+    return_content: false
+  register: postgres_exporter_metrics_endpoint
+  retries: 12
+  delay: 2
+  until: postgres_exporter_metrics_endpoint.status | default(0) == 200
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+    - not ansible_check_mode
+
+- name: Enable PostgreSQL scrape in Vector
+  ansible.builtin.set_fact:
+    vector_postgres_exporter_enabled: true
+  when:
+    - inventory_hostname in groups[group | default('all')]
+    - postgres_exporter_affinity_detected | default(false) | bool
+    - postgres_exporter_metrics_endpoint.status | default(0) == 200
