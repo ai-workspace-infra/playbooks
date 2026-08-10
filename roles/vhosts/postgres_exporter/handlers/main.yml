@@ -1,0 +1,11 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: not ansible_check_mode
+
+- name: Restart postgres exporter
+  ansible.builtin.systemd:
+    name: "{{ postgres_exporter_service_name }}"
+    state: restarted
+  when: not ansible_check_mode

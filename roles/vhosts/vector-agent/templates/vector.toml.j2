@@ -47,6 +47,8 @@ source = '''
 .tags.job = "xray"
 .tags.transport = "tcp"
 '''
+{% endif %}
+
 {% set postgres_exporter_enabled = vector_postgres_exporter_enabled | default(false) | bool %}
 {% if postgres_exporter_enabled %}
 [sources.postgres_metrics]
@@ -147,11 +149,11 @@ type = "prometheus_remote_write"
   {% set _ = remote_inputs.append("blackbox_" ~ (target.name | regex_replace('[^A-Za-z0-9_]', '_')) ~ "_labels") %}
 {% endfor %}
 inputs = {{ remote_inputs | to_json }}
-{% if inventory_hostname == 'install.svc.plus' %}
+{% if vector_local_observability_enabled | default(false) | bool or inventory_hostname == 'install.svc.plus' %}
 endpoint = "http://127.0.0.1:9090/api/v1/write"
 {% else %}
 endpoint = "{{ vector_observability_endpoint | default('https://observability.svc.plus') }}/ingest/metrics/api/v1/write"
-{% if vector_auth_user is defined and vector_auth_password is defined %}
+{% if vector_auth_user | default('') | trim | length > 0 and vector_auth_password | default('') | trim | length > 0 %}
 [sinks.prometheus_remote.auth]
 strategy = "basic"
 user = "{{ vector_auth_user }}"
@@ -200,14 +202,14 @@ source = '''
 [sinks.victorialogs]
 type = "http"
 inputs = ["process_logs"]
-{% if inventory_hostname == 'install.svc.plus' %}
+{% if vector_local_observability_enabled | default(false) | bool or inventory_hostname == 'install.svc.plus' %}
 uri = "http://127.0.0.1:9428/insert/jsonline?_msg_field=message&_stream_fields=instance,file"
 {% else %}
 uri = "{{ vector_observability_endpoint | default('https://observability.svc.plus') }}/ingest/logs/insert/jsonline?_msg_field=message&_stream_fields=instance,file"
 {% endif %}
 encoding.codec = "json"
-{% if inventory_hostname != 'install.svc.plus' %}
-{% if vector_auth_user is defined and vector_auth_password is defined %}
+{% if not (vector_local_observability_enabled | default(false) | bool or inventory_hostname == 'install.svc.plus') %}
+{% if vector_auth_user | default('') | trim | length > 0 and vector_auth_password | default('') | trim | length > 0 %}
 [sinks.victorialogs.auth]
 strategy = "basic"
 user = "{{ vector_auth_user }}"

@@ -1,0 +1,27 @@
+[Unit]
+Description=Prometheus PostgreSQL Exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User={{ postgres_exporter_user }}
+Group={{ postgres_exporter_group }}
+EnvironmentFile={{ postgres_exporter_env_file }}
+ExecStart={{ postgres_exporter_binary_path }} \
+  --web.listen-address={{ postgres_exporter_bind_address }}:{{ postgres_exporter_port }} \
+  --log.level={{ postgres_exporter_log_level }}
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
