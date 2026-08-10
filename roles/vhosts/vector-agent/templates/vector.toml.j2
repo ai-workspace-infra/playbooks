@@ -222,14 +222,14 @@ source = '''
 if is_string(.message) {
   parsed, err = parse_json(.message)
   if err == null && is_object(parsed) {
-    . = merge(., parsed)
+    . = merge!(., parsed)
   }
 }
 if !exists(.service_name) && exists(.container_name) {
   .service_name = .container_name
 }
-if !exists(.["service.name"]) && exists(.service_name) {
-  .["service.name"] = .service_name
+if exists(.service_name) {
+  . = set!(., ["service.name"], .service_name)
 }
 if !exists(.environment) {
   .environment = "unknown"
