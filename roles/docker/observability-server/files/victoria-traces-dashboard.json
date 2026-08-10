@@ -61,6 +61,27 @@
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "web-saas-console",
+          "value": "web-saas-console"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Trace Service",
+        "name": "SERVICE",
+        "options": [
+          { "selected": true, "text": "web-saas-console", "value": "web-saas-console" },
+          { "selected": false, "text": "web-saas-accounts", "value": "web-saas-accounts" },
+          { "selected": false, "text": "web-saas-billing", "value": "web-saas-billing" },
+          { "selected": false, "text": "web-saas-caddy", "value": "web-saas-caddy" }
+        ],
+        "query": "web-saas-console,web-saas-accounts,web-saas-billing,web-saas-caddy",
+        "refresh": 1,
+        "skipUrlSync": false,
+        "type": "custom"
       }
     ]
   },
@@ -80,11 +101,125 @@
         "nodeGraph": { "enabled": true }
       },
       "title": "Distributed Trace Explorer (Jaeger / VictoriaTraces)",
-      "type": "jaeger"
+      "type": "traces",
+      "targets": [
+        {
+          "queryType": "search",
+          "serviceName": "$SERVICE",
+          "operationName": "",
+          "tags": "",
+          "minDuration": "",
+          "maxDuration": "",
+          "limit": 20,
+          "refId": "A"
+        }
+      ]
     },
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "id": 6,
+      "title": "Service Dependency Analysis",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "jaeger", "uid": "$DS_TRACES" },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 16 },
+      "id": 7,
+      "options": {
+        "nodeGraph": { "enabled": true }
+      },
+      "title": "Service Dependency Graph (Selected Trace)",
+      "type": "traces",
+      "targets": [
+        {
+          "queryType": "search",
+          "serviceName": "$SERVICE",
+          "operationName": "",
+          "tags": "",
+          "minDuration": "",
+          "maxDuration": "",
+          "limit": 20,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "jaeger", "uid": "$DS_TRACES" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 16 },
+      "id": 8,
+      "options": {
+        "nodeGraph": { "enabled": true }
+      },
+      "title": "Slow Traces & Critical Path (>= 500ms)",
+      "type": "traces",
+      "targets": [
+        {
+          "queryType": "search",
+          "serviceName": "$SERVICE",
+          "operationName": "",
+          "tags": "",
+          "minDuration": "500ms",
+          "maxDuration": "",
+          "limit": 20,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "id": 9,
+      "title": "Error Analysis",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "jaeger", "uid": "$DS_TRACES" },
+      "gridPos": { "h": 14, "w": 12, "x": 0, "y": 27 },
+      "id": 10,
+      "options": {
+        "nodeGraph": { "enabled": true }
+      },
+      "title": "Error Traces (error=true)",
+      "type": "traces",
+      "targets": [
+        {
+          "queryType": "search",
+          "serviceName": "$SERVICE",
+          "operationName": "",
+          "tags": "error=true",
+          "minDuration": "",
+          "maxDuration": "",
+          "limit": 20,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "jaeger", "uid": "$DS_TRACES" },
+      "gridPos": { "h": 14, "w": 12, "x": 12, "y": 27 },
+      "id": 11,
+      "options": {
+        "nodeGraph": { "enabled": true }
+      },
+      "title": "HTTP 5xx Error Trace Search",
+      "type": "traces",
+      "targets": [
+        {
+          "queryType": "search",
+          "serviceName": "$SERVICE",
+          "operationName": "",
+          "tags": "http.status_code=500",
+          "minDuration": "",
+          "maxDuration": "",
+          "limit": 20,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
       "id": 3,
       "title": "Trace Ingestion & Telemetry Metrics",
       "type": "row"
@@ -97,7 +232,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 42 },
       "id": 4,
       "title": "Trace Spans Ingestion Rate",
       "type": "timeseries",
@@ -118,7 +253,7 @@
           "unit": "bytes"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 42 },
       "id": 5,
       "title": "VictoriaTraces Storage & Ingestion Footprint",
       "type": "timeseries",
