@@ -139,6 +139,9 @@ services:
     restart: always
     env_file:
       - mcp-grafana.env
+    command:
+      - "--allowed-hosts"
+      - "{{ observability_mcp_grafana_allowed_hosts | default('observability.svc.plus') }}"
     ports:
       - "{{ observability_mcp_bind_address | default('127.0.0.1') }}:{{ observability_mcp_grafana_port | default(8000) }}:{{ observability_mcp_grafana_port | default(8000) }}"
     depends_on:
@@ -190,4 +193,3 @@ volumes:
   vlogs_data:
   vtraces_data:
   grafana_data:
-
