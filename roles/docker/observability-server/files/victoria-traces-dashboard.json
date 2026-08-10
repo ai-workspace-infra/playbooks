@@ -1,0 +1,135 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "VictoriaTraces APM & Jaeger Distributed Tracing Explorer with Trace-to-Logs and Trace-to-Metrics Correlation",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "uid": "victoria-traces-overview",
+  "title": "VictoriaTraces Distributed Tracing APM",
+  "tags": ["victoriatraces", "jaeger", "otlp", "tracing", "apm"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "victoriatraces",
+          "value": "victoriatraces"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Traces Datasource",
+        "name": "DS_TRACES",
+        "options": [],
+        "query": "jaeger",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "victoriametrics",
+          "value": "victoriametrics"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Metrics Datasource",
+        "name": "DS_METRICS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "VictoriaTraces Ingestion & APM Overview",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "jaeger", "uid": "$DS_TRACES" },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 1 },
+      "id": 2,
+      "options": {
+        "nodeGraph": { "enabled": true }
+      },
+      "title": "Distributed Trace Explorer (Jaeger / VictoriaTraces)",
+      "type": "jaeger"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "id": 3,
+      "title": "Trace Ingestion & Telemetry Metrics",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15 },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 4,
+      "title": "Trace Spans Ingestion Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+          "expr": "sum(rate(victoriatraces_spans_created_total[5m])) or sum(rate(victoriatraces_rows_inserted_total[5m])) or vector(0)",
+          "legendFormat": "Spans Inserted/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15 },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 5,
+      "title": "VictoriaTraces Storage & Ingestion Footprint",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+          "expr": "victoriatraces_data_size_bytes or victoriatraces_active_merges_total or vector(0)",
+          "legendFormat": "Storage Bytes",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
