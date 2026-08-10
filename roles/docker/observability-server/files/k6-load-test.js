@@ -11,6 +11,8 @@ tempo.instrumentHTTP({ propagator: 'w3c' });
 const TARGET_ENV = __ENV.TARGET_ENV || 'uat';
 const TEST_PROFILE = __ENV.K6_TEST_PROFILE || 'smoke';
 const TEST_ID = __ENV.K6_TEST_ID || 'local-k6-run';
+const DURATION_SELECTION = __ENV.K6_DURATION || 'profile';
+const MAX_VUS_SELECTION = __ENV.K6_MAX_VUS || 'profile';
 
 if (!['sit', 'uat', 'prod'].includes(TARGET_ENV)) {
   throw new Error(`Unsupported TARGET_ENV: ${TARGET_ENV}`);
@@ -39,12 +41,55 @@ const profileStages = {
   ],
 };
 
+function parseDurationSeconds(value) {
+  const match = String(value).match(/^(\d+)(s|m|h)$/);
+  if (!match) {
+    throw new Error(`K6_DURATION must be profile or a duration such as 60s, 5m, 10m, or 1h; got ${value}`);
+  }
+  const amount = Number(match[1]);
+  const unit = match[2];
+  return unit === 'h' ? amount * 3600 : unit === 'm' ? amount * 60 : amount;
+}
+
+function resolveStages() {
+  if (DURATION_SELECTION === 'profile' && MAX_VUS_SELECTION === 'profile') {
+    return profileStages[TEST_PROFILE];
+  }
+
+  const defaultDurationSeconds = TEST_PROFILE === 'capacity' ? 300 : 60;
+  const totalSeconds = DURATION_SELECTION === 'profile'
+    ? defaultDurationSeconds
+    : parseDurationSeconds(DURATION_SELECTION);
+  const maxVus = MAX_VUS_SELECTION === 'profile'
+    ? (TEST_PROFILE === 'capacity' ? 500 : 5)
+    : Number(MAX_VUS_SELECTION);
+
+  if (!Number.isInteger(maxVus) || maxVus < 1 || maxVus > 500) {
+    throw new Error(`K6_MAX_VUS must be profile or an integer between 1 and 500; got ${MAX_VUS_SELECTION}`);
+  }
+  if (TEST_PROFILE === 'smoke' && maxVus > 20) {
+    throw new Error(`smoke profile is limited to 20 VUs; select capacity for ${maxVus} VUs`);
+  }
+
+  const rampSeconds = Math.max(5, Math.floor(totalSeconds * 0.25));
+  const holdSeconds = totalSeconds - rampSeconds * 2;
+  if (holdSeconds < 5) {
+    throw new Error(`K6_DURATION is too short for ramp/hold/ramp: ${DURATION_SELECTION}`);
+  }
+
+  return [
+    { duration: `${rampSeconds}s`, target: maxVus },
+    { duration: `${holdSeconds}s`, target: maxVus },
+    { duration: `${rampSeconds}s`, target: 0 },
+  ];
+}
+
 export const options = {
   scenarios: {
     capacity_stress_test: {
       executor: 'ramping-vus',
       startVUs: 1,
-      stages: profileStages[TEST_PROFILE] || profileStages.smoke,
+      stages: resolveStages(),
       gracefulRampDown: '10s',
     },
   },
