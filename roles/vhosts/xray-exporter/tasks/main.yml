@@ -21,6 +21,15 @@
     group: "{{ xray_exporter_group }}"
     mode: "0750"
 
+- name: Ensure xray access log file has read permission if present
+  ansible.builtin.file:
+    path: "{{ xray_exporter_log_path }}"
+    mode: "0644"
+  when:
+    - xray_exporter_log_path is defined
+    - xray_exporter_log_path | length > 0
+  failed_when: false
+
 - name: Render xray-exporter runtime environment
   ansible.builtin.template:
     src: xray-exporter.env.j2
