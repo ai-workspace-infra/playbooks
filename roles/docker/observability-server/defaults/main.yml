@@ -68,15 +68,17 @@ observability_mcp_victoriametrics_instance_type: "single"
 observability_mcp_victoriametrics_bearer_token: ""
 
 # VictoriaLogs MCP Server
-observability_mcp_victorialogs_enabled: "{{ observability_mcp_enabled }}"
+# The host's 8081 is owned by xray-exporter. The core VictoriaLogs service
+# remains enabled; this optional MCP adapter is opt-in to avoid a port clash.
+observability_mcp_victorialogs_enabled: false
 observability_mcp_victorialogs_image: "ghcr.io/victoriametrics/mcp-victorialogs:latest"
 observability_mcp_victorialogs_port: 8081
 observability_mcp_victorialogs_entrypoint: "http://victoria-logs:9428"
 observability_mcp_victorialogs_bearer_token: ""
 
 # VictoriaTraces MCP Server
-observability_mcp_victoriatraces_enabled: "{{ observability_mcp_enabled }}"
-observability_mcp_victoriatraces_image: "ghcr.io/victoriametrics/mcp-victoriatraces:latest"
+observability_mcp_victoriatraces_enabled: true
+observability_mcp_victoriatraces_image: "ghcr.io/victoriametrics-community/mcp-victoriatraces:latest"
 observability_mcp_victoriatraces_port: 8082
 observability_mcp_victoriatraces_entrypoint: "http://victoria-traces:10428"
 observability_mcp_victoriatraces_bearer_token: ""
