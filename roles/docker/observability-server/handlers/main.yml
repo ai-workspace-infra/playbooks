@@ -10,6 +10,17 @@
   args:
     chdir: "{{ observability_dir }}"
 
+# Compose only compares its service definition; it does not recreate a
+# container when a file inside a bind-mounted config directory changes.
+# VictoriaMetrics reads its scrape config and Grafana reads datasource/dashboard
+# provisioning at startup, so explicitly restart both consumers after a
+# configuration notification.
+- name: Reload VictoriaMetrics and Grafana configuration
+  ansible.builtin.command: docker compose restart victoria-metrics grafana
+  args:
+    chdir: "{{ observability_dir }}"
+  listen: Restart observability stack
+
 # Grafana 的 alerting provisioning 只在启动时加载,
 # 而 `docker compose up -d` 不会重建配置未变的 grafana 容器,
 # 因此告警规则变更必须显式重启 grafana 才会生效。
