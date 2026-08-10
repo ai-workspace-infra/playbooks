@@ -9,6 +9,33 @@
     file: "{{ playbook_dir }}/roles/vhosts/blackbox_exporter/defaults/main.yml"
     name: blackbox_exporter_role_defaults
 
+# The Blackbox defaults are loaded under a namespace so this role does not
+# overwrite inventory overrides.  Their derived values refer to the
+# unqualified variables below, therefore resolve them in dependency order
+# before vector.toml.j2 evaluates blackbox_ssl_targets.  Without this, the
+# namespaced expression is rendered on the target with undefined variables and
+# Vector receives no blackbox sources at all.
+- name: Resolve Blackbox probe base and environment
+  ansible.builtin.set_fact:
+    blackbox_probe_domain_base: >-
+      {{ blackbox_probe_domain_base | default(
+           blackbox_exporter_role_defaults.blackbox_probe_domain_base, true) }}
+    blackbox_probe_env: >-
+      {{ blackbox_probe_env | default(
+           blackbox_exporter_role_defaults.blackbox_probe_env, true) }}
+
+- name: Resolve Blackbox probe environment suffix
+  ansible.builtin.set_fact:
+    blackbox_probe_env_suffix: >-
+      {{ blackbox_probe_env_suffix | default(
+           blackbox_exporter_role_defaults.blackbox_probe_env_suffix, true) }}
+
+- name: Resolve Blackbox SSL targets
+  ansible.builtin.set_fact:
+    blackbox_ssl_targets: >-
+      {{ blackbox_ssl_targets | default(
+           blackbox_exporter_role_defaults.blackbox_ssl_targets, true) }}
+
 - name: Download Vector deb package
   ansible.builtin.get_url:
     url: "https://github.com/vectordotdev/vector/releases/download/v{{ vector_version }}/vector_{{ vector_version }}-1_{{ vector_arch }}.deb"
