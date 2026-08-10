@@ -76,7 +76,7 @@
       ansible.builtin.shell: >-
         pgrep -x postgres >/dev/null 2>&1 ||
         ss -tulpn | grep -qE ':5432|:15432|:9187' ||
-        (command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -qE 'postgres|postgresql|postgresql_exporter')
+        (command -v docker >/dev/null 2>&1 && docker ps --format '{{ '{{' }}.Names{{ '}}' }}' 2>/dev/null | grep -qE 'postgres|postgresql|postgresql_exporter')
       register: postgres_process_check
       ignore_errors: true
       changed_when: false
