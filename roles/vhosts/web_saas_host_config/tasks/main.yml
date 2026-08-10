@@ -97,6 +97,20 @@
     group: root
     mode: "0700"
 
+# Docker creates a missing bind-mount source as a directory.  If a first
+# compose reconcile happened before this role rendered the collector file,
+# the next template task must repair that directory back into a regular file.
+- name: Check OTLP collector config path type
+  ansible.builtin.stat:
+    path: "{{ web_saas_host_config_otel_collector_config }}"
+  register: web_saas_host_config_otel_collector_config_stat
+
+- name: Remove an invalid directory at the OTLP collector config path
+  ansible.builtin.file:
+    path: "{{ web_saas_host_config_otel_collector_config }}"
+    state: absent
+  when: web_saas_host_config_otel_collector_config_stat.stat.isdir | default(false)
+
 - name: Render web-saas secrets env file
   ansible.builtin.template:
     src: secrets.env.j2
