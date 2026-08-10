@@ -50,7 +50,7 @@ Pigsty 风格的下拉导航。**每个下拉的 tag 都已在对应 dashboard J
 
 | 选择器 | 类型 | 默认值 | 用途 |
 | --- | --- | --- | --- |
-| Environment | 自定义 | UAT | 传递 SIT / UAT / PROD 压测上下文 |
+| Environment | 自定义 | All | 传递 SIT / UAT / PROD 压测上下文 |
 | Resource | 查询 | All | 选择目标主机实例 |
 | Metrics DS | 数据源 | VictoriaMetrics | 首页与指标看板使用的 Prometheus 数据源 |
 | Logs DS | 数据源 | VictoriaLogs | k6 / 日志看板使用的 VictoriaLogs 数据源 |
