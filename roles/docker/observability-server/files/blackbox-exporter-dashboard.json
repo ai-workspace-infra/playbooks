@@ -25,7 +25,7 @@
   "tags": ["blackbox", "probe", "ssl", "http", "victoriametrics"],
   "timezone": "browser",
   "schemaVersion": 38,
-  "version": 1,
+  "version": 2,
   "templating": {
     "list": [
       {
@@ -203,8 +203,117 @@
       ]
     },
     {
+      "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "probe_success" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "mappings", "value": [
+                { "options": { "0": { "color": "red", "text": "DOWN" }, "1": { "color": "green", "text": "UP" } }, "type": "value" }
+              ]},
+              { "id": "displayName", "value": "探测状态" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "probe_http_status_code" },
+            "properties": [
+              { "id": "displayName", "value": "HTTP状态码" },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "probe_duration_seconds" },
+            "properties": [
+              { "id": "displayName", "value": "响应耗时(ms)" },
+              { "id": "unit", "value": "ms" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Value #D" },
+            "properties": [
+              { "id": "displayName", "value": "SSL剩余(天)" },
+              { "id": "unit", "value": "d" },
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 15 }, { "color": "green", "value": 30 }] } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "name" },
+            "properties": [ { "id": "displayName", "value": "服务/目标名" } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "target" },
+            "properties": [ { "id": "displayName", "value": "探测 URL" } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "env" },
+            "properties": [ { "id": "displayName", "value": "环境" } ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 5 },
+      "id": 10,
+      "options": {
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "frameIndex": 0,
+        "showHeader": true,
+        "sortBy": [ { "displayName": "探测状态", "desc": false } ]
+      },
+      "title": "全域域名与 SSL 证书探测总览表",
+      "type": "table",
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        }
+      ],
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+          "expr": "probe_success{target=~\"$target\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "probe_success"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+          "expr": "probe_http_status_code{target=~\"$target\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "probe_http_status_code"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+          "expr": "probe_duration_seconds{target=~\"$target\"} * 1000",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "probe_duration_seconds"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+          "expr": "(probe_ssl_earliest_cert_expiry{target=~\"$target\"} - time()) / 86400",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "D"
+        }
+      ]
+    },
+    {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
       "id": 6,
       "title": "SSL Certificate Expiration & Probe Details",
       "type": "row"
@@ -217,7 +326,7 @@
           "unit": "d"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
       "id": 7,
       "title": "SSL Certificate Expiry Countdown (Days)",
       "type": "timeseries",
@@ -238,7 +347,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
       "id": 8,
       "title": "Probe Latency Duration (seconds)",
       "type": "timeseries",
