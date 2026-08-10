@@ -93,13 +93,13 @@ function requestParams(endpoint) {
 }
 
 export default function () {
-  // 1. Health & Overview Endpoint
-  const healthRes = http.get(`${baseUrl}/api/health`, requestParams('health'));
-  const healthSuccess = check(healthRes, {
-    'health status is 200': (r) => r.status === 200,
+  // 1. Console runtime health & overview endpoint
+  const pingRes = http.get(`${baseUrl}/api/ping`, requestParams('ping'));
+  const pingSuccess = check(pingRes, {
+    'ping status is 200': (r) => r.status === 200,
   });
-  errorRate.add(!healthSuccess, { endpoint: 'health' });
-  if (healthSuccess) successfulRequests.add(1, { endpoint: 'health' });
+  errorRate.add(!pingSuccess, { endpoint: 'ping' });
+  if (pingSuccess) successfulRequests.add(1, { endpoint: 'ping' });
 
   sleep(0.5);
 
