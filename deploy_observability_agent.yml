@@ -1,4 +1,15 @@
 ---
+# This playbook is the canonical collection-side entrypoint. It now owns the
+# Xray exporter and Vector collection previously embedded in
+# deploy_observability.yml; the server stack lives in deploy_observability_server.yml.
+- name: Deploy Xray Exporter collection source
+  hosts:
+    - install.svc.plus
+    - tky-proxy.svc.plus
+  become: true
+  roles:
+    - vhosts/xray-exporter
+
 - name: Setup observability agent
   hosts: all
   # 兜底用的短等待窗口。首次启动的收敛由 deploy_base 的
@@ -94,21 +105,6 @@
         name: vhosts/postgres_exporter
       tags:
         - postgres_exporter
-
-    # A newly provisioned agent_proxy reaches this play before the native Xray
-    # deployment job. Render Vector's scrape and HTTP fan-out sources from CMDB
-    # intent now; they may briefly retry until Xray/exporters start later.
-
-    - name: Include xray-exporter role
-      ansible.builtin.import_role:
-        name: vhosts/xray-exporter
-      when:
-        - xray_process_check.rc == 0
-        # The agent-proxy domain owns its exporter instances and their
-        # transport-specific API endpoints. Reapplying the generic monitoring
-        # defaults here races that domain job and rewrites 28080/28181 back to
-        # the legacy 18080/18081 endpoints.
-        - "'agent_proxy' not in group_names"
 
     - name: Include vector-agent role
       ansible.builtin.import_role:
