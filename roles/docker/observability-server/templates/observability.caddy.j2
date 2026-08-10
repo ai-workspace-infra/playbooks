@@ -99,22 +99,34 @@ observability.svc.plus {
     handle_path /mcp/grafana/* {
         reverse_proxy 127.0.0.1:{{ observability_mcp_grafana_port | default(8000) }}
     }
+    handle_path /mcp/v1/grafana/* {
+        reverse_proxy 127.0.0.1:{{ observability_mcp_grafana_port | default(8000) }}
+    }
 {% endif %}
 
 {% if observability_mcp_victoriametrics_enabled | default(true) | bool %}
     handle_path /mcp/victoriametrics/* {
-        reverse_proxy 127.0.0.1:{{ observability_mcp_victoriametrics_port | default(8080) }}
+        reverse_proxy 127.0.0.1:{{ observability_mcp_victoriametrics_port | default(8088) }}
+    }
+    handle_path /mcp/v1/metrics/* {
+        reverse_proxy 127.0.0.1:{{ observability_mcp_victoriametrics_port | default(8088) }}
     }
 {% endif %}
 
-{% if observability_mcp_victorialogs_enabled | default(false) | bool %}
+{% if observability_mcp_victorialogs_enabled | default(true) | bool %}
     handle_path /mcp/victorialogs/* {
+        reverse_proxy 127.0.0.1:{{ observability_mcp_victorialogs_port | default(8081) }}
+    }
+    handle_path /mcp/v1/logs/* {
         reverse_proxy 127.0.0.1:{{ observability_mcp_victorialogs_port | default(8081) }}
     }
 {% endif %}
 
-{% if observability_mcp_victoriatraces_enabled | default(false) | bool %}
+{% if observability_mcp_victoriatraces_enabled | default(true) | bool %}
     handle_path /mcp/victoriatraces/* {
+        reverse_proxy 127.0.0.1:{{ observability_mcp_victoriatraces_port | default(8082) }}
+    }
+    handle_path /mcp/v1/traces/* {
         reverse_proxy 127.0.0.1:{{ observability_mcp_victoriatraces_port | default(8082) }}
     }
 {% endif %}
