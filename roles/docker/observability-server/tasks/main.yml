@@ -12,6 +12,7 @@
     - "{{ observability_dir }}/grafana/provisioning/dashboards"
     - "{{ observability_dir }}/grafana/dashboards"
     - "{{ observability_dir }}/grafana/provisioning/alerting"
+    - "{{ observability_dir }}/k6"
   tags:
     - observability
     - observability_alerting
@@ -91,8 +92,17 @@
     - process-exporter-dashboard-with-treemap.json
     - homepage-navigation.json
     - postgres-exporter-dashboard.json
+    - k6-performance-capacity-dashboard.json
     - victoria-traces-dashboard.json
     - blackbox-exporter-dashboard.json
+  tags:
+    - observability
+
+- name: Copy k6 end-to-end load test script
+  ansible.builtin.copy:
+    src: k6-load-test.js
+    dest: "{{ observability_dir }}/k6/k6-load-test.js"
+    mode: '0644'
   tags:
     - observability
 

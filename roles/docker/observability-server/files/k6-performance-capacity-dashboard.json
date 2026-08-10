@@ -65,6 +65,36 @@
         ],
         "query": "sit,uat,prod",
         "type": "custom"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+        "definition": "label_values(k6_http_reqs_total, testid)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Test ID",
+        "multi": true,
+        "name": "testid",
+        "options": [],
+        "query": "label_values(k6_http_reqs_total, testid)",
+        "refresh": 2,
+        "type": "query",
+        "allValue": ".*"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+        "definition": "label_values(node_cpu_seconds_total, instance)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Target Instance",
+        "multi": true,
+        "name": "target_instance",
+        "options": [],
+        "query": "label_values(node_cpu_seconds_total, instance)",
+        "refresh": 2,
+        "type": "query",
+        "allValue": ".*"
       }
     ]
   },
@@ -87,7 +117,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "sum(rate(k6_http_reqs{environment=~\"$environment\"}[1m])) or sum(rate(http_requests_total{env=~\"$environment\"}[1m])) or vector(0)",
+          "expr": "sum(rate(k6_http_reqs_total{environment=~\"$environment\",testid=~\"$testid\"}[1m]))",
           "legendFormat": "Peak RPS",
           "refId": "A"
         }
@@ -117,7 +147,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "(1 - sum(rate(k6_http_reqs{status=~\"[45]..\", environment=~\"$environment\"}[1m])) / sum(rate(k6_http_reqs{environment=~\"$environment\"}[1m]))) * 100 or vector(100)",
+          "expr": "(1 - sum(rate(k6_http_reqs_total{status=~\"[45]..\",environment=~\"$environment\",testid=~\"$testid\"}[1m])) / sum(rate(k6_http_reqs_total{environment=~\"$environment\",testid=~\"$testid\"}[1m]))) * 100",
           "legendFormat": "Success %",
           "refId": "A"
         }
@@ -147,7 +177,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "histogram_quantile(0.95, sum(rate(k6_http_req_duration_bucket{environment=~\"$environment\"}[1m])) by (le)) or vector(0)",
+          "expr": "max(k6_http_req_duration_p95{environment=~\"$environment\",testid=~\"$testid\"})",
           "legendFormat": "p95 Duration",
           "refId": "A"
         }
@@ -164,7 +194,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "max(k6_vus{environment=~\"$environment\"}) or vector(0)",
+          "expr": "max(k6_vus{environment=~\"$environment\",testid=~\"$testid\"})",
           "legendFormat": "VUs",
           "refId": "A"
         }
@@ -174,7 +204,7 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
       "id": 6,
-      "title": "Throughput (RPS), Concurrency & Latency Distribution",
+      "title": "Environment End-to-End Throughput (RPS), Concurrency & Latency Distribution",
       "type": "row"
     },
     {
@@ -192,13 +222,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "sum(rate(k6_http_reqs{environment=~\"$environment\"}[1m]))",
+          "expr": "sum(rate(k6_http_reqs_total{environment=~\"$environment\",testid=~\"$testid\"}[1m]))",
           "legendFormat": "HTTP RPS",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "sum(k6_vus{environment=~\"$environment\"})",
+          "expr": "sum(k6_vus{environment=~\"$environment\",testid=~\"$testid\"})",
           "legendFormat": "Virtual Users (VUs)",
           "refId": "B"
         }
@@ -219,25 +249,25 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "histogram_quantile(0.50, sum(rate(k6_http_req_duration_bucket{environment=~\"$environment\"}[1m])) by (le))",
+          "expr": "max(k6_http_req_duration_p50{environment=~\"$environment\",testid=~\"$testid\"})",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "histogram_quantile(0.90, sum(rate(k6_http_req_duration_bucket{environment=~\"$environment\"}[1m])) by (le))",
+          "expr": "max(k6_http_req_duration_p90{environment=~\"$environment\",testid=~\"$testid\"})",
           "legendFormat": "p90",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "histogram_quantile(0.95, sum(rate(k6_http_req_duration_bucket{environment=~\"$environment\"}[1m])) by (le))",
+          "expr": "max(k6_http_req_duration_p95{environment=~\"$environment\",testid=~\"$testid\"})",
           "legendFormat": "p95",
           "refId": "C"
         },
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "histogram_quantile(0.99, sum(rate(k6_http_req_duration_bucket{environment=~\"$environment\"}[1m])) by (le))",
+          "expr": "max(k6_http_req_duration_p99{environment=~\"$environment\",testid=~\"$testid\"})",
           "legendFormat": "p99",
           "refId": "D"
         }
@@ -265,7 +295,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * 100)",
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$target_instance\"}[1m])) * 100)",
           "legendFormat": "CPU % - {{instance}}",
           "refId": "A"
         }
@@ -286,22 +316,159 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+          "expr": "(1 - (node_memory_MemAvailable_bytes{instance=~\"$target_instance\"} / node_memory_MemTotal_bytes{instance=~\"$target_instance\"})) * 100",
           "legendFormat": "RAM % - {{instance}}",
           "refId": "A"
         }
       ]
     },
     {
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+      "fieldConfig": { "defaults": { "unit": "percent" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "id": 14,
+      "title": "Target Root Filesystem Utilization (%)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+          "expr": "100 * (1 - (node_filesystem_avail_bytes{instance=~\"$target_instance\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{instance=~\"$target_instance\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"}))",
+          "legendFormat": "Disk % - {{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+      "fieldConfig": { "defaults": { "unit": "Bps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "id": 15,
+      "title": "Target Network Throughput",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+          "expr": "sum by (instance) (rate(node_network_receive_bytes_total{instance=~\"$target_instance\",device!~\"lo\"}[1m]) + rate(node_network_transmit_bytes_total{instance=~\"$target_instance\",device!~\"lo\"}[1m]))",
+          "legendFormat": "Network - {{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "id": 16,
+      "title": "PostgreSQL Dependency Impact",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 33 },
+      "id": 17,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "DB Connections During Test",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+          "expr": "sum(pg_stat_database_numbackends{instance=~\"$target_instance\",datname!~\"template[01]\"})",
+          "legendFormat": "Connections",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 8, "w": 9, "x": 6, "y": 33 },
+      "id": 18,
+      "title": "DB Transactions / Second",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+          "expr": "sum(rate(pg_stat_database_xact_commit{instance=~\"$target_instance\",datname!~\"template[01]\"}[1m])) + sum(rate(pg_stat_database_xact_rollback{instance=~\"$target_instance\",datname!~\"template[01]\"}[1m]))",
+          "legendFormat": "Transactions",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+      "fieldConfig": { "defaults": { "unit": "percent" } },
+      "gridPos": { "h": 8, "w": 9, "x": 15, "y": 33 },
+      "id": 19,
+      "title": "DB Buffer Cache Hit Ratio",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+          "expr": "100 * sum(rate(pg_stat_database_blks_hit{instance=~\"$target_instance\",datname!~\"template[01]\"}[1m])) / (sum(rate(pg_stat_database_blks_hit{instance=~\"$target_instance\",datname!~\"template[01]\"}[1m])) + sum(rate(pg_stat_database_blks_read{instance=~\"$target_instance\",datname!~\"template[01]\"}[1m])))",
+          "legendFormat": "Cache hit %",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 41 },
+      "id": 20,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "PostgreSQL Exporter Up",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+          "expr": "min(pg_up{instance=~\"$target_instance\"})",
+          "legendFormat": "pg_up",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 8, "w": 9, "x": 6, "y": 41 },
+      "id": 21,
+      "title": "PostgreSQL Lock Count",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+          "expr": "sum by (mode) (pg_locks_count{instance=~\"$target_instance\",datname!~\"template[01]\"})",
+          "legendFormat": "{{mode}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "gridPos": { "h": 8, "w": 9, "x": 15, "y": 41 },
+      "id": 22,
+      "title": "Environment End-to-End API p95",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+          "expr": "max by (endpoint) (k6_http_req_duration_p95{environment=~\"$environment\",testid=~\"$testid\"})",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 },
       "id": 12,
       "title": "Bottleneck Analysis & Trace-to-Logs Correlation",
       "type": "row"
     },
     {
       "datasource": { "type": "jaeger", "uid": "$DS_TRACES" },
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 24 },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 51 },
       "id": 13,
       "options": { "nodeGraph": { "enabled": true } },
       "title": "Slow Trace Spans Explorer (VictoriaTraces APM)",
