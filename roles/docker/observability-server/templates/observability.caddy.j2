@@ -52,9 +52,14 @@ observability.svc.plus {
     # ==========================================
     # OpenTelemetry / Jaeger
     # ==========================================
-    # [接收] 链路数据写入 (OTLP Ingest)
-    handle_path /ingest/otlp/* {
-        reverse_proxy 127.0.0.1:4318
+    # [接收] 链路数据写入 (OTLP/HTTP Ingest)
+    # VictoriaTraces exposes OTLP/HTTP on its query server at 10428. The
+    # /insert/opentelemetry/v1/traces path must be restored after the public
+    # /ingest/otlp prefix is matched; 4318 is not enabled by the single-node
+    # container unless a separate OTLP receiver is configured.
+    handle /ingest/otlp/v1/traces* {
+        rewrite * /insert/opentelemetry/v1/traces
+        reverse_proxy 127.0.0.1:10428
     }
     # [查询] 链路数据读取 (Trace Query / UI)
     handle_path /vtraces/* {
@@ -145,4 +150,3 @@ observability.svc.plus {
 {% endif %}
 {% endif %}
 }
-

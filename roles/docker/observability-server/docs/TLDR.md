@@ -8,7 +8,7 @@ graph TD
     Client[边缘端 Vector / 浏览器] -->|HTTPS 443 (Basic Auth / Token)| Caddy[Caddy 网关]
     Caddy -->|/ingest/metrics/| VM[VictoriaMetrics:8428]
     Caddy -->|/ingest/logs/| VL[VictoriaLogs:9428]
-    Caddy -->|/ingest/otlp/| VT_Ingest[VictoriaTraces:4318]
+    Caddy -->|/ingest/otlp/v1/traces| VT_Ingest[VictoriaTraces:10428/insert/opentelemetry/v1/traces]
     Caddy -->|/grafana/| Grafana[Grafana:3030]
     Caddy -->|/vtraces/| VT_Query[VictoriaTraces:10428]
     vmalert -->|查询规则| VM
@@ -26,7 +26,7 @@ Caddy 作为统一入口，通过不同的 Path 将外网请求分发到 Docker 
 | **`/vmetrics/*`** | `handle_path /vmetrics/*`| `victoria-metrics` | `8428` | **查询**：Grafana 读取 Metrics (PromQL) |
 | **`/ingest/logs/*`** | `handle_path /ingest/logs/*` | `victoria-logs` | `9428` | **写入**：接收 Vector 等 JSON 日志推送 |
 | **`/vlogs/*`** | `handle_path /vlogs/*` | `victoria-logs` | `9428` | **查询**：Grafana 读取 Logs (LogQL) |
-| **`/ingest/otlp/*`** | `handle_path /ingest/otlp/*` | `victoria-traces` | `4318` | **写入**：接收 OTLP 格式链路数据 |
+| **`/ingest/otlp/v1/traces`** | `handle /ingest/otlp/v1/traces*` + rewrite | `victoria-traces` | `10428` | **写入**：接收 OTLP/HTTP 并转发到 `/insert/opentelemetry/v1/traces` |
 | **`/vtraces/*`** | `handle_path /vtraces/*` | `victoria-traces` | `10428` | **查询**：向外部/Grafana暴露 Jaeger API |
 | **`/vmalert/*`** | `handle_path /vmalert/*` | `vmalert` | `8880` | **引擎**：告警规则计算引擎 |
 | **`/alertmgr/*`** | `handle_path /alertmgr/*` | `alertmanager` | `9093` | **路由**：告警去重、分组与分发 |
