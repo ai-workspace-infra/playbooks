@@ -175,7 +175,7 @@
             "uid": "${DS_VICTORIALOGS}"
           },
           "editorMode": "code",
-          "expr": "source_type:=$source_type host:=$host | stats count() logs, count() if (i(error)) errors, count() if (i(warn)) warnings | math round(errors / logs, 0.01) as error_ratio | math round(warnings / logs, 0.01) as warn_ratio",
+          "expr": "source_type:~\"$source_type\" host:~\"$host\" | stats count() logs, count() if (i(error)) errors, count() if (i(warn)) warnings | math round(errors / logs, 0.01) as error_ratio | math round(warnings / logs, 0.01) as warn_ratio",
           "queryType": "instant",
           "refId": "A"
         }
@@ -283,7 +283,7 @@
             "uid": "${DS_VICTORIALOGS}"
           },
           "editorMode": "code",
-          "expr": "i(error) source_type:=$source_type host:=$host | top 10 by (container_name)",
+          "expr": "i(error) source_type:~\"$source_type\" host:~\"$host\" | top 10 by (container_name)",
           "key": "Q-7745a61c-4d1f-48a7-8569-c5eb0840e560-0",
           "queryType": "instant",
           "refId": "A"
@@ -394,7 +394,7 @@
             "uid": "${DS_VICTORIALOGS}"
           },
           "editorMode": "code",
-          "expr": "i(error) source_type:=$source_type host:=$host | top 10 by (host)",
+          "expr": "i(error) source_type:~\"$source_type\" host:~\"$host\" | top 10 by (host)",
           "key": "Q-7745a61c-4d1f-48a7-8569-c5eb0840e560-0",
           "queryType": "instant",
           "refId": "A"
@@ -517,7 +517,7 @@
             "uid": "${DS_VICTORIALOGS}"
           },
           "editorMode": "code",
-          "expr": "i(warn) source_type:=$source_type host:=$host | top 10 by (container_name)",
+          "expr": "i(warn) source_type:~\"$source_type\" host:~\"$host\" | top 10 by (container_name)",
           "key": "Q-7745a61c-4d1f-48a7-8569-c5eb0840e560-0",
           "queryType": "instant",
           "refId": "A"
@@ -628,7 +628,7 @@
             "uid": "${DS_VICTORIALOGS}"
           },
           "editorMode": "code",
-          "expr": "i(warn) source_type:=$source_type host:=$host | top 10 by (host)",
+          "expr": "i(warn) source_type:~\"$source_type\" host:~\"$host\" | top 10 by (host)",
           "key": "Q-7745a61c-4d1f-48a7-8569-c5eb0840e560-0",
           "queryType": "instant",
           "refId": "A"
@@ -798,7 +798,7 @@
             "uid": "${DS_VICTORIALOGS}"
           },
           "editorMode": "code",
-          "expr": "source_type:=$source_type host:=$host stream:=$stream level:=$level | sort by (Time desc)",
+          "expr": "source_type:~\"$source_type\" host:~\"$host\" stream:~\"$stream\" level:~\"$level\" | sort by (Time desc)",
           "queryType": "instant",
           "refId": "A"
         }
@@ -944,7 +944,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "${DS_VICTORIALOGS}"
           },
-          "expr": "sum by (source_type, host) (count_over_time(source_type:=$source_type host:=$host [$__auto]))",
+          "expr": "sum by (source_type, host) (count_over_time(source_type:~\"$source_type\" host:~\"$host\" [$__auto]))",
           "legendFormat": "{{node}} {{stream}}",
           "refId": "A"
         }
@@ -1044,7 +1044,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "${DS_VICTORIALOGS}"
           },
-          "expr": "sum by (source_type, level) (count_over_time(source_type:=$source_type host:=$host level:~\"$level\" [$__auto]))",
+          "expr": "sum by (source_type, level) (count_over_time(source_type:~\"$source_type\" host:~\"$host\" level:~\"$level\" [$__auto]))",
           "legendFormat": "{{node}} {{level}}",
           "refId": "A"
         }
@@ -1080,7 +1080,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "${DS_VICTORIALOGS}"
           },
-          "expr": "source_type:=$source_type host:=$host stream:=$stream level:~\"$level\"",
+          "expr": "source_type:~\"$source_type\" host:~\"$host\" stream:~\"$stream\" level:~\"$level\"",
           "refId": "A"
         }
       ],
@@ -1115,7 +1115,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "${DS_VICTORIALOGS}"
           },
-          "expr": "source_type:=$source_type host:=$host stream:=$stream level:~\"$level\"",
+          "expr": "source_type:~\"$source_type\" host:~\"$host\" stream:~\"$stream\" level:~\"$level\"",
           "refId": "A"
         }
       ],
@@ -1150,7 +1150,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "${DS_VICTORIALOGS}"
           },
-          "expr": "source_type:=$source_type host:=$host level:~\"$level\"",
+          "expr": "source_type:~\"$source_type\" host:~\"$host\" level:~\"$level\"",
           "refId": "A"
         }
       ],
