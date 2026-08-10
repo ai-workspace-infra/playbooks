@@ -5,13 +5,13 @@
 
 ## 设计依据
 
-视觉语言参考 [Pigsty demo homepage](https://demo.pigsty.io/ui/d/pigsty/pigsty)(彩色背景磁贴 + 大号实例网格 + 右侧仪表盘目录 + 顶部平铺导航);信息架构按排障路径整理为六类:
+视觉语言参考 [Pigsty demo homepage](https://demo.pigsty.io/ui/d/pigsty/pigsty)(彩色背景磁贴 + 大号实例网格 + 右侧仪表盘目录 + 顶部 tag 折叠导航);信息架构按排障路径整理为六类:
 
 ```
 环境  →  资源  →  指标  →  日志  →  链路  →  告警
 ```
 
-首页保留原有 Grafana 顶部按钮样式和总览区,六个入口平铺展示,点击后直接进入对应的面板集合,不再展开二级分类,不改变现有面板布局。
+首页保留原有 Grafana 顶部按钮样式和总览区,六个入口折叠展示,点击后进入对应的全部面板二级菜单,不改变现有面板布局。
 
 ## 数据基准:全部查询已对线上 VictoriaMetrics 实测
 
@@ -35,11 +35,11 @@ Pigsty 风格的下拉导航。**每个下拉的 tag 都已在对应 dashboard J
 
 | 入口 | 类型 | 过滤 / 目标 | 实际命中 |
 | --- | --- | --- | --- |
-| 环境 | 平铺 | tag `ENVIRONMENT` | k6 多环境压测看板 |
-| 资源 | 平铺 | tag `RESOURCE` | Node、process、PostgreSQL、Blackbox |
-| 指标 | 平铺 | tag `METRICS` | Node、process、PostgreSQL、Xray、k6、Blackbox |
-| 日志 | 平铺 | tag `LOGS` | VictoriaLogs Overview |
-| 链路 | 平铺 | tag `TRACES` | VictoriaTraces APM、k6 端到端压测 |
+| 环境 | 折叠 | tag `ENVIRONMENT` | k6 多环境压测看板 |
+| 资源 | 折叠 | tag `RESOURCE` | Node、process、PostgreSQL、Blackbox |
+| 指标 | 折叠 | tag `METRICS` | Node、process、PostgreSQL、Xray、k6、Blackbox |
+| 日志 | 折叠 | tag `LOGS` | VictoriaLogs Overview |
+| 链路 | 折叠 | tag `TRACES` | VictoriaTraces APM、k6 端到端压测 |
 | 告警 | 直链 | `/grafana/alerting/list` | Grafana 内置统一告警 |
 
 为此给已部署的仪表盘补了导航 tag:资源类面板使用 `RESOURCE`,指标类面板使用 `METRICS`,k6 使用 `ENVIRONMENT`/`TRACES`,日志与链路面板分别使用 `LOGS`/`TRACES`,并保留原有业务与采集 tag。首页同时提供 `Environment`、`Resource`、`Metrics DS`、`Logs DS`、`Traces DS` 选择器,点击分类入口时保留这些变量。
