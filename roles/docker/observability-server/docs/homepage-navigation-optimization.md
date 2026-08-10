@@ -42,11 +42,11 @@ Pigsty 风格的下拉导航。**每个下拉的 tag 都已在对应 dashboard J
 | 链路 | 折叠 | tag `TRACES` | VictoriaTraces APM、k6 端到端压测 |
 | 告警 | 直链 | `/grafana/alerting/list` | Grafana 内置统一告警 |
 
-为此给已部署的仪表盘补了导航 tag:资源类面板使用 `RESOURCE`,指标类面板使用 `METRICS`,k6 使用 `ENVIRONMENT`/`TRACES`,日志与链路面板分别使用 `LOGS`/`TRACES`,并保留原有业务与采集 tag。首页顶部只显示 `Environment`、`Metrics`、`Logs`、`Traces`、`告警`、`Resource` 六个折叠菜单,内部变量保持隐藏以维持跨面板上下文。
+为此给已部署的仪表盘补了导航 tag:资源类面板使用 `RESOURCE`,指标类面板使用 `METRICS`,k6 使用 `ENVIRONMENT`/`TRACES`,日志与链路面板分别使用 `LOGS`/`TRACES`,并保留原有业务与采集 tag。首页删除顶部导航按钮,只显示 `Environment`、`Metrics`、`Logs`、`Traces`、`告警`、`Resource` 六个变量选择器。
 
-### 首页内部上下文变量
+### 首页变量选择器
 
-Grafana 原生变量仍保留在 dashboard 定义中,但不在首页顶部显示;它们仅用于面板查询和导航跳转上下文:
+Grafana 原生变量直接显示在首页顶部:
 
 | 选择器 | 类型 | 默认值 | 用途 |
 | --- | --- | --- | --- |
@@ -55,6 +55,7 @@ Grafana 原生变量仍保留在 dashboard 定义中,但不在首页顶部显示
 | Metrics DS | 数据源 | VictoriaMetrics | 首页与指标看板使用的 Prometheus 数据源 |
 | Logs DS | 数据源 | VictoriaLogs | k6 / 日志看板使用的 VictoriaLogs 数据源 |
 | Traces DS | 数据源 | VictoriaTraces | k6 / APM 看板使用的 Jaeger 数据源 |
+| 告警 | 自定义 | All | 告警状态筛选上下文 |
 
 ## 面板结构
 
