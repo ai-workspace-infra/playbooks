@@ -216,6 +216,24 @@ source = '''
 .host = "{{ inventory_hostname }}"
 .source_type = "docker_logs"
 .instance = "{{ inventory_hostname }}"
+
+# Application services emit JSON slog/Node records. Promote the structured
+# fields so VictoriaLogs and Grafana can correlate logs with OTel spans.
+if is_string(.message) {
+  parsed, err = parse_json(.message)
+  if err == null && is_object(parsed) {
+    . = merge(., parsed)
+  }
+}
+if !exists(.service_name) && exists(.container_name) {
+  .service_name = .container_name
+}
+if !exists(.["service.name"]) && exists(.service_name) {
+  .["service.name"] = .service_name
+}
+if !exists(.environment) {
+  .environment = "unknown"
+}
 '''
 
 [sinks.victorialogs]
