@@ -4,6 +4,19 @@ observability.svc.plus {
     # Root redirects to Grafana
     redir / /grafana/
 
+    # ==========================================
+    # Auto-fix for subpaths accessed under /grafana/ (e.g. Grafana navigation links)
+    # ==========================================
+    handle_path /grafana/vmetrics/* {
+        reverse_proxy 127.0.0.1:{{ observability_prometheus_port | default('9090') }}
+    }
+    handle_path /grafana/vlogs/* {
+        reverse_proxy 127.0.0.1:9428
+    }
+    handle_path /grafana/vtraces/* {
+        reverse_proxy 127.0.0.1:10428
+    }
+
     # Grafana (可视化大盘面板)
     handle /grafana/* {
         reverse_proxy 127.0.0.1:{{ observability_grafana_port | default('3030') }}
