@@ -46,14 +46,24 @@ flowchart LR
 
 ---
 
-## 2. 默认端口规划
+## 2. 默认端口规划与 Endpoint 统一暴露全清单
 
-| 服务组件 | 容器服务名 | 宿主机/监听端口 | 访问/查询路径 | 默认状态 |
+### 2.1 可观测性核心服务 Endpoints
+| 服务组件 | 容器服务名 | 宿主机端口 | Caddy 统一网关 Ingress 路径 | 核心功能与职责 |
 | :--- | :--- | :--- | :--- | :--- |
-| **Grafana MCP Server** | `xstream_mcp_grafana` | `127.0.0.1:8000` | `/mcp/grafana` | 默认启用 |
-| **VictoriaMetrics MCP Server** | `xstream_mcp_victoriametrics` | `127.0.0.1:8088` | `/mcp/victoriametrics` | 默认启用 |
-| **VictoriaLogs MCP Server** | `xstream_mcp_victorialogs` | `127.0.0.1:8081` | `/mcp/victorialogs` | 默认禁用 |
-| **VictoriaTraces MCP Server** | `xstream_mcp_victoriatraces` | `127.0.0.1:8082` | `/mcp/victoriatraces` | 默认禁用 |
+| **Grafana UI** | `xstream_grafana` | `127.0.0.1:3030` | `https://observability.svc.plus/grafana/` | 统一可视化大盘面板与告警管理 |
+| **VictoriaMetrics (Metrics)** | `xstream_victoriametrics` | `127.0.0.1:9090` | 写入: `/ingest/metrics/*`<br>查询: `/vmetrics/*` | Prometheus 协议指标数据 Remote Write 接收与 MetricsQL 查询 |
+| **VictoriaLogs (Logs)** | `xstream_victorialogs` | `127.0.0.1:9428` | 写入: `/ingest/logs/*`<br>查询: `/vlogs/*` | JSON Lines 日志流式写入与 LogsQL 高基数检索 |
+| **VictoriaTraces (Traces)** | `xstream_victoriatraces` | `127.0.0.1:10428`<br>`:4318` / `:4317` | OTLP 写入: `/ingest/otlp/*`<br>查询: `/vtraces/*` | OpenTelemetry (OTLP gRPC/HTTP) 链路接收与 TraceQL 查询 |
+| **Blackbox Exporter** | `xstream_blackbox` | `127.0.0.1:9115` | `/blackbox/*` | 网络、域名、HTTP/TCP 探针拨测 |
+
+### 2.2 Model Context Protocol (MCP) Server 阵列 Endpoints
+| MCP 服务组件 | 容器服务名 | 宿主机端口 | Caddy 统一网关路径 (Legacy & AI Standard) | 默认状态 |
+| :--- | :--- | :--- | :--- | :--- |
+| **Grafana MCP Server** | `xstream_mcp_grafana` | `127.0.0.1:8000` | `/mcp/grafana/`<br>`/mcp/v1/grafana/` | 默认启用 |
+| **VictoriaMetrics MCP Server** | `xstream_mcp_victoriametrics` | `127.0.0.1:8088` | `/mcp/victoriametrics/`<br>`/mcp/v1/metrics/` | 默认启用 |
+| **VictoriaLogs MCP Server** | `xstream_mcp_victorialogs` | `127.0.0.1:8081` | `/mcp/victorialogs/`<br>`/mcp/v1/logs/` | 默认启用 |
+| **VictoriaTraces MCP Server** | `xstream_mcp_victoriatraces` | `127.0.0.1:8082` | `/mcp/victoriatraces/`<br>`/mcp/v1/traces/` | 默认启用 |
 
 ---
 
