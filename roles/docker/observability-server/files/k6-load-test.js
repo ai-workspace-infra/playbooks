@@ -46,7 +46,6 @@ export const options = {
     environment: TARGET_ENV,
     test_profile: TEST_PROFILE,
     testid: TEST_ID,
-    chain: 'caddy_api_db',
   },
   thresholds: {
     http_req_failed: ['rate<0.01'],        // Error rate must be under 1%
@@ -83,8 +82,6 @@ function requestParams(endpoint) {
       endpoint,
       test_profile: TEST_PROFILE,
       testid: TEST_ID,
-      chain: 'caddy_api_db',
-      edge: 'caddy',
     },
   };
 }
