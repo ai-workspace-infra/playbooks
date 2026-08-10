@@ -44,6 +44,9 @@
 	   console 自己要访问 accounts 时走 authUrl(accounts-uat 这个 vhost), 不靠本域。 #}
 	@accounts host {{ web_saas_host_config_accounts_domain }}
 	handle @accounts {
+		tracing {
+			span http.server.request
+		}
 		reverse_proxy accounts:8080 {
 			header_up X-Forwarded-Host {host}
 		}
@@ -51,6 +54,9 @@
 
 	@console host {{ web_saas_host_config_console_domain }}
 	handle @console {
+		tracing {
+			span http.server.request
+		}
 		reverse_proxy console:3000
 	}
 
@@ -62,6 +68,9 @@
 	handle @billing {
 		@billing_agent remote_ip {{ web_saas_host_config_billing_allowed_cidrs }}
 		handle @billing_agent {
+			tracing {
+				span http.server.request
+			}
 			reverse_proxy billing:8081 {
 				header_up X-Forwarded-Host {host}
 			}
@@ -84,12 +93,18 @@ https://{{ web_saas_host_config_console_domain }} {
 	# /api/auth/* 不做分流: 那是 console 自己的 Next BFF 路由, 不是 accounts 的
 	# API 前缀。理由同 DNS-01 分支上面那段注释。
 	handle {
+		tracing {
+			span http.server.request
+		}
 		reverse_proxy console:3000
 	}
 }
 
 https://{{ web_saas_host_config_accounts_domain }} {
 	encode zstd gzip
+	tracing {
+		span http.server.request
+	}
 	reverse_proxy accounts:8080 {
 		header_up X-Forwarded-Host {host}
 	}
@@ -100,6 +115,9 @@ https://{{ web_saas_host_config_billing_domain }} {
 	encode zstd gzip
 	@billing_agent remote_ip {{ web_saas_host_config_billing_allowed_cidrs }}
 	handle @billing_agent {
+		tracing {
+			span http.server.request
+		}
 		reverse_proxy billing:8081 {
 			header_up X-Forwarded-Host {host}
 		}

@@ -22,7 +22,10 @@ datasources:
     uid: victoriatraces
     type: jaeger
     access: proxy
-    url: http://victoria-traces:10428
+    # VictoriaTraces exposes the Jaeger-compatible query API below /select/jaeger.
+    # Without this prefix Grafana requests /api/services and every trace panel is
+    # empty even when spans have been successfully ingested.
+    url: http://victoria-traces:10428/select/jaeger
     editable: false
     jsonData:
       tracesToLogs:
