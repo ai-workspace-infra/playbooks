@@ -47,6 +47,20 @@ source = '''
 .tags.job = "xray"
 .tags.transport = "tcp"
 '''
+{% set postgres_exporter_enabled = vector_postgres_exporter_enabled | default(false) | bool %}
+{% if postgres_exporter_enabled %}
+[sources.postgres_metrics]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:{{ postgres_exporter_port | default('9187') }}/metrics"]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+
+[transforms.add_postgres_labels]
+type = "remap"
+inputs = ["postgres_metrics"]
+source = '''
+.tags.instance = "{{ inventory_hostname }}"
+.tags.job = "postgres"
+'''
 {% endif %}
 
 [transforms.add_labels]
@@ -121,11 +135,18 @@ max_size = {{ vector_disk_buffer_max_bytes | default(536870912) }}
 
 [sinks.prometheus_remote]
 type = "prometheus_remote_write"
+{% set remote_inputs = ["add_labels"] %}
 {% if xray_exporter_enabled %}
-inputs = ["add_labels", "add_xray_xhttp_labels", "add_xray_tcp_labels"{% for target in ssl_targets %}, "blackbox_{{ target.name | regex_replace('[^A-Za-z0-9_]', '_') }}_labels"{% endfor %}]
-{% else %}
-inputs = ["add_labels"{% for target in ssl_targets %}, "blackbox_{{ target.name | regex_replace('[^A-Za-z0-9_]', '_') }}_labels"{% endfor %}]
+  {% set _ = remote_inputs.append("add_xray_xhttp_labels") %}
+  {% set _ = remote_inputs.append("add_xray_tcp_labels") %}
 {% endif %}
+{% if postgres_exporter_enabled %}
+  {% set _ = remote_inputs.append("add_postgres_labels") %}
+{% endif %}
+{% for target in ssl_targets %}
+  {% set _ = remote_inputs.append("blackbox_" ~ (target.name | regex_replace('[^A-Za-z0-9_]', '_')) ~ "_labels") %}
+{% endfor %}
+inputs = {{ remote_inputs | to_json }}
 {% if inventory_hostname == 'install.svc.plus' %}
 endpoint = "http://127.0.0.1:9090/api/v1/write"
 {% else %}

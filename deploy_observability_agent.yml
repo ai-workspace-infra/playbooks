@@ -72,10 +72,21 @@
       ignore_errors: true
       changed_when: false
 
+    - name: Check if PostgreSQL database or exporter exists on target host
+      ansible.builtin.shell: >-
+        pgrep -x postgres >/dev/null 2>&1 ||
+        ss -tulpn | grep -qE ':5432|:15432|:9187' ||
+        (command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -qE 'postgres|postgresql|postgresql_exporter')
+      register: postgres_process_check
+      ignore_errors: true
+      changed_when: false
+
     - name: Resolve desired Xray exporter telemetry state
       ansible.builtin.set_fact:
         vector_xray_exporter_enabled: >-
           {{ 'agent_proxy' in group_names or xray_process_check.rc == 0 }}
+        vector_postgres_exporter_enabled: >-
+          {{ postgres_process_check.rc == 0 }}
 
     # A newly provisioned agent_proxy reaches this play before the native Xray
     # deployment job. Render Vector's scrape and HTTP fan-out sources from CMDB
