@@ -1,15 +1,6 @@
 {{ xworkmate_bridge_domain }} {
-{% if (xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token) | trim | length) > 0 %}
-    @unauthorized expression `{http.request.header.Authorization} != "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}" && {http.request.header.Authorization} != "Bearer {{ xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token) }}"`
-{% else %}
-    @unauthorized {
-        not header Authorization "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
-    }
-{% endif %}
-    handle @unauthorized {
-        header Content-Type "application/json"
-        respond `{"jsonrpc":"2.0","error":{"code":-32001,"message":"unauthorized"},"type":"res","ok":false}` 401
-    }
+    # Authentication is evaluated by xworkmate-bridge against Accounts. Caddy
+    # only preserves the request Authorization header and contains no user token.
 
     # /api* 承载 tasks.get 轮询与（部分）流式响应：与 /acp* 用同样的流式 + 长超时配置，
     # 避免落到 Caddy 默认短超时把轮询/流式打断（T2）。

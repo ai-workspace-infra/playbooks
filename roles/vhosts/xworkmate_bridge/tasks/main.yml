@@ -64,62 +64,6 @@
     group: "{{ xworkmate_bridge_service_group if ansible_os_family != 'Windows' else omit }}"
     mode: "{{ '0755' if ansible_os_family != 'Windows' else omit }}"
 
-- name: Read existing xworkmate-bridge auth token from systemd units
-  ansible.builtin.shell: |
-    set -euo pipefail
-    for unit in \
-      "{{ xworkmate_bridge_systemd_unit_path }}" \
-      "{{ xworkmate_bridge_user_systemd_unit_path }}"
-    do
-      if [ -f "${unit}" ]; then
-        sed -n 's/^Environment="BRIDGE_AUTH_TOKEN=\(.*\)"$/\1/p' "${unit}" | head -n 1
-      fi
-    done | sed '/^$/d' | head -n 1
-  args:
-    executable: /bin/bash
-  register: xworkmate_bridge_existing_auth_token
-  check_mode: false
-  changed_when: false
-  failed_when: false
-  no_log: true
-  when: ansible_os_family != 'Darwin'
-
-- name: Read existing xworkmate-bridge review auth token from systemd units
-  ansible.builtin.shell: |
-    set -euo pipefail
-    for unit in \
-      "{{ xworkmate_bridge_systemd_unit_path }}" \
-      "{{ xworkmate_bridge_user_systemd_unit_path }}"
-    do
-      if [ -f "${unit}" ]; then
-        sed -n 's/^Environment="BRIDGE_REVIEW_AUTH_TOKEN=\(.*\)"$/\1/p' "${unit}" | head -n 1
-      fi
-    done | sed '/^$/d' | head -n 1
-  args:
-    executable: /bin/bash
-  register: xworkmate_bridge_existing_review_auth_token
-  check_mode: false
-  changed_when: false
-  failed_when: false
-  no_log: true
-  when: ansible_os_family != 'Darwin'
-
-- name: Resolve xworkmate-bridge auth token
-  ansible.builtin.set_fact:
-    xworkmate_bridge_effective_auth_token: >-
-      {{
-        xworkmate_bridge_auth_token
-        if (xworkmate_bridge_auth_token | trim | length > 0)
-        else (xworkmate_bridge_existing_auth_token.stdout | default(''))
-      }}
-    xworkmate_bridge_effective_review_auth_token: >-
-      {{
-        xworkmate_bridge_review_auth_token
-        if (xworkmate_bridge_review_auth_token | trim | length > 0)
-        else (xworkmate_bridge_existing_review_auth_token.stdout | default(''))
-      }}
-  no_log: true
-
 - name: Assert xworkmate-bridge binary exists
   ansible.builtin.stat:
     path: "{{ xworkmate_bridge_binary_path }}"
@@ -132,13 +76,15 @@
       - xworkmate_bridge_binary.stat.isreg
     fail_msg: "xworkmate-bridge binary is missing: {{ xworkmate_bridge_binary_path }}"
 
-- name: Assert xworkmate-bridge auth token is provided
+- name: Assert Accounts introspection configuration is provided
   ansible.builtin.assert:
     that:
-      - xworkmate_bridge_effective_auth_token | trim | length > 0
+      - xworkmate_bridge_accounts_introspection_url | trim | length > 0
+      - xworkmate_bridge_accounts_service_token | trim | length > 0
+      - xworkmate_bridge_openclaw_gateway_service_token | trim | length > 0
     fail_msg: >-
-      xworkmate_bridge_auth_token is required. Pass it with -e or provide
-      BRIDGE_AUTH_TOKEN / INTERNAL_SERVICE_TOKEN in the deploy environment.
+      BRIDGE_ACCOUNTS_INTROSPECTION_URL, BRIDGE_ACCOUNTS_SERVICE_TOKEN, and
+      OPENCLAW_GATEWAY_SERVICE_TOKEN are required.
   no_log: true
 
 - name: Stop deprecated Docker bridge container when present
