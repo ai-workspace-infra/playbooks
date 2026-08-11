@@ -51,30 +51,13 @@
     - xworkmate_bridge_public_access | bool
     - caddy_enabled | default(true) | bool
 
-- name: Assert Caddy and systemd use the same bridge token set
+- name: Assert Caddy and systemd contain no static bridge user token
   ansible.builtin.assert:
     that:
-      - >-
-        'Bearer ' ~ (xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token))
-        in xworkmate_bridge_fragment.stdout
-      - >-
-        'Environment="BRIDGE_AUTH_TOKEN=' ~ (xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token)) ~ '"'
-        in xworkmate_bridge_systemd_unit_text.stdout
-      - >-
-        ((xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token) | trim | length) == 0)
-        or
-        (
-          'Bearer ' ~ (xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token))
-          in xworkmate_bridge_fragment.stdout
-        )
-      - >-
-        ((xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token) | trim | length) == 0)
-        or
-        (
-          'Environment="BRIDGE_REVIEW_AUTH_TOKEN=' ~ (xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token)) ~ '"'
-          in xworkmate_bridge_systemd_unit_text.stdout
-        )
-    fail_msg: "xworkmate-bridge Caddy and systemd token configuration are not aligned"
+      - "'BRIDGE_AUTH_TOKEN=' not in xworkmate_bridge_systemd_unit_text.stdout"
+      - "'BRIDGE_REVIEW_AUTH_TOKEN=' not in xworkmate_bridge_systemd_unit_text.stdout"
+      - "'@unauthorized' not in xworkmate_bridge_fragment.stdout"
+    fail_msg: "static bridge user token remains in Caddy or systemd"
   no_log: true
   when: 
     - xworkmate_bridge_public_access | bool
@@ -124,7 +107,7 @@
   ansible.builtin.uri:
     url: "{{ xworkmate_bridge_validation_base_url }}/api/ping"
     headers:
-      Authorization: "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
+      Authorization: "Bearer {{ xworkmate_bridge_validation_credential_token }}"
       Origin: "{{ xworkmate_bridge_validation_origin }}"
     return_content: true
     validate_certs: "{{ xworkmate_bridge_validation_validate_certs | bool }}"
@@ -153,7 +136,7 @@
     url: "{{ xworkmate_bridge_validation_base_url }}/acp/rpc"
     method: POST
     headers:
-      Authorization: "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
+      Authorization: "Bearer {{ xworkmate_bridge_validation_credential_token }}"
       Origin: "{{ xworkmate_bridge_validation_origin }}"
       Content-Type: application/json
     body_format: json
@@ -167,26 +150,6 @@
   register: xworkmate_bridge_capabilities
   changed_when: false
   no_log: true
-
-- name: Check xworkmate-bridge public domain ping with review token
-  ansible.builtin.uri:
-    url: "{{ xworkmate_bridge_validation_base_url }}/api/ping"
-    headers:
-      Authorization: "Bearer {{ xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token) }}"
-      Origin: "{{ xworkmate_bridge_validation_origin }}"
-    return_content: true
-    validate_certs: "{{ xworkmate_bridge_validation_validate_certs | bool }}"
-  register: xworkmate_bridge_review_service_ping
-  until:
-    - xworkmate_bridge_review_service_ping.status == 200
-    - xworkmate_bridge_review_service_ping.json is defined
-    - xworkmate_bridge_review_service_ping.json.status | default('') == "ok"
-  retries: 3
-  delay: 5
-  changed_when: false
-  no_log: true
-  when:
-    - xworkmate_bridge_effective_review_auth_token | default(xworkmate_bridge_review_auth_token) | trim | length > 0
 
 - name: Assert xworkmate-bridge capabilities expose app contract providers
   ansible.builtin.assert:
@@ -205,7 +168,7 @@
     url: "{{ xworkmate_bridge_validation_base_url }}/acp/rpc"
     method: POST
     headers:
-      Authorization: "Bearer {{ xworkmate_bridge_effective_auth_token | default(xworkmate_bridge_auth_token) }}"
+      Authorization: "Bearer {{ xworkmate_bridge_validation_credential_token }}"
       Origin: "{{ xworkmate_bridge_validation_origin }}"
       Content-Type: application/json
     body_format: json

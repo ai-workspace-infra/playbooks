@@ -5,13 +5,13 @@
 
 ## 设计依据
 
-视觉语言参考 [Pigsty demo homepage](https://demo.pigsty.io/ui/d/pigsty/pigsty)(彩色背景磁贴 + 大号实例网格 + 右侧仪表盘目录 + 顶部 tag 下拉导航);信息架构来自 [observability-server-core 博客](https://console.svc.plus/blogs/03-observability/observability-server-core.zh) 的四段式流水线:
+视觉语言参考 [Pigsty demo homepage](https://demo.pigsty.io/ui/d/pigsty/pigsty)(彩色背景磁贴 + 大号实例网格 + 右侧仪表盘目录 + 顶部 tag 折叠导航);信息架构按排障路径整理为六类:
 
 ```
-COLLECT 采集  →  INGEST 接入  →  STORE 存储  →  AI DIAGNOSE 智能诊断
+环境  →  指标  →  日志  →  链路  →  告警  →  资源
 ```
 
-首页即按这四段组织,不再使用此前从 Pigsty 模板搬来、与本平台实际部署对应不上的 IaaS / PaaS / SaaS 分层。
+首页保留原有 Grafana 顶部按钮样式和总览区,六个入口折叠展示,点击后进入对应的全部面板二级菜单,不改变现有面板布局。
 
 ## 数据基准:全部查询已对线上 VictoriaMetrics 实测
 
@@ -35,42 +35,59 @@ Pigsty 风格的下拉导航。**每个下拉的 tag 都已在对应 dashboard J
 
 | 入口 | 类型 | 过滤 / 目标 | 实际命中 |
 | --- | --- | --- | --- |
-| 采集 | 下拉 | tag `COLLECT` | Node Exporter、process exporter |
-| 业务 | 下拉 | tag `BU` | Xray Dashboard |
-| 全部仪表盘 | 下拉 | 无过滤 | 全部 4 个 |
-| Metrics | 直链 | `/vmetrics/vmui/` | — |
-| Logs | 直链 | `/vlogs/select/vmui/` | — |
-| 告警 | 直链 | `/grafana/alerting/list` | — |
+| 环境 | 变量选择器 | `environment` | SIT / UAT / PROD 上下文 |
+| 指标 | 变量选择器 | `DS_METRICS` | VictoriaMetrics |
+| 日志 | 变量选择器 | `DS_LOGS` | VictoriaLogs |
+| 链路 | 变量选择器 | `DS_TRACES` | VictoriaTraces |
+| 告警 | 变量选择器 | `alert_state` | All / Firing / Pending / Normal |
+| 资源 | 变量选择器 | `target_instance` | 主机实例 All / 多选 |
 
-为此给已部署的仪表盘补了分层 tag:`Node-Exporter-Dashboard` 与 `process-exporter` 加 `COLLECT`/`NODE`,`dashboard.json`(Xray Dashboard)加 `BU`/`XRAY`。
+为此给已部署的仪表盘补了导航 tag:资源类面板使用 `RESOURCE`,指标类面板使用 `METRICS`,k6 使用 `ENVIRONMENT`/`TRACES`,日志与链路面板分别使用 `LOGS`/`TRACES`,并保留原有业务与采集 tag。首页删除顶部导航按钮,只显示 `Environment`、`Metrics`、`Logs`、`Traces`、`告警`、`Resource` 六个变量选择器。原有监控面板全部保留,新增平台整体 Cloud Resources Watch、业务负载、性能压测和边缘业务流量视角。
+
+### 首页变量选择器
+
+Grafana 原生变量直接显示在首页顶部:
+
+| 选择器 | 类型 | 默认值 | 用途 |
+| --- | --- | --- | --- |
+| Environment | 自定义 | All | 传递 SIT / UAT / PROD 压测上下文 |
+| Resource | 查询 | All | 选择目标主机实例 |
+| Metrics DS | 数据源 | VictoriaMetrics | 首页与指标看板使用的 Prometheus 数据源 |
+| Logs DS | 数据源 | VictoriaLogs | k6 / 日志看板使用的 VictoriaLogs 数据源 |
+| Traces DS | 数据源 | VictoriaTraces | k6 / APM 看板使用的 Jaeger 数据源 |
+| 告警 | 自定义 | All | 告警状态筛选上下文 |
+
+### 平台整体视角
+
+手动调整版将平台主路径前置,并把采集、接入、存储、告警与 MCP 自监控放在末尾:
+
+| 区块 | 关注点 | 主要数据 |
+| --- | --- | --- |
+| 02 · Platform Overview 平台总览 | 平台覆盖、资源节点、服务承载节点、业务入口覆盖 | node-exporter、process-exporter、blackbox |
+| 03 · Resource Health 资源健康 | SSL 证书、各实例 CPU / 内存压力 | `probe_ssl_earliest_cert_expiry`、`node_cpu_seconds_total`、`node_memory_*` |
+| 04 · Edge Traffic 边缘流量 | Xray 业务流量、入口探测延迟 | `xray_traffic_*`、`probe_duration_seconds` |
+| 05 · Business Load 业务负载 | 业务负载 RPS、成功率、p95、当前 VU | k6 `k6_http_*`、`k6_vus` |
 
 ## 面板结构
 
 | 区块 | 面板 | 数据来源 | 实测 |
 | --- | --- | --- | --- |
-| — | 总览导航 | 静态 HTML,四段流水线示意 | — |
-| 平台脉搏 | 快速入口 | 纯导航磁贴 | — |
-| 平台脉搏 | 采集器 | 各 exporter 覆盖主机数,按 instance 去重 | 5 项均有值 |
-| 平台脉搏 | 边缘节点 | 每主机 CPU%,area sparkline,可下钻主机详情 | 3 series |
-| 平台脉搏 | 仪表盘 | dashlist,不做 tag 过滤 | — |
-| 01 COLLECT | CPU / 内存 使用率 | `node_cpu_seconds_total` / `node_memory_*` | 各 3 series |
-| 01 COLLECT | 根分区磁盘 | `node_filesystem_*{mountpoint="/"}` | 3 series |
-| 01 COLLECT | xray 探针 | `xray_up`,按 transport,0/1 映射 DOWN/UP | 4 series |
-| 02 INGEST | Vector 出口事件速率 | `vector_component_sent_events_total` | 3 series |
-| 02 INGEST | Vector 缓冲积压 | `vector_buffer_byte_size` | 4 series |
-| 02 INGEST | Vector 错误率 | `vector_component_errors_total` | 1 series |
-| 03 STORE | 存储引擎与网关 | 纯导航磁贴 | — |
-| 03 STORE | SSL 证书剩余 | `probe_ssl_earliest_cert_expiry` | 5 series |
-| 03 STORE | Firing Alerts | Grafana 原生 `alertlist` 面板 | 见下 |
-| 04 AI DIAGNOSE | MCP 服务入口 | 纯导航磁贴,4 个 MCP 适配器 | — |
-| 04 AI DIAGNOSE | MCP 能力说明 | 静态 HTML,含安全边界说明 | — |
+| — | 总览导航 | 静态 HTML,六类排障路径示意 | — |
+| 01 Platform Pulse 平台脉搏 | 快速入口 / 采集器 / 边缘节点 / 仪表盘 | 导航磁贴、exporter 覆盖数、主机 CPU、dashlist | — |
+| 02 Platform Overview 平台总览 | 平台覆盖、资源节点、服务承载节点、业务入口覆盖 | node-exporter、process-exporter、blackbox | 5 项均有值 |
+| 03 Resource Health 资源健康 | SSL 证书 / CPU / 内存压力 | `probe_ssl_earliest_cert_expiry`、`node_cpu_seconds_total` / `node_memory_*` | 已接入 |
+| 04 Edge Traffic 边缘流量 | Xray 业务流量、入口探测延迟 | `xray_traffic_*`、`probe_duration_seconds` | 1 / 1 series |
+| 05 Business Load 业务负载(默认折叠) | RPS / 成功率 / p95 / 当前 VU | k6 `k6_http_*`、`k6_vus` | 空闲时为 No data |
+| 06 Observability Core 监控核心 | Collect / Ingest / Store / Alert 自监控 | node、Vector、证书、Grafana Alerting | 手动版保留 8 个面板 |
 
 所有 PromQL 查询均已逐条打到线上 VictoriaMetrics 验证返回非空。
 
 ### 设计取舍
 
 - **纯导航磁贴明确标注**:快速入口 / 存储引擎 / MCP 三个面板用 `expr: 1` 常亮,panel description 里写明"不代表健康状态"。避免用户误以为绿色 = 健康 —— 这几个组件目前确实没有被纳入采集。
-- **`origin_prometheus` 变量接上了**:所有面板 datasource 改为 `${origin_prometheus}`,此前该变量是声明了但没有任何面板引用的死配置。
+- **平台主路径优先**:首页按 `Platform Pulse → Platform Overview → Resource Health → Edge Traffic → Business Load` 展示;手动调整版将 `Business Load` 默认折叠,底部 `Observability Core` 保持展开以便直接查看采集与接入状态。
+- **手动导出已转换**:Grafana `dashboard.grafana.app/v2` 导出不能直接作为 classic file provisioning 文件使用,已转换为 playbook 当前的 classic dashboard JSON,并保留手动版的行顺序、折叠状态、面板标题与变量选择器。
+- **统一选择器接上了**:首页面板使用 `${DS_METRICS}`,并提供与 k6 / VictoriaTraces 看板一致的 `Environment`、`Metrics DS`、`Logs DS`、`Traces DS` 与 `Resource` 选择器;分类入口会带上当前变量。
 - **删除 `interval` 变量**:同样是无人引用的死配置。
 
 ## 告警:改用 Grafana 内置统一告警

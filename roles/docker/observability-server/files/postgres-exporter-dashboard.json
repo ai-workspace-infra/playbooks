@@ -22,7 +22,7 @@
   "id": null,
   "uid": "postgres-exporter-overview",
   "title": "PostgreSQL Database Overview",
-  "tags": ["postgres", "database", "victoriametrics"],
+  "tags": ["postgres", "database", "victoriametrics", "RESOURCE", "METRICS"],
   "timezone": "browser",
   "schemaVersion": 38,
   "version": 1,
@@ -37,7 +37,7 @@
         "hide": 0,
         "includeAll": false,
         "label": "Datasource",
-        "name": "DS_PROMETHEUS",
+        "name": "DS_METRICS",
         "options": [],
         "query": "prometheus",
         "refresh": 1,
@@ -53,7 +53,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "$DS_PROMETHEUS"
+          "uid": "$DS_METRICS"
         },
         "definition": "label_values(pg_stat_database_numbackends, instance)",
         "hide": 0,
@@ -78,7 +78,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "$DS_PROMETHEUS"
+          "uid": "$DS_METRICS"
         },
         "definition": "label_values(pg_stat_database_numbackends, datname)",
         "hide": 0,
@@ -106,7 +106,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -128,7 +128,7 @@
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
           "expr": "sum(pg_stat_database_numbackends{instance=~\"$instance\", datname=~\"$datname\"})",
           "legendFormat": "Connections",
           "refId": "A"
@@ -136,7 +136,7 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -158,7 +158,7 @@
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
           "expr": "sum(rate(pg_stat_database_blks_hit{instance=~\"$instance\", datname=~\"$datname\"}[5m])) / (sum(rate(pg_stat_database_blks_hit{instance=~\"$instance\", datname=~\"$datname\"}[5m])) + sum(rate(pg_stat_database_blks_read{instance=~\"$instance\", datname=~\"$datname\"}[5m]))) * 100",
           "legendFormat": "Hit Ratio",
           "refId": "A"
@@ -166,7 +166,7 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -180,7 +180,7 @@
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
           "expr": "sum(rate(pg_stat_database_xact_commit{instance=~\"$instance\", datname=~\"$datname\"}[5m]))",
           "legendFormat": "Commits/s",
           "refId": "A"
@@ -188,7 +188,7 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -209,7 +209,7 @@
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
           "expr": "sum(rate(pg_stat_database_xact_rollback{instance=~\"$instance\", datname=~\"$datname\"}[5m]))",
           "legendFormat": "Rollbacks/s",
           "refId": "A"
@@ -224,7 +224,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
       "fieldConfig": {
         "defaults": {
           "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10 },
@@ -237,7 +237,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
           "expr": "pg_stat_database_numbackends{instance=~\"$instance\", datname=~\"$datname\"}",
           "legendFormat": "{{datname}} ({{instance}})",
           "refId": "A"
@@ -245,7 +245,7 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+      "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
       "fieldConfig": {
         "defaults": {
           "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10 },
@@ -258,7 +258,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "$DS_PROMETHEUS" },
+          "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
           "expr": "pg_database_size_bytes{instance=~\"$instance\", datname=~\"$datname\"}",
           "legendFormat": "{{datname}} ({{instance}})",
           "refId": "A"

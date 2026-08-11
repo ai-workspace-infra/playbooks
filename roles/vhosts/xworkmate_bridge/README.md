@@ -82,8 +82,8 @@ OpenClaw task admission is configured in the generated bridge `config.yaml` from
 - `xworkmate_bridge_openclaw_gateway_max_queued` defaults to `20`
 - `xworkmate_bridge_openclaw_gateway_queue_timeout` defaults to `10m`
 
-Apple review / beta 工测可配置临时 `BRIDGE_REVIEW_AUTH_TOKEN`。该 token 与主
-`BRIDGE_AUTH_TOKEN` 并行生效；清空 `BRIDGE_REVIEW_AUTH_TOKEN` 并重新部署或
+Apple review / beta 工测使用由 Accounts 签发的独立 tenant credential；不再部署
+`BRIDGE_REVIEW_AUTH_TOKEN` 或 `BRIDGE_AUTH_TOKEN`。重新部署时仅配置 Accounts
 reload/restart bridge 即可单独关停审核通道，不影响生产 token。
 
 Non-contract routes:

@@ -71,6 +71,14 @@ web_saas_host_config_stunnel_check_host: ""
 # 对外站点。console 与 accounts 共用一台主机, 由 Caddy 按域名分流。
 web_saas_host_config_console_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_CONSOLE_DOMAIN') | default('', true) }}"
 web_saas_host_config_accounts_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_ACCOUNTS_DOMAIN') | default('', true) }}"
+# The web-saas accounts endpoint is the shared XWorkmate control plane in
+# every environment. Its public hostname is environment-specific, while the
+# Accounts service resolves the shared tenant from the source environment's
+# canonical host. The deploy workflow supplies this value explicitly; keeping
+# it out of the template avoids coupling UAT/prod hostnames to the role.
+web_saas_host_config_accounts_forwarded_host: >-
+  {{ lookup('ansible.builtin.env', 'WEB_SAAS_ACCOUNTS_FORWARDED_HOST')
+     | default('', true) }}
 # Billing 的 job trigger 入口只给 agent-proxy 使用。它不是用户面板 API；
 # 没有同时提供域名和允许访问的 agent CIDR 时不渲染站点，避免误把
 # /v1/jobs/* 暴露到公网。
