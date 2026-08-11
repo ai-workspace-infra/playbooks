@@ -1,0 +1,30 @@
+---
+- name: Verify install Xray TCP certificate files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ install_xray_metrics_tcp_certificate_file }}"
+    - "{{ install_xray_metrics_tcp_key_file }}"
+  register: install_xray_metrics_certificates
+
+- name: Require install Xray TCP certificate files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+    fail_msg: "Required install Xray TLS file is missing: {{ item.item }}"
+  loop: "{{ install_xray_metrics_certificates.results }}"
+
+- name: Patch install Xray API ports and TCP certificate atomically
+  ansible.builtin.script: >-
+    {{ role_path }}/files/patch_install_xray_metrics.py
+    --xhttp-config {{ install_xray_metrics_xhttp_config_path }}
+    --tcp-config {{ install_xray_metrics_tcp_config_path }}
+    --xray-binary {{ install_xray_metrics_xray_binary_path }}
+    --xhttp-api-port {{ install_xray_metrics_xhttp_api_port }}
+    --tcp-api-port {{ install_xray_metrics_tcp_api_port }}
+    --tcp-certificate-file {{ install_xray_metrics_tcp_certificate_file }}
+    --tcp-key-file {{ install_xray_metrics_tcp_key_file }}
+  register: install_xray_metrics_patch
+  changed_when: "'No changes required' not in install_xray_metrics_patch.stdout"
+  notify: Restart install Xray services

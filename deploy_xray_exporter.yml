@@ -21,10 +21,21 @@
          | default('prod', true) }}
     xray_exporter_release_repository: >-
       {{ lookup('ansible.builtin.env', 'XRAY_EXPORTER_RELEASE_REPOSITORY')
-         | default('compassvpn/xray-exporter', true) }}
+         | default('ai-workspace-xstream/xray-exporter', true) }}
+    # Production uses the maintained fork in metrics-only mode. UAT may opt
+    # into the fork's snapshot flags when its billing contract is configured.
+    xray_exporter_snapshot_features_enabled: >-
+      {{ lookup('ansible.builtin.env', 'XRAY_EXPORTER_SNAPSHOT_FEATURES_ENABLED')
+         | default(
+             (
+               xray_exporter_release_repository == 'ai-workspace-xstream/xray-exporter'
+               and xray_exporter_env_name == 'uat'
+             ),
+             true
+           ) | bool }}
     xray_exporter_version: >-
       {{ lookup('ansible.builtin.env', 'XRAY_EXPORTER_VERSION')
-         | default('v0.6.0', true) }}
+         | default('daily-build-2026.08.11', true) }}
     xray_exporter_stats_url: >-
       {{ lookup('ansible.builtin.env', 'XRAY_STATS_URL')
          | default('http://127.0.0.1:49227/debug/vars', true) }}
@@ -53,10 +64,18 @@
     # Xray API layout still differs.
     xray_exporter_xray_api_addr: >-
       {{ lookup('ansible.builtin.env', 'XRAY_EXPORTER_XRAY_API_ADDR')
-         | default('127.0.0.1:28080', true) }}
+         | default(
+             hostvars[inventory_hostname].xray_exporter_xray_api_addr
+             | default('127.0.0.1:18080', true),
+             true
+           ) }}
     xray_exporter_tcp_xray_api_addr: >-
       {{ lookup('ansible.builtin.env', 'XRAY_EXPORTER_TCP_XRAY_API_ADDR')
-         | default('127.0.0.1:28181', true) }}
+         | default(
+             hostvars[inventory_hostname].xray_exporter_tcp_xray_api_addr
+             | default('127.0.0.1:18081', true),
+             true
+           ) }}
     xray_exporter_env_file: >-
       {{ lookup('ansible.builtin.env', 'XRAY_EXPORTER_ENV_FILE')
          | default('/etc/xray-exporter.env', true) }}
@@ -73,5 +92,6 @@
           - xray_exporter_internal_service_token | length > 0
         fail_msg: "INTERNAL_SERVICE_TOKEN must be exported before running this playbook."
         success_msg: "INTERNAL_SERVICE_TOKEN found"
+      when: xray_exporter_snapshot_features_enabled | bool
   roles:
     - roles/vhosts/xray-exporter

@@ -1,0 +1,16 @@
+---
+- name: Repair install Xray metrics API and exporter
+  hosts: "{{ install_xray_metrics_hosts | default('install.svc.plus') }}"
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Include install Xray metrics repair role
+      ansible.builtin.include_role:
+        name: vhosts/install-xray-metrics
+
+    - name: Apply Xray service repair before starting exporter
+      ansible.builtin.meta: flush_handlers
+
+    - name: Include Xray exporter role
+      ansible.builtin.include_role:
+        name: vhosts/xray-exporter

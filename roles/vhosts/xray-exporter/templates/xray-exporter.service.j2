@@ -7,7 +7,8 @@ Type=simple
 User={{ xray_exporter_user }}
 Group={{ xray_exporter_group }}
 EnvironmentFile=-{{ xray_exporter_env_file }}
-ExecStart={{ xray_exporter_binary_path }} -l {{ xray_exporter_instance.listen_addr }} -e {{ xray_exporter_instance.xray_api_addr }}{% if xray_exporter_user_traffic_metrics | bool %} -u{% endif %}{% if xray_exporter_log_path | trim | length > 0 %} -p {{ xray_exporter_log_path }}{% endif %} --node-id {{ xray_exporter_instance.node_id }} --snapshot-store-path {{ xray_exporter_instance.snapshot_store_path }}
+{% set snapshot_args = (' --node-id ' ~ xray_exporter_instance.node_id ~ ' --snapshot-store-path ' ~ xray_exporter_instance.snapshot_store_path) if (xray_exporter_snapshot_features_enabled | bool) else '' %}
+ExecStart={{ xray_exporter_binary_path }} -l {{ xray_exporter_instance.listen_addr }} -e {{ xray_exporter_instance.xray_api_addr }}{% if xray_exporter_user_traffic_metrics | bool %} -u{% endif %}{% if xray_exporter_log_path | trim | length > 0 %} -p {{ xray_exporter_log_path }}{% endif %}{{ snapshot_args }}
 Restart=always
 RestartSec=10
 
