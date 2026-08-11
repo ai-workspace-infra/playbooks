@@ -59,12 +59,12 @@ Grafana 原生变量直接显示在首页顶部:
 
 ### 平台整体视角
 
-新增区块不替换原有面板,从现有布局末尾继续追加:
+手动调整版将平台主路径前置,并把采集、接入、存储、告警与 MCP 自监控放在末尾:
 
 | 区块 | 关注点 | 主要数据 |
 | --- | --- | --- |
 | 02 · Platform Overview 平台总览 | 平台覆盖、资源节点、服务承载节点、业务入口覆盖 | node-exporter、process-exporter、blackbox |
-| 03 · Resource Health 资源健康 | 各实例 CPU / 内存压力 | `node_cpu_seconds_total`、`node_memory_*` |
+| 03 · Resource Health 资源健康 | SSL 证书、各实例 CPU / 内存压力 | `probe_ssl_earliest_cert_expiry`、`node_cpu_seconds_total`、`node_memory_*` |
 | 04 · Edge Traffic 边缘流量 | Xray 业务流量、入口探测延迟 | `xray_traffic_*`、`probe_duration_seconds` |
 | 05 · Business Load 业务负载 | 业务负载 RPS、成功率、p95、当前 VU | k6 `k6_http_*`、`k6_vus` |
 
@@ -75,17 +75,18 @@ Grafana 原生变量直接显示在首页顶部:
 | — | 总览导航 | 静态 HTML,六类排障路径示意 | — |
 | 01 Platform Pulse 平台脉搏 | 快速入口 / 采集器 / 边缘节点 / 仪表盘 | 导航磁贴、exporter 覆盖数、主机 CPU、dashlist | — |
 | 02 Platform Overview 平台总览 | 平台覆盖、资源节点、服务承载节点、业务入口覆盖 | node-exporter、process-exporter、blackbox | 5 项均有值 |
-| 03 Resource Health 资源健康 | CPU / 内存压力 | `node_cpu_seconds_total` / `node_memory_*` | 各 3 series |
+| 03 Resource Health 资源健康 | SSL 证书 / CPU / 内存压力 | `probe_ssl_earliest_cert_expiry`、`node_cpu_seconds_total` / `node_memory_*` | 已接入 |
 | 04 Edge Traffic 边缘流量 | Xray 业务流量、入口探测延迟 | `xray_traffic_*`、`probe_duration_seconds` | 1 / 1 series |
-| 05 Business Load 业务负载 | RPS / 成功率 / p95 / 当前 VU | k6 `k6_http_*`、`k6_vus` | 空闲时为 No data |
-| 06 Observability Core 监控核心(默认折叠) | Collect / Ingest / Store / Alert / MCP 自监控 | node、Vector、存储网关、Grafana Alerting、MCP | 展开后保留全部原面板 |
+| 05 Business Load 业务负载(默认折叠) | RPS / 成功率 / p95 / 当前 VU | k6 `k6_http_*`、`k6_vus` | 空闲时为 No data |
+| 06 Observability Core 监控核心 | Collect / Ingest / Store / Alert 自监控 | node、Vector、证书、Grafana Alerting | 手动版保留 8 个面板 |
 
 所有 PromQL 查询均已逐条打到线上 VictoriaMetrics 验证返回非空。
 
 ### 设计取舍
 
 - **纯导航磁贴明确标注**:快速入口 / 存储引擎 / MCP 三个面板用 `expr: 1` 常亮,panel description 里写明"不代表健康状态"。避免用户误以为绿色 = 健康 —— 这几个组件目前确实没有被纳入采集。
-- **平台主路径优先**:首页按 `Platform Pulse → Platform Overview → Resource Health → Edge Traffic → Business Load` 展示,采集、接入、存储、告警和 MCP 自监控合并为底部默认折叠的 `Observability Core`。
+- **平台主路径优先**:首页按 `Platform Pulse → Platform Overview → Resource Health → Edge Traffic → Business Load` 展示;手动调整版将 `Business Load` 默认折叠,底部 `Observability Core` 保持展开以便直接查看采集与接入状态。
+- **手动导出已转换**:Grafana `dashboard.grafana.app/v2` 导出不能直接作为 classic file provisioning 文件使用,已转换为 playbook 当前的 classic dashboard JSON,并保留手动版的行顺序、折叠状态、面板标题与变量选择器。
 - **统一选择器接上了**:首页面板使用 `${DS_METRICS}`,并提供与 k6 / VictoriaTraces 看板一致的 `Environment`、`Metrics DS`、`Logs DS`、`Traces DS` 与 `Resource` 选择器;分类入口会带上当前变量。
 - **删除 `interval` 变量**:同样是无人引用的死配置。
 
