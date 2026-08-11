@@ -63,37 +63,29 @@ Grafana 原生变量直接显示在首页顶部:
 
 | 区块 | 关注点 | 主要数据 |
 | --- | --- | --- |
-| Platform Cloud Resources Watch | 平台覆盖、资源节点、服务承载节点、业务入口覆盖 | node-exporter、process-exporter、blackbox |
-| Business Load & Performance | 业务负载 RPS、成功率、p95、当前 VU | k6 `k6_http_*`、`k6_vus` |
-| Cloud Resources Watch | 各实例 CPU / 内存压力 | `node_cpu_seconds_total`、`node_memory_*` |
-| Edge & Business Traffic | Xray 业务流量、入口探测延迟 | `xray_traffic_*`、`probe_duration_seconds` |
+| 02 · Platform Overview 平台总览 | 平台覆盖、资源节点、服务承载节点、业务入口覆盖 | node-exporter、process-exporter、blackbox |
+| 03 · Resource Health 资源健康 | 各实例 CPU / 内存压力 | `node_cpu_seconds_total`、`node_memory_*` |
+| 04 · Edge Traffic 边缘流量 | Xray 业务流量、入口探测延迟 | `xray_traffic_*`、`probe_duration_seconds` |
+| 05 · Business Load 业务负载 | 业务负载 RPS、成功率、p95、当前 VU | k6 `k6_http_*`、`k6_vus` |
 
 ## 面板结构
 
 | 区块 | 面板 | 数据来源 | 实测 |
 | --- | --- | --- | --- |
 | — | 总览导航 | 静态 HTML,六类排障路径示意 | — |
-| 平台脉搏 | 快速入口 | 纯导航磁贴 | — |
-| 平台脉搏 | 采集器 | 各 exporter 覆盖主机数,按 instance 去重 | 5 项均有值 |
-| 平台脉搏 | 边缘节点 | 每主机 CPU%,area sparkline,可下钻主机详情 | 3 series |
-| 平台脉搏 | 仪表盘 | dashlist,不做 tag 过滤 | — |
-| 01 COLLECT | CPU / 内存 使用率 | `node_cpu_seconds_total` / `node_memory_*` | 各 3 series |
-| 01 COLLECT | 根分区磁盘 | `node_filesystem_*{mountpoint="/"}` | 3 series |
-| 01 COLLECT | xray 探针 | `xray_up`,按 transport,0/1 映射 DOWN/UP | 4 series |
-| 02 INGEST | Vector 出口事件速率 | `vector_component_sent_events_total` | 3 series |
-| 02 INGEST | Vector 缓冲积压 | `vector_buffer_byte_size` | 4 series |
-| 02 INGEST | Vector 错误率 | `vector_component_errors_total` | 1 series |
-| 03 STORE | 存储引擎与网关 | 纯导航磁贴 | — |
-| 03 STORE | SSL 证书剩余 | `probe_ssl_earliest_cert_expiry` | 5 series |
-| 03 STORE | Firing Alerts | Grafana 原生 `alertlist` 面板 | 见下 |
-| 04 AI DIAGNOSE | MCP 服务入口 | 纯导航磁贴,4 个 MCP 适配器 | — |
-| 04 AI DIAGNOSE | MCP 能力说明 | 静态 HTML,含安全边界说明 | — |
+| 01 Platform Pulse 平台脉搏 | 快速入口 / 采集器 / 边缘节点 / 仪表盘 | 导航磁贴、exporter 覆盖数、主机 CPU、dashlist | — |
+| 02 Platform Overview 平台总览 | 平台覆盖、资源节点、服务承载节点、业务入口覆盖 | node-exporter、process-exporter、blackbox | 5 项均有值 |
+| 03 Resource Health 资源健康 | CPU / 内存压力 | `node_cpu_seconds_total` / `node_memory_*` | 各 3 series |
+| 04 Edge Traffic 边缘流量 | Xray 业务流量、入口探测延迟 | `xray_traffic_*`、`probe_duration_seconds` | 1 / 1 series |
+| 05 Business Load 业务负载 | RPS / 成功率 / p95 / 当前 VU | k6 `k6_http_*`、`k6_vus` | 空闲时为 No data |
+| 06 Observability Core 监控核心(默认折叠) | Collect / Ingest / Store / Alert / MCP 自监控 | node、Vector、存储网关、Grafana Alerting、MCP | 展开后保留全部原面板 |
 
 所有 PromQL 查询均已逐条打到线上 VictoriaMetrics 验证返回非空。
 
 ### 设计取舍
 
 - **纯导航磁贴明确标注**:快速入口 / 存储引擎 / MCP 三个面板用 `expr: 1` 常亮,panel description 里写明"不代表健康状态"。避免用户误以为绿色 = 健康 —— 这几个组件目前确实没有被纳入采集。
+- **平台主路径优先**:首页按 `Platform Pulse → Platform Overview → Resource Health → Edge Traffic → Business Load` 展示,采集、接入、存储、告警和 MCP 自监控合并为底部默认折叠的 `Observability Core`。
 - **统一选择器接上了**:首页面板使用 `${DS_METRICS}`,并提供与 k6 / VictoriaTraces 看板一致的 `Environment`、`Metrics DS`、`Logs DS`、`Traces DS` 与 `Resource` 选择器;分类入口会带上当前变量。
 - **删除 `interval` 变量**:同样是无人引用的死配置。
 
