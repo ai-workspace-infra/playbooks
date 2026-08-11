@@ -2,6 +2,13 @@
 # This playbook is the canonical collection-side entrypoint. It now owns the
 # Xray exporter and Vector collection previously embedded in
 # deploy_observability.yml; the server stack lives in deploy_observability_server.yml.
+- name: Repair install Xray metrics API endpoint
+  hosts: install.svc.plus
+  become: true
+  gather_facts: false
+  roles:
+    - vhosts/install-xray-metrics
+
 - name: Deploy Xray Exporter collection source
   hosts:
     - install.svc.plus
