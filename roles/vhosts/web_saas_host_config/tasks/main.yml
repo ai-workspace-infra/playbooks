@@ -133,6 +133,16 @@
     owner: root
     group: root
     mode: "0600"
+
+- name: Validate configured managed Bridge endpoint
+  ansible.builtin.assert:
+    that:
+      - web_saas_host_config_bridge_server_url is match('^https?://[^/]+(/.*)?$')
+    fail_msg: >-
+      XWORKMATE_BRIDGE_SERVER_URL must be an absolute HTTP(S) URL when set.
+      Leave it empty only while no managed Bridge is deployed; Accounts will
+      then fail profile sync closed instead of routing to another environment.
+  when: web_saas_host_config_bridge_server_url | length > 0
   no_log: true
 
 - name: Write stunnel TLS material

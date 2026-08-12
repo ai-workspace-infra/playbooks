@@ -24,6 +24,10 @@ accounts_service_caddy_conf_dir: "{{ accounts_service_caddy_base_dir }}/conf.d"
 # definition) — the legacy path below is removed by a cleanup task.
 accounts_service_caddy_fragment_path: "{{ accounts_service_caddy_base_dir }}/conf.d/accounts.svc.plus.caddy"
 accounts_service_caddy_legacy_fragment_path: "{{ accounts_service_caddy_base_dir }}/conf.d/accounts.caddy"
+accounts_service_bridge_server_url: >-
+  {{ lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_SERVER_URL')
+     | default(lookup('ansible.builtin.env', 'BRIDGE_SERVER_URL') | default('', true), true)
+     | trim }}
 accounts_service_caddy_sites:
   - server_names:
       - accounts.svc.plus
@@ -39,11 +43,11 @@ accounts_service_env_defaults:
   DB_USER: account_user
   BRIDGE_AUTH_TOKEN: "{{ lookup('ansible.builtin.env', 'BRIDGE_AUTH_TOKEN') | default('', true) }}"
   BRIDGE_REVIEW_AUTH_TOKEN: "{{ lookup('ansible.builtin.env', 'BRIDGE_REVIEW_AUTH_TOKEN') | default('', true) }}"
-  BRIDGE_SERVER_URL: "{{ lookup('ansible.builtin.env', 'BRIDGE_SERVER_URL') | default('https://xworkmate-bridge.svc.plus', true) }}"
-  # accounts reads XWORKMATE_BRIDGE_SERVER_URL first and falls back to
-  # BRIDGE_SERVER_URL (cmd/accountsvc/main.go). Keep both in sync so a fresh
-  # host render and the existing host stay identical.
-  XWORKMATE_BRIDGE_SERVER_URL: "{{ lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_SERVER_URL') | default(lookup('ansible.builtin.env', 'BRIDGE_SERVER_URL') | default('https://xworkmate-bridge.svc.plus', true), true) }}"
+  # The managed Bridge is an environment-owned endpoint. Do not recover to a
+  # svc.plus host here: a replica must either provide its own Bridge URL or
+  # have Accounts fail profile sync with bridge_server_url_unavailable.
+  BRIDGE_SERVER_URL: "{{ accounts_service_bridge_server_url }}"
+  XWORKMATE_BRIDGE_SERVER_URL: "{{ accounts_service_bridge_server_url }}"
   # The web-saas deployment passes TARGET_DOMAIN_BASE as the shared tenant
   # identity. Accounts uses this list for forwarded-host resolution; it is
   # intentionally not tied to a hard-coded public domain.
