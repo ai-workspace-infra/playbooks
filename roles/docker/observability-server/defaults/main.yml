@@ -5,6 +5,12 @@ observability_grafana_port: "3030"
 observability_scrape_interval: "15s"
 observability_retention_time: "30d"
 
+# Vault integration configuration. Keep the lookup order aligned with the
+# production roles: the dedicated server-root token is preferred, while the
+# regular VAULT_TOKEN remains a compatible fallback for local runs.
+vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default(lookup('ansible.builtin.env', 'VAULT_SERVER_URL') | default('https://vault.svc.plus', true), true) }}"
+vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true), true) }}"
+
 # Exporters to scrape
 observability_exporters:
   - "install.svc.plus:8081"
