@@ -44,6 +44,10 @@ accounts_service_env_defaults:
   # BRIDGE_SERVER_URL (cmd/accountsvc/main.go). Keep both in sync so a fresh
   # host render and the existing host stay identical.
   XWORKMATE_BRIDGE_SERVER_URL: "{{ lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_SERVER_URL') | default(lookup('ansible.builtin.env', 'BRIDGE_SERVER_URL') | default('https://xworkmate-bridge.svc.plus', true), true) }}"
+  # The web-saas deployment passes TARGET_DOMAIN_BASE as the shared tenant
+  # identity. Accounts uses this list for forwarded-host resolution; it is
+  # intentionally not tied to a hard-coded public domain.
+  XWORKMATE_SHARED_TENANT_DOMAINS: "{{ lookup('ansible.builtin.env', 'XWORKMATE_SHARED_TENANT_DOMAINS') | default(lookup('ansible.builtin.env', 'TARGET_DOMAIN_BASE') | default('', true), true) }}"
   INTERNAL_SERVICE_TOKEN: ""
   POSTGRES_PASSWORD: "{{ lookup('ansible.builtin.env', 'ACCOUNT_PG_PASSWORD') | default('', true) }}"
   POSTGRES_USER: account_user
