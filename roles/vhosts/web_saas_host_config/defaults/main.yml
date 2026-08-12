@@ -83,6 +83,14 @@ web_saas_host_config_deploy_env: >-
   {{ lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('', true) | trim }}
 web_saas_host_config_accounts_forwarded_host: >-
   {{ web_saas_host_config_target_domain_base }}
+# The Bridge endpoint is deployment-owned, not derived from the Accounts
+# public hostname. It is rendered into the existing secrets.env that Accounts
+# already consumes, so a normal host reconciliation can seed the shared
+# profile without embedding a domain in the service image or GitOps manifest.
+web_saas_host_config_bridge_server_url: >-
+  {{ lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_SERVER_URL')
+     | default(lookup('ansible.builtin.env', 'BRIDGE_SERVER_URL') | default('', true), true)
+     | trim }}
 # Billing 的 job trigger 入口只给 agent-proxy 使用。它不是用户面板 API；
 # 没有同时提供域名和允许访问的 agent CIDR 时不渲染站点，避免误把
 # /v1/jobs/* 暴露到公网。
@@ -157,6 +165,7 @@ web_saas_host_config_secrets:
   GOOGLE_CLIENT_SECRET: "{{ lookup('ansible.builtin.env', 'OAUTH_GOOGLE_CLIENT_SECRET') | default('', true) }}"
 
   INTERNAL_SERVICE_TOKEN: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}"
+  XWORKMATE_BRIDGE_SERVER_URL: "{{ web_saas_host_config_bridge_server_url }}"
 
   # Stripe 密钥归 Vault kv/billing-service, 与本角色其余密钥不同源 ——
   # 那个 KV 是计费域专用, 按 SANDBOX_/PROD_ 前缀存两套。留空时 accounts
