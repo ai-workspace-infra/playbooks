@@ -65,11 +65,24 @@
     that:
       - web_saas_host_config_console_domain | trim | length > 0
       - web_saas_host_config_accounts_domain | trim | length > 0
+      - web_saas_host_config_target_domain_base | trim | length > 0
+      - web_saas_host_config_deploy_env | trim | length > 0
       - web_saas_host_config_accounts_forwarded_host | trim | length > 0
     fail_msg: >-
-      WEB_SAAS_CONSOLE_DOMAIN, WEB_SAAS_ACCOUNTS_DOMAIN and
-      WEB_SAAS_ACCOUNTS_FORWARDED_HOST must be set — Caddy needs them to
-      request certificates, route by host, and preserve tenant identity.
+      WEB_SAAS_CONSOLE_DOMAIN, WEB_SAAS_ACCOUNTS_DOMAIN, TARGET_DOMAIN_BASE
+      and DEPLOY_ENV must be set — Caddy needs the public aliases while
+      Accounts needs TARGET_DOMAIN_BASE to preserve shared tenant identity.
+
+- name: Assert the public Accounts alias matches the target domain base
+  ansible.builtin.assert:
+    that:
+      - web_saas_host_config_accounts_domain | trim ==
+        'accounts-' ~ web_saas_host_config_deploy_env ~ '.' ~ web_saas_host_config_target_domain_base
+    fail_msg: >-
+      WEB_SAAS_ACCOUNTS_DOMAIN must be
+      accounts-{{ web_saas_host_config_deploy_env }}.{{ web_saas_host_config_target_domain_base }};
+      the public environment alias must remain separate from the shared tenant
+      host {{ web_saas_host_config_accounts_forwarded_host }}.
 
 - name: Report Billing external ingress mode
   ansible.builtin.debug:

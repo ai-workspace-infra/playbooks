@@ -42,7 +42,13 @@ compose 里这些路径**必须是绝对的**:Doco-CD 每次部署都把 gitops 
 - `WEB_SAAS_POSTGRES_PASSWORD`、`ACCOUNT_PG_PASSWORD`
 - `AUTH_TOKEN_PUBLIC_TOKEN`、`AUTH_TOKEN_REFRESH_SECRET`、`AUTH_TOKEN_ACCESS_SECRET`
 - `WEB_SAAS_STUNNEL_{CA_CERT,SERVER_CERT,SERVER_KEY}_B64`(base64,避免换行在 env 里被破坏)
-- `WEB_SAAS_CONSOLE_DOMAIN`、`WEB_SAAS_ACCOUNTS_DOMAIN`
+- `WEB_SAAS_CONSOLE_DOMAIN`、`WEB_SAAS_ACCOUNTS_DOMAIN`、`TARGET_DOMAIN_BASE`、`DEPLOY_ENV`
+
+`TARGET_DOMAIN_BASE` 是部署和迁移共用的唯一 base-domain 输入。它同时决定
+Accounts 收到的共享租户 host（例如 `onwalk.net`）以及公开环境别名的后缀；
+例如 `DEPLOY_ENV=uat` 时，公开地址是 `accounts-uat.onwalk.net`，Caddy 转发
+给 Accounts 的 `X-Forwarded-Host` 则是 `onwalk.net`。不要传入
+`source_domain_base`，也不要在 role 或 Caddyfile 中硬编码域名。
 
 **可选的跨节点 Billing 入口**:
 
