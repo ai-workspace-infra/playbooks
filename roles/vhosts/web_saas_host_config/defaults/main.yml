@@ -134,6 +134,7 @@ web_saas_host_config_secrets:
 
   # accounts system admin bootstrap credential. The value is owned by
   # kv/data/CICD and injected by the platform-ops workflow.
+  ROOT_BOOTSTRAP_EMAIL: "{{ lookup('ansible.builtin.env', 'ROOT_BOOTSTRAP_EMAIL') | default('', true) }}"
   ROOT_BOOTSTRAP_PASSWORD: "{{ lookup('ansible.builtin.env', 'ROOT_BOOTSTRAP_PASSWORD') | default('', true) }}"
 
   ACCOUNT_PG_USER: "{{ web_saas_host_config_account_pg_user }}"
@@ -182,6 +183,7 @@ web_saas_host_config_secrets:
 # 暴露问题, 那时 job 早已报绿。
 web_saas_host_config_required_secrets:
   - POSTGRES_PASSWORD
+  - ROOT_BOOTSTRAP_EMAIL
   - ROOT_BOOTSTRAP_PASSWORD
   - ACCOUNT_PG_PASSWORD
   - AUTH_TOKEN_PUBLIC_TOKEN
