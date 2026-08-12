@@ -48,6 +48,8 @@
 			span http.server.request
 		}
 		reverse_proxy accounts:8080 {
+			# Public host is accounts-${DEPLOY_ENV}.${TARGET_DOMAIN_BASE}; the
+			# upstream tenant identity is TARGET_DOMAIN_BASE itself.
 			header_up X-Forwarded-Host {{ web_saas_host_config_accounts_forwarded_host }}
 		}
 	}
@@ -106,6 +108,7 @@ https://{{ web_saas_host_config_accounts_domain }} {
 		span http.server.request
 	}
 	reverse_proxy accounts:8080 {
+		# Keep the public environment alias separate from the shared tenant host.
 		header_up X-Forwarded-Host {{ web_saas_host_config_accounts_forwarded_host }}
 	}
 }
