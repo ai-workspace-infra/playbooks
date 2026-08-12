@@ -132,12 +132,9 @@ web_saas_host_config_secrets:
   POSTGRES_PASSWORD: "{{ web_saas_host_config_postgres_root_password }}"
   POSTGRES_DB: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_POSTGRES_DB') | default('postgres', true) }}"
 
-  # accounts system admin bootstrap credentials. The password is owned by
-  # kv/data/CICD and injected by the platform-ops workflow. The email is a
-  # public identity (not a secret); keep the documented default so fresh
-  # compose deployments can bootstrap when older Vault mounts do not carry
-  # ROOT_BOOTSTRAP_EMAIL.
-  ROOT_BOOTSTRAP_EMAIL: "{{ lookup('ansible.builtin.env', 'ROOT_BOOTSTRAP_EMAIL') | default('admin@svc.plus', true) }}"
+  # accounts system admin bootstrap credential. The value is owned by
+  # kv/data/CICD and injected by the platform-ops workflow.
+  ROOT_BOOTSTRAP_EMAIL: "{{ lookup('ansible.builtin.env', 'ROOT_BOOTSTRAP_EMAIL') | default('', true) }}"
   ROOT_BOOTSTRAP_PASSWORD: "{{ lookup('ansible.builtin.env', 'ROOT_BOOTSTRAP_PASSWORD') | default('', true) }}"
 
   ACCOUNT_PG_USER: "{{ web_saas_host_config_account_pg_user }}"
@@ -186,6 +183,7 @@ web_saas_host_config_secrets:
 # 暴露问题, 那时 job 早已报绿。
 web_saas_host_config_required_secrets:
   - POSTGRES_PASSWORD
+  - ROOT_BOOTSTRAP_EMAIL
   - ROOT_BOOTSTRAP_PASSWORD
   - ACCOUNT_PG_PASSWORD
   - AUTH_TOKEN_PUBLIC_TOKEN

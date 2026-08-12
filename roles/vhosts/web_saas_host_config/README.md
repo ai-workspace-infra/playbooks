@@ -43,6 +43,7 @@ compose 里这些路径**必须是绝对的**:Doco-CD 每次部署都把 gitops 
 - `AUTH_TOKEN_PUBLIC_TOKEN`、`AUTH_TOKEN_REFRESH_SECRET`、`AUTH_TOKEN_ACCESS_SECRET`
 - `WEB_SAAS_STUNNEL_{CA_CERT,SERVER_CERT,SERVER_KEY}_B64`(base64,避免换行在 env 里被破坏)
 - `WEB_SAAS_CONSOLE_DOMAIN`、`WEB_SAAS_ACCOUNTS_DOMAIN`、`TARGET_DOMAIN_BASE`、`DEPLOY_ENV`
+- `ROOT_BOOTSTRAP_EMAIL`、`ROOT_BOOTSTRAP_PASSWORD`（Accounts 首次 root 引导凭据，均由 Vault 注入）
 
 `TARGET_DOMAIN_BASE` 是部署和迁移共用的唯一 base-domain 输入。它同时决定
 Accounts 收到的共享租户 host（例如 `onwalk.net`）以及公开环境别名的后缀；
