@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Patch install.svc.plus Xray API endpoints without touching proxy inbounds."""
+"""Patch Xray metrics API endpoints without touching proxy inbounds."""
 
 from __future__ import annotations
 
@@ -124,7 +124,7 @@ def main() -> int:
 
         stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H%M%S")
         for original, candidate in candidates:
-            backup = original.with_name(f"{original.name}.bak.install-xray-metrics.{stamp}")
+            backup = original.with_name(f"{original.name}.bak.xray-exporter.{stamp}")
             shutil.copy2(original, backup)
             os.replace(candidate, original)
             print(f"Patched {original}; backup={backup}")

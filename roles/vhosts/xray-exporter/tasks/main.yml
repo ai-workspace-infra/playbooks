@@ -1,4 +1,49 @@
 ---
+- name: Require Xray metrics repair certificate domain
+  ansible.builtin.assert:
+    that:
+      - xray_exporter_tcp_certificate_domain | trim | length > 0
+    fail_msg: >-
+      xray_exporter_tcp_certificate_domain must be set when
+      xray_exporter_repair_xray_services_enabled=true.
+  when: xray_exporter_repair_xray_services_enabled | bool
+
+- name: Verify Xray metrics repair certificate files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ xray_exporter_tcp_certificate_file }}"
+    - "{{ xray_exporter_tcp_key_file }}"
+  register: xray_exporter_repair_certificates
+  when: xray_exporter_repair_xray_services_enabled | bool
+
+- name: Require Xray metrics repair certificate files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+    fail_msg: "Required Xray TLS file is missing: {{ item.item }}"
+  loop: "{{ xray_exporter_repair_certificates.results | default([]) }}"
+  when: xray_exporter_repair_xray_services_enabled | bool
+
+- name: Repair Xray metrics API ports and TCP certificate atomically
+  ansible.builtin.script: >-
+    {{ role_path }}/files/patch_xray_metrics.py
+    --xhttp-config {{ xray_exporter_xray_config_path }}
+    --tcp-config {{ xray_exporter_tcp_xray_config_path }}
+    --xray-binary {{ xray_exporter_xray_binary_path }}
+    --xhttp-api-port {{ xray_exporter_xray_api_port }}
+    --tcp-api-port {{ xray_exporter_tcp_xray_api_port }}
+    --tcp-certificate-file {{ xray_exporter_tcp_certificate_file }}
+    --tcp-key-file {{ xray_exporter_tcp_key_file }}
+  register: xray_exporter_repair
+  changed_when: "'No changes required' not in xray_exporter_repair.stdout"
+  notify: Restart Xray services
+  when: xray_exporter_repair_xray_services_enabled | bool
+
+- name: Apply Xray service repair before starting exporter
+  ansible.builtin.meta: flush_handlers
+
 - name: Determine architecture
   ansible.builtin.set_fact:
     xray_exporter_arch: >-
