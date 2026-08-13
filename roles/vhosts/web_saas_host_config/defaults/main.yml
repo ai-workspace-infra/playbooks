@@ -83,13 +83,16 @@ web_saas_host_config_deploy_env: >-
   {{ lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('', true) | trim }}
 web_saas_host_config_accounts_forwarded_host: >-
   {{ web_saas_host_config_target_domain_base }}
+web_saas_host_config_bridge_domain: >-
+  bridge-{{ web_saas_host_config_deploy_env }}.{{ web_saas_host_config_target_domain_base }}
 # The Bridge endpoint is deployment-owned, not derived from the Accounts
 # public hostname. It is rendered into the existing secrets.env that Accounts
 # already consumes, so a normal host reconciliation can seed the shared
 # profile without embedding a domain in the service image or GitOps manifest.
 web_saas_host_config_bridge_server_url: >-
   {{ lookup('ansible.builtin.env', 'XWORKMATE_BRIDGE_SERVER_URL')
-     | default(lookup('ansible.builtin.env', 'BRIDGE_SERVER_URL') | default('', true), true)
+     | default(lookup('ansible.builtin.env', 'BRIDGE_SERVER_URL')
+       | default('https://' ~ web_saas_host_config_bridge_domain, true), true)
      | trim }}
 # Billing 的 job trigger 入口只给 agent-proxy 使用。它不是用户面板 API；
 # 没有同时提供域名和允许访问的 agent CIDR 时不渲染站点，避免误把
@@ -142,7 +145,9 @@ web_saas_host_config_secrets:
 
   # accounts system admin bootstrap credential. The value is owned by
   # kv/data/CICD and injected by the platform-ops workflow.
-  ROOT_BOOTSTRAP_EMAIL: "{{ lookup('ansible.builtin.env', 'ROOT_BOOTSTRAP_EMAIL') | default('', true) }}"
+  # Root identity is environment-derived.  Do not reuse a source-zone email
+  # (for example admin@svc.plus) after deploying into another domain.
+  ROOT_BOOTSTRAP_EMAIL: "admin@{{ web_saas_host_config_target_domain_base }}"
   ROOT_BOOTSTRAP_PASSWORD: "{{ lookup('ansible.builtin.env', 'ROOT_BOOTSTRAP_PASSWORD') | default('', true) }}"
 
   ACCOUNT_PG_USER: "{{ web_saas_host_config_account_pg_user }}"
@@ -166,6 +171,12 @@ web_saas_host_config_secrets:
 
   INTERNAL_SERVICE_TOKEN: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}"
   XWORKMATE_BRIDGE_SERVER_URL: "{{ web_saas_host_config_bridge_server_url }}"
+  XWORKMATE_SHARED_TENANT_DOMAIN: "{{ web_saas_host_config_target_domain_base }}"
+  XWORKMATE_SHARED_TENANT_DOMAINS: "{{ web_saas_host_config_target_domain_base }}"
+  BRIDGE_ACCOUNTS_SERVICE_TOKEN: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}"
+  # Browser-origin validation is also deployment-owned: never inherit the
+  # source-zone default compiled into the Bridge image.
+  ACP_ALLOWED_ORIGINS: "https://{{ web_saas_host_config_console_domain }}"
 
   # Stripe 密钥归 Vault kv/billing-service, 与本角色其余密钥不同源 ——
   # 那个 KV 是计费域专用, 按 SANDBOX_/PROD_ 前缀存两套。留空时 accounts
@@ -198,6 +209,7 @@ web_saas_host_config_required_secrets:
   - AUTH_TOKEN_PUBLIC_TOKEN
   - AUTH_TOKEN_REFRESH_SECRET
   - AUTH_TOKEN_ACCESS_SECRET
+  - INTERNAL_SERVICE_TOKEN
 
 # TLS 证书。stunnel 用自签 CA, 三份 PEM 由流水线从 Vault 取出后经环境
 # 变量传入(base64, 避免换行在 env 里被破坏)。
