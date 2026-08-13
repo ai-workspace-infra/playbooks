@@ -145,6 +145,15 @@
   when: web_saas_host_config_bridge_server_url | length > 0
   no_log: true
 
+- name: Assert managed Bridge URL matches the deployment domain
+  ansible.builtin.assert:
+    that:
+      - web_saas_host_config_bridge_server_url == 'https://' ~ web_saas_host_config_bridge_domain
+    fail_msg: >-
+      XWORKMATE_BRIDGE_SERVER_URL must be the managed deployment endpoint
+      https://{{ web_saas_host_config_bridge_domain }}. Do not route UAT
+      profile sync to a source-zone or separately unmanaged Bridge.
+
 - name: Write stunnel TLS material
   ansible.builtin.copy:
     content: "{{ item.value | b64decode }}"

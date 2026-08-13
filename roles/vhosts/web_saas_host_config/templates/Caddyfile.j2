@@ -62,6 +62,14 @@
 		reverse_proxy console:3000
 	}
 
+	@bridge host {{ web_saas_host_config_bridge_domain }}
+	handle @bridge {
+		tracing {
+			span http.server.request
+		}
+		reverse_proxy bridge:8787
+	}
+
 	{# agent-proxy/Vector 通过这个入口投递 Billing 快照。域名和 agent CIDR
 	   都由部署流水线提供时才生成, Caddy 先做源 IP 限制, Billing ingest
 	   再用与 Accounts 相同的 INTERNAL_SERVICE_TOKEN 做 Bearer 认证。 #}
@@ -111,6 +119,14 @@ https://{{ web_saas_host_config_accounts_domain }} {
 		# Keep the public environment alias separate from the shared tenant host.
 		header_up X-Forwarded-Host {{ web_saas_host_config_accounts_forwarded_host }}
 	}
+}
+
+https://{{ web_saas_host_config_bridge_domain }} {
+	encode zstd gzip
+	tracing {
+		span http.server.request
+	}
+	reverse_proxy bridge:8787
 }
 
 {% if web_saas_host_config_billing_domain | trim | length > 0 and web_saas_host_config_billing_allowed_cidrs | trim | length > 0 %}
