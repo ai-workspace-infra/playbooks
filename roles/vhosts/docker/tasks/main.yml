@@ -1,6 +1,12 @@
----
+- name: Check if Docker is already installed
+  ansible.builtin.command: docker --version
+  register: docker_bin_check
+  failed_when: false
+  changed_when: false
+
 - name: Coordinate Debian package manager before Docker installation
   ansible.builtin.import_tasks: apt_preflight.yml
+  when: docker_bin_check.rc != 0
 
 - name: Detect supported platform
   ansible.builtin.set_fact:
@@ -11,6 +17,7 @@
         else 'rocky' if ansible_distribution == 'Rocky' and (ansible_distribution_major_version | int) in [8, 9, 10]
         else 'unsupported'
       }}
+  when: docker_bin_check.rc != 0
 
 - name: Determine repository architecture
   ansible.builtin.set_fact:
@@ -20,7 +27,9 @@
         else 'arm64' if ansible_architecture in ['aarch64', 'arm64']
         else ansible_architecture
       }}
-  when: ansible_distribution == 'Ubuntu'
+  when:
+    - docker_bin_check.rc != 0
+    - ansible_distribution == 'Ubuntu'
 
 - name: Determine repository architecture for Debian
   ansible.builtin.set_fact:
@@ -30,16 +39,21 @@
         else 'arm64' if ansible_architecture in ['aarch64', 'arm64']
         else ansible_architecture
       }}
-  when: ansible_distribution == 'Debian'
+  when:
+    - docker_bin_check.rc != 0
+    - ansible_distribution == 'Debian'
 
 - name: Ensure platform is supported
   ansible.builtin.assert:
     that: docker_platform != 'unsupported'
     fail_msg: >-
       Docker installation is only supported on Debian 11/12/13, Ubuntu 22.04/24.04/26.04, and Rocky Linux 8/9/10.
+  when: docker_bin_check.rc != 0
 
 - name: Install Docker on Ubuntu
-  when: docker_platform == 'ubuntu'
+  when:
+    - docker_bin_check.rc != 0
+    - docker_platform | default('') == 'ubuntu'
   block:
     - name: Install required packages
       ansible.builtin.apt:
@@ -97,7 +111,9 @@
         APT_LISTCHANGES_FRONTEND: none
 
 - name: Install Docker on Debian
-  when: docker_platform == 'debian'
+  when:
+    - docker_bin_check.rc != 0
+    - docker_platform | default('') == 'debian'
   block:
     - name: Install required packages
       ansible.builtin.apt:
@@ -155,7 +171,9 @@
         APT_LISTCHANGES_FRONTEND: none
 
 - name: Install Docker on Rocky Linux
-  when: docker_platform == 'rocky'
+  when:
+    - docker_bin_check.rc != 0
+    - docker_platform | default('') == 'rocky'
   block:
     - name: Install required packages
       ansible.builtin.package:
