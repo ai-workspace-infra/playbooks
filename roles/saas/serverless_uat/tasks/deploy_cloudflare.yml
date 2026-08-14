@@ -1,0 +1,23 @@
+---
+# -----------------------------------------------------------------------------
+# 部署 Cloudflare Worker 与 Cloudflare Pages 任务
+# -----------------------------------------------------------------------------
+
+- name: Deploy Cloudflare Worker edge-gateway
+  ansible.builtin.command: npx wrangler deploy --env uat
+  args:
+    chdir: "{{ cloudflare_worker_dir }}"
+  when: cloudflare_worker_dir is defined
+  failed_when: false
+  changed_when: true
+
+- name: Deploy Cloudflare Pages portal
+  ansible.builtin.command: >-
+    npx wrangler pages deploy out
+    --project-name={{ cloudflare_pages_project_name }}
+    --branch=uat
+  args:
+    chdir: "{{ cloudflare_portal_dir }}"
+  when: cloudflare_portal_dir is defined
+  failed_when: false
+  changed_when: true

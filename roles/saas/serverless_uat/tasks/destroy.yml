@@ -1,0 +1,14 @@
+---
+# -----------------------------------------------------------------------------
+# 销毁 UAT 临时计算任务 (仅销毁 Cloud Run，Supabase 永久保留)
+# -----------------------------------------------------------------------------
+
+- name: Teardown ephemeral Cloud Run services
+  ansible.builtin.command: >-
+    gcloud run services delete uat-{{ item.name }}
+    --project={{ cloud_run_project_id }}
+    --region={{ cloud_run_region }}
+    --quiet
+  loop: "{{ serverless_microservices }}"
+  failed_when: false
+  changed_when: true
