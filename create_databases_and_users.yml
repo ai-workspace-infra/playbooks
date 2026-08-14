@@ -150,13 +150,14 @@
       failed_when: false
       changed_when: false
 
-    # 显式传入的 POSTGRESQL_DEPLOY_MODE 优先; 否则按实际探测结果判定。
+    # Compose 模式只接受已探测到的目标容器。此前容器缺失时仍强制进入
+    # compose 分支，最终把错误延后并隐藏在 CREATE ROLE 的 no_log 输出里。
     - name: Resolve effective PostgreSQL topology
       ansible.builtin.set_fact:
         pg_topology: >-
-          {{ 'compose' if (lookup('env', 'POSTGRESQL_DEPLOY_MODE') == 'compose'
-                           or (detected_pg.stdout | default('') | trim) != '')
-             else ('native' if (psql_check.rc | default(-1)) == 0 else 'none') }}
+          {{ 'compose' if (detected_pg.stdout | default('') | trim) != ''
+             else ('none' if postgresql_deploy_mode_effective == 'compose'
+                   else ('native' if (psql_check.rc | default(-1)) == 0 else 'none')) }}
         pg_container: "{{ (detected_pg.stdout | default('') | trim) or pg_container_default }}"
 
     # 探测不到可用 PostgreSQL 时必须失败。跳过会让建库整体静默不执行, 而后续
