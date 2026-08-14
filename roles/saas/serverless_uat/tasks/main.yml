@@ -1,0 +1,17 @@
+---
+# -----------------------------------------------------------------------------
+# UAT on Serverless 主任务入口
+# -----------------------------------------------------------------------------
+
+- name: Display UAT deployment banner
+  ansible.builtin.debug:
+    msg: "==> Starting UAT Serverless Stack Provisioning (Region: {{ cloud_run_region }}, Project: {{ cloud_run_project_id }})"
+
+- name: Include Cloud Run deployment tasks
+  ansible.builtin.include_tasks: deploy_cloudrun.yml
+
+- name: Include Cloudflare Worker & Pages deployment tasks
+  ansible.builtin.include_tasks: deploy_cloudflare.yml
+
+- name: Include smoke test validation tasks
+  ansible.builtin.include_tasks: smoke_test.yml

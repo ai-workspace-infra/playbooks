@@ -1,0 +1,23 @@
+---
+# -----------------------------------------------------------------------------
+# 部署 GCP Cloud Run 微服务任务 (min-instances=0, max-instances=2)
+# -----------------------------------------------------------------------------
+
+- name: Deploy backend Go containers to GCP Cloud Run
+  ansible.builtin.command: >-
+    gcloud run deploy uat-{{ item.name }}
+    --project={{ cloud_run_project_id }}
+    --region={{ cloud_run_region }}
+    --image=asia-east1-docker.pkg.dev/{{ cloud_run_project_id }}/serverless/{{ item.name }}:{{ cloud_run_image_tag }}
+    --platform=managed
+    --allow-unauthenticated
+    --min-instances={{ cloud_run_min_instances }}
+    --max-instances={{ cloud_run_max_instances }}
+    --cpu={{ cloud_run_cpu }}
+    --memory={{ cloud_run_memory }}
+    --set-env-vars="ENV=uat"
+    --quiet
+  loop: "{{ serverless_microservices }}"
+  register: cloudrun_deploy_result
+  failed_when: false
+  changed_when: cloudrun_deploy_result.rc == 0

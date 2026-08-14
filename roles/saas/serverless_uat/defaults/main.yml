@@ -1,0 +1,32 @@
+---
+# -----------------------------------------------------------------------------
+# UAT on Serverless Ansible Role 默认配置
+# -----------------------------------------------------------------------------
+
+# Vault 服务与凭据路径
+vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
+vault_serverless_base_path: "kv/data/uat/serverless"
+
+# GCP Cloud Run 配置
+cloud_run_project_id: "ai-workspace-uat-project"
+cloud_run_region: "asia-east1"
+cloud_run_min_instances: 0
+cloud_run_max_instances: 2
+cloud_run_cpu: 1
+cloud_run_memory: "512Mi"
+cloud_run_image_tag: "latest"
+
+# 部署目标微服务列表
+serverless_microservices:
+  - name: "accounts"
+    port: 8080
+  - name: "billing-service"
+    port: 8080
+  - name: "content-service"
+    port: 8080
+
+# Cloudflare 配置
+cloudflare_worker_dir: "/Users/shenlan/workspaces/ai-workspace-service/edge-gateway.svc.plus"
+cloudflare_portal_dir: "/Users/shenlan/workspaces/ai-workspace-service/portal"
+cloudflare_pages_project_name: "ai-workspace-portal-uat"

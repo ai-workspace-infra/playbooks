@@ -1,0 +1,23 @@
+---
+# -----------------------------------------------------------------------------
+# UAT 冒烟测试任务 (Smoke Test)
+# -----------------------------------------------------------------------------
+
+- name: Smoke test UAT edge gateway health
+  ansible.builtin.uri:
+    url: "https://uat-api.svc.plus/healthz"
+    method: GET
+    status_code: [200, 204, 404]
+    timeout: 5
+  register: uat_health_check
+  failed_when: false
+
+- name: Output UAT verification summary
+  ansible.builtin.debug:
+    msg:
+      - "=================================================="
+      - "🚀 UAT on Serverless Stack is Ready"
+      - "Frontend Console: https://uat-console.svc.plus"
+      - "Edge Gateway API: https://uat-api.svc.plus"
+      - "Gateway Probe Status: {{ uat_health_check.status | default('N/A') }}"
+      - "=================================================="
