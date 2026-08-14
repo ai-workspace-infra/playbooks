@@ -430,7 +430,7 @@
             - exec
             - -i
             - -e
-            - "PGPASSWORD={{ item.item.password }}"
+            - "PGPASSWORD={{ item.password }}"
             - -e
             - PGCONNECT_TIMEOUT=5
             - "{{ pg_container }}"
@@ -438,27 +438,21 @@
             - -h
             - "{{ pg_container_probe_host }}"
             - -U
-            - "{{ item.item.user }}"
+            - "{{ item.user }}"
             - -d
-            - "{{ item.item.db }}"
+            - "{{ item.db }}"
             - -tAc
             - SELECT 1
-        loop: "{{ user_check_results.results }}"
+        loop: "{{ db_spec }}"
         register: role_auth_results
         changed_when: false
-        # failed_when must judge *this* psql attempt. It previously read
-        # item.rc / item.stdout, which are the fields of the loop item -- the
-        # result of the earlier role-existence probe, not of the connection
-        # being verified. Two consequences, both seen in UAT:
-        #   * a genuine auth failure was masked, because the probe's rc was 0;
-        #   * on a fresh database every role is newly created, so the probe's
-        #     stdout is empty rather than '1' and the check failed for all
-        #     roles at once, aborting the play before the schema was seeded.
+        # failed_when must judge *this* psql attempt.
         failed_when: >-
           role_auth_results.rc | default(1) != 0 or
           (role_auth_results.stdout | default('') | trim) != '1'
         retries: 3
         delay: 2
+        until: role_auth_results.rc | default(1) == 0 and (role_auth_results.stdout | default('') | trim) == '1'
         no_log: true
         when: pg_topology == 'compose'
   
