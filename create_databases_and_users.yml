@@ -176,72 +176,61 @@
     - name: Conditional DB creation block
       when: pg_topology in ['compose', 'native']
       block:
-      - name: Create dedicated users
+      - name: Fetch existing roles in a single query
         ansible.builtin.command: >
           docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -tAc
-          "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ item.user }}'"
-        loop: "{{ resolved_db_configs }}"
-        register: user_check_results
+          "SELECT rolname FROM pg_catalog.pg_roles;"
+        register: existing_roles_raw
         changed_when: false
-        failed_when: false
         when: pg_topology == 'compose'
         no_log: true
-  
-      - name: Create dedicated users via PostgreSQL TCP
+
+      - name: Fetch existing roles via PostgreSQL TCP in a single query
         ansible.builtin.command: >
           psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -tAc
-          "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ item.user }}'"
-        loop: "{{ resolved_db_configs }}"
-        # 不能与 compose 分支共用 register 名: 被 skip 的任务同样会写 register,
-        # 会把已运行分支的结果覆盖成没有 stdout 的 skip 字典
-        register: user_check_results_tcp
+          "SELECT rolname FROM pg_catalog.pg_roles;"
+        register: existing_roles_raw_tcp
         changed_when: false
-        failed_when: false
         environment:
           PGPASSWORD: "{{ pg_root_password }}"
         when: pg_topology != 'compose'
         no_log: true
-  
-      - name: Execute CREATE ROLE if not exists
+
+      - name: Parse existing roles list
+        ansible.builtin.set_fact:
+          existing_roles_list: >-
+            {{ (existing_roles_raw.stdout_lines | default([]))
+               if pg_topology == 'compose'
+               else (existing_roles_raw_tcp.stdout_lines | default([])) }}
+
+      - name: Fetch existing databases in a single query
         ansible.builtin.command: >
-          docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -c
-          "CREATE ROLE {{ item.item.user }} LOGIN PASSWORD '{{ item.item.password }}';"
-        loop: "{{ user_check_results.results }}"
-        register: create_user_results
-        changed_when: true
-        when:
-          - pg_topology == 'compose'
-          - (item.stdout | default('')) | trim != '1'
-        no_log: true
-  
-      - name: Execute CREATE ROLE if not exists via PostgreSQL TCP
-        ansible.builtin.command:
-          cmd: >-
-            psql -h {{ pg_root_host }} -p {{ pg_root_port }}
-            -U {{ pg_root_user }} -d postgres
-            -c "CREATE ROLE {{ item.item.user }} LOGIN PASSWORD '{{ item.item.password }}';"
-        environment:
-          PGPASSWORD: "{{ pg_root_password }}"
-        loop: "{{ user_check_results_tcp.results }}"
-        register: create_user_results_tcp
-        changed_when: true
-        when:
-          - pg_topology != 'compose'
-          - (item.stdout | default('')) | trim != '1'
+          docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -tAc
+          "SELECT datname FROM pg_catalog.pg_database;"
+        register: existing_dbs_raw
+        changed_when: false
+        when: pg_topology == 'compose'
         no_log: true
 
+      - name: Fetch existing databases via PostgreSQL TCP in a single query
+        ansible.builtin.command: >
+          psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -tAc
+          "SELECT datname FROM pg_catalog.pg_database;"
+        register: existing_dbs_raw_tcp
+        changed_when: false
+        environment:
+          PGPASSWORD: "{{ pg_root_password }}"
+        when: pg_topology != 'compose'
+        no_log: true
+
+      - name: Parse existing databases list
+        ansible.builtin.set_fact:
+          existing_dbs_list: >-
+            {{ (existing_dbs_raw.stdout_lines | default([]))
+               if pg_topology == 'compose'
+               else (existing_dbs_raw_tcp.stdout_lines | default([])) }}
+
       # 收敛已存在角色的密码前, 先挡住"用自动生成的密码去改一个已在用的角色"。
-      #
-      # 密码解析顺序是 Env > Vault > 自动生成。自动生成出来的值不会写回 Vault,
-      # 也不会传给应用容器 —— 容器的密码来自部署侧的 ACCOUNT_DB_PASSWORD (Vault)。
-      # 因此一旦 Vault 读取返回空 (token 缺失 / 路径不对 / 键不存在), 下面的
-      # reconcile 就会把数据库角色改成一个只有本次 run 知道的随机密码, 而所有
-      # 正在运行的服务仍然拿着旧密码 —— 认证全线失败, 且现象要等到下一次新建
-      # 连接才浮现 (连接池里的旧连接还能用一段时间, 掩盖问题)。
-      #
-      # 加入 reconcile 之前这只是"不同步", 加入之后升级成"主动改坏", 所以这里
-      # 必须硬失败而不是继续。新建角色 (CREATE ROLE 分支) 不受影响: 那时还没有
-      # 任何消费者持有旧密码, 自动生成是安全的。
       - name: Refuse to reconcile a pre-existing role with a generated password
         ansible.builtin.fail:
           msg: >-
@@ -254,21 +243,13 @@
             re-run.
         vars:
           generated_pw_existing_roles: >-
-            {{ ((user_check_results.results | default([]))
-                + (user_check_results_tcp.results | default([])))
-               | selectattr('item', 'defined')
-               | selectattr('stdout', 'defined')
-               | selectattr('stdout', 'search', '^1$')
-               | map(attribute='item')
+            {{ resolved_db_configs
+               | selectattr('user', 'in', existing_roles_list)
                | selectattr('source', 'equalto', 'generated')
                | map(attribute='user') | list }}
         when: generated_pw_existing_roles | length > 0
 
-      # 角色若已存在 (例如 postgres 数据卷跨 run 存活下来), 上面的 CREATE ROLE
-      # 会被跳过, 密码永远停留在这个角色第一次被创建时的值, 与
-      # resolved_db_configs (Env > Vault > 自动生成解析出的当前值) 脱节, 导致
-      # 应用侧连接密码认证失败。这里对已存在的角色显式收敛一次密码。
-      - name: Reconcile password for pre-existing roles
+      - name: Batch execute CREATE / ALTER ROLE statements
         ansible.builtin.command:
           argv:
             - docker
@@ -284,21 +265,18 @@
             - postgres
             - -v
             - ON_ERROR_STOP=1
-            - -v
-            - "role_name={{ item.item.user }}"
-            - -v
-            - "role_password={{ item.item.password }}"
           stdin: >-
-            SELECT format('ALTER ROLE %I PASSWORD %L', :'role_name', :'role_password') \gexec
-        loop: "{{ user_check_results.results }}"
-        register: sync_password_results
-        changed_when: true
-        when:
-          - pg_topology == 'compose'
-          - (item.stdout | default('')) | trim == '1'
+            {% for item in resolved_db_configs %}
+            {% if item.user not in existing_roles_list %}
+            CREATE ROLE {{ item.user }} LOGIN PASSWORD '{{ item.password }}';
+            {% else %}
+            ALTER ROLE {{ item.user }} WITH PASSWORD '{{ item.password }}';
+            {% endif %}
+            {% endfor %}
+        when: pg_topology == 'compose'
         no_log: true
 
-      - name: Reconcile password for pre-existing roles via PostgreSQL TCP
+      - name: Batch execute CREATE / ALTER ROLE statements via PostgreSQL TCP
         ansible.builtin.command:
           argv:
             - psql
@@ -312,66 +290,37 @@
             - postgres
             - -v
             - ON_ERROR_STOP=1
-            - -v
-            - "role_name={{ item.item.user }}"
-            - -v
-            - "role_password={{ item.item.password }}"
           stdin: >-
-            SELECT format('ALTER ROLE %I PASSWORD %L', :'role_name', :'role_password') \gexec
-        environment:
-          PGPASSWORD: "{{ pg_root_password }}"
-        loop: "{{ user_check_results_tcp.results }}"
-        register: sync_password_results_tcp
-        changed_when: true
-        when:
-          - pg_topology != 'compose'
-          - (item.stdout | default('')) | trim == '1'
-        no_log: true
-  
-      - name: Create dedicated databases and assign owners
-        ansible.builtin.command: >
-          docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -tc "SELECT 1 FROM pg_database WHERE datname = '{{ item.db }}'"
-        loop: "{{ resolved_db_configs }}"
-        register: db_check_results
-        changed_when: false
-        failed_when: false
-        when: pg_topology == 'compose'
-        no_log: true
-  
-      - name: Create dedicated databases and assign owners via PostgreSQL TCP
-        ansible.builtin.command: >
-          psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = '{{ item.db }}'"
-        loop: "{{ resolved_db_configs }}"
-        register: db_check_results_tcp
-        changed_when: false
-        failed_when: false
+            {% for item in resolved_db_configs %}
+            {% if item.user not in existing_roles_list %}
+            CREATE ROLE {{ item.user }} LOGIN PASSWORD '{{ item.password }}';
+            {% else %}
+            ALTER ROLE {{ item.user }} WITH PASSWORD '{{ item.password }}';
+            {% endif %}
+            {% endfor %}
         environment:
           PGPASSWORD: "{{ pg_root_password }}"
         when: pg_topology != 'compose'
         no_log: true
-  
-      - name: Execute CREATE DATABASE if not exists
+
+      - name: Execute CREATE DATABASE for missing databases
         ansible.builtin.command: >
-          docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -c "CREATE DATABASE {{ item.item.db }} OWNER {{ item.item.user }} ENCODING 'UTF8';"
-        loop: "{{ db_check_results.results }}"
+          docker exec -i {{ pg_container }} psql -U {{ pg_root_user }} -c "CREATE DATABASE {{ item.db }} OWNER {{ item.user }} ENCODING 'UTF8';"
+        loop: "{{ resolved_db_configs | rejectattr('db', 'in', existing_dbs_list) | list }}"
         register: create_db_results
         changed_when: true
-        when:
-          - pg_topology == 'compose'
-          - (item.stdout | default('')) | trim != '1'
+        when: pg_topology == 'compose'
         no_log: true
-  
-      - name: Execute CREATE DATABASE if not exists via PostgreSQL TCP
+
+      - name: Execute CREATE DATABASE for missing databases via PostgreSQL TCP
         ansible.builtin.command: >
-          psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -c "CREATE DATABASE {{ item.item.db }} OWNER {{ item.item.user }} ENCODING 'UTF8';"
-        loop: "{{ db_check_results_tcp.results }}"
+          psql -h {{ pg_root_host }} -p {{ pg_root_port }} -U {{ pg_root_user }} -d postgres -c "CREATE DATABASE {{ item.db }} OWNER {{ item.user }} ENCODING 'UTF8';"
+        loop: "{{ resolved_db_configs | rejectattr('db', 'in', existing_dbs_list) | list }}"
         register: create_db_results_tcp
         changed_when: true
         environment:
           PGPASSWORD: "{{ pg_root_password }}"
-        when:
-          - pg_topology != 'compose'
-          - (item.stdout | default('')) | trim != '1'
+        when: pg_topology != 'compose'
         no_log: true
 
       # Docker/PostgreSQL startup and the first application connection can
