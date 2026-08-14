@@ -1,6 +1,13 @@
 # The whole Caddy role is skipped when caddy_enabled is false (default on macOS
 # single-host deploys), so /etc/caddy is never touched and no caddy service is
 # expected. Override with -e caddy_enabled=true.
+- name: Check if Caddy is already installed
+  ansible.builtin.command: caddy version
+  register: caddy_bin_check
+  failed_when: false
+  changed_when: false
+  when: caddy_enabled | default(true) | bool
+
 - name: Configure Caddy reverse proxy
   when: caddy_enabled | default(true) | bool
   block:
@@ -12,6 +19,7 @@
         state: present
         update_cache: true
       when:
+        - caddy_bin_check.rc != 0
         # 用 major_version 比较: Debian 点位版本 (13.1) 和 trixie 预发布的
         # distribution_version 对 version('13', '==') 都判 False, 会整体跳过安装
         - "(ansible_facts['distribution'] == 'Debian' and (ansible_facts['distribution_major_version'] is version('13', '>='))) or (ansible_facts['distribution'] == 'Ubuntu' and (ansible_facts['distribution_version'] is version('24.04', '>=')))"
@@ -23,17 +31,20 @@
         owner: root
         group: root
         mode: '0755'
+      when: caddy_bin_check.rc != 0
 
     - name: Download Caddy GPG key
       ansible.builtin.get_url:
         url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
         dest: /etc/apt/keyrings/caddy-stable.asc
         mode: '0644'
+      when: caddy_bin_check.rc != 0
 
     - name: Dearmor Caddy GPG key
       ansible.builtin.command:
         cmd: gpg --dearmor -o /etc/apt/keyrings/caddy-stable.gpg /etc/apt/keyrings/caddy-stable.asc
         creates: /etc/apt/keyrings/caddy-stable.gpg
+      when: caddy_bin_check.rc != 0
 
     - name: Add Caddy repository (Debian)
       ansible.builtin.apt_repository:
@@ -41,6 +52,7 @@
         filename: caddy-stable
         state: present
       when:
+        - caddy_bin_check.rc != 0
         - ansible_facts['distribution'] == 'Debian'
         - ansible_facts['distribution_major_version'] is version('13', '>=')
 
@@ -50,6 +62,7 @@
         filename: caddy-stable
         state: present
       when:
+        - caddy_bin_check.rc != 0
         - ansible_facts['distribution'] == 'Ubuntu'
         - ansible_facts['distribution_version'] is version('24.04', '>=')
 
@@ -59,6 +72,7 @@
         state: present
         update_cache: true
       when:
+        - caddy_bin_check.rc != 0
         # 用 major_version 比较: Debian 点位版本 (13.1) 和 trixie 预发布的
         # distribution_version 对 version('13', '==') 都判 False, 会整体跳过安装
         - "(ansible_facts['distribution'] == 'Debian' and (ansible_facts['distribution_major_version'] is version('13', '>='))) or (ansible_facts['distribution'] == 'Ubuntu' and (ansible_facts['distribution_version'] is version('24.04', '>=')))"
