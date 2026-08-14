@@ -19,58 +19,100 @@ if [[ -z "${OBSERVE_URLS:-}" ]]; then
 fi
 
 timeout_seconds="${OBSERVE_TIMEOUT_SECONDS:-300}"
-poll_seconds="${OBSERVE_POLL_SECONDS:-15}"
+poll_seconds="${OBSERVE_POLL_SECONDS:-3}"
+curl_timeout_seconds="${OBSERVE_CURL_TIMEOUT_SECONDS:-5}"
+
+read -r -a observe_urls <<< "${OBSERVE_URLS}"
+if [[ "${#observe_urls[@]}" -eq 0 ]]; then
+  echo "::warning::${DOMAIN}/${DEPLOY_ENV} has no valid observe URL tokens."
+  exit 0
+fi
 
 # DNS 切换之前, 公网记录可能还指着旧主机(甚至指着一台已经销毁的机器), 那时候
 # 直接打域名量到的是别人, 探测结果毫无意义 —— 而且失败得像"新主机没起来"。
-# 给定 OBSERVE_RESOLVE_IP 时用 --resolve 把域名钉到本次部署的那台机器上,
-# 这样 observe 测的始终是"我刚部署的这台", 与 DNS 是否已经切换无关。
+# 给定 OBSERVE_RESOLVE_IP 时用 --resolve 把所有待探测域名钉到本次部署的
+# 那台机器上。必须一次性覆盖整个 OBSERVE_URLS 集合: console 的 307/302
+# 可能跳到 accounts 或其它域名, curl 不应在 DNS 切换前逃逸到公网解析。
 resolve_args=()
 if [[ -n "${OBSERVE_RESOLVE_IP:-}" ]]; then
   echo "Pinning observed hostnames to ${OBSERVE_RESOLVE_IP} (pre-DNS-cutover safe)."
+  declare -A resolve_hosts=()
+  for url in "${observe_urls[@]}"; do
+    host="${url#*://}"
+    host="${host%%/*}"
+    host="${host%%:*}"
+    if [[ -n "${host}" ]]; then
+      resolve_hosts["${host}"]=1
+    fi
+  done
+  for host in "${!resolve_hosts[@]}"; do
+    resolve_args+=(--resolve "${host}:443:${OBSERVE_RESOLVE_IP}")
+    resolve_args+=(--resolve "${host}:80:${OBSERVE_RESOLVE_IP}")
+  done
 fi
 
 curl_for() {
   local url="$1"
-  local -a args=(-sS -o /dev/null -w '%{http_code}' -L --max-time 15)
-  if [[ -n "${OBSERVE_RESOLVE_IP:-}" ]]; then
-    local host="${url#*://}"
-    host="${host%%/*}"
-    host="${host%%:*}"
-    args+=(--resolve "${host}:443:${OBSERVE_RESOLVE_IP}" --resolve "${host}:80:${OBSERVE_RESOLVE_IP}")
-  fi
+  # A 3xx from the local Caddy/Next.js stack is a successful readiness signal.
+  # Do not follow it here: following can leave the --resolve set when the
+  # redirect target is not in the observed URL list.
+  local -a args=(-sS -o /dev/null -w '%{http_code}' --max-time "${curl_timeout_seconds}")
+  args+=("${resolve_args[@]}")
   curl "${args[@]}" "${url}" 2>/dev/null
 }
 
 # Doco-CD 是轮询式的, 镜像还要现拉, 所以给一个窗口而不是一次定生死。
 #
-# 窗口按 URL 各算各的, 不能所有 URL 共用一个 deadline: 共用的话第一个
-# URL 卡满整个窗口后, 后面的 URL 一次都探不到就出循环, 报出来的是空状态
-# 而不是真实结果 —— 那等于把"没测"伪装成"测过了"。
 failures=()
+last_codes=()
+completed=()
+for index in "${!observe_urls[@]}"; do
+  last_codes["${index}"]=""
+  completed["${index}"]=false
+done
 
-for url in ${OBSERVE_URLS}; do
-  ok=false
-  last=""
-  deadline=$(( $(date +%s) + timeout_seconds ))
-  # 至少探一次, 循环条件用 do-while 语义, 避免 deadline 边界上零次探测。
-  while :; do
-    # 分开取 http_code 与 curl 自身退出码: TLS 握手失败时 http_code 是 000,
-    # 与"连上了但 502"是两种完全不同的故障, 合并成一个数字会把它们抹平。
-    code="$(curl_for "${url}")" || code="000"
-    if [[ "${code}" =~ ^[234] ]]; then
-      ok=true
-      last="${code}"
-      break
-    fi
-    last="${code}"
-    [[ $(date +%s) -lt $deadline ]] || break
-    sleep "${poll_seconds}"
+probe_dir="$(mktemp -d)"
+trap 'rm -rf "${probe_dir}"' EXIT
+
+deadline=$(( $(date +%s) + timeout_seconds ))
+while :; do
+  probe_pids=()
+  for index in "${!observe_urls[@]}"; do
+    [[ "${completed[${index}]}" == true ]] && continue
+    (
+      code="$(curl_for "${observe_urls[${index}]}")" || code="000"
+      printf '%s\n' "${code}" > "${probe_dir}/${index}"
+    ) &
+    probe_pids+=("$!")
   done
 
-  if [[ "${ok}" == true ]]; then
-    echo "OK   ${url} -> HTTP ${last}"
-  else
+  for pid in "${probe_pids[@]}"; do
+    wait "${pid}" || true
+  done
+
+  pending=false
+  for index in "${!observe_urls[@]}"; do
+    [[ "${completed[${index}]}" == true ]] && continue
+    url="${observe_urls[${index}]}"
+    code="$(<"${probe_dir}/${index}")"
+    last_codes["${index}"]="${code}"
+    if [[ "${code}" =~ ^[23] ]]; then
+      completed["${index}"]=true
+      echo "OK   ${url} -> HTTP ${code}"
+    else
+      pending=true
+    fi
+  done
+
+  [[ "${pending}" == false ]] && break
+  [[ $(date +%s) -lt "${deadline}" ]] || break
+  sleep "${poll_seconds}"
+done
+
+for index in "${!observe_urls[@]}"; do
+  if [[ "${completed[${index}]}" != true ]]; then
+    url="${observe_urls[${index}]}"
+    last="${last_codes[${index}]}"
     if [[ "${last}" == "000" ]]; then
       detail="no HTTP response (TLS handshake or connection failed)"
     else

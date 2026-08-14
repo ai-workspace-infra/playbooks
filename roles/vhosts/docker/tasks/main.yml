@@ -4,9 +4,21 @@
   failed_when: false
   changed_when: false
 
+- name: Check if Docker Compose plugin is already installed
+  ansible.builtin.command: docker compose version
+  register: docker_compose_check
+  failed_when: false
+  changed_when: false
+  when: docker_bin_check.rc == 0
+
+- name: Decide whether Docker installation is required
+  ansible.builtin.set_fact:
+    docker_golden_image_ready: >-
+      {{ docker_bin_check.rc == 0 and (docker_compose_check.rc | default(1)) == 0 }}
+
 - name: Coordinate Debian package manager before Docker installation
   ansible.builtin.import_tasks: apt_preflight.yml
-  when: docker_bin_check.rc != 0
+  when: not docker_golden_image_ready | bool
 
 - name: Detect supported platform
   ansible.builtin.set_fact:
@@ -17,7 +29,7 @@
         else 'rocky' if ansible_distribution == 'Rocky' and (ansible_distribution_major_version | int) in [8, 9, 10]
         else 'unsupported'
       }}
-  when: docker_bin_check.rc != 0
+  when: not docker_golden_image_ready | bool
 
 - name: Determine repository architecture
   ansible.builtin.set_fact:
@@ -28,7 +40,7 @@
         else ansible_architecture
       }}
   when:
-    - docker_bin_check.rc != 0
+    - not docker_golden_image_ready | bool
     - ansible_distribution == 'Ubuntu'
 
 - name: Determine repository architecture for Debian
@@ -40,7 +52,7 @@
         else ansible_architecture
       }}
   when:
-    - docker_bin_check.rc != 0
+    - not docker_golden_image_ready | bool
     - ansible_distribution == 'Debian'
 
 - name: Ensure platform is supported
@@ -48,11 +60,11 @@
     that: docker_platform != 'unsupported'
     fail_msg: >-
       Docker installation is only supported on Debian 11/12/13, Ubuntu 22.04/24.04/26.04, and Rocky Linux 8/9/10.
-  when: docker_bin_check.rc != 0
+  when: not docker_golden_image_ready | bool
 
 - name: Install Docker on Ubuntu
   when:
-    - docker_bin_check.rc != 0
+    - not docker_golden_image_ready | bool
     - docker_platform | default('') == 'ubuntu'
   block:
     - name: Install required packages
@@ -112,7 +124,7 @@
 
 - name: Install Docker on Debian
   when:
-    - docker_bin_check.rc != 0
+    - not docker_golden_image_ready | bool
     - docker_platform | default('') == 'debian'
   block:
     - name: Install required packages
@@ -172,7 +184,7 @@
 
 - name: Install Docker on Rocky Linux
   when:
-    - docker_bin_check.rc != 0
+    - not docker_golden_image_ready | bool
     - docker_platform | default('') == 'rocky'
   block:
     - name: Install required packages
