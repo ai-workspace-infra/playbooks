@@ -18,8 +18,13 @@
       {{ lookup('ansible.builtin.env', 'AGENT_REPO_URL')
          | default('https://github.com/x-evor/agent.svc.plus.git', true) }}
     agent_svc_plus_repo_version: >-
-      {{ lookup('ansible.builtin.env', 'AGENT_REPO_VERSION')
-         | default('main', true) }}
+      {{ lookup('ansible.builtin.env', 'AGENT_SVC_PLUS_VERSION')
+         | default(
+             'main'
+             if ('daily-build' in (lookup('ansible.builtin.env', 'AGENT_REPO_VERSION') | default('main', true)))
+             else (lookup('ansible.builtin.env', 'AGENT_REPO_VERSION') | default('main', true)),
+             true
+           ) }}
     agent_svc_plus_release_tag: >-
       {{ lookup('ansible.builtin.env', 'AGENT_RELEASE_TAG')
          | default(
