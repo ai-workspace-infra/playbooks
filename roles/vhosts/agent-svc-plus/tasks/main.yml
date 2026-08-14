@@ -78,6 +78,19 @@
     update: true
   notify: Restart agent-svc-plus
   when: agent_svc_plus_manage_source_checkout | bool
+  register: agent_svc_plus_clone_res
+  ignore_errors: true
+
+- name: Fallback to main branch if specified version is not found
+  ansible.builtin.git:
+    repo: "{{ agent_svc_plus_repo_url }}"
+    dest: "{{ agent_svc_plus_app_dir }}"
+    version: main
+    update: true
+  notify: Restart agent-svc-plus
+  when:
+    - agent_svc_plus_manage_source_checkout | bool
+    - agent_svc_plus_clone_res is failed
 
 - name: Build agent.svc.plus binary
   ansible.builtin.command: >-
