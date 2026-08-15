@@ -42,6 +42,12 @@ agent_status_interval: "1m"
 agent_sync_interval: "5m"
 agent_tls_insecure_skip_verify: false
 
+# Agent deployment runs before DNS cutover.  The controller may not be
+# reachable over the public TLS endpoint yet, so the deploy-only path installs
+# and starts the agent without making Xray runtime generation a pre-DNS gate.
+# The post-DNS verification stage owns this readiness check.
+agent_svc_plus_wait_for_runtime_config: true
+
 agent_billing_enabled: true
 agent_billing_base_url: "http://127.0.0.1:8081"
 agent_billing_http_timeout: "15s"

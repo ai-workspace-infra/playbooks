@@ -358,7 +358,9 @@
   loop:
     - "{{ xray_config_path }}"
     - "{{ xray_tcp_config_path }}"
-  when: xray_enabled | bool
+  when:
+    - xray_enabled | bool
+    - agent_svc_plus_wait_for_runtime_config | bool
 
 - name: Validate Xray configuration before starting services
   ansible.builtin.command: "{{ xray_binary_path }} run -test -config {{ item }}"
@@ -368,7 +370,9 @@
   loop:
     - "{{ xray_config_path }}"
     - "{{ xray_tcp_config_path }}"
-  when: xray_enabled | bool
+  when:
+    - xray_enabled | bool
+    - agent_svc_plus_wait_for_runtime_config | bool
 
 - name: Enable and start Xray services
   ansible.builtin.systemd:
@@ -379,4 +383,6 @@
   loop:
     - xray.service
     - xray-tcp.service
-  when: xray_enabled | bool
+  when:
+    - xray_enabled | bool
+    - agent_svc_plus_wait_for_runtime_config | bool
