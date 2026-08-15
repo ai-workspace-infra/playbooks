@@ -84,6 +84,24 @@
       the public environment alias must remain separate from the shared tenant
       host {{ web_saas_host_config_accounts_forwarded_host }}.
 
+# The Web SaaS ingress is the Caddy container managed by Doco-CD. Golden Images
+# also contain the system Caddy package for the agent-proxy domain, and its
+# default service can be enabled on a newly provisioned Web SaaS host. Leaving
+# that service alive makes it win the host's 80/443 sockets (or makes the
+# Compose port publish fail), so requests never reach web-saas-caddy. This is a
+# Web SaaS-only reconciliation; agent-proxy keeps managing the system Caddy.
+- name: Gather host service facts for the Web SaaS ingress
+  ansible.builtin.service_facts:
+
+- name: Stop and disable Golden Image system Caddy on Web SaaS hosts
+  ansible.builtin.systemd_service:
+    name: caddy.service
+    state: stopped
+    enabled: false
+  when:
+    - ansible_service_mgr == 'systemd'
+    - "'caddy.service' in ansible_facts.services"
+
 - name: Report Billing external ingress mode
   ansible.builtin.debug:
     msg: >-
