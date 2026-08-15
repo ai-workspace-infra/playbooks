@@ -93,6 +93,12 @@
     xray_enabled: >-
       {{ lookup('ansible.builtin.env', 'AGENT_XRAY_ENABLED')
          | default(true, true) | bool }}
+    # This playbook is used by the platform pipeline before DNS cutover.
+    # Runtime config generation is verified by the final post-DNS gate instead
+    # of blocking the deployment while the controller hostname is not public.
+    agent_svc_plus_wait_for_runtime_config: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_SVC_PLUS_WAIT_FOR_RUNTIME_CONFIG')
+         | default(false, true) | bool }}
   pre_tasks:
 
     - name: Try to read agent-proxy secrets from Vault
