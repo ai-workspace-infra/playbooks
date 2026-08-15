@@ -76,6 +76,11 @@ ansible-playbook -i inventory.ini deploy_observability_server.yml \
 `observability_hosts` 是 inventory 中对应 `observability.svc.plus` 的主机组。
 不要将真实 Vault Token 写入仓库、命令历史或文档。
 
+Vault 路径 `kv/data/observability/mcp` 还必须包含
+`GRAFANA_SERVICE_ACCOUNT_TOKEN`。该 token 仅由 playbook 写入线上
+`/opt/observability-server/mcp-grafana.env`，用于 Grafana MCP 调用 Grafana
+API，不应写入 Git。
+
 ## 5. Grafana 插件与数据源规划 (Data Sources)
 
 服务端部署时，通过 `GF_INSTALL_PLUGINS` 环境变量在 Grafana 启动时自动下载插件，并通过 Provisioning 自动配置好三大数据源，实现开箱即用的“黄金三角”。

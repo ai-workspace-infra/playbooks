@@ -83,7 +83,10 @@ observability_mcp_basic_auth_password_hash: ""
 
 Vault must contain `MCP_BASIC_AUTH_USER`, `MCP_BASIC_AUTH_PASSWORD`, and
 `MCP_BASIC_AUTH_PASSWORD_HASH` at `kv/data/observability/mcp`. The plaintext
-password is for MCP client configuration only; Caddy uses the hash.
+password is for MCP client configuration only; Caddy uses the hash. When
+Grafana MCP is enabled, the same Vault record must also contain
+`GRAFANA_SERVICE_ACCOUNT_TOKEN`; the token is written only to the generated
+`mcp-grafana.env` file and is never committed to Git.
 
 # Grafana MCP Server
 observability_mcp_grafana_enabled: true

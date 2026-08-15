@@ -54,7 +54,9 @@
   failed_when: false
   when:
     - observability_mcp_enabled | default(true) | bool
-    - observability_mcp_auth_enabled | default(true) | bool
+    - >-
+      (observability_mcp_auth_enabled | default(true) | bool)
+      or (observability_mcp_grafana_enabled | default(true) | bool)
     - vault_token | trim | length > 0
 
 - name: Resolve MCP ingress credentials from Vault
@@ -65,10 +67,28 @@
     observability_mcp_basic_auth_password_hash: >-
       {{ (observability_mcp_vault_secret.json | default({})).get('data', {}).get('data', {}).get(
          'MCP_BASIC_AUTH_PASSWORD_HASH', observability_mcp_basic_auth_password_hash) }}
+    observability_mcp_grafana_service_account_token: >-
+      {{ (observability_mcp_vault_secret.json | default({})).get('data', {}).get('data', {}).get(
+         'GRAFANA_SERVICE_ACCOUNT_TOKEN', observability_mcp_grafana_service_account_token) }}
   no_log: true
   when:
     - observability_mcp_enabled | default(true) | bool
-    - observability_mcp_auth_enabled | default(true) | bool
+    - >-
+      (observability_mcp_auth_enabled | default(true) | bool)
+      or (observability_mcp_grafana_enabled | default(true) | bool)
+
+- name: Refuse to start Grafana MCP without a Grafana service account token
+  ansible.builtin.assert:
+    that:
+      - observability_mcp_grafana_service_account_token | trim | length > 0
+    fail_msg: >-
+      Grafana MCP requires GRAFANA_SERVICE_ACCOUNT_TOKEN in
+      {{ observability_mcp_auth_vault_path }} (or the explicit
+      observability_mcp_grafana_service_account_token variable).
+  no_log: true
+  when:
+    - observability_mcp_enabled | default(true) | bool
+    - observability_mcp_grafana_enabled | default(true) | bool
 
 - name: Refuse to expose unauthenticated MCP ingress
   ansible.builtin.assert:
