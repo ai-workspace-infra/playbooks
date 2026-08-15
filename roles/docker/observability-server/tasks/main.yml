@@ -77,6 +77,19 @@
       (observability_mcp_auth_enabled | default(true) | bool)
       or (observability_mcp_grafana_enabled | default(true) | bool)
 
+- name: Warn when Grafana MCP token is absent during check mode
+  ansible.builtin.debug:
+    msg: >-
+      Grafana MCP requires GRAFANA_SERVICE_ACCOUNT_TOKEN in
+      {{ observability_mcp_auth_vault_path }} before a real deployment.
+      Check mode is continuing because it does not start the MCP container.
+  changed_when: false
+  when:
+    - ansible_check_mode | bool
+    - observability_mcp_enabled | default(true) | bool
+    - observability_mcp_grafana_enabled | default(true) | bool
+    - observability_mcp_grafana_service_account_token | trim | length == 0
+
 - name: Refuse to start Grafana MCP without a Grafana service account token
   ansible.builtin.assert:
     that:
@@ -89,6 +102,7 @@
   when:
     - observability_mcp_enabled | default(true) | bool
     - observability_mcp_grafana_enabled | default(true) | bool
+    - not (ansible_check_mode | bool)
 
 - name: Refuse to expose unauthenticated MCP ingress
   ansible.builtin.assert:
