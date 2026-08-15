@@ -21,6 +21,11 @@ fi
 timeout_seconds="${OBSERVE_TIMEOUT_SECONDS:-300}"
 poll_seconds="${OBSERVE_POLL_SECONDS:-3}"
 curl_timeout_seconds="${OBSERVE_CURL_TIMEOUT_SECONDS:-5}"
+# Comma-separated, endpoint-specific success codes in the same order as
+# OBSERVE_URLS.  Empty tokens retain the default (2xx/3xx) contract.  This
+# keeps an intentional unauthenticated 401/404 from being mistaken for an
+# unavailable service without treating arbitrary 4xx responses as healthy.
+IFS=',' read -r -a observe_expected_codes <<< "${OBSERVE_EXPECTED_CODES:-}"
 
 read -r -a observe_urls <<< "${OBSERVE_URLS}"
 if [[ "${#observe_urls[@]}" -eq 0 ]]; then
@@ -61,6 +66,24 @@ curl_for() {
   curl "${args[@]}" "${url}" 2>/dev/null
 }
 
+is_healthy_code() {
+  local index="$1"
+  local code="$2"
+  local expected="${observe_expected_codes[${index}]:-}"
+
+  if [[ -z "${expected}" ]]; then
+    [[ "${code}" =~ ^[23] ]]
+    return
+  fi
+
+  IFS='|' read -r -a accepted_codes <<< "${expected}"
+  local accepted
+  for accepted in "${accepted_codes[@]}"; do
+    [[ "${code}" == "${accepted}" ]] && return 0
+  done
+  return 1
+}
+
 # Doco-CD 是轮询式的, 镜像还要现拉, 所以给一个窗口而不是一次定生死。
 #
 failures=()
@@ -96,7 +119,7 @@ while :; do
     url="${observe_urls[${index}]}"
     code="$(<"${probe_dir}/${index}")"
     last_codes["${index}"]="${code}"
-    if [[ "${code}" =~ ^[23] ]]; then
+    if is_healthy_code "${index}" "${code}"; then
       completed["${index}"]=true
       echo "OK   ${url} -> HTTP ${code}"
     else
