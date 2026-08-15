@@ -1,6 +1,9 @@
 ---
 - name: Deploy Observability Server Stack (Prometheus, VictoriaLogs, VictoriaTraces & Grafana)
-  hosts: "{{ observability_server_hosts | default('install.svc.plus') }}"
+  # observability.svc.plus is the public service name. The inventory maps it
+  # to the observability_hosts group so deployments do not depend on the
+  # historical install.svc.plus inventory alias.
+  hosts: "{{ observability_server_hosts | default('observability_hosts') }}"
   become: true
   roles:
     - docker/observability-server
