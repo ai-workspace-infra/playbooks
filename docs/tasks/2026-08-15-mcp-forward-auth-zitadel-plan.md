@@ -6,7 +6,7 @@
 >
 > Related Issue: [#360 — 需求收集：MCP Forward Auth 与 Zitadel 多租户统一认证](https://github.com/ai-workspace-infra/playbooks/issues/360)
 >
-> Related PRs: 待实施
+> Related PRs: [#361 — docs: plan MCP forward auth integration](https://github.com/ai-workspace-infra/playbooks/pull/361) [DRAFT]
 > Domains: `open-platform`（Zitadel、Observability、MCP）、`web-saas`（Accounts 租户映射）
 
 ## 目标
