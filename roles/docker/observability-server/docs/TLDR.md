@@ -58,7 +58,25 @@ Caddy 作为统一入口，通过不同的 Path 将外网请求分发到 Docker 
     ```
 *   *可选进阶方案：* 如果对安全性要求极高，可以在 Caddy 和 Vector 之间配置 mTLS（双向证书认证），Caddy 仅放行持有受信任客户端证书的流量。
 
-## 4. Grafana 插件与数据源规划 (Data Sources)
+## 4. 线上服务端差异预检 (Dry Run)
+
+针对 `observability.svc.plus` 执行 Ansible diff/check mode 时，使用具备读取
+`kv/data/observability/mcp` 权限的临时 Vault Token。该命令不会修改线上服务：
+
+```bash
+cd /Users/shenlan/workspaces/ai-workspace-infra/playbooks
+
+VAULT_ADDR=https://vault.svc.plus \
+VAULT_TOKEN='<有效token>' \
+ansible-playbook -i inventory.ini deploy_observability_server.yml \
+  -e observability_server_hosts=observability_hosts \
+  -l observability_hosts -D -C
+```
+
+`observability_hosts` 是 inventory 中对应 `observability.svc.plus` 的主机组。
+不要将真实 Vault Token 写入仓库、命令历史或文档。
+
+## 5. Grafana 插件与数据源规划 (Data Sources)
 
 服务端部署时，通过 `GF_INSTALL_PLUGINS` 环境变量在 Grafana 启动时自动下载插件，并通过 Provisioning 自动配置好三大数据源，实现开箱即用的“黄金三角”。
 

@@ -9,7 +9,9 @@
     - vhosts/xray-exporter
 
 - name: Setup observability agent
-  hosts: all
+  # Keep the default broad for fleet collection, while allowing a focused
+  # online check/deployment with -e observability_agent_hosts=observability_hosts.
+  hosts: "{{ observability_agent_hosts | default('all') }}"
   # 兜底用的短等待窗口。首次启动的收敛由 deploy_base 的
   # common_wait_for_host_init.sh 统一负责(它在 bootstrap 前等 cloud-init 与
   # unattended-upgrades 退出), 所以到这里锁通常已经放开; 这里只覆盖那之后
@@ -32,7 +34,7 @@
       when: observability_deepflow_server_ip is defined and observability_deepflow_server_ip != ''
 
 - name: Deploy Base Probes and Vector Agent
-  hosts: all
+  hosts: "{{ observability_agent_hosts | default('all') }}"
   # 兜底用的短等待窗口。首次启动的收敛由 deploy_base 的
   # common_wait_for_host_init.sh 统一负责(它在 bootstrap 前等 cloud-init 与
   # unattended-upgrades 退出), 所以到这里锁通常已经放开; 这里只覆盖那之后
