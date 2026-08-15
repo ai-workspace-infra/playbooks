@@ -39,6 +39,50 @@
   ignore_errors: true
   when: vault_token | trim | length > 0
 
+- name: Read MCP ingress credentials from Vault
+  delegate_to: localhost
+  become: false
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/{{ observability_mcp_auth_vault_path }}"
+    headers:
+      X-Vault-Token: "{{ vault_token }}"
+    method: GET
+  register: observability_mcp_vault_secret
+  run_once: true
+  check_mode: false
+  no_log: true
+  failed_when: false
+  when:
+    - observability_mcp_enabled | default(true) | bool
+    - observability_mcp_auth_enabled | default(true) | bool
+    - vault_token | trim | length > 0
+
+- name: Resolve MCP ingress credentials from Vault
+  ansible.builtin.set_fact:
+    observability_mcp_basic_auth_user: >-
+      {{ (observability_mcp_vault_secret.json | default({})).get('data', {}).get('data', {}).get(
+         'MCP_BASIC_AUTH_USER', observability_mcp_basic_auth_user) }}
+    observability_mcp_basic_auth_password_hash: >-
+      {{ (observability_mcp_vault_secret.json | default({})).get('data', {}).get('data', {}).get(
+         'MCP_BASIC_AUTH_PASSWORD_HASH', observability_mcp_basic_auth_password_hash) }}
+  no_log: true
+  when:
+    - observability_mcp_enabled | default(true) | bool
+    - observability_mcp_auth_enabled | default(true) | bool
+
+- name: Refuse to expose unauthenticated MCP ingress
+  ansible.builtin.assert:
+    that:
+      - observability_mcp_basic_auth_user | trim | length > 0
+      - observability_mcp_basic_auth_password_hash | trim | length > 0
+    fail_msg: >-
+      MCP authentication is enabled but Vault did not provide credentials at
+      {{ observability_mcp_auth_vault_path }}.
+  no_log: true
+  when:
+    - observability_mcp_enabled | default(true) | bool
+    - observability_mcp_auth_enabled | default(true) | bool
+
 - name: Template Docker Compose and configs
   ansible.builtin.template:
     src: "{{ item.src }}"
