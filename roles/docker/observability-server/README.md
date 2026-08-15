@@ -76,9 +76,14 @@ observability_mcp_network: "observability"
 observability_mcp_bind_address: "127.0.0.1"
 
 # 网关统一认证 (Basic Auth)
-observability_mcp_auth_enabled: false
+observability_mcp_auth_enabled: true
+observability_mcp_auth_vault_path: "kv/data/observability/mcp"
 observability_mcp_basic_auth_user: "mcp_agent"
 observability_mcp_basic_auth_password_hash: ""
+
+Vault must contain `MCP_BASIC_AUTH_USER`, `MCP_BASIC_AUTH_PASSWORD`, and
+`MCP_BASIC_AUTH_PASSWORD_HASH` at `kv/data/observability/mcp`. The plaintext
+password is for MCP client configuration only; Caddy uses the hash.
 
 # Grafana MCP Server
 observability_mcp_grafana_enabled: true
