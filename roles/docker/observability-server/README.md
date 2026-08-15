@@ -87,6 +87,8 @@ password is for MCP client configuration only; Caddy uses the hash. When
 Grafana MCP is enabled, the same Vault record must also contain
 `GRAFANA_SERVICE_ACCOUNT_TOKEN`; the token is written only to the generated
 `mcp-grafana.env` file and is never committed to Git.
+The server dry-run reports a warning when this field is absent; a real
+deployment still fails closed until the token is present.
 
 # Grafana MCP Server
 observability_mcp_grafana_enabled: true

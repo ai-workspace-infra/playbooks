@@ -80,6 +80,8 @@ Vault 路径 `kv/data/observability/mcp` 还必须包含
 `GRAFANA_SERVICE_ACCOUNT_TOKEN`。该 token 仅由 playbook 写入线上
 `/opt/observability-server/mcp-grafana.env`，用于 Grafana MCP 调用 Grafana
 API，不应写入 Git。
+`-C` 预检在该字段缺失时只告警并继续；真实部署仍会 fail-closed，必须先补齐
+该 Vault 字段。
 
 ## 5. Grafana 插件与数据源规划 (Data Sources)
 
