@@ -129,6 +129,36 @@
     - agent_proxy_binary_src | length == 0
     - agent_proxy_release_tag | length > 0
 
+- name: Check Agent Proxy binary before rename migration
+  ansible.builtin.stat:
+    path: "{{ agent_proxy_binary_path }}"
+  register: agent_proxy_binary_stat
+  when: not (agent_proxy_build_on_target | bool)
+
+- name: Check legacy agent binary for rename migration
+  ansible.builtin.stat:
+    path: "{{ agent_proxy_legacy_binary_path }}"
+  register: agent_proxy_legacy_binary_stat
+  when:
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_legacy_binary_path != agent_proxy_binary_path
+
+- name: Migrate legacy agent binary to the Agent Proxy path
+  ansible.builtin.copy:
+    src: "{{ agent_proxy_legacy_binary_path }}"
+    dest: "{{ agent_proxy_binary_path }}"
+    remote_src: true
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0755"
+  notify: Restart agent-proxy
+  when:
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_binary_src | length == 0
+    - not agent_proxy_binary_stat.stat.exists
+    - agent_proxy_legacy_binary_stat.stat.exists
+    - not agent_proxy_legacy_binary_stat.stat.isdir
+
 - name: Check existing agent binary on target host
   ansible.builtin.stat:
     path: "{{ agent_proxy_binary_path }}"
