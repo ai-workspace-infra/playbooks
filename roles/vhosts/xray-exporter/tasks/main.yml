@@ -66,10 +66,11 @@
     group: "{{ xray_exporter_group }}"
     mode: "0750"
 
-- name: Ensure xray access log file has read permission if present
+- name: Preserve shared Xray access log permissions if present
   ansible.builtin.file:
     path: "{{ xray_exporter_log_path }}"
-    mode: "0644"
+    group: "{{ xray_exporter_log_group }}"
+    mode: "0660"
   when:
     - xray_exporter_log_path is defined
     - xray_exporter_log_path | length > 0

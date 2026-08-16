@@ -48,6 +48,10 @@ xray_exporter_snapshot_interval: "1m"
 xray_exporter_vector_snapshot_url: ""
 xray_exporter_user_traffic_metrics: true
 xray_exporter_log_path: "/var/log/xray/access.log"
+# The agent-svc-plus role owns this shared log group and grants it to the
+# Xray service users. The exporter must preserve group write access because
+# both Xray services append to the same access log.
+xray_exporter_log_group: "xray-access"
 
 # Wait, Xray Stats API URL configuration:
 xray_exporter_stats_url: "http://127.0.0.1:49227/debug/vars"
