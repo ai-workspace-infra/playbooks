@@ -12,3 +12,4 @@
 | 日期 | Case | 根因归属 |
 |---|---|---|
 | 2026-07-31 | [console 域 `/api/auth/*` 被劫持到 accounts，MFA 绑定面板密钥/二维码空白](2026-07-31-console-api-auth-bff-hijack.md) | `roles/vhosts/web_saas_host_config` Caddyfile.j2 |
+| 2026-08-16 | [UAT agent-proxy Xray 因共享 access.log 权限错误未启动](2026-08-16-uat-xray-access-log-permission-denied.md) | `roles/vhosts/xray-exporter` tasks/main.yml |
