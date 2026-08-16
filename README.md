@@ -200,7 +200,7 @@ Runbook：[`roles/vhosts/xworkmate_bridge_distributed_vpn/README.md`](roles/vhos
 | `console_service` | console.svc.plus（仅 pull-only compose 部署，写 Caddy 片段而非托管 Caddy） |
 | `docs_service` | docs.svc.plus |
 | `billing-service` | 计费服务（依赖 `DATABASE_URL`） |
-| `agent-svc-plus` | agent.svc.plus |
+| `agent-proxy` | Agent Proxy（上游实现为 agent.svc.plus） |
 | `xcontrol_server` / `docker/XControl` | XControl 控制端 |
 | `web_saas_host_config` | web-saas 宿主机配置，部署权交给 Doco-CD |
 | `nextjs` / `docker/neurapress` / `modern_it_history` | 站点类应用 |
@@ -288,9 +288,7 @@ Runbook：[`roles/vhosts/xworkmate_bridge_distributed_vpn/README.md`](roles/vhos
 
 聚合入口 `deploy_svc_plus_core_services_stack.yml`，按依赖顺序编排下列 playbook：
 
-`deploy_billing_service.yml` → `deploy_xworkmate_bridge_vhosts.yml` → `deploy_xray_exporter.yml` → `deploy_agent_svc_plus.yml` → `deploy_accounts_svc_plus.yml` → `deploy_stunnel-client.yml` → `deploy_apisix.yml` → `deploy_console_svc_plus.yml`
-
-> ⚠️ **当前该聚合入口无法执行**：第 136 行 `import_playbook: deploy_agent_svc_plus.yml` 指向的文件在仓库中不存在（agent.svc.plus 的实现现在是 `deploy_xray_proxy_server.yml`）。`import_playbook` 是静态导入，即使 `STACK_SERVICES` 不含 `agent` 也会在解析阶段直接报错。修好前请单独执行各子 playbook。
+`deploy_billing_service.yml` → `deploy_xworkmate_bridge_vhosts.yml` → `deploy_xray_exporter.yml` → `deploy_xray_proxy_server.yml` → `deploy_accounts_svc_plus.yml` → `deploy_stunnel-client.yml` → `deploy_apisix.yml` → `deploy_console_svc_plus.yml`
 
 ```bash
 export INTERNAL_SERVICE_TOKEN=...
@@ -419,7 +417,7 @@ ansible-playbook -i inventory.ini deploy_console_svc_plus.yml \
 
 ## 约定
 
-**清单与分组** — `inventory.ini` 按「地域 + 角色」分组：`jp_xhttp_contabo_host`、`us_xhttp_host`、`cn_front_host`、`tky_proxy_host`、`jp_k3s_vultr_host`，以及服务组 `agent_svc_plus`、`billing_service`、`accounts`、`docs`、`apisix`、`postgresql`、`k3s`、`observability_hosts`、`xray_exporter`。`xworkmate_bridge_distributed` 是 `xworkmate_bridge` + `cn_xworkmate_bridge` 的父组。动态清单走 `inventory/terraform_cmdb.py`。
+**清单与分组** — `inventory.ini` 按「地域 + 角色」分组：`jp_xhttp_contabo_host`、`us_xhttp_host`、`cn_front_host`、`tky_proxy_host`、`jp_k3s_vultr_host`，以及服务组 `agent_proxy`、`billing_service`、`accounts`、`docs`、`apisix`、`postgresql`、`k3s`、`observability_hosts`、`xray_exporter`。`xworkmate_bridge_distributed` 是 `xworkmate_bridge` + `cn_xworkmate_bridge` 的父组。动态清单走 `inventory/terraform_cmdb.py`。
 
 **密钥** — 不落静态密钥文件。S3/DB 凭据在运行时经 Vault（`https://vault.svc.plus`）JWT 短期认证取得，仅驻留内存。仓库启用 gitleaks（`.gitleaks.toml` / `.gitleaksignore`）。
 

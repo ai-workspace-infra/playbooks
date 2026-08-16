@@ -17,7 +17,7 @@ template therefore uses the same local `pgrep -x xray` signal that gates the
 exporter role, while retaining the legacy group as a fallback for standalone
 inventory runs.
 
-The UAT `agent-svc-plus` Xray instances expose Stats APIs on
+The UAT `agent-proxy` Xray instances expose Stats APIs on
 `127.0.0.1:28080` and `127.0.0.1:28181`. Exporter addresses are now explicit
 and remain overrideable with `XRAY_EXPORTER_XRAY_API_ADDR` and
 `XRAY_EXPORTER_TCP_XRAY_API_ADDR` for hosts with the legacy layout.

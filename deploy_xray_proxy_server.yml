@@ -1,5 +1,5 @@
-- name: Deploy managed agent.svc.plus service
-  hosts: "{{ agent_service_hosts | default('agent_svc_plus') }}"
+- name: Deploy managed agent proxy service
+  hosts: "{{ agent_service_hosts | default('agent_proxy') }}"
   # 兜底用的短等待窗口。首次启动的收敛由 deploy_base 的
   # common_wait_for_host_init.sh 统一负责(它在 bootstrap 前等 cloud-init 与
   # unattended-upgrades 退出), 所以到这里锁通常已经放开; 这里只覆盖那之后
@@ -14,18 +14,18 @@
     vault_env_path: "{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}"
     vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
     vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('', true) }}"
-    agent_svc_plus_repo_url: >-
+    agent_proxy_repo_url: >-
       {{ lookup('ansible.builtin.env', 'AGENT_REPO_URL')
          | default('https://github.com/x-evor/agent.svc.plus.git', true) }}
-    agent_svc_plus_repo_version: >-
-      {{ lookup('ansible.builtin.env', 'AGENT_SVC_PLUS_VERSION')
+    agent_proxy_repo_version: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_PROXY_VERSION')
          | default(
              'main'
              if ('daily-build' in (lookup('ansible.builtin.env', 'AGENT_REPO_VERSION') | default('main', true)))
              else (lookup('ansible.builtin.env', 'AGENT_REPO_VERSION') | default('main', true)),
              true
            ) }}
-    agent_svc_plus_release_tag: >-
+    agent_proxy_release_tag: >-
       {{ lookup('ansible.builtin.env', 'AGENT_RELEASE_TAG')
          | default(
              (lookup('ansible.builtin.env', 'AGENT_REPO_VERSION')
@@ -35,13 +35,13 @@
              else '',
              true
            ) }}
-    agent_svc_plus_binary_src: >-
+    agent_proxy_binary_src: >-
       {{ lookup('ansible.builtin.env', 'AGENT_BINARY_SRC')
          | default('', true) }}
-    agent_svc_plus_app_dir: >-
+    agent_proxy_app_dir: >-
       {{ lookup('ansible.builtin.env', 'AGENT_APP_DIR')
-         | default('/opt/agent.svc.plus', true) }}
-    agent_svc_plus_go_version: >-
+         | default('/opt/agent-proxy', true) }}
+    agent_proxy_go_version: >-
       {{ lookup('ansible.builtin.env', 'AGENT_GO_VERSION')
          | default('1.25.1', true) }}
     agent_id: >-
@@ -96,8 +96,8 @@
     # This playbook is used by the platform pipeline before DNS cutover.
     # Runtime config generation is verified by the final post-DNS gate instead
     # of blocking the deployment while the controller hostname is not public.
-    agent_svc_plus_wait_for_runtime_config: >-
-      {{ lookup('ansible.builtin.env', 'AGENT_SVC_PLUS_WAIT_FOR_RUNTIME_CONFIG')
+    agent_proxy_wait_for_runtime_config: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_PROXY_WAIT_FOR_RUNTIME_CONFIG')
          | default(false, true) | bool }}
   pre_tasks:
 
@@ -173,4 +173,4 @@
   roles:
     - roles/vhosts/caddy
     - roles/vhosts/tky-proxy
-    - roles/vhosts/agent-svc-plus
+    - roles/vhosts/agent-proxy
