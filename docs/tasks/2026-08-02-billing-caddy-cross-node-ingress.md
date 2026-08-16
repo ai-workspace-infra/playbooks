@@ -3,11 +3,11 @@
 ## 背景
 
 UAT 的 `billing-service` 跑在 web-saas 主机，`xray-exporter` 与
-`agent-svc-plus` 跑在 agent-proxy 主机。Billing 的数据采集仍是：
+`agent-proxy` 跑在 agent-proxy 主机。Billing 的数据采集仍是：
 
 ```text
 Xray -> xray-exporter ->(Billing 拉取 window API)-> billing-service -> PostgreSQL -> Accounts -> Portal
-agent-svc-plus ->(触发 collect/reconcile job)-> billing-service
+agent-proxy ->(触发 collect/reconcile job)-> billing-service
 ```
 
 Billing 不读取 Prometheus/Grafana，也不把 observability 做成计费写路径的依赖。

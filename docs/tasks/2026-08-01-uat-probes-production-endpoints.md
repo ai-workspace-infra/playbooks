@@ -28,7 +28,7 @@ UAT 主机 `agent-proxy.onwalk.net`（45.32.19.172）上的 vector agent 正在�
 **结论是没有**，这条链路是干净的：
 
 ```
-agent-svc-plus (pid 15133) → 167.179.110.129:443 = accounts-uat.onwalk.net  ✅
+agent-proxy (pid 15133) → 167.179.110.129:443 = accounts-uat.onwalk.net  ✅
 /etc/agent/account-agent.yaml:  controllerUrl: "https://accounts-uat.onwalk.net"
 配置内零处 svc.plus
 ```
@@ -37,7 +37,7 @@ agent-svc-plus (pid 15133) → 167.179.110.129:443 = accounts-uat.onwalk.net  �
 自带的仓库默认值；systemd 实际加载的是 `/etc/agent/account-agent.yaml`
 （`ExecStart=... -config /etc/agent/account-agent.yaml`），那些文件未被使用。
 
-> 值得记下的是：`roles/vhosts/agent-svc-plus/defaults/main.yml` 里
+> 值得记下的是：`roles/vhosts/agent-proxy/defaults/main.yml` 里
 > `agent_controller_url` 的默认值**就是** `https://accounts.svc.plus`（生产），
 > 只是被 platform-ops 的 `AGENT_CONTROLLER_URL` 环境变量覆盖掉了。这与本次
 > vector 的问题是**同一类**——默认值指向生产，靠上层覆盖兜底。agent 这条侥幸
@@ -46,7 +46,7 @@ agent-svc-plus (pid 15133) → 167.179.110.129:443 = accounts-uat.onwalk.net  �
 真正的问题是在 `ss -tnp` 里看出站连接时顺带发现的：
 
 ```
-ESTAB  45.32.19.172:38852 → 167.179.110.129:443   agent-svc-plus   ← 正确(uat)
+ESTAB  45.32.19.172:38852 → 167.179.110.129:443   agent-proxy   ← 正确(uat)
 ESTAB  45.32.19.172:59040 →  46.250.251.132:443   vector           ← 生产 IP
 ```
 
@@ -150,7 +150,7 @@ web-saas TLS 那次的教训：证书恢复、渲染、挂载全部正确，唯�
 
 | 位置 | 默认值 | 是否有覆盖 |
 |---|---|---|
-| `roles/vhosts/agent-svc-plus/defaults/main.yml` `agent_controller_url` | `https://accounts.svc.plus` | 有（platform-ops 传 `AGENT_CONTROLLER_URL`）|
+| `roles/vhosts/agent-proxy/defaults/main.yml` `agent_controller_url` | `https://accounts.svc.plus` | 有（platform-ops 传 `AGENT_CONTROLLER_URL`）|
 | `roles/vhosts/blackbox_exporter/defaults/main.yml` `blackbox_ssl_targets` | 5 个 `svc.plus` 站点 | **无**（本次修复前）|
 
 建议全仓扫一遍还有多少这种模式。这类默认值的问题在于：**忘记覆盖时不会报错，
@@ -193,4 +193,4 @@ TARGET_DOMAIN_BASE=onwalk.net DEPLOY_ENV=uat ansible-playbook /tmp/bb2.yml -e ta
 |---|---|
 | `roles/vhosts/blackbox_exporter/defaults/main.yml` | 探测目标按环境派生 |
 | `roles/vhosts/vector-agent/templates/vector.toml.j2` | company/project/env 标签参数化 |
-| `roles/vhosts/agent-svc-plus/defaults/main.yml` | **未改**，但默认值同样指向生产，见 B 节 |
+| `roles/vhosts/agent-proxy/defaults/main.yml` | **未改**，但默认值同样指向生产，见 B 节 |
