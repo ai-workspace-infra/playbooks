@@ -12,5 +12,6 @@
 
 | 日期 | 任务 | 状态 | 关联 PR |
 |---|---|---|---|
+| 2026-08-15 | [MCP Forward Auth 与 Zitadel/Accounts 多租户统一认证规划](2026-08-15-mcp-forward-auth-zitadel-plan.md) | 🟡 [需求收集 #360](https://github.com/ai-workspace-infra/playbooks/issues/360)，待计划排期 | 待实施 |
 | 2026-08-01 | [UAT xray-exporter 部署契约审计](2026-08-01-uat-xray-exporter-deployment-contract.md) | 🟡 Exporter [#3 OPEN](https://github.com/ai-workspace-xstream/xray-exporter/pull/3)；记录旧 role 与 control-plane window API 的契约缺口，infra/GitOps 后续 feature PR 独立处理 | Billing #24；Exporter #3 |
 | 2026-07-11 | [accounts OAuth 部署接线](2026-07-11-accounts-oauth-deploy.md) | ✅ 已合并上线 | playbooks #111 #112 |
