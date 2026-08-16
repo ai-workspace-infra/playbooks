@@ -1,17 +1,17 @@
 ---
 - name: Map Go architecture
   ansible.builtin.set_fact:
-    agent_svc_plus_go_arch: >-
+    agent_proxy_go_arch: >-
       {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
-    agent_svc_plus_release_arch: >-
+    agent_proxy_release_arch: >-
       {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
-  when: agent_svc_plus_build_on_target | bool
+  when: agent_proxy_build_on_target | bool
 
 - name: Map release artifact architecture when build is disabled
   ansible.builtin.set_fact:
-    agent_svc_plus_release_arch: >-
+    agent_proxy_release_arch: >-
       {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
-  when: not (agent_svc_plus_build_on_target | bool)
+  when: not (agent_proxy_build_on_target | bool)
 
 - name: Ensure agent build prerequisites are installed
   ansible.builtin.apt:
@@ -22,136 +22,136 @@
       - tar
     state: present
     update_cache: true
-  when: agent_svc_plus_build_on_target | bool
+  when: agent_proxy_build_on_target | bool
 
 - name: Check installed Go version
-  ansible.builtin.command: "{{ agent_svc_plus_go_bin }} version"
-  register: agent_svc_plus_go_version_check
+  ansible.builtin.command: "{{ agent_proxy_go_bin }} version"
+  register: agent_proxy_go_version_check
   changed_when: false
   failed_when: false
-  when: agent_svc_plus_build_on_target | bool
+  when: agent_proxy_build_on_target | bool
 
 - name: Download Go toolchain archive
   ansible.builtin.get_url:
-    url: "https://go.dev/dl/go{{ agent_svc_plus_go_version }}.linux-{{ agent_svc_plus_go_arch }}.tar.gz"
-    dest: "/tmp/go{{ agent_svc_plus_go_version }}.linux-{{ agent_svc_plus_go_arch }}.tar.gz"
+    url: "https://go.dev/dl/go{{ agent_proxy_go_version }}.linux-{{ agent_proxy_go_arch }}.tar.gz"
+    dest: "/tmp/go{{ agent_proxy_go_version }}.linux-{{ agent_proxy_go_arch }}.tar.gz"
     mode: "0644"
   when:
-    - agent_svc_plus_build_on_target | bool
-    - agent_svc_plus_go_version_check.rc != 0 or ('go' ~ agent_svc_plus_go_version) not in agent_svc_plus_go_version_check.stdout
+    - agent_proxy_build_on_target | bool
+    - agent_proxy_go_version_check.rc != 0 or ('go' ~ agent_proxy_go_version) not in agent_proxy_go_version_check.stdout
 
 - name: Remove previous Go installation
   ansible.builtin.file:
-    path: "{{ agent_svc_plus_go_root }}"
+    path: "{{ agent_proxy_go_root }}"
     state: absent
   when:
-    - agent_svc_plus_build_on_target | bool
-    - agent_svc_plus_go_version_check.rc != 0 or ('go' ~ agent_svc_plus_go_version) not in agent_svc_plus_go_version_check.stdout
+    - agent_proxy_build_on_target | bool
+    - agent_proxy_go_version_check.rc != 0 or ('go' ~ agent_proxy_go_version) not in agent_proxy_go_version_check.stdout
 
 - name: Install Go toolchain
   ansible.builtin.unarchive:
-    src: "/tmp/go{{ agent_svc_plus_go_version }}.linux-{{ agent_svc_plus_go_arch }}.tar.gz"
+    src: "/tmp/go{{ agent_proxy_go_version }}.linux-{{ agent_proxy_go_arch }}.tar.gz"
     dest: "/usr/local"
     remote_src: true
   when:
-    - agent_svc_plus_build_on_target | bool
-    - agent_svc_plus_go_version_check.rc != 0 or ('go' ~ agent_svc_plus_go_version) not in agent_svc_plus_go_version_check.stdout
+    - agent_proxy_build_on_target | bool
+    - agent_proxy_go_version_check.rc != 0 or ('go' ~ agent_proxy_go_version) not in agent_proxy_go_version_check.stdout
 
 - name: Create agent directories
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
-    owner: "{{ agent_svc_plus_user }}"
-    group: "{{ agent_svc_plus_group }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
     mode: "0755"
   loop:
-    - "{{ agent_svc_plus_app_dir }}"
-    - "{{ agent_svc_plus_config_dir }}"
-    - "{{ agent_svc_plus_data_dir }}"
+    - "{{ agent_proxy_app_dir }}"
+    - "{{ agent_proxy_config_dir }}"
+    - "{{ agent_proxy_data_dir }}"
     - "{{ xray_template_dir }}"
 
 - name: Clone agent.svc.plus repository
   ansible.builtin.git:
-    repo: "{{ agent_svc_plus_repo_url }}"
-    dest: "{{ agent_svc_plus_app_dir }}"
-    version: "{{ agent_svc_plus_repo_version }}"
+    repo: "{{ agent_proxy_repo_url }}"
+    dest: "{{ agent_proxy_app_dir }}"
+    version: "{{ agent_proxy_repo_version }}"
     update: true
-  notify: Restart agent-svc-plus
-  when: agent_svc_plus_manage_source_checkout | bool
-  register: agent_svc_plus_clone_res
+  notify: Restart agent-proxy
+  when: agent_proxy_manage_source_checkout | bool
+  register: agent_proxy_clone_res
   ignore_errors: true
 
 - name: Fallback to main branch if specified version is not found
   ansible.builtin.git:
-    repo: "{{ agent_svc_plus_repo_url }}"
-    dest: "{{ agent_svc_plus_app_dir }}"
+    repo: "{{ agent_proxy_repo_url }}"
+    dest: "{{ agent_proxy_app_dir }}"
     version: main
     update: true
-  notify: Restart agent-svc-plus
+  notify: Restart agent-proxy
   when:
-    - agent_svc_plus_manage_source_checkout | bool
-    - agent_svc_plus_clone_res is failed
+    - agent_proxy_manage_source_checkout | bool
+    - agent_proxy_clone_res is failed
 
 - name: Build agent.svc.plus binary
   ansible.builtin.command: >-
-    {{ agent_svc_plus_go_bin }} build -o {{ agent_svc_plus_binary_path }} {{ agent_svc_plus_build_target }}
+    {{ agent_proxy_go_bin }} build -o {{ agent_proxy_binary_path }} {{ agent_proxy_build_target }}
   args:
-    chdir: "{{ agent_svc_plus_app_dir }}"
+    chdir: "{{ agent_proxy_app_dir }}"
   environment:
-    GOROOT: "{{ agent_svc_plus_go_root }}"
-    PATH: "{{ agent_svc_plus_go_root }}/bin:{{ ansible_env.PATH }}"
+    GOROOT: "{{ agent_proxy_go_root }}"
+    PATH: "{{ agent_proxy_go_root }}/bin:{{ ansible_env.PATH }}"
     GOTOOLCHAIN: local
-  notify: Restart agent-svc-plus
-  when: agent_svc_plus_build_on_target | bool
+  notify: Restart agent-proxy
+  when: agent_proxy_build_on_target | bool
 
 - name: Deploy prebuilt agent binary from control machine
   ansible.builtin.copy:
-    src: "{{ agent_svc_plus_binary_src }}"
-    dest: "{{ agent_svc_plus_binary_path }}"
-    owner: "{{ agent_svc_plus_user }}"
-    group: "{{ agent_svc_plus_group }}"
+    src: "{{ agent_proxy_binary_src }}"
+    dest: "{{ agent_proxy_binary_path }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
     mode: "0755"
-  notify: Restart agent-svc-plus
+  notify: Restart agent-proxy
   when:
-    - not (agent_svc_plus_build_on_target | bool)
-    - agent_svc_plus_binary_src | length > 0
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_binary_src | length > 0
 
 - name: Download prebuilt agent binary from GitHub Release
   ansible.builtin.get_url:
-    url: "{{ agent_svc_plus_release_asset_url }}"
-    dest: "{{ agent_svc_plus_binary_path }}"
-    owner: "{{ agent_svc_plus_user }}"
-    group: "{{ agent_svc_plus_group }}"
+    url: "{{ agent_proxy_release_asset_url }}"
+    dest: "{{ agent_proxy_binary_path }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
     mode: "0755"
-  notify: Restart agent-svc-plus
+  notify: Restart agent-proxy
   when:
-    - not (agent_svc_plus_build_on_target | bool)
-    - agent_svc_plus_binary_src | length == 0
-    - agent_svc_plus_release_tag | length > 0
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_binary_src | length == 0
+    - agent_proxy_release_tag | length > 0
 
 - name: Check existing agent binary on target host
   ansible.builtin.stat:
-    path: "{{ agent_svc_plus_binary_path }}"
-  register: agent_svc_plus_binary_stat
+    path: "{{ agent_proxy_binary_path }}"
+  register: agent_proxy_binary_stat
 
 - name: Assert target host already has agent binary when build is disabled
   ansible.builtin.assert:
     that:
-      - agent_svc_plus_binary_stat.stat.exists
-      - not agent_svc_plus_binary_stat.stat.isdir
+      - agent_proxy_binary_stat.stat.exists
+      - not agent_proxy_binary_stat.stat.isdir
     fail_msg: >-
-      {{ agent_svc_plus_binary_path }} does not exist on the target host.
+      {{ agent_proxy_binary_path }} does not exist on the target host.
       This role is configured to avoid clone/build on target. Provide
-      agent_svc_plus_binary_src, or set agent_svc_plus_release_tag so the role
-      can download {{ agent_svc_plus_release_asset_name }}, or enable
-      agent_svc_plus_build_on_target.
-  when: not (agent_svc_plus_build_on_target | bool)
+      agent_proxy_binary_src, or set agent_proxy_release_tag so the role
+      can download {{ agent_proxy_release_asset_name }}, or enable
+      agent_proxy_build_on_target.
+  when: not (agent_proxy_build_on_target | bool)
 
 - name: Ensure agent binary permissions
   ansible.builtin.file:
-    path: "{{ agent_svc_plus_binary_path }}"
-    owner: "{{ agent_svc_plus_user }}"
-    group: "{{ agent_svc_plus_group }}"
+    path: "{{ agent_proxy_binary_path }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
     mode: "0755"
 
 - name: Check installed Xray version
@@ -191,7 +191,7 @@
 
 - name: Create temporary Xray extraction directory
   ansible.builtin.file:
-    path: "/var/cache/agent-svc-plus/xray-{{ xray_version }}"
+    path: "/var/cache/agent-proxy/xray-{{ xray_version }}"
     state: directory
     owner: root
     group: root
@@ -203,7 +203,7 @@
 - name: Extract pinned Xray release
   ansible.builtin.unarchive:
     src: "{{ xray_release_archive_path }}"
-    dest: "/var/cache/agent-svc-plus/xray-{{ xray_version }}"
+    dest: "/var/cache/agent-proxy/xray-{{ xray_version }}"
     remote_src: true
   when:
     - xray_enabled | bool
@@ -211,7 +211,7 @@
 
 - name: Install pinned Xray binary atomically
   ansible.builtin.copy:
-    src: "/var/cache/agent-svc-plus/xray-{{ xray_version }}/xray"
+    src: "/var/cache/agent-proxy/xray-{{ xray_version }}/xray"
     dest: "{{ xray_binary_path }}"
     remote_src: true
     owner: root
@@ -233,7 +233,7 @@
 
 - name: Install pinned Xray routing assets
   ansible.builtin.copy:
-    src: "/var/cache/agent-svc-plus/xray-{{ xray_version }}/{{ item }}"
+    src: "/var/cache/agent-proxy/xray-{{ xray_version }}/{{ item }}"
     dest: "/usr/local/share/xray/{{ item }}"
     remote_src: true
     owner: root
@@ -248,11 +248,11 @@
 - name: Deploy agent configuration
   ansible.builtin.template:
     src: agent-config.yaml.j2
-    dest: "{{ agent_svc_plus_config_path }}"
-    owner: "{{ agent_svc_plus_user }}"
-    group: "{{ agent_svc_plus_group }}"
+    dest: "{{ agent_proxy_config_path }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
     mode: "0600"
-  notify: Restart agent-svc-plus
+  notify: Restart agent-proxy
 
 - name: Ensure Xray access log directory exists
   ansible.builtin.file:
@@ -302,8 +302,8 @@
   ansible.builtin.template:
     src: xray.xhttp.template.json.j2
     dest: "{{ xray_template_dir }}/xray.xhttp.template.json"
-    owner: "{{ agent_svc_plus_user }}"
-    group: "{{ agent_svc_plus_group }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
     mode: "0644"
   when: xray_enabled | bool
   tags:
@@ -313,8 +313,8 @@
   ansible.builtin.template:
     src: xray.tcp.template.json.j2
     dest: "{{ xray_template_dir }}/xray.tcp.template.json"
-    owner: "{{ agent_svc_plus_user }}"
-    group: "{{ agent_svc_plus_group }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
     mode: "0644"
   when: xray_enabled | bool
   tags:
@@ -337,16 +337,27 @@
 
 - name: Install agent systemd service
   ansible.builtin.template:
-    src: agent-svc-plus.service.j2
-    dest: "/etc/systemd/system/{{ agent_svc_plus_service_name }}.service"
+    src: agent-proxy.service.j2
+    dest: "/etc/systemd/system/{{ agent_proxy_service_name }}.service"
     owner: root
     group: root
     mode: "0644"
-  notify: Restart agent-svc-plus
+  notify: Restart agent-proxy
 
-- name: Enable and start agent-svc-plus
+- name: Stop legacy agent systemd service after rename
   ansible.builtin.systemd:
-    name: "{{ agent_svc_plus_service_name }}"
+    name: "{{ agent_proxy_legacy_service_name }}"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  when:
+    - agent_proxy_legacy_service_name | length > 0
+    - agent_proxy_legacy_service_name != agent_proxy_service_name
+  failed_when: false
+
+- name: Enable and start agent-proxy
+  ansible.builtin.systemd:
+    name: "{{ agent_proxy_service_name }}"
     enabled: true
     state: started
     daemon_reload: true
@@ -360,7 +371,7 @@
     - "{{ xray_tcp_config_path }}"
   when:
     - xray_enabled | bool
-    - agent_svc_plus_wait_for_runtime_config | bool
+    - agent_proxy_wait_for_runtime_config | bool
 
 - name: Validate Xray configuration before starting services
   ansible.builtin.command: "{{ xray_binary_path }} run -test -config {{ item }}"
@@ -372,7 +383,7 @@
     - "{{ xray_tcp_config_path }}"
   when:
     - xray_enabled | bool
-    - agent_svc_plus_wait_for_runtime_config | bool
+    - agent_proxy_wait_for_runtime_config | bool
 
 - name: Enable and start Xray services
   ansible.builtin.systemd:
@@ -385,4 +396,4 @@
     - xray-tcp.service
   when:
     - xray_enabled | bool
-    - agent_svc_plus_wait_for_runtime_config | bool
+    - agent_proxy_wait_for_runtime_config | bool

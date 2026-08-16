@@ -69,11 +69,11 @@ Vector 采用双源采集 Xray 指标：
 
 ## 对应配置文件
 
-- [`roles/vhosts/agent-svc-plus/defaults/main.yml`](/Users/shenlan/workspaces/ai-workspace-infra/playbooks/roles/vhosts/agent-svc-plus/defaults/main.yml)
-- [`roles/vhosts/agent-svc-plus/templates/xray.service.j2`](/Users/shenlan/workspaces/ai-workspace-infra/playbooks/roles/vhosts/agent-svc-plus/templates/xray.service.j2)
-- [`roles/vhosts/agent-svc-plus/templates/xray-tcp.service.j2`](/Users/shenlan/workspaces/ai-workspace-infra/playbooks/roles/vhosts/agent-svc-plus/templates/xray-tcp.service.j2)
-- [`roles/vhosts/agent-svc-plus/templates/xray.xhttp.template.json.j2`](/Users/shenlan/workspaces/ai-workspace-infra/playbooks/roles/vhosts/agent-svc-plus/templates/xray.xhttp.template.json.j2)
-- [`roles/vhosts/agent-svc-plus/templates/xray.tcp.template.json.j2`](/Users/shenlan/workspaces/ai-workspace-infra/playbooks/roles/vhosts/agent-svc-plus/templates/xray.tcp.template.json.j2)
+- [`roles/vhosts/agent-proxy/defaults/main.yml`](/Users/shenlan/workspaces/ai-workspace-infra/playbooks/roles/vhosts/agent-proxy/defaults/main.yml)
+- [`roles/vhosts/agent-proxy/templates/xray.service.j2`](/Users/shenlan/workspaces/ai-workspace-infra/playbooks/roles/vhosts/agent-proxy/templates/xray.service.j2)
+- [`roles/vhosts/agent-proxy/templates/xray-tcp.service.j2`](/Users/shenlan/workspaces/ai-workspace-infra/playbooks/roles/vhosts/agent-proxy/templates/xray-tcp.service.j2)
+- [`roles/vhosts/agent-proxy/templates/xray.xhttp.template.json.j2`](/Users/shenlan/workspaces/ai-workspace-infra/playbooks/roles/vhosts/agent-proxy/templates/xray.xhttp.template.json.j2)
+- [`roles/vhosts/agent-proxy/templates/xray.tcp.template.json.j2`](/Users/shenlan/workspaces/ai-workspace-infra/playbooks/roles/vhosts/agent-proxy/templates/xray.tcp.template.json.j2)
 - [`roles/vhosts/xray-exporter/defaults/main.yml`](/Users/shenlan/workspaces/ai-workspace-infra/playbooks/roles/vhosts/xray-exporter/defaults/main.yml)
 - [`roles/vhosts/xray-exporter/templates/xray-exporter.service.j2`](/Users/shenlan/workspaces/ai-workspace-infra/playbooks/roles/vhosts/xray-exporter/templates/xray-exporter.service.j2)
 - [`roles/vhosts/vector-agent/templates/vector.toml.j2`](/Users/shenlan/workspaces/ai-workspace-infra/playbooks/roles/vhosts/vector-agent/templates/vector.toml.j2)

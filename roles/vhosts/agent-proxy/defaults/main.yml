@@ -1,0 +1,81 @@
+---
+# Agent Proxy deployment defaults
+
+agent_proxy_repo_url: "https://github.com/x-evor/agent.svc.plus.git"
+agent_proxy_repo_version: "main"
+agent_proxy_app_dir: "/opt/agent-proxy"
+agent_proxy_manage_source_checkout: false
+agent_proxy_binary_src: ""
+agent_proxy_release_repo: "x-evor/agent.svc.plus"
+agent_proxy_release_tag: ""
+agent_proxy_release_base_url: "https://github.com/{{ agent_proxy_release_repo }}/releases/download"
+
+agent_proxy_go_version: "1.25.1"
+agent_proxy_go_root: "/usr/local/go"
+agent_proxy_go_bin: "{{ agent_proxy_go_root }}/bin/go"
+agent_proxy_build_on_target: false
+
+agent_proxy_binary_name: "agent-proxy"
+agent_proxy_binary_path: "/usr/local/bin/{{ agent_proxy_binary_name }}"
+agent_proxy_build_target: "./cmd/agent"
+# This is the upstream release asset name; keep it separate from the local
+# agent-proxy binary name used by this role.
+agent_proxy_release_asset_name: "agent-svc-plus-linux-{{ agent_proxy_release_arch }}"
+agent_proxy_release_asset_url: "{{ agent_proxy_release_base_url }}/{{ agent_proxy_release_tag }}/{{ agent_proxy_release_asset_name }}"
+
+agent_proxy_service_name: "agent-proxy"
+agent_proxy_service_description: "agent proxy service"
+# Transitional systemd unit name from before the role was aligned with the
+# Agent Proxy domain component. It is stopped and disabled during migration.
+agent_proxy_legacy_service_name: "agent-svc-plus"
+agent_proxy_user: "root"
+agent_proxy_group: "root"
+
+agent_proxy_config_dir: "/etc/agent"
+agent_proxy_config_file: "account-agent.yaml"
+agent_proxy_config_path: "{{ agent_proxy_config_dir }}/{{ agent_proxy_config_file }}"
+agent_proxy_data_dir: "/var/lib/agent-proxy"
+
+agent_id: "node-xhttp.svc.plus"
+agent_tls_cert_name: "{{ agent_id }}"
+agent_tls_cert_path: "/etc/caddy/tls/agent-proxy.crt"
+agent_tls_key_path: "/etc/caddy/tls/agent-proxy.key"
+agent_controller_url: "https://accounts.svc.plus"
+agent_api_token: ""
+agent_http_timeout: "15s"
+agent_status_interval: "1m"
+agent_sync_interval: "5m"
+agent_tls_insecure_skip_verify: false
+
+# Agent deployment runs before DNS cutover.  The controller may not be
+# reachable over the public TLS endpoint yet, so the deploy-only path installs
+# and starts the agent without making Xray runtime generation a pre-DNS gate.
+# The post-DNS verification stage owns this readiness check.
+agent_proxy_wait_for_runtime_config: true
+
+agent_billing_enabled: true
+agent_billing_base_url: "http://127.0.0.1:8081"
+agent_billing_http_timeout: "15s"
+agent_billing_collect_interval: "1m"
+agent_billing_reconcile_interval: "5m"
+
+xray_enabled: true
+xray_version: "v26.3.27"
+xray_binary_path: "/usr/local/bin/xray"
+xray_release_asset_arch: "64"
+xray_release_sha256: "23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae"
+xray_release_archive_path: "/var/cache/agent-proxy/Xray-linux-{{ xray_release_asset_arch }}.zip"
+xray_release_url: "https://github.com/XTLS/Xray-core/releases/download/{{ xray_version }}/Xray-linux-{{ xray_release_asset_arch }}.zip"
+xray_sync_interval: "5m"
+xray_uuid: "00000000-0000-0000-0000-000000000000"
+xray_config_path: "/usr/local/etc/xray/config.json"
+xray_tcp_config_path: "/usr/local/etc/xray/tcp-config.json"
+xray_template_dir: "/usr/local/etc/xray/templates"
+xray_access_log_path: "/var/log/xray/access.log"
+xray_access_log_group: "xray-access"
+xray_xhttp_api_port: 28080
+xray_tcp_api_port: 28181
+xray_xhttp_service_user: nobody
+xray_tcp_service_user: caddy
+
+agent_log_level: "info"

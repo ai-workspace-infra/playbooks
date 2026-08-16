@@ -133,7 +133,7 @@
          | default('billing-service,xworkmate-bridge,xray-exporter,agent,accounts,stunnel-client,apisix,console', true) }}
   when: "'xray-exporter' in (stack_services.split(',') | map('trim') | list)"
 
-- import_playbook: deploy_agent_svc_plus.yml
+- import_playbook: deploy_xray_proxy_server.yml
   vars:
     stack_env_file: >-
       {{ lookup('ansible.builtin.env', 'STACK_ENV_FILE')
@@ -141,7 +141,7 @@
     agent_service_hosts: >-
       {{ lookup('ansible.builtin.env', 'STACK_TARGET_HOST')
          | default(lookup('ansible.builtin.env', 'AGENT_SERVICE_HOSTS')
-         | default('agent_svc_plus', true), true) }}
+         | default('agent_proxy', true), true) }}
     agent_api_token: >-
       {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
          | default(hostvars['localhost'].stack_env_map.INTERNAL_SERVICE_TOKEN
