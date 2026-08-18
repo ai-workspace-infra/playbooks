@@ -1,3 +1,12 @@
+[Unit]
+{% if vector_xray_exporter_enabled | default(false) | bool %}
+# Agent Proxy data-plane ordering: Vector must not start before the exporter
+# listeners it receives snapshots from. The exporter units in turn require
+# both Xray services.
+Wants=xray-exporter-xhttp.service xray-exporter-tcp.service
+After=xray-exporter-xhttp.service xray-exporter-tcp.service
+{% endif %}
+
 [Service]
 User=root
 Group=root

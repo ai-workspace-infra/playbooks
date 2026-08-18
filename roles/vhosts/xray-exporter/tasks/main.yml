@@ -86,6 +86,16 @@
   no_log: true
   notify: Restart xray-exporters
 
+- name: Validate Vector snapshot handoff for Xray exporters
+  ansible.builtin.assert:
+    that:
+      - xray_exporter_vector_snapshot_url | trim == 'http://127.0.0.1:8686'
+    fail_msg: >-
+      Xray exporter snapshot handoff must target Vector at
+      http://127.0.0.1:8686 on Agent Proxy hosts; got
+      {{ xray_exporter_vector_snapshot_url | default('') }}.
+  when: xray_exporter_snapshot_features_enabled | bool
+
 - name: Stop and disable legacy xray-exporter services
   ansible.builtin.systemd:
     name: "{{ item }}"
