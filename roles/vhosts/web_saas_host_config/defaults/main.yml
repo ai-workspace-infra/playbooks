@@ -68,12 +68,13 @@ web_saas_host_config_stunnel_client_connect_host: stunnel-server
 web_saas_host_config_stunnel_client_accept_port: 15432
 web_saas_host_config_stunnel_check_host: ""
 
-# 对外站点。console 与 accounts 共用一台主机, 由 Caddy 按域名分流。
+# VPS Caddy 站点。console 与 accounts 共用一台主机, 由 Caddy 按 selfhost
+# 域名分流；公共环境域名由 DNS 指向这些 selfhost 目标。
 web_saas_host_config_console_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_CONSOLE_DOMAIN') | default('', true) }}"
 web_saas_host_config_accounts_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_ACCOUNTS_DOMAIN') | default('', true) }}"
-# The public accounts hostname is an environment alias (for example,
-# accounts-uat.onwalk.net), while Accounts resolves the shared tenant from
-# the target domain base (onwalk.net). Keep those identities separate and
+# The VPS Accounts hostname is mode-qualified (for example,
+# accounts-selfhost-uat.onwalk.net), while Accounts resolves the shared tenant
+# from the target domain base (onwalk.net). Keep those identities separate and
 # derive the tenant host from TARGET_DOMAIN_BASE, the single base-domain input
 # used by deployment and migration. There is deliberately no source-domain or
 # svc.plus fallback here.

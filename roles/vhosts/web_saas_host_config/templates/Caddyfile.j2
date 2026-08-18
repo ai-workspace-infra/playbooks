@@ -41,14 +41,14 @@
 	   把 BFF 路径翻成 Go 路径(/mfa/setup → /mfa/totp/provision)。曾经这里有一条
 	   把该前缀转给 accounts:8080 的规则, 结果 MFA 绑定四个端点全废(setup 404、
 	   status/disable 401、verify 语义错) —— 见 docs/cases/runbooks/。
-	   console 自己要访问 accounts 时走 authUrl(accounts-uat 这个 vhost), 不靠本域。 #}
+	   console 自己要访问 accounts 时走 authUrl(accounts-selfhost-${DEPLOY_ENV} 这个 vhost), 不靠本域。 #}
 	@accounts host {{ web_saas_host_config_accounts_domain }}
 	handle @accounts {
 		tracing {
 			span http.server.request
 		}
 		reverse_proxy accounts:8080 {
-			# Public host is accounts-${DEPLOY_ENV}.${TARGET_DOMAIN_BASE}; the
+			# VPS host is accounts-selfhost-${DEPLOY_ENV}.${TARGET_DOMAIN_BASE}; the
 			# upstream tenant identity is TARGET_DOMAIN_BASE itself.
 			header_up X-Forwarded-Host {{ web_saas_host_config_accounts_forwarded_host }}
 		}

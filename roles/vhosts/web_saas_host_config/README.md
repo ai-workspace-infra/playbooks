@@ -46,9 +46,10 @@ compose 里这些路径**必须是绝对的**:Doco-CD 每次部署都把 gitops 
 - `ROOT_BOOTSTRAP_EMAIL`、`ROOT_BOOTSTRAP_PASSWORD`（Accounts 首次 root 引导凭据，均由 Vault 注入）
 
 `TARGET_DOMAIN_BASE` 是部署和迁移共用的唯一 base-domain 输入。它同时决定
-Accounts 收到的共享租户 host（例如 `onwalk.net`）以及公开环境别名的后缀；
-例如 `DEPLOY_ENV=uat` 时，公开地址是 `accounts-uat.onwalk.net`，Caddy 转发
-给 Accounts 的 `X-Forwarded-Host` 则是 `onwalk.net`。不要传入
+Accounts 收到的共享租户 host（例如 `onwalk.net`）以及 VPS selfhost 别名的后缀；
+例如 `DEPLOY_ENV=uat` 时，VPS Caddy 地址是 `accounts-selfhost-uat.onwalk.net`，
+公共地址 `accounts-uat.onwalk.net` 由 DNS 指向该 selfhost 目标，Caddy 转发给
+Accounts 的 `X-Forwarded-Host` 则是 `onwalk.net`。不要传入
 `source_domain_base`，也不要在 role 或 Caddyfile 中硬编码域名。
 
 **可选的跨节点 Billing 入口**:
@@ -113,7 +114,7 @@ HTTP 服务上提供 Bearer 保护的 `/v1/snapshots/*`。Prometheus 的 `/scrap
    `OAUTH_GOOGLE_CLIENT_SECRET`。
 
 > 两者的回调域名都是 `WEB_SAAS_ACCOUNTS_DOMAIN`(例如 UAT 下是
-> `accounts-uat.onwalk.net`),不是 console 的域名——OAuth 回调固定落在
+> `accounts-selfhost-uat.onwalk.net`),不是 console 的域名——OAuth 回调固定落在
 > accounts 服务上,console 只是发起登录跳转的一方。
 
 ## 断言在最前面,这是有意的
