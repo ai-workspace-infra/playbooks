@@ -60,7 +60,7 @@
       docker turns into empty directories rather than an error.
   no_log: true
 
-- name: Assert public domains are set
+- name: Assert VPS domains are set
   ansible.builtin.assert:
     that:
       - web_saas_host_config_console_domain | trim | length > 0
@@ -70,18 +70,18 @@
       - web_saas_host_config_accounts_forwarded_host | trim | length > 0
     fail_msg: >-
       WEB_SAAS_CONSOLE_DOMAIN, WEB_SAAS_ACCOUNTS_DOMAIN, TARGET_DOMAIN_BASE
-      and DEPLOY_ENV must be set — Caddy needs the public aliases while
+      and DEPLOY_ENV must be set — Caddy needs the VPS selfhost aliases while
       Accounts needs TARGET_DOMAIN_BASE to preserve shared tenant identity.
 
-- name: Assert the public Accounts alias matches the target domain base
+- name: Assert the VPS Accounts alias matches the target domain base
   ansible.builtin.assert:
     that:
       - web_saas_host_config_accounts_domain | trim ==
-        'accounts-' ~ web_saas_host_config_deploy_env ~ '.' ~ web_saas_host_config_target_domain_base
+        'accounts-selfhost-' ~ web_saas_host_config_deploy_env ~ '.' ~ web_saas_host_config_target_domain_base
     fail_msg: >-
       WEB_SAAS_ACCOUNTS_DOMAIN must be
-      accounts-{{ web_saas_host_config_deploy_env }}.{{ web_saas_host_config_target_domain_base }};
-      the public environment alias must remain separate from the shared tenant
+      accounts-selfhost-{{ web_saas_host_config_deploy_env }}.{{ web_saas_host_config_target_domain_base }};
+      the VPS selfhost alias must remain separate from the shared tenant
       host {{ web_saas_host_config_accounts_forwarded_host }}.
 
 # The Web SaaS ingress is the Caddy container managed by Doco-CD. Golden Images
