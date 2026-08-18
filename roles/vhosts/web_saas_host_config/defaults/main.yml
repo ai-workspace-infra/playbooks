@@ -72,6 +72,13 @@ web_saas_host_config_stunnel_check_host: ""
 # 域名分流；公共环境域名由 DNS 指向这些 selfhost 目标。
 web_saas_host_config_console_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_CONSOLE_DOMAIN') | default('', true) }}"
 web_saas_host_config_accounts_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_ACCOUNTS_DOMAIN') | default('', true) }}"
+# The public environment aliases resolve to the VPS selfhost names in DNS, but
+# DNS-only routing preserves the public Host header. Caddy must therefore serve
+# both names on the same host instead of relying on the CNAME target name.
+web_saas_host_config_console_public_domain: >-
+  console-{{ web_saas_host_config_deploy_env }}.{{ web_saas_host_config_target_domain_base }}
+web_saas_host_config_accounts_public_domain: >-
+  accounts-{{ web_saas_host_config_deploy_env }}.{{ web_saas_host_config_target_domain_base }}
 # The VPS Accounts hostname is mode-qualified (for example,
 # accounts-selfhost-uat.onwalk.net), while Accounts resolves the shared tenant
 # from the target domain base (onwalk.net). Keep those identities separate and
@@ -194,8 +201,10 @@ web_saas_host_config_secrets:
   EXPORTER_SOURCES_JSON: "{{ lookup('ansible.builtin.env', 'EXPORTER_SOURCES_JSON') | default('', true) }}"
   BILLING_INGEST_MODE: "{{ lookup('ansible.builtin.env', 'BILLING_INGEST_MODE') | default('push', true) }}"
 
-  ACCOUNT_SERVICE_URL: "{{ lookup('ansible.builtin.env', 'ACCOUNT_SERVICE_URL') | default('https://' ~ web_saas_host_config_accounts_domain, true) }}"
-  NEXT_PUBLIC_ACCOUNT_SERVICE_URL: "{{ lookup('ansible.builtin.env', 'NEXT_PUBLIC_ACCOUNT_SERVICE_URL') | default('https://' ~ web_saas_host_config_accounts_domain, true) }}"
+  # Server-side Console BFF calls stay on the compose network. Browser calls
+  # use the public environment alias, whose Host is accepted by Caddy.
+  ACCOUNT_SERVICE_URL: "{{ lookup('ansible.builtin.env', 'ACCOUNT_SERVICE_URL') | default('http://accounts:8080', true) }}"
+  NEXT_PUBLIC_ACCOUNT_SERVICE_URL: "{{ lookup('ansible.builtin.env', 'NEXT_PUBLIC_ACCOUNT_SERVICE_URL') | default('https://' ~ web_saas_host_config_accounts_public_domain, true) }}"
   SERVER_SERVICE_URL: "{{ lookup('ansible.builtin.env', 'SERVER_SERVICE_URL') | default('https://' ~ web_saas_host_config_console_domain ~ '/api', true) }}"
   NEXT_PUBLIC_SERVER_SERVICE_URL: "{{ lookup('ansible.builtin.env', 'NEXT_PUBLIC_SERVER_SERVICE_URL') | default('https://' ~ web_saas_host_config_console_domain ~ '/api', true) }}"
 

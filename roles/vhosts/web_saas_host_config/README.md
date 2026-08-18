@@ -48,8 +48,9 @@ compose 里这些路径**必须是绝对的**:Doco-CD 每次部署都把 gitops 
 `TARGET_DOMAIN_BASE` 是部署和迁移共用的唯一 base-domain 输入。它同时决定
 Accounts 收到的共享租户 host（例如 `onwalk.net`）以及 VPS selfhost 别名的后缀；
 例如 `DEPLOY_ENV=uat` 时，VPS Caddy 地址是 `accounts-selfhost-uat.onwalk.net`，
-公共地址 `accounts-uat.onwalk.net` 由 DNS 指向该 selfhost 目标，Caddy 转发给
-Accounts 的 `X-Forwarded-Host` 则是 `onwalk.net`。不要传入
+公共地址 `accounts-uat.onwalk.net` 由 DNS 指向该 selfhost 目标；由于这是
+DNS-only，Caddy 必须同时接受这两个 Host。Caddy 转发给 Accounts 的
+`X-Forwarded-Host` 则是 `onwalk.net`。不要传入
 `source_domain_base`，也不要在 role 或 Caddyfile 中硬编码域名。
 
 **可选的跨节点 Billing 入口**:
