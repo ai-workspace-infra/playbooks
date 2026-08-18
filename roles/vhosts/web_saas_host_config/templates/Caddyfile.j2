@@ -42,7 +42,7 @@
 	   把该前缀转给 accounts:8080 的规则, 结果 MFA 绑定四个端点全废(setup 404、
 	   status/disable 401、verify 语义错) —— 见 docs/cases/runbooks/。
 	   console 自己要访问 accounts 时走 authUrl(accounts-selfhost-${DEPLOY_ENV} 这个 vhost), 不靠本域。 #}
-	@accounts host {{ web_saas_host_config_accounts_domain }}
+	@accounts host {{ web_saas_host_config_accounts_domain }} {{ web_saas_host_config_accounts_public_domain }}
 	handle @accounts {
 		tracing {
 			span http.server.request
@@ -54,7 +54,7 @@
 		}
 	}
 
-	@console host {{ web_saas_host_config_console_domain }}
+	@console host {{ web_saas_host_config_console_domain }} {{ web_saas_host_config_console_public_domain }}
 	handle @console {
 		tracing {
 			span http.server.request
@@ -97,7 +97,7 @@
 	}
 }
 {% else %}
-https://{{ web_saas_host_config_console_domain }} {
+https://{{ web_saas_host_config_console_domain }}, https://{{ web_saas_host_config_console_public_domain }} {
 	encode zstd gzip
 
 	# /api/auth/* 不做分流: 那是 console 自己的 Next BFF 路由, 不是 accounts 的
@@ -110,7 +110,7 @@ https://{{ web_saas_host_config_console_domain }} {
 	}
 }
 
-https://{{ web_saas_host_config_accounts_domain }} {
+https://{{ web_saas_host_config_accounts_domain }}, https://{{ web_saas_host_config_accounts_public_domain }} {
 	encode zstd gzip
 	tracing {
 		span http.server.request
