@@ -1,6 +1,6 @@
 # 全栈无服务器与边缘架构可观测性体系指南 (Serverless & Edge Full-Stack Architecture Guide)
 
-本文档系统性阐述 **Cloudflare Edge + Frontend Router + 5 SSR Workers + 3 Edge Gateway Workers + GCP Cloud Run + Supabase Cloud DB (PostgreSQL)** 的全栈无服务器架构，以及覆盖多环境（`sit` / `uat` / `prod`）的可观测性监控接入方案。
+本文档系统性阐述 **Cloudflare Edge + Frontend Router + 5 SSR Workers + 3 Edge Gateway Workers + GCP Cloud Run + Supabase Cloud DB (PostgreSQL)** 的全栈无服务器架构，以及覆盖多环境（`sit` / `uat` / `prod`）的可观测性监控接入与认证方案。
 
 ---
 
@@ -52,66 +52,90 @@
 
 ---
 
-## 3. 监控与可观测性接入方案 (Monitoring Ingestion Runbook)
+## 3. 监控接入与认证细节 (Authentication & Ingestion TL;DR)
 
-### 3.1 DNS 与 Cloudflare 边缘指标采集
-1. **指标流 (Prometheus / VictoriaMetrics)**：
-   - 通过 Cloudflare GraphQL Analytics API / Prometheus Cloudflare Exporter 定期拉取 DNS 解析速率（`cloudflare_dns_queries_total`）、Zone 状态码分布（`cloudflare_zone_requests_status_total`）、缓存与带宽（`cloudflare_zone_bandwidth_cached_bytes`）。
-2. **边缘日志流 (VictoriaLogs)**：
-   - 启用 Cloudflare Logpush 将 HTTP Request Logs 投递至 Vector 采集网关，Vector 标准化后写入 VictoriaLogs（标签：`source_type="cloudflare"`, `env="uat"`, `zone="onwalk.net"`）。
+为了保证公网传输与多环境采集的安全性，所有外部组件向统一服务端（`https://observability.svc.plus`）推送数据时，均严格遵循 Vault 凭据隔离与认证通道规范。
 
-### 3.2 终端可用性与黑盒探针 (Blackbox Exporter)
-1. **探针配置**：
-   - 由 `roles/vhosts/blackbox_exporter` 管理探针配置 `blackbox.yml`。
-   - 自动探测各环境域名：
-     - `https://console-{env}.onwalk.net`
-     - `https://accounts-{env}.onwalk.net`
-     - `https://ai-workspace-portal-{env}.pages.dev`
-     - Cloud Run 直连健康检查接口
-2. **核心指标**：
-   - `probe_success`：端点可用性（0: DOWN, 1: UP）。
-   - `probe_duration_seconds`：端点响应耗时（DNS、TCP、TLS、TTFB、Transfer）。
-   - `probe_ssl_earliest_cert_expiry`：SSL 证书到期倒计时（天）。
+```
+[Cloudflare Edge]   --> (Logpush / Analytics API)    --> [Vector / Prometheus Exporter] --> [VictoriaMetrics / Logs]
+[GCP Cloud Run]     --> (Cloud Monitoring / OTel)    --> [Prometheus Scraper]          --> [VictoriaMetrics / Logs]
+[Supabase DB]       --> (postgres_exporter / Drain)  --> [Prometheus Scraper]          --> [VictoriaMetrics / Logs]
+[Blackbox Exporter] --> (Synthetic HTTPS Probes)     --> [Prometheus Scraper]          --> [VictoriaMetrics]
+```
 
-### 3.3 5 大 SSR Workers 与 3 大 Edge Gateway 采集
-1. **Worker 性能指标**：
-   - `cloudflare_worker_requests_count{worker="frontend-ssr-public-uat"}`：请求速率。
-   - `cloudflare_worker_cpu_time_us_sum / cloudflare_worker_cpu_time_us_count`：平均 CPU 渲染耗时（ms）。
-   - `cloudflare_worker_errors_count`：未捕获异常与 5xx 错误。
-   - `edge_gateway_upstream_requests_total{upstream="primary|fallback"}`：上游分发与回退路由比例。
-   - `edge_gateway_auth_duration_seconds_bucket`：JWT 鉴权耗时分位数。
-2. **Worker 执行日志**：
-   - Cloudflare Workers Tail / Logpush 流入 VictoriaLogs（`source_type="cloudflare"`, `worker="edge-gateway-core"`）。
+### 3.1 链路一：Cloudflare Edge 接入与认证
+```
+[Cloudflare Edge] --(Logpush HTTP Sink)--> [Caddy /ingest/logs] --> [VictoriaLogs]
+[Cloudflare API]  <--(GraphQL Pull)------ [CF Exporter] ---------> [VictoriaMetrics]
+```
+1. **Cloudflare Logpush (边缘日志直推)**：
+   - **认证方式**：HTTP Header 注入 `Authorization: Basic <base64(vector_user:vector_pass)>` 或 Bearer Token。
+   - **推送地址**：`https://observability.svc.plus/ingest/logs/insert/jsonline?_msg_field=message&_stream_fields=zone,worker,status`
+   - **凭据来源**：Vault 路径 `kv/data/<env>/serverless/cloudflare` 中的 `CLOUDFLARE_LOGPUSH_AUTH_TOKEN`。
+2. **Cloudflare Analytics & DNS 指标 (GraphQL API 轮询)**：
+   - **认证方式**：API Token 认证（`Authorization: Bearer ${CLOUDFLARE_API_TOKEN}`）。
+   - **权限范围**：`Analytics:Read`, `Zone:Read`, `Workers Analytics:Read`。
+   - **凭据注入**：流水线自 Vault `kv/data/<env>/serverless/cloudflare` 读取 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID`（`e71be5efb76a6c54f78f008da4404f00`）注入 Exporter。
 
-### 3.4 GCP Cloud Run 计算指标与日志 (Project: xworktech)
-1. **GCP 监控指标导出**：
-   - 通过 OpenTelemetry Collector / GCP Cloud Monitoring Exporter 采集：
-     - `cloud_run_request_count` / `run_googleapis_com_request_count`
-     - `cloud_run_container_instance_count`：活跃实例伸缩
-     - `cloud_run_container_startup_latencies_count`：容器冷启动频次
-     - `cloud_run_container_cpu_utilizations`、`cloud_run_container_memory_utilizations`：CPU 与内存利用率
-2. **容器应用日志**：
-   - Google Cloud Logging 经 Log Sink 转发到 Vector，入库 VictoriaLogs（`source_type="cloud_run"`, `service_name="accounts"`）。
+---
 
-### 3.5 ★ Supabase Cloud DB (PostgreSQL) 深度性能监控 (重点关注)
-1. **指标链路 (Prometheus Scraper -> postgres_exporter)**：
-   - 连接 Supabase Direct URL (`db.iqkxspmhcfqmhkbjdoms.supabase.co:5432`) 与 Supavisor Pooler (`aws-0-ap-northeast-1.pooler.supabase.com:6543`)。
-   - 采集核心数据库指标：
-     - **连接负载**：`pg_stat_activity_count`（`active`, `idle`, `idle in transaction`）、`pg_settings_max_connections`、`supavisor_active_client_connections`。
-     - **事务吞吐量**：`pg_stat_database_xact_commit` 与 `pg_stat_database_xact_rollback`（监测回滚率异动）。
-     - **缓存命中率**：`pg_stat_database_blks_hit / (blks_hit + blks_read) * 100`（维持 > 99%）。
-     - **查询耗时分位数**：`pg_stat_statements_total_exec_time / pg_stat_statements_calls` 与 `pg_stat_activity_query_duration_seconds_bucket`（p50/p95/p99）。
-     - **死元组与表膨胀**：`pg_stat_user_tables_n_dead_tup` 与 `pg_stat_user_tables_autovacuum_count`。
-     - **存储容量与 WAL**：`pg_database_size_bytes` 与 `pg_stat_wal_wal_bytes`。
-2. **Supabase 数据库日志与慢查询**：
-   - Supabase Log Drains 转发 Postgres 慢查询（`duration > 500ms`）与 `ERROR`/`FATAL` 日志至 VictoriaLogs（`source_type="supabase"`）。
+### 3.2 链路二：GCP Cloud Run 计算指标与应用日志接入
+```
+[Cloud Run (xworktech)] --(OTel / Cloud Logging)--> [Vector Sink / OTel Collector] --> [VictoriaMetrics / Logs]
+```
+1. **GCP Cloud Monitoring / 指标拉取**：
+   - **认证方式**：GitHub OIDC $\rightarrow$ Vault JWT $\rightarrow$ GCP Workload Identity 换取短期 GCP Access Token。
+   - **Service Account 权限**：`roles/monitoring.viewer` 与 `roles/logging.viewer`。
+   - **Vault 凭据路径**：
+     - `kv/data/<env>/serverless/gcp/GCP_WORKLOAD_IDENTITY_PROVIDER`
+     - `kv/data/<env>/serverless/gcp/GCP_SERVICE_ACCOUNT_EMAIL`
+     - `kv/data/<env>/serverless/gcp/GCP_PROJECT_ID` (`xworktech`)
+2. **Cloud Run 应用日志 (Log Router / Log Sink 导出)**：
+   - **认证方式**：GCP Log Sink 通过 HTTPS Webhook 转发至 Vector 网关，携带签名密钥或 Basic Auth Header（`vector_agent:<password>`）。
+   - **入库规范**：打标 `source_type="cloud_run"`, `env="${DEPLOY_ENV}"`, `service_name="accounts|content-service|billing-service"`。
+
+---
+
+### 3.3 链路三：Supabase Cloud DB (PostgreSQL) 深度监控接入
+```
+[Supabase DB (iqkxspmhcfqmhkbjdoms)] <--(TLS 5432/6543)-- [postgres_exporter] --> [VictoriaMetrics]
+[Supabase Log Drain]                 --(HTTPS Webhook)--> [Vector Ingest]      --> [VictoriaLogs]
+```
+1. **数据库指标采集 (postgres_exporter)**：
+   - **认证方式**：PostgreSQL SCRAM-SHA-256 / MD5 密码认证 + 强制 TLS (`sslmode=require`)。
+   - **连接目标**：
+     - **直连端口 (Direct URL)**：`postgres://postgres:<DB_PASS>@db.iqkxspmhcfqmhkbjdoms.supabase.co:5432/postgres?sslmode=require`
+     - **连接池端口 (Pooler URL)**：`postgres://postgres.iqkxspmhcfqmhkbjdoms:<DB_PASS>@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?sslmode=require`
+   - **Vault 凭据路径**：`kv/data/<env>/serverless/supabase` 中的 `DATABASE_DIRECT_URL` 与 `DATABASE_SESSION_POOLER_URL`。
+   - **数据库最小只读角色权限**：
+     ```sql
+     GRANT pg_read_all_stats TO postgres_exporter;
+     GRANT SELECT ON pg_stat_statements TO postgres_exporter;
+     ```
+2. **Supabase 慢查询与报错日志 (Log Drains)**：
+   - **认证方式**：Supabase Webhook Destination 添加 Custom Headers（`Authorization: Basic <base64>` 或 `X-Vector-Auth: <token>`）。
+   - **推送终点**：`https://observability.svc.plus/ingest/logs/insert/jsonline`，自动解析 `duration`、`statement`、`error_severity`。
+
+---
+
+### 3.4 链路四：Blackbox Exporter 终端可用性探测
+```
+[Blackbox Exporter] --(HTTPS GET / TLS Handshake)--> [Console / Accounts / Pages / API]
+[Prometheus Scraper] <--(Scrape :9115/probe)--------- [VictoriaMetrics]
+```
+1. **黑盒探针执行**：
+   - **认证策略**：对外网公网域名（如 `https://console-uat.onwalk.net`、`https://accounts-uat.onwalk.net`）发起标准无凭据探测（模拟真实用户终端接入），校验 HTTP 状态码（`200`/`404`/`302`）与 SSL 握手证书有效性。
+   - **专用内部探针（可选）**：对受保护的管理接口（如 `/api/admin/health`）注入 Bearer Probe Token 探测。
+2. **Prometheus Scraper 抓取**：
+   - **认证方式**：通过本地回环 `127.0.0.1:9115` 或 Caddy `/blackbox/*` 经 Basic Auth 认证抓取指标，存入 VictoriaMetrics（`job="blackbox"`）。
 
 ---
 
 ## 4. Grafana 大盘概览 (Dashboard Specifications)
 
 看板文件：`roles/docker/observability-server/files/serverless-edge-cloudrun-supabase-dashboard.json`  
-UID：`serverless-fullstack-architecture`
+UID：`serverless-fullstack-architecture`  
+在线直达：[https://observability.svc.plus/grafana/d/serverless-fullstack-architecture/](https://observability.svc.plus/grafana/d/serverless-fullstack-architecture/)
 
 ### 8 大核心监控板块：
 1. **01 · 全链路架构拓扑脉搏**：端到端状态流、SLA、边缘 QPS、SSR 耗时、Gateway 回退率、Cloud Run 活跃实例、Supabase 连接池饱和度及云控制台直达。

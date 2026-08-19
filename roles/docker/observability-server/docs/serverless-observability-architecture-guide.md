@@ -1,10 +1,10 @@
-# 全栈无服务器与边缘架构可观测性指南 (Serverless & Edge Full-Stack Observability Guide)
+# 全栈无服务器与边缘架构可观测性体系指南 (Serverless & Edge Full-Stack Architecture Guide)
 
-本文档阐述基于 **Cloudflare Edge + Frontend Router + 5 SSR Workers + 3 Edge Gateway Workers + GCP Cloud Run + Supabase Cloud DB (PostgreSQL)** 的端到端多环境 (`sit` / `uat` / `prod`) 可观测性架构与 Grafana Dashboard 设计。
+本文档系统性阐述 **Cloudflare Edge + Frontend Router + 5 SSR Workers + 3 Edge Gateway Workers + GCP Cloud Run + Supabase Cloud DB (PostgreSQL)** 的全栈无服务器架构，以及覆盖多环境（`sit` / `uat` / `prod`）的可观测性监控接入与认证方案。
 
 ---
 
-## 1. 系统架构与拓扑 (System Topology)
+## 1. 架构拓扑与流量流向 (Architecture Topology)
 
 ```
                                  Cloudflare Edge
@@ -28,98 +28,33 @@
                                                      (重点关注 · Core Stateful DB)
 ```
 
-### 1.1 云原生资产与控制台直达
+### 1.1 云原生资产与控制台直达映射
 
-| 组件层级 | 服务 / 标识 | 环境分布 | 控制台直达 / 资源地址 |
+| 架构层级 | 组件 / 标识 | 负责服务与职责 | 控制台直达 / 资源地址 |
 |---|---|---|---|
-| **Edge & DNS** | Cloudflare Zone (`onwalk.net` / `svc.plus`) | SIT / UAT / PROD | [Cloudflare Workers & Pages](https://dash.cloudflare.com/e71be5efb76a6c54f78f008da4404f00/workers-and-pages) |
-| **Frontend Router** | `frontend-router-{env}` | SIT / UAT / PROD | 挂载于 `console-{env}.onwalk.net` / `console.svc.plus` |
-| **5 SSR Workers** | `public` / `content` / `auth` / `console` / `workspace` | 独立 Worker 边界 | 路由分流 (`/*`, `/blogs*`, `/login*`, `/panel*`, `/ai-workspace*`) |
-| **Pages 静态产物** | `ai-workspace-portal-{env}.pages.dev` | SIT / UAT / PROD | 静态资源前缀 `/_next/*`, `/static/*`, `/assets/*` |
-| **3 Gateway Workers** | `edge-gateway-auth` / `admin` / `core` | API Ingress | 挂载于 `accounts-{env}.onwalk.net`，支持主备回退路由 |
-| **弹性计算 (Cloud Run)** | `accounts` / `content-service` / `billing-service` | GCP Project: `xworktech` | [Google Cloud Run Console](https://console.cloud.google.com/run/services?project=xworktech) (Region: `asia-northeast1`) |
-| **核心数据库 (Supabase)** | PostgreSQL 15+ & Supavisor Pooler | Project: `iqkxspmhcfqmhkbjdoms` | [Supabase Project Console](https://supabase.com/dashboard/project/iqkxspmhcfqmhkbjdoms) |
+| **01 · Edge & Ingress** | Cloudflare Zone (`onwalk.net` / `svc.plus`) | DNS 权威解析、WAF 防护、TLS 1.3 终止、Edge 缓存 | [Cloudflare Workers & Pages 控制台](https://dash.cloudflare.com/e71be5efb76a6c54f78f008da4404f00/workers-and-pages) (Account: `e71be5efb76a6c54f78f008da4404f00`) |
+| **02 · Frontend Router** | `frontend-router-{env}` | Cloudflare Worker 路由中心，挂载于 `console-{env}` | [Frontend Router 视图](https://dash.cloudflare.com/e71be5efb76a6c54f78f008da4404f00/workers/services/view/frontend-router-uat/production) |
+| **03 · 5 SSR Workers** | `public` / `content` / `auth` / `console` / `workspace` | 边缘动态 SSR 渲染分流 (`/*`, `/blogs*`, `/login*`, `/panel*`, `/ai-workspace*`) | [Workers 服务列表](https://dash.cloudflare.com/e71be5efb76a6c54f78f008da4404f00/workers-and-pages) |
+| **04 · 静态资源 Pages** | `ai-workspace-portal-{env}.pages.dev` | 托管 Next.js / 前端静态资源 (`/_next/*`, `/static/*`, `/assets/*`) | Cloudflare Pages Project |
+| **05 · 3 Gateway Workers** | `edge-gateway-auth` / `admin` / `core` | API Ingress 边界，挂载于 `accounts-{env}`，具备主备 failover 路由 | Cloudflare Worker Ingress |
+| **06 · 弹性计算 (Cloud Run)** | `accounts` / `content-service` / `billing-service` | GCP 无服务器容器计算（区域：`asia-northeast1`） | [Google Cloud Run 控制台](https://console.cloud.google.com/run/services?project=xworktech) (Project: `xworktech`) |
+| **07 · 核心数据库 (Supabase)** | PostgreSQL 15+ & Supavisor Pooler | 核心有状态业务数据库（**重点关注**） | [Supabase Project 控制台](https://supabase.com/dashboard/project/iqkxspmhcfqmhkbjdoms) (Project: `iqkxspmhcfqmhkbjdoms`) |
 
 ---
 
-## 2. 多环境多维度看板结构 (Dashboard Structure)
+## 2. 多环境路由与域名契约 (Multi-Environment Matrix)
 
-看板 UID：`serverless-fullstack-architecture`  
-看板标题：`全栈无服务器与边缘架构总览 (Serverless & Edge Full-Stack Topology)`
-
-### 2.1 模板变量 (Templating Variables)
-- **`$env`**: 环境选择器 (`sit`, `uat`, `prod`, `All`)，支持无缝切换。
-- **`$DS_METRICS`**: 指标数据源（默认 `victoriametrics` / `prometheus`）。
-- **`$DS_LOGS`**: 日志数据源（默认 `victorialogs`）。
-- **`$ssr_worker`**: 5 大 SSR 边缘工作线程筛选器 (`public`, `content`, `auth`, `console`, `workspace`)。
-- **`$gateway_worker`**: 3 大 API 边界筛选器 (`auth`, `admin`, `core`)。
-- **`$cloudrun_service`**: Cloud Run 后端服务筛选器 (`accounts`, `content-service`, `billing-service`)。
-- **`$database`**: Postgres 数据库名筛选器 (`postgres`, `accounts`, `billing`)。
+| 环境 | 控制平面 | 门户入口 (Console Domain) | 认证与网关入口 (Accounts Domain) | Pages 静态源站 | Cloud Run 区域 |
+|---|---|---|---|---|---|
+| **SIT** | Cloudflare DNS | `console-sit.onwalk.net` | `accounts-sit.onwalk.net` | `ai-workspace-portal-sit.pages.dev` | `asia-northeast1` |
+| **UAT** | Cloudflare DNS | `console-uat.onwalk.net` | `accounts-uat.onwalk.net` | `ai-workspace-portal-uat.pages.dev` | `asia-northeast1` |
+| **PROD** | Cloudflare DNS | `console.svc.plus` | `accounts.svc.plus` | `ai-workspace-portal-prod.pages.dev` | `asia-northeast1` |
 
 ---
 
-## 3. 分层可观测性设计与指标规范 (Telemetry Pillars)
+## 3. 监控接入与认证细节 (Authentication & Ingestion TL;DR)
 
-### 3.1 全链路架构脉搏 (Architecture Pulse)
-- **全站可用性 (SLA)**：综合所有端点黑盒探针成功率（`avg(probe_success{env=~"$env"}) * 100`）。
-- **边缘总 QPS**：Cloudflare 接入总请求速率。
-- **SSR 平均 CPU 耗时**：Worker 执行耗时基线（毫秒级）。
-- **Gateway 回退比例**：Primary VPS 与 Fallback Cloud Run 的流量比例与故障转移状态。
-- **Cloud Run 活跃实例**：当前伸缩实例总数。
-- **Supabase 连接池饱和度**：当前活跃连接占最大连接数百分比。
-
-### 3.2 DNS 流量与边缘接入采集 (DNS & Edge Ingress)
-- **DNS 解析速率与类型**：A / AAAA / CNAME 查询 QPS 与响应状态码（`NOERROR`, `NXDOMAIN`, `SERVFAIL`）。
-- **HTTP 响应状态码分布**：2xx, 3xx, 4xx, 5xx 堆叠趋势图。
-- **边缘缓存命中率与带宽**：Cached vs Uncached Bandwidth (Bps)。
-- **WAF 与安全防护**：威胁拦截事件、Bot 防护计数与速率限制触发。
-
-### 3.3 终端可用性与 SSL 证书黑盒探测 (Endpoint Synthetic Probe)
-- **全域探针状态矩阵**：
-  - `console.{env}` (Console Portal 探测)
-  - `accounts.{env}` (Accounts Auth / Gateway 探测)
-  - Cloud Run 直连健康检查探测
-- **SSL 证书倒计时 (天)**：
-  - 触发黄色告警阈值：`< 15` 天
-  - 触发红色严重告警阈值：`< 7` 天
-- **探针时延分段**：DNS 查找、TCP 建连、TLS 握手、TTFB 首字节、传输耗时。
-
-### 3.4 Cloudflare Frontend Router 与 5 大 SSR Workers
-- **分发吞吐量 (QPS)**：Frontend Router 命中 Pages vs 5 SSR Workers。
-- **CPU 耗时 (p50/p95/p99)**：各 SSR Worker 内部渲染耗时。
-- **子请求与外部调用**：Worker 发起的 Origin / KV / DB 子请求速率。
-- **Worker 错误数**：4xx/5xx 与 Worker Unhandled Exceptions。
-
-### 3.5 Cloudflare Edge Gateway (3 Workers)
-- **3 大边界流量**：`/api/auth/*` (Auth), `/api/admin/*` (Admin), `/api/*` (Core)。
-- **JWT 鉴权耗时**：Gateway 解析与验证 JWT 签名耗时（p95 ms）。
-- **401/403 拦截率**：鉴权失败与权限拒绝速率。
-- **Failover 回退路由**：主节点不可用时平滑向 Cloud Run fallback 的请求数。
-
-### 3.6 GCP Cloud Run 运行的服务 (Project: xworktech)
-- **服务请求与延迟**：`accounts`, `content-service`, `billing-service` 请求 QPS 与 p95 响应耗时。
-- **容器伸缩与冷启动**：实例数（Active Instances）与冷启动（Cold Start / Container Startup）计数。
-- **资源使用率**：CPU 利用率 (%) 与 Memory 利用率 (%)。
-
-### 3.7 ★ Supabase Cloud DB / PostgreSQL 深度性能 (重点关注)
-- **连接数与连接池负载**：
-  - 活跃连接数（`state=active`）、空闲连接（`state=idle`）、事务中空闲（`state=idle in transaction`）。
-  - Supavisor / PgBouncer 客户端等待队列与池饱和度。
-- **TPS 事务吞吐量**：Commits/s vs Rollbacks/s（回滚率异常升高报警）。
-- **共享内存缓存命中率 (Cache Hit Ratio)**：
-  - 目标值：`> 99%`（低于 `95%` 触发性能调优告警）。
-- **SQL 执行耗时分位数**：`pg_stat_statements` 平均查询耗时与 p95 耗时。
-- **死元组与自动清理**：`n_dead_tup` 膨胀趋势与 Autovacuum 触发频率。
-- **存储与 WAL**：数据库磁盘占用量（GB）与 WAL 生成速率（Bytes/s）。
-
-### 3.8 全栈统一日志流下钻 (VictoriaLogs)
-- **错误与警告组件分布**：按 `source_type` (`cloudflare`, `cloud_run`, `supabase`) 聚合错误日志。
-- **Supabase DB 慢查询与报错日志**：筛选 `duration > 500ms` 与 `ERROR` / `FATAL` 级别数据库日志。
-- **Cloud Run & Edge 运行时日志**：实时日志流，支持按环境、服务、状态码直接过滤。
-
----
-
-## 4. 采集器与数据导出链路配置 (Data Pipeline)
+为了保证公网传输与多环境采集的安全性，所有外部组件向统一服务端（`https://observability.svc.plus`）推送数据时，均严格遵循 Vault 凭据隔离与认证通道规范。
 
 ```
 [Cloudflare Edge]   --> (Logpush / Analytics API)    --> [Vector / Prometheus Exporter] --> [VictoriaMetrics / Logs]
@@ -128,10 +63,98 @@
 [Blackbox Exporter] --> (Synthetic HTTPS Probes)     --> [Prometheus Scraper]          --> [VictoriaMetrics]
 ```
 
+### 3.1 链路一：Cloudflare Edge 接入与认证
+```
+[Cloudflare Edge] --(Logpush HTTP Sink)--> [Caddy /ingest/logs] --> [VictoriaLogs]
+[Cloudflare API]  <--(GraphQL Pull)------ [CF Exporter] ---------> [VictoriaMetrics]
+```
+1. **Cloudflare Logpush (边缘日志直推)**：
+   - **认证方式**：HTTP Header 注入 `Authorization: Basic <base64(vector_user:vector_pass)>` 或 Bearer Token。
+   - **推送地址**：`https://observability.svc.plus/ingest/logs/insert/jsonline?_msg_field=message&_stream_fields=zone,worker,status`
+   - **凭据来源**：Vault 路径 `kv/data/<env>/serverless/cloudflare` 中的 `CLOUDFLARE_LOGPUSH_AUTH_TOKEN`。
+2. **Cloudflare Analytics & DNS 指标 (GraphQL API 轮询)**：
+   - **认证方式**：API Token 认证（`Authorization: Bearer ${CLOUDFLARE_API_TOKEN}`）。
+   - **权限范围**：`Analytics:Read`, `Zone:Read`, `Workers Analytics:Read`。
+   - **凭据注入**：流水线自 Vault `kv/data/<env>/serverless/cloudflare` 读取 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID`（`e71be5efb76a6c54f78f008da4404f00`）注入 Exporter。
+
 ---
 
-## 5. 验证与交付清单
+### 3.2 链路二：GCP Cloud Run 计算指标与应用日志接入
+```
+[Cloud Run (xworktech)] --(OTel / Cloud Logging)--> [Vector Sink / OTel Collector] --> [VictoriaMetrics / Logs]
+```
+1. **GCP Cloud Monitoring / 指标拉取**：
+   - **认证方式**：GitHub OIDC $\rightarrow$ Vault JWT $\rightarrow$ GCP Workload Identity 换取短期 GCP Access Token。
+   - **Service Account 权限**：`roles/monitoring.viewer` 与 `roles/logging.viewer`。
+   - **Vault 凭据路径**：
+     - `kv/data/<env>/serverless/gcp/GCP_WORKLOAD_IDENTITY_PROVIDER`
+     - `kv/data/<env>/serverless/gcp/GCP_SERVICE_ACCOUNT_EMAIL`
+     - `kv/data/<env>/serverless/gcp/GCP_PROJECT_ID` (`xworktech`)
+2. **Cloud Run 应用日志 (Log Router / Log Sink 导出)**：
+   - **认证方式**：GCP Log Sink 通过 HTTPS Webhook 转发至 Vector 网关，携带签名密钥或 Basic Auth Header（`vector_agent:<password>`）。
+   - **入库规范**：打标 `source_type="cloud_run"`, `env="${DEPLOY_ENV}"`, `service_name="accounts|content-service|billing-service"`。
 
-1. **Grafana 自动装载**：`playbooks/roles/docker/observability-server/tasks/main.yml` 已配置自动下发 `serverless-edge-cloudrun-supabase-dashboard.json`。
-2. **首页导航联动**：`homepage-navigation.json` 已集成 `Serverless` 快捷入口磁贴。
-3. **多环境过滤**：仪表板在 `sit`、`uat`、`prod` 下均可独立过滤与聚合呈现。
+---
+
+### 3.3 链路三：Supabase Cloud DB (PostgreSQL) 深度监控接入
+```
+[Supabase DB (iqkxspmhcfqmhkbjdoms)] <--(TLS 5432/6543)-- [postgres_exporter] --> [VictoriaMetrics]
+[Supabase Log Drain]                 --(HTTPS Webhook)--> [Vector Ingest]      --> [VictoriaLogs]
+```
+1. **数据库指标采集 (postgres_exporter)**：
+   - **认证方式**：PostgreSQL SCRAM-SHA-256 / MD5 密码认证 + 强制 TLS (`sslmode=require`)。
+   - **连接目标**：
+     - **直连端口 (Direct URL)**：`postgres://postgres:<DB_PASS>@db.iqkxspmhcfqmhkbjdoms.supabase.co:5432/postgres?sslmode=require`
+     - **连接池端口 (Pooler URL)**：`postgres://postgres.iqkxspmhcfqmhkbjdoms:<DB_PASS>@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres?sslmode=require`
+   - **Vault 凭据路径**：`kv/data/<env>/serverless/supabase` 中的 `DATABASE_DIRECT_URL` 与 `DATABASE_SESSION_POOLER_URL`。
+   - **数据库最小只读角色权限**：
+     ```sql
+     GRANT pg_read_all_stats TO postgres_exporter;
+     GRANT SELECT ON pg_stat_statements TO postgres_exporter;
+     ```
+2. **Supabase 慢查询与报错日志 (Log Drains)**：
+   - **认证方式**：Supabase Webhook Destination 添加 Custom Headers（`Authorization: Basic <base64>` 或 `X-Vector-Auth: <token>`）。
+   - **推送终点**：`https://observability.svc.plus/ingest/logs/insert/jsonline`，自动解析 `duration`、`statement`、`error_severity`。
+
+---
+
+### 3.4 链路四：Blackbox Exporter 终端可用性探测
+```
+[Blackbox Exporter] --(HTTPS GET / TLS Handshake)--> [Console / Accounts / Pages / API]
+[Prometheus Scraper] <--(Scrape :9115/probe)--------- [VictoriaMetrics]
+```
+1. **黑盒探针执行**：
+   - **认证策略**：对外网公网域名（如 `https://console-uat.onwalk.net`、`https://accounts-uat.onwalk.net`）发起标准无凭据探测（模拟真实用户终端接入），校验 HTTP 状态码（`200`/`404`/`302`）与 SSL 握手证书有效性。
+   - **专用内部探针（可选）**：对受保护的管理接口（如 `/api/admin/health`）注入 Bearer Probe Token 探测。
+2. **Prometheus Scraper 抓取**：
+   - **认证方式**：通过本地回环 `127.0.0.1:9115` 或 Caddy `/blackbox/*` 经 Basic Auth 认证抓取指标，存入 VictoriaMetrics（`job="blackbox"`）。
+
+---
+
+## 4. Grafana 大盘概览 (Dashboard Specifications)
+
+看板文件：`roles/docker/observability-server/files/serverless-edge-cloudrun-supabase-dashboard.json`  
+UID：`serverless-fullstack-architecture`  
+在线直达：[https://observability.svc.plus/grafana/d/serverless-fullstack-architecture/](https://observability.svc.plus/grafana/d/serverless-fullstack-architecture/)
+
+### 8 大核心监控板块：
+1. **01 · 全链路架构拓扑脉搏**：端到端状态流、SLA、边缘 QPS、SSR 耗时、Gateway 回退率、Cloud Run 活跃实例、Supabase 连接池饱和度及云控制台直达。
+2. **02 · DNS 流量与边缘接入采集**：DNS 查询 QPS、HTTP 状态码分布 (2xx/3xx/4xx/5xx)、边缘缓存命中率与带宽。
+3. **03 · 终端可用性与 SSL 探测**：端点状态表、SSL 证书倒计时趋势（<15d 警告, <7d 严重）、探针各阶段时延。
+4. **04 · Cloudflare Frontend Router & 5 SSR Workers**：5 大 Worker 吞吐量 QPS、CPU 耗时、错误数与子请求。
+5. **05 · Cloudflare Edge Gateway (3 Workers)**：边界 QPS (auth, admin, core)、主备路由回退分发比、JWT 鉴权耗时与 401/403 拦截率。
+6. **06 · GCP Cloud Run 计算**：`accounts`、`content-service`、`billing-service` 请求 QPS 与 p95 响应耗时、活跃容器数、冷启动次数、CPU/内存利用率。
+7. **07 · ★ Supabase Cloud DB (PostgreSQL)**：连接数与池负载、TPS、共享缓存命中率 (>99%)、查询耗时分位数 (p50/p95/p99)、死元组膨胀与 Autovacuum、存储与 WAL 速率。
+8. **08 · 全栈统一日志流下钻**：组件错误与告警分布 (Bar Gauge)、Supabase DB 慢查询与报错表、Cloud Run & Edge 运行时日志表。
+
+---
+
+## 5. 部署与装载验证 (Verification)
+
+1. **Ansible 自动装载**：已在 `roles/docker/observability-server/tasks/main.yml` 的 `Copy Grafana dashboards` 任务中注册 `serverless-edge-cloudrun-supabase-dashboard.json`。
+2. **导航大盘联动**：已在 `roles/docker/observability-server/files/homepage-navigation.json` 中配置 `Serverless` 快捷入口磁贴。
+3. **JSON 语法校验**：
+   ```bash
+   jq .title roles/docker/observability-server/files/serverless-edge-cloudrun-supabase-dashboard.json
+   jq .title roles/docker/observability-server/files/homepage-navigation.json
+   ```
