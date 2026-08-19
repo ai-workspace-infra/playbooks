@@ -1,31 +1,65 @@
 ---
-# -----------------------------------------------------------------------------
-# DNS-only Billing origin alias. The public Billing hostname stays proxied;
-# Cloudflare Origin Rules use this same-zone alias for the origin override.
-# -----------------------------------------------------------------------------
+# Billing uses a Worker custom domain. The core Edge Gateway proxies requests
+# to Cloud Run, avoiding Enterprise-only Origin Rule Host/SNI overrides.
 
-- name: Resolve deployed Billing Cloud Run URL
-  ansible.builtin.command: >-
-    gcloud run services describe {{ cloud_run_billing_service_name }}
-    --project={{ cloud_run_project_id }}
-    --region={{ cloud_run_region }}
-    --format=value(status.url)
-  register: billing_cloud_run_url
-  changed_when: false
-
-- name: Validate Billing Cloud Run URL
+- name: Validate Cloudflare Billing Worker inputs
   ansible.builtin.assert:
     that:
-      - billing_cloud_run_url.stdout | trim is match('^https://[^/]+$')
-    fail_msg: "Cloud Run service did not return a valid HTTPS URL: {{ billing_cloud_run_url.stdout | trim }}"
+      - cloudflare_api_token | length > 0
+      - cloudflare_account_id | length > 0
+      - cloudflare_billing_host | length > 0
+      - cloudflare_edge_gateway_core_worker | length > 0
+    fail_msg: "Cloudflare token, account, Billing host, and core Worker are required"
 
-- name: Reconcile DNS-only Billing origin alias
-  ansible.builtin.include_role:
-    name: cloudflare_dns
-  vars:
-    cloudflare_dns_records:
-      - type: CNAME
-        name: "{{ cloudflare_billing_origin_host }}"
-        content: "{{ billing_cloud_run_url.stdout | trim | regex_replace('^https://', '') }}"
-        ttl: 60
-        proxied: false
+- name: Resolve Cloudflare zone
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones?name={{ cloudflare_dns_zone_name | urlencode }}&status=active"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+    return_content: true
+  register: cloudflare_zone_response
+  no_log: true
+
+- name: Validate Cloudflare zone result
+  ansible.builtin.assert:
+    that:
+      - cloudflare_zone_response.json.success | bool
+      - cloudflare_zone_response.json.result | length == 1
+    fail_msg: "Expected exactly one active Cloudflare zone for {{ cloudflare_dns_zone_name }}"
+
+- name: Find conflicting Billing CNAME
+  ansible.builtin.uri:
+    url: >-
+      https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_response.json.result[0].id }}/dns_records?type=CNAME&name={{ cloudflare_billing_host | urlencode }}
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+    return_content: true
+  register: cloudflare_billing_cnames
+  no_log: true
+
+- name: Remove conflicting Billing CNAME before Worker binding
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_response.json.result[0].id }}/dns_records/{{ item.id }}"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+    status_code: 200
+  loop: "{{ cloudflare_billing_cnames.json.result | default([]) }}"
+  no_log: true
+
+- name: Attach Billing custom domain to core Edge Gateway Worker
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/workers/domains"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+    body_format: json
+    body:
+      hostname: "{{ cloudflare_billing_host }}"
+      service: "{{ cloudflare_edge_gateway_core_worker }}"
+      zone_id: "{{ cloudflare_zone_response.json.result[0].id }}"
+      zone_name: "{{ cloudflare_dns_zone_name }}"
+    status_code: 200
+  no_log: true
