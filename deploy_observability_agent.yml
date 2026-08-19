@@ -33,7 +33,7 @@
         deepflowk8sclusterid: "{{ observability_deepflow_cluster_id | default('d-kqjofXyZbg') }}"
       when: observability_deepflow_server_ip is defined and observability_deepflow_server_ip != ''
 
-- name: Deploy Base Probes and Vector Agent
+- name: Deploy Base Probes, Serverless Pipeline and Vector Agent
   hosts: "{{ observability_agent_hosts | default('all') }}"
   # 兜底用的短等待窗口。首次启动的收敛由 deploy_base 的
   # common_wait_for_host_init.sh 统一负责(它在 bootstrap 前等 cloud-init 与
@@ -45,6 +45,14 @@
   become: yes
   vars:
     group: all
+    deploy_env: >-
+      {{ lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('uat', true) }}
+    target_domain_base: >-
+      {{ lookup('ansible.builtin.env', 'TARGET_DOMAIN_BASE') | default('onwalk.net', true) }}
+    vault_addr: >-
+      {{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}
+    vault_token: >-
+      {{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}
     vector_auth_user: >-
       {{ lookup('ansible.builtin.env', 'VECTOR_AUTH_USER')
          | default('', true) }}
@@ -66,6 +74,12 @@
     vector_billing_ingest_token: >-
       {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
          | default('', true) }}
+    vector_serverless_ingest_enabled: >-
+      {{ lookup('ansible.builtin.env', 'VECTOR_SERVERLESS_INGEST_ENABLED')
+         | default(true, true) | bool }}
+    vector_serverless_ingest_address: >-
+      {{ lookup('ansible.builtin.env', 'VECTOR_SERVERLESS_INGEST_ADDRESS')
+         | default('0.0.0.0:8688', true) }}
     xray_exporter_vector_snapshot_url: >-
       {{ lookup('ansible.builtin.env', 'VECTOR_SNAPSHOT_URL')
          | default(
@@ -78,6 +92,65 @@
       {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
          | default('', true) }}
   tasks:
+    # -------------------------------------------------------------
+    # 1. Read Serverless Telemetry Secrets from HashiCorp Vault
+    # -------------------------------------------------------------
+    - name: Read Cloudflare Serverless credentials from Vault
+      community.hashi_vault.vault_kv2_get:
+        url: "{{ vault_addr }}"
+        auth_method: token
+        token: "{{ vault_token }}"
+        path: "{{ deploy_env }}/serverless/cloudflare"
+        engine_mount_point: "kv"
+      register: vault_cloudflare_secret
+      failed_when: false
+      no_log: true
+      when: vault_token | trim | length > 0
+      delegate_to: localhost
+      become: false
+
+    - name: Read Supabase Serverless credentials from Vault
+      community.hashi_vault.vault_kv2_get:
+        url: "{{ vault_addr }}"
+        auth_method: token
+        token: "{{ vault_token }}"
+        path: "{{ deploy_env }}/serverless/supabase"
+        engine_mount_point: "kv"
+      register: vault_supabase_secret
+      failed_when: false
+      no_log: true
+      when: vault_token | trim | length > 0
+      delegate_to: localhost
+      become: false
+
+    - name: Resolve Serverless telemetry credentials
+      ansible.builtin.set_fact:
+        cloudflare_account_id: >-
+          {{ ((vault_cloudflare_secret.secret | default({})).CLOUDFLARE_ACCOUNT_ID)
+             | default(lookup('ansible.builtin.env', 'CLOUDFLARE_ACCOUNT_ID') | default('', true), true) }}
+        cloudflare_api_token: >-
+          {{ ((vault_cloudflare_secret.secret | default({})).CLOUDFLARE_API_TOKEN)
+             | default(lookup('ansible.builtin.env', 'CLOUDFLARE_API_TOKEN') | default('', true), true) }}
+        supabase_database_direct_url: >-
+          {{ ((vault_supabase_secret.secret | default({})).DATABASE_DIRECT_URL)
+             | default(lookup('ansible.builtin.env', 'DATABASE_DIRECT_URL') | default('', true), true) }}
+        supabase_database_name: >-
+          {{ ((vault_supabase_secret.secret | default({})).DATABASE_NAME)
+             | default(lookup('ansible.builtin.env', 'DATABASE_NAME') | default('', true), true) }}
+        supabase_database_password: >-
+          {{ ((vault_supabase_secret.secret | default({})).DATABASE_PASSWORD)
+             | default(lookup('ansible.builtin.env', 'DATABASE_PASSWORD') | default('', true), true) }}
+        supabase_database_session_pooler_url: >-
+          {{ ((vault_supabase_secret.secret | default({})).DATABASE_SESSION_POOLER_URL)
+             | default(lookup('ansible.builtin.env', 'DATABASE_SESSION_POOLER_URL') | default('', true), true) }}
+        supabase_database_username: >-
+          {{ ((vault_supabase_secret.secret | default({})).DATABASE_USERNAME)
+             | default(lookup('ansible.builtin.env', 'DATABASE_USERNAME') | default('', true), true) }}
+        supabase_project_ref: >-
+          {{ ((vault_supabase_secret.secret | default({})).PROJECT_REF)
+             | default(lookup('ansible.builtin.env', 'PROJECT_REF') | default('', true), true) }}
+      no_log: true
+
     - name: Include node_exporter role
       ansible.builtin.import_role:
         name: vhosts/node_exporter
@@ -99,16 +172,24 @@
 
     # PostgreSQL exporter owns its own affinity detection. It is included for
     # every host so PostgreSQL nodes get the exporter automatically, while
-    # non-PostgreSQL nodes are left untouched and report a clean skip.
-    - name: Include postgres-exporter role
+    # external Supabase Cloud DB uses the session pooler URL when supplied.
+    - name: Configure and include postgres-exporter role
       ansible.builtin.import_role:
         name: vhosts/postgres_exporter
+      vars:
+        postgres_exporter_data_source_name: >-
+          {{ supabase_database_session_pooler_url
+             if (supabase_database_session_pooler_url | length > 0)
+             else (supabase_database_direct_url | default('', true)) }}
       tags:
         - postgres_exporter
 
     - name: Include vector-agent role
       ansible.builtin.import_role:
         name: vhosts/vector-agent
+      vars:
+        blackbox_probe_domain_base: "{{ target_domain_base }}"
+        blackbox_probe_env: "{{ deploy_env }}"
       tags:
         - vector_agent
 

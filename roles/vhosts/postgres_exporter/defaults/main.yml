@@ -28,3 +28,6 @@ postgres_exporter_collection_timeout: 1m
 postgres_exporter_log_level: info
 postgres_exporter_group_name: postgres_exporter
 postgres_exporter_postgres_container_name: ""
+# Direct DSN / URI for Supabase or external PostgreSQL instances
+postgres_exporter_data_source_name: "{{ lookup('ansible.builtin.env', 'DATABASE_SESSION_POOLER_URL') | default(lookup('ansible.builtin.env', 'DATABASE_DIRECT_URL') | default('', true), true) }}"
+

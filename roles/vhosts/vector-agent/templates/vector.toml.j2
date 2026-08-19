@@ -236,9 +236,38 @@ if !exists(.environment) {
 }
 '''
 
+# Serverless HTTP Telemetry Ingest (Cloudflare Logpush, Cloud Run, Supabase Log Drains)
+{% if vector_serverless_ingest_enabled | default(true) | bool %}
+[sources.serverless_http_ingest]
+type = "http_server"
+address = "{{ vector_serverless_ingest_address | default('0.0.0.0:8688') }}"
+decoding.codec = "json"
+
+[transforms.process_serverless_logs]
+type = "remap"
+inputs = ["serverless_http_ingest"]
+source = '''
+.instance = "{{ inventory_hostname }}"
+if !exists(.source_type) {
+  if exists(.worker) || exists(.zone) || exists(.ray_id) || exists(.EdgePathingOp) {
+    .source_type = "cloudflare"
+  } else if exists(.service_name) && (.service_name == "accounts" || .service_name == "content-service" || .service_name == "billing-service") {
+    .source_type = "cloud_run"
+  } else if exists(.database) || exists(.statement) || exists(.session_id) || exists(.error_severity) {
+    .source_type = "supabase"
+  } else {
+    .source_type = "serverless"
+  }
+}
+if !exists(.env) {
+  .env = "{{ blackbox_probe_env | default('uat') }}"
+}
+'''
+{% endif %}
+
 [sinks.victorialogs]
 type = "http"
-inputs = ["process_logs", "process_docker_logs"]
+inputs = ["process_logs", "process_docker_logs"{% if vector_serverless_ingest_enabled | default(true) | bool %}, "process_serverless_logs"{% endif %}]
 {% if vector_local_observability_enabled | default(false) | bool or inventory_hostname == 'install.svc.plus' %}
 uri = "http://127.0.0.1:9428/insert/jsonline?_msg_field=message&_stream_fields=instance,file"
 {% else %}
