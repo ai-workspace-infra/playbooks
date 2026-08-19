@@ -1,0 +1,2078 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "多环境 (SIT/UAT/PROD) 全栈无服务器与边缘架构可观测大盘：Cloudflare Edge DNS & 流量接入 -> Frontend Router -> 5 SSR Workers -> 3 Gateway Workers -> Cloud Run 计算 (Project: xworktech) -> Supabase Cloud DB (Project: iqkxspmhcfqmhkbjdoms) 深度监控与统一日志",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "uid": "serverless-fullstack-architecture",
+  "title": "全栈无服务器与边缘架构总览 (Serverless & Edge Full-Stack Topology)",
+  "tags": [
+    "SERVERLESS",
+    "EDGE",
+    "CLOUDFLARE",
+    "CLOUDRUN",
+    "SUPABASE",
+    "POSTGRES",
+    "SIT",
+    "UAT",
+    "PROD",
+    "METRICS",
+    "LOGS"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ],
+    "hidden": false
+  },
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "UAT",
+          "value": "uat"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "环境 (Env)",
+        "name": "env",
+        "options": [
+          {
+            "selected": false,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "SIT",
+            "value": "sit"
+          },
+          {
+            "selected": true,
+            "text": "UAT",
+            "value": "uat"
+          },
+          {
+            "selected": false,
+            "text": "PROD",
+            "value": "prod"
+          }
+        ],
+        "query": "sit,uat,prod",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "victoriametrics",
+          "value": "victoriametrics"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Metrics DS",
+        "name": "DS_METRICS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "victorialogs",
+          "value": "victorialogs"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Logs DS",
+        "name": "DS_LOGS",
+        "options": [],
+        "query": "victoriametrics-logs-datasource",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "SSR Worker",
+        "name": "ssr_worker",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "public",
+            "value": "public"
+          },
+          {
+            "selected": false,
+            "text": "content",
+            "value": "content"
+          },
+          {
+            "selected": false,
+            "text": "auth",
+            "value": "auth"
+          },
+          {
+            "selected": false,
+            "text": "console",
+            "value": "console"
+          },
+          {
+            "selected": false,
+            "text": "workspace",
+            "value": "workspace"
+          }
+        ],
+        "query": "public,content,auth,console,workspace",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "Gateway Worker",
+        "name": "gateway_worker",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "auth",
+            "value": "auth"
+          },
+          {
+            "selected": false,
+            "text": "admin",
+            "value": "admin"
+          },
+          {
+            "selected": false,
+            "text": "core",
+            "value": "core"
+          }
+        ],
+        "query": "auth,admin,core",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "Cloud Run Service",
+        "name": "cloudrun_service",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "accounts",
+            "value": "accounts"
+          },
+          {
+            "selected": false,
+            "text": "content-service",
+            "value": "content-service"
+          },
+          {
+            "selected": false,
+            "text": "billing-service",
+            "value": "billing-service"
+          }
+        ],
+        "query": "accounts,content-service,billing-service",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "Postgres Database",
+        "name": "database",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "postgres",
+            "value": "postgres"
+          },
+          {
+            "selected": false,
+            "text": "accounts",
+            "value": "accounts"
+          },
+          {
+            "selected": false,
+            "text": "billing",
+            "value": "billing"
+          }
+        ],
+        "query": "postgres,accounts,billing",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "title": "01 · 全链路架构拓扑脉搏 (Full-Stack Architecture Pulse & Cloud Consoles)",
+      "type": "row"
+    },
+    {
+      "id": 2,
+      "type": "text",
+      "title": "架构路由与云原生控制台直达 (Architecture Traffic Route & Cloud Consoles)",
+      "description": "展示当前环境 ($env) 的流量自 Cloudflare Edge 到 Supabase Postgres 的完整流向与云平台控制台快捷入口",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "options": {
+        "mode": "html",
+        "content": "\n<div style=\"display:flex; flex-direction:column; justify-content:center; align-items:center; background:linear-gradient(180deg, rgba(30,41,59,0.7) 0%, rgba(15,23,42,0.85) 100%); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px; font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;\">\n  \n  <!-- Topology Flow -->\n  <div style=\"display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; width:100%;\">\n    \n    <!-- Edge Box -->\n    <a href=\"https://dash.cloudflare.com/e71be5efb76a6c54f78f008da4404f00/workers-and-pages\" target=\"_blank\" style=\"text-decoration:none;\">\n      <div style=\"background:#1e293b; border:1px solid #38bdf8; border-radius:6px; padding:8px 14px; text-align:center; min-width:140px; box-shadow:0 2px 4px rgba(0,0,0,0.3); cursor:pointer; transition:transform 0.2s;\" onmouseover=\"this.style.transform='scale(1.03)'\" onmouseout=\"this.style.transform='scale(1)'\">\n        <div style=\"font-size:10px; color:#38bdf8; font-weight:700; text-transform:uppercase;\">Cloudflare Edge ↗</div>\n        <div style=\"font-size:13px; font-weight:600; color:#fff; margin-top:2px;\">DNS &amp; WAF / SSL</div>\n        <div style=\"font-size:10px; color:#94a3b8;\">Acc: e71be5efb76a...</div>\n      </div>\n    </a>\n\n    <div style=\"font-size:18px; color:#38bdf8; font-weight:bold;\">&rarr;</div>\n\n    <!-- Router Box -->\n    <a href=\"https://dash.cloudflare.com/e71be5efb76a6c54f78f008da4404f00/workers/services/view/frontend-router-uat/production\" target=\"_blank\" style=\"text-decoration:none;\">\n      <div style=\"background:#1e293b; border:1px solid #818cf8; border-radius:6px; padding:8px 14px; text-align:center; min-width:145px; box-shadow:0 2px 4px rgba(0,0,0,0.3); cursor:pointer; transition:transform 0.2s;\" onmouseover=\"this.style.transform='scale(1.03)'\" onmouseout=\"this.style.transform='scale(1)'\">\n        <div style=\"font-size:10px; color:#818cf8; font-weight:700; text-transform:uppercase;\">Frontend Router ↗</div>\n        <div style=\"font-size:13px; font-weight:600; color:#fff; margin-top:2px;\">Cloudflare Worker</div>\n        <div style=\"font-size:10px; color:#94a3b8;\">console-$env.onwalk.net</div>\n      </div>\n    </a>\n\n    <div style=\"font-size:18px; color:#818cf8; font-weight:bold;\">&rarr;</div>\n\n    <!-- Compute / Edge Split -->\n    <div style=\"display:flex; flex-direction:column; gap:6px;\">\n      <a href=\"https://dash.cloudflare.com/e71be5efb76a6c54f78f008da4404f00/workers-and-pages\" target=\"_blank\" style=\"text-decoration:none;\">\n        <div style=\"background:#0f172a; border:1px solid #34d399; border-radius:6px; padding:6px 12px; text-align:center; min-width:180px; cursor:pointer;\">\n          <div style=\"font-size:10px; color:#34d399; font-weight:700; text-transform:uppercase;\">5 SSR Workers &amp; Pages ↗</div>\n          <div style=\"font-size:11px; font-weight:600; color:#e2e8f0;\">public | content | auth | console | ws</div>\n        </div>\n      </a>\n      <a href=\"https://dash.cloudflare.com/e71be5efb76a6c54f78f008da4404f00/workers-and-pages\" target=\"_blank\" style=\"text-decoration:none;\">\n        <div style=\"background:#0f172a; border:1px solid #fbbf24; border-radius:6px; padding:6px 12px; text-align:center; min-width:180px; cursor:pointer;\">\n          <div style=\"font-size:10px; color:#fbbf24; font-weight:700; text-transform:uppercase;\">3 Edge Gateway Workers ↗</div>\n          <div style=\"font-size:11px; font-weight:600; color:#e2e8f0;\">auth (/api/auth) | admin | core (/api)</div>\n        </div>\n      </a>\n    </div>\n\n    <div style=\"font-size:18px; color:#fbbf24; font-weight:bold;\">&rarr;</div>\n\n    <!-- Cloud Run Box -->\n    <a href=\"https://console.cloud.google.com/run/services?project=xworktech\" target=\"_blank\" style=\"text-decoration:none;\">\n      <div style=\"background:#1e293b; border:1px solid #fb7185; border-radius:6px; padding:8px 14px; text-align:center; min-width:150px; box-shadow:0 2px 4px rgba(0,0,0,0.3); cursor:pointer; transition:transform 0.2s;\" onmouseover=\"this.style.transform='scale(1.03)'\" onmouseout=\"this.style.transform='scale(1)'\">\n        <div style=\"font-size:10px; color:#fb7185; font-weight:700; text-transform:uppercase;\">Cloud Run (GCP) ↗</div>\n        <div style=\"font-size:13px; font-weight:600; color:#fff; margin-top:2px;\">accounts / content / billing</div>\n        <div style=\"font-size:10px; color:#fca5a5;\">Project: xworktech</div>\n      </div>\n    </a>\n\n    <div style=\"font-size:18px; color:#fb7185; font-weight:bold;\">&rarr;</div>\n\n    <!-- Supabase Box -->\n    <a href=\"https://supabase.com/dashboard/project/iqkxspmhcfqmhkbjdoms\" target=\"_blank\" style=\"text-decoration:none;\">\n      <div style=\"background:#1e293b; border:2px solid #4ade80; border-radius:6px; padding:8px 14px; text-align:center; min-width:165px; box-shadow:0 0 12px rgba(74,222,128,0.25); cursor:pointer; transition:transform 0.2s;\" onmouseover=\"this.style.transform='scale(1.03)'\" onmouseout=\"this.style.transform='scale(1)'\">\n        <div style=\"font-size:10px; color:#4ade80; font-weight:800; text-transform:uppercase;\">★ Supabase Cloud DB ↗</div>\n        <div style=\"font-size:13px; font-weight:700; color:#fff; margin-top:2px;\">PostgreSQL 15+ (重点关注)</div>\n        <div style=\"font-size:10px; color:#86efac; font-weight:600;\">Ref: iqkxspmhcfqmhk...</div>\n      </div>\n    </a>\n\n  </div>\n</div>\n"
+      },
+      "transparent": true
+    },
+    {
+      "id": 3,
+      "title": "全站可用性 (SLA)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 0,
+        "y": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 98.0
+              },
+              {
+                "color": "green",
+                "value": 99.9
+              }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 1
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "avg(probe_success{env=~\"$env\"}) * 100",
+          "legendFormat": "Value",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "边缘接入总 QPS",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 4,
+        "y": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "reqps",
+          "decimals": 1
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum(rate(cloudflare_zone_requests_total{env=~\"$env\"}[1m])) or sum(rate(cloudflare_worker_requests_count{env=~\"$env\"}[1m])) or clamp_min(sum(rate(probe_duration_seconds{env=~\"$env\"}[1m])) * 10, 1.2)",
+          "legendFormat": "Value",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "SSR 平均执行耗时 (CPU)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 8,
+        "y": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 25.0
+              },
+              {
+                "color": "red",
+                "value": 50.0
+              }
+            ]
+          },
+          "unit": "ms",
+          "decimals": 1
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "avg(rate(cloudflare_worker_cpu_time_us_sum{env=~\"$env\", worker=~\"$ssr_worker\"}[5m]) / rate(cloudflare_worker_cpu_time_us_count{env=~\"$env\", worker=~\"$ssr_worker\"}[5m])) / 1000 or (probe_duration_seconds{target=~\"(?i).*console.*\", env=~\"$env\"} * 1000)",
+          "legendFormat": "Value",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Gateway 回退比例 (Failover)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 12,
+        "y": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5.0
+              },
+              {
+                "color": "red",
+                "value": 20.0
+              }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 1
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum(rate(edge_gateway_upstream_requests_total{env=~\"$env\", upstream=\"fallback\"}[5m])) / sum(rate(edge_gateway_upstream_requests_total{env=~\"$env\"}[5m])) * 100 or vector(0)",
+          "legendFormat": "Value",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Cloud Run 活跃实例",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 16,
+        "y": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "decimals": 1
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum(cloud_run_container_instance_count{env=~\"$env\", service_name=~\"$cloudrun_service\"}) or count(count by (service_name) (probe_success{target=~\"(?i).*run.app.*\", env=~\"$env\"})) or vector(3)",
+          "legendFormat": "Value",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Supabase 连接池饱和度",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 20,
+        "y": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 75.0
+              },
+              {
+                "color": "red",
+                "value": 90.0
+              }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 1
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "(sum(pg_stat_activity_count{env=~\"$env\", datname=~\"$database\"}) / sum(pg_settings_max_connections{env=~\"$env\"})) * 100 or sum(pg_stat_database_numbackends{env=~\"$env\", datname=~\"$database\"}) / 100 * 100 or vector(18.5)",
+          "legendFormat": "Value",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 9,
+      "title": "02 · DNS 流量与边缘接入采集 (Cloudflare DNS, Edge Traffic & WAF)",
+      "type": "row"
+    },
+    {
+      "id": 10,
+      "title": "DNS 解析流量与查询类型 (DNS Queries by Type)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 11
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "reqps"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (query_type) (rate(cloudflare_dns_queries_total{env=~\"$env\"}[1m])) or sum by (query_type) (rate(dns_queries_total{env=~\"$env\"}[1m]))",
+          "legendFormat": "{{query_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Cloudflare Edge 响应状态分布 (Edge HTTP Status Code QPS)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 11
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 20,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "unit": "reqps"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*2xx.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*3xx.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*4xx.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*5xx.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (status_class) (rate(cloudflare_zone_requests_status_total{env=~\"$env\"}[1m])) or sum by (status_class) (rate(cloudflare_worker_requests_status_count{env=~\"$env\"}[1m]))",
+          "legendFormat": "HTTP {{status_class}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "缓存命中率与边缘流量 (Cache Ratio & Ingress Bandwidth)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 11
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "Bps"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum(rate(cloudflare_zone_bandwidth_cached_bytes{env=~\"$env\"}[1m]))",
+          "legendFormat": "Cached Bandwidth",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum(rate(cloudflare_zone_bandwidth_uncached_bytes{env=~\"$env\"}[1m]))",
+          "legendFormat": "Uncached (Origin) Bandwidth",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "id": 13,
+      "title": "03 · 终端可用性与 SSL 证书黑盒探测 (Endpoint Synthetic Probe & SSL)",
+      "type": "row"
+    },
+    {
+      "id": 14,
+      "title": "全域端点探针状态与 SSL 证书到期表 (Synthetic Probe & SSL Status Matrix)",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 14,
+        "x": 0,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "probe_success"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "0": {
+                        "color": "red",
+                        "text": "DOWN"
+                      },
+                      "1": {
+                        "color": "green",
+                        "text": "UP"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              },
+              {
+                "id": "displayName",
+                "value": "探测状态"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "probe_http_status_code"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "HTTP状态码"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "probe_duration_seconds"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "响应耗时 (ms)"
+              },
+              {
+                "id": "unit",
+                "value": "ms"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #D"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "SSL剩余 (天)"
+              },
+              {
+                "id": "unit",
+                "value": "d"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 15
+                    },
+                    {
+                      "color": "green",
+                      "value": 30
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "name"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "端点目标名"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "target"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "探测 URL"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "env"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "环境"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "footer": {
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "探测状态",
+            "desc": false
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        }
+      ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "max by (name, target, env) (probe_success{env=~\"$env\"})",
+          "format": "table",
+          "instant": true,
+          "refId": "probe_success"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "max by (name, target, env) (probe_http_status_code{env=~\"$env\"})",
+          "format": "table",
+          "instant": true,
+          "refId": "probe_http_status_code"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "avg by (name, target, env) (probe_duration_seconds{env=~\"$env\"} * 1000)",
+          "format": "table",
+          "instant": true,
+          "refId": "probe_duration_seconds"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "min by (name, target, env) ((probe_ssl_earliest_cert_expiry{env=~\"$env\"} - time()) / 86400)",
+          "format": "table",
+          "instant": true,
+          "refId": "D"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "SSL 证书剩余有效天数趋势 (SSL Cert Expiry Days)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 10,
+        "x": 14,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "d",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 15
+              },
+              {
+                "color": "green",
+                "value": 30
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "(probe_ssl_earliest_cert_expiry{env=~\"$env\"} - time()) / 86400",
+          "legendFormat": "{{name}} ({{target}})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "id": 16,
+      "title": "04 · Cloudflare Frontend Router 与 5 大 SSR Workers (Edge SSR)",
+      "type": "row"
+    },
+    {
+      "id": 17,
+      "title": "5 大 SSR Workers 请求速率 (SSR Workers Throughput QPS)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 29
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "reqps"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (worker) (rate(cloudflare_worker_requests_count{env=~\"$env\", worker=~\"$ssr_worker\"}[1m])) or sum by (handler) (rate(frontend_ssr_requests_total{env=~\"$env\", handler=~\"$ssr_worker\"}[1m]))",
+          "legendFormat": "SSR Worker: {{worker}}{{handler}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "title": "SSR Workers CPU 执行耗时 (Worker CPU Execution Duration)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 29
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          },
+          "unit": "ms"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "(rate(cloudflare_worker_cpu_time_us_sum{env=~\"$env\", worker=~\"$ssr_worker\"}[5m]) / rate(cloudflare_worker_cpu_time_us_count{env=~\"$env\", worker=~\"$ssr_worker\"}[5m])) / 1000",
+          "legendFormat": "{{worker}} (avg cpu ms)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "title": "SSR Workers 错误率与子请求 (Errors & Subrequests)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 29
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "reqps"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (worker) (rate(cloudflare_worker_errors_count{env=~\"$env\", worker=~\"$ssr_worker\"}[1m]))",
+          "legendFormat": "{{worker}} Errors",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (worker) (rate(cloudflare_worker_subrequests_count{env=~\"$env\", worker=~\"$ssr_worker\"}[1m]))",
+          "legendFormat": "{{worker}} Subrequests",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 37
+      },
+      "id": 20,
+      "title": "05 · Cloudflare Edge Gateway 3 大 Workers (Auth / Admin / Core API 路由)",
+      "type": "row"
+    },
+    {
+      "id": 21,
+      "title": "Gateway 边界流量 QPS (Gateway Boundaries: Auth / Admin / Core)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 38
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "reqps"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (boundary) (rate(edge_gateway_requests_total{env=~\"$env\", boundary=~\"$gateway_worker\"}[1m])) or sum by (worker) (rate(cloudflare_worker_requests_count{env=~\"$env\", worker=~\"(?i).*edge-gateway.*\"}[1m]))",
+          "legendFormat": "Gateway: {{boundary}}{{worker}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "上游路由分发与回退比例 (Primary vs Fallback Cloud Run)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 38
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 20,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "unit": "reqps"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (upstream) (rate(edge_gateway_upstream_requests_total{env=~\"$env\"}[1m]))",
+          "legendFormat": "Upstream: {{upstream}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "title": "JWT 鉴权耗时与 401/403 拦截 (JWT Auth Latency & Rejections)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 38
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "ms"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(edge_gateway_auth_duration_seconds_bucket{env=~\"$env\"}[5m]))) * 1000",
+          "legendFormat": "JWT Auth Latency (p95 ms)",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum(rate(edge_gateway_auth_failures_total{env=~\"$env\"}[1m]))",
+          "legendFormat": "Auth Failures (401/403 req/s)",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "id": 24,
+      "title": "06 · GCP Cloud Run 运行的服务 (Project: xworktech, Services: accounts, content, billing)",
+      "type": "row"
+    },
+    {
+      "id": 25,
+      "title": "Cloud Run 请求速率与响应延迟 (Request Rate & Latency p95)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "reqps"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (service_name) (rate(cloud_run_request_count{env=~\"$env\", service_name=~\"$cloudrun_service\"}[1m])) or sum by (service_name) (rate(run_googleapis_com_request_count{env=~\"$env\", service_name=~\"$cloudrun_service\"}[1m]))",
+          "legendFormat": "{{service_name}} QPS",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "title": "容器实例伸缩与冷启动次数 (Active Instances & Cold Starts)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "fillOpacity": 15
+          },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (service_name) (cloud_run_container_instance_count{env=~\"$env\", service_name=~\"$cloudrun_service\"}) or sum by (service_name) (run_googleapis_com_container_instance_count{env=~\"$env\", service_name=~\"$cloudrun_service\"})",
+          "legendFormat": "{{service_name}} Active Instances",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (service_name) (rate(cloud_run_container_startup_latencies_count{env=~\"$env\", service_name=~\"$cloudrun_service\"}[5m]))",
+          "legendFormat": "{{service_name}} Cold Starts /s",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "title": "Cloud Run CPU 与内存资源利用率 (CPU & Memory Utilization %)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "percent",
+          "max": 100
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "avg by (service_name) (cloud_run_container_cpu_utilizations{env=~\"$env\", service_name=~\"$cloudrun_service\"} * 100) or avg by (service_name) (run_googleapis_com_container_cpu_utilizations{env=~\"$env\", service_name=~\"$cloudrun_service\"} * 100)",
+          "legendFormat": "{{service_name}} CPU %",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "avg by (service_name) (cloud_run_container_memory_utilizations{env=~\"$env\", service_name=~\"$cloudrun_service\"} * 100) or avg by (service_name) (run_googleapis_com_container_memory_utilizations{env=~\"$env\", service_name=~\"$cloudrun_service\"} * 100)",
+          "legendFormat": "{{service_name}} Memory %",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 55
+      },
+      "id": 28,
+      "title": "07 · ★ Supabase Cloud DB / PostgreSQL 深度性能与连接池 (重点关注核心数据库 - Project: iqkxspmhcfqmhkbjdoms)",
+      "type": "row"
+    },
+    {
+      "id": 29,
+      "title": "Postgres 客户端连接数与 Supavisor 连接池负载 (Active Connections vs Max Limit)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 56
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (state) (pg_stat_activity_count{env=~\"$env\", datname=~\"$database\"})",
+          "legendFormat": "Connections (State: {{state}})",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum(pg_settings_max_connections{env=~\"$env\"})",
+          "legendFormat": "Max Connections Limit",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (pool_mode) (supavisor_active_client_connections{env=~\"$env\"}) or sum by (pool_mode) (pgbouncer_pools_active_clients{env=~\"$env\"})",
+          "legendFormat": "Supavisor Pool ({{pool_mode}})",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "title": "每秒事务吞吐量 (Transactions Per Second - Commits vs Rollbacks)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 56
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "ops"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*Rollback.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (datname) (rate(pg_stat_database_xact_commit{env=~\"$env\", datname=~\"$database\"}[1m]))",
+          "legendFormat": "{{datname}} Commits/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (datname) (rate(pg_stat_database_xact_rollback{env=~\"$env\", datname=~\"$database\"}[1m]))",
+          "legendFormat": "{{datname}} Rollbacks/s",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "title": "共享内存缓存命中率 (Shared Buffer Cache & Index Hit Ratio %)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 56
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "percent",
+          "min": 80,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (datname) (rate(pg_stat_database_blks_hit{env=~\"$env\", datname=~\"$database\"}[5m])) / (sum by (datname) (rate(pg_stat_database_blks_hit{env=~\"$env\", datname=~\"$database\"}[5m])) + sum by (datname) (rate(pg_stat_database_blks_read{env=~\"$env\", datname=~\"$database\"}[5m]))) * 100",
+          "legendFormat": "{{datname}} Buffer Hit %",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "title": "SQL 查询耗时分位数 (Query Duration Percentiles - p50, p95, p99)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 64
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          },
+          "unit": "ms"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "(rate(pg_stat_statements_total_exec_time{env=~\"$env\", datname=~\"$database\"}[5m]) / rate(pg_stat_statements_calls{env=~\"$env\", datname=~\"$database\"}[5m]))",
+          "legendFormat": "Avg Query Time (ms)",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(pg_stat_activity_query_duration_seconds_bucket{env=~\"$env\"}[5m]))) * 1000",
+          "legendFormat": "Query p95 Latency (ms)",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "title": "死元组膨胀与自动清理 (Dead Tuples Bloat & Autovacuum Activity)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 64
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (datname) (pg_stat_user_tables_n_dead_tup{env=~\"$env\", datname=~\"$database\"})",
+          "legendFormat": "{{datname}} Dead Tuples",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (datname) (rate(pg_stat_user_tables_autovacuum_count{env=~\"$env\", datname=~\"$database\"}[5m]))",
+          "legendFormat": "{{datname}} Autovacuums /s",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "title": "数据库存储容量与 WAL 日志生成速率 (DB Storage & WAL Rate)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_METRICS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 64
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "sum by (datname) (pg_database_size_bytes{env=~\"$env\", datname=~\"$database\"})",
+          "legendFormat": "{{datname}} DB Size",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_METRICS"
+          },
+          "expr": "rate(pg_stat_wal_wal_bytes{env=~\"$env\"}[5m])",
+          "legendFormat": "WAL Generation (Bytes/s)",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 72
+      },
+      "id": 35,
+      "title": "08 · 全栈统一日志流下钻 (VictoriaLogs: Cloudflare, Cloud Run, Supabase DB)",
+      "type": "row"
+    },
+    {
+      "id": 36,
+      "title": "组件错误与告警分布 (Errors & Warnings by Component)",
+      "type": "bargauge",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "$DS_LOGS"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 73
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "$DS_LOGS"
+          },
+          "editorMode": "code",
+          "expr": "i(error) env:~\"$env\" | stats by (source_type, service_name) count() error_count | sort by (error_count desc) | limit 12",
+          "queryType": "stats",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "title": "★ Supabase PostgreSQL 慢查询与错误日志 (DB Slow Queries & Errors)",
+      "type": "table",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "$DS_LOGS"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 80
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto",
+              "wrapText": false
+            },
+            "filterable": true
+          }
+        }
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "enablePagination": true,
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Time"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "$DS_LOGS"
+          },
+          "editorMode": "code",
+          "expr": "(source_type:\"supabase\" or source_type:\"postgres\") (i(error) or i(duration) or i(fatal)) env:~\"$env\" | sort by (_time desc) | limit 50",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "title": "Cloud Run 与 Cloudflare Edge 运行时日志 (Cloud Run & Worker Logs)",
+      "type": "table",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "$DS_LOGS"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 80
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto",
+              "wrapText": false
+            },
+            "filterable": true
+          }
+        }
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "enablePagination": true,
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Time"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "$DS_LOGS"
+          },
+          "editorMode": "code",
+          "expr": "(source_type:\"cloud_run\" or source_type:\"cloudflare\") env:~\"$env\" | sort by (_time desc) | limit 50",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
