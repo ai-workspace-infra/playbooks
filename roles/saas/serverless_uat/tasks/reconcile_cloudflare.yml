@@ -1,0 +1,31 @@
+---
+# -----------------------------------------------------------------------------
+# DNS-only Billing origin alias. The public Billing hostname stays proxied;
+# Cloudflare Origin Rules use this same-zone alias for the origin override.
+# -----------------------------------------------------------------------------
+
+- name: Resolve deployed Billing Cloud Run URL
+  ansible.builtin.command: >-
+    gcloud run services describe {{ cloud_run_billing_service_name }}
+    --project={{ cloud_run_project_id }}
+    --region={{ cloud_run_region }}
+    --format=value(status.url)
+  register: billing_cloud_run_url
+  changed_when: false
+
+- name: Validate Billing Cloud Run URL
+  ansible.builtin.assert:
+    that:
+      - billing_cloud_run_url.stdout | trim is match('^https://[^/]+$')
+    fail_msg: "Cloud Run service did not return a valid HTTPS URL: {{ billing_cloud_run_url.stdout | trim }}"
+
+- name: Reconcile DNS-only Billing origin alias
+  ansible.builtin.include_role:
+    name: cloudflare_dns
+  vars:
+    cloudflare_dns_records:
+      - type: CNAME
+        name: "{{ cloudflare_billing_origin_host }}"
+        content: "{{ billing_cloud_run_url.stdout | trim | regex_replace('^https://', '') }}"
+        ttl: 60
+        proxied: false
