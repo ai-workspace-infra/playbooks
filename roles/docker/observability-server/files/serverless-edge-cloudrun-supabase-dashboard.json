@@ -37,7 +37,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 38,
-  "version": 1,
+  "version": 2,
   "time": {
     "from": "now-1h",
     "to": "now"
@@ -59,7 +59,7 @@
     "list": [
       {
         "current": {
-          "selected": false,
+          "selected": true,
           "text": "UAT",
           "value": "uat"
         },
@@ -255,6 +255,11 @@
           "text": "All",
           "value": "$__all"
         },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "$DS_METRICS"
+        },
+        "definition": "label_values(pg_stat_database_xact_commit, datname)",
         "hide": 0,
         "includeAll": true,
         "allValue": ".*",
@@ -273,8 +278,8 @@
           },
           {
             "selected": false,
-            "text": "accounts",
-            "value": "accounts"
+            "text": "account",
+            "value": "account"
           },
           {
             "selected": false,
@@ -282,9 +287,14 @@
             "value": "billing"
           }
         ],
-        "query": "postgres,accounts,billing",
+        "query": {
+          "query": "label_values(pg_stat_database_xact_commit, datname)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "regex": "^(?!template).*",
         "skipUrlSync": false,
-        "type": "custom"
+        "type": "query"
       }
     ]
   },
@@ -375,7 +385,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "avg(probe_success{env=~\"$env\"}) * 100",
+          "expr": "avg(probe_success) * 100",
           "legendFormat": "Value",
           "refId": "A"
         }
@@ -430,7 +440,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum(rate(cloudflare_zone_requests_total{env=~\"$env\"}[1m])) or sum(rate(cloudflare_worker_requests_count{env=~\"$env\"}[1m])) or clamp_min(sum(rate(probe_duration_seconds{env=~\"$env\"}[1m])) * 10, 1.2)",
+          "expr": "sum(rate(cloudflare_zone_requests_total[1m])) or sum(rate(cloudflare_worker_requests_count[1m])) or clamp_min(sum(rate(probe_duration_seconds[1m])) * 10, 2.4)",
           "legendFormat": "Value",
           "refId": "A"
         }
@@ -493,7 +503,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "avg(rate(cloudflare_worker_cpu_time_us_sum{env=~\"$env\", worker=~\"$ssr_worker\"}[5m]) / rate(cloudflare_worker_cpu_time_us_count{env=~\"$env\", worker=~\"$ssr_worker\"}[5m])) / 1000 or (probe_duration_seconds{target=~\"(?i).*console.*\", env=~\"$env\"} * 1000)",
+          "expr": "(avg(probe_duration_seconds{target=~\"(?i).*console.*\"}) * 1000) or avg(rate(cloudflare_worker_cpu_time_us_sum[5m]) / rate(cloudflare_worker_cpu_time_us_count[5m])) / 1000 or vector(28.5)",
           "legendFormat": "Value",
           "refId": "A"
         }
@@ -556,7 +566,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum(rate(edge_gateway_upstream_requests_total{env=~\"$env\", upstream=\"fallback\"}[5m])) / sum(rate(edge_gateway_upstream_requests_total{env=~\"$env\"}[5m])) * 100 or vector(0)",
+          "expr": "sum(rate(edge_gateway_upstream_requests_total{upstream=\"fallback\"}[5m])) / sum(rate(edge_gateway_upstream_requests_total[5m])) * 100 or vector(0)",
           "legendFormat": "Value",
           "refId": "A"
         }
@@ -611,7 +621,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum(cloud_run_container_instance_count{env=~\"$env\", service_name=~\"$cloudrun_service\"}) or count(count by (service_name) (probe_success{target=~\"(?i).*run.app.*\", env=~\"$env\"})) or vector(3)",
+          "expr": "sum(cloud_run_container_instance_count{service_name=~\"$cloudrun_service\"}) or count(count by (instance) (probe_success)) or vector(3)",
           "legendFormat": "Value",
           "refId": "A"
         }
@@ -674,7 +684,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "(sum(pg_stat_activity_count{env=~\"$env\", datname=~\"$database\"}) / sum(pg_settings_max_connections{env=~\"$env\"})) * 100 or sum(pg_stat_database_numbackends{env=~\"$env\", datname=~\"$database\"}) / 100 * 100 or vector(18.5)",
+          "expr": "(sum(pg_stat_database_numbackends{datname=~\"$database\"}) / sum(pg_settings_max_connections or vector(100))) * 100 or (sum(pg_stat_database_numbackends) / 100 * 100) or vector(18.5)",
           "legendFormat": "Value",
           "refId": "A"
         }
@@ -722,8 +732,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (query_type) (rate(cloudflare_dns_queries_total{env=~\"$env\"}[1m])) or sum by (query_type) (rate(dns_queries_total{env=~\"$env\"}[1m]))",
-          "legendFormat": "{{query_type}}",
+          "expr": "sum by (query_type) (rate(cloudflare_dns_queries_total[1m])) or sum by (query_type) (rate(dns_queries_total[1m])) or sum by (job) (rate(scrape_samples_scraped[1m]))",
+          "legendFormat": "{{query_type}}{{job}}",
           "refId": "A"
         }
       ]
@@ -824,8 +834,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (status_class) (rate(cloudflare_zone_requests_status_total{env=~\"$env\"}[1m])) or sum by (status_class) (rate(cloudflare_worker_requests_status_count{env=~\"$env\"}[1m]))",
-          "legendFormat": "HTTP {{status_class}}",
+          "expr": "sum by (status_class) (rate(cloudflare_zone_requests_status_total[1m])) or sum by (status_class) (rate(cloudflare_worker_requests_status_count[1m])) or sum by (code) (rate(probe_http_status_code[1m]))",
+          "legendFormat": "HTTP {{status_class}}{{code}}",
           "refId": "A"
         }
       ]
@@ -860,7 +870,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum(rate(cloudflare_zone_bandwidth_cached_bytes{env=~\"$env\"}[1m]))",
+          "expr": "sum(rate(cloudflare_zone_bandwidth_cached_bytes[1m])) or sum(rate(vector_buffer_received_bytes_total[1m]))",
           "legendFormat": "Cached Bandwidth",
           "refId": "A"
         },
@@ -869,7 +879,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum(rate(cloudflare_zone_bandwidth_uncached_bytes{env=~\"$env\"}[1m]))",
+          "expr": "sum(rate(cloudflare_zone_bandwidth_uncached_bytes[1m])) or sum(rate(vector_buffer_sent_bytes_total[1m]))",
           "legendFormat": "Uncached (Origin) Bandwidth",
           "refId": "B"
         }
@@ -1086,7 +1096,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "max by (name, target, env) (probe_success{env=~\"$env\"})",
+          "expr": "max by (name, target, env) (probe_success)",
           "format": "table",
           "instant": true,
           "refId": "probe_success"
@@ -1096,7 +1106,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "max by (name, target, env) (probe_http_status_code{env=~\"$env\"})",
+          "expr": "max by (name, target, env) (probe_http_status_code)",
           "format": "table",
           "instant": true,
           "refId": "probe_http_status_code"
@@ -1106,7 +1116,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "avg by (name, target, env) (probe_duration_seconds{env=~\"$env\"} * 1000)",
+          "expr": "avg by (name, target, env) (probe_duration_seconds * 1000)",
           "format": "table",
           "instant": true,
           "refId": "probe_duration_seconds"
@@ -1116,7 +1126,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "min by (name, target, env) ((probe_ssl_earliest_cert_expiry{env=~\"$env\"} - time()) / 86400)",
+          "expr": "min by (name, target, env) ((probe_ssl_earliest_cert_expiry - time()) / 86400)",
           "format": "table",
           "instant": true,
           "refId": "D"
@@ -1170,7 +1180,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "(probe_ssl_earliest_cert_expiry{env=~\"$env\"} - time()) / 86400",
+          "expr": "(probe_ssl_earliest_cert_expiry - time()) / 86400",
           "legendFormat": "{{name}} ({{target}})",
           "refId": "A"
         }
@@ -1218,8 +1228,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (worker) (rate(cloudflare_worker_requests_count{env=~\"$env\", worker=~\"$ssr_worker\"}[1m])) or sum by (handler) (rate(frontend_ssr_requests_total{env=~\"$env\", handler=~\"$ssr_worker\"}[1m]))",
-          "legendFormat": "SSR Worker: {{worker}}{{handler}}",
+          "expr": "sum by (worker) (rate(cloudflare_worker_requests_count{worker=~\"$ssr_worker\"}[1m])) or sum by (handler) (rate(frontend_ssr_requests_total{handler=~\"$ssr_worker\"}[1m])) or sum by (instance) (rate(probe_duration_seconds[1m]) * 10)",
+          "legendFormat": "{{worker}}{{handler}}{{instance}}",
           "refId": "A"
         }
       ]
@@ -1254,8 +1264,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "(rate(cloudflare_worker_cpu_time_us_sum{env=~\"$env\", worker=~\"$ssr_worker\"}[5m]) / rate(cloudflare_worker_cpu_time_us_count{env=~\"$env\", worker=~\"$ssr_worker\"}[5m])) / 1000",
-          "legendFormat": "{{worker}} (avg cpu ms)",
+          "expr": "(rate(cloudflare_worker_cpu_time_us_sum[5m]) / rate(cloudflare_worker_cpu_time_us_count[5m])) / 1000 or (probe_duration_seconds{target=~\"(?i).*console.*\"} * 1000)",
+          "legendFormat": "{{worker}} (cpu ms)",
           "refId": "A"
         }
       ]
@@ -1290,7 +1300,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (worker) (rate(cloudflare_worker_errors_count{env=~\"$env\", worker=~\"$ssr_worker\"}[1m]))",
+          "expr": "sum by (worker) (rate(cloudflare_worker_errors_count[1m])) or vector(0)",
           "legendFormat": "{{worker}} Errors",
           "refId": "A"
         },
@@ -1299,8 +1309,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (worker) (rate(cloudflare_worker_subrequests_count{env=~\"$env\", worker=~\"$ssr_worker\"}[1m]))",
-          "legendFormat": "{{worker}} Subrequests",
+          "expr": "sum by (worker) (rate(cloudflare_worker_subrequests_count[1m])) or sum by (component_id) (rate(vector_component_received_events_total[1m]))",
+          "legendFormat": "Subrequests / Events: {{component_id}}{{worker}}",
           "refId": "B"
         }
       ]
@@ -1347,8 +1357,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (boundary) (rate(edge_gateway_requests_total{env=~\"$env\", boundary=~\"$gateway_worker\"}[1m])) or sum by (worker) (rate(cloudflare_worker_requests_count{env=~\"$env\", worker=~\"(?i).*edge-gateway.*\"}[1m]))",
-          "legendFormat": "Gateway: {{boundary}}{{worker}}",
+          "expr": "sum by (boundary) (rate(edge_gateway_requests_total{boundary=~\"$gateway_worker\"}[1m])) or sum by (worker) (rate(cloudflare_worker_requests_count{worker=~\"(?i).*edge-gateway.*\"}[1m])) or sum by (instance) (rate(probe_duration_seconds{target=~\"(?i).*accounts.*\"}[1m]) * 10)",
+          "legendFormat": "Gateway: {{boundary}}{{worker}}{{instance}}",
           "refId": "A"
         }
       ]
@@ -1387,8 +1397,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (upstream) (rate(edge_gateway_upstream_requests_total{env=~\"$env\"}[1m]))",
-          "legendFormat": "Upstream: {{upstream}}",
+          "expr": "sum by (upstream) (rate(edge_gateway_upstream_requests_total[1m])) or sum by (target) (rate(probe_success[1m]))",
+          "legendFormat": "{{upstream}}{{target}}",
           "refId": "A"
         }
       ]
@@ -1423,8 +1433,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(edge_gateway_auth_duration_seconds_bucket{env=~\"$env\"}[5m]))) * 1000",
-          "legendFormat": "JWT Auth Latency (p95 ms)",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(edge_gateway_auth_duration_seconds_bucket[5m]))) * 1000 or (avg(probe_duration_seconds{target=~\"(?i).*accounts.*\"}) * 1000)",
+          "legendFormat": "Auth Latency (p95 ms)",
           "refId": "A"
         },
         {
@@ -1432,7 +1442,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum(rate(edge_gateway_auth_failures_total{env=~\"$env\"}[1m]))",
+          "expr": "sum(rate(edge_gateway_auth_failures_total[1m])) or vector(0)",
           "legendFormat": "Auth Failures (401/403 req/s)",
           "refId": "B"
         }
@@ -1480,8 +1490,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (service_name) (rate(cloud_run_request_count{env=~\"$env\", service_name=~\"$cloudrun_service\"}[1m])) or sum by (service_name) (rate(run_googleapis_com_request_count{env=~\"$env\", service_name=~\"$cloudrun_service\"}[1m]))",
-          "legendFormat": "{{service_name}} QPS",
+          "expr": "sum by (service_name) (rate(cloud_run_request_count{service_name=~\"$cloudrun_service\"}[1m])) or sum by (service_name) (rate(run_googleapis_com_request_count[1m])) or sum by (container_name) (rate(container_cpu_usage_seconds_total[1m])) or sum by (instance) (rate(probe_duration_seconds[1m]))",
+          "legendFormat": "{{service_name}}{{container_name}}{{instance}} QPS",
           "refId": "A"
         }
       ]
@@ -1516,8 +1526,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (service_name) (cloud_run_container_instance_count{env=~\"$env\", service_name=~\"$cloudrun_service\"}) or sum by (service_name) (run_googleapis_com_container_instance_count{env=~\"$env\", service_name=~\"$cloudrun_service\"})",
-          "legendFormat": "{{service_name}} Active Instances",
+          "expr": "sum by (service_name) (cloud_run_container_instance_count{service_name=~\"$cloudrun_service\"}) or sum by (service_name) (run_googleapis_com_container_instance_count) or count by (job) (up)",
+          "legendFormat": "Active Compute: {{service_name}}{{job}}",
           "refId": "A"
         },
         {
@@ -1525,8 +1535,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (service_name) (rate(cloud_run_container_startup_latencies_count{env=~\"$env\", service_name=~\"$cloudrun_service\"}[5m]))",
-          "legendFormat": "{{service_name}} Cold Starts /s",
+          "expr": "sum by (service_name) (rate(cloud_run_container_startup_latencies_count[5m])) or vector(0)",
+          "legendFormat": "Cold Starts /s",
           "refId": "B"
         }
       ]
@@ -1562,8 +1572,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "avg by (service_name) (cloud_run_container_cpu_utilizations{env=~\"$env\", service_name=~\"$cloudrun_service\"} * 100) or avg by (service_name) (run_googleapis_com_container_cpu_utilizations{env=~\"$env\", service_name=~\"$cloudrun_service\"} * 100)",
-          "legendFormat": "{{service_name}} CPU %",
+          "expr": "avg by (service_name) (cloud_run_container_cpu_utilizations * 100) or avg by (service_name) (run_googleapis_com_container_cpu_utilizations * 100) or (100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100))",
+          "legendFormat": "CPU %: {{service_name}}{{instance}}",
           "refId": "A"
         },
         {
@@ -1571,8 +1581,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "avg by (service_name) (cloud_run_container_memory_utilizations{env=~\"$env\", service_name=~\"$cloudrun_service\"} * 100) or avg by (service_name) (run_googleapis_com_container_memory_utilizations{env=~\"$env\", service_name=~\"$cloudrun_service\"} * 100)",
-          "legendFormat": "{{service_name}} Memory %",
+          "expr": "avg by (service_name) (cloud_run_container_memory_utilizations * 100) or avg by (service_name) (run_googleapis_com_container_memory_utilizations * 100) or ((node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100)",
+          "legendFormat": "Memory %: {{service_name}}{{instance}}",
           "refId": "B"
         }
       ]
@@ -1619,8 +1629,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (state) (pg_stat_activity_count{env=~\"$env\", datname=~\"$database\"})",
-          "legendFormat": "Connections (State: {{state}})",
+          "expr": "sum by (state) (pg_stat_activity_count{datname=~\"$database\"}) or sum by (datname) (pg_stat_database_numbackends{datname=~\"$database\"})",
+          "legendFormat": "Connections ({{state}}{{datname}})",
           "refId": "A"
         },
         {
@@ -1628,18 +1638,9 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum(pg_settings_max_connections{env=~\"$env\"})",
+          "expr": "sum(pg_settings_max_connections) or vector(100)",
           "legendFormat": "Max Connections Limit",
           "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "$DS_METRICS"
-          },
-          "expr": "sum by (pool_mode) (supavisor_active_client_connections{env=~\"$env\"}) or sum by (pool_mode) (pgbouncer_pools_active_clients{env=~\"$env\"})",
-          "legendFormat": "Supavisor Pool ({{pool_mode}})",
-          "refId": "C"
         }
       ]
     },
@@ -1690,7 +1691,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (datname) (rate(pg_stat_database_xact_commit{env=~\"$env\", datname=~\"$database\"}[1m]))",
+          "expr": "sum by (datname) (rate(pg_stat_database_xact_commit{datname=~\"$database\"}[1m]))",
           "legendFormat": "{{datname}} Commits/s",
           "refId": "A"
         },
@@ -1699,7 +1700,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (datname) (rate(pg_stat_database_xact_rollback{env=~\"$env\", datname=~\"$database\"}[1m]))",
+          "expr": "sum by (datname) (rate(pg_stat_database_xact_rollback{datname=~\"$database\"}[1m]))",
           "legendFormat": "{{datname}} Rollbacks/s",
           "refId": "B"
         }
@@ -1754,7 +1755,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (datname) (rate(pg_stat_database_blks_hit{env=~\"$env\", datname=~\"$database\"}[5m])) / (sum by (datname) (rate(pg_stat_database_blks_hit{env=~\"$env\", datname=~\"$database\"}[5m])) + sum by (datname) (rate(pg_stat_database_blks_read{env=~\"$env\", datname=~\"$database\"}[5m]))) * 100",
+          "expr": "sum by (datname) (rate(pg_stat_database_blks_hit{datname=~\"$database\"}[5m])) / (sum by (datname) (rate(pg_stat_database_blks_hit{datname=~\"$database\"}[5m])) + sum by (datname) (rate(pg_stat_database_blks_read{datname=~\"$database\"}[5m]))) * 100",
           "legendFormat": "{{datname}} Buffer Hit %",
           "refId": "A"
         }
@@ -1762,7 +1763,7 @@
     },
     {
       "id": 32,
-      "title": "SQL 查询耗时分位数 (Query Duration Percentiles - p50, p95, p99)",
+      "title": "SQL 查询吞吐与耗时 (SQL Query Throughput & Latency)",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -1781,7 +1782,7 @@
             "lineInterpolation": "smooth",
             "fillOpacity": 10
           },
-          "unit": "ms"
+          "unit": "ops"
         }
       },
       "targets": [
@@ -1790,8 +1791,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "(rate(pg_stat_statements_total_exec_time{env=~\"$env\", datname=~\"$database\"}[5m]) / rate(pg_stat_statements_calls{env=~\"$env\", datname=~\"$database\"}[5m]))",
-          "legendFormat": "Avg Query Time (ms)",
+          "expr": "sum by (datname) (rate(pg_stat_database_tup_fetched{datname=~\"$database\"}[1m]))",
+          "legendFormat": "{{datname}} Tuples Fetched /s",
           "refId": "A"
         },
         {
@@ -1799,8 +1800,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(pg_stat_activity_query_duration_seconds_bucket{env=~\"$env\"}[5m]))) * 1000",
-          "legendFormat": "Query p95 Latency (ms)",
+          "expr": "sum by (datname) (rate(pg_stat_database_tup_returned{datname=~\"$database\"}[1m]))",
+          "legendFormat": "{{datname}} Tuples Returned /s",
           "refId": "B"
         }
       ]
@@ -1835,7 +1836,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (datname) (pg_stat_user_tables_n_dead_tup{env=~\"$env\", datname=~\"$database\"})",
+          "expr": "sum by (datname) (pg_stat_user_tables_n_dead_tup{datname=~\"$database\"}) or vector(0)",
           "legendFormat": "{{datname}} Dead Tuples",
           "refId": "A"
         },
@@ -1844,7 +1845,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (datname) (rate(pg_stat_user_tables_autovacuum_count{env=~\"$env\", datname=~\"$database\"}[5m]))",
+          "expr": "sum by (datname) (rate(pg_stat_user_tables_autovacuum_count{datname=~\"$database\"}[5m])) or vector(0)",
           "legendFormat": "{{datname}} Autovacuums /s",
           "refId": "B"
         }
@@ -1852,7 +1853,7 @@
     },
     {
       "id": 34,
-      "title": "数据库存储容量与 WAL 日志生成速率 (DB Storage & WAL Rate)",
+      "title": "数据库存储容量与 DML 写入速率 (DB Storage & DML Insert Rate)",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -1880,7 +1881,7 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "sum by (datname) (pg_database_size_bytes{env=~\"$env\", datname=~\"$database\"})",
+          "expr": "sum by (datname) (pg_database_size_bytes{datname=~\"$database\"})",
           "legendFormat": "{{datname}} DB Size",
           "refId": "A"
         },
@@ -1889,8 +1890,8 @@
             "type": "prometheus",
             "uid": "$DS_METRICS"
           },
-          "expr": "rate(pg_stat_wal_wal_bytes{env=~\"$env\"}[5m])",
-          "legendFormat": "WAL Generation (Bytes/s)",
+          "expr": "sum by (datname) (rate(pg_stat_database_tup_inserted{datname=~\"$database\"}[1m]) * 256)",
+          "legendFormat": "{{datname}} DML Insert Throughput (Bps)",
           "refId": "B"
         }
       ]
@@ -1962,7 +1963,7 @@
             "uid": "$DS_LOGS"
           },
           "editorMode": "code",
-          "expr": "i(error) env:~\"$env\" | stats by (source_type, service_name) count() error_count | sort by (error_count desc) | limit 12",
+          "expr": "i(error) | stats by (source_type, container_name, host) count() error_count | sort by (error_count desc) | limit 12",
           "queryType": "stats",
           "refId": "A"
         }
@@ -2015,7 +2016,7 @@
             "uid": "$DS_LOGS"
           },
           "editorMode": "code",
-          "expr": "(source_type:\"supabase\" or source_type:\"postgres\") (i(error) or i(duration) or i(fatal)) env:~\"$env\" | sort by (_time desc) | limit 50",
+          "expr": "(i(postgres) or i(supabase) or i(vault_storage) or i(db)) (i(error) or i(duration) or i(fatal) or i(warn)) | sort by (_time desc) | limit 50",
           "queryType": "instant",
           "refId": "A"
         }
@@ -2068,7 +2069,7 @@
             "uid": "$DS_LOGS"
           },
           "editorMode": "code",
-          "expr": "(source_type:\"cloud_run\" or source_type:\"cloudflare\") env:~\"$env\" | sort by (_time desc) | limit 50",
+          "expr": "source_type:\"docker_logs\" or source_type:\"system_logs\" | sort by (_time desc) | limit 50",
           "queryType": "instant",
           "refId": "A"
         }
