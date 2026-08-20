@@ -26,9 +26,20 @@ observability.svc.plus {
     }
 
     # ==========================================
-    # VictoriaMetrics / Prometheus
+    # VictoriaMetrics / Prometheus (Metrics Ingest & Query)
     # ==========================================
-    # [接收] 指标数据写入 (Remote Write) # VictoriaMetrics 写入入口
+    # [接收] 标准 OTLP/HTTP Metrics 写入 (/v1/metrics, /otlp/v1/metrics, /ingest/otlp/v1/metrics)
+    @otlp_metrics path /v1/metrics* /otlp/v1/metrics* /ingest/otlp/v1/metrics* /insert/opentelemetry/v1/metrics*
+    handle @otlp_metrics {
+        rewrite * /insert/opentelemetry/v1/metrics
+        reverse_proxy 127.0.0.1:{{ observability_vmetrics_port | default('9090') }}
+    }
+    # [接收] Prometheus Remote Write & Import (/api/v1/write, /api/v1/import/*)
+    @prom_write path /api/v1/write* /api/v1/import/*
+    handle @prom_write {
+        reverse_proxy 127.0.0.1:{{ observability_vmetrics_port | default('9090') }}
+    }
+    # [接收] 兼容原有指标写入路径 (/ingest/metrics/*)
     handle_path /ingest/metrics/* {
         reverse_proxy 127.0.0.1:{{ observability_vmetrics_port | default('9090') }}
     }
@@ -38,9 +49,20 @@ observability.svc.plus {
     }
 
     # ==========================================
-    # VictoriaLogs / Loki
+    # VictoriaLogs / Loki (Logs Ingest & Query)
     # ==========================================
-    # [接收] 日志数据写入 (Log Ingest)
+    # [接收] 标准 OTLP/HTTP Logs 写入 (/v1/logs, /otlp/v1/logs, /ingest/otlp/v1/logs)
+    @otlp_logs path /v1/logs* /otlp/v1/logs* /ingest/otlp/v1/logs* /insert/opentelemetry/v1/logs*
+    handle @otlp_logs {
+        rewrite * /insert/opentelemetry/v1/logs
+        reverse_proxy 127.0.0.1:9428
+    }
+    # [接收] VictoriaLogs / JSONLine / Loki 直推 (/insert/jsonline, /insert/loki/*, /insert/elasticsearch/*)
+    @vlogs_insert path /insert/jsonline* /insert/loki/* /insert/elasticsearch/* /insert/syslog/*
+    handle @vlogs_insert {
+        reverse_proxy 127.0.0.1:9428
+    }
+    # [接收] 兼容原有日志写入路径 (/ingest/logs/*)
     handle_path /ingest/logs/* {
         reverse_proxy 127.0.0.1:9428
     }
@@ -50,14 +72,11 @@ observability.svc.plus {
     }
 
     # ==========================================
-    # OpenTelemetry / Jaeger
+    # OpenTelemetry / VictoriaTraces / Jaeger (Traces Ingest & Query)
     # ==========================================
-    # [接收] 链路数据写入 (OTLP/HTTP Ingest)
-    # VictoriaTraces exposes OTLP/HTTP on its query server at 10428. The
-    # /insert/opentelemetry/v1/traces path must be restored after the public
-    # /ingest/otlp prefix is matched; 4318 is not enabled by the single-node
-    # container unless a separate OTLP receiver is configured.
-    handle /ingest/otlp/v1/traces* {
+    # [接收] 标准 OTLP/HTTP Traces 写入 (/v1/traces, /otlp/v1/traces, /ingest/otlp/v1/traces)
+    @otlp_traces path /v1/traces* /otlp/v1/traces* /ingest/otlp/v1/traces* /insert/opentelemetry/v1/traces*
+    handle @otlp_traces {
         rewrite * /insert/opentelemetry/v1/traces
         reverse_proxy 127.0.0.1:10428
     }

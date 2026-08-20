@@ -119,13 +119,23 @@
 
 ---
 
-## 4. 采集器与数据导出链路配置 (Data Pipeline)
+## 4. 统一通用可观测性接入点与数据导出链路 (Standardized Ingestion Endpoints)
+
+为支持 Cloudflare Observability Destinations、OpenTelemetry SDK、Vector 及 Prometheus Remote Write 标准接入，`https://observability.svc.plus` 统一暴露通用 HTTP 终结点：
+
+| 遥测类型 (Type) | 标准接入终结点 (Endpoint) | 后端服务与端口 | 协议与数据格式 |
+| :--- | :--- | :--- | :--- |
+| **链路跟踪 (Traces)** | `https://observability.svc.plus/v1/traces` (或 `/otlp/v1/traces`) | VictoriaTraces (`:10428`) | OTLP/HTTP (Protobuf / JSON) |
+| **日志流 (Logs - OTLP)** | `https://observability.svc.plus/v1/logs` (或 `/otlp/v1/logs`) | VictoriaLogs (`:9428`) | OTLP/HTTP (Protobuf / JSON) |
+| **日志流 (Logs - 直推)** | `https://observability.svc.plus/insert/jsonline?_msg_field=message&_stream_fields=zone,worker,status` | VictoriaLogs (`:9428`) | JSON Lines / NDJSON |
+| **指标 (Metrics - OTLP)** | `https://observability.svc.plus/v1/metrics` (或 `/otlp/v1/metrics`) | VictoriaMetrics (`:9090`) | OTLP/HTTP (Protobuf / JSON) |
+| **指标 (Metrics - Prom)** | `https://observability.svc.plus/api/v1/write` (或 `/api/v1/import/prometheus`) | VictoriaMetrics (`:9090`) | Prometheus Remote Write (Snappy) |
 
 ```
-[Cloudflare Edge]   --> (Logpush / Analytics API)    --> [Vector / Prometheus Exporter] --> [VictoriaMetrics / Logs]
-[GCP Cloud Run]     --> (Cloud Monitoring / OTel)    --> [Prometheus Scraper]          --> [VictoriaMetrics / Logs]
-[Supabase DB]       --> (postgres_exporter / Drain)  --> [Prometheus Scraper]          --> [VictoriaMetrics / Logs]
-[Blackbox Exporter] --> (Synthetic HTTPS Probes)     --> [Prometheus Scraper]          --> [VictoriaMetrics]
+[Cloudflare Edge / Workers] --> (OTLP: /v1/traces, Logs: /v1/logs)  --> [VictoriaTraces / VictoriaLogs]
+[GCP Cloud Run / OTel SDK]  --> (OTLP: /v1/traces, /v1/metrics)     --> [VictoriaTraces / VictoriaMetrics]
+[Supabase DB / Exporters]   --> (Prometheus: /api/v1/write)         --> [VictoriaMetrics]
+[Blackbox Exporter]         --> (Synthetic HTTPS Probes)            --> [VictoriaMetrics]
 ```
 
 ---
