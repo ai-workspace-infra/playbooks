@@ -22,12 +22,17 @@ Caddy 作为统一入口，通过不同的 Path 将外网请求分发到 Docker 
 | 统一公网入口 (observability.svc.plus) | Caddy 指令 | Docker 内部服务 (目标组件) | 内部端口 | 核心职责 |
 | :--- | :--- | :--- | :--- | :--- |
 | **`/grafana/*`** | `handle /grafana/*` | `grafana` | `3000` | 全局大盘，默认根路径 `/` 也会重定向至此 |
-| **`/ingest/metrics/*`** | `handle_path /ingest/metrics/*`| `victoria-metrics` | `8428` | **写入**：接收 Remote Write 时序指标 |
-| **`/vmetrics/*`** | `handle_path /vmetrics/*`| `victoria-metrics` | `8428` | **查询**：Grafana 读取 Metrics (PromQL) |
-| **`/ingest/logs/*`** | `handle_path /ingest/logs/*` | `victoria-logs` | `9428` | **写入**：接收 Vector 等 JSON 日志推送 |
-| **`/vlogs/*`** | `handle_path /vlogs/*` | `victoria-logs` | `9428` | **查询**：Grafana 读取 Logs (LogQL) |
-| **`/ingest/otlp/v1/traces`** | `handle /ingest/otlp/v1/traces*` + rewrite | `victoria-traces` | `10428` | **写入**：接收 OTLP/HTTP 并转发到 `/insert/opentelemetry/v1/traces` |
-| **`/vtraces/*`** | `handle_path /vtraces/*` | `victoria-traces` | `10428` | **查询**：向外部/Grafana暴露 Jaeger API |
+| **`/otlp/v1/traces`** (或 `/v1/traces`) | `handle @otlp_traces` + rewrite | `victoria-traces` | `10428` | **写入**：OpenTelemetry Traces 标准 OTLP/HTTP 接入 |
+| **`/otlp/v1/logs`** (或 `/v1/logs`) | `handle @otlp_logs` + rewrite | `victoria-logs` | `9428` | **写入**：OpenTelemetry Logs 标准 OTLP/HTTP 接入 |
+| **`/otlp/v1/metrics`** (或 `/v1/metrics`)| `handle @otlp_metrics` + rewrite | `victoria-metrics` | `9090` | **写入**：OpenTelemetry Metrics 标准 OTLP/HTTP 接入 |
+| **`/api/v1/write`** | `handle @prom_write` | `victoria-metrics` | `9090` | **写入**：Prometheus Remote Write 接入 |
+| **`/insert/jsonline`** | `handle @vlogs_insert` | `victoria-logs` | `9428` | **写入**：VictoriaLogs JSON Lines 格式流式直推 |
+| **`/ingest/metrics/*`** | `handle_path /ingest/metrics/*`| `victoria-metrics` | `9090` | **写入**：兼容原有 Remote Write 指标写入 |
+| **`/vmetrics/*`** | `handle_path /vmetrics/*`| `victoria-metrics` | `9090` | **查询**：Grafana 读取 Metrics (PromQL / MetricsQL) |
+| **`/ingest/logs/*`** | `handle_path /ingest/logs/*` | `victoria-logs` | `9428` | **写入**：兼容原有 Vector 等 JSON 日志推送 |
+| **`/vlogs/*`** | `handle_path /vlogs/*` | `victoria-logs` | `9428` | **查询**：Grafana 读取 Logs (LogsQL) |
+| **`/ingest/otlp/v1/traces`** | `handle /ingest/otlp/v1/traces*` + rewrite | `victoria-traces` | `10428` | **写入**：兼容原有 OTLP/HTTP 写入 |
+| **`/vtraces/*`** | `handle_path /vtraces/*` | `victoria-traces` | `10428` | **查询**：向外部/Grafana暴露 TraceQL / Jaeger API |
 | **`/vmalert/*`** | `handle_path /vmalert/*` | `vmalert` | `8880` | **引擎**：告警规则计算引擎 |
 | **`/alertmgr/*`** | `handle_path /alertmgr/*` | `alertmanager` | `9093` | **路由**：告警去重、分组与分发 |
 | **`/blackbox/*`** | `handle_path /blackbox/*` | `blackbox-exporter`| `9115` | **探针**：主动网络及接口拨测 |

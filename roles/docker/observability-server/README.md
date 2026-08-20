@@ -48,13 +48,13 @@ flowchart LR
 
 ## 2. 默认端口规划与 Endpoint 统一暴露全清单
 
-### 2.1 可观测性核心服务 Endpoints
-| 服务组件 | 容器服务名 | 宿主机端口 | Caddy 统一网关 Ingress 路径 | 核心功能与职责 |
+### 2.1 可观测性核心服务 Endpoints (标准通用接入点 & 查询)
+| 服务组件 | 容器服务名 | 宿主机端口 | Caddy 统一网关 Ingress 路径 (标准 & 兼容) | 核心功能与职责 |
 | :--- | :--- | :--- | :--- | :--- |
 | **Grafana UI** | `xstream_grafana` | `127.0.0.1:3030` | `https://observability.svc.plus/grafana/` | 统一可视化大盘面板与告警管理 |
-| **VictoriaMetrics (Metrics)** | `xstream_victoriametrics` | `127.0.0.1:9090` | 写入: `/ingest/metrics/*`<br>查询: `/vmetrics/*` | Prometheus 协议指标数据 Remote Write 接收与 MetricsQL 查询 |
-| **VictoriaLogs (Logs)** | `xstream_victorialogs` | `127.0.0.1:9428` | 写入: `/ingest/logs/*`<br>查询: `/vlogs/*` | JSON Lines 日志流式写入与 LogsQL 高基数检索 |
-| **VictoriaTraces (Traces)** | `xstream_victoriatraces` | `127.0.0.1:10428` | OTLP/HTTP 写入: `/ingest/otlp/v1/traces` → `/insert/opentelemetry/v1/traces`<br>查询: `/vtraces/*` | OpenTelemetry (OTLP/HTTP) 链路接收与 TraceQL 查询 |
+| **VictoriaMetrics (Metrics)** | `xstream_victoriametrics` | `127.0.0.1:9090` | OTLP 写入: `/otlp/v1/metrics` (或 `/v1/metrics`)<br>Prom 写入: `/api/v1/write`<br>兼容写入: `/ingest/metrics/*`<br>查询: `/vmetrics/*` | Prometheus 协议指标数据 Remote Write 接收、OTLP/HTTP Metrics 与 MetricsQL 查询 |
+| **VictoriaLogs (Logs)** | `xstream_victorialogs` | `127.0.0.1:9428` | OTLP 写入: `/otlp/v1/logs` (或 `/v1/logs`)<br>JSONLine 写入: `/insert/jsonline`<br>兼容写入: `/ingest/logs/*`<br>查询: `/vlogs/*` | OpenTelemetry Logs、JSON Lines 流式写入与 LogsQL 高基数检索 |
+| **VictoriaTraces (Traces)** | `xstream_victoriatraces` | `127.0.0.1:10428` | OTLP 写入: `/otlp/v1/traces` (或 `/v1/traces`)<br>兼容写入: `/ingest/otlp/v1/traces`<br>查询: `/vtraces/*` | OpenTelemetry (OTLP/HTTP) 链路接收与 TraceQL 查询 |
 | **Blackbox Exporter** | `xstream_blackbox` | `127.0.0.1:9115` | `/blackbox/*` | 网络、域名、HTTP/TCP 探针拨测 |
 
 ### 2.2 Model Context Protocol (MCP) Server 阵列 Endpoints
