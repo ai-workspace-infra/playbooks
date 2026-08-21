@@ -31,8 +31,8 @@ all-in-one 部署会发生端口冲突或 exporter 连接拒绝。
 | --- | --- | --- |
 | `xray-exporter-xhttp.service` | `127.0.0.1:8080` | 采集 `xray.service` 的上游指标 |
 | `xray-exporter-tcp.service` | `127.0.0.1:8081` | 采集 `xray-tcp.service` 的上游指标 |
-| `xray.service` | `127.0.0.1:18080` | XHTTP 侧 Xray API 端口 |
-| `xray-tcp.service` | `127.0.0.1:18081` | TCP 侧 Xray API 端口 |
+| `xray.service` | `127.0.0.1:28080` | XHTTP 侧 Xray API 端口 |
+| `xray-tcp.service` | `127.0.0.1:28081` | TCP 侧 Xray API 端口 |
 | `node_exporter` | `127.0.0.1:9100` | 主机指标采集 |
 | `process_exporter` | `127.0.0.1:9256` | 进程指标采集 |
 
@@ -43,22 +43,22 @@ all-in-one 部署会发生端口冲突或 exporter 连接拒绝。
 - `xray.service`
   - 使用 `/usr/local/etc/xray/config.json`
   - 提供 XHTTP 侧的 `StatsService`
-  - API 监听 `127.0.0.1:18080`
+  - API 监听 `127.0.0.1:28080`
 
 - `xray-tcp.service`
   - 使用 `/usr/local/etc/xray/tcp-config.json`
   - 提供 TCP 侧的 `StatsService`
-  - API 监听 `127.0.0.1:18081`
+  - API 监听 `127.0.0.1:28081`
 
 ### Exporter
 
 - `xray-exporter-xhttp.service`
   - 监听 `127.0.0.1:8080`
-  - 上游指向 `127.0.0.1:18080`
+  - 上游指向 `127.0.0.1:28080`
 
 - `xray-exporter-tcp.service`
   - 监听 `127.0.0.1:8081`
-  - 上游指向 `127.0.0.1:18081`
+  - 上游指向 `127.0.0.1:28081`
 
 ### 主机观测
 
@@ -112,21 +112,19 @@ Vector 采用双源采集 Xray 指标：
 因宿主机环境上存在生产遗留问题与容器端口占用冲突，针对 `install.svc.plus` 进行了特例微调，避开了占用端口并修改了证书配置。具体现状如下：
 
 ### 端口与服务变更
-1. **停止 billing-service**：
-   - 宿主机上的 `billing-service` 服务已被停止并禁用（`systemctl disable billing-service`），以释放 `127.0.0.1:8081` 端口给 `xray-exporter-tcp.service` 监听。
-2. **微调 XHTTP 侧 API 端口**：
-   - 宿主机上的 `console-c894924-contabo` 容器占用了 `127.0.0.1:18080`，因此将 `xray.service` (XHTTP) 的 API 端口微调为 `127.0.0.1:28080`。
-   - `xray-exporter-xhttp.service` 同步修改上游探测地址为 `127.0.0.1:28080`。
-3. **微调 TCP 侧 API 端口**：
-   - 宿主机上的 `accounts-managed-prod-contabo` 容器占用了 `127.0.0.1:18081`，因此将 `xray-tcp.service` (TCP) 的 API 端口微调为 `127.0.0.1:28081`。
-   - `xray-exporter-tcp.service` 同步修改上游探测地址为 `127.0.0.1:28081`。
+1. **远端 Xray 节点统一使用 28080/28081**：
+   - `tky-proxy.svc.plus` 的 XHTTP/TCP Xray Stats API 分别监听 `127.0.0.1:28080` 和 `127.0.0.1:28081`。
+   - 两个 exporter 分别监听 `127.0.0.1:8080`、`127.0.0.1:8081`，并访问对应的 28080/28081 上游。
+2. **observability 主机不启动本地 Xray**：
+   - `install.svc.plus` 仅运行 exporter、Vector/VictoriaMetrics 等观测组件，不把 exporter 绑定到本机失效的 `xray.service` / `xray-tcp.service`。
+   - 通过 `xray_exporter_require_local_xray_services: false` 清除 systemd 本地 Xray 依赖，避免本地容器端口或证书残留导致 exporter 被 systemd 停止。
 
 ### 证书路径修正
 - `xray-tcp.service` 在该主机上加载的 TLS 证书路径修正为本地实际存在的 `xworkmate-bridge.svc.plus` 证书目录（`/var/lib/caddy/.local/share/caddy/certificates/.../xworkmate-bridge.svc.plus/`）。
 
 ### 调整后在该主机的端口拓扑
-- `xray.service` (XHTTP API)：`127.0.0.1:28080`
-- `xray-exporter-xhttp.service` (指标服务)：监听 `127.0.0.1:8080`
-- `xray-tcp.service` (TCP API)：`127.0.0.1:28081`
-- `xray-exporter-tcp.service` (指标服务)：监听 `127.0.0.1:8081`
+- `tky-proxy.svc.plus` 的 `xray.service` (XHTTP API)：`127.0.0.1:28080`
+- `tky-proxy.svc.plus` 的 `xray-exporter-xhttp.service`：监听 `127.0.0.1:8080`
+- `tky-proxy.svc.plus` 的 `xray-tcp.service` (TCP API)：`127.0.0.1:28081`
+- `tky-proxy.svc.plus` 的 `xray-exporter-tcp.service`：监听 `127.0.0.1:8081`
 - `vector.service` (指标抓取)：继续通过 `127.0.0.1:8080/scrape` 和 `127.0.0.1:8081/scrape` 正常抓取。
