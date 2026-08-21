@@ -81,6 +81,28 @@ def validate(binary: str, candidate: Path) -> None:
         raise RuntimeError(f"Xray rejected {candidate}:\n{output}")
 
 
+def is_immutable(path: Path) -> bool:
+    """Return whether Linux marks a config file immutable."""
+    result = subprocess.run(
+        ["lsattr", "-d", str(path)],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    attributes = result.stdout.split(maxsplit=1)[0]
+    return len(attributes) > 4 and attributes[4] == "i"
+
+
+def set_immutable(path: Path, enabled: bool) -> None:
+    """Temporarily unlock a protected config, then restore its prior state."""
+    subprocess.run(
+        ["chattr", "+i" if enabled else "-i", str(path)],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--xhttp-config", required=True, type=Path)
@@ -118,11 +140,15 @@ def main() -> int:
         (args.xhttp_config, write_candidate(args.xhttp_config, xhttp_data)),
         (args.tcp_config, write_candidate(args.tcp_config, tcp_data)),
     ]
+    immutable = {original: is_immutable(original) for original, _ in candidates}
     try:
         for _, candidate in candidates:
             validate(args.xray_binary, candidate)
 
         stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H%M%S")
+        for original, protected in immutable.items():
+            if protected:
+                set_immutable(original, False)
         for original, candidate in candidates:
             backup = original.with_name(f"{original.name}.bak.xray-exporter.{stamp}")
             shutil.copy2(original, backup)
@@ -131,6 +157,9 @@ def main() -> int:
     finally:
         for _, candidate in candidates:
             candidate.unlink(missing_ok=True)
+        for original, protected in immutable.items():
+            if protected:
+                set_immutable(original, True)
 
     return 0
 

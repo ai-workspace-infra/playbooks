@@ -1,0 +1,61 @@
+---
+# Cross-environment collection bridge for the production Tokyo proxy.
+#
+# This playbook changes only the collection path:
+#   Xray -> xray-exporter -> Vector -> UAT Billing -> UAT Console/Accounts
+# The Xray services, agent service and all other application binaries are not
+# managed here. The exporter release is intentionally explicit because the
+# snapshot push contract is the only binary capability this bridge needs.
+- name: Configure tky production Xray billing fan-out
+  hosts: tky-proxy.svc.plus
+  remote_user: admin
+  become: true
+  gather_facts: true
+  module_defaults:
+    ansible.builtin.apt:
+      lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
+  vars:
+    # Keep the source identity production-scoped while sending the usage data
+    # to the UAT serverless billing/accounting plane.
+    xray_exporter_node_id: "tky-proxy.svc.plus"
+    xray_exporter_env_name: "prod"
+    xray_exporter_version: "uat-daily-build-2026.08.21-r8"
+    xray_exporter_snapshot_features_enabled: true
+    # Ensure the exporter is wired to the standardized Xray Stats APIs. This
+    # changes only the API listener settings used by collection; Xray itself
+    # and all application binaries remain unchanged.
+    xray_exporter_repair_xray_services_enabled: true
+    xray_exporter_xray_api_port: 28080
+    xray_exporter_tcp_xray_api_port: 28081
+    xray_exporter_tcp_certificate_domain: "tky-proxy.svc.plus"
+    xray_exporter_accounts_base_url: "https://accounts-serverless-uat.onwalk.net"
+    xray_exporter_internal_service_token: >-
+      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}
+    xray_exporter_vector_snapshot_url: "http://127.0.0.1:8686"
+
+    # Vector is the sole Billing egress. Prometheus remote-write remains the
+    # existing Observability path and is deliberately left enabled.
+    vector_xray_exporter_enabled: true
+    vector_billing_ingest_enabled: true
+    vector_billing_ingest_address: "127.0.0.1:8686"
+    vector_billing_ingest_url: "https://billing-serverless-uat.onwalk.net/v1/ingest/snapshots"
+    vector_billing_ingest_token: >-
+      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}
+    vector_observability_endpoint: "https://observability.svc.plus"
+  pre_tasks:
+    - name: Require the Vault-provided UAT internal service token
+      ansible.builtin.assert:
+        that:
+          - xray_exporter_internal_service_token | trim | length > 0
+          - vector_billing_ingest_token | trim | length > 0
+        fail_msg: >-
+          INTERNAL_SERVICE_TOKEN must be exported from Vault before deploying
+          the tky production to UAT Billing collection bridge.
+        success_msg: "Internal service token found"
+      no_log: true
+
+  roles:
+    # Start the local HTTP source before the exporter begins its first snapshot
+    # interval, then install/restart only the exporter binary and services.
+    - role: vhosts/vector-agent
+    - role: vhosts/xray-exporter
