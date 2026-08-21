@@ -1,8 +1,9 @@
 [Unit]
 Description={{ xray_exporter_instance.description }}
 Wants=network-online.target
-After=network-online.target xray.service xray-tcp.service
-Requires=xray.service xray-tcp.service
+After=network-online.target{% if xray_exporter_require_local_xray_services | bool %} xray.service xray-tcp.service{% endif %}
+{% if xray_exporter_require_local_xray_services | bool %}Requires=xray.service xray-tcp.service
+{% endif %}
 
 [Service]
 Type=simple
