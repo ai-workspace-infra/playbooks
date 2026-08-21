@@ -18,7 +18,7 @@ exporter role, while retaining the legacy group as a fallback for standalone
 inventory runs.
 
 The UAT `agent-proxy` Xray instances expose Stats APIs on
-`127.0.0.1:28080` and `127.0.0.1:28181`. Exporter addresses are now explicit
+`127.0.0.1:28080` and `127.0.0.1:28081`. Exporter addresses are now explicit
 and remain overrideable with `XRAY_EXPORTER_XRAY_API_ADDR` and
 `XRAY_EXPORTER_TCP_XRAY_API_ADDR` for hosts with the legacy layout.
 

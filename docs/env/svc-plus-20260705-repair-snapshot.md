@@ -2,6 +2,29 @@
 
 这个文档记录 `svc-plus-20260705-repair-snapshot` 对应的最终线上口径，方便后续迁移、部署和回滚时对照。
 
+## all-in-one 端口隔离约定
+
+all-in-one 主机可能同时承载多个本地服务，`10080/10081` 与
+`18080/18081` 已被其他服务或宿主机编排预留，不能再作为 Xray Stats API
+端口使用。基础设施 playbook 的当前规范如下：
+
+| 用途 | XHTTP | TCP |
+| --- | ---: | ---: |
+| 其他 all-in-one 服务预留 | `10080` / `18080` | `10081` / `18081` |
+| Xray Stats API | `28080` | `28081` |
+| xray-exporter 指标端点 | `8080` | `8081` |
+
+因此，`xray.service` 与 `xray-tcp.service` 必须分别监听
+`127.0.0.1:28080` 和 `127.0.0.1:28081`，对应 exporter 也必须使用相同的
+上游地址。不要恢复 `28181`，也不要把 exporter 指向 `18080/18081`；否则
+all-in-one 部署会发生端口冲突或 exporter 连接拒绝。
+
+该约定由以下 playbook 默认变量共同保证：
+
+- `roles/vhosts/agent-proxy/defaults/main.yml`
+- `roles/vhosts/xray-exporter/defaults/main.yml`
+- `deploy_xray_exporter.yml`
+
 ## 最终版端口拓扑
 
 | 组件 | 监听地址 | 说明 |
@@ -107,4 +130,3 @@ Vector 采用双源采集 Xray 指标：
 - `xray-tcp.service` (TCP API)：`127.0.0.1:28081`
 - `xray-exporter-tcp.service` (指标服务)：监听 `127.0.0.1:8081`
 - `vector.service` (指标抓取)：继续通过 `127.0.0.1:8080/scrape` 和 `127.0.0.1:8081/scrape` 正常抓取。
-

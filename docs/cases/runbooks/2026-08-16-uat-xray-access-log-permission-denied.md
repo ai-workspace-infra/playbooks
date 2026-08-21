@@ -57,7 +57,7 @@ mode: "0660"
 ```sh
 stat -c '%U:%G %a %n' /var/log/xray/access.log
 systemctl is-active xray xray-tcp
-ss -lntp | grep -E '28080|28181'
+ss -lntp | grep -E '28080|28081'
 curl -s http://127.0.0.1:8080/scrape | grep xray_up
 curl -s http://127.0.0.1:8081/scrape | grep xray_up
 ```
