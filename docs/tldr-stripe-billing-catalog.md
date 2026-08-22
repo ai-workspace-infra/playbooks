@@ -11,14 +11,17 @@ Product、Price、Webhook 和 `billing_plans.stripe_price_id` / 价格快照由
 所需密钥只存在于 Vault：
 
 ```text
-kv/<env>/billing-service: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
+kv/uat/billing-service: SANDBOX_STRIPE_SECRET_KEY, SANDBOX_STRIPE_WEBHOOK_SECRET,
+STRIPE_XCONNECT_PAY_URL
+kv/prod/billing-service: PROD_STRIPE_SECRET_KEY, PROD_STRIPE_WEBHOOK_SECRET,
+STRIPE_XCONNECT_PAY_URL
 kv/CICD: ROOT_BOOTSTRAP_PASSWORD（可选 ROOT_BOOTSTRAP_EMAIL）
 ```
 
 紧急人工同步时，使用 Accounts 仓库的命令，不要把 Markdown URL 放进环境变量值：
 
 ```bash
-STRIPE_SECRET_KEY='从 Vault 读取' \
+STRIPE_SECRET_KEY='从 Vault 的环境前缀键读取' \
 ACCOUNTS_ADMIN_TOKEN='短期管理员 token' \
 ACCOUNTS_BASE_URL='https://accounts-cloudflare-uat.onwalk.net' \
 scripts/stripe-sync-catalog.sh \
