@@ -254,6 +254,8 @@ Runbook：[`roles/vhosts/xworkmate_bridge_distributed_vpn/README.md`](roles/vhos
 
 参考：[`docs/tldr-ssh-security.md`](docs/tldr-ssh-security.md)
 
+Stripe 新环境套餐初始化：[`docs/tldr-stripe-billing-catalog.md`](docs/tldr-stripe-billing-catalog.md)
+
 ### 云开发桌面
 
 | Playbook | 场景 |
