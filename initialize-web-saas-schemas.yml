@@ -29,6 +29,8 @@
     accounts_schema_ref: "{{ lookup('ansible.builtin.env', 'ACCOUNTS_SCHEMA_REF') | default('', true) or 'main' }}"
     accounts_schema_url: >-
       https://raw.githubusercontent.com/ai-workspace-services/accounts/{{ accounts_schema_ref }}/sql/schema.sql
+    billing_catalog_seed_url: >-
+      https://raw.githubusercontent.com/ai-workspace-services/accounts/{{ accounts_schema_ref }}/scripts/seed-billing-plans.sql
     pg_container_default: web-saas-postgresql
     # 与 create_databases_and_users.yml 和 web_saas_host_config 用的是同一个
     # 角色名。accounts 和 billing 都经这个角色连库。
@@ -104,6 +106,57 @@
           account baseline schema still missing after applying
           {{ accounts_schema_url }} — refusing to report success.
       when: (users_table_verify.stdout | default('') | trim) != '1'
+
+    # A fresh Accounts schema only contains the runtime fallback plans (Free
+    # and Trial). Seed the purchasable catalog before the application starts
+    # accepting Checkout requests. The SQL itself is idempotent and preserves
+    # Stripe price IDs, but we skip the download and write once the primary
+    # paid plan exists so ordinary deployments never overwrite operator edits.
+    - name: Check whether the paid billing catalog is already present
+      ansible.builtin.command: >-
+        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
+        "SELECT 1 FROM public.billing_plans WHERE plan_id = 'PRO-MONTHLY'"
+      register: billing_catalog_check
+      changed_when: false
+      failed_when: false
+
+    - name: Fetch the billing catalog seed matching the deployed ref
+      ansible.builtin.get_url:
+        url: "{{ billing_catalog_seed_url }}"
+        dest: /tmp/accounts-billing-catalog.sql
+        mode: "0600"
+        force: true
+      when: (billing_catalog_check.stdout | default('') | trim) != '1'
+
+    - name: Seed the initial paid billing catalog
+      ansible.builtin.shell: >-
+        set -o pipefail &&
+        docker exec -i {{ pg_container }} psql -U postgres -d account
+        -v ON_ERROR_STOP=1 -f - < /tmp/accounts-billing-catalog.sql
+      args:
+        executable: /bin/bash
+      when: (billing_catalog_check.stdout | default('') | trim) != '1'
+
+    - name: Remove the downloaded billing catalog seed
+      ansible.builtin.file:
+        path: /tmp/accounts-billing-catalog.sql
+        state: absent
+      when: (billing_catalog_check.stdout | default('') | trim) != '1'
+
+    - name: Verify the paid billing catalog is present
+      ansible.builtin.command: >-
+        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
+        "SELECT 1 FROM public.billing_plans WHERE plan_id = 'PRO-MONTHLY'"
+      register: billing_catalog_verify
+      changed_when: false
+      failed_when: false
+
+    - name: Fail when the paid billing catalog is missing after initialization
+      ansible.builtin.fail:
+        msg: >-
+          paid billing catalog is missing after applying
+          {{ billing_catalog_seed_url }}.
+      when: (billing_catalog_verify.stdout | default('') | trim) != '1'
 
     # schema 是以 -U postgres 灌的, 所以每张表的属主都是 postgres, 而
     # account_user 一张也访问不到。accounts 之前看不出问题, 是因为它自己也用
