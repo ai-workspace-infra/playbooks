@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"path"
@@ -125,6 +126,10 @@ func (c *HTTPController) doJSON(ctx context.Context, method, endpoint string, re
 	if responseValue == nil {
 		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		return nil
+	}
+	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil || (mediaType != "application/json" && mediaType != "application/vnd.xconnect.gateway.v1+json") {
+		return errors.New("controller response content type is invalid")
 	}
 	const maxResponseBytes = 4 << 20
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))

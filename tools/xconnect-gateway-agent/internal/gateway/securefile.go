@@ -27,8 +27,9 @@ func readProtectedFile(path, label string) ([]byte, error) {
 	if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) {
 		return nil, errors.New("protected file changed while opening")
 	}
-	raw, err := io.ReadAll(io.LimitReader(file, 1<<20))
-	if err != nil {
+	const maxProtectedFileBytes = 1 << 20
+	raw, err := io.ReadAll(io.LimitReader(file, maxProtectedFileBytes+1))
+	if err != nil || len(raw) > maxProtectedFileBytes {
 		return nil, fmt.Errorf("read %s", label)
 	}
 	return raw, nil

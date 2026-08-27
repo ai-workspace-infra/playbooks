@@ -253,6 +253,15 @@ func TestStoreAtomicPermissionsAndLKG(t *testing.T) {
 	if checkpoint.PendingResult != nil {
 		t.Fatal("reported shadow result remained queued")
 	}
+	checkpointPath := filepath.Join(store.lkgDir, "checkpoint.json")
+	for _, invalid := range []string{`{"observed_generation":1,"unknown":true}`, `{} {}`} {
+		if err := os.WriteFile(checkpointPath, []byte(invalid), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.LoadCheckpoint(); err == nil {
+			t.Fatalf("non-strict checkpoint accepted: %q", invalid)
+		}
+	}
 }
 
 type fakeRunner struct {
@@ -353,6 +362,16 @@ func TestHTTPControllerHeartbeatRotationAnd401Redaction(t *testing.T) {
 		if strictErr == nil {
 			t.Fatalf("non-strict Controller response accepted: %q", responseBody)
 		}
+	}
+	wrongTypeServer := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", "text/plain")
+		_, _ = response.Write([]byte(`{}`))
+	}))
+	wrongTypeController, _ := NewHTTPController(wrongTypeServer.URL, credential, wrongTypeServer.Client())
+	_, wrongTypeErr := wrongTypeController.PlannedSnapshot(context.Background(), "gw_test_01")
+	wrongTypeServer.Close()
+	if wrongTypeErr == nil {
+		t.Fatal("non-JSON Controller response accepted")
 	}
 }
 
@@ -498,6 +517,12 @@ func TestProtectedFilesRejectWidePermissionsAndSymlinks(t *testing.T) {
 	}
 	if _, err := readProtectedFile(link, "credential"); err == nil {
 		t.Fatal("credential symlink accepted")
+	}
+	if err := os.WriteFile(path, make([]byte, (1<<20)+1), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readProtectedFile(path, "credential"); err == nil {
+		t.Fatal("oversized protected file was silently truncated")
 	}
 }
 

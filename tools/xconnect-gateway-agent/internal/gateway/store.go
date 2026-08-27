@@ -1,9 +1,11 @@
 package gateway
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -46,8 +48,13 @@ func (s *Store) LoadCheckpoint() (Checkpoint, error) {
 		return Checkpoint{}, fmt.Errorf("read checkpoint: %w", err)
 	}
 	var checkpoint Checkpoint
-	if err := json.Unmarshal(raw, &checkpoint); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&checkpoint); err != nil {
 		return Checkpoint{}, fmt.Errorf("decode checkpoint: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return Checkpoint{}, errors.New("decode checkpoint: multiple JSON values")
 	}
 	return checkpoint, nil
 }
