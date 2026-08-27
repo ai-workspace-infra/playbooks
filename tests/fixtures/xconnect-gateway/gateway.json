@@ -5,8 +5,13 @@
   "control_plane": {
     "url": "https://accounts.svc.plus",
     "poll_interval_seconds": 30,
-    "credentials_file": "/etc/xconnect/gateway/credentials.env",
+    "credentials_file": "/etc/xconnect/gateway/node-credential.token",
     "snapshot_signing_public_key_file": "/etc/xconnect/gateway/snapshot-signing.pub"
+  },
+  "identity": {
+    "node_id": "fixture-gateway",
+    "credential_type": "short-lived-bearer-file",
+    "credential_file": "/etc/xconnect/gateway/node-credential.token"
   },
   "provider_manifest": "/etc/xconnect/gateway/providers.d/xconnect-one.json",
   "runtime": {
@@ -27,5 +32,14 @@
     "maximum_schema": 1,
     "empty_peer_snapshot": "require-explicit-override"
   },
-  "apply": {"enabled": false}
+  "apply": {"enabled": false},
+  "health": {
+    "listen_host": "127.0.0.1",
+    "listen_port": 9789,
+    "path": "/healthz"
+  },
+  "logging": {
+    "format": "json",
+    "redact_fields": ["authorization", "credential", "token", "signature.value"]
+  }
 }

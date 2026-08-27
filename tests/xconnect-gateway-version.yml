@@ -8,6 +8,9 @@
     xconnect_gateway_test_valid_output: "Xray 26.3.27 (Xray, Penetrates Everything.) Custom"
     xconnect_gateway_test_wrong_patch_output: "Xray 26.3.270 (Xray, Penetrates Everything.) Custom"
     xconnect_gateway_test_prefixed_output: "custom Xray 26.3.27"
+    xconnect_gateway_test_agent_pattern: "^xconnect-gateway-agent\\s+v?0\\.1\\.0(?:\\s|$)"
+    xconnect_gateway_test_agent_output: "xconnect-gateway-agent 0.1.0 linux/amd64"
+    xconnect_gateway_test_wrong_agent_output: "xconnect-gateway-agent 0.1.01 linux/amd64"
   tasks:
     - name: Assert exact official Xray version line is accepted
       ansible.builtin.assert:
@@ -21,3 +24,5 @@
           - >-
             xconnect_gateway_test_prefixed_output
             is not match('^Xray\\s+' ~ (xconnect_gateway_test_required_version | regex_escape) ~ '(?:\\s|$)')
+          - xconnect_gateway_test_agent_output is match(xconnect_gateway_test_agent_pattern)
+          - xconnect_gateway_test_wrong_agent_output is not match(xconnect_gateway_test_agent_pattern)

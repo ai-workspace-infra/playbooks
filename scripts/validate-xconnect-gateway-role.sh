@@ -74,5 +74,20 @@ if rg -n --ignore-case 'sing[-_ ]?box' \
 fi
 
 rg -q 'CapabilityBoundingSet=$' "${role_root}/templates/xconnect-gateway-agent.service.j2"
+rg -q 'ExecStart=.*--mode shadow$' "${role_root}/templates/xconnect-gateway-agent.service.j2"
 rg -q 'apply_runtime.*false' "${fixture_root}/provider.json"
+rg -q 'runtime_apply_enabled' "${role_root}/tasks/deploy.yml"
+rg -q '^  rescue:$' "${role_root}/tasks/deploy.yml"
+rg -q 'Restore previous XConnect gateway service state' "${role_root}/tasks/deploy.yml"
+rg -q 'checksum.*sha256' "${role_root}/tasks/deploy.yml"
+if rg -n 'EnvironmentFile=' "${role_root}/templates/xconnect-gateway-agent.service.j2"; then
+  echo "credential secret must be read from the protected file reference, not systemd environment" >&2
+  exit 1
+fi
+if rg -n 'wg (set|syncconf)|nft (add|delete|flush|insert|replace)' \
+  "${role_root}/tasks" \
+  "${role_root}/templates"; then
+  echo "shadow role contains a forbidden WireGuard or nftables write path" >&2
+  exit 1
+fi
 echo "xconnect gateway role contract checks passed"

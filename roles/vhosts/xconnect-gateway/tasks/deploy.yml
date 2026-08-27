@@ -1,32 +1,47 @@
 ---
-- name: Validate XConnect gateway bootstrap contract
+- name: Validate enabled XConnect gateway shadow contract
   ansible.builtin.assert:
     that:
       - ansible_system == "Linux"
       - ansible_service_mgr == "systemd"
       - xconnect_gateway_shadow_mode | bool
       - xconnect_gateway_proxy_core == "xray"
-      - xconnect_gateway_xray_required_version | string | trim | length > 0
-      - xconnect_gateway_snapshot_schema_min | int >= 1
-      - xconnect_gateway_snapshot_schema_max | int >= xconnect_gateway_snapshot_schema_min | int
-      - xconnect_gateway_empty_peer_snapshot_policy == "require-explicit-override"
-      - xconnect_gateway_config_root is match('^/')
-      - xconnect_gateway_state_root is match('^/')
-      - xconnect_gateway_runtime_root is match('^/')
-    fail_msg: >-
-      XConnect-One Batch 01 supports Linux/systemd shadow mode with the pinned
-      Xray-core runtime and explicit empty-peer safety override only.
-
-- name: Validate enabled gateway requirements
-  ansible.builtin.assert:
-    that:
       - xconnect_gateway_node_id | string | trim | length > 0
       - xconnect_gateway_control_plane_url is match('^https://')
       - xconnect_gateway_snapshot_signing_public_key | string | trim | length > 0
+      - xconnect_gateway_agent_install_method in ["preinstalled", "local", "url"]
+      - xconnect_gateway_health_listen_host in ["127.0.0.1", "::1"]
+      - xconnect_gateway_health_listen_port | int >= 1
+      - xconnect_gateway_health_listen_port | int <= 65535
+      - xconnect_gateway_health_path is match('^/')
     fail_msg: >-
-      An enabled gateway requires a node ID, an HTTPS control-plane URL, and a
-      snapshot signing public key.
-  when: xconnect_gateway_enabled | bool
+      An enabled Gateway requires Linux/systemd, shadow mode, Xray-core, an
+      HTTPS Controller, node identity, signing key, and loopback health endpoint.
+
+- name: Validate managed Agent release inputs
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_agent_binary_checksum is match('^sha256:[a-f0-9]{64}$')
+      - >-
+        xconnect_gateway_agent_install_method != "local"
+        or xconnect_gateway_agent_binary_source | string | trim | length > 0
+      - >-
+        xconnect_gateway_agent_install_method != "url"
+        or xconnect_gateway_agent_binary_url is match('^https://')
+    fail_msg: >-
+      Local and URL Agent releases require an immutable sha256 checksum; local
+      installs require a controller-side source and URL installs require HTTPS.
+  when: xconnect_gateway_agent_install_method in ["local", "url"]
+
+- name: Validate managed short-lived credential source
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_credentials_source | string | trim | length > 0
+    fail_msg: >-
+      Set xconnect_gateway_credentials_source to a protected controller-side
+      short-lived node credential file when credential management is enabled.
+  when: xconnect_gateway_manage_credentials | bool
+  no_log: true
 
 - name: Install XConnect gateway bootstrap dependencies
   ansible.builtin.apt:
@@ -82,15 +97,84 @@
     - "{{ xconnect_gateway_runtime_root }}"
     - "{{ xconnect_gateway_log_root }}"
 
-- name: Install XConnect gateway agent binary
-  ansible.builtin.copy:
-    src: "{{ xconnect_gateway_agent_binary_source }}"
-    dest: "{{ xconnect_gateway_agent_binary_path }}"
+- name: Create immutable Agent release directory
+  ansible.builtin.file:
+    path: "{{ xconnect_gateway_agent_release_path | dirname }}"
+    state: directory
     owner: root
     group: root
     mode: "0755"
-  when: xconnect_gateway_agent_binary_source | string | trim | length > 0
-  notify: Restart xconnect gateway agent
+  when: xconnect_gateway_agent_install_method in ["local", "url"]
+
+- name: Stage local XConnect gateway Agent release
+  ansible.builtin.copy:
+    src: "{{ xconnect_gateway_agent_binary_source }}"
+    dest: "{{ xconnect_gateway_agent_release_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: xconnect_gateway_agent_install_method == "local"
+
+- name: Download XConnect gateway Agent release
+  ansible.builtin.get_url:
+    url: "{{ xconnect_gateway_agent_binary_url }}"
+    dest: "{{ xconnect_gateway_agent_release_path }}"
+    checksum: "{{ xconnect_gateway_agent_binary_checksum }}"
+    owner: root
+    group: root
+    mode: "0755"
+    timeout: 120
+  when: xconnect_gateway_agent_install_method == "url"
+  no_log: true
+
+- name: Resolve selected XConnect gateway Agent binary
+  ansible.builtin.set_fact:
+    xconnect_gateway_selected_agent_binary: >-
+      {{ xconnect_gateway_agent_release_path
+         if xconnect_gateway_agent_install_method in ["local", "url"]
+         else xconnect_gateway_agent_binary_path }}
+
+- name: Inspect selected XConnect gateway Agent binary
+  ansible.builtin.stat:
+    path: "{{ xconnect_gateway_selected_agent_binary }}"
+    checksum_algorithm: sha256
+  register: xconnect_gateway_agent_binary_stat
+
+- name: Validate selected XConnect gateway Agent binary
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_agent_binary_stat.stat.exists
+      - xconnect_gateway_agent_binary_stat.stat.isreg
+      - xconnect_gateway_agent_binary_stat.stat.executable
+      - >-
+        xconnect_gateway_agent_install_method == "preinstalled"
+        or xconnect_gateway_agent_binary_stat.stat.checksum
+           == xconnect_gateway_agent_binary_checksum.split(':', 1)[1]
+    fail_msg: >-
+      The selected Agent must be an executable regular file and managed release
+      checksum must match before the stable binary path is changed.
+  when:
+    - not ansible_check_mode or xconnect_gateway_agent_install_method == "preinstalled"
+
+- name: Read selected XConnect gateway Agent version
+  ansible.builtin.command:
+    argv:
+      - "{{ xconnect_gateway_selected_agent_binary }}"
+      - --version
+  register: xconnect_gateway_agent_version_output
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Validate selected XConnect gateway Agent version
+  ansible.builtin.assert:
+    that:
+      - >-
+        xconnect_gateway_agent_version_output.stdout_lines | default([]) | first | default('')
+        is match(xconnect_gateway_agent_version_pattern)
+    fail_msg: >-
+      Agent version output does not match the configured release
+      {{ xconnect_gateway_agent_version }}.
+  when: not ansible_check_mode
 
 - name: Install XConnect gateway contract validator
   ansible.builtin.copy:
@@ -111,15 +195,35 @@
     - gateway-provider-manifest.schema.json
     - gateway-snapshot.schema.json
 
-- name: Provision optional control-plane credential file
+- name: Provision managed short-lived node credential file
   ansible.builtin.copy:
-    content: "XCONNECT_GATEWAY_TOKEN={{ xconnect_gateway_control_plane_token }}\n"
+    src: "{{ xconnect_gateway_credentials_source }}"
     dest: "{{ xconnect_gateway_credentials_path }}"
     owner: root
     group: "{{ xconnect_gateway_group }}"
     mode: "0640"
-  no_log: true
   when: xconnect_gateway_manage_credentials | bool
+  no_log: true
+
+- name: Inspect short-lived node credential file
+  ansible.builtin.stat:
+    path: "{{ xconnect_gateway_credentials_path }}"
+  register: xconnect_gateway_credentials_stat
+  no_log: true
+
+- name: Validate short-lived node credential file permissions
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_credentials_stat.stat.exists
+      - xconnect_gateway_credentials_stat.stat.isreg
+      - xconnect_gateway_credentials_stat.stat.pw_name == "root"
+      - xconnect_gateway_credentials_stat.stat.gr_name == xconnect_gateway_group
+      - xconnect_gateway_credentials_stat.stat.mode in ["0440", "0640"]
+    fail_msg: >-
+      The short-lived node credential file must be a root-owned regular file,
+      readable only by root and the dedicated Gateway group.
+  when: not ansible_check_mode
+  no_log: true
 
 - name: Provision snapshot signing public key
   ansible.builtin.copy:
@@ -145,6 +249,14 @@
     group: "{{ xconnect_gateway_group }}"
     mode: "0640"
 
+- name: Render XConnect gateway systemd unit candidate
+  ansible.builtin.template:
+    src: xconnect-gateway-agent.service.j2
+    dest: "/etc/systemd/system/{{ xconnect_gateway_agent_service_name }}.service.candidate"
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Validate XConnect gateway candidate contracts
   ansible.builtin.command:
     argv:
@@ -156,57 +268,61 @@
   changed_when: false
   when: not ansible_check_mode
 
-- name: Promote validated XConnect gateway provider manifest
-  ansible.builtin.copy:
-    src: "{{ xconnect_gateway_provider_manifest_path }}.candidate"
-    dest: "{{ xconnect_gateway_provider_manifest_path }}"
-    remote_src: true
-    owner: root
-    group: "{{ xconnect_gateway_group }}"
-    mode: "0640"
-  when: not ansible_check_mode
-  notify: Restart xconnect gateway agent
-
-- name: Promote validated XConnect gateway configuration
-  ansible.builtin.copy:
-    src: "{{ xconnect_gateway_config_path }}.candidate"
-    dest: "{{ xconnect_gateway_config_path }}"
-    remote_src: true
-    owner: root
-    group: "{{ xconnect_gateway_group }}"
-    mode: "0640"
-  when: not ansible_check_mode
-  notify: Restart xconnect gateway agent
-
-- name: Deploy XConnect gateway systemd unit
-  ansible.builtin.template:
-    src: xconnect-gateway-agent.service.j2
-    dest: "/etc/systemd/system/{{ xconnect_gateway_agent_service_name }}.service"
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Restart xconnect gateway agent
-
-- name: Inspect required XConnect gateway binaries
+- name: Inspect currently promoted Gateway bootstrap files
   ansible.builtin.stat:
     path: "{{ item }}"
+    follow: false
   loop:
+    - "{{ xconnect_gateway_config_path }}"
+    - "{{ xconnect_gateway_provider_manifest_path }}"
     - "{{ xconnect_gateway_agent_binary_path }}"
-    - "{{ xconnect_gateway_xray_binary_path }}"
-  register: xconnect_gateway_required_binaries
-  when: xconnect_gateway_enabled | bool
+    - "/etc/systemd/system/{{ xconnect_gateway_agent_service_name }}.service"
+  register: xconnect_gateway_previous_bootstrap
 
-- name: Assert enabled gateway binaries exist
+- name: Back up current Gateway configuration for transaction rollback
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    owner: root
+    group: "{{ xconnect_gateway_group }}"
+    mode: "0640"
+  loop:
+    - src: "{{ xconnect_gateway_config_path }}"
+      dest: "{{ xconnect_gateway_last_known_good_dir }}/bootstrap-gateway.previous.json"
+      exists: "{{ xconnect_gateway_previous_bootstrap.results[0].stat.exists }}"
+    - src: "{{ xconnect_gateway_provider_manifest_path }}"
+      dest: "{{ xconnect_gateway_last_known_good_dir }}/bootstrap-provider.previous.json"
+      exists: "{{ xconnect_gateway_previous_bootstrap.results[1].stat.exists }}"
+    - src: "/etc/systemd/system/{{ xconnect_gateway_agent_service_name }}.service"
+      dest: "{{ xconnect_gateway_last_known_good_dir }}/bootstrap-systemd.previous.service"
+      exists: "{{ xconnect_gateway_previous_bootstrap.results[3].stat.exists }}"
+  when:
+    - item.exists | bool
+    - not ansible_check_mode
+
+- name: Validate managed release will not replace an unmanaged binary
   ansible.builtin.assert:
     that:
-      - xconnect_gateway_required_binaries.results[0].stat.exists
-      - xconnect_gateway_required_binaries.results[0].stat.executable
-      - xconnect_gateway_required_binaries.results[1].stat.exists
-      - xconnect_gateway_required_binaries.results[1].stat.executable
+      - >-
+        not xconnect_gateway_previous_bootstrap.results[2].stat.exists
+        or xconnect_gateway_previous_bootstrap.results[2].stat.islnk | default(false)
     fail_msg: >-
-      Enabling XConnect gateway requires executable xconnect-gateway-agent and
-      Xray-core binaries at the configured paths.
-  when: xconnect_gateway_enabled | bool
+      Managed release mode refuses to replace an unmanaged regular file at
+      xconnect_gateway_agent_binary_path; select preinstalled or move it first.
+  when: xconnect_gateway_agent_install_method in ["local", "url"]
+
+- name: Inspect installed Xray-core binary
+  ansible.builtin.stat:
+    path: "{{ xconnect_gateway_xray_binary_path }}"
+  register: xconnect_gateway_xray_binary_stat
+
+- name: Assert installed Xray-core binary exists
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_xray_binary_stat.stat.exists
+      - xconnect_gateway_xray_binary_stat.stat.executable
+    fail_msg: "Enabled XConnect gateway requires the pinned executable Xray-core binary."
 
 - name: Read installed Xray-core version
   ansible.builtin.command:
@@ -215,9 +331,8 @@
       - version
   register: xconnect_gateway_xray_version
   changed_when: false
-  when:
-    - xconnect_gateway_enabled | bool
-    - not ansible_check_mode
+  when: not ansible_check_mode
+
 - name: Assert installed Xray-core release is pinned
   ansible.builtin.assert:
     that:
@@ -227,16 +342,209 @@
     fail_msg: >-
       Installed Xray-core does not match the XConnect-One pinned release
       {{ xconnect_gateway_xray_required_version }}.
+  when: not ansible_check_mode
+
+- name: Read previous XConnect gateway service active state
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ xconnect_gateway_agent_service_name }}"
+  register: xconnect_gateway_previous_service_active
+  changed_when: false
+  failed_when: false
   when:
-    - xconnect_gateway_enabled | bool
+    - xconnect_gateway_previous_bootstrap.results[3].stat.exists
     - not ansible_check_mode
 
-- name: Enable and start XConnect gateway shadow service
-  ansible.builtin.systemd:
-    name: "{{ xconnect_gateway_agent_service_name }}"
-    enabled: true
-    state: started
-    daemon_reload: true
+- name: Read previous XConnect gateway service enablement
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-enabled
+      - "{{ xconnect_gateway_agent_service_name }}"
+  register: xconnect_gateway_previous_service_enabled
+  changed_when: false
+  failed_when: false
   when:
-    - xconnect_gateway_enabled | bool
+    - xconnect_gateway_previous_bootstrap.results[3].stat.exists
     - not ansible_check_mode
+
+- name: Apply and verify XConnect gateway shadow transaction
+  when: not ansible_check_mode
+  block:
+    - name: Promote validated XConnect gateway provider manifest
+      ansible.builtin.copy:
+        src: "{{ xconnect_gateway_provider_manifest_path }}.candidate"
+        dest: "{{ xconnect_gateway_provider_manifest_path }}"
+        remote_src: true
+        owner: root
+        group: "{{ xconnect_gateway_group }}"
+        mode: "0640"
+
+    - name: Promote validated XConnect gateway configuration
+      ansible.builtin.copy:
+        src: "{{ xconnect_gateway_config_path }}.candidate"
+        dest: "{{ xconnect_gateway_config_path }}"
+        remote_src: true
+        owner: root
+        group: "{{ xconnect_gateway_group }}"
+        mode: "0640"
+
+    - name: Promote verified XConnect gateway Agent release symlink
+      ansible.builtin.file:
+        src: "{{ xconnect_gateway_agent_release_path }}"
+        dest: "{{ xconnect_gateway_agent_binary_path }}"
+        state: link
+        owner: root
+        group: root
+        force: true
+      when: xconnect_gateway_agent_install_method in ["local", "url"]
+
+    - name: Promote XConnect gateway systemd unit
+      ansible.builtin.copy:
+        src: "/etc/systemd/system/{{ xconnect_gateway_agent_service_name }}.service.candidate"
+        dest: "/etc/systemd/system/{{ xconnect_gateway_agent_service_name }}.service"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable and start XConnect gateway shadow service
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_agent_service_name }}"
+        enabled: true
+        state: restarted
+        daemon_reload: true
+
+    - name: Wait for loopback XConnect gateway health endpoint
+      ansible.builtin.uri:
+        url: >-
+          http://{{ '[' ~ xconnect_gateway_health_listen_host ~ ']'
+                    if ':' in xconnect_gateway_health_listen_host
+                    else xconnect_gateway_health_listen_host }}:{{ xconnect_gateway_health_listen_port }}{{ xconnect_gateway_health_path }}
+        return_content: true
+        status_code: 200
+      register: xconnect_gateway_health
+      until: xconnect_gateway_health.status | default(0) == 200
+      retries: "{{ xconnect_gateway_health_retries | int }}"
+      delay: "{{ xconnect_gateway_health_delay | int }}"
+      no_log: true
+
+    - name: Assert XConnect gateway reports safe shadow health
+      ansible.builtin.assert:
+        that:
+          - xconnect_gateway_health.json.status in ["ok", "ready"]
+          - xconnect_gateway_health.json.mode == "shadow"
+          - xconnect_gateway_health.json.proxy_core == "xray"
+          - not (xconnect_gateway_health.json.runtime_apply_enabled | bool)
+        fail_msg: "Gateway health response does not prove shadow-only Xray operation."
+      no_log: true
+
+    - name: Record healthy bootstrap config as last-known-good
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        remote_src: true
+        owner: root
+        group: "{{ xconnect_gateway_group }}"
+        mode: "0640"
+      loop:
+        - src: "{{ xconnect_gateway_config_path }}"
+          dest: "{{ xconnect_gateway_last_known_good_dir }}/bootstrap-gateway.json"
+        - src: "{{ xconnect_gateway_provider_manifest_path }}"
+          dest: "{{ xconnect_gateway_last_known_good_dir }}/bootstrap-provider.json"
+
+  rescue:
+    - name: Stop failed XConnect gateway shadow service
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_agent_service_name }}"
+        enabled: false
+        state: stopped
+        daemon_reload: true
+      failed_when: false
+
+    - name: Restore previous Gateway configuration after failed health
+      ansible.builtin.copy:
+        src: "{{ xconnect_gateway_last_known_good_dir }}/bootstrap-gateway.previous.json"
+        dest: "{{ xconnect_gateway_config_path }}"
+        remote_src: true
+        owner: root
+        group: "{{ xconnect_gateway_group }}"
+        mode: "0640"
+      when: xconnect_gateway_previous_bootstrap.results[0].stat.exists
+
+    - name: Remove first-install Gateway configuration after failed health
+      ansible.builtin.file:
+        path: "{{ xconnect_gateway_config_path }}"
+        state: absent
+      when: not xconnect_gateway_previous_bootstrap.results[0].stat.exists
+
+    - name: Restore previous Gateway provider after failed health
+      ansible.builtin.copy:
+        src: "{{ xconnect_gateway_last_known_good_dir }}/bootstrap-provider.previous.json"
+        dest: "{{ xconnect_gateway_provider_manifest_path }}"
+        remote_src: true
+        owner: root
+        group: "{{ xconnect_gateway_group }}"
+        mode: "0640"
+      when: xconnect_gateway_previous_bootstrap.results[1].stat.exists
+
+    - name: Remove first-install Gateway provider after failed health
+      ansible.builtin.file:
+        path: "{{ xconnect_gateway_provider_manifest_path }}"
+        state: absent
+      when: not xconnect_gateway_previous_bootstrap.results[1].stat.exists
+
+    - name: Restore previous managed Agent symlink after failed health
+      ansible.builtin.file:
+        src: "{{ xconnect_gateway_previous_bootstrap.results[2].stat.lnk_source }}"
+        dest: "{{ xconnect_gateway_agent_binary_path }}"
+        state: link
+        owner: root
+        group: root
+        force: true
+      when:
+        - xconnect_gateway_agent_install_method in ["local", "url"]
+        - xconnect_gateway_previous_bootstrap.results[2].stat.islnk | default(false)
+
+    - name: Remove first managed Agent symlink after failed health
+      ansible.builtin.file:
+        path: "{{ xconnect_gateway_agent_binary_path }}"
+        state: absent
+      when:
+        - xconnect_gateway_agent_install_method in ["local", "url"]
+        - not (xconnect_gateway_previous_bootstrap.results[2].stat.islnk | default(false))
+
+    - name: Restore previous systemd unit after failed health
+      ansible.builtin.copy:
+        src: "{{ xconnect_gateway_last_known_good_dir }}/bootstrap-systemd.previous.service"
+        dest: "/etc/systemd/system/{{ xconnect_gateway_agent_service_name }}.service"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+      when: xconnect_gateway_previous_bootstrap.results[3].stat.exists
+
+    - name: Remove first-install systemd unit after failed health
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ xconnect_gateway_agent_service_name }}.service"
+        state: absent
+      when: not xconnect_gateway_previous_bootstrap.results[3].stat.exists
+
+    - name: Restore previous XConnect gateway service state
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_agent_service_name }}"
+        enabled: "{{ (xconnect_gateway_previous_service_enabled.rc | default(1)) == 0 }}"
+        state: >-
+          {{ 'started'
+             if (xconnect_gateway_previous_service_active.rc | default(1)) == 0
+             else 'stopped' }}
+        daemon_reload: true
+      when: xconnect_gateway_previous_bootstrap.results[3].stat.exists
+
+    - name: Fail deployment after restoring previous Gateway bootstrap
+      ansible.builtin.fail:
+        msg: >-
+          XConnect gateway shadow health verification failed; previous config
+          systemd unit, managed Agent symlink, and prior service state were restored.

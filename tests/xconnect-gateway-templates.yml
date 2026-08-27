@@ -1,0 +1,67 @@
+---
+- name: Verify XConnect gateway templates are valid and idempotent
+  hosts: all
+  connection: local
+  gather_facts: false
+  vars:
+    xconnect_gateway_template_test_dir: /tmp/xconnect-gateway-template-contract
+  tasks:
+    - name: Load XConnect gateway defaults
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../roles/vhosts/xconnect-gateway/defaults/main.yml"
+
+    - name: Render and validate XConnect gateway templates
+      block:
+        - name: Create template test directory
+          ansible.builtin.file:
+            path: "{{ xconnect_gateway_template_test_dir }}"
+            state: directory
+            mode: "0700"
+
+        - name: Render gateway configuration fixture
+          ansible.builtin.template:
+            src: "{{ playbook_dir }}/../roles/vhosts/xconnect-gateway/templates/gateway.json.j2"
+            dest: "{{ xconnect_gateway_template_test_dir }}/gateway.json"
+            mode: "0600"
+
+        - name: Render provider manifest fixture
+          ansible.builtin.template:
+            src: "{{ playbook_dir }}/../roles/vhosts/xconnect-gateway/templates/gateway-provider.json.j2"
+            dest: "{{ xconnect_gateway_template_test_dir }}/provider.json"
+            mode: "0600"
+
+        - name: Render gateway configuration fixture again
+          ansible.builtin.template:
+            src: "{{ playbook_dir }}/../roles/vhosts/xconnect-gateway/templates/gateway.json.j2"
+            dest: "{{ xconnect_gateway_template_test_dir }}/gateway.json"
+            mode: "0600"
+          register: xconnect_gateway_second_config_render
+
+        - name: Render provider manifest fixture again
+          ansible.builtin.template:
+            src: "{{ playbook_dir }}/../roles/vhosts/xconnect-gateway/templates/gateway-provider.json.j2"
+            dest: "{{ xconnect_gateway_template_test_dir }}/provider.json"
+            mode: "0600"
+          register: xconnect_gateway_second_provider_render
+
+        - name: Assert second template renders are idempotent
+          ansible.builtin.assert:
+            that:
+              - not xconnect_gateway_second_config_render.changed
+              - not xconnect_gateway_second_provider_render.changed
+
+        - name: Validate rendered gateway contracts
+          ansible.builtin.command:
+            argv:
+              - "{{ playbook_dir }}/../roles/vhosts/xconnect-gateway/files/xconnect-gateway-validate.py"
+              - --config
+              - "{{ xconnect_gateway_template_test_dir }}/gateway.json"
+              - --provider
+              - "{{ xconnect_gateway_template_test_dir }}/provider.json"
+          changed_when: false
+
+      always:
+        - name: Remove template test directory
+          ansible.builtin.file:
+            path: "{{ xconnect_gateway_template_test_dir }}"
+            state: absent

@@ -17,13 +17,19 @@ xconnect_gateway_last_known_good_dir: "{{ xconnect_gateway_state_root }}/last-kn
 xconnect_gateway_evidence_dir: "{{ xconnect_gateway_state_root }}/evidence"
 xconnect_gateway_config_path: "{{ xconnect_gateway_config_root }}/gateway.json"
 xconnect_gateway_provider_manifest_path: "{{ xconnect_gateway_provider_dir }}/xconnect-one.json"
-xconnect_gateway_credentials_path: "{{ xconnect_gateway_config_root }}/credentials.env"
+xconnect_gateway_credentials_path: "{{ xconnect_gateway_config_root }}/node-credential.token"
 xconnect_gateway_signing_public_key_path: "{{ xconnect_gateway_config_root }}/snapshot-signing.pub"
 
+xconnect_gateway_agent_install_method: preinstalled
 xconnect_gateway_agent_binary_source: ""
+xconnect_gateway_agent_binary_url: ""
+xconnect_gateway_agent_binary_checksum: ""
 xconnect_gateway_agent_binary_path: /usr/local/bin/xconnect-gateway-agent
+xconnect_gateway_agent_release_root: /opt/xconnect/gateway-agent/releases
+xconnect_gateway_agent_release_path: "{{ xconnect_gateway_agent_release_root }}/{{ xconnect_gateway_agent_version }}/xconnect-gateway-agent"
 xconnect_gateway_agent_service_name: xconnect-gateway-agent
 xconnect_gateway_agent_version: "0.1.0"
+xconnect_gateway_agent_version_pattern: "^xconnect-gateway-agent\\s+v?{{ xconnect_gateway_agent_version | regex_escape }}(?:\\s|$)"
 xconnect_gateway_provider_version: "0.1.0"
 
 # XConnect-One v1 has exactly one proxy core. Enabling the service also checks
@@ -42,4 +48,9 @@ xconnect_gateway_snapshot_schema_max: 1
 xconnect_gateway_empty_peer_snapshot_policy: require-explicit-override
 xconnect_gateway_snapshot_signing_public_key: ""
 xconnect_gateway_manage_credentials: false
-xconnect_gateway_control_plane_token: ""
+xconnect_gateway_credentials_source: ""
+xconnect_gateway_health_listen_host: 127.0.0.1
+xconnect_gateway_health_listen_port: 9789
+xconnect_gateway_health_path: /healthz
+xconnect_gateway_health_retries: 12
+xconnect_gateway_health_delay: 2

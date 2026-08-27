@@ -41,6 +41,16 @@ def validate(config: dict, provider: dict) -> None:
     require(config.get("schema_version") == 1, "config schema_version must be 1")
     require(config.get("mode") == "shadow", "config mode must be shadow")
     require(config.get("apply", {}).get("enabled") is False, "runtime apply must be disabled")
+    identity = config.get("identity", {})
+    require(identity.get("node_id") == config.get("node_id"), "identity node_id must match gateway node_id")
+    require(
+        identity.get("credential_type") == "short-lived-bearer-file",
+        "identity must use a short-lived bearer credential file",
+    )
+    require(
+        identity.get("credential_file") == config.get("control_plane", {}).get("credentials_file"),
+        "identity and control-plane credential references differ",
+    )
     require(config.get("runtime", {}).get("proxy_core") == "xray", "proxy core must be xray")
     for key in ("xray_binary", "xray_config", "wireguard_config"):
         value = config.get("runtime", {}).get(key, "")
@@ -79,6 +89,20 @@ def validate(config: dict, provider: dict) -> None:
     for key in ("candidate_dir", "last_known_good_dir", "evidence_dir"):
         value = config.get("snapshots", {}).get(key, "")
         require(pathlib.PurePosixPath(value).is_absolute(), f"{key} must be absolute")
+    health = config.get("health", {})
+    require(health.get("listen_host") in {"127.0.0.1", "::1"}, "health endpoint must be loopback-only")
+    require(
+        isinstance(health.get("listen_port"), int) and 1 <= health["listen_port"] <= 65535,
+        "health listen_port is invalid",
+    )
+    require(str(health.get("path", "")).startswith("/"), "health path must be absolute")
+    logging = config.get("logging", {})
+    redact_fields = set(logging.get("redact_fields", []))
+    require(logging.get("format") == "json", "gateway logs must use structured JSON")
+    require(
+        {"authorization", "credential", "token", "signature.value"} <= redact_fields,
+        "gateway log redaction fields are incomplete",
+    )
 
 
 def validate_snapshot(snapshot: dict) -> None:

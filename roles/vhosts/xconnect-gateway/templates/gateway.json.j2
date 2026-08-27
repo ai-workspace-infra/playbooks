@@ -8,6 +8,11 @@
     "credentials_file": {{ xconnect_gateway_credentials_path | to_json }},
     "snapshot_signing_public_key_file": {{ xconnect_gateway_signing_public_key_path | to_json }}
   },
+  "identity": {
+    "node_id": {{ xconnect_gateway_node_id | to_json }},
+    "credential_type": "short-lived-bearer-file",
+    "credential_file": {{ xconnect_gateway_credentials_path | to_json }}
+  },
   "provider_manifest": {{ xconnect_gateway_provider_manifest_path | to_json }},
   "runtime": {
     "proxy_core": "xray",
@@ -29,5 +34,14 @@
   },
   "apply": {
     "enabled": false
+  },
+  "health": {
+    "listen_host": {{ xconnect_gateway_health_listen_host | to_json }},
+    "listen_port": {{ xconnect_gateway_health_listen_port | int }},
+    "path": {{ xconnect_gateway_health_path | to_json }}
+  },
+  "logging": {
+    "format": "json",
+    "redact_fields": ["authorization", "credential", "token", "signature.value"]
   }
 }
