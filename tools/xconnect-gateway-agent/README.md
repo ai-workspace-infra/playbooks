@@ -59,3 +59,13 @@ scripts/validate-xconnect-gateway-agent.sh
 No binary is committed. Release automation must inject `version` through
 `-ldflags` and publish Linux amd64/arm64 artifacts with checksums for the
 `xconnect-gateway` role.
+
+## Static inventory migration
+
+The same module publishes `xconnect-static-import`, a Batch 04 operator tool.
+It strictly reads only `xworkmate_bridge_distributed_vpn_clients`, produces a
+versioned and deterministic accounts import document, and defaults to dry-run.
+It never renders dynamic peers back into Ansible. A separate `diff` operation
+compares one inventory attachment with a GatewaySnapshot and emits redacted
+JSON evidence. See `docs/xconnect/static-to-dynamic-migration.md` for the
+migration and rollback procedure.

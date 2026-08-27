@@ -1,0 +1,19 @@
+---
+xworkmate_bridge_distributed_vpn_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') }}"
+xworkmate_bridge_distributed_vpn_nodes:
+  gateway-a: {}
+  gateway-b: {}
+xworkmate_bridge_distributed_vpn_clients:
+  - id: device-beta
+    wg_ip: 10.77.0.11
+    public_key: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=
+    attach_to:
+      - gateway-b
+  - id: device-alpha
+    wg_ip: 10.77.0.10
+    public_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    tags:
+      - team:platform
+    attach_to:
+      - gateway-b
+      - gateway-a

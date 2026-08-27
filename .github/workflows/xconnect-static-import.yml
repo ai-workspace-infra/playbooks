@@ -1,19 +1,21 @@
-name: XConnect Gateway Agent
+name: XConnect Static Import
 
 on:
   pull_request:
     paths:
       - "tools/xconnect-gateway-agent/**"
-      - "roles/vhosts/xconnect-gateway/**"
-      - "scripts/validate-xconnect-gateway-agent.sh"
-      - ".github/workflows/xconnect-gateway-agent.yml"
+      - "scripts/validate-xconnect-static-import.sh"
+      - "tests/fixtures/xconnect-static-import/**"
+      - "docs/xconnect/static-to-dynamic-migration.md"
+      - ".github/workflows/xconnect-static-import.yml"
   push:
     branches:
       - codex/xconnect-overlay-productization
     paths:
       - "tools/xconnect-gateway-agent/**"
-      - "roles/vhosts/xconnect-gateway/**"
-      - "scripts/validate-xconnect-gateway-agent.sh"
+      - "scripts/validate-xconnect-static-import.sh"
+      - "tests/fixtures/xconnect-static-import/**"
+      - "docs/xconnect/static-to-dynamic-migration.md"
 
 permissions:
   contents: read
@@ -21,9 +23,6 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: tools/xconnect-gateway-agent
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -32,20 +31,17 @@ jobs:
           cache-dependency-path: |
             tools/xconnect-gateway-agent/go.mod
             tools/xconnect-gateway-agent/go.sum
-      - name: Static shadow-mode guard
-        working-directory: .
-        run: scripts/validate-xconnect-gateway-agent.sh
-      - run: go vet ./...
-      - run: go test -race ./...
+      - run: scripts/validate-xconnect-static-import.sh
+      - working-directory: tools/xconnect-gateway-agent
+        run: go vet ./...
+      - working-directory: tools/xconnect-gateway-agent
+        run: go test -race ./...
 
   build-linux:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         goarch: [amd64, arm64]
-    defaults:
-      run:
-        working-directory: tools/xconnect-gateway-agent
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -54,7 +50,8 @@ jobs:
           cache-dependency-path: |
             tools/xconnect-gateway-agent/go.mod
             tools/xconnect-gateway-agent/go.sum
-      - name: Build Linux artifact
+      - name: Build migration utility
+        working-directory: tools/xconnect-gateway-agent
         env:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
@@ -62,5 +59,5 @@ jobs:
         run: >-
           go build -trimpath
           -ldflags "-s -w -X main.version=0.1.0"
-          -o "${RUNNER_TEMP}/xconnect-gateway-agent-linux-${GOARCH}"
-          ./cmd/xconnect-gateway-agent
+          -o "${RUNNER_TEMP}/xconnect-static-import-linux-${GOARCH}"
+          ./cmd/xconnect-static-import
