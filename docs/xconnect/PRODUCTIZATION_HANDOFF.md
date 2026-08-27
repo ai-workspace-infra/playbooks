@@ -1,11 +1,13 @@
-# XConnect Overlay：Playbooks 实施计划
+# XConnect-One Overlay：Playbooks 实施计划
 
 状态：Batch 00 / planning
 长期特性分支：`codex/xconnect-overlay-productization`
 
+产品系列和对外品牌统一为 **XConnect-One**；CLI、服务名、仓库名、分支名和稳定技术标识继续使用小写 `xconnect`。
+
 ## 仓库职责
 
-本仓负责 XConnect Gateway/Relay 的安装、升级、Secret 引用、系统服务、网络规则、监控和端到端部署验证。终端 Join、设备身份、地址租约和 ACL 事实状态不由 Ansible 维护。
+本仓负责 XConnect-One Gateway Agent/Relay 的安装、升级、Secret 引用、系统服务、网络规则、监控和端到端部署验证。终端 Join、设备身份、地址租约和 ACL 事实状态不由 Ansible 维护。
 
 现有可复用基线：
 
