@@ -7,6 +7,8 @@
 
 XConnect-APP 是客户端和跨平台 Tunnel Runtime 底座，XConnect-One 是其零信任组网产品插件；本仓提供 XConnect-One Gateway Agent/Relay 的部署端。客户端插件与 Gateway 通过版本化控制面契约组合，不通过 Ansible 直接耦合。
 
+第一版 Gateway/Relay 的唯一代理内核为锁定版本的 **Xray-core**。Playbooks 不安装、配置或管理 sing-box，不保留双内核变量、模板、service、fallback 或测试矩阵。
+
 ## 仓库职责
 
 本仓负责 XConnect-One Gateway Agent/Relay 的安装、升级、Secret 引用、系统服务、网络规则、监控和端到端部署验证。终端 Join、设备身份、地址租约和 ACL 事实状态不由 Ansible 维护。
@@ -45,7 +47,7 @@ XConnect-One 的 `GatewayProvider` 把签名 snapshot 编译并应用到 WireGua
 
 - `PeerBackend`：WireGuard peer 与 route 的 validate/apply/read-back/rollback。
 - `PolicyBackend`：nftables 规则的 validate/atomic apply/audit/rollback。
-- `RelayBackend`：VLESS/TLS/XUDP listener、credential 和健康状态。
+- `RelayBackend`：使用 Xray-core 的 VLESS/TLS/XUDP listener、credential 和健康状态；v1 core ID 固定为 `xray`。
 - `DiagnosticsContributor`：向统一 evidence 目录输出脱敏状态。
 
 Provider manifest 必须声明版本、所需系统 capability、snapshot schema 范围、权限和支持的回滚级别。未知或不兼容的 provider 不得启动；单个 backend 失败必须保留 last-known-good。
@@ -55,6 +57,7 @@ Provider manifest 必须声明版本、所需系统 capability、snapshot schema
 ### Batch 01：Gateway 契约与 Golden
 
 - 定义 GatewayProvider/Backend capability 与 manifest contract。
+- 清除 sing-box role/task/template/default/service 路径，并增加依赖、unit 和渲染产物扫描门禁。
 - 固化当前 WireGuard/Xray 渲染结果作为 golden fixtures。
 - 定义 GatewaySnapshot JSON Schema。
 - 为节点、客户端、单接入转发路由建立语义 diff。
@@ -113,6 +116,8 @@ scripts/check-xconnect-closure-evidence.sh <evidence-dir>
 关键场景：
 
 - Provider manifest 不兼容、capability 缺失和 backend 初始化失败时安全拒绝。
+- snapshot 声明 sing-box 或未知 core 时拒绝应用且保持 last-known-good。
+- 安装结果只包含锁定版本 Xray-core，不存在 sing-box package、binary、unit 或配置。
 - 替换 Peer/Policy/Relay backend 后仍通过同一 snapshot contract suite。
 - Agent 第一次启动和重复应用幂等。
 - 错误签名、低 generation、过期 snapshot 被拒绝。
