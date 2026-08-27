@@ -12,7 +12,8 @@ provider manifest denies runtime apply and grants no Linux capabilities.
 - `xconnect_gateway_shadow_mode` must remain `true`.
 - `proxy_core` and the Relay backend are fixed to Xray-core v1.
 - candidate, evidence and last-known-good state use separate directories.
-- empty peer snapshots are rejected.
+- empty peer snapshots require an explicit signed `safety.allow_empty_peers`
+  override; generations must advance `expected_previous_generation`.
 - candidate config and provider manifests are validated before promotion.
 - the legacy `wg-xwm`, `wg-quick@wg-xwm`, `xray-wg-tproxy` and
   `wireguard-over-vless.json` assets are read-only bootstrap inputs; the legacy

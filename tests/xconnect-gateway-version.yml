@@ -1,0 +1,23 @@
+---
+- name: Verify pinned Xray-core version matching
+  hosts: all
+  connection: local
+  gather_facts: false
+  vars:
+    xconnect_gateway_test_required_version: "26.3.27"
+    xconnect_gateway_test_valid_output: "Xray 26.3.27 (Xray, Penetrates Everything.) Custom"
+    xconnect_gateway_test_wrong_patch_output: "Xray 26.3.270 (Xray, Penetrates Everything.) Custom"
+    xconnect_gateway_test_prefixed_output: "custom Xray 26.3.27"
+  tasks:
+    - name: Assert exact official Xray version line is accepted
+      ansible.builtin.assert:
+        that:
+          - >-
+            xconnect_gateway_test_valid_output
+            is match('^Xray\\s+' ~ (xconnect_gateway_test_required_version | regex_escape) ~ '(?:\\s|$)')
+          - >-
+            xconnect_gateway_test_wrong_patch_output
+            is not match('^Xray\\s+' ~ (xconnect_gateway_test_required_version | regex_escape) ~ '(?:\\s|$)')
+          - >-
+            xconnect_gateway_test_prefixed_output
+            is not match('^Xray\\s+' ~ (xconnect_gateway_test_required_version | regex_escape) ~ '(?:\\s|$)')
