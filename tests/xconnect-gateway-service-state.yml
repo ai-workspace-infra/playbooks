@@ -1,0 +1,32 @@
+---
+- name: Verify XConnect gateway restart decision is idempotent
+  hosts: all
+  connection: local
+  gather_facts: false
+  vars:
+    xconnect_gateway_restart_scenarios:
+      - name: identical deployment
+        changes: [false, false, false, false, false, false, false, false]
+        expected_state: started
+      - name: changed configuration
+        changes: [false, true, false, false, false, false, false, false]
+        expected_state: restarted
+      - name: rotated credential
+        changes: [false, false, true, false, false, false, false, false]
+        expected_state: restarted
+      - name: changed managed binary
+        changes: [false, false, false, false, false, false, true, false]
+        expected_state: restarted
+  tasks:
+    - name: Assert restart state follows transaction changes
+      ansible.builtin.assert:
+        that:
+          - >-
+            item.expected_state
+            == ('restarted'
+                if (item.changes | select('equalto', true) | list | length) > 0
+                else 'started')
+        fail_msg: "Restart decision failed for {{ item.name }}"
+      loop: "{{ xconnect_gateway_restart_scenarios }}"
+      loop_control:
+        label: "{{ item.name }}"

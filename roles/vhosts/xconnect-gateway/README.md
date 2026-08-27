@@ -58,6 +58,8 @@ scripts/validate-xconnect-gateway-role.sh
 
 Disable `xconnect_gateway_enabled` and stop `xconnect-gateway-agent`. Failed
 service or health verification restores the previous config, provider manifest,
-systemd unit, and managed release symlink. The role does not alter `wg-xwm`,
+systemd unit, managed node credential, signing public key, and managed release
+symlink before restoring the prior service state. Identical deployments ensure
+the service is started and healthy without restarting it. The role does not alter `wg-xwm`,
 `xray-wg-tproxy`, client peers, routes or ACLs in this batch, so the existing
 data plane continues to use its static configuration.

@@ -113,6 +113,7 @@
     owner: root
     group: root
     mode: "0755"
+  register: xconnect_gateway_local_release
   when: xconnect_gateway_agent_install_method == "local"
 
 - name: Download XConnect gateway Agent release
@@ -124,6 +125,7 @@
     group: root
     mode: "0755"
     timeout: 120
+  register: xconnect_gateway_url_release
   when: xconnect_gateway_agent_install_method == "url"
   no_log: true
 
@@ -195,19 +197,27 @@
     - gateway-provider-manifest.schema.json
     - gateway-snapshot.schema.json
 
-- name: Provision managed short-lived node credential file
+- name: Stage managed short-lived node credential candidate
   ansible.builtin.copy:
     src: "{{ xconnect_gateway_credentials_source }}"
-    dest: "{{ xconnect_gateway_credentials_path }}"
+    dest: "{{ xconnect_gateway_credentials_path }}.candidate"
     owner: root
     group: "{{ xconnect_gateway_group }}"
     mode: "0640"
   when: xconnect_gateway_manage_credentials | bool
   no_log: true
 
+- name: Resolve selected short-lived node credential file
+  ansible.builtin.set_fact:
+    xconnect_gateway_selected_credentials_path: >-
+      {{ xconnect_gateway_credentials_path ~ '.candidate'
+         if xconnect_gateway_manage_credentials | bool
+         else xconnect_gateway_credentials_path }}
+  no_log: true
+
 - name: Inspect short-lived node credential file
   ansible.builtin.stat:
-    path: "{{ xconnect_gateway_credentials_path }}"
+    path: "{{ xconnect_gateway_selected_credentials_path }}"
   register: xconnect_gateway_credentials_stat
   no_log: true
 
@@ -225,10 +235,10 @@
   when: not ansible_check_mode
   no_log: true
 
-- name: Provision snapshot signing public key
+- name: Stage snapshot signing public key candidate
   ansible.builtin.copy:
     content: "{{ xconnect_gateway_snapshot_signing_public_key | trim }}\n"
-    dest: "{{ xconnect_gateway_signing_public_key_path }}"
+    dest: "{{ xconnect_gateway_signing_public_key_path }}.candidate"
     owner: root
     group: "{{ xconnect_gateway_group }}"
     mode: "0640"
@@ -277,6 +287,8 @@
     - "{{ xconnect_gateway_provider_manifest_path }}"
     - "{{ xconnect_gateway_agent_binary_path }}"
     - "/etc/systemd/system/{{ xconnect_gateway_agent_service_name }}.service"
+    - "{{ xconnect_gateway_credentials_path }}"
+    - "{{ xconnect_gateway_signing_public_key_path }}"
   register: xconnect_gateway_previous_bootstrap
 
 - name: Back up current Gateway configuration for transaction rollback
@@ -297,9 +309,18 @@
     - src: "/etc/systemd/system/{{ xconnect_gateway_agent_service_name }}.service"
       dest: "{{ xconnect_gateway_last_known_good_dir }}/bootstrap-systemd.previous.service"
       exists: "{{ xconnect_gateway_previous_bootstrap.results[3].stat.exists }}"
+    - src: "{{ xconnect_gateway_credentials_path }}"
+      dest: "{{ xconnect_gateway_last_known_good_dir }}/bootstrap-credential.previous.token"
+      exists: >-
+        {{ xconnect_gateway_manage_credentials | bool
+           and xconnect_gateway_previous_bootstrap.results[4].stat.exists }}
+    - src: "{{ xconnect_gateway_signing_public_key_path }}"
+      dest: "{{ xconnect_gateway_last_known_good_dir }}/bootstrap-signing-key.previous.pub"
+      exists: "{{ xconnect_gateway_previous_bootstrap.results[5].stat.exists }}"
   when:
     - item.exists | bool
     - not ansible_check_mode
+  no_log: true
 
 - name: Validate managed release will not replace an unmanaged binary
   ansible.builtin.assert:
@@ -381,6 +402,7 @@
         owner: root
         group: "{{ xconnect_gateway_group }}"
         mode: "0640"
+      register: xconnect_gateway_promoted_provider
 
     - name: Promote validated XConnect gateway configuration
       ansible.builtin.copy:
@@ -390,6 +412,29 @@
         owner: root
         group: "{{ xconnect_gateway_group }}"
         mode: "0640"
+      register: xconnect_gateway_promoted_config
+
+    - name: Promote managed short-lived node credential
+      ansible.builtin.copy:
+        src: "{{ xconnect_gateway_credentials_path }}.candidate"
+        dest: "{{ xconnect_gateway_credentials_path }}"
+        remote_src: true
+        owner: root
+        group: "{{ xconnect_gateway_group }}"
+        mode: "0640"
+      register: xconnect_gateway_promoted_credential
+      when: xconnect_gateway_manage_credentials | bool
+      no_log: true
+
+    - name: Promote snapshot signing public key
+      ansible.builtin.copy:
+        src: "{{ xconnect_gateway_signing_public_key_path }}.candidate"
+        dest: "{{ xconnect_gateway_signing_public_key_path }}"
+        remote_src: true
+        owner: root
+        group: "{{ xconnect_gateway_group }}"
+        mode: "0640"
+      register: xconnect_gateway_promoted_signing_key
 
     - name: Promote verified XConnect gateway Agent release symlink
       ansible.builtin.file:
@@ -399,6 +444,7 @@
         owner: root
         group: root
         force: true
+      register: xconnect_gateway_promoted_agent_link
       when: xconnect_gateway_agent_install_method in ["local", "url"]
 
     - name: Promote XConnect gateway systemd unit
@@ -409,13 +455,26 @@
         owner: root
         group: root
         mode: "0644"
+      register: xconnect_gateway_promoted_systemd_unit
 
-    - name: Enable and start XConnect gateway shadow service
+    - name: Resolve whether XConnect gateway Agent restart is required
+      ansible.builtin.set_fact:
+        xconnect_gateway_restart_required: >-
+          {{ xconnect_gateway_promoted_provider.changed
+             or xconnect_gateway_promoted_config.changed
+             or (xconnect_gateway_promoted_credential.changed | default(false))
+             or xconnect_gateway_promoted_signing_key.changed
+             or (xconnect_gateway_promoted_agent_link.changed | default(false))
+             or xconnect_gateway_promoted_systemd_unit.changed
+             or (xconnect_gateway_local_release.changed | default(false))
+             or (xconnect_gateway_url_release.changed | default(false)) }}
+
+    - name: Ensure XConnect gateway shadow service is running
       ansible.builtin.systemd:
         name: "{{ xconnect_gateway_agent_service_name }}"
         enabled: true
-        state: restarted
-        daemon_reload: true
+        state: "{{ 'restarted' if xconnect_gateway_restart_required | bool else 'started' }}"
+        daemon_reload: "{{ xconnect_gateway_promoted_systemd_unit.changed }}"
 
     - name: Wait for loopback XConnect gateway health endpoint
       ansible.builtin.uri:
@@ -495,6 +554,44 @@
         path: "{{ xconnect_gateway_provider_manifest_path }}"
         state: absent
       when: not xconnect_gateway_previous_bootstrap.results[1].stat.exists
+
+    - name: Restore previous managed node credential after failed health
+      ansible.builtin.copy:
+        src: "{{ xconnect_gateway_last_known_good_dir }}/bootstrap-credential.previous.token"
+        dest: "{{ xconnect_gateway_credentials_path }}"
+        remote_src: true
+        owner: root
+        group: "{{ xconnect_gateway_group }}"
+        mode: "0640"
+      when:
+        - xconnect_gateway_manage_credentials | bool
+        - xconnect_gateway_previous_bootstrap.results[4].stat.exists
+      no_log: true
+
+    - name: Remove first managed node credential after failed health
+      ansible.builtin.file:
+        path: "{{ xconnect_gateway_credentials_path }}"
+        state: absent
+      when:
+        - xconnect_gateway_manage_credentials | bool
+        - not xconnect_gateway_previous_bootstrap.results[4].stat.exists
+      no_log: true
+
+    - name: Restore previous snapshot signing key after failed health
+      ansible.builtin.copy:
+        src: "{{ xconnect_gateway_last_known_good_dir }}/bootstrap-signing-key.previous.pub"
+        dest: "{{ xconnect_gateway_signing_public_key_path }}"
+        remote_src: true
+        owner: root
+        group: "{{ xconnect_gateway_group }}"
+        mode: "0640"
+      when: xconnect_gateway_previous_bootstrap.results[5].stat.exists
+
+    - name: Remove first snapshot signing key after failed health
+      ansible.builtin.file:
+        path: "{{ xconnect_gateway_signing_public_key_path }}"
+        state: absent
+      when: not xconnect_gateway_previous_bootstrap.results[5].stat.exists
 
     - name: Restore previous managed Agent symlink after failed health
       ansible.builtin.file:

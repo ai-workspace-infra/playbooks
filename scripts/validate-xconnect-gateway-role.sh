@@ -79,7 +79,14 @@ rg -q 'apply_runtime.*false' "${fixture_root}/provider.json"
 rg -q 'runtime_apply_enabled' "${role_root}/tasks/deploy.yml"
 rg -q '^  rescue:$' "${role_root}/tasks/deploy.yml"
 rg -q 'Restore previous XConnect gateway service state' "${role_root}/tasks/deploy.yml"
+rg -q 'Restore previous managed node credential after failed health' "${role_root}/tasks/deploy.yml"
+rg -q 'Restore previous snapshot signing key after failed health' "${role_root}/tasks/deploy.yml"
 rg -q 'checksum.*sha256' "${role_root}/tasks/deploy.yml"
+rg -q "state:.*restarted.*xconnect_gateway_restart_required" "${role_root}/tasks/deploy.yml"
+if rg -n 'state: restarted' "${role_root}/tasks/deploy.yml"; then
+  echo "gateway role contains an unconditional Agent restart" >&2
+  exit 1
+fi
 if rg -n 'EnvironmentFile=' "${role_root}/templates/xconnect-gateway-agent.service.j2"; then
   echo "credential secret must be read from the protected file reference, not systemd environment" >&2
   exit 1
