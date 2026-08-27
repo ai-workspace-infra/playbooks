@@ -6,9 +6,10 @@
       - ansible_service_mgr == "systemd"
       - xconnect_gateway_shadow_mode | bool
       - xconnect_gateway_proxy_core == "xray"
-      - xconnect_gateway_node_id | string | trim | length > 0
+      - xconnect_gateway_node_id is match('^[a-zA-Z0-9][a-zA-Z0-9_.:-]{2,127}$')
       - xconnect_gateway_control_plane_url is match('^https://')
       - xconnect_gateway_snapshot_signing_public_key | string | trim | length > 0
+      - xconnect_gateway_snapshot_signing_key_id is match('^[a-zA-Z0-9][a-zA-Z0-9_.:-]{2,127}$')
       - xconnect_gateway_agent_install_method in ["preinstalled", "local", "url"]
       - xconnect_gateway_health_listen_host in ["127.0.0.1", "::1"]
       - xconnect_gateway_health_listen_port | int >= 1

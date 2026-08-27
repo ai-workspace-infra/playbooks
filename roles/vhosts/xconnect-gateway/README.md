@@ -1,7 +1,7 @@
 # xconnect-gateway
 
 Bootstraps the XConnect-One GatewayProvider without replacing the working
-`xworkmate_bridge_distributed_vpn` role. Batch 02 remains deliberately shadow-only:
+`xworkmate_bridge_distributed_vpn` role. Batch 03 remains deliberately shadow-only:
 the Agent may fetch, validate, render and compare signed snapshots, but its
 provider manifest denies runtime apply and grants no Linux capabilities.
 
@@ -35,16 +35,26 @@ xconnect_gateway_agent_binary_url: https://downloads.example.net/xconnect-gatewa
 xconnect_gateway_agent_binary_checksum: sha256:<64 lowercase hex characters>
 xconnect_gateway_node_id: jp-gateway-01
 xconnect_gateway_control_plane_url: https://accounts.svc.plus
-xconnect_gateway_snapshot_signing_public_key: "<Ed25519 public key>"
+xconnect_gateway_snapshot_signing_public_key: "<base64-encoded 32-byte Ed25519 public key>"
+xconnect_gateway_snapshot_signing_key_id: signing_key_01
 xconnect_gateway_manage_credentials: true
 xconnect_gateway_credentials_source: /secure/controller/path/node-credential.token
 ```
 
 `preinstalled`, `local`, and `url` install methods are supported. Managed local
 and URL releases require a sha256 checksum and are staged in a versioned release
-directory before the stable symlink changes. This repository intentionally does
-not fabricate an Agent executable; its Go source/release pipeline remains an
-external Batch dependency until a canonical source owner is established.
+directory before the stable symlink changes. The canonical, publishable source
+is `tools/xconnect-gateway-agent`; CI verifies it with the race detector and
+cross-builds Linux amd64/arm64 without committing binaries. The role consumes a
+release artifact and checksum produced from that module.
+
+The Agent uses the internal Controller boundary under
+`/api/internal/overlay/v1/nodes`. These endpoints remain an explicit accounts
+control-plane dependency; the Agent's `httptest` contract coverage is not a
+claim of live end-to-end availability. Its checkpoint records
+`observed_generation` separately from the always-zero shadow
+`applied_generation`, and retries a durably queued result without re-observing
+an identical snapshot.
 
 The host must already have the pinned Xray-core binary. The role intentionally
 does not download a mutable `latest` release. Run:

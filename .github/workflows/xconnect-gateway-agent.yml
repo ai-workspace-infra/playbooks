@@ -1,0 +1,62 @@
+name: XConnect Gateway Agent
+
+on:
+  pull_request:
+    paths:
+      - "tools/xconnect-gateway-agent/**"
+      - "roles/vhosts/xconnect-gateway/**"
+      - "scripts/validate-xconnect-gateway-agent.sh"
+      - ".github/workflows/xconnect-gateway-agent.yml"
+  push:
+    branches:
+      - codex/xconnect-overlay-productization
+    paths:
+      - "tools/xconnect-gateway-agent/**"
+      - "roles/vhosts/xconnect-gateway/**"
+      - "scripts/validate-xconnect-gateway-agent.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/xconnect-gateway-agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/xconnect-gateway-agent/go.mod
+          cache-dependency-path: tools/xconnect-gateway-agent/go.mod
+      - name: Static shadow-mode guard
+        working-directory: .
+        run: scripts/validate-xconnect-gateway-agent.sh
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    defaults:
+      run:
+        working-directory: tools/xconnect-gateway-agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/xconnect-gateway-agent/go.mod
+          cache-dependency-path: tools/xconnect-gateway-agent/go.mod
+      - name: Build Linux artifact
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: >-
+          go build -trimpath
+          -ldflags "-s -w -X main.version=0.1.0"
+          -o "${RUNNER_TEMP}/xconnect-gateway-agent-linux-${GOARCH}"
+          ./cmd/xconnect-gateway-agent
