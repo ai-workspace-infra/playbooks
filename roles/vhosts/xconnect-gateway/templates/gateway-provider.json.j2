@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "id": "xconnect-one",
+  "version": {{ xconnect_gateway_provider_version | to_json }},
+  "mode": "shadow",
+  "snapshot_schema": {
+    "minimum": {{ xconnect_gateway_snapshot_schema_min | int }},
+    "maximum": {{ xconnect_gateway_snapshot_schema_max | int }}
+  },
+  "runtime": {
+    "proxy_core": "xray",
+    "proxy_core_version": {{ xconnect_gateway_xray_required_version | to_json }}
+  },
+  "capabilities": [
+    "peer.validate",
+    "peer.render",
+    "peer.read-back",
+    "policy.validate",
+    "policy.render",
+    "relay.validate",
+    "relay.render",
+    "diagnostics.collect"
+  ],
+  "backends": {
+    "peer": "wireguard",
+    "policy": "nftables",
+    "relay": "xray"
+  },
+  "permissions": {
+    "apply_runtime": false,
+    "linux_capabilities": []
+  },
+  "rollback": {
+    "level": "last-known-good",
+    "directory": {{ xconnect_gateway_last_known_good_dir | to_json }}
+  }
+}
+

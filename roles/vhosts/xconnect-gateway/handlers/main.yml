@@ -1,0 +1,9 @@
+---
+- name: Restart xconnect gateway agent
+  ansible.builtin.systemd:
+    name: "{{ xconnect_gateway_agent_service_name }}"
+    state: restarted
+    daemon_reload: true
+  when:
+    - xconnect_gateway_enabled | bool
+    - not ansible_check_mode

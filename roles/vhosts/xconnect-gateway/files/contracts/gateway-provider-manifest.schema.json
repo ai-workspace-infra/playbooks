@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.xconnect.one/gateway-provider-manifest-v1.json",
+  "title": "XConnect-One GatewayProvider manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "mode",
+    "snapshot_schema",
+    "runtime",
+    "capabilities",
+    "backends",
+    "permissions",
+    "rollback"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"const": "xconnect-one"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "mode": {"const": "shadow"},
+    "snapshot_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum", "maximum"],
+      "properties": {
+        "minimum": {"type": "integer", "minimum": 1},
+        "maximum": {"type": "integer", "minimum": 1}
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proxy_core", "proxy_core_version"],
+      "properties": {
+        "proxy_core": {"const": "xray"},
+        "proxy_core_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "backends": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["peer", "policy", "relay"],
+      "properties": {
+        "peer": {"const": "wireguard"},
+        "policy": {"const": "nftables"},
+        "relay": {"const": "xray"}
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apply_runtime", "linux_capabilities"],
+      "properties": {
+        "apply_runtime": {"const": false},
+        "linux_capabilities": {"type": "array", "maxItems": 0}
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "directory"],
+      "properties": {
+        "level": {"const": "last-known-good"},
+        "directory": {"type": "string", "pattern": "^/"}
+      }
+    }
+  }
+}
+

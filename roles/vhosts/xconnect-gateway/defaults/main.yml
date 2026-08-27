@@ -1,0 +1,45 @@
+---
+xconnect_gateway_enabled: false
+xconnect_gateway_shadow_mode: true
+xconnect_gateway_node_id: "{{ inventory_hostname }}"
+xconnect_gateway_control_plane_url: ""
+xconnect_gateway_control_plane_poll_interval: 30
+
+xconnect_gateway_user: xconnect-gateway
+xconnect_gateway_group: xconnect-gateway
+xconnect_gateway_config_root: /etc/xconnect/gateway
+xconnect_gateway_state_root: /var/lib/xconnect/gateway
+xconnect_gateway_runtime_root: /run/xconnect/gateway
+xconnect_gateway_log_root: /var/log/xconnect/gateway
+xconnect_gateway_provider_dir: "{{ xconnect_gateway_config_root }}/providers.d"
+xconnect_gateway_candidate_dir: "{{ xconnect_gateway_state_root }}/candidates"
+xconnect_gateway_last_known_good_dir: "{{ xconnect_gateway_state_root }}/last-known-good"
+xconnect_gateway_evidence_dir: "{{ xconnect_gateway_state_root }}/evidence"
+xconnect_gateway_config_path: "{{ xconnect_gateway_config_root }}/gateway.json"
+xconnect_gateway_provider_manifest_path: "{{ xconnect_gateway_provider_dir }}/xconnect-one.json"
+xconnect_gateway_credentials_path: "{{ xconnect_gateway_config_root }}/credentials.env"
+xconnect_gateway_signing_public_key_path: "{{ xconnect_gateway_config_root }}/snapshot-signing.pub"
+
+xconnect_gateway_agent_binary_source: ""
+xconnect_gateway_agent_binary_path: /usr/local/bin/xconnect-gateway-agent
+xconnect_gateway_agent_service_name: xconnect-gateway-agent
+xconnect_gateway_agent_version: "0.1.0"
+xconnect_gateway_provider_version: "0.1.0"
+
+# XConnect-One v1 has exactly one proxy core. Enabling the service also checks
+# the installed binary reports this pinned release.
+xconnect_gateway_proxy_core: xray
+xconnect_gateway_xray_binary_path: /usr/local/bin/xray
+xconnect_gateway_xray_required_version: "25.8.3"
+xconnect_gateway_xray_service_name: xray-wg-tproxy
+xconnect_gateway_xray_config_path: /usr/local/etc/xray/wireguard-over-vless.json
+xconnect_gateway_wireguard_interface: wg-xwm
+xconnect_gateway_wireguard_config_path: /etc/wireguard/wg-xwm.conf
+xconnect_gateway_wireguard_service_name: wg-quick@wg-xwm
+
+xconnect_gateway_snapshot_schema_min: 1
+xconnect_gateway_snapshot_schema_max: 1
+xconnect_gateway_empty_peer_snapshot_policy: reject
+xconnect_gateway_snapshot_signing_public_key: ""
+xconnect_gateway_manage_credentials: false
+xconnect_gateway_control_plane_token: ""

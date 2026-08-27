@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "node_id": "fixture-gateway",
+  "mode": "shadow",
+  "control_plane": {
+    "url": "https://accounts.svc.plus",
+    "poll_interval_seconds": 30,
+    "credentials_file": "/etc/xconnect/gateway/credentials.env",
+    "snapshot_signing_public_key_file": "/etc/xconnect/gateway/snapshot-signing.pub"
+  },
+  "provider_manifest": "/etc/xconnect/gateway/providers.d/xconnect-one.json",
+  "runtime": {
+    "proxy_core": "xray",
+    "proxy_core_version": "25.8.3",
+    "xray_binary": "/usr/local/bin/xray",
+    "xray_config": "/usr/local/etc/xray/wireguard-over-vless.json",
+    "xray_service": "xray-wg-tproxy",
+    "wireguard_interface": "wg-xwm",
+    "wireguard_config": "/etc/wireguard/wg-xwm.conf",
+    "wireguard_service": "wg-quick@wg-xwm"
+  },
+  "snapshots": {
+    "candidate_dir": "/var/lib/xconnect/gateway/candidates",
+    "last_known_good_dir": "/var/lib/xconnect/gateway/last-known-good",
+    "evidence_dir": "/var/lib/xconnect/gateway/evidence",
+    "minimum_schema": 1,
+    "maximum_schema": 1,
+    "empty_peer_snapshot": "reject"
+  },
+  "apply": {"enabled": false}
+}

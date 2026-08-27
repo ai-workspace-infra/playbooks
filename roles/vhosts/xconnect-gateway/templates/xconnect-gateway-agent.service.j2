@@ -1,0 +1,38 @@
+[Unit]
+Description=XConnect-One gateway agent (shadow mode)
+Documentation=https://github.com/ai-workspace-infra/playbooks
+After=network-online.target
+Wants=network-online.target {{ xconnect_gateway_xray_service_name }}.service
+
+[Service]
+Type=simple
+User={{ xconnect_gateway_user }}
+Group={{ xconnect_gateway_group }}
+EnvironmentFile=-{{ xconnect_gateway_credentials_path }}
+ExecStartPre=/usr/local/libexec/xconnect-gateway-validate --config {{ xconnect_gateway_config_path }} --provider {{ xconnect_gateway_provider_manifest_path }}
+ExecStart={{ xconnect_gateway_agent_binary_path }} --config {{ xconnect_gateway_config_path }}
+Restart=on-failure
+RestartSec=5s
+RuntimeDirectory=xconnect/gateway
+RuntimeDirectoryMode=0750
+ReadWritePaths={{ xconnect_gateway_candidate_dir }} {{ xconnect_gateway_last_known_good_dir }} {{ xconnect_gateway_evidence_dir }} {{ xconnect_gateway_log_root }}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "node_id": {{ xconnect_gateway_node_id | to_json }},
+  "mode": "shadow",
+  "control_plane": {
+    "url": {{ xconnect_gateway_control_plane_url | to_json }},
+    "poll_interval_seconds": {{ xconnect_gateway_control_plane_poll_interval | int }},
+    "credentials_file": {{ xconnect_gateway_credentials_path | to_json }},
+    "snapshot_signing_public_key_file": {{ xconnect_gateway_signing_public_key_path | to_json }}
+  },
+  "provider_manifest": {{ xconnect_gateway_provider_manifest_path | to_json }},
+  "runtime": {
+    "proxy_core": "xray",
+    "proxy_core_version": {{ xconnect_gateway_xray_required_version | to_json }},
+    "xray_binary": {{ xconnect_gateway_xray_binary_path | to_json }},
+    "xray_config": {{ xconnect_gateway_xray_config_path | to_json }},
+    "xray_service": {{ xconnect_gateway_xray_service_name | to_json }},
+    "wireguard_interface": {{ xconnect_gateway_wireguard_interface | to_json }},
+    "wireguard_config": {{ xconnect_gateway_wireguard_config_path | to_json }},
+    "wireguard_service": {{ xconnect_gateway_wireguard_service_name | to_json }}
+  },
+  "snapshots": {
+    "candidate_dir": {{ xconnect_gateway_candidate_dir | to_json }},
+    "last_known_good_dir": {{ xconnect_gateway_last_known_good_dir | to_json }},
+    "evidence_dir": {{ xconnect_gateway_evidence_dir | to_json }},
+    "minimum_schema": {{ xconnect_gateway_snapshot_schema_min | int }},
+    "maximum_schema": {{ xconnect_gateway_snapshot_schema_max | int }},
+    "empty_peer_snapshot": "reject"
+  },
+  "apply": {
+    "enabled": false
+  }
+}
