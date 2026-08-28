@@ -1,6 +1,7 @@
 # XConnect-One Playbooks/Gateway 实施更新记录
 
-状态日期：2026-08-28  
+状态日期：2026-08-28
+
 本仓职责：Gateway Agent、静态迁移/shadow、事务 apply、readiness、Ansible 角色和回滚
 
 ## 运行与迁移边界
@@ -66,4 +67,3 @@
 - 五平台终端与 Gateway 的 join/ACL/rotate/revoke/rollback live E2E 尚未完成。
 - 当前批次保留在特性分支，未创建新的 PR；后续 PR base 为
   `codex/xconnect-overlay-productization`，创建前需再次取得用户确认。
-
