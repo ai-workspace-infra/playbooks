@@ -164,6 +164,9 @@ func TestCredentialResolverAndXrayCandidateProtection(t *testing.T) {
 	if bytes.Contains(plan, []byte("7b7f7a4f")) {
 		t.Fatal("ordinary evidence leaked resolved credential")
 	}
+	if _, err := RenderXrayRelayConfig(snapshot, "xconnect-one-relay", CredentialResolver{Directory: credentialDir, ExpectedCertificate: cert, ExpectedPrivateKey: filepath.Join(root, "wrong.key")}); err == nil {
+		t.Fatal("relay credential outside the node TLS binding was accepted")
+	}
 	if _, err := (CredentialResolver{Directory: credentialDir}).Resolve("../escape"); err == nil {
 		t.Fatal("credential traversal accepted")
 	}
@@ -185,26 +188,28 @@ func TestRuntimeTransactionOrderCommitAndNoHostNetwork(t *testing.T) {
 	cfg.Runtime.RelayListenHost, cfg.Runtime.RelayListenPort = "0.0.0.0", 443
 	cfg.Runtime.RelayCredentialDir = filepath.Join(root, "credentials")
 	cfg.Runtime.XrayAPIEndpoint, cfg.Runtime.XrayInboundTag = "127.0.0.1:10085", "xconnect-one-relay"
+	cert, key := filepath.Join(root, "tls.crt"), filepath.Join(root, "tls.key")
+	cfg.Runtime.RelayTLSCertificate, cfg.Runtime.RelayTLSPrivateKey = cert, key
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("valid apply config rejected: %v", err)
 	}
 	if err := os.MkdirAll(cfg.Runtime.RelayCredentialDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	cert, key := filepath.Join(root, "tls.crt"), filepath.Join(root, "tls.key")
 	for path, raw := range map[string]string{cert: "cert", key: "key"} {
 		if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	credential := `{"id":"7b7f7a4f-938f-4aeb-86eb-53ee67c1a001","certificate_file":"` + cert + `","private_key_file":"` + key + `"}`
-	if err := os.WriteFile(filepath.Join(cfg.Runtime.RelayCredentialDir, "vault_test_01.json"), []byte(credential), 0o600); err != nil {
+	credentialRef := "relay_credential_" + cfg.NodeID
+	if err := os.WriteFile(filepath.Join(cfg.Runtime.RelayCredentialDir, credentialRef+".json"), []byte(credential), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(cfg.Apply.RuntimeSecretLKG, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	snapshot := GatewaySnapshot{SnapshotID: "snap_apply_01", Generation: 1, ProxyCore: "xray", WireGuard: GatewayWireGuard{InterfaceName: "wg-xco", ListenPort: 51820, Addresses: []string{"10.77.0.1/32"}, Peers: []GatewayPeer{{DeviceID: "dev-a", PublicKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)), AllowedIPs: []string{"10.77.0.10/32"}}}}, Relay: GatewayRelay{Transport: "vless-tls-xudp", ListenHost: "0.0.0.0", ListenPort: 443, ServerNames: []string{"gateway.example"}, CredentialRefs: []string{"vault_test_01"}}}
+	snapshot := GatewaySnapshot{SnapshotID: "snap_apply_01", Generation: 1, ProxyCore: "xray", WireGuard: GatewayWireGuard{InterfaceName: "wg-xco", ListenPort: 51820, Addresses: []string{"10.77.0.1/32"}, Peers: []GatewayPeer{{DeviceID: "dev-a", PublicKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)), AllowedIPs: []string{"10.77.0.10/32"}}}}, Relay: GatewayRelay{Transport: "vless-tls-xudp", ListenHost: "0.0.0.0", ListenPort: 443, ServerNames: []string{"gateway.example"}, CredentialRefs: []string{credentialRef}}}
 	baseline, err := RenderXrayRelayConfig(snapshot, cfg.Runtime.XrayInboundTag, CredentialResolver{Directory: cfg.Runtime.RelayCredentialDir})
 	if err != nil {
 		t.Fatal(err)
@@ -330,6 +335,18 @@ func TestRuntimeRejectsUnsortedAddressBindingBeforeCommands(t *testing.T) {
 	}
 	if called {
 		t.Fatal("unsorted binding reached command runner")
+	}
+}
+
+func TestRuntimeRejectsRelayCredentialForAnotherNodeBeforeCommands(t *testing.T) {
+	called := false
+	tx := RuntimeTransaction{Config: Config{NodeID: "gw_test_01", Runtime: RuntimeConfig{WireGuardInterface: "wg-xco", WireGuardListenPort: 51820, WireGuardAddresses: []string{"10.77.0.1/32"}, RelayListenHost: "0.0.0.0", RelayListenPort: 443}}, Runner: commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) { called = true; return nil, nil })}
+	snapshot := GatewaySnapshot{WireGuard: GatewayWireGuard{InterfaceName: "wg-xco", ListenPort: 51820, Addresses: []string{"10.77.0.1/32"}}, Relay: GatewayRelay{ListenHost: "0.0.0.0", ListenPort: 443, CredentialRefs: []string{"relay_credential_other_node"}}}
+	if _, err := tx.Apply(context.Background(), snapshot, ACLArtifact{}); err == nil {
+		t.Fatal("relay credential for another node was accepted")
+	}
+	if called {
+		t.Fatal("relay credential mismatch reached command runner")
 	}
 }
 

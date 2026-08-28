@@ -22,7 +22,11 @@ type relayCredential struct {
 	PrivateKeyFile  string `json:"private_key_file"`
 }
 
-type CredentialResolver struct{ Directory string }
+type CredentialResolver struct {
+	Directory           string
+	ExpectedCertificate string
+	ExpectedPrivateKey  string
+}
 
 func (r CredentialResolver) Resolve(ref string) (relayCredential, error) {
 	if !idPattern.MatchString(ref) || strings.Contains(ref, "..") || strings.ContainsAny(ref, `/\\`) {
@@ -51,6 +55,9 @@ func (r CredentialResolver) Resolve(ref string) (relayCredential, error) {
 	}
 	if !uuidPattern.MatchString(strings.ToLower(credential.ID)) || !filepath.IsAbs(credential.CertificateFile) || !filepath.IsAbs(credential.PrivateKeyFile) {
 		return relayCredential{}, errors.New("relay credential fields are invalid")
+	}
+	if (r.ExpectedCertificate != "" && credential.CertificateFile != r.ExpectedCertificate) || (r.ExpectedPrivateKey != "" && credential.PrivateKeyFile != r.ExpectedPrivateKey) {
+		return relayCredential{}, errors.New("relay credential TLS identity differs from node bootstrap binding")
 	}
 	if _, err := readProtectedFile(credential.CertificateFile, "relay TLS certificate"); err != nil {
 		return relayCredential{}, err

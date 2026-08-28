@@ -95,6 +95,10 @@ func (t *RuntimeTransaction) Apply(ctx context.Context, snapshot GatewaySnapshot
 	if !sortedUniqueStrings(snapshot.WireGuard.Addresses) || !sortedUniqueStrings(t.Config.Runtime.WireGuardAddresses) || strings.Join(snapshot.WireGuard.Addresses, "\x00") != strings.Join(t.Config.Runtime.WireGuardAddresses, "\x00") {
 		return DiffSummary{}, errors.New("signed snapshot WireGuard addresses do not match the bootstrap binding")
 	}
+	expectedRelayCredential := "relay_credential_" + t.Config.NodeID
+	if len(snapshot.Relay.CredentialRefs) != 1 || snapshot.Relay.CredentialRefs[0] != expectedRelayCredential {
+		return DiffSummary{}, errors.New("signed snapshot relay credential does not match this gateway node")
+	}
 	lock, err := t.lock()
 	if err != nil {
 		return DiffSummary{}, err
@@ -131,7 +135,7 @@ func (t *RuntimeTransaction) Apply(ctx context.Context, snapshot GatewaySnapshot
 	nftCandidate := filepath.Join(directory, "nftables.candidate")
 	xrayPlanCandidate := filepath.Join(directory, "xray-relay-plan.candidate.json")
 	xrayCandidate := filepath.Join(directory, "xray-runtime.candidate.json")
-	xrayRuntime, err := RenderXrayRelayConfig(snapshot, t.Config.Runtime.XrayInboundTag, CredentialResolver{Directory: t.Config.Runtime.RelayCredentialDir})
+	xrayRuntime, err := RenderXrayRelayConfig(snapshot, t.Config.Runtime.XrayInboundTag, CredentialResolver{Directory: t.Config.Runtime.RelayCredentialDir, ExpectedCertificate: t.Config.Runtime.RelayTLSCertificate, ExpectedPrivateKey: t.Config.Runtime.RelayTLSPrivateKey})
 	if err != nil {
 		return DiffSummary{}, err
 	}

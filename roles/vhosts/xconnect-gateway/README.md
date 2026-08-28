@@ -69,9 +69,10 @@ Disable `xconnect_gateway_enabled` and stop `xconnect-gateway-agent`. Failed
 service or health verification restores the previous config, provider manifest,
 systemd unit, managed node credential, signing public key, and managed release
 symlink before restoring the prior service state. Identical deployments ensure
-the service is started and healthy without restarting it. The role does not alter `wg-xwm`,
-`xray-wg-tproxy`, client peers, routes or ACLs in this batch, so the existing
-data plane continues to use its static configuration.
+the service is started and healthy without restarting it. Shadow mode never
+alters `wg-xwm`, `xray-wg-tproxy`, client peers, routes, or ACLs. Apply mode
+performs the explicit handoff below while preserving both legacy configs as the
+M0-M2 rollback source.
 
 ## Explicit runtime apply (Batch 05)
 
@@ -80,14 +81,35 @@ false` and `xconnect_gateway_runtime_apply_enabled: true` together to opt a
 Linux Gateway into the signed transaction path. The role then grants only
 `CAP_NET_ADMIN`; shadow mode retains an empty capability set.
 
-Before first activation, provide
-`xconnect_gateway_xray_runtime_baseline_source`: a protected (0400-0640),
-remote Xray `AddInbound` JSON for the already-running dedicated
-`xconnect-one-relay` inbound. The role seeds a 0600 secret last-known-good copy.
-Activation refuses to start without this migration baseline, avoiding a first
-`AddInbound` collision. Relay credential refs resolve from protected JSON files
-under `xconnect_gateway_relay_credential_dir`; resolved VLESS IDs remain only
-in the 0600 transaction and secret LKG.
+Before first activation, provide these protected remote bootstrap sources:
+
+```yaml
+xconnect_gateway_wireguard_target_config_source: /root/xconnect-seed/wg-xco.conf
+xconnect_gateway_xray_runtime_baseline_source: /root/xconnect-seed/xray-add-inbound.json
+xconnect_gateway_relay_credential_source: /root/xconnect-seed/relay-credential.json
+xconnect_gateway_relay_tls_certificate_source: /root/xconnect-seed/relay.crt
+xconnect_gateway_relay_tls_private_key_source: /root/xconnect-seed/relay.key
+```
+
+The WireGuard source must be root-owned 0400/0600 and is copied without exposing
+its private key to the Agent or logs. An already provisioned
+`/etc/wireguard/wg-xco.conf` is also accepted if it is a root-owned 0400/0600
+regular file. The Xray baseline must be a protected `AddInbound` JSON for the
+dedicated `xconnect-one-relay` tag. The relay credential must be strict JSON
+containing the node UUID and the configured absolute TLS paths. The role copies
+the credential, certificate and key into dedicated-user-owned 0600 files, then
+runs both the contract validator and `xray run -test` as that unprivileged user;
+a root-only false-positive preflight is therefore rejected. These `force:
+false` files are first-activation seeds, not the later credential rotation API.
+
+The role captures active/enabled state for legacy `wg-quick@wg-xwm` and
+`xray-wg-tproxy`, stops legacy WireGuard, starts `wg-quick@wg-xco`, and verifies
+its exact canonical addresses and UDP listen port. It then stops legacy Xray,
+starts the restricted `xconnect-one-xray`, starts the Agent, and waits for apply
+health. Only after health succeeds are both legacy units disabled. Any failure
+stops the target units, removes first-install seed files, and restores the
+captured legacy active/enabled states. Legacy configs remain on disk for the
+documented rollback.
 
 The signed snapshot must exactly match this node's configured WireGuard
 interface, listener, addresses, and Xray listener. Interface addresses are

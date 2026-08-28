@@ -17,9 +17,21 @@
       - xconnect_gateway_health_path is match('^/')
       - xconnect_gateway_wireguard_config_path == '/etc/wireguard/' ~ xconnect_gateway_wireguard_interface ~ '.conf'
       - xconnect_gateway_wireguard_service_name == 'wg-quick@' ~ xconnect_gateway_wireguard_interface
+      - xconnect_gateway_wireguard_addresses | length > 0
+      - xconnect_gateway_wireguard_addresses == (xconnect_gateway_wireguard_addresses | unique | sort)
       - xconnect_gateway_xray_wireguard_target_host == '127.0.0.1'
+      - not (xconnect_gateway_runtime_apply_enabled | bool) or xconnect_gateway_xray_apply_service_name != xconnect_gateway_xray_service_name
       - not (xconnect_gateway_runtime_apply_enabled | bool) or xconnect_gateway_xray_api_endpoint is match('^(127\\.0\\.0\\.1|\\[::1\\]):[0-9]+$')
       - not (xconnect_gateway_runtime_apply_enabled | bool) or xconnect_gateway_xray_runtime_baseline_source | string | trim | length > 0
+      - not (xconnect_gateway_runtime_apply_enabled | bool) or xconnect_gateway_relay_credential_ref == 'relay_credential_' ~ xconnect_gateway_node_id
+      - not (xconnect_gateway_runtime_apply_enabled | bool) or xconnect_gateway_relay_credential_source | string | trim | length > 0
+      - not (xconnect_gateway_runtime_apply_enabled | bool) or xconnect_gateway_relay_tls_certificate_source | string | trim | length > 0
+      - not (xconnect_gateway_runtime_apply_enabled | bool) or xconnect_gateway_relay_tls_private_key_source | string | trim | length > 0
+      - not (xconnect_gateway_runtime_apply_enabled | bool) or xconnect_gateway_legacy_wireguard_service_name != xconnect_gateway_wireguard_service_name
+      - >-
+        not (xconnect_gateway_runtime_apply_enabled | bool)
+        or xconnect_gateway_legacy_wireguard_service_name
+           == 'wg-quick@' ~ xconnect_gateway_legacy_wireguard_interface
     fail_msg: >-
       An enabled Gateway requires Linux/systemd, one explicit mode, Xray-core, an
       HTTPS Controller, node identity, signing key, and loopback health endpoint.
@@ -124,6 +136,7 @@
     - "{{ xconnect_gateway_runtime_lkg_dir }}"
     - "{{ xconnect_gateway_runtime_secret_lkg_dir }}"
     - "{{ xconnect_gateway_relay_credential_dir }}"
+    - "{{ xconnect_gateway_relay_tls_dir }}"
   when: xconnect_gateway_runtime_apply_enabled | bool
 
 - name: Inspect explicit Xray runtime migration baseline
@@ -164,6 +177,168 @@
     group: "{{ xconnect_gateway_group }}"
     mode: "0600"
     force: false
+  when: xconnect_gateway_runtime_apply_enabled | bool
+  no_log: true
+
+- name: Inspect protected relay bootstrap sources
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: false
+  loop:
+    - name: credential
+      path: "{{ xconnect_gateway_relay_credential_source }}"
+      modes: ["0400", "0600"]
+    - name: certificate
+      path: "{{ xconnect_gateway_relay_tls_certificate_source }}"
+      modes: ["0400", "0440", "0600", "0640", "0644"]
+    - name: private key
+      path: "{{ xconnect_gateway_relay_tls_private_key_source }}"
+      modes: ["0400", "0600"]
+  register: xconnect_gateway_relay_bootstrap_sources
+  when: xconnect_gateway_runtime_apply_enabled | bool
+  no_log: true
+
+- name: Validate protected relay bootstrap sources
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+      - not (item.stat.islnk | default(false))
+      - item.stat.pw_name == "root"
+      - item.stat.mode in item.item.modes
+    fail_msg: >-
+      Apply mode requires root-controlled regular relay credential, certificate,
+      and private-key bootstrap sources; secret sources must not be group/world readable.
+  loop: "{{ xconnect_gateway_relay_bootstrap_sources.results }}"
+  when: xconnect_gateway_runtime_apply_enabled | bool
+  no_log: true
+
+- name: Inspect existing protected relay runtime files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ xconnect_gateway_relay_credential_dir }}/{{ xconnect_gateway_relay_credential_ref }}.json"
+    - "{{ xconnect_gateway_relay_tls_certificate_path }}"
+    - "{{ xconnect_gateway_relay_tls_private_key_path }}"
+  register: xconnect_gateway_previous_relay_runtime_files
+  when: xconnect_gateway_runtime_apply_enabled | bool
+  no_log: true
+
+- name: Seed protected relay runtime files
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    owner: "{{ xconnect_gateway_user }}"
+    group: "{{ xconnect_gateway_group }}"
+    mode: "0600"
+    force: false
+  loop:
+    - src: "{{ xconnect_gateway_relay_credential_source }}"
+      dest: "{{ xconnect_gateway_relay_credential_dir }}/{{ xconnect_gateway_relay_credential_ref }}.json"
+    - src: "{{ xconnect_gateway_relay_tls_certificate_source }}"
+      dest: "{{ xconnect_gateway_relay_tls_certificate_path }}"
+    - src: "{{ xconnect_gateway_relay_tls_private_key_source }}"
+      dest: "{{ xconnect_gateway_relay_tls_private_key_path }}"
+  when: xconnect_gateway_runtime_apply_enabled | bool
+  no_log: true
+
+- name: Inspect seeded protected relay runtime files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ xconnect_gateway_relay_credential_dir }}/{{ xconnect_gateway_relay_credential_ref }}.json"
+    - "{{ xconnect_gateway_relay_tls_certificate_path }}"
+    - "{{ xconnect_gateway_relay_tls_private_key_path }}"
+  register: xconnect_gateway_seeded_relay_runtime_files
+  when: xconnect_gateway_runtime_apply_enabled | bool
+  no_log: true
+
+- name: Validate seeded relay files are readable only by the dedicated runtime
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+      - not (item.stat.islnk | default(false))
+      - item.stat.pw_name == xconnect_gateway_user
+      - item.stat.gr_name == xconnect_gateway_group
+      - item.stat.mode == "0600"
+    fail_msg: >-
+      Relay runtime credential and TLS files must be dedicated-user-owned 0600
+      regular files before apply can start.
+  loop: "{{ xconnect_gateway_seeded_relay_runtime_files.results }}"
+  when: xconnect_gateway_runtime_apply_enabled | bool
+  no_log: true
+
+- name: Inspect target WireGuard config before optional bootstrap seed
+  ansible.builtin.stat:
+    path: "{{ xconnect_gateway_wireguard_config_path }}"
+    follow: false
+  register: xconnect_gateway_previous_wireguard_config
+  when: xconnect_gateway_runtime_apply_enabled | bool
+  no_log: true
+
+- name: Inspect protected target WireGuard config source
+  ansible.builtin.stat:
+    path: "{{ xconnect_gateway_wireguard_target_config_source }}"
+    follow: false
+  register: xconnect_gateway_wireguard_config_source_stat
+  when:
+    - xconnect_gateway_runtime_apply_enabled | bool
+    - xconnect_gateway_wireguard_target_config_source | string | trim | length > 0
+  no_log: true
+
+- name: Validate protected target WireGuard config source
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_wireguard_config_source_stat.stat.exists
+      - xconnect_gateway_wireguard_config_source_stat.stat.isreg
+      - not (xconnect_gateway_wireguard_config_source_stat.stat.islnk | default(false))
+      - xconnect_gateway_wireguard_config_source_stat.stat.pw_name == "root"
+      - xconnect_gateway_wireguard_config_source_stat.stat.mode in ["0400", "0600"]
+    fail_msg: >-
+      Optional target WireGuard seed must be a root-owned 0400/0600 regular file.
+  when:
+    - xconnect_gateway_runtime_apply_enabled | bool
+    - xconnect_gateway_wireguard_target_config_source | string | trim | length > 0
+  no_log: true
+
+- name: Seed protected target WireGuard configuration
+  ansible.builtin.copy:
+    src: "{{ xconnect_gateway_wireguard_target_config_source }}"
+    dest: "{{ xconnect_gateway_wireguard_config_path }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+    force: false
+  register: xconnect_gateway_seeded_wireguard_config
+  when:
+    - xconnect_gateway_runtime_apply_enabled | bool
+    - xconnect_gateway_wireguard_target_config_source | string | trim | length > 0
+  no_log: true
+
+- name: Inspect target WireGuard configuration
+  ansible.builtin.stat:
+    path: "{{ xconnect_gateway_wireguard_config_path }}"
+    follow: false
+  register: xconnect_gateway_wireguard_config_stat
+  when: xconnect_gateway_runtime_apply_enabled | bool
+  no_log: true
+
+- name: Validate protected target WireGuard configuration
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_wireguard_config_stat.stat.exists
+      - xconnect_gateway_wireguard_config_stat.stat.isreg
+      - not (xconnect_gateway_wireguard_config_stat.stat.islnk | default(false))
+      - xconnect_gateway_wireguard_config_stat.stat.pw_name == "root"
+      - xconnect_gateway_wireguard_config_stat.stat.mode in ["0400", "0600"]
+    fail_msg: >-
+      Apply takeover requires an explicitly pre-provisioned or protected-source
+      target WireGuard config bound to the configured wg-xco interface.
   when: xconnect_gateway_runtime_apply_enabled | bool
   no_log: true
 
@@ -478,6 +653,97 @@
     - xconnect_gateway_runtime_apply_enabled | bool
     - not ansible_check_mode
 
+- name: Read previous dedicated Xray service enablement
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-enabled
+      - "{{ xconnect_gateway_xray_apply_service_name }}"
+  register: xconnect_gateway_previous_xray_enabled
+  changed_when: false
+  failed_when: false
+  when:
+    - xconnect_gateway_runtime_apply_enabled | bool
+    - not ansible_check_mode
+
+- name: Read target WireGuard service active state before takeover
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ xconnect_gateway_wireguard_service_name }}"
+  register: xconnect_gateway_previous_target_wireguard_active
+  changed_when: false
+  failed_when: false
+  when:
+    - xconnect_gateway_runtime_apply_enabled | bool
+    - not ansible_check_mode
+
+- name: Read target WireGuard service enablement before takeover
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-enabled
+      - "{{ xconnect_gateway_wireguard_service_name }}"
+  register: xconnect_gateway_previous_target_wireguard_enabled
+  changed_when: false
+  failed_when: false
+  when:
+    - xconnect_gateway_runtime_apply_enabled | bool
+    - not ansible_check_mode
+
+- name: Read legacy WireGuard service active state before takeover
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ xconnect_gateway_legacy_wireguard_service_name }}"
+  register: xconnect_gateway_previous_legacy_wireguard_active
+  changed_when: false
+  failed_when: false
+  when:
+    - xconnect_gateway_runtime_apply_enabled | bool
+    - not ansible_check_mode
+
+- name: Read legacy WireGuard service enablement before takeover
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-enabled
+      - "{{ xconnect_gateway_legacy_wireguard_service_name }}"
+  register: xconnect_gateway_previous_legacy_wireguard_enabled
+  changed_when: false
+  failed_when: false
+  when:
+    - xconnect_gateway_runtime_apply_enabled | bool
+    - not ansible_check_mode
+
+- name: Read legacy Xray service active state before takeover
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ xconnect_gateway_xray_service_name }}"
+  register: xconnect_gateway_previous_legacy_xray_active
+  changed_when: false
+  failed_when: false
+  when:
+    - xconnect_gateway_runtime_apply_enabled | bool
+    - not ansible_check_mode
+
+- name: Read legacy Xray service enablement before takeover
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-enabled
+      - "{{ xconnect_gateway_xray_service_name }}"
+  register: xconnect_gateway_previous_legacy_xray_enabled
+  changed_when: false
+  failed_when: false
+  when:
+    - xconnect_gateway_runtime_apply_enabled | bool
+    - not ansible_check_mode
+
 - name: Render restricted dedicated Xray base config candidate
   ansible.builtin.template:
     src: xray-base.json.j2
@@ -499,6 +765,10 @@
       - "{{ xconnect_gateway_xray_base_config_path }}.candidate"
       - --xray-baseline
       - "{{ xconnect_gateway_runtime_secret_lkg_dir }}/xray-runtime.json"
+      - --relay-credential
+      - "{{ xconnect_gateway_relay_credential_dir }}/{{ xconnect_gateway_relay_credential_ref }}.json"
+  become: true
+  become_user: "{{ xconnect_gateway_user }}"
   changed_when: false
   when:
     - xconnect_gateway_runtime_apply_enabled | bool
@@ -512,6 +782,8 @@
       - -test
       - -config
       - "{{ xconnect_gateway_xray_base_config_path }}.candidate"
+  become: true
+  become_user: "{{ xconnect_gateway_user }}"
   changed_when: false
   when:
     - xconnect_gateway_runtime_apply_enabled | bool
@@ -525,6 +797,8 @@
       - -test
       - -config
       - "{{ xconnect_gateway_runtime_secret_lkg_dir }}/xray-runtime.json"
+  become: true
+  become_user: "{{ xconnect_gateway_user }}"
   changed_when: false
   when:
     - xconnect_gateway_runtime_apply_enabled | bool
@@ -554,19 +828,17 @@
   register: xconnect_gateway_promoted_xray_unit
   when: xconnect_gateway_runtime_apply_enabled | bool
 
-- name: Ensure dedicated restricted Xray runtime is healthy
-  ansible.builtin.systemd:
-    name: "{{ xconnect_gateway_xray_apply_service_name }}"
-    enabled: true
-    state: >-
-      {{ 'restarted'
-         if (xconnect_gateway_promoted_xray_base.changed | default(false)
-             or xconnect_gateway_promoted_xray_unit.changed | default(false))
-         else 'started' }}
-    daemon_reload: "{{ xconnect_gateway_promoted_xray_unit.changed | default(false) }}"
-  when:
-    - xconnect_gateway_runtime_apply_enabled | bool
-    - not ansible_check_mode
+- name: Resolve whether a runtime handoff is required
+  ansible.builtin.set_fact:
+    xconnect_gateway_runtime_handoff_required: >-
+      {{ (xconnect_gateway_previous_legacy_wireguard_active.rc | default(3)) == 0
+         or (xconnect_gateway_previous_target_wireguard_active.rc | default(3)) != 0
+         or (xconnect_gateway_previous_legacy_xray_active.rc | default(3)) == 0
+         or (xconnect_gateway_previous_xray_active.rc | default(3)) != 0
+         or (xconnect_gateway_seeded_wireguard_config.changed | default(false))
+         or (xconnect_gateway_promoted_xray_base.changed | default(false))
+         or (xconnect_gateway_promoted_xray_unit.changed | default(false)) }}
+  when: xconnect_gateway_runtime_apply_enabled | bool
 
 - name: Read previous XConnect gateway service active state
   ansible.builtin.command:
@@ -597,6 +869,105 @@
 - name: Apply and verify XConnect gateway bootstrap transaction
   when: not ansible_check_mode
   block:
+    - name: Stop the Agent before an apply runtime handoff
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_agent_service_name }}"
+        state: stopped
+      when:
+        - xconnect_gateway_runtime_apply_enabled | bool
+        - xconnect_gateway_runtime_handoff_required | bool
+        - (xconnect_gateway_previous_service_active.rc | default(3)) == 0
+
+    - name: Stop legacy WireGuard before binding the target listener
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_legacy_wireguard_service_name }}"
+        state: stopped
+      when:
+        - xconnect_gateway_runtime_apply_enabled | bool
+        - xconnect_gateway_runtime_handoff_required | bool
+        - (xconnect_gateway_previous_legacy_wireguard_active.rc | default(3)) == 0
+
+    - name: Start target WireGuard for the apply runtime
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_wireguard_service_name }}"
+        enabled: true
+        state: started
+      when:
+        - xconnect_gateway_runtime_apply_enabled | bool
+        - xconnect_gateway_runtime_handoff_required | bool
+
+    - name: Read target WireGuard listen port after handoff
+      ansible.builtin.command:
+        argv:
+          - "{{ xconnect_gateway_wireguard_binary_path }}"
+          - show
+          - "{{ xconnect_gateway_wireguard_interface }}"
+          - listen-port
+      register: xconnect_gateway_target_wireguard_listen_port
+      changed_when: false
+      when: xconnect_gateway_runtime_apply_enabled | bool
+
+    - name: Read target WireGuard addresses after handoff
+      ansible.builtin.command:
+        argv:
+          - "{{ xconnect_gateway_ip_binary_path }}"
+          - -json
+          - addr
+          - show
+          - dev
+          - "{{ xconnect_gateway_wireguard_interface }}"
+      register: xconnect_gateway_target_wireguard_addresses_output
+      changed_when: false
+      when: xconnect_gateway_runtime_apply_enabled | bool
+
+    - name: Reset observed target WireGuard address list
+      ansible.builtin.set_fact:
+        xconnect_gateway_observed_wireguard_addresses: []
+      when: xconnect_gateway_runtime_apply_enabled | bool
+
+    - name: Build canonical target WireGuard address list
+      ansible.builtin.set_fact:
+        xconnect_gateway_observed_wireguard_addresses: >-
+          {{ xconnect_gateway_observed_wireguard_addresses
+             + [item.local ~ '/' ~ (item.prefixlen | string)] }}
+      loop: >-
+        {{ ((xconnect_gateway_target_wireguard_addresses_output.stdout | from_json)
+             | first).addr_info | default([]) }}
+      when:
+        - xconnect_gateway_runtime_apply_enabled | bool
+        - item.family == "inet"
+
+    - name: Assert target WireGuard binding is exact
+      ansible.builtin.assert:
+        that:
+          - (xconnect_gateway_target_wireguard_listen_port.stdout | trim | int) == (xconnect_gateway_wireguard_listen_port | int)
+          - (xconnect_gateway_observed_wireguard_addresses | sort) == xconnect_gateway_wireguard_addresses
+        fail_msg: >-
+          Target WireGuard interface does not match the configured canonical
+          address/listen-port binding; legacy takeover was rolled back.
+      when: xconnect_gateway_runtime_apply_enabled | bool
+
+    - name: Stop legacy Xray before binding the dedicated relay listener
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_xray_service_name }}"
+        state: stopped
+      when:
+        - xconnect_gateway_runtime_apply_enabled | bool
+        - xconnect_gateway_runtime_handoff_required | bool
+        - (xconnect_gateway_previous_legacy_xray_active.rc | default(3)) == 0
+
+    - name: Ensure dedicated restricted Xray runtime is healthy
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_xray_apply_service_name }}"
+        enabled: true
+        state: >-
+          {{ 'restarted'
+             if (xconnect_gateway_promoted_xray_base.changed | default(false)
+                 or xconnect_gateway_promoted_xray_unit.changed | default(false))
+             else 'started' }}
+        daemon_reload: "{{ xconnect_gateway_promoted_xray_unit.changed | default(false) }}"
+      when: xconnect_gateway_runtime_apply_enabled | bool
+
     - name: Promote validated XConnect gateway provider manifest
       ansible.builtin.copy:
         src: "{{ xconnect_gateway_provider_manifest_path }}.candidate"
@@ -703,6 +1074,28 @@
         fail_msg: "Gateway health response does not prove the selected Xray runtime mode."
       no_log: true
 
+    - name: Disable legacy WireGuard after healthy target takeover
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_legacy_wireguard_service_name }}"
+        enabled: false
+        state: stopped
+      when:
+        - xconnect_gateway_runtime_apply_enabled | bool
+        - >-
+          (xconnect_gateway_previous_legacy_wireguard_active.rc | default(3)) == 0
+          or (xconnect_gateway_previous_legacy_wireguard_enabled.rc | default(3)) == 0
+
+    - name: Disable legacy Xray after healthy dedicated takeover
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_xray_service_name }}"
+        enabled: false
+        state: stopped
+      when:
+        - xconnect_gateway_runtime_apply_enabled | bool
+        - >-
+          (xconnect_gateway_previous_legacy_xray_active.rc | default(3)) == 0
+          or (xconnect_gateway_previous_legacy_xray_enabled.rc | default(3)) == 0
+
     - name: Record healthy bootstrap config as last-known-good
       ansible.builtin.copy:
         src: "{{ item.src }}"
@@ -724,6 +1117,54 @@
         enabled: false
         state: stopped
         daemon_reload: true
+      failed_when: false
+
+    - name: Stop failed dedicated Xray runtime before rollback
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_xray_apply_service_name }}"
+        enabled: false
+        state: stopped
+      when: xconnect_gateway_runtime_apply_enabled | bool
+      failed_when: false
+
+    - name: Stop target WireGuard before restoring legacy binding
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_wireguard_service_name }}"
+        enabled: false
+        state: stopped
+      when: xconnect_gateway_runtime_apply_enabled | bool
+      failed_when: false
+
+    - name: Remove first seeded target WireGuard config after failed takeover
+      ansible.builtin.file:
+        path: "{{ xconnect_gateway_wireguard_config_path }}"
+        state: absent
+      when:
+        - xconnect_gateway_runtime_apply_enabled | bool
+        - not (xconnect_gateway_previous_wireguard_config.stat.exists | default(false))
+        - xconnect_gateway_wireguard_target_config_source | string | trim | length > 0
+      no_log: true
+
+    - name: Restore previous target WireGuard service state
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_wireguard_service_name }}"
+        enabled: "{{ (xconnect_gateway_previous_target_wireguard_enabled.rc | default(1)) == 0 }}"
+        state: >-
+          {{ 'started'
+             if (xconnect_gateway_previous_target_wireguard_active.rc | default(1)) == 0
+             else 'stopped' }}
+      when: xconnect_gateway_runtime_apply_enabled | bool
+      failed_when: false
+
+    - name: Restore previous legacy WireGuard service state
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_legacy_wireguard_service_name }}"
+        enabled: "{{ (xconnect_gateway_previous_legacy_wireguard_enabled.rc | default(1)) == 0 }}"
+        state: >-
+          {{ 'started'
+             if (xconnect_gateway_previous_legacy_wireguard_active.rc | default(1)) == 0
+             else 'stopped' }}
+      when: xconnect_gateway_runtime_apply_enabled | bool
       failed_when: false
 
     - name: Restore previous dedicated Xray base config after failed bootstrap
@@ -769,12 +1210,24 @@
     - name: Restore previous dedicated Xray service state
       ansible.builtin.systemd:
         name: "{{ xconnect_gateway_xray_apply_service_name }}"
-        enabled: "{{ xconnect_gateway_previous_xray_active.rc | default(3) == 0 }}"
+        enabled: "{{ (xconnect_gateway_previous_xray_enabled.rc | default(3)) == 0 }}"
         state: "{{ 'restarted' if xconnect_gateway_previous_xray_active.rc | default(3) == 0 else 'stopped' }}"
         daemon_reload: true
       when:
         - xconnect_gateway_runtime_apply_enabled | bool
         - xconnect_gateway_previous_xray_bootstrap.results[1].stat.exists | default(false)
+      failed_when: false
+
+    - name: Restore previous legacy Xray service state
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_xray_service_name }}"
+        enabled: "{{ (xconnect_gateway_previous_legacy_xray_enabled.rc | default(1)) == 0 }}"
+        state: >-
+          {{ 'started'
+             if (xconnect_gateway_previous_legacy_xray_active.rc | default(1)) == 0
+             else 'stopped' }}
+        daemon_reload: true
+      when: xconnect_gateway_runtime_apply_enabled | bool
       failed_when: false
 
     - name: Remove first protected Xray runtime baseline after failed bootstrap
@@ -784,6 +1237,16 @@
       when:
         - xconnect_gateway_runtime_apply_enabled | bool
         - not (xconnect_gateway_previous_xray_runtime_baseline.stat.exists | default(false))
+      no_log: true
+
+    - name: Remove first protected relay runtime files after failed bootstrap
+      ansible.builtin.file:
+        path: "{{ item.item }}"
+        state: absent
+      loop: "{{ xconnect_gateway_previous_relay_runtime_files.results }}"
+      when:
+        - xconnect_gateway_runtime_apply_enabled | bool
+        - not (item.stat.exists | default(false))
       no_log: true
 
     - name: Restore previous Gateway configuration after failed health
@@ -906,5 +1369,5 @@
     - name: Fail deployment after restoring previous Gateway bootstrap
       ansible.builtin.fail:
         msg: >-
-          XConnect gateway shadow health verification failed; previous config
-          systemd unit, managed Agent symlink, and prior service state were restored.
+          XConnect gateway health verification failed; prior Agent, dedicated
+          runtime, target/legacy WireGuard, and legacy Xray states were restored.

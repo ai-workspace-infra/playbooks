@@ -18,17 +18,36 @@ python3 -m json.tool "${fixture_root}/gateway-apply.json" >/dev/null
 python3 -m json.tool "${fixture_root}/provider-apply.json" >/dev/null
 python3 -m json.tool "${fixture_root}/xray-base.json" >/dev/null
 python3 -m json.tool "${fixture_root}/xray-baseline.json" >/dev/null
+python3 -m json.tool "${fixture_root}/relay-credential.json" >/dev/null
 
 python3 "${validator}" \
   --config "${fixture_root}/gateway.json" \
   --provider "${fixture_root}/provider.json" \
   --snapshot "${fixture_root}/snapshot.json"
 
+relay_test_uuid="7b7f4b8e-9aa5-4eb0-965f-927de3d264f1"
+sed "s/<redacted-runtime-secret>/${relay_test_uuid}/" \
+  "${fixture_root}/xray-baseline.json" >"${temp_dir}/xray-baseline.json"
+sed "s/<redacted-runtime-secret>/${relay_test_uuid}/" \
+  "${fixture_root}/relay-credential.json" >"${temp_dir}/relay-credential.json"
+
 python3 "${validator}" \
   --config "${fixture_root}/gateway-apply.json" \
   --provider "${fixture_root}/provider-apply.json" \
   --xray-base "${fixture_root}/xray-base.json" \
-  --xray-baseline "${fixture_root}/xray-baseline.json"
+  --xray-baseline "${temp_dir}/xray-baseline.json" \
+  --relay-credential "${temp_dir}/relay-credential.json"
+
+sed 's#/etc/xconnect/gateway/relay-tls/relay.key#/tmp/not-the-bound-key#' \
+  "${temp_dir}/relay-credential.json" >"${temp_dir}/bad-relay-credential.json"
+if python3 "${validator}" \
+  --config "${fixture_root}/gateway-apply.json" \
+  --provider "${fixture_root}/provider-apply.json" \
+  --xray-baseline "${temp_dir}/xray-baseline.json" \
+  --relay-credential "${temp_dir}/bad-relay-credential.json" >/dev/null 2>&1; then
+  echo "validator accepted a relay private key outside the node binding" >&2
+  exit 1
+fi
 
 if python3 "${validator}" \
   --config "${fixture_root}/gateway.json" \
@@ -106,6 +125,15 @@ rg -q '^  rescue:$' "${role_root}/tasks/deploy.yml"
 rg -q 'Restore previous XConnect gateway service state' "${role_root}/tasks/deploy.yml"
 rg -q 'Restore previous managed node credential after failed health' "${role_root}/tasks/deploy.yml"
 rg -q 'Restore previous snapshot signing key after failed health' "${role_root}/tasks/deploy.yml"
+rg -q 'Read legacy WireGuard service active state before takeover' "${role_root}/tasks/deploy.yml"
+rg -q 'Stop legacy WireGuard before binding the target listener' "${role_root}/tasks/deploy.yml"
+rg -q 'Restore previous legacy WireGuard service state' "${role_root}/tasks/deploy.yml"
+rg -q 'Read legacy Xray service active state before takeover' "${role_root}/tasks/deploy.yml"
+rg -q 'Stop legacy Xray before binding the dedicated relay listener' "${role_root}/tasks/deploy.yml"
+rg -q 'Restore previous legacy Xray service state' "${role_root}/tasks/deploy.yml"
+rg -q 'Validate seeded relay files are readable only by the dedicated runtime' "${role_root}/tasks/deploy.yml"
+rg -q 'Assert target WireGuard binding is exact' "${role_root}/tasks/deploy.yml"
+rg -Fq 'become_user: "{{ xconnect_gateway_user }}"' "${role_root}/tasks/deploy.yml"
 rg -q 'checksum.*sha256' "${role_root}/tasks/deploy.yml"
 rg -q "xconnect_gateway_restart_required" "${role_root}/tasks/deploy.yml"
 if rg -n 'state: restarted' "${role_root}/tasks/deploy.yml"; then
@@ -122,4 +150,34 @@ if rg -n 'wg (set|syncconf)|nft (add|delete|flush|insert|replace)' \
   echo "shadow role contains a forbidden WireGuard or nftables write path" >&2
   exit 1
 fi
+
+python3 - "${role_root}/tasks/deploy.yml" <<'PY'
+import pathlib
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+ordered = [
+    "Stop legacy WireGuard before binding the target listener",
+    "Start target WireGuard for the apply runtime",
+    "Assert target WireGuard binding is exact",
+    "Stop legacy Xray before binding the dedicated relay listener",
+    "Ensure dedicated restricted Xray runtime is healthy",
+    "Ensure XConnect gateway service is running",
+    "Wait for loopback XConnect gateway health endpoint",
+    "Disable legacy WireGuard after healthy target takeover",
+    "Disable legacy Xray after healthy dedicated takeover",
+]
+positions = [text.index(value) for value in ordered]
+if positions != sorted(positions):
+    raise SystemExit("Gateway handoff task order is unsafe")
+rescue = text.index("\n  rescue:\n")
+for name in (
+    "Stop target WireGuard before restoring legacy binding",
+    "Restore previous legacy WireGuard service state",
+    "Stop failed dedicated Xray runtime before rollback",
+    "Restore previous legacy Xray service state",
+):
+    if text.index(name) < rescue:
+        raise SystemExit(f"{name} is not protected by the transaction rescue")
+PY
 echo "xconnect gateway role contract checks passed"

@@ -61,6 +61,8 @@ type RuntimeConfig struct {
 	RelayListenHost     string   `json:"relay_listen_host,omitempty"`
 	RelayListenPort     int      `json:"relay_listen_port,omitempty"`
 	RelayCredentialDir  string   `json:"relay_credential_dir,omitempty"`
+	RelayTLSCertificate string   `json:"relay_tls_certificate_file,omitempty"`
+	RelayTLSPrivateKey  string   `json:"relay_tls_private_key_file,omitempty"`
 	XrayAPIEndpoint     string   `json:"xray_api_endpoint,omitempty"`
 	XrayInboundTag      string   `json:"xray_inbound_tag,omitempty"`
 }
@@ -142,7 +144,7 @@ func (c Config) Validate() error {
 		if c.Runtime.WireGuardBinary == "" || c.Runtime.NFTablesBinary == "" || c.Runtime.IPBinary == "" || c.Apply.LockFile == "" || c.Apply.TransactionDir == "" || c.Apply.RuntimeLastKnownGood == "" || c.Apply.RuntimeSecretLKG == "" || !c.Apply.RelayEnabled {
 			return errors.New("runtime apply requires explicit binaries, lock, transaction, and runtime LKG paths")
 		}
-		if c.Runtime.RelayCredentialDir == "" || c.Runtime.XrayAPIEndpoint == "" || !idPattern.MatchString(c.Runtime.XrayInboundTag) {
+		if c.Runtime.RelayCredentialDir == "" || c.Runtime.RelayTLSCertificate == "" || c.Runtime.RelayTLSPrivateKey == "" || c.Runtime.XrayAPIEndpoint == "" || !idPattern.MatchString(c.Runtime.XrayInboundTag) {
 			return errors.New("runtime apply requires protected relay credentials and an explicit Xray API contract")
 		}
 		if c.Runtime.WireGuardListenPort < 1 || c.Runtime.WireGuardListenPort > 65535 || net.ParseIP(c.Runtime.RelayListenHost) == nil || c.Runtime.RelayListenPort < 1 || c.Runtime.RelayListenPort > 65535 {
@@ -187,6 +189,8 @@ func (c Config) Validate() error {
 			"runtime last-known-good": c.Apply.RuntimeLastKnownGood,
 			"runtime secret LKG":      c.Apply.RuntimeSecretLKG,
 			"relay credential dir":    c.Runtime.RelayCredentialDir,
+			"relay TLS certificate":   c.Runtime.RelayTLSCertificate,
+			"relay TLS private key":   c.Runtime.RelayTLSPrivateKey,
 		} {
 			if !filepath.IsAbs(path) {
 				return fmt.Errorf("%s path must be absolute", label)

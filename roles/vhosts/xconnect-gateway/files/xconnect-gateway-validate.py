@@ -4,6 +4,7 @@
 import argparse
 import json
 import pathlib
+import re
 import sys
 from datetime import datetime
 
@@ -84,7 +85,14 @@ def validate(config: dict, provider: dict) -> None:
 
     if apply_enabled:
         runtime = config.get("runtime", {})
-        for key in ("wireguard_binary", "nftables_binary", "ip_binary", "relay_credential_dir"):
+        for key in (
+            "wireguard_binary",
+            "nftables_binary",
+            "ip_binary",
+            "relay_credential_dir",
+            "relay_tls_certificate_file",
+            "relay_tls_private_key_file",
+        ):
             require(pathlib.PurePosixPath(runtime.get(key, "")).is_absolute(), f"apply runtime {key} must be absolute")
         require(runtime.get("xray_api_endpoint", "").startswith(("127.0.0.1:", "[::1]:")), "Xray API must be loopback")
         require(config.get("apply", {}).get("relay_enabled") is True, "full runtime apply requires relay transaction")
@@ -196,6 +204,16 @@ def validate_xray_baseline(baseline: dict, config: dict) -> None:
     require(bool(stream.get("tlsSettings", {}).get("certificates")), "Xray baseline TLS identity is required")
 
 
+def validate_relay_credential(credential: dict, baseline: dict, config: dict) -> None:
+    require(set(credential) == {"id", "certificate_file", "private_key_file"}, "relay credential fields are not strict")
+    require(bool(re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", credential.get("id", ""))), "relay credential ID must be a canonical UUID")
+    runtime = config.get("runtime", {})
+    require(credential.get("certificate_file") == runtime.get("relay_tls_certificate_file"), "relay certificate path differs from node binding")
+    require(credential.get("private_key_file") == runtime.get("relay_tls_private_key_file"), "relay private-key path differs from node binding")
+    clients = baseline.get("inbounds", [{}])[0].get("settings", {}).get("clients", [])
+    require([value.get("id") for value in clients] == [credential.get("id")], "baseline and relay credential identities differ")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=pathlib.Path)
@@ -203,6 +221,7 @@ def main() -> int:
     parser.add_argument("--snapshot", type=pathlib.Path)
     parser.add_argument("--xray-base", type=pathlib.Path)
     parser.add_argument("--xray-baseline", type=pathlib.Path)
+    parser.add_argument("--relay-credential", type=pathlib.Path)
     args = parser.parse_args()
     try:
         validate(load_object(args.config), load_object(args.provider))
@@ -212,6 +231,9 @@ def main() -> int:
             validate_xray_base(load_object(args.xray_base), load_object(args.config))
         if args.xray_baseline:
             validate_xray_baseline(load_object(args.xray_baseline), load_object(args.config))
+        if args.relay_credential:
+            require(bool(args.xray_baseline), "relay credential validation requires Xray baseline")
+            validate_relay_credential(load_object(args.relay_credential), load_object(args.xray_baseline), load_object(args.config))
     except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
         print(f"xconnect gateway contract rejected: {exc}", file=sys.stderr)
         return 1

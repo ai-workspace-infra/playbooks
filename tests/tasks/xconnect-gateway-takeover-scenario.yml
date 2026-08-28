@@ -1,0 +1,52 @@
+---
+- name: Reset simulated pre-takeover service state
+  ansible.builtin.set_fact:
+    xconnect_gateway_simulated_state:
+      legacy_wg: true
+      target_wg: false
+      legacy_xray: true
+      dedicated_xray: false
+
+- name: Run simulated takeover transaction with injected failure
+  block:
+    - name: Simulate target WireGuard handoff
+      ansible.builtin.set_fact:
+        xconnect_gateway_simulated_state: >-
+          {{ xconnect_gateway_simulated_state
+             | combine({'legacy_wg': false, 'target_wg': true}) }}
+
+    - name: Inject target WireGuard validation failure
+      ansible.builtin.fail:
+        msg: injected target WireGuard validation failure
+      when: xconnect_gateway_takeover_scenario.fail_at == "wireguard"
+
+    - name: Simulate dedicated Xray handoff
+      ansible.builtin.set_fact:
+        xconnect_gateway_simulated_state: >-
+          {{ xconnect_gateway_simulated_state
+             | combine({'legacy_xray': false, 'dedicated_xray': true}) }}
+
+    - name: Inject dedicated Xray failure
+      ansible.builtin.fail:
+        msg: injected dedicated Xray failure
+      when: xconnect_gateway_takeover_scenario.fail_at == "xray"
+
+    - name: Inject Agent health failure
+      ansible.builtin.fail:
+        msg: injected Agent health failure
+      when: xconnect_gateway_takeover_scenario.fail_at == "health"
+
+  rescue:
+    - name: Simulate exact restoration of captured legacy states
+      ansible.builtin.set_fact:
+        xconnect_gateway_simulated_state:
+          legacy_wg: true
+          target_wg: false
+          legacy_xray: true
+          dedicated_xray: false
+
+- name: Assert simulated takeover result
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_simulated_state == xconnect_gateway_takeover_scenario.expected
+    fail_msg: "Takeover rollback state mismatch for {{ xconnect_gateway_takeover_scenario.name }}"

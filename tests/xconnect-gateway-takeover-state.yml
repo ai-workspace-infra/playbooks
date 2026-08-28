@@ -1,0 +1,26 @@
+---
+- name: Verify XConnect Gateway takeover rollback state machine
+  hosts: all
+  connection: local
+  gather_facts: false
+  vars:
+    xconnect_gateway_takeover_scenarios:
+      - name: success
+        fail_at: never
+        expected: {legacy_wg: false, target_wg: true, legacy_xray: false, dedicated_xray: true}
+      - name: target WireGuard binding failure
+        fail_at: wireguard
+        expected: {legacy_wg: true, target_wg: false, legacy_xray: true, dedicated_xray: false}
+      - name: dedicated Xray failure
+        fail_at: xray
+        expected: {legacy_wg: true, target_wg: false, legacy_xray: true, dedicated_xray: false}
+      - name: Agent health failure
+        fail_at: health
+        expected: {legacy_wg: true, target_wg: false, legacy_xray: true, dedicated_xray: false}
+  tasks:
+    - name: Inject each takeover outcome
+      ansible.builtin.include_tasks: tasks/xconnect-gateway-takeover-scenario.yml
+      loop: "{{ xconnect_gateway_takeover_scenarios }}"
+      loop_control:
+        loop_var: xconnect_gateway_takeover_scenario
+        label: "{{ xconnect_gateway_takeover_scenario.name }}"
