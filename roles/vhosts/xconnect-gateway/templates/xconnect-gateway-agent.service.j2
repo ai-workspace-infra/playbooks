@@ -1,22 +1,22 @@
 [Unit]
-Description=XConnect-One gateway agent (shadow mode)
+Description=XConnect-One gateway agent ({{ 'apply' if xconnect_gateway_runtime_apply_enabled | bool else 'shadow' }} mode)
 Documentation=https://github.com/ai-workspace-infra/playbooks
-After=network-online.target
-Wants=network-online.target {{ xconnect_gateway_xray_service_name }}.service
+After=network-online.target {{ xconnect_gateway_xray_apply_service_name if xconnect_gateway_runtime_apply_enabled | bool else xconnect_gateway_xray_service_name }}.service
+Wants=network-online.target {{ xconnect_gateway_xray_apply_service_name if xconnect_gateway_runtime_apply_enabled | bool else xconnect_gateway_xray_service_name }}.service
 
 [Service]
 Type=simple
 User={{ xconnect_gateway_user }}
 Group={{ xconnect_gateway_group }}
 ExecStartPre=/usr/local/libexec/xconnect-gateway-validate --config {{ xconnect_gateway_config_path }} --provider {{ xconnect_gateway_provider_manifest_path }}
-ExecStart={{ xconnect_gateway_agent_binary_path }} --config {{ xconnect_gateway_config_path }} --mode shadow
+ExecStart={{ xconnect_gateway_agent_binary_path }} --config {{ xconnect_gateway_config_path }} --mode {{ 'apply' if xconnect_gateway_runtime_apply_enabled | bool else 'shadow' }}
 Restart=on-failure
 RestartSec=5s
 RuntimeDirectory=xconnect/gateway
 RuntimeDirectoryMode=0750
 LogsDirectory=xconnect/gateway
 LogsDirectoryMode=0750
-ReadWritePaths={{ xconnect_gateway_candidate_dir }} {{ xconnect_gateway_last_known_good_dir }} {{ xconnect_gateway_evidence_dir }} {{ xconnect_gateway_log_root }}
+ReadWritePaths={{ xconnect_gateway_candidate_dir }} {{ xconnect_gateway_last_known_good_dir }} {{ xconnect_gateway_evidence_dir }} {{ xconnect_gateway_log_root }}{% if xconnect_gateway_runtime_apply_enabled | bool %} {{ xconnect_gateway_runtime_root }} {{ xconnect_gateway_runtime_lkg_dir }} {{ xconnect_gateway_runtime_secret_lkg_dir }}{% endif %}
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=xconnect-gateway-agent
@@ -30,13 +30,13 @@ ProtectKernelTunables=true
 ProtectProc=invisible
 ProtectSystem=strict
 ProcSubset=pid
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6{% if xconnect_gateway_runtime_apply_enabled | bool %} AF_NETLINK{% endif %}
 RestrictNamespaces=true
 RestrictSUIDSGID=true
 LockPersonality=true
 MemoryDenyWriteExecute=true
-CapabilityBoundingSet=
-AmbientCapabilities=
+CapabilityBoundingSet={% if xconnect_gateway_runtime_apply_enabled | bool %}CAP_NET_ADMIN{% endif %}
+AmbientCapabilities={% if xconnect_gateway_runtime_apply_enabled | bool %}CAP_NET_ADMIN{% endif %}
 SystemCallArchitectures=native
 UMask=0027
 

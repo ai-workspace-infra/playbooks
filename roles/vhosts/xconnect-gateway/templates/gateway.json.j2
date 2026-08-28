@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "node_id": {{ xconnect_gateway_node_id | to_json }},
-  "mode": "shadow",
+  "mode": {{ ('apply' if xconnect_gateway_runtime_apply_enabled | bool else 'shadow') | to_json }},
   "control_plane": {
     "url": {{ xconnect_gateway_control_plane_url | to_json }},
     "poll_interval_seconds": {{ xconnect_gateway_control_plane_poll_interval | int }},
@@ -20,11 +20,21 @@
     "proxy_core": "xray",
     "proxy_core_version": {{ xconnect_gateway_xray_required_version | to_json }},
     "xray_binary": {{ xconnect_gateway_xray_binary_path | to_json }},
-    "xray_config": {{ xconnect_gateway_xray_config_path | to_json }},
-    "xray_service": {{ xconnect_gateway_xray_service_name | to_json }},
+    "xray_config": {{ (xconnect_gateway_xray_base_config_path if xconnect_gateway_runtime_apply_enabled | bool else xconnect_gateway_xray_config_path) | to_json }},
+    "xray_service": {{ (xconnect_gateway_xray_apply_service_name if xconnect_gateway_runtime_apply_enabled | bool else xconnect_gateway_xray_service_name) | to_json }},
     "wireguard_interface": {{ xconnect_gateway_wireguard_interface | to_json }},
     "wireguard_config": {{ xconnect_gateway_wireguard_config_path | to_json }},
-    "wireguard_service": {{ xconnect_gateway_wireguard_service_name | to_json }}
+    "wireguard_service": {{ xconnect_gateway_wireguard_service_name | to_json }},
+    "wireguard_binary": {{ xconnect_gateway_wireguard_binary_path | to_json }},
+    "nftables_binary": {{ xconnect_gateway_nftables_binary_path | to_json }},
+    "ip_binary": {{ xconnect_gateway_ip_binary_path | to_json }},
+    "wireguard_addresses": {{ xconnect_gateway_wireguard_addresses | to_json }},
+    "wireguard_listen_port": {{ xconnect_gateway_wireguard_listen_port | int }},
+    "relay_listen_host": {{ xconnect_gateway_relay_listen_host | to_json }},
+    "relay_listen_port": {{ xconnect_gateway_relay_listen_port | int }},
+    "relay_credential_dir": {{ xconnect_gateway_relay_credential_dir | to_json }},
+    "xray_api_endpoint": {{ xconnect_gateway_xray_api_endpoint | to_json }},
+    "xray_inbound_tag": {{ xconnect_gateway_xray_inbound_tag | to_json }}
   },
   "snapshots": {
     "candidate_dir": {{ xconnect_gateway_candidate_dir | to_json }},
@@ -35,7 +45,13 @@
     "empty_peer_snapshot": "require-explicit-override"
   },
   "apply": {
-    "enabled": false
+    "enabled": {{ xconnect_gateway_runtime_apply_enabled | bool | to_json }},
+    "lock_file": {{ xconnect_gateway_apply_lock_path | to_json }},
+    "transaction_dir": {{ xconnect_gateway_transaction_dir | to_json }},
+    "runtime_last_known_good": {{ xconnect_gateway_runtime_lkg_dir | to_json }},
+    "runtime_secret_last_known_good": {{ xconnect_gateway_runtime_secret_lkg_dir | to_json }},
+    "readback_retries": {{ xconnect_gateway_apply_readback_retries | int }},
+    "relay_enabled": {{ xconnect_gateway_runtime_apply_enabled | bool | to_json }}
   },
   "health": {
     "listen_host": {{ xconnect_gateway_health_listen_host | to_json }},

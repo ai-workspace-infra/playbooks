@@ -3,7 +3,9 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -12,10 +14,37 @@ type CommandRunner interface {
 	Run(context.Context, string, ...string) ([]byte, error)
 }
 
-type ExecRunner struct{}
+// ExecRunner executes only explicitly allowlisted absolute binaries. It never
+// invokes a shell and supplies a minimal fixed environment so controller
+// credentials and service environment variables cannot leak to child tools.
+type ExecRunner struct {
+	Allowed map[string]bool
+}
 
-func (ExecRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).Output()
+func (r ExecRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if !filepath.IsAbs(name) || filepath.Clean(name) != name || !r.Allowed[name] {
+		return nil, fmt.Errorf("command is not an allowlisted absolute binary")
+	}
+	for _, arg := range args {
+		if strings.ContainsRune(arg, '\x00') {
+			return nil, errors.New("command argument contains NUL")
+		}
+	}
+	command := exec.CommandContext(ctx, name, args...)
+	command.Env = []string{"LANG=C", "LC_ALL=C", "PATH=/usr/sbin:/usr/bin:/sbin:/bin"}
+	command.Stdin = nil
+	command.Stderr = nil
+	return command.Output()
+}
+
+func DefaultExecRunner(paths ...string) ExecRunner {
+	allowed := make(map[string]bool, len(paths))
+	for _, value := range paths {
+		if filepath.IsAbs(value) {
+			allowed[filepath.Clean(value)] = true
+		}
+	}
+	return ExecRunner{Allowed: allowed}
 }
 
 type CurrentPeer struct {

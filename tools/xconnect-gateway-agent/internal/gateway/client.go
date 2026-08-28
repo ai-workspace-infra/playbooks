@@ -85,6 +85,60 @@ func (c *HTTPController) ReportApplyResult(ctx context.Context, result ApplyResu
 	return c.doJSON(ctx, http.MethodPost, endpoint, result, nil)
 }
 
+// PolicyArtifact is isolated behind PolicyProvider because the Accounts
+// Batch06 endpoint is an internal node boundary, not a user policy API.
+func (c *HTTPController) PolicyArtifact(ctx context.Context, nodeID string, generation uint64, digest string) ([]byte, error) {
+	endpoint := path.Join("/api/internal/overlay/v1/nodes", url.PathEscape(nodeID), "policy-artifacts", fmt.Sprintf("%d", generation), digest)
+	requestURL := *c.baseURL
+	requestURL.Path = path.Join(c.baseURL.Path, endpoint)
+	tokenRaw, err := readProtectedFile(c.credentialFile, "controller credential")
+	if err != nil {
+		return nil, errors.New("read controller credential")
+	}
+	token := strings.TrimSpace(string(tokenRaw))
+	if token == "" {
+		return nil, errors.New("controller credential is empty")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.xconnect.gateway-policy.v1+json")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, errors.New("policy artifact request failed")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("policy artifact request failed with status %d", resp.StatusCode)
+	}
+	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil || (mediaType != "application/vnd.xconnect.gateway-policy.v1+json" && mediaType != "application/json") {
+		return nil, errors.New("policy artifact response content type is invalid")
+	}
+	if !strings.EqualFold(strings.TrimSpace(resp.Header.Get("Cache-Control")), "no-store") {
+		return nil, errors.New("policy artifact response must be no-store")
+	}
+	varyAuthorization := false
+	for _, value := range strings.Split(resp.Header.Get("Vary"), ",") {
+		varyAuthorization = varyAuthorization || strings.EqualFold(strings.TrimSpace(value), "Authorization")
+	}
+	if !varyAuthorization {
+		return nil, errors.New("policy artifact response must vary on authorization")
+	}
+	const maxPolicyBytes = 4 << 20
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxPolicyBytes+1))
+	if err != nil || len(raw) > maxPolicyBytes {
+		return nil, errors.New("policy artifact response is too large")
+	}
+	if _, err := DecodePolicyArtifact(raw); err != nil {
+		return nil, errors.New("decode policy artifact response")
+	}
+	return raw, nil
+}
+
 func (c *HTTPController) doJSON(ctx context.Context, method, endpoint string, requestValue any, responseValue any) error {
 	var body io.Reader
 	if requestValue != nil {

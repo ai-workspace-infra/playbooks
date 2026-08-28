@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "xconnect-one",
   "version": {{ xconnect_gateway_provider_version | to_json }},
-  "mode": "shadow",
+  "mode": {{ ('apply' if xconnect_gateway_runtime_apply_enabled | bool else 'shadow') | to_json }},
   "snapshot_schema": {
     "minimum": {{ xconnect_gateway_snapshot_schema_min | int }},
     "maximum": {{ xconnect_gateway_snapshot_schema_max | int }}
@@ -19,7 +19,12 @@
     "policy.render",
     "relay.validate",
     "relay.render",
-    "diagnostics.collect"
+    "diagnostics.collect"{% if xconnect_gateway_runtime_apply_enabled | bool %},
+    "peer.apply",
+    "policy.apply",
+    "relay.apply",
+    "transaction.rollback"
+{% endif %}
   ],
   "backends": {
     "peer": "wireguard",
@@ -27,12 +32,11 @@
     "relay": "xray"
   },
   "permissions": {
-    "apply_runtime": false,
-    "linux_capabilities": []
+    "apply_runtime": {{ xconnect_gateway_runtime_apply_enabled | bool | to_json }},
+    "linux_capabilities": {{ (['CAP_NET_ADMIN'] if xconnect_gateway_runtime_apply_enabled | bool else []) | to_json }}
   },
   "rollback": {
     "level": "last-known-good",
     "directory": {{ xconnect_gateway_last_known_good_dir | to_json }}
   }
 }
-

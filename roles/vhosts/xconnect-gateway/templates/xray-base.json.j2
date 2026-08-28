@@ -1,0 +1,21 @@
+{
+  "log": {"loglevel": "warning"},
+  "api": {"tag": "xconnect-one-api", "services": ["HandlerService", "StatsService"]},
+  "policy": {"system": {"statsInboundUplink": true, "statsInboundDownlink": true}},
+  "inbounds": [{
+    "tag": "xconnect-one-api",
+    "listen": {{ xconnect_gateway_xray_api_endpoint.rsplit(':', 1)[0] | to_json }},
+    "port": {{ xconnect_gateway_xray_api_endpoint.rsplit(':', 1)[1] | int }},
+    "protocol": "dokodemo-door",
+    "settings": {"address": {{ xconnect_gateway_xray_api_endpoint.rsplit(':', 1)[0] | to_json }}
+  }],
+  "outbounds": [
+    {"tag": "xconnect-one-wg", "protocol": "freedom"},
+    {"tag": "xconnect-one-block", "protocol": "blackhole"}
+  ],
+  "routing": {"domainStrategy": "AsIs", "rules": [
+    {"type": "field", "inboundTag": ["xconnect-one-api"], "outboundTag": "xconnect-one-api"},
+    {"type": "field", "inboundTag": [{{ xconnect_gateway_xray_inbound_tag | to_json }}], "network": "udp", "ip": [{{ xconnect_gateway_xray_wireguard_target_host | to_json }}], "port": {{ xconnect_gateway_wireguard_listen_port | to_json }}, "outboundTag": "xconnect-one-wg"},
+    {"type": "field", "inboundTag": [{{ xconnect_gateway_xray_inbound_tag | to_json }}], "outboundTag": "xconnect-one-block"}
+  ]}
+}

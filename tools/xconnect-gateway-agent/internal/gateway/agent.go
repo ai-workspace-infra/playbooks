@@ -28,8 +28,10 @@ type HealthState struct {
 type Agent struct {
 	Config     Config
 	Controller Controller
+	Policy     PolicyProvider
 	Store      *Store
 	WireGuard  WireGuardReader
+	Runtime    RuntimeApplier
 	PublicKey  ed25519.PublicKey
 	Version    string
 	Logger     *slog.Logger
@@ -49,7 +51,7 @@ func (a *Agent) initialize() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.health.Status == "" {
-		a.health = HealthState{Status: "ready", Mode: "shadow", ProxyCore: "xray", RuntimeApplyEnabled: false, ControllerStatus: "unknown", Diff: UnavailableDiff(0), UpdatedAt: a.Now().UTC()}
+		a.health = HealthState{Status: "ready", Mode: a.Config.Mode, ProxyCore: "xray", RuntimeApplyEnabled: a.Config.RuntimeApplyEnabled(), ControllerStatus: "unknown", Diff: UnavailableDiff(0), UpdatedAt: a.Now().UTC()}
 	}
 }
 
@@ -103,11 +105,32 @@ func (a *Agent) runCycle(ctx context.Context) {
 		a.recordEvent("checkpoint_read_failed", "error")
 		return
 	}
+	if a.Config.RuntimeApplyEnabled() && !checkpoint.RuntimeFault {
+		if a.Runtime == nil || a.Policy == nil {
+			a.recordEvent("runtime_apply_dependency_missing", "error")
+			return
+		}
+		if err := a.Runtime.Recover(ctx, checkpoint); err != nil {
+			a.recordEvent("runtime_recovery_failed", "error")
+			return
+		}
+	}
+	reportedObserved := checkpoint.ObservedGeneration
+	if checkpoint.RuntimeFaultGeneration > reportedObserved {
+		reportedObserved = checkpoint.RuntimeFaultGeneration
+	}
 	a.setHealth(func(state *HealthState) {
-		state.ObservedGeneration = checkpoint.ObservedGeneration
+		state.ObservedGeneration = reportedObserved
 		state.AppliedGeneration = checkpoint.AppliedGeneration
+		if checkpoint.RuntimeFault {
+			state.Status = "unsafe-manual-recovery"
+			if checkpoint.RuntimeQuarantined {
+				state.Status = "fail-closed"
+			}
+			state.LastEventCode = "apply_failed_rollback_failed"
+		}
 	})
-	heartbeat := Heartbeat{NodeID: a.Config.NodeID, AgentVersion: a.Version, Mode: "shadow", ProxyCore: "xray", ObservedGeneration: checkpoint.ObservedGeneration, AppliedGeneration: checkpoint.AppliedGeneration}
+	heartbeat := Heartbeat{NodeID: a.Config.NodeID, AgentVersion: a.Version, Mode: a.Config.Mode, ProxyCore: "xray", ObservedGeneration: reportedObserved, AppliedGeneration: checkpoint.AppliedGeneration}
 	if err := a.Controller.Heartbeat(ctx, heartbeat); err != nil {
 		a.recordEvent("heartbeat_failed", "error")
 	} else {
@@ -128,6 +151,10 @@ func (a *Agent) runCycle(ctx context.Context) {
 		checkpoint.LastReportedObservedGeneration = pending.ObservedGeneration
 		checkpoint.LastReportedResult = pending.Result
 		a.recordEvent("shadow_result_retry_ok", "ok")
+	}
+	if checkpoint.RuntimeFault {
+		a.recordEvent("runtime_manual_recovery_required", "error")
+		return
 	}
 	raw, err := a.Controller.PlannedSnapshot(ctx, a.Config.NodeID)
 	if errors.Is(err, ErrNoPlannedSnapshot) {
@@ -153,7 +180,11 @@ func (a *Agent) runCycle(ctx context.Context) {
 		return
 	}
 	if err := snapshot.Validate(a.Now(), a.Config.NodeID, a.Config.ControlPlane.SnapshotSigningKeyID, a.PublicKey, previous); err != nil {
-		result := newShadowResult(a.Config.NodeID, snapshot, "shadow_rejected", UnavailableDiff(len(snapshot.WireGuard.Peers)))
+		resultName := "shadow_rejected"
+		if a.Config.RuntimeApplyEnabled() {
+			resultName = "apply_rejected"
+		}
+		result := newResult(a.Config.NodeID, snapshot, checkpoint.AppliedGeneration, false, resultName, UnavailableDiff(len(snapshot.WireGuard.Peers)))
 		if checkpoint.LastReportedSnapshotID == result.SnapshotID && checkpoint.LastReportedObservedGeneration == result.ObservedGeneration && checkpoint.LastReportedResult == result.Result {
 			a.recordEvent("snapshot_rejection_already_reported", "ok")
 			return
@@ -166,6 +197,10 @@ func (a *Agent) runCycle(ctx context.Context) {
 			a.recordEvent("shadow_result_checkpoint_failed", "error")
 		}
 		a.recordEvent("snapshot_validation_rejected", "ok")
+		return
+	}
+	if a.Config.RuntimeApplyEnabled() {
+		a.runApply(ctx, raw, snapshot, checkpoint)
 		return
 	}
 	if checkpoint.ObservedGeneration == snapshot.Generation && checkpoint.ObservedSnapshotID == snapshot.SnapshotID {
@@ -204,7 +239,98 @@ func (a *Agent) runCycle(ctx context.Context) {
 }
 
 func newShadowResult(nodeID string, snapshot GatewaySnapshot, result string, diff DiffSummary) ApplyResult {
-	return ApplyResult{NodeID: nodeID, SnapshotID: snapshot.SnapshotID, ObservedGeneration: snapshot.Generation, AppliedGeneration: 0, RuntimeApplied: false, Result: result, Diff: diff}
+	return newResult(nodeID, snapshot, 0, false, result, diff)
+}
+
+func newResult(nodeID string, snapshot GatewaySnapshot, applied uint64, runtimeApplied bool, result string, diff DiffSummary) ApplyResult {
+	return ApplyResult{NodeID: nodeID, SnapshotID: snapshot.SnapshotID, ObservedGeneration: snapshot.Generation, AppliedGeneration: applied, RuntimeApplied: runtimeApplied, Result: result, Diff: diff}
+}
+
+func (a *Agent) runApply(ctx context.Context, raw []byte, snapshot GatewaySnapshot, checkpoint Checkpoint) {
+	if checkpoint.AppliedGeneration == snapshot.Generation && checkpoint.ObservedSnapshotID == snapshot.SnapshotID {
+		a.recordEvent("snapshot_already_applied", "ok")
+		return
+	}
+	policyRaw, err := a.Policy.PolicyArtifact(ctx, a.Config.NodeID, snapshot.Policy.Generation, snapshot.Policy.RulesetSHA256)
+	if err != nil {
+		a.queueApplyFailure(ctx, checkpoint, snapshot, "apply_rejected", UnavailableDiff(len(snapshot.WireGuard.Peers)), false)
+		a.recordEvent("policy_artifact_fetch_failed", "error")
+		return
+	}
+	artifact, err := ValidatePolicyArtifact(policyRaw, snapshot)
+	if err != nil {
+		a.queueApplyFailure(ctx, checkpoint, snapshot, "apply_rejected", UnavailableDiff(len(snapshot.WireGuard.Peers)), false)
+		a.recordEvent("policy_artifact_rejected", "error")
+		return
+	}
+	diff, err := a.Runtime.Apply(ctx, snapshot, artifact)
+	if err != nil {
+		resultName := "apply_failed_rolled_back"
+		if errors.Is(err, ErrRuntimeRollbackFailed) {
+			resultName = "apply_failed_rollback_failed"
+		}
+		a.queueApplyFailure(ctx, checkpoint, snapshot, resultName, diff, errors.Is(err, ErrRuntimeQuarantined))
+		return
+	}
+	result := newResult(a.Config.NodeID, snapshot, snapshot.Generation, true, "applied", diff)
+	if err := a.Store.CommitApplied(raw, snapshot, result); err != nil {
+		if abortErr := a.Runtime.Abort(ctx, snapshot.Generation, snapshot.SnapshotID); abortErr != nil {
+			a.queueApplyFailure(ctx, checkpoint, snapshot, "apply_failed_rollback_failed", diff, errors.Is(abortErr, ErrRuntimeQuarantined))
+		} else {
+			a.queueApplyFailure(ctx, checkpoint, snapshot, "apply_failed_rolled_back", diff, false)
+		}
+		return
+	}
+	if err := a.Runtime.Commit(ctx, snapshot.Generation, snapshot.SnapshotID); err != nil {
+		a.recordEvent("runtime_lkg_commit_failed", "error")
+		return
+	}
+	committed := Checkpoint{ObservedGeneration: snapshot.Generation, ObservedSnapshotID: snapshot.SnapshotID, AppliedGeneration: snapshot.Generation, PendingResult: &result}
+	if a.reportResult(ctx, result) {
+		if err := a.Store.MarkResultReported(committed, result); err != nil {
+			a.recordEvent("apply_result_checkpoint_failed", "error")
+		}
+	}
+	a.setHealth(func(state *HealthState) {
+		state.ObservedGeneration = snapshot.Generation
+		state.AppliedGeneration = snapshot.Generation
+		state.Diff = diff
+		state.LastEventCode = "applied"
+	})
+}
+
+func (a *Agent) queueApplyFailure(ctx context.Context, checkpoint Checkpoint, snapshot GatewaySnapshot, resultName string, diff DiffSummary, quarantined bool) {
+	result := newResult(a.Config.NodeID, snapshot, checkpoint.AppliedGeneration, false, resultName, diff)
+	if resultName == "apply_failed_rollback_failed" {
+		checkpoint.RuntimeFault = true
+		checkpoint.RuntimeFaultSnapshotID = snapshot.SnapshotID
+		checkpoint.RuntimeFaultGeneration = snapshot.Generation
+		checkpoint.RuntimeQuarantined = quarantined
+	}
+	if checkpoint.LastReportedSnapshotID == result.SnapshotID && checkpoint.LastReportedObservedGeneration == result.ObservedGeneration && checkpoint.LastReportedResult == result.Result {
+		a.recordEvent(resultName+"_already_reported", "ok")
+		return
+	}
+	if !a.reportResult(ctx, result) {
+		if err := a.Store.QueueResult(checkpoint, result); err != nil {
+			a.recordEvent("apply_result_checkpoint_failed", "error")
+		}
+	} else if err := a.Store.MarkResultReported(checkpoint, result); err != nil {
+		a.recordEvent("apply_result_checkpoint_failed", "error")
+	}
+	a.setHealth(func(state *HealthState) {
+		if resultName == "apply_failed_rollback_failed" {
+			state.Status = "unsafe-manual-recovery"
+			if quarantined {
+				state.Status = "fail-closed"
+			}
+		}
+		state.ObservedGeneration = snapshot.Generation
+		state.AppliedGeneration = checkpoint.AppliedGeneration
+		state.Diff = diff
+		state.LastEventCode = resultName
+	})
+	a.recordEvent(resultName, "error")
 }
 
 func (a *Agent) reportResult(ctx context.Context, result ApplyResult) bool {
@@ -217,7 +343,7 @@ func (a *Agent) reportResult(ctx context.Context, result ApplyResult) bool {
 }
 
 func (a *Agent) recordEvent(code, controllerStatus string) {
-	a.Logger.Info("gateway shadow event", "event_code", code)
+	a.Logger.Info("gateway event", "event_code", code)
 	a.setHealth(func(state *HealthState) {
 		state.LastEventCode = code
 		state.ControllerStatus = controllerStatus

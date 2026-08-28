@@ -14,11 +14,21 @@ python3 -m json.tool "${fixture_root}/gateway.json" >/dev/null
 python3 -m json.tool "${fixture_root}/provider.json" >/dev/null
 python3 -m json.tool "${fixture_root}/snapshot.json" >/dev/null
 python3 -m json.tool "${fixture_root}/snapshot-empty-peers.json" >/dev/null
+python3 -m json.tool "${fixture_root}/gateway-apply.json" >/dev/null
+python3 -m json.tool "${fixture_root}/provider-apply.json" >/dev/null
+python3 -m json.tool "${fixture_root}/xray-base.json" >/dev/null
+python3 -m json.tool "${fixture_root}/xray-baseline.json" >/dev/null
 
 python3 "${validator}" \
   --config "${fixture_root}/gateway.json" \
   --provider "${fixture_root}/provider.json" \
   --snapshot "${fixture_root}/snapshot.json"
+
+python3 "${validator}" \
+  --config "${fixture_root}/gateway-apply.json" \
+  --provider "${fixture_root}/provider-apply.json" \
+  --xray-base "${fixture_root}/xray-base.json" \
+  --xray-baseline "${fixture_root}/xray-baseline.json"
 
 if python3 "${validator}" \
   --config "${fixture_root}/gateway.json" \
@@ -73,16 +83,31 @@ if rg -n --ignore-case 'sing[-_ ]?box' \
   exit 1
 fi
 
-rg -q 'CapabilityBoundingSet=$' "${role_root}/templates/xconnect-gateway-agent.service.j2"
-rg -q 'ExecStart=.*--mode shadow$' "${role_root}/templates/xconnect-gateway-agent.service.j2"
+rg -Fq 'CapabilityBoundingSet={% if xconnect_gateway_runtime_apply_enabled' "${role_root}/templates/xconnect-gateway-agent.service.j2"
+rg -Fq 'AmbientCapabilities={% if xconnect_gateway_runtime_apply_enabled' "${role_root}/templates/xconnect-gateway-agent.service.j2"
+rg -Fq -- '--mode {{' "${role_root}/templates/xconnect-gateway-agent.service.j2"
+rg -Fq 'After=network-online.target {{ xconnect_gateway_xray_apply_service_name' "${role_root}/templates/xconnect-gateway-agent.service.j2"
 rg -q 'apply_runtime.*false' "${fixture_root}/provider.json"
+rg -q '"CAP_NET_ADMIN"' "${fixture_root}/provider-apply.json"
+rg -q 'HandlerService' "${role_root}/templates/xray-base.json.j2"
+rg -q 'xconnect-one-block' "${role_root}/templates/xray-base.json.j2"
+rg -q '"network": "tcp"' "${repo_root}/roles/vhosts/xworkmate_bridge_distributed_vpn/templates/wireguard-over-vless.json.j2"
+rg -q '"packetEncoding": "xudp"' "${repo_root}/roles/vhosts/xworkmate_bridge_distributed_vpn/templates/wireguard-over-vless.json.j2"
+if rg -q '"allowInsecure"' "${repo_root}/roles/vhosts/xworkmate_bridge_distributed_vpn/templates/wireguard-over-vless.json.j2"; then
+  echo "Xray 26.3.27 client template contains removed allowInsecure setting" >&2
+  exit 1
+fi
+if rg -n '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}' "${fixture_root}"; then
+  echo "runtime relay credential leaked into a checked-in fixture" >&2
+  exit 1
+fi
 rg -q 'runtime_apply_enabled' "${role_root}/tasks/deploy.yml"
 rg -q '^  rescue:$' "${role_root}/tasks/deploy.yml"
 rg -q 'Restore previous XConnect gateway service state' "${role_root}/tasks/deploy.yml"
 rg -q 'Restore previous managed node credential after failed health' "${role_root}/tasks/deploy.yml"
 rg -q 'Restore previous snapshot signing key after failed health' "${role_root}/tasks/deploy.yml"
 rg -q 'checksum.*sha256' "${role_root}/tasks/deploy.yml"
-rg -q "state:.*restarted.*xconnect_gateway_restart_required" "${role_root}/tasks/deploy.yml"
+rg -q "xconnect_gateway_restart_required" "${role_root}/tasks/deploy.yml"
 if rg -n 'state: restarted' "${role_root}/tasks/deploy.yml"; then
   echo "gateway role contains an unconditional Agent restart" >&2
   exit 1

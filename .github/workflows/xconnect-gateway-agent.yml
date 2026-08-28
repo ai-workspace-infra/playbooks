@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - codex/xconnect-overlay-productization
+      - codex/xconnect-batch-05-gateway-apply
     paths:
       - "tools/xconnect-gateway-agent/**"
       - "roles/vhosts/xconnect-gateway/**"
@@ -37,6 +38,11 @@ jobs:
         run: scripts/validate-xconnect-gateway-agent.sh
       - run: go vet ./...
       - run: go test -race ./...
+      - name: Install isolated namespace test dependencies
+        run: sudo apt-get update && sudo apt-get install -y nftables iproute2
+      - name: Verify scoped nftables transaction in an isolated namespace
+        working-directory: .
+        run: scripts/test-xconnect-gateway-namespace.sh
 
   build-linux:
     runs-on: ubuntu-latest

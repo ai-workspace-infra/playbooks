@@ -236,8 +236,11 @@ func TestStoreAtomicPermissionsAndLKG(t *testing.T) {
 			t.Fatalf("directory mode = %o", info.Mode().Perm())
 		}
 	}
-	for _, file := range []string{filepath.Join(store.candidateDir, "gateway-snapshot.json"), filepath.Join(store.lkgDir, "gateway-snapshot.json"), filepath.Join(store.lkgDir, "checkpoint.json"), filepath.Join(store.evidenceDir, "shadow-diff.json")} {
+	for _, file := range []string{filepath.Join(store.candidateDir, "gateway-snapshot.json"), filepath.Join(store.lkgDir, "snapshots", snapshot.SnapshotID+".json"), filepath.Join(store.lkgDir, "checkpoint.json"), filepath.Join(store.evidenceDir, "shadow-diff.json")} {
 		info, _ := os.Stat(file)
+		if info == nil {
+			t.Fatalf("missing state file %s", file)
+		}
 		if info.Mode().Perm() != 0o600 {
 			t.Fatalf("file mode = %o", info.Mode().Perm())
 		}
@@ -261,6 +264,46 @@ func TestStoreAtomicPermissionsAndLKG(t *testing.T) {
 		if _, err := store.LoadCheckpoint(); err == nil {
 			t.Fatalf("non-strict checkpoint accepted: %q", invalid)
 		}
+	}
+}
+
+func TestStoreCheckpointFailureKeepsPreviousImmutableLKG(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(testConfig(root).Snapshots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, privateKey, _ := ed25519.GenerateKey(rand.Reader)
+	oldRaw, oldSnapshot := signedSnapshot(t, privateKey, time.Now(), 1, 0, "snap_old_01")
+	oldResult := newShadowResult("gw_test_01", oldSnapshot, "shadow_validated", DiffSummary{Status: "available", Equal: true})
+	if err := store.CommitObserved(oldRaw, oldSnapshot, oldResult); err != nil {
+		t.Fatal(err)
+	}
+	newRaw, newSnapshot := signedSnapshot(t, privateKey, time.Now(), 2, 1, "snap_new_02")
+	newResult := newShadowResult("gw_test_01", newSnapshot, "shadow_validated", DiffSummary{Status: "available", Equal: true})
+	originalWrite := store.writeFile
+	store.writeFile = func(path string, raw []byte) error {
+		if path == filepath.Join(store.lkgDir, "checkpoint.json") {
+			return errors.New("injected checkpoint promotion failure")
+		}
+		return originalWrite(path, raw)
+	}
+	if err := store.CommitObserved(newRaw, newSnapshot, newResult); err == nil {
+		t.Fatal("checkpoint failure was accepted")
+	}
+	restarted, err := NewStore(testConfig(root).Snapshots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := restarted.LoadLastKnownGood()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded == nil || loaded.SnapshotID != oldSnapshot.SnapshotID || loaded.Generation != oldSnapshot.Generation {
+		t.Fatalf("restart did not retain previous LKG: %+v", loaded)
+	}
+	if _, err := os.Stat(filepath.Join(store.lkgDir, "snapshots", newSnapshot.SnapshotID+".json")); err != nil {
+		t.Fatalf("new immutable orphan was not safely written: %v", err)
 	}
 }
 
@@ -372,6 +415,38 @@ func TestHTTPControllerHeartbeatRotationAnd401Redaction(t *testing.T) {
 	wrongTypeServer.Close()
 	if wrongTypeErr == nil {
 		t.Fatal("non-JSON Controller response accepted")
+	}
+}
+
+func TestHTTPControllerPolicyArtifactInternalContract(t *testing.T) {
+	root := t.TempDir()
+	credential := filepath.Join(root, "credential.token")
+	if err := os.WriteFile(credential, []byte("xgn_test_token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rawWithNewline, err := os.ReadFile("testdata/network-policy-enforcement.golden.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := bytes.TrimSuffix(rawWithNewline, []byte("\n"))
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/internal/overlay/v1/nodes/gw_test_01/policy-artifacts/9/58941760a9ab4568d2e72a6f34a2cede891d8e678346da8e886d86263e5b780c" || request.Header.Get("Authorization") != "Bearer xgn_test_token" || request.Header.Get("Accept") != "application/vnd.xconnect.gateway-policy.v1+json" {
+			http.Error(response, "bad internal contract", http.StatusBadRequest)
+			return
+		}
+		response.Header().Set("Content-Type", "application/vnd.xconnect.gateway-policy.v1+json")
+		response.Header().Set("Cache-Control", "no-store")
+		response.Header().Set("Vary", "Authorization")
+		_, _ = response.Write(raw)
+	}))
+	defer server.Close()
+	controller, err := NewHTTPController(server.URL, credential, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := controller.PolicyArtifact(context.Background(), "gw_test_01", 9, "58941760a9ab4568d2e72a6f34a2cede891d8e678346da8e886d86263e5b780c")
+	if err != nil || !bytes.Equal(got, raw) {
+		t.Fatalf("policy artifact contract failed: %v", err)
 	}
 }
 

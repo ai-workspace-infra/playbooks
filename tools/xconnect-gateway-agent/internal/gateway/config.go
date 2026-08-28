@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -44,14 +45,24 @@ type IdentityConfig struct {
 }
 
 type RuntimeConfig struct {
-	ProxyCore          string `json:"proxy_core"`
-	ProxyCoreVersion   string `json:"proxy_core_version"`
-	XrayBinary         string `json:"xray_binary"`
-	XrayConfig         string `json:"xray_config"`
-	XrayService        string `json:"xray_service"`
-	WireGuardInterface string `json:"wireguard_interface"`
-	WireGuardConfig    string `json:"wireguard_config"`
-	WireGuardService   string `json:"wireguard_service"`
+	ProxyCore           string   `json:"proxy_core"`
+	ProxyCoreVersion    string   `json:"proxy_core_version"`
+	XrayBinary          string   `json:"xray_binary"`
+	XrayConfig          string   `json:"xray_config"`
+	XrayService         string   `json:"xray_service"`
+	WireGuardInterface  string   `json:"wireguard_interface"`
+	WireGuardConfig     string   `json:"wireguard_config"`
+	WireGuardService    string   `json:"wireguard_service"`
+	WireGuardBinary     string   `json:"wireguard_binary,omitempty"`
+	NFTablesBinary      string   `json:"nftables_binary,omitempty"`
+	IPBinary            string   `json:"ip_binary,omitempty"`
+	WireGuardAddresses  []string `json:"wireguard_addresses,omitempty"`
+	WireGuardListenPort int      `json:"wireguard_listen_port,omitempty"`
+	RelayListenHost     string   `json:"relay_listen_host,omitempty"`
+	RelayListenPort     int      `json:"relay_listen_port,omitempty"`
+	RelayCredentialDir  string   `json:"relay_credential_dir,omitempty"`
+	XrayAPIEndpoint     string   `json:"xray_api_endpoint,omitempty"`
+	XrayInboundTag      string   `json:"xray_inbound_tag,omitempty"`
 }
 
 type SnapshotConfig struct {
@@ -64,7 +75,13 @@ type SnapshotConfig struct {
 }
 
 type ApplyConfig struct {
-	Enabled bool `json:"enabled"`
+	Enabled              bool   `json:"enabled"`
+	LockFile             string `json:"lock_file,omitempty"`
+	TransactionDir       string `json:"transaction_dir,omitempty"`
+	RuntimeLastKnownGood string `json:"runtime_last_known_good,omitempty"`
+	RuntimeSecretLKG     string `json:"runtime_secret_last_known_good,omitempty"`
+	ReadbackRetries      int    `json:"readback_retries,omitempty"`
+	RelayEnabled         bool   `json:"relay_enabled"`
 }
 
 type HealthConfig struct {
@@ -99,8 +116,8 @@ func LoadConfig(path string) (Config, error) {
 }
 
 func (c Config) Validate() error {
-	if c.SchemaVersion != 1 || c.Mode != "shadow" || c.Apply.Enabled {
-		return errors.New("config must be schema v1 shadow mode with runtime apply disabled")
+	if c.SchemaVersion != 1 || (c.Mode != "shadow" && c.Mode != "apply") || c.Apply.Enabled != (c.Mode == "apply") {
+		return errors.New("config must be schema v1 with mode and explicit runtime apply flag consistent")
 	}
 	if !idPattern.MatchString(c.NodeID) || c.Identity.NodeID != c.NodeID {
 		return errors.New("node identity is missing or inconsistent")
@@ -121,6 +138,33 @@ func (c Config) Validate() error {
 	if c.Runtime.ProxyCore != "xray" || c.Runtime.ProxyCoreVersion == "" || !interfacePattern.MatchString(c.Runtime.WireGuardInterface) || c.Runtime.XrayService == "" || c.Runtime.WireGuardService == "" {
 		return errors.New("v1 runtime requires Xray and a WireGuard interface")
 	}
+	if c.Apply.Enabled {
+		if c.Runtime.WireGuardBinary == "" || c.Runtime.NFTablesBinary == "" || c.Runtime.IPBinary == "" || c.Apply.LockFile == "" || c.Apply.TransactionDir == "" || c.Apply.RuntimeLastKnownGood == "" || c.Apply.RuntimeSecretLKG == "" || !c.Apply.RelayEnabled {
+			return errors.New("runtime apply requires explicit binaries, lock, transaction, and runtime LKG paths")
+		}
+		if c.Runtime.RelayCredentialDir == "" || c.Runtime.XrayAPIEndpoint == "" || !idPattern.MatchString(c.Runtime.XrayInboundTag) {
+			return errors.New("runtime apply requires protected relay credentials and an explicit Xray API contract")
+		}
+		if c.Runtime.WireGuardListenPort < 1 || c.Runtime.WireGuardListenPort > 65535 || net.ParseIP(c.Runtime.RelayListenHost) == nil || c.Runtime.RelayListenPort < 1 || c.Runtime.RelayListenPort > 65535 {
+			return errors.New("runtime apply requires explicit WireGuard and relay listener bindings")
+		}
+		if len(c.Runtime.WireGuardAddresses) == 0 || !sortedUniqueStrings(c.Runtime.WireGuardAddresses) {
+			return errors.New("runtime apply requires canonical expected WireGuard addresses")
+		}
+		for _, address := range c.Runtime.WireGuardAddresses {
+			prefix, err := netip.ParsePrefix(address)
+			if err != nil || prefix.String() != address {
+				return errors.New("runtime apply WireGuard address is invalid")
+			}
+		}
+		if c.Apply.ReadbackRetries < 1 || c.Apply.ReadbackRetries > 20 {
+			return errors.New("runtime apply readback retries must be between 1 and 20")
+		}
+		host, port, err := net.SplitHostPort(c.Runtime.XrayAPIEndpoint)
+		if err != nil || port == "" || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
+			return errors.New("Xray API endpoint must be an explicit loopback host and port")
+		}
+	}
 	if c.Snapshots.MinimumSchema != 1 || c.Snapshots.MaximumSchema != 1 || c.Snapshots.EmptyPeerSnapshot != "require-explicit-override" {
 		return errors.New("snapshot schema or empty-peer policy is unsupported")
 	}
@@ -131,6 +175,22 @@ func (c Config) Validate() error {
 	} {
 		if !filepath.IsAbs(path) {
 			return fmt.Errorf("%s path must be absolute", label)
+		}
+	}
+	if c.Apply.Enabled {
+		for label, path := range map[string]string{
+			"WireGuard binary":        c.Runtime.WireGuardBinary,
+			"nftables binary":         c.Runtime.NFTablesBinary,
+			"ip binary":               c.Runtime.IPBinary,
+			"apply lock":              c.Apply.LockFile,
+			"transaction directory":   c.Apply.TransactionDir,
+			"runtime last-known-good": c.Apply.RuntimeLastKnownGood,
+			"runtime secret LKG":      c.Apply.RuntimeSecretLKG,
+			"relay credential dir":    c.Runtime.RelayCredentialDir,
+		} {
+			if !filepath.IsAbs(path) {
+				return fmt.Errorf("%s path must be absolute", label)
+			}
 		}
 	}
 	if net.ParseIP(c.Health.ListenHost) == nil || !net.ParseIP(c.Health.ListenHost).IsLoopback() {
@@ -153,6 +213,8 @@ func (c Config) Validate() error {
 	}
 	return nil
 }
+
+func (c Config) RuntimeApplyEnabled() bool { return c.Mode == "apply" && c.Apply.Enabled }
 
 func (c Config) PollInterval() time.Duration {
 	return time.Duration(c.ControlPlane.PollIntervalSeconds) * time.Second

@@ -1,27 +1,26 @@
 # xconnect-gateway
 
 Bootstraps the XConnect-One GatewayProvider without replacing the working
-`xworkmate_bridge_distributed_vpn` role. Batch 03 remains deliberately shadow-only:
-the Agent may fetch, validate, render and compare signed snapshots, but its
-provider manifest denies runtime apply and grants no Linux capabilities.
+`xworkmate_bridge_distributed_vpn` role. Shadow remains the default; Batch 05
+adds an explicitly gated Linux apply mode with a transactional runtime.
 
 ## Safety model
 
 - `xconnect_gateway_enabled` defaults to `false`; installation does not start a
   not-yet-provided Agent binary.
-- `xconnect_gateway_shadow_mode` must remain `true`.
+- shadow and apply flags are mutually exclusive; apply must be explicitly set.
 - `proxy_core` and the Relay backend are fixed to Xray-core v1.
 - candidate, evidence and last-known-good state use separate directories.
 - empty peer snapshots require an explicit signed `safety.allow_empty_peers`
   override; generations must advance `expected_previous_generation`.
 - candidate config and provider manifests are validated before promotion.
 - the legacy `wg-xwm`, `wg-quick@wg-xwm`, `xray-wg-tproxy` and
-  `wireguard-over-vless.json` assets are read-only bootstrap inputs; the legacy
-  role and its systemd units are untouched.
-- the Agent always receives both config `mode: shadow` and `--mode shadow`; its
-  systemd capability sets are empty, so it cannot apply WireGuard or nftables.
-- the loopback health response must prove `runtime_apply_enabled: false` before
-  a release is accepted as healthy.
+  `wireguard-over-vless.json` topology remains the M0-M2 rollback path. Its only
+  compatibility change removes the Xray 26.3.27-deleted `allowInsecure: false`.
+- shadow receives config/CLI `mode: shadow` and empty capabilities. Apply must
+  receive matching config/CLI flags and only `CAP_NET_ADMIN`.
+- loopback health must prove the selected mode and runtime-apply flag before a
+  release is accepted as healthy.
 
 ## Enable a shadow node
 
@@ -52,9 +51,9 @@ The Agent uses the internal Controller boundary under
 `/api/internal/overlay/v1/nodes`. These endpoints remain an explicit accounts
 control-plane dependency; the Agent's `httptest` contract coverage is not a
 claim of live end-to-end availability. Its checkpoint records
-`observed_generation` separately from the always-zero shadow
-`applied_generation`, and retries a durably queued result without re-observing
-an identical snapshot.
+`observed_generation` separately from `applied_generation` (always zero in
+shadow mode), and retries a durably queued result without re-observing an
+identical snapshot.
 
 The host must already have the pinned Xray-core binary. The role intentionally
 does not download a mutable `latest` release. Run:
@@ -73,3 +72,49 @@ symlink before restoring the prior service state. Identical deployments ensure
 the service is started and healthy without restarting it. The role does not alter `wg-xwm`,
 `xray-wg-tproxy`, client peers, routes or ACLs in this batch, so the existing
 data plane continues to use its static configuration.
+
+## Explicit runtime apply (Batch 05)
+
+Runtime mutation remains off by default. Set `xconnect_gateway_shadow_mode:
+false` and `xconnect_gateway_runtime_apply_enabled: true` together to opt a
+Linux Gateway into the signed transaction path. The role then grants only
+`CAP_NET_ADMIN`; shadow mode retains an empty capability set.
+
+Before first activation, provide
+`xconnect_gateway_xray_runtime_baseline_source`: a protected (0400-0640),
+remote Xray `AddInbound` JSON for the already-running dedicated
+`xconnect-one-relay` inbound. The role seeds a 0600 secret last-known-good copy.
+Activation refuses to start without this migration baseline, avoiding a first
+`AddInbound` collision. Relay credential refs resolve from protected JSON files
+under `xconnect_gateway_relay_credential_dir`; resolved VLESS IDs remain only
+in the 0600 transaction and secret LKG.
+
+The signed snapshot must exactly match this node's configured WireGuard
+interface, listener, addresses, and Xray listener. Interface addresses are
+read-only verified with the allowlisted `ip` binary before any mutation. The
+transaction preflights everything, then applies the exclusive `inet
+xconnect_one` forward table, the Xray inbound, and WireGuard peers. Rollback
+reverses that order. It never captures or flushes the host ruleset and never
+calls `sudo`, a shell, or arbitrary systemd units.
+
+The Accounts policy endpoint and Xray HandlerService are deployment
+prerequisites; fake and isolated-namespace tests do not claim production E2E.
+Static group vars remain unchanged as the M0-M2 rollback source.
+
+### Manual recovery from a rollback fault
+
+`apply_failed_rollback_failed` is persistent and never auto-retries. If the
+Agent can verify `ip link set dev wg-xco down`, health is `fail-closed`;
+otherwise it reports `unsafe-manual-recovery`. In either case:
+
+1. Stop `xconnect-gateway-agent` and keep the overlay interface isolated.
+2. Inspect `runtime-transaction.json` and its 0700 transaction directory;
+   restore `wireguard.previous`, `xray-runtime.previous.json`, and only the
+   saved `inet xconnect_one` table. Never restore or flush the host ruleset.
+3. Verify the intended WireGuard/Xray/nftables state, remove the resolved
+   transaction journal, and explicitly bring `wg-xco` up.
+4. While the service is still stopped, run
+   `xconnect-gateway-agent --config /etc/xconnect/gateway/gateway.json --mode apply --clear-runtime-fault <snapshot_id>`.
+   The acknowledgement refuses a remaining journal, a mismatched snapshot ID,
+   or an interface that is not read back as UP. Then restart the Agent and
+   confirm health before accepting new snapshots.

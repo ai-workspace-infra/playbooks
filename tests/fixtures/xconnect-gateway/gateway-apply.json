@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "node_id": "fixture-gateway",
+  "mode": "apply",
+  "control_plane": {"url":"https://accounts.svc.plus","poll_interval_seconds":30,"credentials_file":"/etc/xconnect/gateway/node-credential.token","snapshot_signing_public_key_file":"/etc/xconnect/gateway/snapshot-signing.pub","snapshot_signing_key_id":"signing_key_01","api_version":"v1"},
+  "identity": {"node_id":"fixture-gateway","credential_type":"short-lived-bearer-file","credential_file":"/etc/xconnect/gateway/node-credential.token"},
+  "provider_manifest": "/etc/xconnect/gateway/providers.d/xconnect-one.json",
+  "runtime": {"proxy_core":"xray","proxy_core_version":"26.3.27","xray_binary":"/usr/local/bin/xray","xray_config":"/etc/xconnect/gateway/xray-base.json","xray_service":"xconnect-one-xray","wireguard_interface":"wg-xco","wireguard_config":"/etc/wireguard/wg-xco.conf","wireguard_service":"wg-quick@wg-xco","wireguard_binary":"/usr/bin/wg","nftables_binary":"/usr/sbin/nft","ip_binary":"/usr/sbin/ip","wireguard_addresses":["10.77.0.1/32"],"wireguard_listen_port":51820,"relay_listen_host":"0.0.0.0","relay_listen_port":443,"relay_credential_dir":"/etc/xconnect/gateway/relay-credentials","xray_api_endpoint":"127.0.0.1:10085","xray_inbound_tag":"xconnect-one-relay"},
+  "snapshots": {"candidate_dir":"/var/lib/xconnect/gateway/candidates","last_known_good_dir":"/var/lib/xconnect/gateway/last-known-good","evidence_dir":"/var/lib/xconnect/gateway/evidence","minimum_schema":1,"maximum_schema":1,"empty_peer_snapshot":"require-explicit-override"},
+  "apply": {"enabled":true,"lock_file":"/run/xconnect/gateway/apply.lock","transaction_dir":"/run/xconnect/gateway/transactions","runtime_last_known_good":"/var/lib/xconnect/gateway/runtime-last-known-good","runtime_secret_last_known_good":"/var/lib/xconnect/gateway/runtime-secret-last-known-good","readback_retries":3,"relay_enabled":true},
+  "health": {"listen_host":"127.0.0.1","listen_port":9789,"path":"/healthz"},
+  "logging": {"format":"json","redact_fields":["authorization","credential","token","signature.value"]}
+}

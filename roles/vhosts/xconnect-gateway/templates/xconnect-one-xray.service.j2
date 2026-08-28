@@ -1,0 +1,22 @@
+[Unit]
+Description=XConnect-One dedicated restricted Xray runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ xconnect_gateway_user }}
+Group={{ xconnect_gateway_group }}
+ExecStart={{ xconnect_gateway_xray_binary_path }} run -config {{ xconnect_gateway_xray_base_config_path }}
+Restart=on-failure
+RestartSec=3s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

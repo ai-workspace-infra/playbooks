@@ -2,7 +2,7 @@
 - name: Validate disabled-safe XConnect gateway contract
   ansible.builtin.assert:
     that:
-      - xconnect_gateway_shadow_mode | bool
+      - (xconnect_gateway_shadow_mode | bool) != (xconnect_gateway_runtime_apply_enabled | bool)
       - xconnect_gateway_proxy_core == "xray"
       - xconnect_gateway_xray_required_version | string | trim | length > 0
       - xconnect_gateway_snapshot_schema_min | int >= 1
@@ -10,7 +10,7 @@
       - xconnect_gateway_empty_peer_snapshot_policy == "require-explicit-override"
     fail_msg: >-
       XConnect-One Batch 01 supports the pinned Xray-core runtime and safe
-      shadow-mode snapshot validation only.
+      shadow validation by default and explicit, mutually exclusive runtime apply.
 
 - name: Run enabled XConnect gateway deployment
   ansible.builtin.include_tasks: deploy.yml
