@@ -22,11 +22,17 @@ type Config struct {
 	ControlPlane     ControlPlaneConfig `json:"control_plane"`
 	Identity         IdentityConfig     `json:"identity"`
 	ProviderManifest string             `json:"provider_manifest"`
+	Authority        AuthorityConfig    `json:"authority"`
 	Runtime          RuntimeConfig      `json:"runtime"`
 	Snapshots        SnapshotConfig     `json:"snapshots"`
 	Apply            ApplyConfig        `json:"apply"`
 	Health           HealthConfig       `json:"health"`
 	Logging          LoggingConfig      `json:"logging"`
+}
+
+type AuthorityConfig struct {
+	ProjectionSource      string `json:"projection_source"`
+	ReadinessEvidenceFile string `json:"readiness_evidence_file"`
 }
 
 type ControlPlaneConfig struct {
@@ -140,6 +146,12 @@ func (c Config) Validate() error {
 	if c.Runtime.ProxyCore != "xray" || c.Runtime.ProxyCoreVersion == "" || !interfacePattern.MatchString(c.Runtime.WireGuardInterface) || c.Runtime.XrayService == "" || c.Runtime.WireGuardService == "" {
 		return errors.New("v1 runtime requires Xray and a WireGuard interface")
 	}
+	if c.Authority.ProjectionSource != "static-shadow" && c.Authority.ProjectionSource != "accounts-only" {
+		return errors.New("projection authority must be static-shadow or accounts-only")
+	}
+	if c.Authority.ProjectionSource == "accounts-only" && !c.Apply.Enabled {
+		return errors.New("accounts-only authority requires explicit runtime apply")
+	}
 	if c.Apply.Enabled {
 		if c.Runtime.WireGuardBinary == "" || c.Runtime.NFTablesBinary == "" || c.Runtime.IPBinary == "" || c.Apply.LockFile == "" || c.Apply.TransactionDir == "" || c.Apply.RuntimeLastKnownGood == "" || c.Apply.RuntimeSecretLKG == "" || !c.Apply.RelayEnabled {
 			return errors.New("runtime apply requires explicit binaries, lock, transaction, and runtime LKG paths")
@@ -172,7 +184,8 @@ func (c Config) Validate() error {
 	}
 	for label, path := range map[string]string{
 		"credential": c.ControlPlane.CredentialsFile, "signing key": c.ControlPlane.SnapshotSigningPublicKeyFile,
-		"candidate": c.Snapshots.CandidateDir, "last-known-good": c.Snapshots.LastKnownGoodDir, "evidence": c.Snapshots.EvidenceDir,
+		"readiness evidence": c.Authority.ReadinessEvidenceFile,
+		"candidate":          c.Snapshots.CandidateDir, "last-known-good": c.Snapshots.LastKnownGoodDir, "evidence": c.Snapshots.EvidenceDir,
 		"provider manifest": c.ProviderManifest, "Xray binary": c.Runtime.XrayBinary, "Xray config": c.Runtime.XrayConfig, "WireGuard config": c.Runtime.WireGuardConfig,
 	} {
 		if !filepath.IsAbs(path) {

@@ -212,6 +212,22 @@ func (s GatewaySnapshot) Validate(now time.Time, nodeID, keyID string, publicKey
 	return nil
 }
 
+// ValidateAgainstGeneration verifies a signed snapshot for an offline rollout
+// decision when the immutable previous generation is supplied by a protected
+// Gateway checkpoint. The synthetic previous value is used only for transition
+// and removal-safety checks; signature verification always covers the current
+// snapshot byte-for-byte.
+func (s GatewaySnapshot) ValidateAgainstGeneration(now time.Time, nodeID, keyID string, publicKey ed25519.PublicKey, previousGeneration uint64) error {
+	if previousGeneration == 0 {
+		return s.Validate(now, nodeID, keyID, publicKey, nil)
+	}
+	previous := &GatewaySnapshot{
+		SnapshotID: "checkpoint_previous_generation",
+		Generation: previousGeneration,
+	}
+	return s.Validate(now, nodeID, keyID, publicKey, previous)
+}
+
 func (s GatewaySnapshot) validateRemoval(previous *GatewaySnapshot) error {
 	if len(previous.WireGuard.Peers) == 0 {
 		return nil

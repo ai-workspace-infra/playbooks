@@ -1,0 +1,66 @@
+---
+- name: Verify accounts-only template authority and shadow fallback
+  hosts: all
+  connection: local
+  gather_facts: false
+  vars:
+    xconnect_gateway_template_test_dir: /tmp/xconnect-gateway-accounts-only-contract
+  tasks:
+    - name: Load XConnect gateway defaults
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../roles/vhosts/xconnect-gateway/defaults/main.yml"
+
+    - name: Select explicit accounts-only apply mode
+      ansible.builtin.set_fact:
+        xconnect_gateway_shadow_mode: false
+        xconnect_gateway_runtime_apply_enabled: true
+        xconnect_gateway_accounts_only_enabled: true
+        xconnect_gateway_snapshot_signing_key_id: signing_key_01
+
+    - name: Render and verify accounts-only contracts
+      block:
+        - name: Create accounts-only template test directory
+          ansible.builtin.file:
+            path: "{{ xconnect_gateway_template_test_dir }}"
+            state: directory
+            mode: "0700"
+
+        - name: Render accounts-only Gateway config
+          ansible.builtin.template:
+            src: "{{ playbook_dir }}/../roles/vhosts/xconnect-gateway/templates/gateway.json.j2"
+            dest: "{{ xconnect_gateway_template_test_dir }}/gateway.json"
+            mode: "0600"
+
+        - name: Render accounts-only provider
+          ansible.builtin.template:
+            src: "{{ playbook_dir }}/../roles/vhosts/xconnect-gateway/templates/gateway-provider.json.j2"
+            dest: "{{ xconnect_gateway_template_test_dir }}/provider.json"
+            mode: "0600"
+
+        - name: Validate accounts-only Gateway config
+          ansible.builtin.command:
+            argv:
+              - "{{ playbook_dir }}/../roles/vhosts/xconnect-gateway/files/xconnect-gateway-validate.py"
+              - --config
+              - "{{ xconnect_gateway_template_test_dir }}/gateway.json"
+              - --provider
+              - "{{ xconnect_gateway_template_test_dir }}/provider.json"
+          changed_when: false
+
+        - name: Read rendered accounts-only Gateway config
+          ansible.builtin.slurp:
+            src: "{{ xconnect_gateway_template_test_dir }}/gateway.json"
+          register: xconnect_gateway_accounts_only_config
+
+        - name: Assert rendered authority is accounts-only
+          ansible.builtin.assert:
+            that:
+              - >-
+                ((xconnect_gateway_accounts_only_config.content | b64decode | from_json)
+                 .authority.projection_source) == "accounts-only"
+
+      always:
+        - name: Remove accounts-only template test directory
+          ansible.builtin.file:
+            path: "{{ xconnect_gateway_template_test_dir }}"
+            state: absent

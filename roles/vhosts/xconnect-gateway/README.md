@@ -21,6 +21,9 @@ adds an explicitly gated Linux apply mode with a transactional runtime.
   receive matching config/CLI flags and only `CAP_NET_ADMIN`.
 - loopback health must prove the selected mode and runtime-apply flag before a
   release is accepted as healthy.
+- accounts-only defaults off and requires the standalone readiness verifier to
+  pass before any deployment mutation; runtime apply alone never changes the
+  authority source.
 
 ## Enable a shadow node
 
@@ -140,3 +143,31 @@ otherwise it reports `unsafe-manual-recovery`. In either case:
    The acknowledgement refuses a remaining journal, a mismatched snapshot ID,
    or an interface that is not read back as UP. Then restart the Agent and
    confirm health before accepting new snapshots.
+
+## Accounts-only rollout (Batch 06)
+
+Set `xconnect_gateway_accounts_only_enabled: true` only after Batch05 apply is
+healthy and provide a protected absolute
+`xconnect_gateway_accounts_only_readiness_bundle`. The role executes
+`xconnect-cutover-readiness --accounts-only` before packages, configs, or
+services can change. The verifier requires exact import receipt/baseline,
+Accounts/static/snapshot projection equality, snapshot signature and policy
+digest validity, generation-scoped Controller authorization, clean reconcile
+and checkpoint state, exact runtime readback, and consecutive healthy samples.
+
+Authorization must be an Accounts Ed25519 signature verified with the separately
+pinned `xconnect_gateway_accounts_only_authorization_public_key_path` and key ID.
+Unsigned bundle fields never count as Controller approval. The production
+authorization producer remains an explicit Accounts dependency.
+
+Once accepted, config and health report `projection_source: accounts-only`.
+Operational role tasks/templates are statically forbidden from reading
+`group_vars` or `xworkmate_bridge_distributed_vpn_clients`; those files remain
+unchanged as rollback evidence.
+
+For an immediate non-mutating stop, set accounts-only and runtime apply false
+and shadow true, then re-run the role. This restarts only the Agent in read-only
+shadow mode and preserves the current runtime LKG. It does not restore legacy
+WireGuard private keys, VLESS UUIDs, static peers, or legacy services. See
+`docs/xconnect/accounts-only-cutover.md` for the evidence bundle and recovery
+sequence.

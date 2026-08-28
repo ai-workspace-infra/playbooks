@@ -16,6 +16,10 @@
     "credential_file": {{ xconnect_gateway_credentials_path | to_json }}
   },
   "provider_manifest": {{ xconnect_gateway_provider_manifest_path | to_json }},
+  "authority": {
+    "projection_source": {{ ('accounts-only' if xconnect_gateway_accounts_only_enabled | bool else 'static-shadow') | to_json }},
+    "readiness_evidence_file": {{ xconnect_gateway_accounts_only_evidence_path | to_json }}
+  },
   "runtime": {
     "proxy_core": "xray",
     "proxy_core_version": {{ xconnect_gateway_xray_required_version | to_json }},

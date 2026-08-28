@@ -17,6 +17,7 @@ type HealthState struct {
 	Mode                string      `json:"mode"`
 	ProxyCore           string      `json:"proxy_core"`
 	RuntimeApplyEnabled bool        `json:"runtime_apply_enabled"`
+	ProjectionSource    string      `json:"projection_source"`
 	ObservedGeneration  uint64      `json:"observed_generation"`
 	AppliedGeneration   uint64      `json:"applied_generation"`
 	ControllerStatus    string      `json:"controller_status"`
@@ -51,7 +52,7 @@ func (a *Agent) initialize() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.health.Status == "" {
-		a.health = HealthState{Status: "ready", Mode: a.Config.Mode, ProxyCore: "xray", RuntimeApplyEnabled: a.Config.RuntimeApplyEnabled(), ControllerStatus: "unknown", Diff: UnavailableDiff(0), UpdatedAt: a.Now().UTC()}
+		a.health = HealthState{Status: "ready", Mode: a.Config.Mode, ProxyCore: "xray", RuntimeApplyEnabled: a.Config.RuntimeApplyEnabled(), ProjectionSource: a.Config.Authority.ProjectionSource, ControllerStatus: "unknown", Diff: UnavailableDiff(0), UpdatedAt: a.Now().UTC()}
 	}
 }
 

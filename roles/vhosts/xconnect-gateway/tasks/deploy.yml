@@ -19,6 +19,21 @@
       - xconnect_gateway_wireguard_service_name == 'wg-quick@' ~ xconnect_gateway_wireguard_interface
       - xconnect_gateway_wireguard_addresses | length > 0
       - xconnect_gateway_wireguard_addresses == (xconnect_gateway_wireguard_addresses | unique | sort)
+      - not (xconnect_gateway_accounts_only_enabled | bool) or xconnect_gateway_runtime_apply_enabled | bool
+      - not (xconnect_gateway_accounts_only_enabled | bool) or xconnect_gateway_accounts_only_readiness_binary is match('^/')
+      - not (xconnect_gateway_accounts_only_enabled | bool) or xconnect_gateway_accounts_only_readiness_bundle is match('^/')
+      - not (xconnect_gateway_accounts_only_enabled | bool) or xconnect_gateway_accounts_only_evidence_path is match('^/')
+      - not (xconnect_gateway_accounts_only_enabled | bool) or xconnect_gateway_accounts_only_authorization_public_key_path is match('^/')
+      - >-
+        not (xconnect_gateway_accounts_only_enabled | bool)
+        or xconnect_gateway_accounts_only_authorization_key_id
+           is match('^[a-zA-Z0-9][a-zA-Z0-9_.:-]{2,127}$')
+      - >-
+        not (xconnect_gateway_accounts_only_enabled | bool)
+        or xconnect_gateway_accounts_only_authorization_public_key_path
+           != xconnect_gateway_signing_public_key_path
+      - xconnect_gateway_accounts_only_minimum_health_samples | int >= 2
+      - xconnect_gateway_accounts_only_minimum_health_samples | int <= 100
       - xconnect_gateway_xray_wireguard_target_host == '127.0.0.1'
       - not (xconnect_gateway_runtime_apply_enabled | bool) or xconnect_gateway_xray_apply_service_name != xconnect_gateway_xray_service_name
       - not (xconnect_gateway_runtime_apply_enabled | bool) or xconnect_gateway_xray_api_endpoint is match('^(127\\.0\\.0\\.1|\\[::1\\]):[0-9]+$')
@@ -35,6 +50,97 @@
     fail_msg: >-
       An enabled Gateway requires Linux/systemd, one explicit mode, Xray-core, an
       HTTPS Controller, node identity, signing key, and loopback health endpoint.
+
+- name: Inspect accounts-only readiness inputs before any deployment mutation
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ xconnect_gateway_accounts_only_readiness_binary }}"
+    - "{{ xconnect_gateway_accounts_only_readiness_bundle }}"
+    - "{{ xconnect_gateway_accounts_only_authorization_public_key_path }}"
+    - "{{ xconnect_gateway_signing_public_key_path }}"
+  register: xconnect_gateway_accounts_only_readiness_inputs
+  when: xconnect_gateway_accounts_only_enabled | bool
+  no_log: true
+
+- name: Validate protected accounts-only readiness inputs
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_accounts_only_readiness_inputs.results[0].stat.exists
+      - xconnect_gateway_accounts_only_readiness_inputs.results[0].stat.isreg
+      - not (xconnect_gateway_accounts_only_readiness_inputs.results[0].stat.islnk | default(false))
+      - xconnect_gateway_accounts_only_readiness_inputs.results[0].stat.executable
+      - xconnect_gateway_accounts_only_readiness_inputs.results[0].stat.pw_name == "root"
+      - xconnect_gateway_accounts_only_readiness_inputs.results[0].stat.mode in ["0500", "0550", "0555", "0700", "0750", "0755"]
+      - xconnect_gateway_accounts_only_readiness_inputs.results[1].stat.exists
+      - xconnect_gateway_accounts_only_readiness_inputs.results[1].stat.isreg
+      - not (xconnect_gateway_accounts_only_readiness_inputs.results[1].stat.islnk | default(false))
+      - xconnect_gateway_accounts_only_readiness_inputs.results[1].stat.pw_name == "root"
+      - xconnect_gateway_accounts_only_readiness_inputs.results[1].stat.mode in ["0400", "0440", "0600", "0640"]
+      - xconnect_gateway_accounts_only_readiness_inputs.results[2].stat.exists
+      - xconnect_gateway_accounts_only_readiness_inputs.results[2].stat.isreg
+      - not (xconnect_gateway_accounts_only_readiness_inputs.results[2].stat.islnk | default(false))
+      - xconnect_gateway_accounts_only_readiness_inputs.results[2].stat.pw_name == "root"
+      - xconnect_gateway_accounts_only_readiness_inputs.results[2].stat.mode in ["0400", "0440", "0600", "0640"]
+      - xconnect_gateway_accounts_only_readiness_inputs.results[3].stat.exists
+      - xconnect_gateway_accounts_only_readiness_inputs.results[3].stat.isreg
+      - not (xconnect_gateway_accounts_only_readiness_inputs.results[3].stat.islnk | default(false))
+      - xconnect_gateway_accounts_only_readiness_inputs.results[3].stat.pw_name == "root"
+      - xconnect_gateway_accounts_only_readiness_inputs.results[3].stat.mode in ["0400", "0440", "0600", "0640"]
+    fail_msg: >-
+      Accounts-only cutover requires an executable readiness verifier and
+      protected regular evidence/signing-key inputs before any host mutation.
+  when: xconnect_gateway_accounts_only_enabled | bool
+  no_log: true
+
+- name: Require executable accounts-only readiness decision
+  ansible.builtin.command:
+    argv:
+      - "{{ xconnect_gateway_accounts_only_readiness_binary }}"
+      - --accounts-only
+      - --bundle
+      - "{{ xconnect_gateway_accounts_only_readiness_bundle }}"
+      - --signing-public-key
+      - "{{ xconnect_gateway_signing_public_key_path }}"
+      - --authorization-public-key
+      - "{{ xconnect_gateway_accounts_only_authorization_public_key_path }}"
+      - --authorization-key-id
+      - "{{ xconnect_gateway_accounts_only_authorization_key_id }}"
+      - --minimum-health-samples
+      - "{{ xconnect_gateway_accounts_only_minimum_health_samples | string }}"
+      - --evidence
+      - "{{ xconnect_gateway_accounts_only_evidence_path }}"
+  register: xconnect_gateway_accounts_only_readiness
+  changed_when: true
+  when:
+    - xconnect_gateway_accounts_only_enabled | bool
+    - not ansible_check_mode
+  no_log: true
+
+- name: Inspect accepted accounts-only readiness evidence
+  ansible.builtin.stat:
+    path: "{{ xconnect_gateway_accounts_only_evidence_path }}"
+    follow: false
+  register: xconnect_gateway_accounts_only_evidence
+  when:
+    - xconnect_gateway_accounts_only_enabled | bool
+    - not ansible_check_mode
+  no_log: true
+
+- name: Validate accepted accounts-only readiness evidence protection
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_accounts_only_evidence.stat.exists
+      - xconnect_gateway_accounts_only_evidence.stat.isreg
+      - not (xconnect_gateway_accounts_only_evidence.stat.islnk | default(false))
+      - xconnect_gateway_accounts_only_evidence.stat.pw_name == "root"
+      - xconnect_gateway_accounts_only_evidence.stat.mode == "0600"
+    fail_msg: "Accepted accounts-only readiness evidence must be root-owned 0600."
+  when:
+    - xconnect_gateway_accounts_only_enabled | bool
+    - not ansible_check_mode
+  no_log: true
 
 - name: Validate managed Agent release inputs
   ansible.builtin.assert:
@@ -441,6 +547,7 @@
   loop:
     - gateway-provider-manifest.schema.json
     - gateway-snapshot.schema.json
+    - accounts-only-readiness-evidence.schema.json
 
 - name: Stage managed short-lived node credential candidate
   ansible.builtin.copy:
@@ -1071,6 +1178,9 @@
           - xconnect_gateway_health.json.mode == ('apply' if xconnect_gateway_runtime_apply_enabled | bool else 'shadow')
           - xconnect_gateway_health.json.proxy_core == "xray"
           - (xconnect_gateway_health.json.runtime_apply_enabled | bool) == (xconnect_gateway_runtime_apply_enabled | bool)
+          - >-
+            xconnect_gateway_health.json.projection_source
+            == ('accounts-only' if xconnect_gateway_accounts_only_enabled | bool else 'static-shadow')
         fail_msg: "Gateway health response does not prove the selected Xray runtime mode."
       no_log: true
 

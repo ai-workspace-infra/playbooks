@@ -1,7 +1,8 @@
 # xconnect-gateway-agent
 
-Shadow-only XConnect-One infrastructure data-plane Agent. It is an independent
-Go module inside `playbooks`; no new top-level repository is required.
+XConnect-One infrastructure data-plane Agent and rollout utilities. They are an
+independent Go module inside `playbooks`; no new top-level repository is
+required.
 
 The Agent:
 
@@ -16,8 +17,9 @@ The Agent:
   with `0700` directories and `0600` files;
 - exposes loopback health with `runtime_apply_enabled: false`.
 
-It contains no WireGuard or nftables mutation backend. Runtime apply belongs to
-a later batch and requires a separate, explicitly privileged provider.
+Runtime apply is explicit and transactional. Shadow remains the default and has
+no network mutation capability. Accounts-only authority is a separate rollout
+decision and is never inferred from runtime apply alone.
 
 ## Controller dependency
 
@@ -53,6 +55,7 @@ signed snapshot as a replay.
 ```bash
 make -C tools/xconnect-gateway-agent check
 make -C tools/xconnect-gateway-agent build
+make -C tools/xconnect-gateway-agent build-cutover-readiness
 scripts/validate-xconnect-gateway-agent.sh
 ```
 
@@ -69,3 +72,26 @@ It never renders dynamic peers back into Ansible. A separate `diff` operation
 compares one inventory attachment with a GatewaySnapshot and emits redacted
 JSON evidence. See `docs/xconnect/static-to-dynamic-migration.md` for the
 migration and rollback procedure.
+
+## Accounts-only readiness
+
+`xconnect-cutover-readiness` consumes one protected, strict evidence bundle and
+emits a redacted decision document. `--accounts-only` is mandatory. Readiness
+requires the reviewed static-import hash and receipt, exact Accounts/static/
+snapshot device projections, a valid Ed25519 GatewaySnapshot, the exact policy
+artifact digest, Controller generation authorization, clean reconcile state,
+matching Gateway heartbeat/apply-result/checkpoint/runtime readback, and a
+configured number of consecutive healthy samples. Missing evidence returns
+exit code `3`; malformed or unsafe input returns `2`.
+
+Controller approval is a separate Ed25519-signed authorization, not a local
+bundle boolean. It binds node/network/generation/snapshot, import baseline,
+Accounts projection hash, policy digest, reconcile counters, mode, and validity
+window. A pinned authorization public key is mandatory. Accounts still needs to
+ship the production authorization producer; until then, the tool must not be
+used to claim a live cutover approval.
+
+The mock HTTPS handler under `internal/cutover` is a test-only composition
+boundary. Accounts exposes the existing import and node APIs, not a synthetic
+readiness endpoint; passing this harness is not a live E2E claim. See
+`docs/xconnect/accounts-only-cutover.md`.

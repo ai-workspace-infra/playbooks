@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xconnect.one/contracts/accounts-only-readiness-evidence.schema.json",
+  "title": "XConnect-One accounts-only readiness evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "decision",
+    "requested_mode",
+    "node_id",
+    "network_id",
+    "health_sample_count",
+    "required_health_samples",
+    "evaluated_at",
+    "checks"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "xconnect.accounts-only-readiness-evidence"},
+    "decision": {"enum": ["ready", "rejected"]},
+    "requested_mode": {"const": "accounts-only"},
+    "node_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]{2,127}$"},
+    "network_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]{2,127}$"},
+    "snapshot_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]{2,127}$"},
+    "generation": {"type": "integer", "minimum": 1},
+    "baseline_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "policy_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "projection_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "health_sample_count": {"type": "integer", "minimum": 0},
+    "required_health_samples": {"type": "integer", "minimum": 2, "maximum": 100},
+    "evaluated_at": {"type": "string", "format": "date-time"},
+    "checks": {
+      "type": "array",
+      "minItems": 16,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status"],
+        "properties": {
+          "name": {
+            "enum": [
+              "bundle_contract",
+              "static_import_baseline",
+              "import_receipt",
+              "accounts_projection_contract",
+              "static_accounts_projection_exact",
+              "signed_snapshot",
+              "policy_digest",
+              "snapshot_projection_exact",
+              "projection_digest",
+              "controller_apply_authorization",
+              "no_pending_reconcile",
+              "gateway_checkpoint",
+              "gateway_heartbeat",
+              "gateway_apply_result",
+              "runtime_readback_exact",
+              "consecutive_health_samples"
+            ]
+          },
+          "status": {"enum": ["passed", "failed"]}
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"decision": {"const": "ready"}}},
+      "then": {
+        "required": [
+          "snapshot_id",
+          "generation",
+          "baseline_sha256",
+          "policy_sha256",
+          "projection_sha256"
+        ],
+        "properties": {
+          "checks": {
+            "items": {
+              "properties": {"status": {"const": "passed"}}
+            }
+          },
+          "health_sample_count": {"minimum": 2}
+        }
+      }
+    }
+  ]
+}

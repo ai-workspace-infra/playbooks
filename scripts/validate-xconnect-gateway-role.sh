@@ -10,6 +10,7 @@ trap 'rm -rf "${temp_dir}"' EXIT
 
 python3 -m json.tool "${role_root}/files/contracts/gateway-provider-manifest.schema.json" >/dev/null
 python3 -m json.tool "${role_root}/files/contracts/gateway-snapshot.schema.json" >/dev/null
+python3 -m json.tool "${role_root}/files/contracts/accounts-only-readiness-evidence.schema.json" >/dev/null
 python3 -m json.tool "${fixture_root}/gateway.json" >/dev/null
 python3 -m json.tool "${fixture_root}/provider.json" >/dev/null
 python3 -m json.tool "${fixture_root}/snapshot.json" >/dev/null
@@ -105,7 +106,7 @@ fi
 rg -Fq 'CapabilityBoundingSet={% if xconnect_gateway_runtime_apply_enabled' "${role_root}/templates/xconnect-gateway-agent.service.j2"
 rg -Fq 'AmbientCapabilities={% if xconnect_gateway_runtime_apply_enabled' "${role_root}/templates/xconnect-gateway-agent.service.j2"
 rg -Fq -- '--mode {{' "${role_root}/templates/xconnect-gateway-agent.service.j2"
-rg -Fq 'After=network-online.target {{ xconnect_gateway_xray_apply_service_name' "${role_root}/templates/xconnect-gateway-agent.service.j2"
+rg -Fq 'After=network-online.target{% if xconnect_gateway_runtime_apply_enabled' "${role_root}/templates/xconnect-gateway-agent.service.j2"
 rg -q 'apply_runtime.*false' "${fixture_root}/provider.json"
 rg -q '"CAP_NET_ADMIN"' "${fixture_root}/provider-apply.json"
 rg -q 'HandlerService' "${role_root}/templates/xray-base.json.j2"
@@ -133,6 +134,8 @@ rg -q 'Stop legacy Xray before binding the dedicated relay listener' "${role_roo
 rg -q 'Restore previous legacy Xray service state' "${role_root}/tasks/deploy.yml"
 rg -q 'Validate seeded relay files are readable only by the dedicated runtime' "${role_root}/tasks/deploy.yml"
 rg -q 'Assert target WireGuard binding is exact' "${role_root}/tasks/deploy.yml"
+rg -q 'Require executable accounts-only readiness decision' "${role_root}/tasks/deploy.yml"
+rg -q 'Validate accepted accounts-only readiness evidence protection' "${role_root}/tasks/deploy.yml"
 rg -Fq 'become_user: "{{ xconnect_gateway_user }}"' "${role_root}/tasks/deploy.yml"
 rg -q 'checksum.*sha256' "${role_root}/tasks/deploy.yml"
 rg -q "xconnect_gateway_restart_required" "${role_root}/tasks/deploy.yml"
@@ -148,6 +151,11 @@ if rg -n 'wg (set|syncconf)|nft (add|delete|flush|insert|replace)' \
   "${role_root}/tasks" \
   "${role_root}/templates"; then
   echo "shadow role contains a forbidden WireGuard or nftables write path" >&2
+  exit 1
+fi
+if rg -n 'xworkmate_bridge_distributed_vpn_clients|group_vars' \
+  "${role_root}/tasks" "${role_root}/templates"; then
+  echo "accounts-only Gateway role must not render dynamic peers from group_vars" >&2
   exit 1
 fi
 

@@ -7,6 +7,8 @@ on:
       - "roles/vhosts/xconnect-gateway/**"
       - "scripts/validate-xconnect-gateway-agent.sh"
       - "scripts/validate-xconnect-gateway-role.sh"
+      - "scripts/test-xconnect-cutover-integration.sh"
+      - "docs/xconnect/accounts-only-cutover.md"
       - "tests/xconnect-gateway-*.yml"
       - "tests/tasks/xconnect-gateway-*.yml"
       - "tests/fixtures/xconnect-gateway/**"
@@ -15,11 +17,14 @@ on:
     branches:
       - codex/xconnect-overlay-productization
       - codex/xconnect-batch-05-gateway-apply
+      - codex/xconnect-batch-06-rollout-gates
     paths:
       - "tools/xconnect-gateway-agent/**"
       - "roles/vhosts/xconnect-gateway/**"
       - "scripts/validate-xconnect-gateway-agent.sh"
       - "scripts/validate-xconnect-gateway-role.sh"
+      - "scripts/test-xconnect-cutover-integration.sh"
+      - "docs/xconnect/accounts-only-cutover.md"
       - "tests/xconnect-gateway-*.yml"
       - "tests/tasks/xconnect-gateway-*.yml"
       - "tests/fixtures/xconnect-gateway/**"
@@ -56,9 +61,11 @@ jobs:
         run: |
           ansible-playbook -i localhost, tests/xconnect-gateway-disabled.yml --syntax-check
           ansible-playbook -i localhost, tests/xconnect-gateway-takeover-state.yml --syntax-check
+          ansible-playbook -i localhost, tests/xconnect-gateway-accounts-only.yml --syntax-check
           ansible-playbook -i localhost, tests/xconnect-gateway-disabled.yml
           ansible-playbook -i localhost, tests/xconnect-gateway-service-state.yml
           ansible-playbook -i localhost, tests/xconnect-gateway-takeover-state.yml
+          ansible-playbook -i localhost, tests/xconnect-gateway-accounts-only.yml
           ansible-playbook -i localhost, tests/xconnect-gateway-templates.yml
           ansible-playbook -i localhost, tests/xconnect-gateway-version.yml
       - run: go vet ./...
@@ -68,6 +75,9 @@ jobs:
       - name: Verify scoped nftables transaction in an isolated namespace
         working-directory: .
         run: scripts/test-xconnect-gateway-namespace.sh
+      - name: Verify accounts-only cutover gates with mock HTTPS and namespace evidence
+        working-directory: .
+        run: scripts/test-xconnect-cutover-integration.sh
 
   build-linux:
     runs-on: ubuntu-latest
@@ -95,3 +105,13 @@ jobs:
           -ldflags "-s -w -X main.version=0.1.0"
           -o "${RUNNER_TEMP}/xconnect-gateway-agent-linux-${GOARCH}"
           ./cmd/xconnect-gateway-agent
+      - name: Build Linux cutover readiness verifier
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: >-
+          go build -trimpath
+          -ldflags "-s -w -X main.version=0.1.0"
+          -o "${RUNNER_TEMP}/xconnect-cutover-readiness-linux-${GOARCH}"
+          ./cmd/xconnect-cutover-readiness

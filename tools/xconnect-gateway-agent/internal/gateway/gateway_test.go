@@ -26,6 +26,7 @@ func testConfig(root string) Config {
 		ControlPlane:     ControlPlaneConfig{URL: "https://controller.example", PollIntervalSeconds: 60, CredentialsFile: filepath.Join(root, "credential.token"), SnapshotSigningPublicKeyFile: filepath.Join(root, "signing.pub"), SnapshotSigningKeyID: "key_test_01", APIVersion: "v1"},
 		Identity:         IdentityConfig{NodeID: "gw_test_01", CredentialType: "short-lived-bearer-file", CredentialFile: filepath.Join(root, "credential.token")},
 		ProviderManifest: filepath.Join(root, "provider.json"),
+		Authority:        AuthorityConfig{ProjectionSource: "static-shadow", ReadinessEvidenceFile: filepath.Join(root, "accounts-only-readiness.json")},
 		Runtime:          RuntimeConfig{ProxyCore: "xray", ProxyCoreVersion: "26.3.27", XrayBinary: "/usr/local/bin/xray", XrayConfig: "/etc/xray/config.json", XrayService: "xray", WireGuardInterface: "wg-xco", WireGuardConfig: "/etc/wireguard/wg-xco.conf", WireGuardService: "wg-quick@wg-xco"},
 		Snapshots:        SnapshotConfig{CandidateDir: filepath.Join(root, "candidate"), LastKnownGoodDir: filepath.Join(root, "lkg"), EvidenceDir: filepath.Join(root, "evidence"), MinimumSchema: 1, MaximumSchema: 1, EmptyPeerSnapshot: "require-explicit-override"},
 		Health:           HealthConfig{ListenHost: "127.0.0.1", ListenPort: 9789, Path: "/healthz"},
@@ -56,6 +57,17 @@ func TestConfigStrictShadowDecode(t *testing.T) {
 	cfg.Apply.Enabled = true
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("runtime apply enabled config accepted")
+	}
+}
+
+func TestAccountsOnlyAuthorityRequiresRuntimeApply(t *testing.T) {
+	cfg := testConfig(t.TempDir())
+	cfg.Authority.ProjectionSource = "accounts-only"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("accounts-only authority was accepted in shadow mode")
+	}
+	if cfg.Authority.ProjectionSource = "static-shadow"; cfg.Validate() != nil {
+		t.Fatal("default static-shadow authority was rejected")
 	}
 }
 

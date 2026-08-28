@@ -1,4 +1,4 @@
-.PHONY: build build-static-import test race vet check
+.PHONY: build build-static-import build-cutover-readiness test race vet check
 
 VERSION ?= 0.1.0
 BIN_DIR ?= bin
@@ -11,6 +11,10 @@ build:
 build-static-import:
 	mkdir -p "$(BIN_DIR)"
 	go build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN_DIR)/xconnect-static-import" ./cmd/xconnect-static-import
+
+build-cutover-readiness:
+	mkdir -p "$(BIN_DIR)"
+	go build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN_DIR)/xconnect-cutover-readiness" ./cmd/xconnect-cutover-readiness
 
 test:
 	go test ./...

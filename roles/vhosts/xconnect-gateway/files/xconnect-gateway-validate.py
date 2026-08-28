@@ -58,6 +58,19 @@ def validate(config: dict, provider: dict) -> None:
     require(config.get("control_plane", {}).get("api_version") == "v1", "control-plane api_version must be v1")
     require(bool(config.get("control_plane", {}).get("snapshot_signing_key_id")), "snapshot signing key ID is required")
     require(config.get("runtime", {}).get("proxy_core") == "xray", "proxy core must be xray")
+    authority = config.get("authority", {})
+    require(
+        authority.get("projection_source") in {"static-shadow", "accounts-only"},
+        "projection authority must be static-shadow or accounts-only",
+    )
+    require(
+        pathlib.PurePosixPath(authority.get("readiness_evidence_file", "")).is_absolute(),
+        "accounts-only readiness evidence path must be absolute",
+    )
+    require(
+        authority.get("projection_source") != "accounts-only" or apply_enabled is True,
+        "accounts-only authority requires explicit runtime apply",
+    )
     for key in ("xray_binary", "xray_config", "wireguard_config"):
         value = config.get("runtime", {}).get(key, "")
         require(pathlib.PurePosixPath(value).is_absolute(), f"runtime {key} must be absolute")

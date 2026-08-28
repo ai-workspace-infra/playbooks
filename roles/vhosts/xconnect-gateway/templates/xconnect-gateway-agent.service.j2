@@ -1,8 +1,8 @@
 [Unit]
 Description=XConnect-One gateway agent ({{ 'apply' if xconnect_gateway_runtime_apply_enabled | bool else 'shadow' }} mode)
 Documentation=https://github.com/ai-workspace-infra/playbooks
-After=network-online.target {{ xconnect_gateway_xray_apply_service_name if xconnect_gateway_runtime_apply_enabled | bool else xconnect_gateway_xray_service_name }}.service
-Wants=network-online.target {{ xconnect_gateway_xray_apply_service_name if xconnect_gateway_runtime_apply_enabled | bool else xconnect_gateway_xray_service_name }}.service
+After=network-online.target{% if xconnect_gateway_runtime_apply_enabled | bool %} {{ xconnect_gateway_xray_apply_service_name }}.service{% endif %}
+Wants=network-online.target{% if xconnect_gateway_runtime_apply_enabled | bool %} {{ xconnect_gateway_xray_apply_service_name }}.service{% endif %}
 
 [Service]
 Type=simple
