@@ -11,6 +11,9 @@
     vault_env_path: "{{ lookup('env', 'VAULT_ENV_PATH') | default('prod', true) }}"
     vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('', true) }}"
     vault_email_secret_path: "{{ lookup('env', 'RESEND_VAULT_PATH') | default('kv/data/' ~ vault_env_path ~ '/xworktech-email', true) }}"
+    # Safe by default: read-only discovery is allowed, provider mutations require
+    # an explicit opt-in from the caller (the CI apply workflow sets this).
+    email_dns_apply: "{{ lookup('env', 'EMAIL_DNS_APPLY') | default('false', true) | bool }}"
   pre_tasks:
     - name: Load declarative email DNS policy
       ansible.builtin.include_vars:
@@ -40,8 +43,13 @@
           - resend_api_key | length > 0
           - cloudflare_api_token | length > 0
         fail_msg: "Provide RESEND_API_KEY and CLOUDFLARE_DNS_API_TOKEN, or the Vault secret at {{ vault_email_secret_path }}."
+      when: email_dns_apply
 
   tasks:
+    - name: Show reconciliation mode
+      ansible.builtin.debug:
+        msg: "Resend/DNS reconciliation mode: {{ 'APPLY' if email_dns_apply else 'PLAN (read-only)' }}"
+
     - name: Find Resend domain
       ansible.builtin.uri:
         url: "{{ resend_api_base }}/domains"
@@ -50,6 +58,7 @@
         return_content: true
       register: resend_domains
       no_log: true
+      when: email_dns_apply
 
     - name: Create Resend domain when absent
       ansible.builtin.uri:
@@ -62,12 +71,14 @@
         return_content: true
       register: resend_domain_create
       no_log: true
-      when: (resend_domains.json.data | default(resend_domains.json.result | default([])) | selectattr('name', 'equalto', email_dns.spec.resend.domain) | list | length) == 0
+      check_mode: false
+      when: email_dns_apply and (resend_domains.json.data | default(resend_domains.json.result | default([])) | selectattr('name', 'equalto', email_dns.spec.resend.domain) | list | length) == 0
 
     - name: Resolve Resend domain object
       ansible.builtin.set_fact:
         resend_domain: "{{ ((resend_domains.json.data | default(resend_domains.json.result | default([]))) + [resend_domain_create.json]) | selectattr('name', 'equalto', email_dns.spec.resend.domain) | list | first }}"
       no_log: true
+      when: email_dns_apply
 
     - name: Read Resend verification records
       ansible.builtin.uri:
@@ -77,6 +88,7 @@
         return_content: true
       register: resend_domain_detail
       no_log: true
+      when: email_dns_apply
 
     - name: Resolve Cloudflare zone
       ansible.builtin.uri:
@@ -85,19 +97,23 @@
         return_content: true
       register: cloudflare_zone
       no_log: true
+      when: email_dns_apply
 
     - name: Validate Cloudflare zone
       ansible.builtin.assert:
         that: [cloudflare_zone.json.success, cloudflare_zone.json.result | length > 0]
         fail_msg: "Cloudflare zone {{ email_dns.spec.zone }} was not found or is not accessible."
+      when: email_dns_apply
 
     - name: Set Cloudflare zone id
       ansible.builtin.set_fact:
         cloudflare_zone_id: "{{ cloudflare_zone.json.result[0].id }}"
+      when: email_dns_apply
 
     - name: Build managed DNS records (SPF is reconciled separately)
       ansible.builtin.set_fact:
         managed_records: "{{ (resend_domain_detail.json.records | default([]) | rejectattr('value', 'default', '') | rejectattr('value', 'search', 'v=spf1') | map('combine', {'ttl': 3600, 'proxied': false}) | list) + [email_dns.spec.dmarc | combine({'type': 'TXT', 'name': email_dns.spec.dmarc.name, 'content': email_dns.spec.dmarc.value})] }}"
+      when: email_dns_apply
 
     - name: Query apex TXT records for SPF merge
       ansible.builtin.uri:
@@ -106,6 +122,7 @@
         return_content: true
       register: apex_txt_records
       no_log: true
+      when: email_dns_apply
 
     - name: Merge Google Workspace and Resend SPF into one apex record
       ansible.builtin.uri:
@@ -122,6 +139,7 @@
       vars:
         spf_record: "{{ apex_txt_records.json.result | selectattr('content', 'search', '^v=spf1') | list | first | default(omit) }}"
       no_log: true
+      when: email_dns_apply
 
     - name: Query existing records by name and type
       ansible.builtin.uri:
@@ -132,6 +150,7 @@
       loop_control: {label: "{{ item.type }} {{ item.name }}"}
       register: existing_records
       no_log: true
+      when: email_dns_apply
 
     - name: Upsert managed DNS records
       ansible.builtin.uri:
@@ -144,3 +163,4 @@
       loop: "{{ managed_records + email_dns.spec.google_workspace.mx | zip(existing_records.results) | list }}"
       loop_control: {label: "{{ item.0.type }} {{ item.0.name }}"}
       no_log: true
+      when: email_dns_apply
