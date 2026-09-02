@@ -1,0 +1,146 @@
+---
+- name: Reconcile Resend transactional email and Cloudflare DNS
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    config_path: "{{ lookup('env', 'EMAIL_DNS_CONFIG_PATH') | default(playbook_dir ~ '/../gitops/resources/xworktech.com/prod/cloudflare/email-dns.yaml', true) }}"
+    resend_api_base: https://api.resend.com
+    cloudflare_api_base: https://api.cloudflare.com/client/v4
+    vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+    vault_env_path: "{{ lookup('env', 'VAULT_ENV_PATH') | default('prod', true) }}"
+    vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('', true) }}"
+    vault_email_secret_path: "{{ lookup('env', 'RESEND_VAULT_PATH') | default('kv/data/' ~ vault_env_path ~ '/xworktech-email', true) }}"
+  pre_tasks:
+    - name: Load declarative email DNS policy
+      ansible.builtin.include_vars:
+        file: "{{ config_path }}"
+        name: email_dns
+
+    - name: Read provider credentials from Vault
+      community.hashi_vault.vault_kv2_get:
+        url: "{{ vault_addr }}"
+        auth_method: token
+        token: "{{ vault_token }}"
+        path: "{{ vault_email_secret_path | regex_replace('^kv/data/', '') }}"
+        engine_mount_point: kv
+      register: email_secrets
+      no_log: true
+      when: vault_token | length > 0
+
+    - name: Resolve credentials from Vault or environment
+      ansible.builtin.set_fact:
+        resend_api_key: "{{ (email_secrets.secret | default({})).resend_api_key | default(lookup('env', 'RESEND_API_KEY'), true) }}"
+        cloudflare_api_token: "{{ (email_secrets.secret | default({})).cloudflare_api_token | default(lookup('env', 'CLOUDFLARE_DNS_API_TOKEN'), true) }}"
+      no_log: true
+
+    - name: Validate required credentials
+      ansible.builtin.assert:
+        that:
+          - resend_api_key | length > 0
+          - cloudflare_api_token | length > 0
+        fail_msg: "Provide RESEND_API_KEY and CLOUDFLARE_DNS_API_TOKEN, or the Vault secret at {{ vault_email_secret_path }}."
+
+  tasks:
+    - name: Find Resend domain
+      ansible.builtin.uri:
+        url: "{{ resend_api_base }}/domains"
+        method: GET
+        headers: {Authorization: "Bearer {{ resend_api_key }}"}
+        return_content: true
+      register: resend_domains
+      no_log: true
+
+    - name: Create Resend domain when absent
+      ansible.builtin.uri:
+        url: "{{ resend_api_base }}/domains"
+        method: POST
+        headers: {Authorization: "Bearer {{ resend_api_key }}", Content-Type: application/json}
+        body_format: json
+        body: {name: "{{ email_dns.spec.resend.domain }}"}
+        status_code: [200, 201, 409]
+        return_content: true
+      register: resend_domain_create
+      no_log: true
+      when: (resend_domains.json.data | default(resend_domains.json.result | default([])) | selectattr('name', 'equalto', email_dns.spec.resend.domain) | list | length) == 0
+
+    - name: Resolve Resend domain object
+      ansible.builtin.set_fact:
+        resend_domain: "{{ ((resend_domains.json.data | default(resend_domains.json.result | default([]))) + [resend_domain_create.json]) | selectattr('name', 'equalto', email_dns.spec.resend.domain) | list | first }}"
+      no_log: true
+
+    - name: Read Resend verification records
+      ansible.builtin.uri:
+        url: "{{ resend_api_base }}/domains/{{ resend_domain.id }}"
+        method: GET
+        headers: {Authorization: "Bearer {{ resend_api_key }}"}
+        return_content: true
+      register: resend_domain_detail
+      no_log: true
+
+    - name: Resolve Cloudflare zone
+      ansible.builtin.uri:
+        url: "{{ cloudflare_api_base }}/zones?name={{ email_dns.spec.zone }}&status=active"
+        headers: {Authorization: "Bearer {{ cloudflare_api_token }}", Content-Type: application/json}
+        return_content: true
+      register: cloudflare_zone
+      no_log: true
+
+    - name: Validate Cloudflare zone
+      ansible.builtin.assert:
+        that: [cloudflare_zone.json.success, cloudflare_zone.json.result | length > 0]
+        fail_msg: "Cloudflare zone {{ email_dns.spec.zone }} was not found or is not accessible."
+
+    - name: Set Cloudflare zone id
+      ansible.builtin.set_fact:
+        cloudflare_zone_id: "{{ cloudflare_zone.json.result[0].id }}"
+
+    - name: Build managed DNS records (SPF is reconciled separately)
+      ansible.builtin.set_fact:
+        managed_records: "{{ (resend_domain_detail.json.records | default([]) | rejectattr('value', 'default', '') | rejectattr('value', 'search', 'v=spf1') | map('combine', {'ttl': 3600, 'proxied': false}) | list) + [email_dns.spec.dmarc | combine({'type': 'TXT', 'name': email_dns.spec.dmarc.name, 'content': email_dns.spec.dmarc.value})] }}"
+
+    - name: Query apex TXT records for SPF merge
+      ansible.builtin.uri:
+        url: "{{ cloudflare_api_base }}/zones/{{ cloudflare_zone_id }}/dns_records?name={{ email_dns.spec.zone }}&type=TXT"
+        headers: {Authorization: "Bearer {{ cloudflare_api_token }}"}
+        return_content: true
+      register: apex_txt_records
+      no_log: true
+
+    - name: Merge Google Workspace and Resend SPF into one apex record
+      ansible.builtin.uri:
+        url: "{{ cloudflare_api_base }}/zones/{{ cloudflare_zone_id }}/dns_records{{ '/' ~ (spf_record.id if spf_record is defined else '') }}"
+        method: "{{ 'PUT' if spf_record is defined else 'POST' }}"
+        headers: {Authorization: "Bearer {{ cloudflare_api_token }}", Content-Type: application/json}
+        body_format: json
+        body:
+          type: TXT
+          name: "{{ email_dns.spec.zone }}"
+          content: "v=spf1 {{ email_dns.spec.google_workspace.spf_include }} {{ email_dns.spec.resend.spf_include }} ~all"
+          ttl: 3600
+        return_content: true
+      vars:
+        spf_record: "{{ apex_txt_records.json.result | selectattr('content', 'search', '^v=spf1') | list | first | default(omit) }}"
+      no_log: true
+
+    - name: Query existing records by name and type
+      ansible.builtin.uri:
+        url: "{{ cloudflare_api_base }}/zones/{{ cloudflare_zone_id }}/dns_records?name={{ item.name }}&type={{ item.type }}"
+        headers: {Authorization: "Bearer {{ cloudflare_api_token }}"}
+        return_content: true
+      loop: "{{ managed_records + email_dns.spec.google_workspace.mx }}"
+      loop_control: {label: "{{ item.type }} {{ item.name }}"}
+      register: existing_records
+      no_log: true
+
+    - name: Upsert managed DNS records
+      ansible.builtin.uri:
+        url: "{{ cloudflare_api_base }}/zones/{{ cloudflare_zone_id }}/dns_records{{ '/' ~ (item.1.json.result[0].id if item.1.json.result | length > 0 else '') }}"
+        method: "{{ 'PUT' if item.1.json.result | length > 0 else 'POST' }}"
+        headers: {Authorization: "Bearer {{ cloudflare_api_token }}", Content-Type: application/json}
+        body_format: json
+        body: "{{ {'type': item.0.type, 'name': item.0.name, 'content': item.0.value | default(item.0.content), 'ttl': item.0.ttl | default(3600), 'proxied': false} | combine({'priority': item.0.priority} if item.0.priority is defined else {}) }}"
+        return_content: true
+      loop: "{{ managed_records + email_dns.spec.google_workspace.mx | zip(existing_records.results) | list }}"
+      loop_control: {label: "{{ item.0.type }} {{ item.0.name }}"}
+      no_log: true

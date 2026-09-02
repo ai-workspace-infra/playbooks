@@ -1,0 +1,59 @@
+name: Configure Resend DNS
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment
+        required: true
+        default: prod
+        type: choice
+        options: [prod]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  reconcile:
+    name: Reconcile Resend and Cloudflare DNS
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Checkout playbooks
+        uses: actions/checkout@v4
+        with:
+          path: playbooks
+
+      - name: Checkout GitOps declarations
+        uses: actions/checkout@v4
+        with:
+          repository: x-evor/gitops
+          path: gitops
+          ref: main
+
+      - name: Load provider credentials from Vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: https://vault.svc.plus
+          method: jwt
+          role: github-actions-gitops-prod
+          jwtGithubAudience: vault
+          secrets: |
+            kv/data/prod/xworktech-email resend_api_key | RESEND_API_KEY ;
+            kv/data/prod/xworktech-email cloudflare_api_token | CLOUDFLARE_DNS_API_TOKEN
+
+      - name: Install Ansible dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ansible-core hvac jmespath
+          ansible-galaxy collection install community.hashi_vault
+
+      - name: Reconcile DNS
+        env:
+          RESEND_API_KEY: ${{ env.RESEND_API_KEY }}
+          CLOUDFLARE_DNS_API_TOKEN: ${{ env.CLOUDFLARE_DNS_API_TOKEN }}
+          EMAIL_DNS_CONFIG_PATH: gitops/resources/xworktech.com/prod/cloudflare/email-dns.yaml
+        run: >-
+          ansible-playbook -i localhost, -c local
+          playbooks/configure_resend_dns.yml
