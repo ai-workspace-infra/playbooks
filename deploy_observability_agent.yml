@@ -86,6 +86,13 @@
       ansible.builtin.import_role:
         name: vhosts/process_exporter
 
+    # vector.toml renders local Blackbox scrape sources on every observability
+    # agent. Keep the producer and consumer in the same canonical deployment so
+    # a newly provisioned node never loops on 127.0.0.1:9115 connection errors.
+    - name: Include blackbox_exporter role
+      ansible.builtin.import_role:
+        name: vhosts/blackbox_exporter
+
     - name: Check if xray process exists
       ansible.builtin.command: pgrep -x xray
       register: xray_process_check
