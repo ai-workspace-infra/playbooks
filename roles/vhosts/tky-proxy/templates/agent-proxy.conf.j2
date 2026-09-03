@@ -20,6 +20,11 @@
         path /split /split/*
     }
 
+    @xhttp_root path /split
+    # Xray normalizes its configured path to `/split/`. Rewrite the exact
+    # legacy client path internally so existing subscriptions keep working.
+    rewrite @xhttp_root /split/
+
     handle @xhttp {
         reverse_proxy unix//dev/shm/xray.sock {
             transport http {
