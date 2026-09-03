@@ -8,6 +8,7 @@
     blackbox_archive_name: "blackbox_exporter-{{ blackbox_version }}.{{ blackbox_archive_arch }}"
     blackbox_archive_file: "{{ blackbox_tmp_dir }}/blackbox_exporter-{{ blackbox_version }}.{{ blackbox_archive_arch }}.tar.gz"
     blackbox_archive_url: "{{ blackbox_download_base_url }}/{{ blackbox_version }}/blackbox_exporter-{{ blackbox_version }}.{{ blackbox_archive_arch }}.tar.gz"
+    blackbox_archive_fallback_url: "{{ blackbox_download_fallback_base_url }}/blackbox_exporter-{{ blackbox_version }}.{{ blackbox_archive_arch }}.tar.gz"
 
 - name: Ensure user exists
   ansible.builtin.user:
@@ -25,10 +26,18 @@
     mode: "0750"
 
 - name: Download blackbox_exporter tarball
-  ansible.builtin.get_url:
-    url: "{{ blackbox_archive_url }}"
-    dest: "{{ blackbox_archive_file }}"
-    mode: "0644"
+  block:
+    - name: Download blackbox_exporter from the configured mirror
+      ansible.builtin.get_url:
+        url: "{{ blackbox_archive_url }}"
+        dest: "{{ blackbox_archive_file }}"
+        mode: "0644"
+  rescue:
+    - name: Download blackbox_exporter from the upstream release
+      ansible.builtin.get_url:
+        url: "{{ blackbox_archive_fallback_url }}"
+        dest: "{{ blackbox_archive_file }}"
+        mode: "0644"
 
 - name: Unpack archive
   ansible.builtin.unarchive:
