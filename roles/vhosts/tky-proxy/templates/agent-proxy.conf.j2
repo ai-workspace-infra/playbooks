@@ -20,6 +20,14 @@
         path /split /split/*
     }
 
+    @xhttp_empty_padding {
+        path /split /split/*
+        query x_padding=
+    }
+    # Some clients serialize an unset padding as `x_padding=`. Remove only
+    # that empty value; a non-empty padding value is passed through unchanged.
+    uri @xhttp_empty_padding query -x_padding
+
     @xhttp_root path /split
     # Xray normalizes its configured path to `/split/`. Rewrite the exact
     # legacy client path internally so existing subscriptions keep working.
