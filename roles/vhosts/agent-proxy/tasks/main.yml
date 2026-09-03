@@ -202,6 +202,15 @@
     - xray_enabled | bool
     - xray_version not in (xray_version_check.stdout | default(''))
 
+- name: Ensure Xray archive extraction prerequisites are installed
+  ansible.builtin.apt:
+    name: unzip
+    state: present
+    update_cache: true
+  when:
+    - xray_enabled | bool
+    - xray_version not in (xray_version_check.stdout | default(''))
+
 - name: Download pinned Xray release
   ansible.builtin.get_url:
     url: "{{ xray_release_url }}"
