@@ -49,15 +49,33 @@
     state: directory
     mode: '0755'
 
-- name: Configure Caddy for agent proxy domains in conf.d
+- name: Configure Agent Proxy root Caddyfile
   ansible.builtin.template:
-    src: agent-proxy.conf.j2
-    dest: /etc/caddy/conf.d/tky-proxy.caddy
+    src: agent-proxy.Caddyfile.j2
+    dest: /etc/caddy/Caddyfile
     mode: '0644'
   notify:
     - Restart caddy
 
-- name: Remove legacy ignored Caddy configuration
+- name: Configure Caddy for agent proxy domains in conf.d
+  ansible.builtin.template:
+    src: agent-proxy.conf.j2
+    dest: /etc/caddy/conf.d/agent-proxy.caddy
+    mode: '0644'
+  notify:
+    - Restart caddy
+
+- name: Remove legacy Agent Proxy Caddy configurations
   ansible.builtin.file:
-    path: /etc/caddy/conf.d/tky-proxy.conf
+    path: "{{ item }}"
     state: absent
+  loop:
+    - /etc/caddy/conf.d/tky-proxy.caddy
+    - /etc/caddy/conf.d/tky-proxy.conf
+  notify:
+    - Restart caddy
+
+- name: Validate composed Agent Proxy Caddy configuration
+  ansible.builtin.command:
+    cmd: caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+  changed_when: false
