@@ -327,6 +327,22 @@
     state: present
   when: xray_enabled | bool
 
+- name: Create dedicated XHTTP Xray system group
+  ansible.builtin.group:
+    name: "{{ xray_xhttp_service_group }}"
+    system: true
+  when: xray_enabled | bool
+
+- name: Create dedicated XHTTP Xray system account
+  ansible.builtin.user:
+    name: "{{ xray_xhttp_service_user }}"
+    group: "{{ xray_xhttp_service_group }}"
+    system: true
+    create_home: false
+    shell: "/usr/sbin/nologin"
+  notify: Restart Xray services
+  when: xray_enabled | bool
+
 - name: Grant XHTTP Xray service access to the shared log group
   ansible.builtin.user:
     name: "{{ xray_xhttp_service_user }}"
