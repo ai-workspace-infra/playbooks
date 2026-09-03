@@ -63,8 +63,15 @@ agent_billing_reconcile_interval: "5m"
 xray_enabled: true
 xray_version: "v26.3.27"
 xray_binary_path: "/usr/local/bin/xray"
-xray_release_asset_arch: "64"
-xray_release_sha256: "23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae"
+# Xray uses a different asset suffix for ARM64 than for x86-64.  T4G hosts
+# report aarch64 and must receive arm64-v8a; downloading Xray-linux-64.zip on
+# them leaves an x86-64 executable that systemd reports as status=203/EXEC.
+xray_release_asset_arch: >-
+  {{ 'arm64-v8a' if ansible_architecture in ['aarch64', 'arm64'] else '64' }}
+xray_release_sha256: >-
+  {{ '4d30283ae614e3057f730f67cd088a42be6fdf91f8639d82cb69e48cde80413c'
+     if xray_release_asset_arch == 'arm64-v8a'
+     else '23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae' }}
 xray_release_archive_path: "/var/cache/agent-proxy/Xray-linux-{{ xray_release_asset_arch }}.zip"
 xray_release_url: "https://github.com/XTLS/Xray-core/releases/download/{{ xray_version }}/Xray-linux-{{ xray_release_asset_arch }}.zip"
 xray_sync_interval: "5m"
