@@ -191,6 +191,16 @@
   failed_when: false
   when: xray_enabled | bool
 
+- name: Explain unsupported Xray executable before replacement
+  ansible.builtin.debug:
+    msg: >-
+      Installed Xray cannot execute on {{ ansible_architecture }}; it will be
+      replaced with Xray-linux-{{ xray_release_asset_arch }}.zip.
+  when:
+    - xray_enabled | bool
+    - xray_version_check.rc != 0
+    - xray_version_check.stderr | default('') | length > 0
+
 - name: Ensure Xray cache directory exists
   ansible.builtin.file:
     path: "{{ xray_release_archive_path | dirname }}"
@@ -260,6 +270,15 @@
   when:
     - xray_enabled | bool
     - xray_version not in (xray_version_check.stdout | default(''))
+
+- name: Validate installed Xray executable for the target architecture
+  ansible.builtin.command: "{{ xray_binary_path }} version"
+  register: xray_installed_version_check
+  changed_when: false
+  failed_when:
+    - xray_installed_version_check.rc != 0
+    - xray_version not in (xray_installed_version_check.stdout | default(''))
+  when: xray_enabled | bool
 
 - name: Ensure Xray asset directory exists
   ansible.builtin.file:

@@ -4,7 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory={{ agent_proxy_data_dir }}
+WorkingDirectory={{ agent_proxy_config_dir }}
+ExecStartPre=/usr/bin/test -r {{ agent_proxy_config_path }}
 ExecStart={{ agent_proxy_binary_path }} -config {{ agent_proxy_config_path }}
 Restart=always
 User={{ agent_proxy_user }}
