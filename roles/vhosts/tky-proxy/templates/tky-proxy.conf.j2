@@ -14,7 +14,10 @@
     }
 
     @xhttp {
-        path /split/*
+        # Xray XHTTP uses the configured path itself for the initial request
+        # and may use descendants for subsequent stream requests. Keep the
+        # original path when proxying: handle_path would strip `/split`.
+        path /split /split/*
     }
 
     handle @xhttp {
