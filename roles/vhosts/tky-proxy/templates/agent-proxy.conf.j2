@@ -20,20 +20,18 @@
         path /split /split/*
     }
 
-    @xhttp_empty_padding {
-        path /split /split/*
-        query x_padding=
-    }
-    # Some clients serialize an unset padding as `x_padding=`. Remove only
-    # that empty value; a non-empty padding value is passed through unchanged.
-    uri @xhttp_empty_padding query -x_padding
-
     @xhttp_root path /split
     # Xray normalizes its configured path to `/split/`. Rewrite the exact
     # legacy client path internally so existing subscriptions keep working.
     rewrite @xhttp_root /split/
 
     handle @xhttp {
+        # `x_padding` is not part of this node's XHTTP contract. Some clients
+        # serialize an unset value as `x_padding=`, which Xray rejects before
+        # the VLESS handshake. Remove it in the selected XHTTP handler so the
+        # mutation is guaranteed to run immediately before proxying.
+        uri query -x_padding
+
         reverse_proxy unix//dev/shm/xray.sock {
             transport http {
                 versions h2c 2
