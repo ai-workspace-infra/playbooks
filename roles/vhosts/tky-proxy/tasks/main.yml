@@ -65,13 +65,32 @@
   notify:
     - Restart caddy
 
-- name: Remove legacy Agent Proxy Caddy configurations
+- name: Configure legacy Agent Proxy Caddy fragment when explicitly enabled
+  ansible.builtin.template:
+    src: agent-proxy.conf.j2
+    dest: /etc/caddy/conf.d/tky-proxy.caddy
+    mode: '0644'
+  vars:
+    agent_proxy_domains:
+      - "{{ agent_proxy_legacy_domain }}"
+  when:
+    - agent_proxy_legacy_domain | default('') | length > 0
+    - agent_proxy_legacy_domain not in (agent_proxy_domains | default([]))
+  notify:
+    - Restart caddy
+
+- name: Remove legacy Agent Proxy Caddy fragment when not configured
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: /etc/caddy/conf.d/tky-proxy.caddy
     state: absent
-  loop:
-    - /etc/caddy/conf.d/tky-proxy.caddy
-    - /etc/caddy/conf.d/tky-proxy.conf
+  when: agent_proxy_legacy_domain | default('') | length == 0
+  notify:
+    - Restart caddy
+
+- name: Remove obsolete legacy Agent Proxy Caddy configuration
+  ansible.builtin.file:
+    path: /etc/caddy/conf.d/tky-proxy.conf
+    state: absent
   notify:
     - Restart caddy
 

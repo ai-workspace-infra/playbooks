@@ -73,11 +73,12 @@
       - >-
         {{ lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN')
            | default(agent_id, true) }}
-      # Explicit PROD compatibility alias for CNAME-based legacy
-      # subscriptions. UAT/SIT leave the environment variable empty.
-      - >-
-        {{ lookup('ansible.builtin.env', 'AGENT_PROXY_LEGACY_DOMAIN')
-           | default('', true) }}
+    # Explicit PROD compatibility hostname is rendered as a separate Caddy
+    # site fragment so the legacy and primary files can coexist without
+    # declaring the same site address twice. UAT/SIT leave this empty.
+    agent_proxy_legacy_domain: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_PROXY_LEGACY_DOMAIN')
+         | default('', true) }}
     agent_api_token: >-
       {{ lookup('ansible.builtin.vars', 'INTERNAL_SERVICE_TOKEN', default=lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true)) }}
     agent_billing_enabled: >-
