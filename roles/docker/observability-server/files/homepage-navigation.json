@@ -717,12 +717,12 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "边缘节点",
-      "description": "每台上报主机的 CPU 使用率,点击磁贴下钻到主机详情。颜色按阈值:<60% 正常,60-85% 偏高,>85% 告警。",
+      "title": "运行资源",
+      "description": "统一展示边缘节点与 SaaS 资源。节点显示 CPU 使用率并可下钻主机详情；SaaS 显示最近 5 分钟的采集状态并可跳转服务控制台。",
       "gridPos": {
         "x": 8,
         "y": 4,
-        "w": 8,
+        "w": 12,
         "h": 10
       },
       "links": [],
@@ -757,97 +757,57 @@
           },
           "unit": "percent"
         },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "text": {
-          "valueSize": 26
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          },
-          "editorMode": "code",
-          "exemplar": false,
-          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
-          "hide": false,
-          "instant": false,
-          "interval": "",
-          "legendFormat": "{{instance}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_METRICS}"
-      }
-    },
-    {
-      "id": 40,
-      "type": "stat",
-      "title": "SaaS 资源",
-      "description": "运行中的 SaaS 资源入口。ONLINE 表示最近 5 分钟有健康探针或原生指标；NO TELEMETRY 表示已配置入口但尚未接入对应采集器。",
-      "gridPos": {
-        "x": 16,
-        "y": 4,
-        "w": 4,
-        "h": 10
-      },
-      "links": [],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "dark-red",
-                  "text": "NO TELEMETRY"
-                },
-                "1": {
-                  "color": "dark-green",
-                  "text": "ONLINE"
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^(Cloudflare Pages|Cloudflare Workers|Supabase Project)$/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "0": {
+                        "color": "dark-red",
+                        "text": "NO TELEMETRY"
+                      },
+                      "1": {
+                        "color": "dark-green",
+                        "text": "ONLINE"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "dark-red",
+                      "value": null
+                    },
+                    {
+                      "color": "dark-green",
+                      "value": 1
+                    }
+                  ]
                 }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "dark-red",
-                "value": null
-              },
-              {
-                "color": "dark-green",
-                "value": 1
               }
             ]
-          }
-        },
-        "overrides": [
+          },
           {
             "matcher": {
               "id": "byName",
@@ -906,9 +866,9 @@
       },
       "options": {
         "colorMode": "background",
-        "graphMode": "none",
+        "graphMode": "area",
         "justifyMode": "center",
-        "orientation": "vertical",
+        "orientation": "auto",
         "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
@@ -919,8 +879,7 @@
         },
         "showPercentChange": false,
         "text": {
-          "titleSize": 12,
-          "valueSize": 13
+          "valueSize": 26
         },
         "textMode": "value_and_name",
         "wideLayout": true
@@ -932,11 +891,26 @@
             "uid": "${DS_METRICS}"
           },
           "editorMode": "code",
+          "exemplar": false,
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+          "hide": false,
+          "instant": false,
+          "interval": "",
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "editorMode": "code",
           "expr": "min(max_over_time(probe_success{workload=\"serverless\",name=~\".*-cloudflare-.*\",env=~\"$environment\"}[5m])) or vector(0)",
           "instant": true,
           "legendFormat": "Cloudflare Pages",
           "range": false,
-          "refId": "A"
+          "refId": "B"
         },
         {
           "datasource": {
@@ -948,7 +922,7 @@
           "instant": true,
           "legendFormat": "Cloudflare Workers",
           "range": false,
-          "refId": "B"
+          "refId": "C"
         },
         {
           "datasource": {
@@ -960,7 +934,7 @@
           "instant": true,
           "legendFormat": "Supabase Project",
           "range": false,
-          "refId": "C"
+          "refId": "D"
         }
       ],
       "datasource": {
@@ -1279,6 +1253,199 @@
       }
     },
     {
+      "id": 40,
+      "type": "stat",
+      "title": "SaaS Resources by Environment",
+      "description": "SaaS 资源清单按 UAT / PROD 分环境统计。UAT 当前登记 Pages 8 个（5 SSR、3 Gateway）、Worker 1 个、Supabase Cloud Project 1 个；PROD 尚未登记时显示 NO TELEMETRY。",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 5
+      },
+      "links": [],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^PROD ·/"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "0": {
+                        "color": "dark-red",
+                        "text": "NO TELEMETRY"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "dark-red",
+                      "value": null
+                    },
+                    {
+                      "color": "dark-green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 20
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "editorMode": "code",
+          "expr": "vector(8)",
+          "instant": true,
+          "legendFormat": "UAT · Pages",
+          "range": false,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "editorMode": "code",
+          "expr": "vector(5)",
+          "instant": true,
+          "legendFormat": "UAT · SSR",
+          "range": false,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "editorMode": "code",
+          "expr": "vector(3)",
+          "instant": true,
+          "legendFormat": "UAT · Gateway",
+          "range": false,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "editorMode": "code",
+          "expr": "vector(1)",
+          "instant": true,
+          "legendFormat": "UAT · Worker",
+          "range": false,
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "editorMode": "code",
+          "expr": "vector(1)",
+          "instant": true,
+          "legendFormat": "UAT · Supabase",
+          "range": false,
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "editorMode": "code",
+          "expr": "vector(0)",
+          "instant": true,
+          "legendFormat": "PROD · Pages",
+          "range": false,
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "editorMode": "code",
+          "expr": "vector(0)",
+          "instant": true,
+          "legendFormat": "PROD · Worker",
+          "range": false,
+          "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "editorMode": "code",
+          "expr": "vector(0)",
+          "instant": true,
+          "legendFormat": "PROD · Supabase",
+          "range": false,
+          "refId": "H"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      }
+    },
+    {
       "id": 33,
       "type": "row",
       "title": "03 · RESOURCE HEALTH 资源健康",
@@ -1286,7 +1453,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 25,
         "w": 24,
         "h": 1
       }
@@ -1298,7 +1465,7 @@
       "description": "blackbox https_ssl 模块探测到的证书剩余有效天数。<30 天转橙,<14 天转红。",
       "gridPos": {
         "x": 0,
-        "y": 21,
+        "y": 26,
         "w": 8,
         "h": 8
       },
@@ -1379,7 +1546,7 @@
       "description": "Cloud resource watch: 主机 CPU 压力。",
       "gridPos": {
         "x": 8,
-        "y": 21,
+        "y": 26,
         "w": 8,
         "h": 8
       },
@@ -1483,7 +1650,7 @@
       "description": "Cloud resource watch: 主机内存压力。",
       "gridPos": {
         "x": 16,
-        "y": 21,
+        "y": 26,
         "w": 8,
         "h": 8
       },
@@ -1588,7 +1755,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 29,
+        "y": 34,
         "w": 24,
         "h": 1
       }
@@ -1600,7 +1767,7 @@
       "description": "边缘业务流量趋势，用于观察业务负载与入口承载。",
       "gridPos": {
         "x": 0,
-        "y": 30,
+        "y": 35,
         "w": 12,
         "h": 8
       },
@@ -1704,7 +1871,7 @@
       "description": "公网业务入口探测延迟，用于发现 Caddy/API 链路退化。",
       "gridPos": {
         "x": 12,
-        "y": 30,
+        "y": 35,
         "w": 12,
         "h": 8
       },
@@ -2089,7 +2256,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 38,
+        "y": 43,
         "w": 24,
         "h": 1
       }
@@ -2102,7 +2269,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 39,
+        "y": 44,
         "w": 24,
         "h": 1
       }
@@ -2114,7 +2281,7 @@
       "description": "node-exporter 采集,按主机聚合。",
       "gridPos": {
         "x": 0,
-        "y": 40,
+        "y": 45,
         "w": 12,
         "h": 8
       },
@@ -2224,7 +2391,7 @@
       "description": "已用内存占比 (MemTotal - MemAvailable) / MemTotal。",
       "gridPos": {
         "x": 12,
-        "y": 40,
+        "y": 45,
         "w": 12,
         "h": 8
       },
@@ -2334,7 +2501,7 @@
       "description": "根分区已用百分比。>80% 转橙,>90% 转红。",
       "gridPos": {
         "x": 0,
-        "y": 48,
+        "y": 53,
         "w": 12,
         "h": 7
       },
@@ -2415,7 +2582,7 @@
       "description": "xray-exporter 按 transport 上报的探针状态,1=UP 0=DOWN。仅代理节点部署。",
       "gridPos": {
         "x": 12,
-        "y": 48,
+        "y": 53,
         "w": 12,
         "h": 7
       },
@@ -2505,7 +2672,7 @@
       "description": "Vector 各组件错误速率 (errors/s)。正常应恒为 0。",
       "gridPos": {
         "x": 0,
-        "y": 55,
+        "y": 60,
         "w": 12,
         "h": 8
       },
@@ -2586,7 +2753,7 @@
       "description": "各主机 Vector 管道向后端推送的事件速率 (events/s),即真正流入平台的数据量。",
       "gridPos": {
         "x": 12,
-        "y": 55,
+        "y": 60,
         "w": 12,
         "h": 8
       },
@@ -2695,7 +2862,7 @@
       "description": "Vector sink 缓冲区占用字节。持续 >0 说明后端写入跟不上或网络抖动,溢出后会落 256MB 磁盘缓冲。",
       "gridPos": {
         "x": 0,
-        "y": 63,
+        "y": 68,
         "w": 12,
         "h": 8
       },
@@ -2804,7 +2971,7 @@
       "description": "Grafana 内置统一告警的实时状态(firing / pending / error)。规则由 Ansible 经 grafana-provisioning-alerting.yml.j2 下发,共 9 条,覆盖主机 CPU/内存/磁盘、边缘 Agent 失联、xray 探针、Vector 积压与错误、站点探测与 SSL 到期。列表为空表示当前一切正常。",
       "gridPos": {
         "x": 12,
-        "y": 63,
+        "y": 68,
         "w": 12,
         "h": 8
       },
