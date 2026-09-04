@@ -1,4 +1,13 @@
 ---
+- name: Ensure Agent Proxy monitoring prerequisites are installed
+  ansible.builtin.package:
+    name: jq
+    state: present
+  become: true
+  when:
+    - ansible_os_family != 'Darwin'
+    - xray_enabled | bool
+
 - name: Map Go architecture
   ansible.builtin.set_fact:
     agent_proxy_go_arch: >-
