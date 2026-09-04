@@ -69,10 +69,15 @@
          | regex_replace('^https?://', '')
          | regex_replace('/.*$', '')
          | regex_replace(':.*$', '') }}
-    tky_proxy_domains:
+    agent_proxy_domains:
       - >-
         {{ lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN')
            | default(agent_id, true) }}
+      # Explicit PROD compatibility alias for CNAME-based legacy
+      # subscriptions. UAT/SIT leave the environment variable empty.
+      - >-
+        {{ lookup('ansible.builtin.env', 'AGENT_PROXY_LEGACY_DOMAIN')
+           | default('', true) }}
     agent_api_token: >-
       {{ lookup('ansible.builtin.vars', 'INTERNAL_SERVICE_TOKEN', default=lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true)) }}
     agent_billing_enabled: >-
