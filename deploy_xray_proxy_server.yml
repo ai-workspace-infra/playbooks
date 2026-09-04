@@ -69,10 +69,13 @@
          | regex_replace('^https?://', '')
          | regex_replace('/.*$', '')
          | regex_replace(':.*$', '') }}
-    agent_proxy_domains:
+    # Keep the primary list separate because the legacy Caddy task temporarily
+    # overrides agent_proxy_domains to render its own site fragment.
+    agent_proxy_primary_domains:
       - >-
         {{ lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN')
            | default(agent_id, true) }}
+    agent_proxy_domains: "{{ agent_proxy_primary_domains }}"
     # Explicit PROD compatibility hostname is rendered as a separate Caddy
     # site fragment so the legacy and primary files can coexist without
     # declaring the same site address twice. UAT/SIT leave this empty.
