@@ -17,6 +17,12 @@ datasources:
     access: proxy
     url: http://victoria-logs:9428
     editable: false
+    jsonData:
+      derivedFields:
+        - name: Trace ID
+          matcherRegex: '(?:trace[_-]?id|traceID)[=:\\s"]+([0-9a-fA-F]{16,32})'
+          url: '$${__value.raw}'
+          datasourceUid: victoriatraces
 
   - name: VictoriaTraces
     uid: victoriatraces

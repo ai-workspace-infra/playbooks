@@ -1,0 +1,70 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  # Applications set deployment.environment.name=uat|prod.  Mirror it to the
+  # concise env label used by Grafana without overwriting an explicit env.
+  transform/environment:
+    error_mode: ignore
+    trace_statements:
+      - context: resource
+        statements:
+          - set(attributes["env"], attributes["deployment.environment.name"]) where attributes["env"] == nil and attributes["deployment.environment.name"] != nil
+    log_statements:
+      - context: resource
+        statements:
+          - set(attributes["env"], attributes["deployment.environment.name"]) where attributes["env"] == nil and attributes["deployment.environment.name"] != nil
+    metric_statements:
+      - context: resource
+        statements:
+          - set(attributes["env"], attributes["deployment.environment.name"]) where attributes["env"] == nil and attributes["deployment.environment.name"] != nil
+  batch:
+    timeout: 5s
+
+exporters:
+  otlphttp/victoria-traces:
+    endpoint: http://victoria-traces:4318
+  otlphttp/victoria-logs:
+    # The exporter appends /v1/logs, producing VictoriaLogs' OTLP endpoint.
+    endpoint: http://victoria-logs:9428/insert/opentelemetry
+  prometheusremotewrite/victoriametrics:
+    endpoint: http://victoria-metrics:8428/api/v1/write
+
+connectors:
+  # Turn every OTLP span into low-cardinality RED metrics.  The selected
+  # dimensions are the stable Agent / GenAI resource attributes used by the
+  # dashboard; request IDs, prompts and user IDs are deliberately excluded.
+  spanmetrics:
+    histogram:
+      explicit:
+        buckets: [1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s, 30s, 60s]
+    dimensions:
+      - name: agent.name
+      - name: agent.type
+      - name: gen_ai.provider.name
+      - name: gen_ai.request.model
+      - name: gen_ai.operation.name
+      - name: tool.name
+      - name: mcp.server.name
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/environment, batch]
+      exporters: [otlphttp/victoria-traces, spanmetrics]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/environment, batch]
+      exporters: [otlphttp/victoria-logs]
+    metrics:
+      receivers: [otlp, spanmetrics]
+      processors: [memory_limiter, transform/environment, batch]
+      exporters: [prometheusremotewrite/victoriametrics]
