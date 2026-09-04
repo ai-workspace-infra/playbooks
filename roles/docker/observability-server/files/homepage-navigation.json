@@ -607,6 +607,34 @@
                     }
                   ]
                 }
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": true,
+                    "title": "Open Cloudflare Workers & Pages",
+                    "url": "https://dash.cloudflare.com/e71be5efb76a6c54f78f008da4404f00/workers-and-pages"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Supabase Projects"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": true,
+                    "title": "Open Supabase Project",
+                    "url": "https://supabase.com/dashboard/project/iqkxspmhcfqmhkbjdoms"
+                  }
+                ]
               }
             ]
           }
@@ -987,304 +1015,37 @@
     {
       "id": 24,
       "type": "stat",
-      "title": "Monitored Instances",
-      "description": "当前被 node-exporter 观测到的主机实例数。",
+      "title": "Platform Resources",
+      "description": "平台资源统一实时视图。主机、服务和业务入口来自现有采集指标；Cloudflare Pages/Workers 与 Supabase 按当前环境的资源标签实时去重统计，不使用静态规划数量。",
       "gridPos": {
         "x": 0,
         "y": 15,
-        "w": 6,
-        "h": 5
-      },
-      "links": [],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          },
-          "expr": "count(count by (instance) (node_cpu_seconds_total))",
-          "hide": false,
-          "instant": true,
-          "legendFormat": "Instances",
-          "range": false,
-          "refId": "A"
-        }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_METRICS}"
-      }
-    },
-    {
-      "id": 25,
-      "type": "stat",
-      "title": "Resource Nodes",
-      "description": "同时提供主机资源指标的节点数。",
-      "gridPos": {
-        "x": 6,
-        "y": 15,
-        "w": 6,
-        "h": 5
-      },
-      "links": [],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          },
-          "expr": "count(count by (instance) (node_memory_MemTotal_bytes))",
-          "hide": false,
-          "instant": true,
-          "legendFormat": "Resource nodes",
-          "range": false,
-          "refId": "A"
-        }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_METRICS}"
-      }
-    },
-    {
-      "id": 26,
-      "type": "stat",
-      "title": "Service-bearing Nodes",
-      "description": "运行并上报命名进程指标的节点数，用于观察业务承载面。",
-      "gridPos": {
-        "x": 12,
-        "y": 15,
-        "w": 6,
-        "h": 5
-      },
-      "links": [],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          },
-          "expr": "count(count by (instance) (namedprocess_namegroup_num_procs))",
-          "hide": false,
-          "instant": true,
-          "legendFormat": "Service nodes",
-          "range": false,
-          "refId": "A"
-        }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_METRICS}"
-      }
-    },
-    {
-      "id": 27,
-      "type": "stat",
-      "title": "Business Endpoints",
-      "description": "Blackbox 探针覆盖的业务入口数量。",
-      "gridPos": {
-        "x": 18,
-        "y": 15,
-        "w": 6,
-        "h": 5
-      },
-      "links": [],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          },
-          "expr": "count(count by (instance) (probe_success))",
-          "hide": false,
-          "instant": true,
-          "legendFormat": "Endpoints",
-          "range": false,
-          "refId": "A"
-        }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_METRICS}"
-      }
-    },
-    {
-      "id": 40,
-      "type": "stat",
-      "title": "SaaS Resources by Environment",
-      "description": "SaaS 资源清单按 UAT / PROD 分环境统计。UAT 当前登记 Pages 8 个（5 SSR、3 Gateway）、Worker 1 个、Supabase Cloud Project 1 个；PROD 尚未登记时显示 NO TELEMETRY。",
-      "gridPos": {
-        "x": 0,
-        "y": 20,
         "w": 24,
         "h": 5
       },
       "links": [],
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "dark-blue",
-                "value": null
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
               }
             ]
-          }
+          },
+          "unit": "short"
         },
         "overrides": [
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "/^PROD ·/"
+              "options": "/^(Pages|SSR Workers|Gateway Workers|Workers|Cloud Run APIs|Supabase Projects)$/"
             },
             "properties": [
               {
@@ -1335,10 +1096,6 @@
           "values": false
         },
         "showPercentChange": false,
-        "text": {
-          "titleSize": 12,
-          "valueSize": 20
-        },
         "textMode": "value_and_name",
         "wideLayout": true
       },
@@ -1348,10 +1105,10 @@
             "type": "prometheus",
             "uid": "${DS_METRICS}"
           },
-          "editorMode": "code",
-          "expr": "vector(8)",
+          "expr": "count(count by (instance) (node_cpu_seconds_total))",
+          "hide": false,
           "instant": true,
-          "legendFormat": "UAT · Pages",
+          "legendFormat": "Instances",
           "range": false,
           "refId": "A"
         },
@@ -1360,10 +1117,10 @@
             "type": "prometheus",
             "uid": "${DS_METRICS}"
           },
-          "editorMode": "code",
-          "expr": "vector(5)",
+          "expr": "count(count by (instance) (node_memory_MemTotal_bytes))",
+          "hide": false,
           "instant": true,
-          "legendFormat": "UAT · SSR",
+          "legendFormat": "Resource Nodes",
           "range": false,
           "refId": "B"
         },
@@ -1372,10 +1129,10 @@
             "type": "prometheus",
             "uid": "${DS_METRICS}"
           },
-          "editorMode": "code",
-          "expr": "vector(3)",
+          "expr": "count(count by (instance) (namedprocess_namegroup_num_procs))",
+          "hide": false,
           "instant": true,
-          "legendFormat": "UAT · Gateway",
+          "legendFormat": "Service Nodes",
           "range": false,
           "refId": "C"
         },
@@ -1384,10 +1141,10 @@
             "type": "prometheus",
             "uid": "${DS_METRICS}"
           },
-          "editorMode": "code",
-          "expr": "vector(1)",
+          "expr": "count(count by (target) (probe_success{env=~\"$environment\"}))",
+          "hide": false,
           "instant": true,
-          "legendFormat": "UAT · Worker",
+          "legendFormat": "Endpoints",
           "range": false,
           "refId": "D"
         },
@@ -1396,10 +1153,10 @@
             "type": "prometheus",
             "uid": "${DS_METRICS}"
           },
-          "editorMode": "code",
-          "expr": "vector(1)",
+          "expr": "count(count by (name) (probe_success{env=~\"$environment\",workload=\"serverless\",name=~\".*-cloudflare-.*\"}))",
+          "hide": false,
           "instant": true,
-          "legendFormat": "UAT · Supabase",
+          "legendFormat": "Pages",
           "range": false,
           "refId": "E"
         },
@@ -1408,10 +1165,10 @@
             "type": "prometheus",
             "uid": "${DS_METRICS}"
           },
-          "editorMode": "code",
-          "expr": "vector(0)",
+          "expr": "count(count by (worker) (cloudflare_worker_requests_count{env=~\"$environment\",worker=~\"(?i).*(ssr|public|content|auth|console|ws).*\"}))",
+          "hide": false,
           "instant": true,
-          "legendFormat": "PROD · Pages",
+          "legendFormat": "SSR Workers",
           "range": false,
           "refId": "F"
         },
@@ -1420,10 +1177,10 @@
             "type": "prometheus",
             "uid": "${DS_METRICS}"
           },
-          "editorMode": "code",
-          "expr": "vector(0)",
+          "expr": "count(count by (worker) (cloudflare_worker_requests_count{env=~\"$environment\",worker=~\"(?i).*gateway.*\"}))",
+          "hide": false,
           "instant": true,
-          "legendFormat": "PROD · Worker",
+          "legendFormat": "Gateway Workers",
           "range": false,
           "refId": "G"
         },
@@ -1432,12 +1189,36 @@
             "type": "prometheus",
             "uid": "${DS_METRICS}"
           },
-          "editorMode": "code",
-          "expr": "vector(0)",
+          "expr": "count(count by (worker) (cloudflare_worker_requests_count{env=~\"$environment\"}))",
+          "hide": false,
           "instant": true,
-          "legendFormat": "PROD · Supabase",
+          "legendFormat": "Workers",
           "range": false,
           "refId": "H"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "expr": "count(count by (service_name) (cloud_run_revision{env=~\"$environment\",service_name!=\"\"})) or count(count by (service_name) (run_googleapis_com_container_instance_count{env=~\"$environment\",service_name!=\"\"}))",
+          "hide": false,
+          "instant": true,
+          "legendFormat": "Cloud Run APIs",
+          "range": false,
+          "refId": "I"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "expr": "count(count by (supabase_project) (pg_up{env=~\"$environment\",supabase_project!=\"\"}))",
+          "hide": false,
+          "instant": true,
+          "legendFormat": "Supabase Projects",
+          "range": false,
+          "refId": "J"
         }
       ],
       "datasource": {
@@ -1453,7 +1234,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 20,
         "w": 24,
         "h": 1
       }
@@ -1465,7 +1246,7 @@
       "description": "blackbox https_ssl 模块探测到的证书剩余有效天数。<30 天转橙,<14 天转红。",
       "gridPos": {
         "x": 0,
-        "y": 26,
+        "y": 21,
         "w": 8,
         "h": 8
       },
@@ -1546,7 +1327,7 @@
       "description": "Cloud resource watch: 主机 CPU 压力。",
       "gridPos": {
         "x": 8,
-        "y": 26,
+        "y": 21,
         "w": 8,
         "h": 8
       },
@@ -1650,7 +1431,7 @@
       "description": "Cloud resource watch: 主机内存压力。",
       "gridPos": {
         "x": 16,
-        "y": 26,
+        "y": 21,
         "w": 8,
         "h": 8
       },
@@ -1755,7 +1536,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 29,
         "w": 24,
         "h": 1
       }
@@ -1767,7 +1548,7 @@
       "description": "边缘业务流量趋势，用于观察业务负载与入口承载。",
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 30,
         "w": 12,
         "h": 8
       },
@@ -1871,7 +1652,7 @@
       "description": "公网业务入口探测延迟，用于发现 Caddy/API 链路退化。",
       "gridPos": {
         "x": 12,
-        "y": 35,
+        "y": 30,
         "w": 12,
         "h": 8
       },
@@ -2256,7 +2037,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 38,
         "w": 24,
         "h": 1
       }
@@ -2269,7 +2050,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 44,
+        "y": 39,
         "w": 24,
         "h": 1
       }
@@ -2281,7 +2062,7 @@
       "description": "node-exporter 采集,按主机聚合。",
       "gridPos": {
         "x": 0,
-        "y": 45,
+        "y": 40,
         "w": 12,
         "h": 8
       },
@@ -2391,7 +2172,7 @@
       "description": "已用内存占比 (MemTotal - MemAvailable) / MemTotal。",
       "gridPos": {
         "x": 12,
-        "y": 45,
+        "y": 40,
         "w": 12,
         "h": 8
       },
@@ -2501,7 +2282,7 @@
       "description": "根分区已用百分比。>80% 转橙,>90% 转红。",
       "gridPos": {
         "x": 0,
-        "y": 53,
+        "y": 48,
         "w": 12,
         "h": 7
       },
@@ -2582,7 +2363,7 @@
       "description": "xray-exporter 按 transport 上报的探针状态,1=UP 0=DOWN。仅代理节点部署。",
       "gridPos": {
         "x": 12,
-        "y": 53,
+        "y": 48,
         "w": 12,
         "h": 7
       },
@@ -2672,7 +2453,7 @@
       "description": "Vector 各组件错误速率 (errors/s)。正常应恒为 0。",
       "gridPos": {
         "x": 0,
-        "y": 60,
+        "y": 55,
         "w": 12,
         "h": 8
       },
@@ -2753,7 +2534,7 @@
       "description": "各主机 Vector 管道向后端推送的事件速率 (events/s),即真正流入平台的数据量。",
       "gridPos": {
         "x": 12,
-        "y": 60,
+        "y": 55,
         "w": 12,
         "h": 8
       },
@@ -2862,7 +2643,7 @@
       "description": "Vector sink 缓冲区占用字节。持续 >0 说明后端写入跟不上或网络抖动,溢出后会落 256MB 磁盘缓冲。",
       "gridPos": {
         "x": 0,
-        "y": 68,
+        "y": 63,
         "w": 12,
         "h": 8
       },
@@ -2971,7 +2752,7 @@
       "description": "Grafana 内置统一告警的实时状态(firing / pending / error)。规则由 Ansible 经 grafana-provisioning-alerting.yml.j2 下发,共 9 条,覆盖主机 CPU/内存/磁盘、边缘 Agent 失联、xray 探针、Vector 积压与错误、站点探测与 SSL 到期。列表为空表示当前一切正常。",
       "gridPos": {
         "x": 12,
-        "y": 68,
+        "y": 63,
         "w": 12,
         "h": 8
       },
