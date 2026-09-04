@@ -75,7 +75,7 @@
       - "{{ agent_proxy_legacy_domain }}"
   when:
     - agent_proxy_legacy_domain | default('') | length > 0
-    - agent_proxy_legacy_domain not in (agent_proxy_domains | default([]))
+    - agent_proxy_legacy_domain not in (agent_proxy_primary_domains | default([]))
   notify:
     - Restart caddy
 
@@ -89,8 +89,13 @@
 
 - name: Remove obsolete legacy Agent Proxy Caddy configuration
   ansible.builtin.file:
-    path: /etc/caddy/conf.d/tky-proxy.conf
+    path: "{{ item }}"
     state: absent
+  loop:
+    - /etc/caddy/conf.d/tky-proxy.conf
+    # Older releases used this generated filename; remove it before creating
+    # the explicit compatibility fragment to avoid duplicate site addresses.
+    - /etc/caddy/conf.d/tky-proxy-svc-plus.caddy
   notify:
     - Restart caddy
 
