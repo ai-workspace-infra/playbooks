@@ -722,7 +722,7 @@
       "gridPos": {
         "x": 8,
         "y": 4,
-        "w": 10,
+        "w": 8,
         "h": 10
       },
       "links": [],
@@ -802,14 +802,181 @@
       }
     },
     {
+      "id": 40,
+      "type": "stat",
+      "title": "SaaS 资源",
+      "description": "运行中的 SaaS 资源入口。ONLINE 表示最近 5 分钟有健康探针或原生指标；NO TELEMETRY 表示已配置入口但尚未接入对应采集器。",
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 4,
+        "h": 10
+      },
+      "links": [],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "dark-red",
+                  "text": "NO TELEMETRY"
+                },
+                "1": {
+                  "color": "dark-green",
+                  "text": "ONLINE"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-red",
+                "value": null
+              },
+              {
+                "color": "dark-green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cloudflare Pages"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": true,
+                    "title": "Cloudflare Pages",
+                    "url": "https://dash.cloudflare.com/e71be5efb76a6c54f78f008da4404f00/workers-and-pages"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cloudflare Workers"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": true,
+                    "title": "Cloudflare Workers",
+                    "url": "https://dash.cloudflare.com/e71be5efb76a6c54f78f008da4404f00/workers-and-pages"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Supabase Project"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": true,
+                    "title": "Supabase Project",
+                    "url": "https://supabase.com/dashboard/project/iqkxspmhcfqmhkbjdoms"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 13
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "editorMode": "code",
+          "expr": "min(max_over_time(probe_success{workload=\"serverless\",name=~\".*-cloudflare-.*\",env=~\"$environment\"}[5m])) or vector(0)",
+          "instant": true,
+          "legendFormat": "Cloudflare Pages",
+          "range": false,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "editorMode": "code",
+          "expr": "(count(cloudflare_worker_requests_count{env=~\"$environment\"}) > bool 0) or vector(0)",
+          "instant": true,
+          "legendFormat": "Cloudflare Workers",
+          "range": false,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "editorMode": "code",
+          "expr": "max(pg_up{supabase_project!=\"\"}) or vector(0)",
+          "instant": true,
+          "legendFormat": "Supabase Project",
+          "range": false,
+          "refId": "C"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      }
+    },
+    {
       "id": 6,
       "type": "dashlist",
       "title": "仪表盘",
       "description": "",
       "gridPos": {
-        "x": 18,
+        "x": 20,
         "y": 4,
-        "w": 6,
+        "w": 4,
         "h": 10
       },
       "links": [],
