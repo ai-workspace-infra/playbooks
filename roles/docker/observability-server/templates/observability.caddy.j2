@@ -74,6 +74,15 @@ observability.svc.plus {
     # ==========================================
     # OpenTelemetry / VictoriaTraces / Jaeger (Traces Ingest & Query)
     # ==========================================
+    # Agent and application telemetry enters through the collector so metrics,
+    # logs and traces receive a common resource normalization and trace-derived
+    # RED metrics.  Keep the direct trace endpoint below for compatibility.
+    handle_path /otlp/* {
+        reverse_proxy 127.0.0.1:4319
+    }
+    handle_path /ingest/otlp/* {
+        reverse_proxy 127.0.0.1:4319
+    }
     # [接收] 标准 OTLP/HTTP Traces 写入 (/v1/traces, /otlp/v1/traces, /ingest/otlp/v1/traces)
     @otlp_traces path /v1/traces* /otlp/v1/traces* /ingest/otlp/v1/traces* /insert/opentelemetry/v1/traces*
     handle @otlp_traces {
