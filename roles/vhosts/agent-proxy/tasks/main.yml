@@ -445,6 +445,31 @@
     state: started
     daemon_reload: true
 
+- name: Register agent-proxy with Accounts controller
+  ansible.builtin.uri:
+    url: "{{ agent_controller_url | regex_replace('/+$', '') }}/api/agent-server/v1/status"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ agent_api_token }}"
+      X-Agent-ID: "{{ agent_id }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      agentId: "{{ agent_id }}"
+      healthy: true
+      message: "agent-proxy deployment registration"
+      xray:
+        running: true
+        nodeId: "{{ agent_id }}"
+        statsEnabled: true
+    status_code: 204
+    timeout: "{{ agent_http_timeout | regex_replace('[^0-9]', '') | int }}"
+  register: agent_registration_probe
+  until: agent_registration_probe.status | default(0) == 204
+  retries: 5
+  delay: 5
+  no_log: true
+
 - name: Wait for agent-generated Xray runtime configuration
   ansible.builtin.wait_for:
     path: "{{ item }}"
