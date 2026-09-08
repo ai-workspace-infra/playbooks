@@ -2,3 +2,8 @@ wg_interface: "wg0"
 overlay_config_path: "{{ playbook_dir }}/../../config/sit/vpn-overlay.yaml"
 overlay_keys_path: "{{ playbook_dir }}/../../config/sit/vpn-keys.yaml"
 wg_port: "51820"
+
+# A WireGuard-over-VLESS One reaches the Gateway through Xray, not by receiving
+# public UDP from the Gateway.  Keep the legacy direct-peer endpoint rendering
+# by default, but let the transport lab omit it for NAT/VLESS peers.
+wireguard_hub_include_peer_endpoints: true
