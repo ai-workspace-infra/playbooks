@@ -10,7 +10,9 @@ MTU = 1400
 [Peer]
 PublicKey = {{ key.public_key }}
 AllowedIPs = {{ peer.wg_ip }}/32
+{% if wireguard_hub_include_peer_endpoints | bool %}
 Endpoint = {{ peer.public_ip }}:{{ overlay_data.hub_port | default(wg_port) }}
 PersistentKeepalive = 25
+{% endif %}
 {% endif %}
 {% endfor %}
