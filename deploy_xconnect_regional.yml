@@ -1,0 +1,14 @@
+---
+# Run this entrypoint after the AWS Agent Proxy workflow has produced its
+# cmdb.json.  It uses one inventory build for both Terraform and manual nodes,
+# then applies the existing Agent Proxy and exporter roles to the selected
+# region with --limit localhost,xconnect_pool_<pool>.
+- import_playbook: ulighthost_xconnect.yml
+
+- import_playbook: deploy_xray_proxy_server.yml
+  vars:
+    agent_service_hosts: xconnect
+
+- import_playbook: deploy_xray_exporter.yml
+  vars:
+    xray_exporter_hosts: xconnect

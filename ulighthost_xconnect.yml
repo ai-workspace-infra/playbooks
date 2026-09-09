@@ -1,3 +1,157 @@
 ---
-# Compatibility entrypoint. Regional node behavior is provider-neutral.
-- import_playbook: xconnect_regional_nodes.yml
+- name: Build the hybrid XConnect inventory from GitOps, CMDB, and Vault
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    xconnect_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+    xconnect_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
+    xconnect_cmdb_file: "{{ lookup('ansible.builtin.env', 'XCONNECT_CMDB_FILE') | default('', true) }}"
+    xconnect_deploy_key_file: "{{ lookup('ansible.builtin.env', 'XCONNECT_DEPLOY_KEY_FILE') | default('', true) }}"
+    xconnect_gitops_config: "{{ lookup('ansible.builtin.env', 'XCONNECT_GITOPS_CONFIG') | default(playbook_dir ~ '/../gitops/topology/prod/selfhost/ulighthost-xconnect.yaml', true) }}"
+  pre_tasks:
+    - name: Load non-sensitive XConnect topology from GitOps
+      ansible.builtin.include_vars:
+        file: "{{ xconnect_gitops_config }}"
+        name: xconnect_policy
+
+    - name: Require the declared four-region topology
+      ansible.builtin.assert:
+        that:
+          - xconnect_policy.spec.pools | length == 4
+          - xconnect_policy.spec.connection_sources is defined
+        fail_msg: "GitOps must declare JP, PH, HK, and US XConnect pools with connection sources."
+
+    - name: Require a CMDB artifact for Terraform-managed nodes
+      ansible.builtin.assert:
+        that:
+          - xconnect_cmdb_file | length > 0
+          - xconnect_cmdb_file is file
+          - xconnect_deploy_key_file | length > 0
+          - xconnect_deploy_key_file is file
+        fail_msg: "Set XCONNECT_CMDB_FILE and XCONNECT_DEPLOY_KEY_FILE for Terraform-managed nodes."
+      when: >-
+        xconnect_policy.spec.pools | map(attribute='nodes') | flatten
+        | selectattr('connection_source', 'equalto', 'terraform_cmdb') | list | length > 0
+
+    - name: Read Terraform CMDB artifact
+      ansible.builtin.set_fact:
+        xconnect_cmdb: "{{ lookup('ansible.builtin.file', xconnect_cmdb_file) | from_json }}"
+      no_log: true
+
+    - name: Resolve Terraform-managed node facts by stable node ID
+      ansible.builtin.set_fact:
+        xconnect_cmdb_nodes: >-
+          {{ xconnect_cmdb_nodes | default({}) | combine({
+             item.1.id: (
+               xconnect_cmdb | dict2items
+               | selectattr('value.node_id', 'equalto', item.1.cmdb_selector.node_id)
+               | map(attribute='value') | list | first | default({}, true)
+             )
+          }) }}
+      loop: "{{ query('ansible.builtin.subelements', xconnect_policy.spec.pools, 'nodes', {'skip_missing': True}) }}"
+      when: item.1.connection_source == 'terraform_cmdb'
+      no_log: true
+
+    - name: Validate Terraform-managed CMDB facts
+      ansible.builtin.assert:
+        that:
+          - xconnect_cmdb_nodes[item.1.id].ip | default('') | ansible.utils.ipv4
+          - xconnect_cmdb_nodes[item.1.id].ansible_user | default('') | length > 0
+          - xconnect_cmdb_nodes[item.1.id].instance_id | default('') | length > 0
+          - xconnect_cmdb_nodes[item.1.id].node_id == item.1.cmdb_selector.node_id
+        fail_msg: "CMDB is missing current runtime facts for {{ item.1.cmdb_selector.node_id }}."
+      loop: "{{ query('ansible.builtin.subelements', xconnect_policy.spec.pools, 'nodes', {'skip_missing': True}) }}"
+      when: item.1.connection_source == 'terraform_cmdb' and (item.1.enabled | default(true) | bool)
+      no_log: true
+
+    - name: Require a Vault token for manually provisioned nodes
+      ansible.builtin.assert:
+        that:
+          - xconnect_vault_token | length > 0
+        fail_msg: "Export VAULT_TOKEN before deploying manually provisioned XConnect nodes."
+      when: >-
+        xconnect_policy.spec.pools | map(attribute='nodes') | flatten
+        | selectattr('connection_source', 'equalto', 'vault') | list | length > 0
+
+    - name: Read each manually provisioned node password from Vault
+      community.hashi_vault.vault_kv2_get:
+        url: "{{ xconnect_vault_addr }}"
+        auth_method: token
+        token: "{{ xconnect_vault_token }}"
+        path: "{{ item.1.credentials_vault_path | regex_replace('^kv/data/', '') }}"
+        engine_mount_point: kv
+      loop: "{{ query('ansible.builtin.subelements', xconnect_policy.spec.pools, 'nodes', {'skip_missing': True}) }}"
+      when: item.1.connection_source == 'vault' and (item.1.enabled | default(true) | bool)
+      register: xconnect_vault_results
+      no_log: true
+
+    - name: Index manually provisioned Vault records by node ID
+      ansible.builtin.set_fact:
+        xconnect_vault_nodes: "{{ xconnect_vault_nodes | default({}) | combine({item.item.1.id: item.secret}) }}"
+      loop: "{{ xconnect_vault_results.results | default([]) }}"
+      when: not (item.skipped | default(false))
+      no_log: true
+
+    - name: Validate manually provisioned node facts
+      ansible.builtin.assert:
+        that:
+          - item.1.ansible_host | default('') | ansible.utils.ipv4
+          - item.1.ansible_user | default('') | length > 0
+          - xconnect_vault_nodes[item.1.id].SSH_PASSWORD | default('') | length > 0
+        fail_msg: "GitOps host metadata or Vault SSH_PASSWORD is missing for {{ item.1.id }}."
+      loop: "{{ query('ansible.builtin.subelements', xconnect_policy.spec.pools, 'nodes', {'skip_missing': True}) }}"
+      when: item.1.connection_source == 'vault' and (item.1.enabled | default(true) | bool)
+      no_log: true
+
+    - name: Build inventory for Terraform-managed XConnect nodes
+      ansible.builtin.add_host:
+        name: "{{ item.1.id }}"
+        groups:
+          - xconnect
+          - "xconnect_pool_{{ item.0.name }}"
+          - "xconnect_{{ item.1.role | default('pool_worker') }}"
+        ansible_host: "{{ xconnect_cmdb_nodes[item.1.id].ip }}"
+        ansible_user: "{{ xconnect_cmdb_nodes[item.1.id].ansible_user }}"
+        ansible_ssh_private_key_file: "{{ xconnect_deploy_key_file }}"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=accept-new"
+        xconnect_region: "{{ item.0.region }}"
+        xconnect_pool: "{{ item.0.name }}"
+        xconnect_fqdn: "{{ item.0.entrypoint.fqdn }}"
+        xconnect_connection_source: terraform_cmdb
+        xconnect_cmdb_node_id: "{{ item.1.cmdb_selector.node_id }}"
+      loop: "{{ query('ansible.builtin.subelements', xconnect_policy.spec.pools, 'nodes', {'skip_missing': True}) }}"
+      when: item.1.connection_source == 'terraform_cmdb' and (item.1.enabled | default(true) | bool)
+      no_log: true
+
+    - name: Build inventory for manually provisioned XConnect nodes
+      ansible.builtin.add_host:
+        name: "{{ item.1.id }}"
+        groups:
+          - xconnect
+          - "xconnect_pool_{{ item.0.name }}"
+          - "xconnect_{{ item.1.role | default('pool_worker') }}"
+        ansible_host: "{{ item.1.ansible_host }}"
+        ansible_user: "{{ item.1.ansible_user }}"
+        ansible_password: "{{ xconnect_vault_nodes[item.1.id].SSH_PASSWORD }}"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=accept-new"
+        xconnect_region: "{{ item.0.region }}"
+        xconnect_pool: "{{ item.0.name }}"
+        xconnect_fqdn: "{{ item.0.entrypoint.fqdn }}"
+        xconnect_connection_source: vault
+      loop: "{{ query('ansible.builtin.subelements', xconnect_policy.spec.pools, 'nodes', {'skip_missing': True}) }}"
+      when: item.1.connection_source == 'vault' and (item.1.enabled | default(true) | bool)
+      no_log: true
+
+- name: Verify XConnect regional nodes
+  hosts: xconnect
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 30
+      no_log: true
+
+    - name: Report resolved node mapping
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ xconnect_region }} / {{ xconnect_pool }} -> {{ xconnect_fqdn }} ({{ xconnect_connection_source }})"
