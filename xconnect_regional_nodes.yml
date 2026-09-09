@@ -1,0 +1,102 @@
+---
+- name: Load manually provisioned XConnect regional nodes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    xconnect_gitops_config: "{{ lookup('ansible.builtin.env', 'XCONNECT_GITOPS_CONFIG') | default(playbook_dir ~ '/../gitops/topology/prod/selfhost/xconnect-regional-pools.yaml', true) }}"
+    xconnect_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+    xconnect_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
+    xconnect_vault_path_override: "{{ lookup('ansible.builtin.env', 'XCONNECT_VAULT_PATH') | default('', true) }}"
+    xconnect_ssh_common_args: "{{ lookup('ansible.builtin.env', 'XCONNECT_SSH_COMMON_ARGS') | default('-o StrictHostKeyChecking=accept-new', true) }}"
+  pre_tasks:
+    - name: Require a Vault token
+      ansible.builtin.assert:
+        that:
+          - xconnect_vault_token | length > 0
+        fail_msg: "Export VAULT_TOKEN before running this playbook."
+
+    - name: Load non-sensitive regional pool declarations from GitOps
+      ansible.builtin.include_vars:
+        file: "{{ xconnect_gitops_config }}"
+        name: xconnect_policy
+
+    - name: Resolve the Vault path from environment or GitOps
+      ansible.builtin.set_fact:
+        xconnect_vault_path: >-
+          {{ xconnect_vault_path_override
+             if xconnect_vault_path_override | length > 0
+             else xconnect_policy.spec.connection.vault_secret }}
+
+    - name: Read regional node connection records from Vault
+      community.hashi_vault.vault_kv2_get:
+        url: "{{ xconnect_vault_addr }}"
+        auth_method: token
+        token: "{{ xconnect_vault_token }}"
+        path: "{{ xconnect_vault_path | regex_replace('^kv/data/', '') | regex_replace('^kv/', '') }}"
+        engine_mount_point: kv
+      register: xconnect_vault_secret
+      no_log: true
+
+    - name: Validate enabled node connection records
+      ansible.builtin.assert:
+        that:
+          - xconnect_vault_secret.secret.nodes is defined
+          - item.1.vault_key in xconnect_vault_secret.secret.nodes
+          - xconnect_vault_secret.secret.nodes[item.1.vault_key].public_ipv4 is defined
+          - xconnect_vault_secret.secret.nodes[item.1.vault_key].ansible_user is defined
+          - xconnect_vault_secret.secret.nodes[item.1.vault_key].ansible_password is defined
+        fail_msg: "Each enabled GitOps node needs a matching Vault record with public_ipv4, ansible_user, and ansible_password."
+      loop: "{{ query('ansible.builtin.subelements', xconnect_policy.spec.pools, 'nodes', {'skip_missing': true}) }}"
+      when: item.1.enabled | default(true) | bool
+      no_log: true
+
+    - name: Validate regional pool entrypoints
+      ansible.builtin.assert:
+        that:
+          - item.name is defined
+          - item.region is defined
+          - item.entrypoint.fqdn is defined
+          - item.entrypoint.scheduler_node is defined
+          - item.entrypoint.scheduler_node in (item.nodes | map(attribute='id') | list)
+          - (item.nodes | selectattr('enabled', 'defined') | selectattr('enabled', 'equalto', true) | list | length) > 0
+          - item.nodes | length == 1 or (item.nodes | selectattr('role', 'equalto', 'scheduler') | list | length) == 1
+        fail_msg: "Each pool needs an enabled node, a stable FQDN, and exactly one scheduler role when it has multiple nodes."
+      loop: "{{ xconnect_policy.spec.pools }}"
+
+    - name: Build an in-memory regional node inventory
+      ansible.builtin.add_host:
+        name: "{{ item.1.id }}"
+        groups:
+          - xconnect_regional_nodes
+          - "xconnect_pool_{{ item.0.name }}"
+          - "xconnect_role_{{ item.1.role | default('pool_worker') }}"
+        ansible_host: "{{ xconnect_vault_secret.secret.nodes[item.1.vault_key].public_ipv4 }}"
+        ansible_user: "{{ xconnect_vault_secret.secret.nodes[item.1.vault_key].ansible_user }}"
+        ansible_password: "{{ xconnect_vault_secret.secret.nodes[item.1.vault_key].ansible_password }}"
+        ansible_ssh_common_args: "{{ xconnect_ssh_common_args }}"
+        xconnect_region: "{{ item.0.region }}"
+        xconnect_pool: "{{ item.0.name }}"
+        xconnect_provider: "{{ item.1.provider | default('', true) }}"
+        xconnect_product: "{{ item.1.product | default('', true) }}"
+        xconnect_node_role: "{{ item.1.role | default('pool_worker') }}"
+        xconnect_fqdn: "{{ item.0.entrypoint.fqdn }}"
+        xconnect_entrypoint_mode: "{{ 'direct' if (item.0.nodes | length == 1) else 'scheduler' }}"
+        xconnect_entrypoint_target: "{{ item.0.entrypoint.scheduler_node }}"
+        xconnect_weight: "{{ item.1.weight | default(100) }}"
+      loop: "{{ query('ansible.builtin.subelements', xconnect_policy.spec.pools, 'nodes', {'skip_missing': true}) }}"
+      when: item.1.enabled | default(true) | bool
+      no_log: true
+
+- name: Verify XConnect regional nodes
+  hosts: xconnect_regional_nodes
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 30
+      no_log: true
+
+    - name: Report non-sensitive node mapping
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ xconnect_region }} / {{ xconnect_pool }} / {{ xconnect_node_role }} -> {{ xconnect_fqdn }} via {{ xconnect_entrypoint_target }}"

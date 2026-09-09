@@ -1,0 +1,114 @@
+---
+- name: Reconcile one XConnect regional entrypoint
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    xconnect_pool_name: "{{ lookup('ansible.builtin.env', 'XCONNECT_POOL') | default('', true) | trim | lower }}"
+    xconnect_gitops_config: "{{ lookup('ansible.builtin.env', 'XCONNECT_GITOPS_CONFIG') | default(playbook_dir ~ '/../gitops/topology/prod/selfhost/xconnect-regional-pools.yaml', true) }}"
+    xconnect_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+    xconnect_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
+    xconnect_vault_path_override: "{{ lookup('ansible.builtin.env', 'XCONNECT_VAULT_PATH') | default('', true) }}"
+  pre_tasks:
+    - name: Require an explicit pool selection
+      ansible.builtin.assert:
+        that:
+          - xconnect_pool_name | length > 0
+        fail_msg: "Set XCONNECT_POOL to a canonical pool name, for example ph."
+
+    - name: Load XConnect topology from GitOps
+      ansible.builtin.include_vars:
+        file: "{{ xconnect_gitops_config }}"
+        name: xconnect_policy
+
+    - name: Resolve canonical pool and Vault path
+      ansible.builtin.set_fact:
+        xconnect_canonical_pool_name: >-
+          {{ xconnect_policy.spec.aliases.pools.get(xconnect_pool_name, xconnect_pool_name) }}
+        xconnect_vault_path: >-
+          {{ xconnect_vault_path_override
+             if xconnect_vault_path_override | length > 0
+             else xconnect_policy.spec.connection.vault_secret }}
+
+    - name: Resolve selected regional pool
+      ansible.builtin.set_fact:
+        xconnect_selected_pool: >-
+          {{ xconnect_policy.spec.pools
+             | selectattr('name', 'equalto', xconnect_canonical_pool_name)
+             | list
+             | first
+             | default({}, true) }}
+
+    - name: Require a declared regional pool
+      ansible.builtin.assert:
+        that:
+          - xconnect_selected_pool | length > 0
+        fail_msg: "XCONNECT_POOL does not match a declared pool or alias."
+
+    - name: Resolve entrypoint node and DNS policy
+      ansible.builtin.set_fact:
+        xconnect_entrypoint_node: >-
+          {{ xconnect_selected_pool.nodes
+             | selectattr('id', 'equalto', xconnect_selected_pool.entrypoint.scheduler_node)
+             | list
+             | first
+             | default({}, true) }}
+        xconnect_dns_record: >-
+          {{ (xconnect_policy.spec.entrypoint_defaults.dns_record | default({}))
+             | combine((xconnect_selected_pool.entrypoint.dns_record | default({})), recursive=true) }}
+
+    - name: Require a supported direct DNS binding
+      ansible.builtin.assert:
+        that:
+          - xconnect_entrypoint_node | length > 0
+          - xconnect_dns_record.zone is defined
+          - xconnect_dns_record.type == 'A'
+          - xconnect_vault_token | length > 0
+        fail_msg: "The selected pool needs a declared entrypoint node, an A-record policy, and VAULT_TOKEN."
+
+    - name: Read XConnect node records from Vault
+      community.hashi_vault.vault_kv2_get:
+        url: "{{ xconnect_vault_addr }}"
+        auth_method: token
+        token: "{{ xconnect_vault_token }}"
+        path: "{{ xconnect_vault_path | regex_replace('^kv/data/', '') | regex_replace('^kv/', '') }}"
+        engine_mount_point: kv
+      register: xconnect_vault_secret
+      no_log: true
+
+    - name: Require an IPv4 address for the entrypoint node
+      ansible.builtin.assert:
+        that:
+          - xconnect_entrypoint_node.vault_key in xconnect_vault_secret.secret.nodes
+          - xconnect_vault_secret.secret.nodes[xconnect_entrypoint_node.vault_key].public_ipv4 is defined
+          - xconnect_vault_secret.secret.nodes[xconnect_entrypoint_node.vault_key].public_ipv4 | ansible.utils.ipv4
+        fail_msg: "Vault must contain a valid public_ipv4 for the selected entrypoint node."
+      no_log: true
+
+    - name: Build legacy entrypoint DNS records
+      ansible.builtin.set_fact:
+        xconnect_legacy_dns_records: >-
+          {{ (xconnect_legacy_dns_records | default([]))
+             + [{'type': item.type,
+                 'name': item.fqdn,
+                 'content': item.target,
+                 'ttl': item.ttl | default(xconnect_dns_record.ttl),
+                 'proxied': item.proxied | default(false)}] }}
+      loop: "{{ xconnect_selected_pool.legacy_entrypoints | default([]) }}"
+
+  roles:
+    - role: cloudflare_dns
+      vars:
+        cloudflare_dns_zone_name: "{{ xconnect_dns_record.zone }}"
+        cloudflare_dns_records: >-
+          {{
+            [
+              {
+                'type': xconnect_dns_record.type,
+                'name': xconnect_selected_pool.entrypoint.fqdn,
+                'content': xconnect_vault_secret.secret.nodes[xconnect_entrypoint_node.vault_key].public_ipv4,
+                'ttl': xconnect_dns_record.ttl,
+                'proxied': xconnect_dns_record.proxied
+              }
+            ] + (xconnect_legacy_dns_records | default([]))
+          }}
