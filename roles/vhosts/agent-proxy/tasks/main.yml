@@ -85,6 +85,9 @@
     dest: "{{ agent_proxy_app_dir }}"
     version: "{{ agent_proxy_repo_version }}"
     update: true
+    # Release tags in this managed checkout may have been repointed historically.
+    # Force the fetch so stale local tags cannot block an immutable deployment.
+    force: true
   notify: Restart agent-proxy
   when: agent_proxy_manage_source_checkout | bool
   register: agent_proxy_clone_res
@@ -96,6 +99,7 @@
     dest: "{{ agent_proxy_app_dir }}"
     version: main
     update: true
+    force: true
   notify: Restart agent-proxy
   when:
     - agent_proxy_manage_source_checkout | bool
