@@ -1,0 +1,44 @@
+data_dir = "/var/lib/vector"
+
+[sources.internal_metrics]
+type = "internal_metrics"
+
+[sources.node_metrics]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:19100/metrics"]
+scrape_interval_secs = 15
+
+[transforms.add_xconnect_labels]
+type = "remap"
+inputs = ["internal_metrics", "node_metrics"]
+source = '''
+.tags.role = "{{ xconnect_observability_role }}"
+.tags.environment = "{{ xconnect_observability_environment }}"
+.tags.instance = "{{ xconnect_observability_instance }}"
+.tags.job = "xconnect"
+'''
+
+[sinks.prometheus_remote]
+type = "prometheus_remote_write"
+inputs = ["add_xconnect_labels"]
+endpoint = "{{ xconnect_observability_endpoint }}/ingest/metrics/api/v1/write"
+
+[sinks.prometheus_remote.auth]
+strategy = "basic"
+user = "{{ xconnect_observability_auth_user }}"
+password = "{{ xconnect_observability_auth_password }}"
+
+[sinks.prometheus_remote.tls]
+verify_certificate = true
+verify_hostname = true
+
+[sinks.prometheus_remote.healthcheck]
+enabled = false
+
+[sinks.prometheus_remote.batch]
+max_events = 500
+timeout_secs = 5
+
+[sinks.prometheus_remote.request]
+retry_initial_backoff_secs = 2
+retry_max_duration_secs = 300

@@ -1,12 +1,18 @@
 ---
-# This role writes only local Prometheus textfile metrics.  node_exporter and
-# Vector remain the reusable collection/forwarding roles.
+# This role is deliberately self-contained. It must not import the platform
+# common, firewall or blackbox roles on a persistent Gateway just to publish
+# a small set of runtime metrics.
 xconnect_observability_role: one
 xconnect_observability_environment: uat
 xconnect_observability_instance: "{{ inventory_hostname }}"
 xconnect_observability_wireguard_interface: xconone0
 xconnect_observability_state_dir: /var/lib/xconnect-one
-xconnect_observability_metrics_dir: /var/lib/node_exporter
+xconnect_observability_metrics_dir: /var/lib/xconnect-node-exporter
 xconnect_observability_metrics_file: "{{ xconnect_observability_metrics_dir }}/xconnect.prom"
 xconnect_observability_collector_path: /usr/local/lib/xconnect-observability/collect
 xconnect_observability_collector_interval_seconds: 15
+xconnect_observability_endpoint: https://observability.svc.plus
+xconnect_observability_auth_user: ""
+xconnect_observability_auth_password: ""
+xconnect_observability_node_exporter_version: '1.8.2'
+xconnect_observability_vector_version: '0.41.1'
