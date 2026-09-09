@@ -1,0 +1,96 @@
+---
+- name: Reconcile one XConnect regional entrypoint
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    xconnect_pool_name: "{{ lookup('ansible.builtin.env', 'XCONNECT_POOL') | default('', true) }}"
+    xconnect_gitops_config: "{{ lookup('ansible.builtin.env', 'ULIGHTHOST_GITOPS_CONFIG') | default(playbook_dir ~ '/../gitops/topology/prod/selfhost/ulighthost-xconnect.yaml', true) }}"
+    xconnect_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+    xconnect_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
+    xconnect_vault_path: "{{ lookup('ansible.builtin.env', 'ULIGHTHOST_VAULT_PATH') | default('prod/ulighthost-xconnect', true) }}"
+    xconnect_canonical_pool_name: "{{ 'ph' if (xconnect_pool_name | trim | lower) == 'hp' else (xconnect_pool_name | trim | lower) }}"
+  pre_tasks:
+    - name: Require an explicit pool selection
+      ansible.builtin.assert:
+        that:
+          - xconnect_pool_name | length > 0
+        fail_msg: "Set XCONNECT_POOL to one pool name, for example jp."
+
+    - name: Load XConnect topology from GitOps
+      ansible.builtin.include_vars:
+        file: "{{ xconnect_gitops_config }}"
+        name: xconnect_policy
+
+    - name: Resolve selected regional pool
+      ansible.builtin.set_fact:
+        xconnect_selected_pool: >-
+          {{ xconnect_policy.spec.pools
+             | selectattr('name', 'equalto', xconnect_canonical_pool_name)
+             | list
+             | first
+             | default({}, true) }}
+
+    - name: Resolve the declared entrypoint node
+      ansible.builtin.set_fact:
+        xconnect_entrypoint_node: >-
+          {{ xconnect_selected_pool.nodes
+             | selectattr('id', 'equalto', xconnect_selected_pool.entrypoint.dns_record.target_node)
+             | list | first | default({}, true) }}
+
+    - name: Require a direct node DNS binding
+      ansible.builtin.assert:
+        that:
+          - xconnect_selected_pool | length > 0
+          - xconnect_selected_pool.entrypoint.dns_record.type == 'A'
+          - xconnect_entrypoint_node | length > 0
+          - xconnect_vault_token | length > 0
+        fail_msg: "The selected pool needs an A record target node and VAULT_TOKEN."
+
+    - name: Read XConnect node records from Vault
+      community.hashi_vault.vault_kv2_get:
+        url: "{{ xconnect_vault_addr }}"
+        auth_method: token
+        token: "{{ xconnect_vault_token }}"
+        path: "{{ xconnect_vault_path | regex_replace('^kv/data/', '') }}"
+        engine_mount_point: kv
+      register: xconnect_vault_secret
+      no_log: true
+
+    - name: Require an IPv4 address for the entrypoint node
+      ansible.builtin.assert:
+        that:
+          - xconnect_entrypoint_node.vault_key in xconnect_vault_secret.secret.nodes
+          - xconnect_vault_secret.secret.nodes[xconnect_entrypoint_node.vault_key].public_ipv4 is defined
+          - xconnect_vault_secret.secret.nodes[xconnect_entrypoint_node.vault_key].public_ipv4 | ansible.utils.ipv4
+        fail_msg: "Vault must contain a valid public_ipv4 for the selected entrypoint node."
+      no_log: true
+
+  roles:
+    - role: cloudflare_dns
+      vars:
+        cloudflare_dns_zone_name: svc.plus
+        cloudflare_dns_records: >-
+          {{
+            [
+              {
+                'type': 'A',
+                'name': xconnect_selected_pool.entrypoint.fqdn,
+                'content': xconnect_vault_secret.secret.nodes[xconnect_entrypoint_node.vault_key].public_ipv4,
+                'ttl': xconnect_selected_pool.entrypoint.dns_record.ttl | default(1),
+                'proxied': xconnect_selected_pool.entrypoint.dns_record.proxied | default(false)
+              }
+            ]
+            +
+            (
+              [
+                {
+                  'type': 'CNAME',
+                  'name': xconnect_selected_pool.legacy_cname,
+                  'content': xconnect_selected_pool.legacy_cname_target,
+                  'ttl': 1,
+                  'proxied': false
+                }
+              ] if xconnect_selected_pool.legacy_cname is defined else []
+            )
+          }}
