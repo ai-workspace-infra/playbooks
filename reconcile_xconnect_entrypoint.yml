@@ -24,7 +24,10 @@
     - name: Resolve canonical pool and Vault path
       ansible.builtin.set_fact:
         xconnect_canonical_pool_name: >-
-          {{ xconnect_policy.spec.aliases.pools.get(xconnect_pool_name, xconnect_pool_name) }}
+          {{ (xconnect_policy.spec.aliases.pools | default({})).get(
+               xconnect_pool_name,
+               'ph' if xconnect_pool_name == 'hp' else xconnect_pool_name
+             ) }}
         xconnect_vault_path: >-
           {{ xconnect_vault_path_override
              if xconnect_vault_path_override | length > 0
