@@ -1,0 +1,59 @@
+---
+- name: Preserve deploy-key access for a manually provisioned node
+  hosts: "{{ non_iac_ssh_hosts | default('agent_proxy') }}"
+  gather_facts: true
+  become: true
+  vars:
+    non_iac_deploy_public_key: >-
+      {{ lookup('ansible.builtin.env', 'SSH_PUBLIC_DEPLOY_KEY') | default('', true) }}
+  pre_tasks:
+    - name: Require the release deploy public key
+      ansible.builtin.assert:
+        that:
+          - non_iac_deploy_public_key is match('^ssh-(rsa|ed25519) ')
+        fail_msg: SSH_PUBLIC_DEPLOY_KEY must contain the public half of the release deploy key.
+
+    - name: Resolve the connection user's home directory
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ ansible_user }}"
+
+    - name: Record the connection user's SSH paths
+      ansible.builtin.set_fact:
+        non_iac_ssh_user: "{{ ansible_user }}"
+        non_iac_ssh_home: "{{ ansible_facts.getent_passwd[ansible_user][4] }}"
+
+  tasks:
+    - name: Ensure the connection user's SSH directory exists
+      ansible.builtin.file:
+        path: "{{ non_iac_ssh_home }}/.ssh"
+        state: directory
+        owner: "{{ non_iac_ssh_user }}"
+        group: "{{ non_iac_ssh_user }}"
+        mode: "0700"
+
+    - name: Allow the authorized keys file to be updated
+      ansible.builtin.command:
+        argv:
+          - chattr
+          - -i
+          - "{{ non_iac_ssh_home }}/.ssh/authorized_keys"
+      changed_when: false
+      failed_when: false
+
+    - name: Install the release deploy public key
+      ansible.posix.authorized_key:
+        user: "{{ non_iac_ssh_user }}"
+        key: "{{ non_iac_deploy_public_key }}"
+        state: present
+        manage_dir: false
+
+    - name: Verify deploy-key access remains declared
+      ansible.builtin.slurp:
+        src: "{{ non_iac_ssh_home }}/.ssh/authorized_keys"
+      register: non_iac_authorized_keys
+
+    - name: Require the release deploy key in authorized_keys
+      ansible.builtin.assert:
+        that:
+          - non_iac_deploy_public_key in (non_iac_authorized_keys.content | b64decode)
