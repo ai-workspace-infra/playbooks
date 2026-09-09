@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+metrics_dir='{{ xconnect_observability_metrics_dir }}'
+metrics_file='{{ xconnect_observability_metrics_file }}'
+role='{{ xconnect_observability_role }}'
+environment='{{ xconnect_observability_environment }}'
+instance='{{ xconnect_observability_instance }}'
+wg_interface='{{ xconnect_observability_wireguard_interface }}'
+state_dir='{{ xconnect_observability_state_dir }}'
+
+tmp_file=$(mktemp "${metrics_dir}/.xconnect.prom.XXXXXX")
+trap 'rm -f "${tmp_file}"' EXIT
+
+metric_escape() {
+  sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\n/\\n/g'
+}
+
+label_role=$(printf '%s' "${role}" | metric_escape)
+label_environment=$(printf '%s' "${environment}" | metric_escape)
+label_instance=$(printf '%s' "${instance}" | metric_escape)
+labels="role=\"${label_role}\",environment=\"${label_environment}\",instance=\"${label_instance}\""
+
+up() {
+  if "$@" >/dev/null 2>&1; then
+    printf '1'
+  else
+    printf '0'
+  fi
+}
+
+wireguard_up=$(up ip link show "${wg_interface}")
+xray_up=$(up pgrep -x xray)
+state_up=$(up test -s "${state_dir}/state.json")
+peer_count=0
+latest_handshake=0
+if [[ "${wireguard_up}" == 1 ]]; then
+  peer_count=$(wg show "${wg_interface}" peers 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')
+  latest_handshake=$(wg show "${wg_interface}" latest-handshakes 2>/dev/null | awk 'BEGIN { latest=0 } $2 > latest { latest=$2 } END { print latest }')
+fi
+now=$(date +%s)
+handshake_age=-1
+if [[ "${latest_handshake}" =~ ^[0-9]+$ ]] && (( latest_handshake > 0 && latest_handshake <= now )); then
+  handshake_age=$((now - latest_handshake))
+fi
+
+cat >"${tmp_file}" <<METRICS
+# HELP xconnect_runtime_info Static identity for the XConnect controlled node.
+# TYPE xconnect_runtime_info gauge
+xconnect_runtime_info{${labels}} 1
+# HELP xconnect_runtime_up Whether an XConnect local runtime component is active.
+# TYPE xconnect_runtime_up gauge
+xconnect_runtime_up{${labels},component="wireguard"} ${wireguard_up}
+xconnect_runtime_up{${labels},component="xray"} ${xray_up}
+xconnect_runtime_up{${labels},component="state"} ${state_up}
+# HELP xconnect_wireguard_peer_count Number of configured WireGuard peers.
+# TYPE xconnect_wireguard_peer_count gauge
+xconnect_wireguard_peer_count{${labels}} ${peer_count}
+# HELP xconnect_wireguard_latest_handshake_age_seconds Age of the newest WireGuard handshake, or -1 when unavailable.
+# TYPE xconnect_wireguard_latest_handshake_age_seconds gauge
+xconnect_wireguard_latest_handshake_age_seconds{${labels}} ${handshake_age}
+METRICS
+
+chmod 0644 "${tmp_file}"
+mv "${tmp_file}" "${metrics_file}"

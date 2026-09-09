@@ -1,0 +1,63 @@
+---
+- name: Validate XConnect observability role inputs
+  ansible.builtin.assert:
+    that:
+      - xconnect_observability_role in ['gateway', 'one']
+      - xconnect_observability_environment | trim | length > 0
+      - xconnect_observability_instance | trim | length > 0
+      - xconnect_observability_wireguard_interface | trim | length > 0
+      - xconnect_observability_state_dir | trim | length > 0
+      - xconnect_observability_collector_interval_seconds | int >= 10
+
+- name: Create XConnect observability collector directory
+  ansible.builtin.file:
+    path: "{{ xconnect_observability_collector_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Ensure node exporter textfile directory exists
+  ansible.builtin.file:
+    path: "{{ xconnect_observability_metrics_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install XConnect observability collector
+  ansible.builtin.template:
+    src: collect.sh.j2
+    dest: "{{ xconnect_observability_collector_path }}"
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install XConnect observability collector service
+  ansible.builtin.template:
+    src: xconnect-observability-collector.service.j2
+    dest: /etc/systemd/system/xconnect-observability-collector.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart XConnect observability collector
+
+- name: Install XConnect observability collector timer
+  ansible.builtin.template:
+    src: xconnect-observability-collector.timer.j2
+    dest: /etc/systemd/system/xconnect-observability-collector.timer
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart XConnect observability collector
+
+- name: Enable XConnect observability collector timer
+  ansible.builtin.systemd:
+    name: xconnect-observability-collector.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Collect initial XConnect metrics
+  ansible.builtin.command: "{{ xconnect_observability_collector_path }}"
+  changed_when: false
