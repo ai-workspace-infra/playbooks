@@ -1,0 +1,18 @@
+[Unit]
+Description=XConnect Prometheus node exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nobody
+Group=nogroup
+ExecStart=/usr/local/bin/xconnect-node-exporter --web.listen-address=127.0.0.1:19100 --collector.textfile --collector.textfile.directory={{ xconnect_observability_metrics_dir }}
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

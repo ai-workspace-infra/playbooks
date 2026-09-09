@@ -1,21 +1,14 @@
 ---
 # Collection-side entrypoint for independently deployed Gateway and One nodes.
-# It intentionally reuses the generic OS roles rather than defining XConnect
-# credentials or an observability backend in this repository.
+# It is deliberately self-contained: monitoring must not apply platform
+# firewall, hostname, SSH-hardening or Blackbox defaults to a persistent relay.
 - name: Deploy XConnect Gateway and One observability
   hosts: "{{ xconnect_observability_hosts | default('xconnect') }}"
   become: true
   gather_facts: true
   vars:
-    group: all
-    vector_auth_user: "{{ lookup('ansible.builtin.env', 'VECTOR_AUTH_USER') | default('', true) }}"
-    vector_auth_password: "{{ lookup('ansible.builtin.env', 'VECTOR_AUTH_PASSWORD') | default('', true) }}"
-    vector_observability_endpoint: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ENDPOINT') | default('https://observability.svc.plus', true) }}"
-    # Gateway/One run standalone Xray without the Agent Proxy stats API.
-    vector_xray_exporter_enabled: false
-    blackbox_ssl_targets: []
+    xconnect_observability_auth_user: "{{ lookup('ansible.builtin.env', 'VECTOR_AUTH_USER') | default('', true) }}"
+    xconnect_observability_auth_password: "{{ lookup('ansible.builtin.env', 'VECTOR_AUTH_PASSWORD') | default('', true) }}"
+    xconnect_observability_endpoint: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ENDPOINT') | default('https://observability.svc.plus', true) }}"
   roles:
-    - role: vhosts/node_exporter
-    - role: vhosts/process_exporter
-    - role: vhosts/vector-agent
     - role: vhosts/vpn-overlay/observability

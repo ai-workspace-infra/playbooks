@@ -8,6 +8,113 @@
       - xconnect_observability_wireguard_interface | trim | length > 0
       - xconnect_observability_state_dir | trim | length > 0
       - xconnect_observability_collector_interval_seconds | int >= 10
+      - xconnect_observability_endpoint == 'https://observability.svc.plus'
+      - xconnect_observability_auth_user | trim | length > 0
+      - xconnect_observability_auth_password | trim | length > 0
+
+- name: Resolve observability agent architecture
+  ansible.builtin.set_fact:
+    xconnect_observability_arch: "{{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}"
+
+- name: Install minimal observability runtime dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - tar
+    state: present
+    update_cache: true
+    lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
+
+- name: Download node exporter archive
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/prometheus/node_exporter/releases/download/v{{ xconnect_observability_node_exporter_version }}/node_exporter-{{ xconnect_observability_node_exporter_version }}.linux-{{ xconnect_observability_arch }}.tar.gz
+    dest: /tmp/xconnect-node-exporter.tar.gz
+    mode: '0644'
+
+- name: Extract node exporter archive
+  ansible.builtin.unarchive:
+    src: /tmp/xconnect-node-exporter.tar.gz
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/node_exporter-{{ xconnect_observability_node_exporter_version }}.linux-{{ xconnect_observability_arch }}/node_exporter"
+
+- name: Install node exporter binary
+  ansible.builtin.copy:
+    src: "/tmp/node_exporter-{{ xconnect_observability_node_exporter_version }}.linux-{{ xconnect_observability_arch }}/node_exporter"
+    dest: /usr/local/bin/xconnect-node-exporter
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install XConnect node exporter service
+  ansible.builtin.template:
+    src: xconnect-node-exporter.service.j2
+    dest: /etc/systemd/system/xconnect-node-exporter.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable XConnect node exporter
+  ansible.builtin.systemd:
+    name: xconnect-node-exporter
+    enabled: true
+    state: restarted
+    daemon_reload: true
+
+- name: Download Vector package
+  ansible.builtin.get_url:
+    url: "https://github.com/vectordotdev/vector/releases/download/v{{ xconnect_observability_vector_version }}/vector_{{ xconnect_observability_vector_version }}-1_{{ xconnect_observability_arch }}.deb"
+    dest: /tmp/xconnect-vector.deb
+    mode: '0644'
+
+- name: Install Vector package
+  ansible.builtin.apt:
+    deb: /tmp/xconnect-vector.deb
+    state: present
+    lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
+
+- name: Create Vector configuration directory
+  ansible.builtin.file:
+    path: /etc/vector
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install minimal XConnect Vector configuration
+  ansible.builtin.template:
+    src: vector.toml.j2
+    dest: /etc/vector/xconnect.toml
+    owner: root
+    group: vector
+    mode: '0640'
+  no_log: true
+
+- name: Create Vector systemd override directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/vector.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install XConnect Vector systemd override
+  ansible.builtin.template:
+    src: xconnect-vector.service.j2
+    dest: /etc/systemd/system/vector.service.d/xconnect.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable XConnect Vector remote write
+  ansible.builtin.systemd:
+    name: vector
+    enabled: true
+    state: restarted
+    daemon_reload: true
 
 - name: Create XConnect observability collector directory
   ansible.builtin.file:
