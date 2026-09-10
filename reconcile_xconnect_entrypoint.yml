@@ -5,7 +5,7 @@
   gather_facts: false
   vars:
     xconnect_pool_name: "{{ lookup('ansible.builtin.env', 'XCONNECT_POOL') | default('', true) }}"
-    xconnect_gitops_config: "{{ lookup('ansible.builtin.env', 'XCONNECT_GITOPS_CONFIG') | default(playbook_dir ~ '/../gitops/topology/prod/selfhost/ulighthost-xconnect.yaml', true) }}"
+    xconnect_gitops_config: "{{ lookup('ansible.builtin.env', 'XCONNECT_GITOPS_CONFIG') | default(playbook_dir ~ '/../gitops/topology/prod/selfhost/xconnect-regional-pools.yaml', true) }}"
     xconnect_cmdb_file: "{{ lookup('ansible.builtin.env', 'XCONNECT_CMDB_FILE') | default('', true) }}"
     xconnect_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
     xconnect_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
@@ -29,18 +29,38 @@
              | selectattr('name', 'equalto', xconnect_canonical_pool_name)
              | list | first | default({}, true) }}
 
+    - name: Resolve entrypoint DNS defaults
+      ansible.builtin.set_fact:
+        xconnect_entrypoint_dns_record: >-
+          {{ (xconnect_policy.spec.entrypoint_defaults.dns_record | default({}, true))
+             | combine(xconnect_selected_pool.entrypoint.dns_record | default({}, true), recursive=true) }}
+
+    - name: Resolve optional legacy entrypoint
+      ansible.builtin.set_fact:
+        xconnect_legacy_entrypoint: >-
+          {{ xconnect_selected_pool.legacy_entrypoints | default([], true) | first
+             | default({}, true) }}
+
+    - name: Resolve Terraform CMDB node selector
+      ansible.builtin.set_fact:
+        xconnect_cmdb_node_id: >-
+          {{ xconnect_entrypoint_node.node_id
+             if xconnect_entrypoint_node.node_id is defined
+             else xconnect_entrypoint_node.cmdb_selector.node_id }}
+      when: xconnect_entrypoint_node.connection_source == 'terraform_cmdb'
+
     - name: Resolve the declared entrypoint node
       ansible.builtin.set_fact:
         xconnect_entrypoint_node: >-
           {{ xconnect_selected_pool.nodes
-             | selectattr('id', 'equalto', xconnect_selected_pool.entrypoint.dns_record.target_node)
+             | selectattr('id', 'equalto', (xconnect_entrypoint_dns_record.target_node | default(xconnect_selected_pool.entrypoint.scheduler_node)))
              | list | first | default({}, true) }}
 
     - name: Require a direct node DNS binding
       ansible.builtin.assert:
         that:
           - xconnect_selected_pool | length > 0
-          - xconnect_selected_pool.entrypoint.dns_record.type == 'A'
+          - xconnect_entrypoint_dns_record.type == 'A'
           - xconnect_entrypoint_node | length > 0
           - xconnect_entrypoint_node.connection_source in ['terraform_cmdb', 'vault']
         fail_msg: "The selected pool needs a declared A record target node and connection source."
@@ -57,7 +77,7 @@
       ansible.builtin.set_fact:
         xconnect_entrypoint_ip: >-
           {{ (lookup('ansible.builtin.file', xconnect_cmdb_file) | from_json | dict2items
-              | selectattr('value.node_id', 'equalto', xconnect_entrypoint_node.cmdb_selector.node_id)
+              | selectattr('value.node_id', 'equalto', xconnect_cmdb_node_id)
               | map(attribute='value.ip') | list | first | default('', true)) }}
       when: xconnect_entrypoint_node.connection_source == 'terraform_cmdb'
       no_log: true
@@ -82,7 +102,10 @@
 
     - name: Resolve manually provisioned node address from GitOps metadata
       ansible.builtin.set_fact:
-        xconnect_entrypoint_ip: "{{ xconnect_entrypoint_node.ansible_host }}"
+        xconnect_entrypoint_ip: >-
+          {{ xconnect_entrypoint_node.ansible_host
+             | default(xconnect_vault_secret.secret.public_ipv4
+             | default(xconnect_vault_secret.secret.ansible_host | default(''))) }}
       when: xconnect_entrypoint_node.connection_source == 'vault'
 
     - name: Validate resolved public IPv4 address
@@ -105,28 +128,40 @@
             (
               [
                 {
-                  'type': xconnect_selected_pool.entrypoint.dns_record.origin_record.type | default('A'),
-                  'name': xconnect_selected_pool.entrypoint.dns_record.origin_record.name,
+                  'type': xconnect_entrypoint_dns_record.origin_record.type | default('A'),
+                  'name': xconnect_entrypoint_dns_record.origin_record.name,
                   'content': xconnect_entrypoint_ip,
-                  'ttl': xconnect_selected_pool.entrypoint.dns_record.origin_record.ttl | default(1),
-                  'proxied': xconnect_selected_pool.entrypoint.dns_record.origin_record.proxied | default(false)
+                  'ttl': xconnect_entrypoint_dns_record.origin_record.ttl | default(1),
+                  'proxied': xconnect_entrypoint_dns_record.origin_record.proxied | default(false)
                 }
-              ] if xconnect_selected_pool.entrypoint.dns_record.origin_record is defined else []
+              ] if xconnect_entrypoint_dns_record.origin_record is defined else []
             )
             +
             [
               {
-                'type': xconnect_selected_pool.entrypoint.dns_record.type | default('A'),
+                'type': xconnect_entrypoint_dns_record.type | default('A'),
                 'name': xconnect_selected_pool.entrypoint.fqdn,
                 'content': (
-                  xconnect_selected_pool.entrypoint.dns_record.content
-                  if (xconnect_selected_pool.entrypoint.dns_record.type | default('A')) == 'CNAME'
+                  xconnect_entrypoint_dns_record.content
+                  if (xconnect_entrypoint_dns_record.type | default('A')) == 'CNAME'
                   else xconnect_entrypoint_ip
                 ),
-                'ttl': xconnect_selected_pool.entrypoint.dns_record.ttl | default(1),
-                'proxied': xconnect_selected_pool.entrypoint.dns_record.proxied | default(false)
+                'ttl': xconnect_entrypoint_dns_record.ttl | default(1),
+                'proxied': xconnect_entrypoint_dns_record.proxied | default(false)
               }
             ]
+            +
+            (
+              [
+                {
+                  'type': xconnect_legacy_entrypoint.type | default('CNAME'),
+                  'name': xconnect_legacy_entrypoint.fqdn,
+                  'content': xconnect_legacy_entrypoint.target,
+                  'ttl': xconnect_legacy_entrypoint.ttl | default(1),
+                  'proxied': xconnect_legacy_entrypoint.proxied | default(false)
+                }
+              ] if xconnect_legacy_entrypoint.fqdn is defined else []
+            )
             +
             (
               [
