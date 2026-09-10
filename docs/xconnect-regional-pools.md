@@ -4,10 +4,10 @@
 
 | Pool | Region | 稳定入口 |
 |---|---|---|
-| `jp` | `jpn-tky` | `JP-XConnect.svc.plus` |
-| `us` | `us-ca` | `US-XConnect.svc.plus` |
-| `hk` | `hk` | `HK-XConnect.svc.plus` |
-| `ph` | `ph-mnl` | `PH-XConnect.svc.plus` |
+| `jp` | `jpn-tky` | `jp-xconnect.svc.plus` |
+| `us` | `us-ca` | `us-xconnect.svc.plus` |
+| `hk` | `hk` | `hk-xconnect.svc.plus` |
+| `ph` | `ph-mnl` | `ph-xconnect.svc.plus` |
 
 canonical 命名使用 `ph` / `ph-mnl`；历史输入 `hp` 由 GitOps alias 归一化。菲律宾当前首节点是 `ph-surfercloud-01`，其 `provider: surfercloud`、`product: ulighthost` 是可替换的声明数据。
 
