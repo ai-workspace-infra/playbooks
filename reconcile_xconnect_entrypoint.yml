@@ -88,9 +88,11 @@
     - name: Validate resolved public IPv4 address
       ansible.builtin.assert:
         that:
-          # ansible.utils.ipv4 returns a truthy string on recent Ansible
-          # releases; assert requires an actual boolean expression.
-          - xconnect_entrypoint_ip | ansible.utils.ipv4 | bool
+          # ansible.utils.ipv4 returns the matching address as a string.
+          # Compare its length so assert receives a real boolean; Ansible's
+          # bool filter treats arbitrary non-empty strings, including IPv4
+          # addresses, as false.
+          - (xconnect_entrypoint_ip | ansible.utils.ipv4 | length) > 0
         fail_msg: "The selected entrypoint did not resolve to a valid public IPv4 address."
       no_log: true
 
