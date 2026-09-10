@@ -169,26 +169,79 @@
       no_log: true
       when: email_dns_apply
 
-    - name: Query existing records by name and type
+    # A (name, type) pair can hold more than one record - svc.plus carries five
+    # MX rows at the apex. The previous shape addressed that set through
+    # result[0], so five desired values were written onto one record id in turn:
+    # the last one won, the other four rows kept whatever they already held, and
+    # aspmx.l.google.com at priority 1 was overwritten out of existence. Reconcile
+    # per name instead, the way roles/cloudflare_dns already does it.
+    - name: Collect the record set this run owns
+      ansible.builtin.set_fact:
+        desired_records: "{{ managed_records + email_dns.spec.google_workspace.mx }}"
+      when: email_dns_apply
+
+    # The apex TXT name is shared, not owned: it holds the merged SPF written a
+    # few tasks above and any google-site-verification token the domain carries
+    # for Search Console, Workspace or anyone else. Reconciling it by wiping the
+    # name would take those out as collateral, so it is excluded from the owned
+    # set - and a declared record that lands there is an error worth stopping
+    # for rather than skipping quietly.
+    - name: Refuse to take ownership of the shared apex TXT name
+      ansible.builtin.assert:
+        that:
+          - desired_records | selectattr('name', 'equalto', email_dns.spec.zone)
+                            | selectattr('type', 'equalto', 'TXT') | list | length == 0
+        fail_msg: >-
+          A declared record targets the apex TXT of {{ email_dns.spec.zone }}, which this
+          reconciler shares with SPF and domain-verification tokens. Move it to a
+          subdomain, or extend the SPF merge task to own it explicitly.
+      when: email_dns_apply
+
+    # Pairs rather than dicts, and zip rather than json_query: the CI step
+    # installs ansible-core plus community.hashi_vault, and json_query needs
+    # community.general, which is not there.
+    - name: Resolve the distinct name/type pairs to reconcile
+      ansible.builtin.set_fact:
+        record_keys: >-
+          {{ desired_records | map(attribute='name')
+             | zip(desired_records | map(attribute='type'))
+             | map('list') | unique | list }}
+      when: email_dns_apply
+
+    - name: Query existing records under each owned name
       ansible.builtin.uri:
-        url: "{{ cloudflare_api_base }}/zones/{{ cloudflare_zone_id }}/dns_records?name={{ item.name }}&type={{ item.type }}"
+        url: "{{ cloudflare_api_base }}/zones/{{ cloudflare_zone_id }}/dns_records?name={{ item[0] }}&type={{ item[1] }}"
         headers: {Authorization: "Bearer {{ cloudflare_api_token }}"}
         return_content: true
-      loop: "{{ managed_records + email_dns.spec.google_workspace.mx }}"
-      loop_control: {label: "{{ item.type }} {{ item.name }}"}
-      register: existing_records
+      loop: "{{ record_keys }}"
+      loop_control: {label: "{{ item[1] }} {{ item[0] }}"}
+      register: existing_sets
       no_log: true
       when: email_dns_apply
 
-    - name: Upsert managed DNS records
+    # Delete then create, one name at a time. The alternative - create first,
+    # delete after - reads safer but Cloudflare rejects an exact duplicate of a
+    # record that is already correct, so a no-op run would start erroring.
+    - name: Remove the existing records under each owned name
       ansible.builtin.uri:
-        url: "{{ cloudflare_api_base }}/zones/{{ cloudflare_zone_id }}/dns_records{{ '/' ~ (item.1.json.result[0].id if item.1.json.result | length > 0 else '') }}"
-        method: "{{ 'PUT' if item.1.json.result | length > 0 else 'POST' }}"
+        url: "{{ cloudflare_api_base }}/zones/{{ cloudflare_zone_id }}/dns_records/{{ item.1.id }}"
+        method: DELETE
+        headers: {Authorization: "Bearer {{ cloudflare_api_token }}", Content-Type: application/json}
+      loop: "{{ existing_sets.results | subelements('json.result', skip_missing=True) }}"
+      loop_control: {label: "{{ item.1.type }} {{ item.1.name }}"}
+      no_log: true
+      when: email_dns_apply
+
+    - name: Create the declared records
+      ansible.builtin.uri:
+        url: "{{ cloudflare_api_base }}/zones/{{ cloudflare_zone_id }}/dns_records"
+        method: POST
         headers: {Authorization: "Bearer {{ cloudflare_api_token }}", Content-Type: application/json}
         body_format: json
-        body: "{{ {'type': item.0.type, 'name': item.0.name, 'content': item.0.value | default(item.0.content), 'ttl': item.0.ttl | default(3600), 'proxied': false} | combine({'priority': item.0.priority} if item.0.priority is defined else {}) }}"
+        body: "{{ {'type': item.type, 'name': item.name, 'content': item.value | default(item.content), 'ttl': item.ttl | default(3600), 'proxied': false} | combine({'priority': item.priority} if item.priority is defined else {}) }}"
+        status_code: [200, 201]
         return_content: true
-      loop: "{{ (managed_records + email_dns.spec.google_workspace.mx) | zip(existing_records.results) | list }}"
-      loop_control: {label: "{{ item.0.type }} {{ item.0.name }}"}
+      loop: "{{ desired_records }}"
+      loop_control: {label: "{{ item.type }} {{ item.name }}"}
       no_log: true
       when: email_dns_apply
