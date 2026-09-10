@@ -102,11 +102,27 @@
         cloudflare_dns_zone_name: svc.plus
         cloudflare_dns_records: >-
           {{
+            (
+              [
+                {
+                  'type': xconnect_selected_pool.entrypoint.dns_record.origin_record.type | default('A'),
+                  'name': xconnect_selected_pool.entrypoint.dns_record.origin_record.name,
+                  'content': xconnect_entrypoint_ip,
+                  'ttl': xconnect_selected_pool.entrypoint.dns_record.origin_record.ttl | default(1),
+                  'proxied': xconnect_selected_pool.entrypoint.dns_record.origin_record.proxied | default(false)
+                }
+              ] if xconnect_selected_pool.entrypoint.dns_record.origin_record is defined else []
+            )
+            +
             [
               {
-                'type': 'A',
+                'type': xconnect_selected_pool.entrypoint.dns_record.type | default('A'),
                 'name': xconnect_selected_pool.entrypoint.fqdn,
-                'content': xconnect_entrypoint_ip,
+                'content': (
+                  xconnect_selected_pool.entrypoint.dns_record.content
+                  if (xconnect_selected_pool.entrypoint.dns_record.type | default('A')) == 'CNAME'
+                  else xconnect_entrypoint_ip
+                ),
                 'ttl': xconnect_selected_pool.entrypoint.dns_record.ttl | default(1),
                 'proxied': xconnect_selected_pool.entrypoint.dns_record.proxied | default(false)
               }
