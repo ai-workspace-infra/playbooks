@@ -41,6 +41,13 @@
           {{ xconnect_selected_pool.legacy_entrypoints | default([], true) | first
              | default({}, true) }}
 
+    - name: Resolve the declared entrypoint node
+      ansible.builtin.set_fact:
+        xconnect_entrypoint_node: >-
+          {{ xconnect_selected_pool.nodes
+             | selectattr('id', 'equalto', (xconnect_entrypoint_dns_record.target_node | default(xconnect_selected_pool.entrypoint.scheduler_node)))
+             | list | first | default({}, true) }}
+
     - name: Resolve Terraform CMDB node selector
       ansible.builtin.set_fact:
         xconnect_cmdb_node_id: >-
@@ -48,13 +55,6 @@
              if xconnect_entrypoint_node.node_id is defined
              else xconnect_entrypoint_node.cmdb_selector.node_id }}
       when: xconnect_entrypoint_node.connection_source == 'terraform_cmdb'
-
-    - name: Resolve the declared entrypoint node
-      ansible.builtin.set_fact:
-        xconnect_entrypoint_node: >-
-          {{ xconnect_selected_pool.nodes
-             | selectattr('id', 'equalto', (xconnect_entrypoint_dns_record.target_node | default(xconnect_selected_pool.entrypoint.scheduler_node)))
-             | list | first | default({}, true) }}
 
     - name: Require a direct node DNS binding
       ansible.builtin.assert:
