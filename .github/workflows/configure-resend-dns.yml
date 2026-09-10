@@ -16,9 +16,17 @@ permissions:
 
 jobs:
   reconcile:
-    name: Reconcile Resend and Cloudflare DNS
+    name: Reconcile ${{ matrix.zone }} email DNS
     runs-on: ubuntu-latest
     environment: prod
+    strategy:
+      # Zones are reconciled one at a time: both policies edit the same
+      # Cloudflare account, and a failure on one zone must not leave the other
+      # half-applied.
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        zone: [xworktech.com, svc.plus]
     steps:
       - name: Checkout playbooks
         uses: actions/checkout@v4
@@ -54,7 +62,7 @@ jobs:
           EMAIL_DNS_APPLY: "true"
           RESEND_API_KEY: ${{ env.RESEND_API_KEY }}
           CLOUDFLARE_DNS_API_TOKEN: ${{ env.CLOUDFLARE_DNS_API_TOKEN }}
-          EMAIL_DNS_CONFIG_PATH: gitops/resources/xworktech.com/prod/cloudflare/email-dns.yaml
+          EMAIL_DNS_CONFIG_PATH: gitops/resources/${{ matrix.zone }}/prod/cloudflare/email-dns.yaml
         run: >-
           ansible-playbook -i localhost, -c local
           playbooks/configure_resend_dns.yml

@@ -1,5 +1,5 @@
 ---
-- name: Reconcile Resend transactional email and Cloudflare DNS
+- name: Reconcile transactional email providers and Cloudflare DNS
   hosts: localhost
   connection: local
   gather_facts: false
@@ -31,6 +31,10 @@
       no_log: true
       when: vault_token | length > 0
 
+    - name: Decide which providers this policy declares
+      ansible.builtin.set_fact:
+        resend_enabled: "{{ email_dns.spec.resend is defined }}"
+
     - name: Resolve credentials from Vault or environment
       ansible.builtin.set_fact:
         resend_api_key: "{{ (email_secrets.secret | default({})).resend_api_key | default(lookup('env', 'RESEND_API_KEY'), true) }}"
@@ -40,15 +44,20 @@
     - name: Validate required credentials
       ansible.builtin.assert:
         that:
-          - resend_api_key | length > 0
           - cloudflare_api_token | length > 0
-        fail_msg: "Provide RESEND_API_KEY and CLOUDFLARE_DNS_API_TOKEN, or the Vault secret at {{ vault_email_secret_path }}."
+          - (not resend_enabled) or (resend_api_key | length > 0)
+        fail_msg: >-
+          Provide CLOUDFLARE_DNS_API_TOKEN (and RESEND_API_KEY when the policy
+          declares spec.resend), or the Vault secret at {{ vault_email_secret_path }}.
       when: email_dns_apply
 
   tasks:
     - name: Show reconciliation mode
       ansible.builtin.debug:
-        msg: "Resend/DNS reconciliation mode: {{ 'APPLY' if email_dns_apply else 'PLAN (read-only)' }}"
+        msg: >-
+          {{ email_dns.spec.zone }} DNS reconciliation mode:
+          {{ 'APPLY' if email_dns_apply else 'PLAN (read-only)' }};
+          providers: google_workspace{{ ' + resend' if resend_enabled else '' }}
 
     - name: Find Resend domain
       ansible.builtin.uri:
@@ -58,7 +67,7 @@
         return_content: true
       register: resend_domains
       no_log: true
-      when: email_dns_apply
+      when: email_dns_apply and resend_enabled
 
     - name: Create Resend domain when absent
       ansible.builtin.uri:
@@ -72,13 +81,13 @@
       register: resend_domain_create
       no_log: true
       check_mode: false
-      when: email_dns_apply and (resend_domains.json.data | default(resend_domains.json.result | default([])) | selectattr('name', 'equalto', email_dns.spec.resend.domain) | list | length) == 0
+      when: email_dns_apply and resend_enabled and (resend_domains.json.data | default(resend_domains.json.result | default([])) | selectattr('name', 'equalto', email_dns.spec.resend.domain) | list | length) == 0
 
     - name: Resolve Resend domain object
       ansible.builtin.set_fact:
         resend_domain: "{{ ((resend_domains.json.data | default(resend_domains.json.result | default([]))) + [resend_domain_create.json]) | selectattr('name', 'equalto', email_dns.spec.resend.domain) | list | first }}"
       no_log: true
-      when: email_dns_apply
+      when: email_dns_apply and resend_enabled
 
     - name: Read Resend verification records
       ansible.builtin.uri:
@@ -88,7 +97,7 @@
         return_content: true
       register: resend_domain_detail
       no_log: true
-      when: email_dns_apply
+      when: email_dns_apply and resend_enabled
 
     - name: Resolve Cloudflare zone
       ansible.builtin.uri:
@@ -112,8 +121,27 @@
 
     - name: Build managed DNS records (SPF is reconciled separately)
       ansible.builtin.set_fact:
-        managed_records: "{{ (resend_domain_detail.json.records | default([]) | rejectattr('value', 'default', '') | rejectattr('value', 'search', 'v=spf1') | map('combine', {'ttl': 3600, 'proxied': false}) | list) + [email_dns.spec.dmarc | combine({'type': 'TXT', 'name': email_dns.spec.dmarc.name, 'content': email_dns.spec.dmarc.value})] }}"
+        resend_records: "{{ (resend_domain_detail.json.records | default([]) | rejectattr('value', 'default', '') | rejectattr('value', 'search', 'v=spf1') | map('combine', {'ttl': 3600, 'proxied': false}) | list) if resend_enabled else [] }}"
+        dmarc_records: "{{ [email_dns.spec.dmarc | combine({'type': 'TXT', 'name': email_dns.spec.dmarc.name, 'content': email_dns.spec.dmarc.value})] }}"
+        # A DKIM entry with an empty content is a placeholder for a key that has
+        # not been generated in the Admin console yet. Publishing it would put a
+        # broken selector in DNS, so skip it until the public key is filled in.
+        dkim_records: "{{ email_dns.spec.google_workspace.dkim | default([]) | rejectattr('content', 'equalto', '') | list }}"
       when: email_dns_apply
+
+    - name: Collect the records this run manages
+      ansible.builtin.set_fact:
+        managed_records: "{{ resend_records + dmarc_records + dkim_records }}"
+      when: email_dns_apply
+
+    - name: Warn about DKIM selectors still awaiting a generated key
+      ansible.builtin.debug:
+        msg: >-
+          {{ item.name }} has no public key yet - generate it in Admin console
+          -> Apps -> Google Workspace -> Gmail -> Authenticate email for
+          {{ email_dns.spec.zone }}, paste it into the GitOps policy, then re-run.
+      loop: "{{ email_dns.spec.google_workspace.dkim | default([]) | selectattr('content', 'equalto', '') | list }}"
+      loop_control: {label: "{{ item.name }}"}
 
     - name: Query apex TXT records for SPF merge
       ansible.builtin.uri:
@@ -133,7 +161,7 @@
         body:
           type: TXT
           name: "{{ email_dns.spec.zone }}"
-          content: "v=spf1 {{ email_dns.spec.google_workspace.spf_include }} {{ email_dns.spec.resend.spf_include }} ~all"
+          content: "v=spf1 {{ ([email_dns.spec.google_workspace.spf_include] + ([email_dns.spec.resend.spf_include] if resend_enabled else [])) | join(' ') }} ~all"
           ttl: 3600
         return_content: true
       vars:
@@ -160,7 +188,7 @@
         body_format: json
         body: "{{ {'type': item.0.type, 'name': item.0.name, 'content': item.0.value | default(item.0.content), 'ttl': item.0.ttl | default(3600), 'proxied': false} | combine({'priority': item.0.priority} if item.0.priority is defined else {}) }}"
         return_content: true
-      loop: "{{ managed_records + email_dns.spec.google_workspace.mx | zip(existing_records.results) | list }}"
+      loop: "{{ (managed_records + email_dns.spec.google_workspace.mx) | zip(existing_records.results) | list }}"
       loop_control: {label: "{{ item.0.type }} {{ item.0.name }}"}
       no_log: true
       when: email_dns_apply
