@@ -1,0 +1,50 @@
+---
+- name: Select CPA instances for this host
+  ansible.builtin.set_fact:
+    ai_aggregator_local_cpas: >-
+      {{ ai_aggregator_spec.cpa_instances | selectattr('node', 'in', ai_aggregator_local_nodes | map(attribute='id') | list) | list }}
+
+- name: Create the CPA service group
+  ansible.builtin.group:
+    name: "{{ ai_aggregator_service_group }}"
+    system: true
+
+- name: Create per-instance CPA service users
+  ansible.builtin.user:
+    name: "ai-cpa-{{ item.id }}"
+    group: "{{ ai_aggregator_service_group }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+  loop: "{{ ai_aggregator_local_cpas }}"
+
+- name: Create CPA instance directories
+  ansible.builtin.file:
+    path: "{{ ai_aggregator_root }}/cpa/{{ item.id }}"
+    state: directory
+    owner: "ai-cpa-{{ item.id }}"
+    group: "{{ ai_aggregator_service_group }}"
+    mode: '0750'
+  loop: "{{ ai_aggregator_local_cpas }}"
+
+- name: Render non-secret CPA configuration
+  ansible.builtin.template:
+    src: cpa-config.yaml.j2
+    dest: "{{ ai_aggregator_root }}/cpa/{{ item.id }}/config.yaml"
+    owner: root
+    group: "{{ ai_aggregator_service_group }}"
+    mode: '0640'
+  loop: "{{ ai_aggregator_local_cpas }}"
+
+- name: Render per-instance CPA systemd units
+  ansible.builtin.template:
+    src: cliproxyapi.service.j2
+    dest: "/etc/systemd/system/cliproxyapi-{{ item.id }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ ai_aggregator_local_cpas }}"
+
+- name: Reload systemd after staging units
+  ansible.builtin.systemd:
+    daemon_reload: true
