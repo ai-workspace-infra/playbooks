@@ -1,0 +1,13 @@
+---
+# Deploy One only to explicitly selected existing VPS hosts. The play has no
+# Terraform, VPC, firewall, hostname or SSH side effects.
+- name: Join existing Linux VPS nodes to XConnect Zero as One
+  hosts: "{{ xconnect_one_hosts | default('xconnect_one') }}"
+  become: true
+  gather_facts: true
+  vars:
+    xconnect_observability_auth_user: "{{ lookup('ansible.builtin.env', 'VECTOR_AUTH_USER') | default('', true) }}"
+    xconnect_observability_auth_password: "{{ lookup('ansible.builtin.env', 'VECTOR_AUTH_PASSWORD') | default('', true) }}"
+    xconnect_observability_endpoint: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ENDPOINT') | default('https://observability.svc.plus', true) }}"
+  roles:
+    - role: vhosts/xconnect_one
