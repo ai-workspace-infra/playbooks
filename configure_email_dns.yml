@@ -152,10 +152,15 @@
       no_log: true
       when: email_dns_apply
 
+    - name: Find existing SPF record if present
+      ansible.builtin.set_fact:
+        existing_spf_records: "{{ apex_txt_records.json.result | selectattr('content', 'search', 'v=spf1') | list }}"
+      when: email_dns_apply
+
     - name: Merge Google Workspace and Resend SPF into one apex record
       ansible.builtin.uri:
-        url: "{{ cloudflare_api_base }}/zones/{{ cloudflare_zone_id }}/dns_records{{ '/' ~ (spf_record.id if spf_record is defined else '') }}"
-        method: "{{ 'PUT' if spf_record is defined else 'POST' }}"
+        url: "{{ cloudflare_api_base }}/zones/{{ cloudflare_zone_id }}/dns_records{{ ('/' ~ existing_spf_records[0].id) if (existing_spf_records | length > 0) else '' }}"
+        method: "{{ 'PUT' if (existing_spf_records | length > 0) else 'POST' }}"
         headers: {Authorization: "Bearer {{ cloudflare_api_token }}", Content-Type: application/json}
         body_format: json
         body:
@@ -164,8 +169,6 @@
           content: "v=spf1 {{ ([email_dns.spec.google_workspace.spf_include] + ([email_dns.spec.resend.spf_include] if resend_enabled else [])) | join(' ') }} ~all"
           ttl: 3600
         return_content: true
-      vars:
-        spf_record: "{{ apex_txt_records.json.result | selectattr('content', 'search', '^v=spf1') | list | first | default(omit) }}"
       no_log: true
       when: email_dns_apply
 
