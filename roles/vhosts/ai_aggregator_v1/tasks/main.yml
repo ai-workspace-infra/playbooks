@@ -1,0 +1,84 @@
+---
+- name: Require a GitOps manifest on the control host
+  ansible.builtin.stat:
+    path: "{{ ai_aggregator_manifest_file }}"
+  delegate_to: localhost
+  become: false
+  register: ai_aggregator_manifest_stat
+  run_once: true
+
+- name: Reject a missing GitOps manifest
+  ansible.builtin.assert:
+    that:
+      - ai_aggregator_manifest_file | length > 0
+      - ai_aggregator_manifest_stat.stat.exists
+    fail_msg: "Set ai_aggregator_manifest_file to a checked-out GitOps declaration."
+  run_once: true
+
+- name: Load non-sensitive desired state from GitOps
+  ansible.builtin.include_vars:
+    file: "{{ ai_aggregator_manifest_file }}"
+    name: ai_aggregator_manifest
+
+- name: Select the aggregator specification
+  ansible.builtin.set_fact:
+    ai_aggregator_spec: "{{ ai_aggregator_manifest.spec }}"
+
+- name: Validate manifest identity and operation
+  ansible.builtin.assert:
+    that:
+      - ai_aggregator_manifest.kind == 'PersonalAIAggregator'
+      - ai_aggregator_manifest.metadata.mode == 'selfhost'
+      - ai_aggregator_operation in ['plan', 'stage']
+      - ai_aggregator_spec.entrypoint.source_cidrs is iterable
+      - ai_aggregator_spec.new_api.bind_address in ['127.0.0.1', '::1']
+      - ai_aggregator_spec.cpa_instances | length > 0
+    fail_msg: "The GitOps aggregator declaration is incomplete or unsafe."
+
+- name: Validate unique CPA instance IDs and ports
+  ansible.builtin.assert:
+    that:
+      - ai_aggregator_spec.cpa_instances | map(attribute='id') | unique | list | length == ai_aggregator_spec.cpa_instances | length
+      - ai_aggregator_spec.cpa_instances | map(attribute='port') | unique | list | length == ai_aggregator_spec.cpa_instances | length
+    fail_msg: "CPA instance IDs and ports must be unique."
+  run_once: true
+
+- name: Require immutable artifacts and access policy before staging
+  ansible.builtin.assert:
+    that:
+      - ai_aggregator_spec.enabled | bool
+      - ai_aggregator_spec.entrypoint.source_cidrs | length > 0
+      - ai_aggregator_spec.artifacts.new_api.revision | length > 0
+      - ai_aggregator_spec.artifacts.new_api.sha256 | length == 64
+      - ai_aggregator_spec.artifacts.cliproxyapi.revision | length > 0
+      - ai_aggregator_spec.artifacts.cliproxyapi.sha256 | length == 64
+      - ai_aggregator_spec.new_api.start_command | length > 0
+    fail_msg: "Staging requires enabled GitOps state, an allowlist, and pinned artifact checksums."
+  when: ai_aggregator_operation == 'stage'
+  run_once: true
+
+- name: Find this host's declared node records
+  ansible.builtin.set_fact:
+    ai_aggregator_local_nodes: >-
+      {{ ai_aggregator_spec.nodes | selectattr('inventory_host', 'equalto', inventory_hostname) | list }}
+
+- name: Show plan result
+  ansible.builtin.debug:
+    msg:
+      host: "{{ inventory_hostname }}"
+      operation: "{{ ai_aggregator_operation }}"
+      declared_roles: "{{ ai_aggregator_local_nodes | map(attribute='role') | list }}"
+      enabled: "{{ ai_aggregator_spec.enabled }}"
+  when: ai_aggregator_operation == 'plan'
+
+- name: Stage gateway configuration
+  ansible.builtin.include_tasks: gateway.yml
+  when:
+    - ai_aggregator_operation == 'stage'
+    - ai_aggregator_local_nodes | selectattr('role', 'equalto', 'gateway') | list | length > 0
+
+- name: Stage CPA configuration
+  ansible.builtin.include_tasks: cpa.yml
+  when:
+    - ai_aggregator_operation == 'stage'
+    - ai_aggregator_local_nodes | selectattr('role', 'equalto', 'cpa') | list | length > 0

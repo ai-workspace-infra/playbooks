@@ -1,0 +1,25 @@
+[Unit]
+Description=New API gateway for Personal AI Aggregator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group={{ ai_aggregator_service_group }}
+WorkingDirectory={{ ai_aggregator_root }}/new-api
+# Runtime credentials are injected by the auth role into /run. This unit never
+# accepts a missing credential file as a valid start condition.
+ConditionPathExists={{ ai_aggregator_runtime_root }}/new-api/environment
+EnvironmentFile={{ ai_aggregator_runtime_root }}/new-api/environment
+ExecStart={{ ai_aggregator_spec.new_api.start_command }}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths={{ ai_aggregator_root }}/new-api {{ ai_aggregator_runtime_root }}/new-api
+
+[Install]
+WantedBy=multi-user.target

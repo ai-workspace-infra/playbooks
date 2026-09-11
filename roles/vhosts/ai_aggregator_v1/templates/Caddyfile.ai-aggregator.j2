@@ -1,0 +1,29 @@
+{{ ai_aggregator_spec.entrypoint.domain }} {
+    @allowed remote_ip {{ ai_aggregator_spec.entrypoint.source_cidrs | join(' ') }}
+    @api {
+        remote_ip {{ ai_aggregator_spec.entrypoint.source_cidrs | join(' ') }}
+        path /v1/* /v1beta/*
+    }
+
+    handle @api {
+        reverse_proxy {{ ai_aggregator_spec.new_api.bind_address }}:{{ ai_aggregator_spec.new_api.port }}
+    }
+
+    handle @allowed {
+{% if ai_aggregator_caddy_basic_auth_hash is defined and ai_aggregator_caddy_basic_auth_hash | length > 0 %}
+        basic_auth {
+            admin {{ ai_aggregator_caddy_basic_auth_hash }}
+        }
+{% endif %}
+        reverse_proxy {{ ai_aggregator_spec.new_api.bind_address }}:{{ ai_aggregator_spec.new_api.port }}
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+    }
+
+    respond "forbidden" 403
+}

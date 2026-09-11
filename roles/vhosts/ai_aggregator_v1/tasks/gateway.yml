@@ -1,0 +1,38 @@
+---
+- name: Create the gateway service group
+  ansible.builtin.group:
+    name: "{{ ai_aggregator_service_group }}"
+    system: true
+
+- name: Create gateway runtime directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: "{{ ai_aggregator_service_group }}"
+    mode: '0750'
+  loop:
+    - "{{ ai_aggregator_root }}/new-api"
+    - "{{ ai_aggregator_runtime_root }}/new-api"
+    - "{{ caddy_config_dir | default('/etc/caddy') }}/conf.d"
+
+- name: Render protected Caddy site fragment
+  ansible.builtin.template:
+    src: Caddyfile.ai-aggregator.j2
+    dest: "{{ caddy_config_dir | default('/etc/caddy') }}/conf.d/ai-aggregator.caddy"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Render New API systemd unit without credentials
+  ansible.builtin.template:
+    src: new-api.service.j2
+    dest: /etc/systemd/system/new-api.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Validate Caddy configuration before activation
+  ansible.builtin.command: caddy validate --config {{ caddy_config_dir | default('/etc/caddy') }}/Caddyfile --adapter caddyfile
+  changed_when: false
+

@@ -1,0 +1,23 @@
+[Unit]
+Description=CLIProxyAPI {{ item.id }}
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists={{ ai_aggregator_runtime_root }}/cpa/{{ item.id }}/auth
+
+[Service]
+Type=simple
+User=ai-cpa-{{ item.id }}
+Group={{ ai_aggregator_service_group }}
+WorkingDirectory={{ ai_aggregator_root }}/cpa/{{ item.id }}
+ExecStart={{ ai_aggregator_root }}/cliproxyapi/cliproxyapi --config {{ ai_aggregator_root }}/cpa/{{ item.id }}/config.yaml
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths={{ ai_aggregator_runtime_root }}/cpa/{{ item.id }}
+
+[Install]
+WantedBy=multi-user.target
+
