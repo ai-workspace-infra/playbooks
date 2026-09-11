@@ -1,0 +1,181 @@
+---
+- name: Validate XConnect One role inputs
+  ansible.builtin.assert:
+    that:
+      - xconnect_one_enabled | bool
+      - xconnect_one_environment in ['uat', 'prod']
+      - xconnect_one_binary_source | trim | length > 0
+      - xconnect_one_device_id | trim | regex_search('^[a-z0-9][a-z0-9._-]{0,127}$')
+      - xconnect_one_device_name | trim | length > 0
+      - xconnect_one_invite_uri | trim | regex_search('^xconnect://join/')
+      - xconnect_one_expected_overlay_cidr | trim | regex_search('^[0-9.]+/[0-9]{1,2}$')
+      - xconnect_one_expected_overlay_cidr != '0.0.0.0/0'
+      - xconnect_one_expected_wireguard_interface | trim | regex_search('^[a-zA-Z0-9_.-]{1,15}$')
+      - xconnect_one_expected_xray_loopback_port | int > 1023
+      - xconnect_one_expected_xray_loopback_port | int < 65536
+      - xconnect_one_sync_interval_seconds | int >= 60
+  no_log: true
+
+- name: Install XConnect One preflight dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - python3
+    state: present
+    update_cache: true
+    lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
+
+- name: Create XConnect One runtime directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop:
+    - "{{ xconnect_one_state_dir }}"
+    - /run/xconnect-one
+    - /usr/local/lib/xconnect-one
+
+- name: Install XConnect One collision preflight
+  ansible.builtin.template:
+    src: preflight.py.j2
+    dest: "/usr/local/lib/xconnect-one/preflight-{{ xconnect_one_environment }}.py"
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Refuse overlapping XConnect One host networking
+  ansible.builtin.command: "/usr/local/lib/xconnect-one/preflight-{{ xconnect_one_environment }}.py"
+  changed_when: false
+
+- name: Install reviewed XConnect One CLI artifact
+  ansible.builtin.copy:
+    src: "{{ xconnect_one_binary_source }}"
+    dest: "{{ xconnect_one_binary_path }}"
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Bootstrap external Xray and WireGuard runtime
+  ansible.builtin.command:
+    argv:
+      - "{{ xconnect_one_binary_path }}"
+      - runtime
+      - bootstrap
+      - --state-dir
+      - "{{ xconnect_one_state_dir }}"
+      - --install-system-packages=true
+      - --release-base-url
+      - "{{ xconnect_one_runtime_release_base_url }}"
+  when: xconnect_one_runtime_release_base_url | trim | length > 0
+  no_log: true
+
+- name: Bootstrap external Xray and WireGuard runtime with default release source
+  ansible.builtin.command:
+    argv:
+      - "{{ xconnect_one_binary_path }}"
+      - runtime
+      - bootstrap
+      - --state-dir
+      - "{{ xconnect_one_state_dir }}"
+      - --install-system-packages=true
+  when: xconnect_one_runtime_release_base_url | trim | length == 0
+
+- name: Inspect existing XConnect One enrollment
+  ansible.builtin.stat:
+    path: "{{ xconnect_one_state_dir }}/state.json"
+  register: xconnect_one_existing_state
+
+- name: Write short-lived XConnect One invite file
+  ansible.builtin.copy:
+    content: "{{ xconnect_one_invite_uri }}\n"
+    dest: "{{ xconnect_one_invite_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when: not xconnect_one_existing_state.stat.exists
+  no_log: true
+
+- name: Join XConnect One with protected invite file
+  block:
+    - name: Join the signed XConnect Zero network
+      ansible.builtin.command:
+        argv:
+          - "{{ xconnect_one_binary_path }}"
+          - join
+          - --invite-file
+          - "{{ xconnect_one_invite_path }}"
+          - --state-dir
+          - "{{ xconnect_one_state_dir }}"
+          - --device-id
+          - "{{ xconnect_one_device_id }}"
+          - --name
+          - "{{ xconnect_one_device_name }}"
+      no_log: true
+  always:
+    - name: Remove short-lived XConnect One invite file
+      ansible.builtin.file:
+        path: "{{ xconnect_one_invite_path }}"
+        state: absent
+      no_log: true
+  when: not xconnect_one_existing_state.stat.exists
+
+- name: Synchronize signed XConnect One configuration
+  ansible.builtin.command:
+    argv:
+      - "{{ xconnect_one_binary_path }}"
+      - sync
+      - --state-dir
+      - "{{ xconnect_one_state_dir }}"
+  changed_when: false
+
+- name: Verify expected WireGuard interface is active
+  ansible.builtin.command: "ip link show {{ xconnect_one_expected_wireguard_interface }}"
+  changed_when: false
+
+- name: Verify XConnect One leaves the host default route intact
+  ansible.builtin.command: ip route show default
+  changed_when: false
+  failed_when: false
+  register: xconnect_one_default_route
+
+- name: Fail when XConnect One removed the host default route
+  ansible.builtin.assert:
+    that:
+      - xconnect_one_default_route.stdout | trim | length > 0
+    fail_msg: XConnect One must only add the declared private overlay route and must not replace the host default route.
+
+- name: Install XConnect One signed-config synchronization service
+  ansible.builtin.template:
+    src: xconnect-one-sync.service.j2
+    dest: "/etc/systemd/system/xconnect-one-sync@{{ xconnect_one_environment }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install XConnect One signed-config synchronization timer
+  ansible.builtin.template:
+    src: xconnect-one-sync.timer.j2
+    dest: "/etc/systemd/system/xconnect-one-sync@{{ xconnect_one_environment }}.timer"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable XConnect One signed-config synchronization timer
+  ansible.builtin.systemd:
+    name: "xconnect-one-sync@{{ xconnect_one_environment }}.timer"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Install isolated XConnect One observability
+  ansible.builtin.include_role:
+    name: vhosts/vpn-overlay/observability
+  vars:
+    xconnect_observability_role: one
+    xconnect_observability_environment: "{{ xconnect_one_environment }}"
+    xconnect_observability_instance: "{{ xconnect_one_device_id }}"
+    xconnect_observability_wireguard_interface: "{{ xconnect_one_expected_wireguard_interface }}"
+    xconnect_observability_state_dir: "{{ xconnect_one_state_dir }}"
+  when: xconnect_one_install_observability | bool
