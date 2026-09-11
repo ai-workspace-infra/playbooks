@@ -40,13 +40,21 @@ blackbox_probe_env_suffix: "{{ '' if blackbox_probe_domain_base == 'svc.plus' el
 #
 # jp-xhttp / tky-proxy 是生产独有的代理节点, 非生产环境没有对应物, 所以只在
 # 域名后缀为 svc.plus 时才探测 —— 否则会去探一堆不存在的主机名。
+#
+# 四个 XConnect 区域入口同理, 只存在于生产。它们必须逐个列出: ph-mnl 的节点在
+# Terraform state 之外手工开通, 没有任何 IaC 产物会把它带进探测目标, 所以只要
+# 这里不写, 该区域入口就完全没有可用性与证书探测。
 blackbox_ssl_targets: >-
   {{
     (
       [
         {'name': 'jp-xhttp.'  ~ blackbox_probe_domain_base, 'url': 'https://jp-xhttp.'  ~ blackbox_probe_domain_base},
         {'name': 'tky-proxy.' ~ blackbox_probe_domain_base, 'url': 'https://tky-proxy.' ~ blackbox_probe_domain_base},
-        {'name': 'www.'       ~ blackbox_probe_domain_base, 'url': 'https://www.'       ~ blackbox_probe_domain_base}
+        {'name': 'www.'       ~ blackbox_probe_domain_base, 'url': 'https://www.'       ~ blackbox_probe_domain_base},
+        {'name': 'jp-xconnect.' ~ blackbox_probe_domain_base, 'url': 'https://jp-xconnect.' ~ blackbox_probe_domain_base},
+        {'name': 'us-xconnect.' ~ blackbox_probe_domain_base, 'url': 'https://us-xconnect.' ~ blackbox_probe_domain_base},
+        {'name': 'hk-xconnect.' ~ blackbox_probe_domain_base, 'url': 'https://hk-xconnect.' ~ blackbox_probe_domain_base},
+        {'name': 'ph-xconnect.' ~ blackbox_probe_domain_base, 'url': 'https://ph-xconnect.' ~ blackbox_probe_domain_base}
       ] if blackbox_probe_domain_base == 'svc.plus' else []
     )
     + [
