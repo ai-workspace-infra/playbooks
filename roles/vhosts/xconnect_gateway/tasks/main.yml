@@ -10,6 +10,7 @@
       - (xconnect_gateway_id | trim) is match('^[a-z0-9][a-z0-9._-]{0,127}$')
       - xconnect_gateway_tls_cert_source | trim | length > 0
       - xconnect_gateway_tls_key_source | trim | length > 0
+      - xconnect_gateway_trust_bundle_source | trim | length > 0
       - xconnect_gateway_invite_file_source | trim | length > 0
       - xconnect_gateway_sync_interval_seconds | int >= 60
   no_log: true
@@ -20,6 +21,7 @@
       - ca-certificates
       - curl
       - jq
+      - openssl
       - wireguard-tools
     state: present
     update_cache: true
@@ -70,6 +72,33 @@
     group: root
     mode: '0600'
   no_log: true
+
+- name: Install Gateway trust bundle for One handoff
+  ansible.builtin.copy:
+    src: "{{ xconnect_gateway_trust_bundle_source }}"
+    dest: "{{ xconnect_gateway_trust_bundle_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  no_log: true
+
+- name: Validate Gateway trust bundle is PEM X.509 material
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -in
+      - "{{ xconnect_gateway_trust_bundle_path }}"
+      - -noout
+  changed_when: false
+  no_log: true
+
+- name: Export Gateway public CA for the controlled-client handoff
+  ansible.builtin.fetch:
+    src: "{{ xconnect_gateway_trust_bundle_path }}"
+    dest: "{{ xconnect_gateway_ca_fetch_dest }}"
+    flat: true
+  when: xconnect_gateway_ca_fetch_dest | trim | length > 0
 
 - name: Initialize XConnect Gateway local state
   ansible.builtin.command:
