@@ -117,18 +117,15 @@
 - name: Join XConnect One with protected invite file
   block:
     - name: Join the signed XConnect Zero network
-      ansible.builtin.command:
-        argv:
-          - "{{ xconnect_one_binary_path }}"
-          - join
-          - --invite-file
-          - "{{ xconnect_one_invite_path }}"
-          - --state-dir
-          - "{{ xconnect_one_state_dir }}"
-          - --device-id
-          - "{{ xconnect_one_device_id }}"
-          - --name
-          - "{{ xconnect_one_device_name }}"
+      ansible.builtin.shell: >-
+        set -eu;
+        exec {{ xconnect_one_binary_path | quote }} join
+        --state-dir {{ xconnect_one_state_dir | quote }}
+        --device-id {{ xconnect_one_device_id | quote }}
+        --name {{ xconnect_one_device_name | quote }}
+        "$(cat {{ xconnect_one_invite_path | quote }})"
+      args:
+        executable: /bin/sh
       no_log: true
   always:
     - name: Remove short-lived XConnect One invite file
