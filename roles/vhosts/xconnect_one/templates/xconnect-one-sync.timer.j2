@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh XConnect One {{ xconnect_one_environment }} configuration
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ xconnect_one_sync_interval_seconds | int }}s
+AccuracySec=15s
+Persistent=true
+Unit=xconnect-one-sync@{{ xconnect_one_environment }}.service
+
+[Install]
+WantedBy=timers.target

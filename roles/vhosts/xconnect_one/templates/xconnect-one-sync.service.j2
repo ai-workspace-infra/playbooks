@@ -1,0 +1,13 @@
+[Unit]
+Description=Synchronize XConnect One {{ xconnect_one_environment }} signed configuration
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{ xconnect_one_binary_path }} sync --state-dir {{ xconnect_one_state_dir }}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths={{ xconnect_one_state_dir }} /run /etc/wireguard
