@@ -21,3 +21,8 @@ loopback UDP port. A fixed One uses `persistent` lifecycle; a Spot One must use
 `ephemeral` lifecycle with an Accounts lease. At expiry Accounts revokes the
 device, increments the network generation, and Gateway removes the peer on its
 next signed-config sync.
+
+For a disposable or private UAT Gateway using a lab CA, set
+`xconnect_one_ca_certificate_source` to the controller-local PEM file. The role
+installs it into the system trust store before `join`/`sync`; do not put private
+keys or long-lived credentials in this variable.
