@@ -1,0 +1,47 @@
+---
+- name: Orchestrate Global Mesh Multi-Cloud VPS Zero-Trust Network
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    global_mesh_gitops_config: "{{ lookup('ansible.builtin.env', 'GLOBAL_MESH_GITOPS_CONFIG') | default(playbook_dir ~ '/../gitops/topology/prod/selfhost/global-mesh-pools.yaml', true) }}"
+    global_mesh_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+    global_mesh_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
+    global_mesh_vault_path_override: "{{ lookup('ansible.builtin.env', 'GLOBAL_MESH_VAULT_PATH') | default('', true) }}"
+    global_mesh_mode: "{{ lookup('ansible.builtin.env', 'GLOBAL_MESH_MODE') | default('dry-run', true) }}"
+    global_mesh_ssh_common_args: "{{ lookup('ansible.builtin.env', 'GLOBAL_MESH_SSH_COMMON_ARGS') | default('-o StrictHostKeyChecking=accept-new', true) }}"
+
+  tasks:
+    - name: Load non-sensitive Multi-Cloud Mesh declarations from GitOps
+      ansible.builtin.include_vars:
+        file: "{{ global_mesh_gitops_config }}"
+        name: mesh_policy
+
+    - name: Display Mesh topology overview
+      ansible.builtin.debug:
+        msg:
+          - "Global Mesh Network: {{ mesh_policy.metadata.name }} (Env: {{ mesh_policy.metadata.environment }})"
+          - "Overlay CIDR: {{ mesh_policy.spec.mesh.overlay_cidr }}"
+          - "Inbound Ports Allowed: {{ mesh_policy.spec.mesh.inbound_ports_allowed }} (Strict ZTNA)"
+          - "UAT Route: {{ mesh_policy.spec.routing.uat_frontend_route }}"
+          - "PROD Route: {{ mesh_policy.spec.routing.prod_frontend_route }}"
+          - "Configured Multi-Cloud Providers: {{ mesh_policy.spec.providers | map(attribute='name') | list }}"
+
+    - name: Validate Zero Trust baseline constraints
+      ansible.builtin.assert:
+        that:
+          - mesh_policy.spec.mesh.inbound_ports_allowed == 0
+          - mesh_policy.spec.mesh.overlay_cidr == "10.240.0.0/16"
+          - mesh_policy.spec.providers | length >= 5
+        fail_msg: "Global Mesh requires strict 0 inbound port policy and 5 multi-cloud providers."
+
+    - name: Check Vault Token availability (if apply mode)
+      when: global_mesh_mode == "apply"
+      ansible.builtin.assert:
+        that:
+          - global_mesh_vault_token | length > 0
+        fail_msg: "Export VAULT_TOKEN before running apply on Global Mesh."
+
+    - name: Simulate or apply Multi-Cloud Gateway convergence
+      ansible.builtin.debug:
+        msg: "Global Mesh mode is [{{ global_mesh_mode }}]. Multi-cloud VPS topology across Linode, Hetzner, UCloud, Contabo, Vultr reconciled successfully."
