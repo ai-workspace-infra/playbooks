@@ -75,7 +75,7 @@
       {{ xconnect_fqdn
          | default(lookup('ansible.builtin.env', 'AGENT_PROXY_REGIONAL_DOMAIN')
          | default(
-             (agent_id | regex_replace('^agent-proxy-selfhost-[^-]+-([a-z0-9]+)\.(.*)$', '\\g<1>-xconnect.\\g<2>'))
+             ((agent_id.split('.')[0].split('-') | last) ~ '-xconnect.' ~ (agent_id.split('.', 1) | last))
              if (agent_id is match('^agent-proxy-selfhost-[^-]+-[a-z0-9]+\..+$'))
              else '',
              true
