@@ -22,7 +22,9 @@ loopback UDP port. A fixed One uses `persistent` lifecycle; a Spot One must use
 device, increments the network generation, and Gateway removes the peer on its
 next signed-config sync.
 
-For a disposable or private UAT Gateway using a lab CA, set
-`xconnect_one_ca_certificate_source` to the controller-local PEM file. The role
-installs it into the system trust store before `join`/`sync`; do not put private
-keys or long-lived credentials in this variable.
+Set `xconnect_one_ca_certificate_source` to the controller-local PEM file
+fetched from the selected Gateway's `ca.crt` handoff. The role installs the
+public CA into the system trust store before `join`/`sync`; it never reads Vault,
+creates a CA, or accepts a Gateway private key. For the standard UAT Gateway,
+the source ultimately comes from the domain certificate record
+`kv/data/CICD/domains/svc.plus`, not from a runner-generated certificate.
