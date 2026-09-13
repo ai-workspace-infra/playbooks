@@ -7,7 +7,9 @@
       - xconnect_one_binary_source | trim | length > 0
       - xconnect_one_device_id | trim | regex_search('^[a-z0-9][a-z0-9._-]{0,127}$')
       - xconnect_one_device_name | trim | length > 0
-      - xconnect_one_invite_uri | trim | regex_search('^xconnect://join/')
+      - >-
+        (xconnect_one_invite_file_source | trim | length > 0) or
+        (xconnect_one_invite_uri | trim | regex_search('^xconnect://join/'))
       - xconnect_one_expected_overlay_cidr | trim | regex_search('^[0-9.]+/[0-9]{1,2}$')
       - xconnect_one_expected_overlay_cidr != '0.0.0.0/0'
       - xconnect_one_expected_wireguard_interface | trim | regex_search('^[a-zA-Z0-9_.-]{1,15}$')
@@ -94,7 +96,21 @@
     owner: root
     group: root
     mode: '0600'
-  when: not xconnect_one_existing_state.stat.exists
+  when:
+    - not xconnect_one_existing_state.stat.exists
+    - xconnect_one_invite_file_source | trim | length == 0
+  no_log: true
+
+- name: Stage short-lived XConnect One invite file from controller
+  ansible.builtin.copy:
+    src: "{{ xconnect_one_invite_file_source }}"
+    dest: "{{ xconnect_one_invite_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when:
+    - not xconnect_one_existing_state.stat.exists
+    - xconnect_one_invite_file_source | trim | length > 0
   no_log: true
 
 - name: Join XConnect One with protected invite file
