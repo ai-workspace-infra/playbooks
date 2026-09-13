@@ -1,0 +1,17 @@
+[Unit]
+Description=XConnect Gateway VLESS/Xray data plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart={{ xconnect_gateway_xray_binary_path }} run -config {{ xconnect_gateway_state_dir }}/runtime/xray.json
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

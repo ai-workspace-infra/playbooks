@@ -1,0 +1,12 @@
+[Unit]
+Description=Synchronize XConnect Gateway with XConnect Zero
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{ xconnect_gateway_binary_path }} up --state-dir {{ xconnect_gateway_state_dir }} --tls-cert {{ xconnect_gateway_tls_cert_path }} --tls-key {{ xconnect_gateway_tls_key_path }}
+ExecStartPost=/bin/systemctl restart xconnect-gateway-xray.service
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths={{ xconnect_gateway_state_dir }} /run /etc/xconnect-gateway /etc/wireguard

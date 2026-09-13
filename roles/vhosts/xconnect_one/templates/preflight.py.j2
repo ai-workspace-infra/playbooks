@@ -19,19 +19,17 @@ try:
     with open(state_path, encoding="utf-8") as state_file:
         state = json.load(state_file)
     config = state.get("config") or {}
-    network = config.get("network") or {}
     device = config.get("device") or {}
     wireguard = config.get("wireguard") or {}
     managed_state_matches = (
         state.get("network_id") == expected_network_id
         and state.get("device_id") == expected_device_id
-        and network.get("id") == expected_network_id
-        and network.get("cidr") == str(expected)
         and device.get("id") == expected_device_id
         and wireguard.get("interface") == interface
     )
     if managed_state_matches:
         managed_address = ipaddress.ip_network(wireguard.get("address", ""), strict=False)
+        managed_state_matches = managed_address.subnet_of(expected)
 except (OSError, TypeError, ValueError, json.JSONDecodeError):
     managed_state_matches = False
 
