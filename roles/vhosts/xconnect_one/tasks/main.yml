@@ -5,15 +5,15 @@
       - xconnect_one_enabled | bool
       - xconnect_one_environment in ['uat', 'prod']
       - xconnect_one_binary_source | trim | length > 0
-      - xconnect_one_device_id | trim | regex_search('^[a-z0-9][a-z0-9._-]{0,127}$')
+      - (xconnect_one_device_id | trim) is match('^[a-z0-9][a-z0-9._-]{0,127}$')
       - xconnect_one_device_name | trim | length > 0
       - xconnect_one_expected_network_id | trim | length > 0
       - >-
         (xconnect_one_invite_file_source | trim | length > 0) or
-        (xconnect_one_invite_uri | trim | regex_search('^xconnect://join/'))
-      - xconnect_one_expected_overlay_cidr | trim | regex_search('^[0-9.]+/[0-9]{1,2}$')
+        ((xconnect_one_invite_uri | trim) is match('^xconnect://join/'))
+      - (xconnect_one_expected_overlay_cidr | trim) is match('^[0-9.]+/[0-9]{1,2}$')
       - xconnect_one_expected_overlay_cidr != '0.0.0.0/0'
-      - xconnect_one_expected_wireguard_interface | trim | regex_search('^[a-zA-Z0-9_.-]{1,15}$')
+      - (xconnect_one_expected_wireguard_interface | trim) is match('^[a-zA-Z0-9_.-]{1,15}$')
       - xconnect_one_expected_xray_loopback_port | int > 1023
       - xconnect_one_expected_xray_loopback_port | int < 65536
       - xconnect_one_sync_interval_seconds | int >= 60
