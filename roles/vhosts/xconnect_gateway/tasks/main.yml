@@ -1,0 +1,200 @@
+---
+- name: Validate Zero-driven XConnect Gateway role inputs
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_enabled | bool
+      - xconnect_gateway_environment in ['uat', 'prod']
+      - xconnect_gateway_binary_source | trim | length > 0
+      - xconnect_gateway_xray_binary_source | trim | length > 0
+      - xconnect_gateway_controller | trim | regex_search('^https://')
+      - xconnect_gateway_id | trim | regex_search('^[a-z0-9][a-z0-9._-]{0,127}$')
+      - xconnect_gateway_tls_cert_source | trim | length > 0
+      - xconnect_gateway_tls_key_source | trim | length > 0
+      - xconnect_gateway_invite_file_source | trim | length > 0
+      - xconnect_gateway_sync_interval_seconds | int >= 60
+  no_log: true
+
+- name: Install XConnect Gateway runtime dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - jq
+      - wireguard-tools
+    state: present
+    update_cache: true
+    lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
+
+- name: Create XConnect Gateway protected directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop:
+    - "{{ xconnect_gateway_state_dir }}"
+    - /etc/xconnect-gateway
+    - /run/xconnect-gateway
+
+- name: Install reviewed XConnect Gateway binary
+  ansible.builtin.copy:
+    src: "{{ xconnect_gateway_binary_source }}"
+    dest: "{{ xconnect_gateway_binary_path }}"
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install reviewed external Xray binary
+  ansible.builtin.copy:
+    src: "{{ xconnect_gateway_xray_binary_source }}"
+    dest: "{{ xconnect_gateway_xray_binary_path }}"
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install Gateway TLS certificate
+  ansible.builtin.copy:
+    src: "{{ xconnect_gateway_tls_cert_source }}"
+    dest: "{{ xconnect_gateway_tls_cert_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  no_log: true
+
+- name: Install Gateway TLS private key
+  ansible.builtin.copy:
+    src: "{{ xconnect_gateway_tls_key_source }}"
+    dest: "{{ xconnect_gateway_tls_key_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+
+- name: Initialize XConnect Gateway local state
+  ansible.builtin.command:
+    argv:
+      - "{{ xconnect_gateway_binary_path }}"
+      - init
+      - --state-dir
+      - "{{ xconnect_gateway_state_dir }}"
+      - --controller
+      - "{{ xconnect_gateway_controller }}"
+      - --gateway-id
+      - "{{ xconnect_gateway_id }}"
+    creates: "{{ xconnect_gateway_state_dir }}/state.json"
+  no_log: true
+
+- name: Inspect existing XConnect Gateway enrollment
+  ansible.builtin.stat:
+    path: "{{ xconnect_gateway_state_dir }}/state.json"
+  register: xconnect_gateway_state
+
+- name: Inspect existing Gateway credential state
+  ansible.builtin.command:
+    argv:
+      - jq
+      - -er
+      - .device_credential.credential // empty
+      - "{{ xconnect_gateway_state_dir }}/state.json"
+  when: xconnect_gateway_state.stat.exists
+  register: xconnect_gateway_credential
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Mark Gateway as enrolled only when its credential is present
+  ansible.builtin.set_fact:
+    xconnect_gateway_enrolled: >-
+      {{ xconnect_gateway_state.stat.exists and
+         (xconnect_gateway_credential.stdout | default('') | trim | length > 0) }}
+  no_log: true
+
+- name: Stage short-lived Gateway invitation
+  ansible.builtin.copy:
+    src: "{{ xconnect_gateway_invite_file_source }}"
+    dest: "{{ xconnect_gateway_invite_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when: not (xconnect_gateway_enrolled | default(false) | bool)
+  no_log: true
+
+- name: Join XConnect Gateway with protected invitation
+  block:
+    - name: Exchange Gateway invitation with Zero
+      ansible.builtin.shell: >-
+        {{ xconnect_gateway_binary_path | quote }} join
+        --state-dir {{ xconnect_gateway_state_dir | quote }}
+        --gateway-id {{ xconnect_gateway_id | quote }}
+        "$(cat {{ xconnect_gateway_invite_path | quote }})"
+      args:
+        executable: /bin/bash
+      no_log: true
+  always:
+    - name: Remove short-lived Gateway invitation
+      ansible.builtin.file:
+        path: "{{ xconnect_gateway_invite_path }}"
+        state: absent
+      no_log: true
+  when: not (xconnect_gateway_enrolled | default(false) | bool)
+
+- name: Install Gateway Xray systemd service
+  ansible.builtin.template:
+    src: xconnect-gateway-xray.service.j2
+    dest: /etc/systemd/system/xconnect-gateway-xray.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install Zero-driven Gateway sync systemd service
+  ansible.builtin.template:
+    src: xconnect-gateway-sync.service.j2
+    dest: /etc/systemd/system/xconnect-gateway-sync.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install Zero-driven Gateway sync timer
+  ansible.builtin.template:
+    src: xconnect-gateway-sync.timer.j2
+    dest: /etc/systemd/system/xconnect-gateway-sync.timer
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reconcile signed Gateway configuration
+  ansible.builtin.command:
+    argv:
+      - "{{ xconnect_gateway_binary_path }}"
+      - up
+      - --state-dir
+      - "{{ xconnect_gateway_state_dir }}"
+      - --tls-cert
+      - "{{ xconnect_gateway_tls_cert_path }}"
+      - --tls-key
+      - "{{ xconnect_gateway_tls_key_path }}"
+  register: xconnect_gateway_up
+  changed_when: false
+  no_log: true
+
+- name: Enable Gateway data-plane and sync services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - xconnect-gateway-xray.service
+    - xconnect-gateway-sync.timer
+
+- name: Restart Gateway Xray after signed configuration reconciliation
+  ansible.builtin.systemd:
+    name: xconnect-gateway-xray.service
+    state: restarted
+
+- name: Verify Gateway enrollment state exists
+  ansible.builtin.stat:
+    path: "{{ xconnect_gateway_state_dir }}/state.json"
+  register: xconnect_gateway_final_state
+  failed_when: not xconnect_gateway_final_state.stat.exists
