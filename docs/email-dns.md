@@ -56,6 +56,63 @@ be run from `main`. The role's workflow allowlist lives in the toolkit's
 Do not add `VAULT_TOKEN` to GitHub repository secrets. A local run may use the same playbook
 with an operator-approved Vault token, but that is not the CI deployment path.
 
+## Ops runbook: external mail is not arriving
+
+Use this runbook when a mailbox at a declared zone can receive Google system mail but not
+messages from external senders.
+
+### 1. Confirm the delivery path
+
+Query the authoritative nameserver and at least one public resolver. A missing MX record is a
+hard delivery failure; SPF, DKIM and DMARC do not determine where inbound mail is delivered:
+
+```bash
+dig +short NS xworktech.com
+dig +noall +answer @<authoritative-nameserver> xworktech.com MX
+dig +noall +answer @1.1.1.1 xworktech.com MX
+dig +noall +answer @1.1.1.1 xworktech.com TXT
+dig +noall +answer @1.1.1.1 google._domainkey.xworktech.com TXT
+dig +noall +answer @1.1.1.1 _dmarc.xworktech.com TXT
+```
+
+Compare the result with the declaration at
+`gitops/resources/<zone>/prod/cloudflare/email-dns.yaml`. Do not add a second apex SPF record.
+
+### 2. Apply the declared state through GitHub Actions
+
+Open **Configure Email DNS** in `ai-workspace-infra/platform-ops-toolkit`, choose the `prod`
+environment, and select an allowed release tag rather than `main`. The Vault role binds the
+OIDC `ref` claim to release tags; a run from `main` fails before Cloudflare is contacted.
+
+The workflow applies both declared zones serially and sets `EMAIL_DNS_APPLY=true`. Do not put
+Cloudflare or Vault credentials in repository secrets or in the runbook.
+
+### 3. Verify after the run succeeds
+
+For `xworktech.com`, all five Google Workspace MX rows must be visible, together with the
+merged Google SPF, the declared DKIM selector, and DMARC:
+
+```bash
+dig +noall +answer @1.1.1.1 xworktech.com MX
+dig +noall +answer @1.1.1.1 xworktech.com TXT
+dig +noall +answer @1.1.1.1 google._domainkey.xworktech.com TXT
+dig +noall +answer @1.1.1.1 _dmarc.xworktech.com TXT
+```
+
+Check the authoritative nameserver as well as public resolvers. DNS TTL is normally 3600
+seconds, so sender-side caches may take up to about an hour to converge. Only after the MX
+records are visible should an external test message be used to validate mailbox delivery.
+
+### Production recovery record — 2026-09-14
+
+`haitaopan@xworktech.com` was confirmed to have no public MX or SPF and no published DKIM
+selector; DMARC was present. The first attempted workflow run was rejected by the Vault role
+because it was dispatched from `main`. The remediation was rerun from the allowed tag
+`v2026.09.11-r9` with production APPLY enabled. GitHub Actions run
+`34769536385` completed successfully for both `xworktech.com` and `svc.plus`; authoritative
+and public DNS queries then returned all five Google MX rows, the Google SPF, the `google`
+DKIM selector and DMARC.
+
 ## Two things this reconciler will not do
 
 **It will not touch the apex TXT name.** That name holds the merged SPF plus whatever
