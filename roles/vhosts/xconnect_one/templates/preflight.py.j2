@@ -9,6 +9,36 @@ import sys
 expected = ipaddress.ip_network("{{ xconnect_one_expected_overlay_cidr }}", strict=False)
 interface = "{{ xconnect_one_expected_wireguard_interface }}"
 port = {{ xconnect_one_expected_xray_loopback_port | int }}
+state_path = "{{ xconnect_one_state_dir }}/state.json"
+expected_network_id = "{{ xconnect_one_expected_network_id }}"
+expected_device_id = "{{ xconnect_one_device_id }}"
+
+managed_state_matches = False
+managed_address = None
+try:
+    with open(state_path, encoding="utf-8") as state_file:
+        state = json.load(state_file)
+    config = state.get("config") or {}
+    network = config.get("network") or {}
+    device = config.get("device") or {}
+    wireguard = config.get("wireguard") or {}
+    managed_state_matches = (
+        state.get("network_id") == expected_network_id
+        and state.get("device_id") == expected_device_id
+        and network.get("id") == expected_network_id
+        and network.get("cidr") == str(expected)
+        and device.get("id") == expected_device_id
+        and wireguard.get("interface") == interface
+    )
+    if managed_state_matches:
+        managed_address = ipaddress.ip_network(wireguard.get("address", ""), strict=False)
+except (OSError, TypeError, ValueError, json.JSONDecodeError):
+    managed_state_matches = False
+
+def is_managed_route(candidate, route):
+    return managed_state_matches and route.get("dev") == interface and (
+        candidate == expected or candidate == managed_address
+    )
 
 if expected.version != 4 or expected.prefixlen == 0 or not expected.is_private:
     raise SystemExit("XConnect overlay must be a specific RFC1918 IPv4 CIDR")
@@ -26,7 +56,7 @@ for route in ip_json("route", "show", "table", "all"):
         candidate = ipaddress.ip_network(destination, strict=False)
     except ValueError:
         continue
-    if candidate.version == expected.version and candidate.overlaps(expected):
+    if candidate.version == expected.version and candidate.overlaps(expected) and not is_managed_route(candidate, route):
         conflicts.append("route=" + destination)
 
 for link in ip_json("address", "show"):
@@ -37,21 +67,27 @@ for link in ip_json("address", "show"):
             candidate = ipaddress.ip_interface(address["local"] + "/" + str(address["prefixlen"])).network
         except (KeyError, ValueError):
             continue
-        if candidate.overlaps(expected):
+        if candidate.overlaps(expected) and not (
+            managed_state_matches and link.get("ifname") == interface and candidate == managed_address
+        ):
             conflicts.append("address=" + link.get("ifname", "unknown") + ":" + str(candidate))
 
 if conflicts:
     raise SystemExit("XConnect overlay overlaps existing host networking: " + ", ".join(sorted(conflicts)))
 
-if subprocess.run(["ip", "link", "show", interface], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+interface_exists = subprocess.run(
+    ["ip", "link", "show", interface], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+).returncode == 0
+if interface_exists and not managed_state_matches:
     raise SystemExit("XConnect WireGuard interface already exists: " + interface)
 
-probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-try:
-    probe.bind(("127.0.0.1", port))
-except OSError as exc:
-    raise SystemExit("XConnect local Xray UDP port is already in use: %s" % exc)
-finally:
-    probe.close()
+if not managed_state_matches:
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.bind(("127.0.0.1", port))
+    except OSError as exc:
+        raise SystemExit("XConnect local Xray UDP port is already in use: %s" % exc)
+    finally:
+        probe.close()
 
 print("xconnect preflight: OK")

@@ -10,6 +10,11 @@ at runtime. The URI is written only to a mode `0600` transient file and is
 removed after the exchange. GitOps contains node identity, environment and
 non-sensitive network contracts only.
 
+The collision preflight is repeat-safe for an existing state file that matches
+the declared network, device, CIDR and interface. It still rejects an
+interface, overlay route, or local transport port owned by another network or
+an inconsistent state file.
+
 Before any runtime installation, the role refuses an overlay CIDR that overlaps
 an existing address or route, an occupied WireGuard interface, or the Xray
 loopback UDP port. A fixed One uses `persistent` lifecycle; a Spot One must use
