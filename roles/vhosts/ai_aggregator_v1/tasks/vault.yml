@@ -1,0 +1,31 @@
+---
+- name: Require Vault token for staged deployment
+  ansible.builtin.assert:
+    that:
+      - ai_aggregator_vault_token | length > 0
+      - ai_aggregator_vault_addr | length > 0
+    fail_msg: "Set VAULT_ADDR and VAULT_TOKEN for the staged AI Aggregator deployment."
+  run_once: true
+
+- name: Stage volatile runtime mount unit
+  ansible.builtin.template:
+    src: ai-aggregator-runtime.mount.j2
+    dest: /etc/systemd/system/ai-aggregator-runtime.mount
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload and mount volatile runtime filesystem
+  ansible.builtin.systemd:
+    name: ai-aggregator-runtime.mount
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: Stage Gateway Vault material
+  ansible.builtin.include_tasks: vault-gateway.yml
+  when: ai_aggregator_local_nodes | selectattr('role', 'equalto', 'gateway') | list | length > 0
+
+- name: Stage CPA Vault material
+  ansible.builtin.include_tasks: vault-cpa.yml
+  when: ai_aggregator_local_nodes | selectattr('role', 'equalto', 'cpa') | list | length > 0

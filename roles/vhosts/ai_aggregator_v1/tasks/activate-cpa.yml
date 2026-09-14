@@ -1,0 +1,9 @@
+---
+- name: Start and enable each CPA instance
+  ansible.builtin.systemd:
+    name: "cliproxyapi-{{ item.id }}.service"
+    enabled: true
+    state: started
+  loop: "{{ ai_aggregator_local_cpas }}"
+  loop_control:
+    label: "{{ item.id }}"

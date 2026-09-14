@@ -1,0 +1,6 @@
+---
+- name: Stage each CPA runtime credential from Vault
+  ansible.builtin.include_tasks: vault-cpa-instance.yml
+  loop: "{{ ai_aggregator_spec.cpa_instances | selectattr('node', 'in', ai_aggregator_local_nodes | map(attribute='id') | list) | list }}"
+  loop_control:
+    loop_var: ai_aggregator_cpa

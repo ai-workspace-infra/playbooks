@@ -8,3 +8,18 @@
   roles:
     - role: roles/vhosts/ai_aggregator_v1
 
+# Activation is deliberately split into ordered plays. CPA hosts are started
+# before the gateway host; Caddy is reloaded last after its config validates.
+- name: Activate CPA instances first
+  hosts: ai_aggregator_cpa
+  become: true
+  gather_facts: true
+  roles:
+    - role: roles/vhosts/ai_aggregator_v1
+
+- name: Activate gateway services after CPA instances
+  hosts: ai_aggregator_gateway
+  become: true
+  gather_facts: true
+  roles:
+    - role: roles/vhosts/ai_aggregator_v1
