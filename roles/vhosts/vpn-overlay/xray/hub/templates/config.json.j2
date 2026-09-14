@@ -17,13 +17,14 @@
     "inbounds": [
         {
             "listen": "0.0.0.0",
-            "port": {{ xray_main_port }},
+            "port": {% if xconnect_transport_kind | default('') == 'vless-xhttp' %}{{ xconnect_transport_port }}{% else %}{{ xray_main_port }}{% endif %},
             "protocol": "vless",
             "settings": {
                 "clients": [
                     {
-                        "id": "{{ xray_uuid }}",
+                        "id": "{{ xray_uuid }}"{% if xconnect_transport_kind | default('') != 'vless-xhttp' %},
                         "flow": "xtls-rprx-vision"
+                        {% endif %}
                     }
                 ],
                 "decryption": "none",
@@ -40,7 +41,7 @@
                 ]
             },
             "streamSettings": {
-                "network": "tcp",
+                "network": "{% if xconnect_transport_kind | default('') == 'vless-xhttp' %}xhttp{% else %}tcp{% endif %}",
                 "security": "tls",
                 "tlsSettings": {
                     "rejectUnknownSni": true,
@@ -52,7 +53,12 @@
                             "keyFile": "{{ xray_key_path }}"
                         }
                     ]
-                }
+                }{% if xconnect_transport_kind | default('') == 'vless-xhttp' %},
+                "xhttpSettings": {
+                    "path": "{{ xconnect_transport_path }}",
+                    "mode": "{{ xconnect_transport_mode }}"{% if xconnect_transport_host | default('') | trim %},
+                    "host": "{{ xconnect_transport_host }}"{% endif %}
+                }{% endif %}
             },
             "sniffing": {
                 "enabled": true,
