@@ -1,0 +1,23 @@
+# Non-sensitive LiteLLM configuration. Provider credentials are injected as
+# environment variables from Vault at runtime.
+model_list:
+  - model_name: openai-api
+    litellm_params:
+      model: openai/*
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: anthropic-api
+    litellm_params:
+      model: anthropic/*
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: xai-api
+    litellm_params:
+      model: xai/*
+      api_key: os.environ/XAI_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+
+litellm_settings:
+  json_logs: true
+  drop_params: false

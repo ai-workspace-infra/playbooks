@@ -1,0 +1,35 @@
+---
+- name: Require runtime credential files before gateway activation
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ ai_aggregator_runtime_root }}/new-api/environment"
+    - "{{ ai_aggregator_runtime_root }}/litellm/environment"
+  register: ai_aggregator_gateway_runtime_files
+
+- name: Block gateway activation when Vault injection is incomplete
+  ansible.builtin.assert:
+    that: item.stat.exists
+    fail_msg: "Missing Vault-injected runtime file: {{ item.item }}"
+  loop: "{{ ai_aggregator_gateway_runtime_files.results }}"
+
+- name: Start and enable LiteLLM after CPA activation
+  ansible.builtin.systemd:
+    name: litellm.service
+    enabled: true
+    state: started
+
+- name: Start and enable New API after LiteLLM activation
+  ansible.builtin.systemd:
+    name: new-api.service
+    enabled: true
+    state: started
+
+- name: Validate Caddy configuration before reload
+  ansible.builtin.command: caddy validate --config {{ caddy_config_dir | default('/etc/caddy') }}/Caddyfile --adapter caddyfile
+  changed_when: false
+
+- name: Reload Caddy only after all upstream checks pass
+  ansible.builtin.systemd:
+    name: caddy.service
+    state: reloaded

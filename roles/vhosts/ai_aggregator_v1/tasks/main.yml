@@ -29,9 +29,15 @@
     that:
       - ai_aggregator_manifest.kind == 'PersonalAIAggregator'
       - ai_aggregator_manifest.metadata.mode == 'selfhost'
-      - ai_aggregator_operation in ['plan', 'stage']
+      - ai_aggregator_operation in ['plan', 'stage', 'activate']
       - ai_aggregator_spec.entrypoint.source_cidrs is iterable
+      - ai_aggregator_spec.entrypoint.direct_api_domain | length > 0
+      - ai_aggregator_spec.entrypoint.admin_basic_auth_ref.startswith('vault://')
       - ai_aggregator_spec.new_api.bind_address in ['127.0.0.1', '::1']
+      - ai_aggregator_spec.litellm.bind_address in ['127.0.0.1', '::1']
+      - ai_aggregator_spec.litellm.port != ai_aggregator_spec.new_api.port
+      - ai_aggregator_spec.new_api.persistence.driver == 'postgresql'
+      - ai_aggregator_spec.litellm.persistence.driver == 'postgresql'
       - ai_aggregator_spec.cpa_instances | length > 0
     fail_msg: "The GitOps aggregator declaration is incomplete or unsafe."
 
@@ -40,6 +46,7 @@
     that:
       - ai_aggregator_spec.cpa_instances | map(attribute='id') | unique | list | length == ai_aggregator_spec.cpa_instances | length
       - ai_aggregator_spec.cpa_instances | map(attribute='port') | unique | list | length == ai_aggregator_spec.cpa_instances | length
+      - ai_aggregator_spec.cpa_instances | map(attribute='network_endpoint') | unique | list | length == ai_aggregator_spec.cpa_instances | length
     fail_msg: "CPA instance IDs and ports must be unique."
   run_once: true
 
@@ -62,6 +69,23 @@
     ai_aggregator_local_nodes: >-
       {{ ai_aggregator_spec.nodes | selectattr('inventory_host', 'equalto', inventory_hostname) | list }}
 
+- name: Validate CPA instance contract
+  ansible.builtin.assert:
+    that:
+      - item.account_email is string
+      - "'@' in item.account_email"
+      - item.network_endpoint is string
+      - item.network_endpoint.startswith('cmdb://')
+      - item.auth_secret_ref.startswith('vault://')
+      - item.channel_token_ref.startswith('vault://')
+    fail_msg: "CPA {{ item.id }} must declare identity metadata, CMDB endpoint, and Vault references."
+  loop: "{{ ai_aggregator_spec.cpa_instances }}"
+  run_once: true
+
+- name: Stage Vault runtime material
+  ansible.builtin.include_tasks: vault.yml
+  when: ai_aggregator_operation == 'stage'
+
 - name: Show plan result
   ansible.builtin.debug:
     msg:
@@ -82,3 +106,15 @@
   when:
     - ai_aggregator_operation == 'stage'
     - ai_aggregator_local_nodes | selectattr('role', 'equalto', 'cpa') | list | length > 0
+
+- name: Activate CPA services after Vault staging
+  ansible.builtin.include_tasks: activate-cpa.yml
+  when:
+    - ai_aggregator_operation == 'activate'
+    - ai_aggregator_local_nodes | selectattr('role', 'equalto', 'cpa') | list | length > 0
+
+- name: Activate gateway services after CPA services
+  ansible.builtin.include_tasks: activate-gateway.yml
+  when:
+    - ai_aggregator_operation == 'activate'
+    - ai_aggregator_local_nodes | selectattr('role', 'equalto', 'gateway') | list | length > 0

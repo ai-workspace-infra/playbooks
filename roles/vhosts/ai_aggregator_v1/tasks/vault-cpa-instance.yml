@@ -1,0 +1,59 @@
+---
+- name: Create the shared CPA service group before writing credentials
+  ansible.builtin.group:
+    name: "{{ ai_aggregator_service_group }}"
+    system: true
+
+- name: Create the CPA service user before writing credentials
+  ansible.builtin.user:
+    name: "ai-cpa-{{ ai_aggregator_cpa.id }}"
+    group: "{{ ai_aggregator_service_group }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+
+- name: Create CPA volatile authentication directory
+  ansible.builtin.file:
+    path: "{{ ai_aggregator_runtime_root }}/cpa/{{ ai_aggregator_cpa.id }}/auth"
+    state: directory
+    owner: "ai-cpa-{{ ai_aggregator_cpa.id }}"
+    group: "{{ ai_aggregator_service_group }}"
+    mode: '0700'
+
+- name: Read CPA OAuth bundle from Vault
+  ansible.builtin.uri:
+    url: "{{ ai_aggregator_vault_addr }}/v1/{{ ai_aggregator_cpa.auth_secret_ref.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
+    headers:
+      X-Vault-Token: "{{ ai_aggregator_vault_token }}"
+    return_content: true
+    status_code: 200
+  register: ai_aggregator_cpa_oauth_secret
+  no_log: true
+
+- name: Write CPA OAuth bundle to tmpfs
+  ansible.builtin.copy:
+    dest: "{{ ai_aggregator_runtime_root }}/cpa/{{ ai_aggregator_cpa.id }}/auth/oauth_bundle.json"
+    owner: "ai-cpa-{{ ai_aggregator_cpa.id }}"
+    group: "{{ ai_aggregator_service_group }}"
+    mode: '0600'
+    content: "{{ ai_aggregator_cpa_oauth_secret.json.data.data[ai_aggregator_cpa.auth_secret_ref.split('#')[1]] | to_json }}"
+  no_log: true
+
+- name: Read CPA internal channel token from Vault
+  ansible.builtin.uri:
+    url: "{{ ai_aggregator_vault_addr }}/v1/{{ ai_aggregator_cpa.channel_token_ref.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
+    headers:
+      X-Vault-Token: "{{ ai_aggregator_vault_token }}"
+    return_content: true
+    status_code: 200
+  register: ai_aggregator_cpa_channel_secret
+  no_log: true
+
+- name: Write CPA internal channel token to tmpfs
+  ansible.builtin.copy:
+    dest: "{{ ai_aggregator_runtime_root }}/cpa/{{ ai_aggregator_cpa.id }}/channel-token"
+    owner: "ai-cpa-{{ ai_aggregator_cpa.id }}"
+    group: "{{ ai_aggregator_service_group }}"
+    mode: '0600'
+    content: "{{ ai_aggregator_cpa_channel_secret.json.data.data[ai_aggregator_cpa.channel_token_ref.split('#')[1]] }}\n"
+  no_log: true

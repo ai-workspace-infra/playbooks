@@ -1,0 +1,108 @@
+---
+- name: Read New API PostgreSQL DSN from Vault
+  ansible.builtin.uri:
+    url: "{{ ai_aggregator_vault_addr }}/v1/{{ ai_aggregator_spec.new_api.persistence.secret_ref.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
+    headers:
+      X-Vault-Token: "{{ ai_aggregator_vault_token }}"
+    return_content: true
+    status_code: 200
+  register: ai_aggregator_new_api_db_secret
+  no_log: true
+
+- name: Read New API session secret from Vault
+  ansible.builtin.uri:
+    url: "{{ ai_aggregator_vault_addr }}/v1/{{ ai_aggregator_spec.new_api.session_secret_ref.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
+    headers:
+      X-Vault-Token: "{{ ai_aggregator_vault_token }}"
+    return_content: true
+    status_code: 200
+  register: ai_aggregator_new_api_session_secret
+  no_log: true
+
+- name: Read New API crypto secret from Vault
+  ansible.builtin.uri:
+    url: "{{ ai_aggregator_vault_addr }}/v1/{{ ai_aggregator_spec.new_api.crypto_secret_ref.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
+    headers:
+      X-Vault-Token: "{{ ai_aggregator_vault_token }}"
+    return_content: true
+    status_code: 200
+  register: ai_aggregator_new_api_crypto_secret
+  no_log: true
+
+- name: Read LiteLLM PostgreSQL DSN from Vault
+  ansible.builtin.uri:
+    url: "{{ ai_aggregator_vault_addr }}/v1/{{ ai_aggregator_spec.litellm.persistence.secret_ref.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
+    headers:
+      X-Vault-Token: "{{ ai_aggregator_vault_token }}"
+    return_content: true
+    status_code: 200
+  register: ai_aggregator_litellm_db_secret
+  no_log: true
+
+- name: Read LiteLLM master key from Vault
+  ansible.builtin.uri:
+    url: "{{ ai_aggregator_vault_addr }}/v1/{{ ai_aggregator_spec.litellm.master_key_ref.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
+    headers:
+      X-Vault-Token: "{{ ai_aggregator_vault_token }}"
+    return_content: true
+    status_code: 200
+  register: ai_aggregator_litellm_master_secret
+  no_log: true
+
+- name: Read Caddy admin password hash from Vault
+  ansible.builtin.uri:
+    url: "{{ ai_aggregator_vault_addr }}/v1/{{ ai_aggregator_spec.entrypoint.admin_basic_auth_ref.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
+    headers:
+      X-Vault-Token: "{{ ai_aggregator_vault_token }}"
+    return_content: true
+    status_code: 200
+  register: ai_aggregator_caddy_admin_secret
+  no_log: true
+
+- name: Set Caddy admin password hash fact
+  ansible.builtin.set_fact:
+    ai_aggregator_caddy_basic_auth_hash: "{{ ai_aggregator_caddy_admin_secret.json.data.data[ai_aggregator_spec.entrypoint.admin_basic_auth_ref.split('#')[1]] }}"
+  no_log: true
+
+- name: Read LiteLLM provider keys from Vault
+  ansible.builtin.uri:
+    url: "{{ ai_aggregator_vault_addr }}/v1/{{ item.value.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
+    headers:
+      X-Vault-Token: "{{ ai_aggregator_vault_token }}"
+    return_content: true
+    status_code: 200
+  loop: "{{ ai_aggregator_spec.litellm.provider_secret_refs | dict2items }}"
+  register: ai_aggregator_litellm_provider_secrets
+  no_log: true
+
+- name: Render New API runtime environment on tmpfs
+  ansible.builtin.copy:
+    dest: "{{ ai_aggregator_runtime_root }}/new-api/environment"
+    owner: root
+    group: root
+    mode: '0600'
+    content: |
+      SQL_DSN={{ ai_aggregator_new_api_db_secret.json.data.data[ai_aggregator_spec.new_api.persistence.secret_ref.split('#')[1]] }}
+      SESSION_SECRET={{ ai_aggregator_new_api_session_secret.json.data.data[ai_aggregator_spec.new_api.session_secret_ref.split('#')[1]] }}
+      CRYPTO_SECRET={{ ai_aggregator_new_api_crypto_secret.json.data.data[ai_aggregator_spec.new_api.crypto_secret_ref.split('#')[1]] }}
+  no_log: true
+
+- name: Render LiteLLM runtime environment on tmpfs
+  ansible.builtin.copy:
+    dest: "{{ ai_aggregator_runtime_root }}/litellm/environment"
+    owner: root
+    group: root
+    mode: '0600'
+    content: |
+      DATABASE_URL={{ ai_aggregator_litellm_db_secret.json.data.data[ai_aggregator_spec.litellm.persistence.secret_ref.split('#')[1]] }}
+      LITELLM_MASTER_KEY={{ ai_aggregator_litellm_master_secret.json.data.data[ai_aggregator_spec.litellm.master_key_ref.split('#')[1]] }}
+      OPENAI_API_KEY={{ (ai_aggregator_litellm_provider_secrets.results | selectattr('item.key', 'equalto', 'openai') | first).json.data.data[ai_aggregator_spec.litellm.provider_secret_refs.openai.split('#')[1]] }}
+      ANTHROPIC_API_KEY={{ (ai_aggregator_litellm_provider_secrets.results | selectattr('item.key', 'equalto', 'anthropic') | first).json.data.data[ai_aggregator_spec.litellm.provider_secret_refs.anthropic.split('#')[1]] }}
+      XAI_API_KEY={{ (ai_aggregator_litellm_provider_secrets.results | selectattr('item.key', 'equalto', 'xai') | first).json.data.data[ai_aggregator_spec.litellm.provider_secret_refs.xai.split('#')[1]] }}
+  no_log: true
+
+- name: Stage New API to CPA channel tokens on tmpfs
+  ansible.builtin.include_tasks: vault-channel.yml
+  loop: "{{ ai_aggregator_spec.cpa_instances }}"
+  loop_control:
+    loop_var: ai_aggregator_channel

@@ -13,7 +13,10 @@
     mode: '0750'
   loop:
     - "{{ ai_aggregator_root }}/new-api"
+    - "{{ ai_aggregator_root }}/litellm"
     - "{{ ai_aggregator_runtime_root }}/new-api"
+    - "{{ ai_aggregator_runtime_root }}/litellm"
+    - "{{ ai_aggregator_runtime_root }}/new-api/channels"
     - "{{ caddy_config_dir | default('/etc/caddy') }}/conf.d"
 
 - name: Render protected Caddy site fragment
@@ -30,9 +33,57 @@
     dest: /etc/systemd/system/new-api.service
     owner: root
     group: root
+  mode: '0644'
+
+- name: Render LiteLLM configuration without credentials
+  ansible.builtin.template:
+    src: litellm-config.yaml.j2
+    dest: "{{ ai_aggregator_root }}/litellm/config.yaml"
+    owner: root
+    group: "{{ ai_aggregator_service_group }}"
+    mode: '0640'
+
+- name: Render LiteLLM systemd unit without credentials
+  ansible.builtin.template:
+    src: litellm.service.j2
+    dest: /etc/systemd/system/litellm.service
+    owner: root
+    group: root
     mode: '0644'
+
+- name: Resolve CPA private endpoints from CMDB inventory facts
+  ansible.builtin.set_fact:
+    ai_aggregator_channel_endpoints: >-
+      {{ ai_aggregator_channel_endpoints | default({}) | combine({
+        item.id: 'http://' ~ (hostvars[(ai_aggregator_spec.nodes | selectattr('id', 'equalto', item.node) | first).inventory_host].private_ip | default('')) ~ ':' ~ (item.port | string)
+      }) }}
+  loop: "{{ ai_aggregator_spec.cpa_instances }}"
+  loop_control:
+    label: "{{ item.id }}"
+  no_log: true
+
+- name: Require private CMDB address for every CPA channel
+  ansible.builtin.assert:
+    that:
+      - ai_aggregator_channel_endpoints[item.id] is match('^http://[^:]+:[0-9]+$')
+    fail_msg: "CPA {{ item.id }} has no private_ip in the CMDB-backed inventory."
+  loop: "{{ ai_aggregator_spec.cpa_instances }}"
+  loop_control:
+    label: "{{ item.id }}"
+
+- name: Render New API CPA channel bootstrap map on tmpfs
+  ansible.builtin.template:
+    src: new-api-cpa-channels.yaml.j2
+    dest: "{{ ai_aggregator_runtime_root }}/new-api/channels/cpa.yaml"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+
+- name: Reload systemd after gateway units are staged
+  ansible.builtin.systemd:
+    daemon_reload: true
 
 - name: Validate Caddy configuration before activation
   ansible.builtin.command: caddy validate --config {{ caddy_config_dir | default('/etc/caddy') }}/Caddyfile --adapter caddyfile
   changed_when: false
-

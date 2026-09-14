@@ -1,0 +1,11 @@
+# Runtime-only bootstrap map. It is stored on tmpfs and must be consumed by
+# the New API channel bootstrap procedure; it is never committed to Git.
+channels:
+{% for item in ai_aggregator_spec.cpa_instances %}
+  - id: {{ item.id }}
+    name: {{ item.new_api_channel.name }}
+    provider: {{ item.provider }}
+    protocol: {{ item.new_api_channel.protocol }}
+    endpoint: {{ ai_aggregator_channel_endpoints[item.id] }}
+    token_file: {{ ai_aggregator_runtime_root }}/new-api/channels/{{ item.id }}.token
+{% endfor %}

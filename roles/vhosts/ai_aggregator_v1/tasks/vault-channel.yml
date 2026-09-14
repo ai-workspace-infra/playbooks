@@ -1,0 +1,19 @@
+---
+- name: Read New API to CPA channel token from Vault
+  ansible.builtin.uri:
+    url: "{{ ai_aggregator_vault_addr }}/v1/{{ (ai_aggregator_channel.channel_token_ref | default(ai_aggregator_channel.token_secret_ref, true)).split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
+    headers:
+      X-Vault-Token: "{{ ai_aggregator_vault_token }}"
+    return_content: true
+    status_code: 200
+  register: ai_aggregator_channel_secret
+  no_log: true
+
+- name: Write New API to CPA channel token to tmpfs
+  ansible.builtin.copy:
+    dest: "{{ ai_aggregator_runtime_root }}/new-api/channels/{{ ai_aggregator_channel.id }}.token"
+    owner: root
+    group: root
+    mode: '0600'
+    content: "{{ ai_aggregator_channel_secret.json.data.data[(ai_aggregator_channel.channel_token_ref | default(ai_aggregator_channel.token_secret_ref, true)).split('#')[1]] }}\n"
+  no_log: true

@@ -1,0 +1,25 @@
+[Unit]
+Description=LiteLLM direct AI API gateway
+After=network-online.target ai-aggregator-runtime.mount
+Wants=network-online.target
+Requires=ai-aggregator-runtime.mount
+
+[Service]
+Type=simple
+User=root
+Group={{ ai_aggregator_service_group }}
+WorkingDirectory={{ ai_aggregator_root }}/litellm
+ConditionPathExists={{ ai_aggregator_runtime_root }}/litellm/environment
+EnvironmentFile={{ ai_aggregator_runtime_root }}/litellm/environment
+ExecStartPre=/bin/sh -c '/usr/bin/pg_isready --dbname="$DATABASE_URL"'
+ExecStart={{ ai_aggregator_litellm_binary }} --config {{ ai_aggregator_root }}/litellm/config.yaml --port {{ ai_aggregator_spec.litellm.port }} --host {{ ai_aggregator_spec.litellm.bind_address }}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths={{ ai_aggregator_runtime_root }}/litellm
+
+[Install]
+WantedBy=multi-user.target
