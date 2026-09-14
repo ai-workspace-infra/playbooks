@@ -24,25 +24,31 @@
         "vnext": [
           {
             "address": "{{ xray_remote_domain }}",
-            "port": 1443,
+            "port": {% if xconnect_transport_kind | default('') == 'vless-xhttp' %}{{ xconnect_transport_port }}{% else %}{{ xray_main_port }}{% endif %},
             "users": [
               {
                 "id": "{{ xray_uuid }}",
-                "encryption": "none",
+                "encryption": "none"{% if xconnect_transport_kind | default('') != 'vless-xhttp' %},
                 "flow": "xtls-rprx-vision"
+                {% endif %}
               }
             ]
           }
         ]
       },
       "streamSettings": {
-        "network": "tcp",
+        "network": "{% if xconnect_transport_kind | default('') == 'vless-xhttp' %}xhttp{% else %}tcp{% endif %}",
         "security": "tls",
         "tlsSettings": {
           "serverName": "{{ xray_remote_domain }}",
           "allowInsecure": false,
           "fingerprint": "chrome"
-        }
+        }{% if xconnect_transport_kind | default('') == 'vless-xhttp' %},
+        "xhttpSettings": {
+          "path": "{{ xconnect_transport_path }}",
+          "mode": "{{ xconnect_transport_mode }}"{% if xconnect_transport_host | default('') | trim %},
+          "host": "{{ xconnect_transport_host }}"{% endif %}
+        }{% endif %}
       },
       "tag": "proxy"
     },
