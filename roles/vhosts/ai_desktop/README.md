@@ -19,3 +19,10 @@ repository, launcher, and desktop shortcut handling.
 Each node is intentionally scoped to one account set:
 `ai_desktop_account_scope: single`. Multi-account rotation or aggregation must
 be deployed as separate nodes or an upstream gateway.
+
+This is a strict minimal desktop base. Its package allowlist contains only the
+XFCE session/window manager, panel, terminal, browser support, CJK fonts, and
+the selected remote-access dependencies. It does not install or configure
+office suites, Wine compatibility, video players, media suites, or other
+heavyweight desktop add-ons. The existing browser task's snap cleanup remains
+because it prevents snap-backed browser packages from being pulled in.
