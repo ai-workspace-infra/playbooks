@@ -1,0 +1,94 @@
+---
+- name: Assert IceWM minimal desktop is supported
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == 'Debian'
+    fail_msg: "icewm_desktop_minimal currently supports Debian-family hosts only."
+
+- name: Install IceWM minimal desktop packages
+  ansible.builtin.apt:
+    name: "{{ icewm_desktop_packages }}"
+    state: present
+    install_recommends: false
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+  when: icewm_desktop_enabled | bool
+
+- name: Install optional XRDP remote desktop packages
+  ansible.builtin.apt:
+    name: "{{ icewm_desktop_remote_packages }}"
+    state: present
+    install_recommends: false
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_remote_enabled | bool
+
+- name: Ensure IceWM desktop user exists
+  ansible.builtin.user:
+    name: "{{ icewm_desktop_user }}"
+    shell: /bin/bash
+    create_home: true
+    groups: "{{ icewm_desktop_user_groups }}"
+    append: true
+    state: present
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_manage_user | bool
+
+- name: Require a password for XRDP-managed users
+  ansible.builtin.assert:
+    that:
+      - icewm_desktop_user_password | length > 0
+    fail_msg: "icewm_desktop_user_password must be set when managing an XRDP user."
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_remote_enabled | bool
+    - icewm_desktop_manage_user | bool
+
+- name: Set IceWM desktop user password
+  ansible.builtin.user:
+    name: "{{ icewm_desktop_user }}"
+    password: "{{ icewm_desktop_user_password | password_hash('sha512') }}"
+    update_password: on_create
+    password_lock: false
+  become: true
+  no_log: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_remote_enabled | bool
+    - icewm_desktop_manage_user | bool
+    - not ansible_check_mode
+
+- name: Configure IceWM session for XRDP
+  ansible.builtin.template:
+    src: xsession.j2
+    dest: "/home/{{ icewm_desktop_user }}/.xsession"
+    owner: "{{ icewm_desktop_user }}"
+    group: "{{ icewm_desktop_user }}"
+    mode: '0644'
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_remote_enabled | bool
+
+- name: Enable and start XRDP services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - xrdp-sesman
+    - xrdp
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_remote_enabled | bool
