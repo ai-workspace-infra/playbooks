@@ -1,0 +1,35 @@
+---
+ai_desktop_enabled: true
+ai_desktop_remote_enabled: true
+ai_desktop_remote_type: xrdp
+# One AI Desktop/proxy node owns one provider-account set. Multi-account
+# rotation and aggregation belong in separate nodes or an upstream gateway.
+ai_desktop_account_scope: single
+
+ai_desktop_xfce_packages:
+  - xfce4-session
+  - xfwm4
+  - xfdesktop4
+  - xfce4-panel
+  - xfce4-terminal
+  - dbus-x11
+  - fonts-noto-cjk
+  - "{{ 'xserver-xorg-core' if ai_desktop_remote_enabled | bool else omit }}"
+
+ai_desktop_user: "{{ ansible_user | default('ubuntu') }}"
+ai_desktop_user_password: ""
+ai_desktop_manage_user: true
+ai_desktop_user_groups:
+  - sudo
+
+# The existing XFCE role can install optional AI automation runtimes. Keep this
+# base role limited to the desktop and browser needed for OAuth/configuration.
+ai_desktop_install_nodejs_runtime: false
+ai_desktop_install_playwright_runtime: false
+
+# Reserved capability switches. They intentionally remain disabled until the
+# corresponding implementation is selected for this host profile.
+ai_desktop_ai_agent_enabled: false
+ai_desktop_monitoring_enabled: false
+ai_desktop_ai_agent_roles: []
+ai_desktop_monitoring_roles: []
