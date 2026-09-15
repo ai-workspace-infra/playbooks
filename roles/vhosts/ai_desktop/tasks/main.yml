@@ -1,0 +1,42 @@
+---
+- name: Install minimal XFCE desktop
+  ansible.builtin.include_role:
+    name: roles/vhosts/xfce_desktop_minimal_runtime
+  vars:
+    xfce_user: "{{ ai_desktop_user }}"
+    xfce_desktop_install_nodejs_runtime: "{{ ai_desktop_install_nodejs_runtime }}"
+    xfce_desktop_install_playwright_runtime: "{{ ai_desktop_install_playwright_runtime }}"
+  when:
+    - ai_desktop_enabled | bool
+    - ansible_os_family != 'Darwin'
+
+- name: Install XRDP remote desktop access
+  ansible.builtin.include_role:
+    name: roles/vhosts/remote_desktop_xrdp_server
+  vars:
+    xfce_user: "{{ ai_desktop_user }}"
+    xfce_manage_user: "{{ ai_desktop_manage_user }}"
+    xfce_user_password_plaintext: "{{ ai_desktop_user_password }}"
+    xfce_user_groups: "{{ ai_desktop_user_groups }}"
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_remote_enabled | bool
+    - ansible_os_family != 'Darwin'
+
+- name: Reserve AI Agent capability slot
+  ansible.builtin.include_role:
+    name: "{{ item }}"
+  loop: "{{ ai_desktop_ai_agent_roles }}"
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_ai_agent_enabled | bool
+    - ai_desktop_ai_agent_roles | length > 0
+
+- name: Reserve monitoring capability slot
+  ansible.builtin.include_role:
+    name: "{{ item }}"
+  loop: "{{ ai_desktop_monitoring_roles }}"
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_monitoring_enabled | bool
+    - ai_desktop_monitoring_roles | length > 0
