@@ -15,3 +15,7 @@ its broad native-client support. The desktop stack retains the XFCE panel and
 terminal, Google Chrome on amd64 (Chromium fallback on other supported
 architectures), CJK fonts, and the existing browser task's snap cleanup, apt
 repository, launcher, and desktop shortcut handling.
+
+Each node is intentionally scoped to one account set:
+`ai_desktop_account_scope: single`. Multi-account rotation or aggregation must
+be deployed as separate nodes or an upstream gateway.

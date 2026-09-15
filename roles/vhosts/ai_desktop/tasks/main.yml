@@ -6,6 +6,12 @@
     fail_msg: "Unsupported ai_desktop_remote_type. The supported connection method is xrdp."
   when: ai_desktop_remote_enabled | bool
 
+- name: Validate single-account node scope
+  ansible.builtin.assert:
+    that:
+      - ai_desktop_account_scope == 'single'
+    fail_msg: "Each AI Desktop/proxy node must use ai_desktop_account_scope: single."
+
 - name: Install minimal XFCE desktop
   ansible.builtin.include_role:
     name: roles/vhosts/xfce_desktop_minimal_runtime
