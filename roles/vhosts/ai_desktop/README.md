@@ -26,3 +26,7 @@ the selected remote-access dependencies. It does not install or configure
 office suites, Wine compatibility, video players, media suites, or other
 heavyweight desktop add-ons. The existing browser task's snap cleanup remains
 because it prevents snap-backed browser packages from being pulled in.
+
+`openssh-server` is installed and enabled by default as the base maintenance
+and provisioning connection. Disable it with `ai_desktop_sshd_enabled: false`
+only when SSH is managed elsewhere.

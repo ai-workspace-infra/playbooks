@@ -12,6 +12,32 @@
       - ai_desktop_account_scope == 'single'
     fail_msg: "Each AI Desktop/proxy node must use ai_desktop_account_scope: single."
 
+- name: Install and enable SSH server
+  ansible.builtin.apt:
+    name: openssh-server
+    state: present
+    install_recommends: false
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_sshd_enabled | bool
+    - ansible_os_family == 'Debian'
+
+- name: Ensure SSH server is enabled and running
+  ansible.builtin.service:
+    name: ssh
+    enabled: true
+    state: started
+  become: true
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_sshd_enabled | bool
+    - ansible_os_family == 'Debian'
+
 - name: Install minimal XFCE desktop
   ansible.builtin.include_role:
     name: roles/vhosts/xfce_desktop_minimal_runtime
