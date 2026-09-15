@@ -1,0 +1,32 @@
+---
+- name: Deploy AI Desktop and basic monitoring to CPA nodes
+  hosts: "{{ ai_desktop_hosts | default('ai_aggregator_cpa', true) }}"
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Require an explicit CPA inventory group
+      ansible.builtin.assert:
+        that:
+          - groups[ai_desktop_monitoring_group] is defined
+          - groups[ai_desktop_monitoring_group] | length > 0
+        fail_msg: >-
+          The generated UAT inventory must define a non-empty
+          {{ ai_desktop_monitoring_group }} group.
+      tags: [always]
+  vars:
+    # Terraform -> CMDB -> Ansible must place all CPA nodes in this group.
+    # The play never targets gateway or database hosts.
+    ai_desktop_monitoring_group: ai_aggregator_cpa
+    ai_desktop_monitoring_enabled: true
+    ai_desktop_monitoring_roles:
+      - roles/vhosts/node_exporter
+    # Optional per-host passwords are supplied from Vault by the runner. Keep
+    # the map out of inventory and never print it. Setting remote_enabled=false
+    # and manage_user=false remains the non-interactive bootstrap mode.
+    ai_desktop_user_password: >-
+      {{ (ai_desktop_password_by_host | default({})).get(inventory_hostname, '') }}
+  roles:
+    - role: roles/vhosts/ai_desktop
+      tags: [ai_desktop, monitoring]
+      vars:
+        group: "{{ ai_desktop_monitoring_group }}"
