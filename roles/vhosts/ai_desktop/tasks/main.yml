@@ -102,3 +102,12 @@
     - ai_desktop_enabled | bool
     - ai_desktop_monitoring_enabled | bool
     - ai_desktop_monitoring_roles | length > 0
+
+- name: Reserve WebRTC remote desktop capability slot
+  ansible.builtin.include_role:
+    name: "{{ item }}"
+  loop: "{{ ai_desktop_webrtc_roles }}"
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_webrtc_enabled | bool
+    - ai_desktop_webrtc_roles | length > 0

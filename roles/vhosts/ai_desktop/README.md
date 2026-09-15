@@ -33,3 +33,9 @@ because it prevents snap-backed browser packages from being pulled in.
 `openssh-server` is installed and enabled by default as the base maintenance
 and provisioning connection. Disable it with `ai_desktop_sshd_enabled: false`
 only when SSH is managed elsewhere.
+
+WebRTC remote desktop is an optional reserved capability and is disabled by
+default with `ai_desktop_webrtc_enabled: false`. When a standalone WebRTC
+bridge role is available, list it in `ai_desktop_webrtc_roles` and enable the
+switch. The disabled default installs no capture, encoder, input-injection, or
+WebRTC service dependencies.
