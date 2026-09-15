@@ -6,6 +6,12 @@
     fail_msg: "Unsupported ai_desktop_remote_type. The supported connection method is xrdp."
   when: ai_desktop_remote_enabled | bool
 
+- name: Validate AI Desktop desktop selection
+  ansible.builtin.assert:
+    that:
+      - ai_desktop_desktop_type in ['xfce', 'icewm']
+    fail_msg: "ai_desktop_desktop_type must be either xfce or icewm."
+
 - name: Validate single-account node scope
   ansible.builtin.assert:
     that:
@@ -48,6 +54,21 @@
     xfce_desktop_install_playwright_runtime: "{{ ai_desktop_install_playwright_runtime }}"
   when:
     - ai_desktop_enabled | bool
+    - ai_desktop_desktop_type == 'xfce'
+    - ansible_os_family != 'Darwin'
+
+- name: Install minimal IceWM desktop
+  ansible.builtin.include_role:
+    name: roles/vhosts/icewm_desktop_minimal
+  vars:
+    icewm_desktop_user: "{{ ai_desktop_user }}"
+    icewm_desktop_user_password: "{{ ai_desktop_user_password }}"
+    icewm_desktop_manage_user: "{{ ai_desktop_manage_user }}"
+    icewm_desktop_user_groups: "{{ ai_desktop_user_groups }}"
+    icewm_desktop_remote_enabled: "{{ ai_desktop_remote_enabled }}"
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_desktop_type == 'icewm'
     - ansible_os_family != 'Darwin'
 
 - name: Install XRDP remote desktop access

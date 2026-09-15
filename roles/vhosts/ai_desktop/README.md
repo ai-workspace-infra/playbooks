@@ -4,6 +4,9 @@ Installs the repository's minimal XFCE desktop and optional XRDP access. This
 role is only the desktop base for CPA and CLI setup/debugging; it does not
 install AI agents, monitoring, containers, or proxy services.
 
+Select the desktop backend with `ai_desktop_desktop_type`: `xfce` is the
+default; `icewm` uses the independent IceWM minimal role.
+
 Set `ai_desktop_user_password` through inventory or an encrypted vars file when
 `ai_desktop_manage_user` is enabled.
 
