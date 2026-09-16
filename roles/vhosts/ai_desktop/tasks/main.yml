@@ -6,11 +6,43 @@
     fail_msg: "Unsupported ai_desktop_remote_type. The supported connection method is xrdp."
   when: ai_desktop_remote_enabled | bool
 
+- name: Validate AI Desktop desktop selection
+  ansible.builtin.assert:
+    that:
+      - ai_desktop_desktop_type in ['xfce', 'icewm']
+    fail_msg: "ai_desktop_desktop_type must be either xfce or icewm."
+
 - name: Validate single-account node scope
   ansible.builtin.assert:
     that:
       - ai_desktop_account_scope == 'single'
     fail_msg: "Each AI Desktop/proxy node must use ai_desktop_account_scope: single."
+
+- name: Install and enable SSH server
+  ansible.builtin.apt:
+    name: openssh-server
+    state: present
+    install_recommends: false
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_sshd_enabled | bool
+    - ansible_os_family == 'Debian'
+
+- name: Ensure SSH server is enabled and running
+  ansible.builtin.service:
+    name: ssh
+    enabled: true
+    state: started
+  become: true
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_sshd_enabled | bool
+    - ansible_os_family == 'Debian'
 
 - name: Install minimal XFCE desktop
   ansible.builtin.include_role:
@@ -22,6 +54,21 @@
     xfce_desktop_install_playwright_runtime: "{{ ai_desktop_install_playwright_runtime }}"
   when:
     - ai_desktop_enabled | bool
+    - ai_desktop_desktop_type == 'xfce'
+    - ansible_os_family != 'Darwin'
+
+- name: Install minimal IceWM desktop
+  ansible.builtin.include_role:
+    name: roles/vhosts/icewm_desktop_minimal
+  vars:
+    icewm_desktop_user: "{{ ai_desktop_user }}"
+    icewm_desktop_user_password: "{{ ai_desktop_user_password }}"
+    icewm_desktop_manage_user: "{{ ai_desktop_manage_user }}"
+    icewm_desktop_user_groups: "{{ ai_desktop_user_groups }}"
+    icewm_desktop_remote_enabled: "{{ ai_desktop_remote_enabled }}"
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_desktop_type == 'icewm'
     - ansible_os_family != 'Darwin'
 
 - name: Install XRDP remote desktop access
@@ -55,3 +102,12 @@
     - ai_desktop_enabled | bool
     - ai_desktop_monitoring_enabled | bool
     - ai_desktop_monitoring_roles | length > 0
+
+- name: Reserve WebRTC remote desktop capability slot
+  ansible.builtin.include_role:
+    name: "{{ item }}"
+  loop: "{{ ai_desktop_webrtc_roles }}"
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_webrtc_enabled | bool
+    - ai_desktop_webrtc_roles | length > 0

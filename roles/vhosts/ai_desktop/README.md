@@ -4,6 +4,9 @@ Installs the repository's minimal XFCE desktop and optional XRDP access. This
 role is only the desktop base for CPA and CLI setup/debugging; it does not
 install AI agents, monitoring, containers, or proxy services.
 
+Select the desktop backend with `ai_desktop_desktop_type`: `xfce` is the
+default; `icewm` uses the independent IceWM minimal role.
+
 Set `ai_desktop_user_password` through inventory or an encrypted vars file when
 `ai_desktop_manage_user` is enabled.
 
@@ -19,3 +22,20 @@ repository, launcher, and desktop shortcut handling.
 Each node is intentionally scoped to one account set:
 `ai_desktop_account_scope: single`. Multi-account rotation or aggregation must
 be deployed as separate nodes or an upstream gateway.
+
+This is a strict minimal desktop base. Its package allowlist contains only the
+XFCE session/window manager, panel, terminal, browser support, CJK fonts, and
+the selected remote-access dependencies. It does not install or configure
+office suites, Wine compatibility, video players, media suites, or other
+heavyweight desktop add-ons. The existing browser task's snap cleanup remains
+because it prevents snap-backed browser packages from being pulled in.
+
+`openssh-server` is installed and enabled by default as the base maintenance
+and provisioning connection. Disable it with `ai_desktop_sshd_enabled: false`
+only when SSH is managed elsewhere.
+
+WebRTC remote desktop is an optional reserved capability and is disabled by
+default with `ai_desktop_webrtc_enabled: false`. When a standalone WebRTC
+bridge role is available, list it in `ai_desktop_webrtc_roles` and enable the
+switch. The disabled default installs no capture, encoder, input-injection, or
+WebRTC service dependencies.
