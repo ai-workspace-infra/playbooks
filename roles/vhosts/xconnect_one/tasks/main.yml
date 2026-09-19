@@ -177,6 +177,18 @@
       - xconnect_one_default_route.stdout | trim | length > 0
     fail_msg: XConnect One must only add the declared private overlay route and must not replace the host default route.
 
+- name: Disable legacy XConnect One signed-config synchronization timer
+  ansible.builtin.systemd:
+    name: "xconnect-one-sync@{{ xconnect_one_environment }}.timer"
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Remove legacy XConnect One signed-config synchronization timer unit
+  ansible.builtin.file:
+    path: "/etc/systemd/system/xconnect-one-sync@{{ xconnect_one_environment }}.timer"
+    state: absent
+
 - name: Install XConnect One signed-config synchronization service
   ansible.builtin.template:
     src: xconnect-one-sync.service.j2
@@ -185,17 +197,9 @@
     group: root
     mode: '0644'
 
-- name: Install XConnect One signed-config synchronization timer
-  ansible.builtin.template:
-    src: xconnect-one-sync.timer.j2
-    dest: "/etc/systemd/system/xconnect-one-sync@{{ xconnect_one_environment }}.timer"
-    owner: root
-    group: root
-    mode: '0644'
-
-- name: Enable XConnect One signed-config synchronization timer
+- name: Enable XConnect One signed-config synchronization service
   ansible.builtin.systemd:
-    name: "xconnect-one-sync@{{ xconnect_one_environment }}.timer"
+    name: "xconnect-one-sync@{{ xconnect_one_environment }}.service"
     enabled: true
     state: started
     daemon_reload: true
