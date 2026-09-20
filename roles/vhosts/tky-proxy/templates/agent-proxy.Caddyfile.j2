@@ -2,7 +2,7 @@
 	debug
 }
 
-# Agent Proxy virtual hosts are managed exclusively in conf.d. The wildcard
-# import intentionally includes the historical tky-proxy.caddy compatibility
-# fragment; that filename must remain loadable across production upgrades.
-import /etc/caddy/conf.d/*.caddy
+# Agent Proxy virtual hosts are managed exclusively in conf.d. The same
+# environment-aware fragment is used for UAT and PROD; the playbook removes
+# the PROD-only compatibility fragment when the current node is not PROD.
+import {{ agent_proxy_caddy_conf_dir }}/*.caddy

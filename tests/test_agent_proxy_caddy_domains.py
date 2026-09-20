@@ -41,6 +41,20 @@ class AgentProxyCaddyDomainsTest(unittest.TestCase):
         first_line = content.splitlines()[0]
         self.assertIn("join(', ')", first_line)
 
+    def test_prod_compatibility_hostname_is_environment_gated(self) -> None:
+        content = PLAYBOOK.read_text()
+        self.assertIn("agent_proxy_environment:", content)
+        self.assertIn("agent_proxy_environment == 'prod'", content)
+        self.assertIn("xconnect_pool | default('') == 'jp'", content)
+
+    def test_caddy_fragments_are_reconciled_and_use_shared_conf_dir(self) -> None:
+        tasks = (ROOT / "roles/vhosts/tky-proxy/tasks/main.yml").read_text()
+        template = (ROOT / "roles/vhosts/tky-proxy/templates/agent-proxy.Caddyfile.j2").read_text()
+        self.assertIn("agent_proxy_caddy_conf_dir", tasks)
+        self.assertIn("force: true", tasks)
+        self.assertIn("Remove PROD-only compatibility fragment outside PROD", tasks)
+        self.assertIn("import {{ agent_proxy_caddy_conf_dir }}/*.caddy", template)
+
 
 if __name__ == "__main__":
     unittest.main()
