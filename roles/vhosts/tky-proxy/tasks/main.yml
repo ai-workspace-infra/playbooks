@@ -21,7 +21,7 @@
 
 - name: Ensure agent-proxy Caddy TLS directory exists
   ansible.builtin.file:
-    path: /etc/caddy/tls
+    path: "{{ agent_proxy_caddy_config_dir }}/tls"
     state: directory
     owner: caddy
     group: caddy
@@ -45,14 +45,14 @@
 
 - name: Ensure Caddy conf.d directory exists
   ansible.builtin.file:
-    path: /etc/caddy/conf.d
+    path: "{{ agent_proxy_caddy_conf_dir }}"
     state: directory
     mode: '0755'
 
 - name: Configure Agent Proxy root Caddyfile
   ansible.builtin.template:
     src: agent-proxy.Caddyfile.j2
-    dest: /etc/caddy/Caddyfile
+    dest: "{{ agent_proxy_caddy_config_dir }}/Caddyfile"
     mode: '0644'
   notify:
     - Restart caddy
@@ -60,7 +60,7 @@
 - name: Configure Caddy for agent proxy domains in conf.d
   ansible.builtin.template:
     src: agent-proxy.conf.j2
-    dest: /etc/caddy/conf.d/agent-proxy.caddy
+    dest: "{{ agent_proxy_caddy_conf_dir }}/agent-proxy.caddy"
     mode: '0644'
   notify:
     - Restart caddy
@@ -68,12 +68,11 @@
 - name: Configure legacy Agent Proxy Caddy fragment when explicitly enabled
   ansible.builtin.template:
     src: agent-proxy.conf.j2
-    dest: /etc/caddy/conf.d/tky-proxy.caddy
+    dest: "{{ agent_proxy_caddy_conf_dir }}/tky-proxy.caddy"
     mode: '0644'
-    # This filename is a long-lived production compatibility contract. If a
-    # historical fragment already exists, leave its routes intact and rely on
-    # the explicit conf.d import in the root Caddyfile to keep it loaded.
-    force: false
+    # Reconcile the long-lived compatibility fragment on every run. Leaving an
+    # old fragment untouched can leak a PROD hostname into a reused UAT node.
+    force: true
   vars:
     agent_proxy_domains:
       - "{{ agent_proxy_legacy_domain }}"
@@ -83,19 +82,30 @@
   notify:
     - Restart caddy
 
+- name: Remove PROD-only compatibility fragment outside PROD
+  ansible.builtin.file:
+    path: "{{ agent_proxy_caddy_conf_dir }}/tky-proxy.caddy"
+    state: absent
+  when:
+    - agent_proxy_legacy_domain | default('') | length == 0
+  notify:
+    - Restart caddy
+
 - name: Remove obsolete legacy Agent Proxy Caddy configuration
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
-    - /etc/caddy/conf.d/tky-proxy.conf
+    - "{{ agent_proxy_caddy_conf_dir }}/tky-proxy.conf"
     # Older releases used this generated filename; remove it before creating
     # the explicit compatibility fragment to avoid duplicate site addresses.
-    - /etc/caddy/conf.d/tky-proxy-svc-plus.caddy
+    - "{{ agent_proxy_caddy_conf_dir }}/tky-proxy-svc-plus.caddy"
   notify:
     - Restart caddy
 
 - name: Validate composed Agent Proxy Caddy configuration
   ansible.builtin.command:
-    cmd: caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+    cmd: >-
+      caddy validate --config {{ agent_proxy_caddy_config_dir }}/Caddyfile
+      --adapter caddyfile
   changed_when: false

@@ -69,6 +69,12 @@
          | regex_replace('^https?://', '')
          | regex_replace('/.*$', '')
          | regex_replace(':.*$', '') }}
+    # Do not infer the environment from the region. A UAT JP node also has
+    # xconnect_pool=jp and must never receive a PROD compatibility hostname.
+    agent_proxy_environment: >-
+      {{ lookup('ansible.builtin.env', 'DEPLOY_ENV')
+         | default(lookup('ansible.builtin.env', 'VAULT_ENV_PATH')
+         | default('uat', true), true) }}
     # Keep the primary list separate because the legacy Caddy task temporarily
     # overrides agent_proxy_domains to render its own site fragment.
     agent_proxy_regional_domain: >-
@@ -94,7 +100,9 @@
       {{ lookup('ansible.builtin.env', 'AGENT_PROXY_LEGACY_DOMAIN')
          | default(
              'tky-proxy.svc.plus'
-             if (agent_id is match('.*-(prod-jp|jpn-tky)\..*') or xconnect_pool | default('') == 'jp')
+             if (agent_proxy_environment == 'prod'
+                 and (agent_id is match('.*-(prod-jp|jpn-tky)\..*')
+                      or xconnect_pool | default('') == 'jp'))
              else '',
              true
            ) }}
