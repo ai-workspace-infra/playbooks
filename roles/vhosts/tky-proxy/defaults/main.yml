@@ -2,6 +2,11 @@
 agent_proxy_domains:
   - "agent-proxy.onwalk.net"
 
+# Caddy owns the public regional HTTPS entrypoint. Keep this opt-out available
+# for legacy standalone deployments that intentionally keep the old gateway
+# listener, while the platform agent-proxy deployment enables it by default.
+tky_proxy_disable_legacy_xconnect_gateway: false
+
 # Keep Caddy paths behind the shared OS-aware setting. Linux external nodes use
 # /etc/caddy; local playbook users may override caddy_config_dir.
 agent_proxy_caddy_config_dir: "{{ caddy_config_dir | default('/etc/caddy', true) }}"
