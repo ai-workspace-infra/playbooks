@@ -14,6 +14,11 @@ postgresql_packages_base:
   - postgresql
   - postgresql-contrib
 postgresql_extra_packages: []
+# Native PostgreSQL installations can opt into pgvector when the matching
+# package is available. The standalone Vault/open-platform node does not use
+# vector search and should not fail just because Debian's default repositories
+# do not publish a version-matched pgvector package.
+postgresql_install_pgvector: true
 postgresql_service_name: postgresql
 postgresql_conf_path: /etc/postgresql/17/main/postgresql.conf
 postgresql_hba_path: /etc/postgresql/17/main/pg_hba.conf
