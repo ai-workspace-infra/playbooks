@@ -132,6 +132,12 @@
     agent_proxy_wait_for_runtime_config: >-
       {{ lookup('ansible.builtin.env', 'AGENT_PROXY_WAIT_FOR_RUNTIME_CONFIG')
          | default(false, true) | bool }}
+    # The existing Ulighthost relay may still have the legacy gateway unit
+    # bound to :443. Caddy is the supported regional entrypoint now, so stop
+    # that conflicting listener before rendering the conf.d sites.
+    tky_proxy_disable_legacy_xconnect_gateway: >-
+      {{ lookup('ansible.builtin.env', 'TKY_PROXY_DISABLE_LEGACY_GATEWAY')
+         | default(true, true) | bool }}
   pre_tasks:
 
     - name: Try to read agent-proxy secrets from Vault

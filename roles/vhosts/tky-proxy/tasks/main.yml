@@ -27,6 +27,17 @@
     group: caddy
     mode: "0750"
 
+- name: Stop legacy XConnect gateway before Caddy claims HTTPS
+  ansible.builtin.systemd:
+    name: xconnect-gateway-xray.service
+    state: stopped
+    enabled: false
+    daemon_reload: true
+  when:
+    - tky_proxy_disable_legacy_xconnect_gateway | bool
+    - ansible_facts.services is defined
+    - "'xconnect-gateway-xray.service' in ansible_facts.services"
+
 - name: Stage Vault-restored certificate for the system Caddy user
   ansible.builtin.copy:
     src: "{{ item.src }}"
