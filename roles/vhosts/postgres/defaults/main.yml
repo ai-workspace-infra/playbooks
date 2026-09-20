@@ -52,4 +52,13 @@ postgresql_admin_password_file: >-
   {{ (ansible_env.HOME ~ '/.ai_workspace_postgres_password')
      if ansible_os_family == 'Darwin'
      else '/root/.ai_workspace_postgres_password' }}
-postgresql_admin_password: "{{ lookup('ansible.builtin.env', 'POSTGRESQL_ADMIN_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') | default(lookup('ansible.builtin.env', 'POSTGRESQL_PASSWORD') | default(lookup('password', postgresql_admin_password_file ~ ' length=32 chars=ascii_letters,digits'), true), true), true) }}"
+# `lookup('password', ...)` runs on the Ansible controller, not the target.
+# Keep its controller-side cache writable by GitHub-hosted runners, then copy
+# the effective value to the protected target shadow file in the role tasks.
+postgresql_admin_password_lookup_file: >-
+  /tmp/ai-workspace-postgresql-admin-{{ inventory_hostname | regex_replace('[^A-Za-z0-9_.-]', '_') }}
+postgresql_admin_password: >-
+  {{ lookup('ansible.builtin.env', 'POSTGRESQL_ADMIN_PASSWORD')
+     | default(lookup('ansible.builtin.env', 'POSTGRES_PASSWORD'), true)
+     | default(lookup('ansible.builtin.env', 'POSTGRESQL_PASSWORD'), true)
+     | default(lookup('password', postgresql_admin_password_lookup_file ~ ' length=32 chars=ascii_letters,digits'), true) }}
