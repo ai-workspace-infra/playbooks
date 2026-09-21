@@ -2,6 +2,28 @@
 # Debian/Ubuntu 显式走 apt：play 的 module_defaults.apt.lock_timeout(模板值)只有
 # 在 ansible.builtin.apt 任务上才会被正确渲染；经 ansible.builtin.package 间接派发到
 # apt 时该模板不渲染，会把字面 "{{ ... }}" 当成 lock_timeout 传入而报 int 转换失败。
+- name: Resolve xworkmate-bridge service account home from passwd
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ xworkmate_bridge_service_user }}"
+    fail_key: true
+  when: ansible_os_family not in ['Darwin', 'Windows']
+
+- name: Set xworkmate-bridge home from the resolved account
+  ansible.builtin.set_fact:
+    xworkmate_bridge_service_home: "{{ ansible_facts.getent_passwd[xworkmate_bridge_service_user][4] }}"
+  when: ansible_os_family not in ['Darwin', 'Windows']
+
+- name: Assert xworkmate-bridge service account home is resolved
+  ansible.builtin.assert:
+    that:
+      - xworkmate_bridge_service_home | default('') | trim | length > 0
+    fail_msg: >-
+      Could not resolve a home directory for xworkmate-bridge user
+      '{{ xworkmate_bridge_service_user }}'. Set xworkmate_bridge_app_user to
+      an existing account or configure ansible_user explicitly.
+  when: ansible_os_family not in ['Darwin', 'Windows']
+
 - name: Install xworkmate-bridge prerequisites (Debian/Ubuntu via apt)
   ansible.builtin.apt:
     name: "{{ xworkmate_bridge_packages }}"
@@ -126,7 +148,7 @@
 
 - name: Remove obsolete user-level xworkmate-serve service file
   ansible.builtin.file:
-    path: "/home/{{ xworkmate_bridge_service_user }}/.config/systemd/user/xworkmate-serve.service"
+    path: "{{ xworkmate_bridge_service_home }}/.config/systemd/user/xworkmate-serve.service"
     state: absent
 
 - name: Inspect xworkmate-bridge config file attributes

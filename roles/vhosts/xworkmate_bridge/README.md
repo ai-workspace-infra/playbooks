@@ -65,8 +65,11 @@ Behavior after deployment:
 - requests with `Authorization: Bearer $INTERNAL_SERVICE_TOKEN` are accepted
 - this playbook only defines and validates the shared ingress token path
 - provider-specific authentication and ACP method compatibility are intentionally left to the individual runtimes
-- the Codex runtime user is a role variable and defaults to `ubuntu`, so it can be changed from inventory if needed
-- Gemini adapter is now also aligned to `ubuntu` home paths so it can reuse `/home/ubuntu/.gemini/oauth_creds.json`
+- the Linux service user is `xworkmate_bridge_app_user` when explicitly set,
+  otherwise it follows the controlled Ansible target identity (`ansible_user`);
+  the role resolves the account's actual home from the target passwd database
+- Gemini credentials are resolved relative to that account's home, so Debian
+  targets using `ansible_user: root` do not require an `ubuntu` account
 
 ## Public Endpoints
 

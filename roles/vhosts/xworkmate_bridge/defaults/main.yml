@@ -1,8 +1,12 @@
 ---
 xworkmate_bridge_service_name: xworkmate-bridge
-xworkmate_bridge_service_user: "{{ ansible_env.USER | default('ubuntu') if ansible_os_family == 'Darwin' else 'ubuntu' }}"
+xworkmate_bridge_app_user: ""
+xworkmate_bridge_service_user: >-
+  {{ (ansible_env.USER | default('root', true)) if ansible_os_family == 'Darwin'
+     else (xworkmate_bridge_app_user | default('', true) | trim
+           or ansible_user | default(ansible_env.USER | default('root', true), true)) }}
 xworkmate_bridge_service_group: "{{ 'staff' if ansible_os_family == 'Darwin' else xworkmate_bridge_service_user }}"
-xworkmate_bridge_service_home: "{{ ansible_env.HOME if ansible_os_family == 'Darwin' else '/home/' + xworkmate_bridge_service_user }}"
+xworkmate_bridge_service_home: "{{ ansible_env.HOME if ansible_os_family == 'Darwin' else ('/root' if xworkmate_bridge_service_user == 'root' else '/home/' + xworkmate_bridge_service_user) }}"
 xworkmate_bridge_accounts_introspection_url: "{{ lookup('ansible.builtin.env', 'BRIDGE_ACCOUNTS_INTROSPECTION_URL') | default('', true) }}"
 xworkmate_bridge_accounts_service_token: "{{ lookup('ansible.builtin.env', 'BRIDGE_ACCOUNTS_SERVICE_TOKEN') | default('', true) }}"
 xworkmate_bridge_openclaw_gateway_service_token: "{{ lookup('ansible.builtin.env', 'OPENCLAW_GATEWAY_SERVICE_TOKEN') | default('', true) }}"
