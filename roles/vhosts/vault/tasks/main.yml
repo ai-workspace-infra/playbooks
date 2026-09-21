@@ -186,9 +186,9 @@
   ansible.builtin.set_fact:
     vault_psql_cmd: >-
       {{
-        ('docker exec -i -u postgres ' ~ vault_postgres_container_name ~ ' psql')
+        ('docker exec -i -u postgres ' ~ vault_postgres_container_name ~ ' psql -U ' ~ vault_postgres_database_user)
         if (vault_postgres_topology.stdout | default('') | trim) == 'container'
-        else 'psql'
+        else ('psql -h 127.0.0.1 -p ' ~ (vault_pg_port | string) ~ ' -U ' ~ vault_postgres_database_user)
       }}
   when:
     - vault_deploy_mode in ["standalone", "native"]
@@ -219,6 +219,9 @@
     ALTER TABLE vault_ha_locks OWNER TO vault_storage;
     SQL
   changed_when: true
+  environment:
+    PGPASSWORD: "{{ vault_pg_password | default('') }}"
+  no_log: true
   when:
     - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
@@ -306,6 +309,9 @@
   become: true
   ansible.builtin.shell: |
     {{ vault_psql_cmd }} -d vault_storage -c "TRUNCATE TABLE vault_kv_store; TRUNCATE TABLE vault_ha_locks;"
+  environment:
+    PGPASSWORD: "{{ vault_pg_password | default('') }}"
+  no_log: true
   when:
     - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'

@@ -2,11 +2,13 @@
 # Use the SSH/Ansible user on Linux.  Akamai Cloud images may expose only
 # root (for example Debian 12), so assuming an ubuntu account makes the first
 # directory ownership task fail before the gateway can be installed.
+gateway_openclaw_app_user: ""
 gateway_openclaw_service_user: >-
   {{
     (ansible_env.USER | default('ubuntu', true))
     if ansible_os_family == 'Darwin'
-    else (ansible_user | default(ansible_env.USER | default('ubuntu', true), true))
+    else (gateway_openclaw_app_user | default('', true) | trim
+          or ansible_user | default(ansible_env.USER | default('root', true), true))
   }}
 gateway_openclaw_service_group: >-
   {{

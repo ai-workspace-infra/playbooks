@@ -1,4 +1,26 @@
 ---
+- name: Resolve OpenClaw service account home from the target passwd database
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ gateway_openclaw_service_user }}"
+    fail_key: true
+  when: ansible_os_family not in ['Darwin', 'Windows']
+
+- name: Set OpenClaw home to the configured service account home
+  ansible.builtin.set_fact:
+    gateway_openclaw_home: "{{ ansible_facts.getent_passwd[gateway_openclaw_service_user][4] }}"
+  when: ansible_os_family not in ['Darwin', 'Windows']
+
+- name: Assert OpenClaw service account has a home directory
+  ansible.builtin.assert:
+    that:
+      - gateway_openclaw_home | default('') | trim | length > 0
+    fail_msg: >-
+      Could not resolve a home directory for OpenClaw service user
+      '{{ gateway_openclaw_service_user }}'. Set gateway_openclaw_app_user to
+      an existing account or configure ansible_user explicitly.
+  when: ansible_os_family not in ['Darwin', 'Windows']
+
 - name: Inspect existing OpenClaw gateway JSON config
   ansible.builtin.stat:
     path: "{{ gateway_openclaw_config_path }}"
