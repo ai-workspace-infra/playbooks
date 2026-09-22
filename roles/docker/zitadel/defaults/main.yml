@@ -23,5 +23,6 @@ zitadel_db_admin_user: postgres
 zitadel_db_admin_password: "{{ lookup('ansible.builtin.env', 'ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD') }}"
 
 # Vault integration configuration
-vault_addr: "{{ vault_runtime_addr | default(lookup('ansible.builtin.env', 'VAULT_ADDR') | default(lookup('ansible.builtin.env', 'VAULT_SERVER_URL') | default('https://vault.svc.plus', true), true), true) }}"
-vault_token: "{{ vault_runtime_token | default(lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN'), true), true) }}"
+vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default(lookup('ansible.builtin.env', 'VAULT_SERVER_URL') | default('https://vault.svc.plus', true), true) }}"
+vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN'), true) }}"
+zitadel_vault_path: "{{ lookup('ansible.builtin.env', 'VAULT_ENV_PATH') | default('uat', true) }}/iam"
