@@ -22,3 +22,24 @@ controller must fetch that public CA for a subsequent `vhosts/xconnect_one`
 deployment. Only the public CA is fetched; the Gateway TLS private key never
 leaves the Gateway/Vault boundary. One must consume this handoff and must not
 generate its own CA.
+
+## Shared Caddy frontend
+
+For a host that also runs Agent Proxy, set:
+
+```yaml
+xconnect_gateway_frontend: caddy-unix-h2c
+xconnect_gateway_listen_socket: /run/xconnect-gateway/xray.sock
+xconnect_gateway_socket_group: caddy
+```
+
+The Gateway Xray then uses its own runtime configuration and Unix socket. It
+does not bind TCP `443` and does not reuse Agent Proxy's
+`/usr/local/etc/xray/config.json` or `/dev/shm/xray.sock`. Configure the
+`vhosts/tky-proxy` role with `xconnect_gateway_caddy_enabled: true` to add the
+`/xconnect` route beside Agent Proxy's existing `/split` route. Caddy remains
+the only TLS listener on TCP `443`.
+
+The Accounts signed Gateway transport must carry the same non-sensitive
+frontend contract (`frontend: caddy-unix-h2c` and `listen_socket`). The VLESS
+UUID remains runtime-signed and is never placed in Caddy or GitOps.

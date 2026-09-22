@@ -8,8 +8,10 @@
       - xconnect_gateway_xray_binary_source | trim | length > 0
       - (xconnect_gateway_controller | trim) is match('^https://')
       - (xconnect_gateway_id | trim) is match('^[a-z0-9][a-z0-9._-]{0,127}$')
-      - xconnect_gateway_tls_cert_source | trim | length > 0
-      - xconnect_gateway_tls_key_source | trim | length > 0
+      - xconnect_gateway_frontend in ['direct-tls', 'caddy-unix-h2c']
+      - xconnect_gateway_frontend != 'direct-tls' or xconnect_gateway_tls_cert_source | trim | length > 0
+      - xconnect_gateway_frontend != 'direct-tls' or xconnect_gateway_tls_key_source | trim | length > 0
+      - xconnect_gateway_frontend != 'caddy-unix-h2c' or (xconnect_gateway_listen_socket | trim) is match('^/')
       - xconnect_gateway_trust_bundle_source | trim | length > 0
       - xconnect_gateway_invite_file_source | trim | length > 0
       - xconnect_gateway_sync_interval_seconds | int >= 60
@@ -32,8 +34,8 @@
     path: "{{ item }}"
     state: directory
     owner: root
-    group: root
-    mode: '0700'
+    group: "{{ xconnect_gateway_socket_group if xconnect_gateway_frontend == 'caddy-unix-h2c' else 'root' }}"
+    mode: "{{ '0750' if xconnect_gateway_frontend == 'caddy-unix-h2c' else '0700' }}"
   loop:
     - "{{ xconnect_gateway_state_dir }}"
     - /etc/xconnect-gateway
@@ -63,6 +65,7 @@
     group: root
     mode: '0644'
   no_log: true
+  when: xconnect_gateway_frontend == 'direct-tls'
 
 - name: Install Gateway TLS private key
   ansible.builtin.copy:
@@ -72,6 +75,7 @@
     group: root
     mode: '0600'
   no_log: true
+  when: xconnect_gateway_frontend == 'direct-tls'
 
 - name: Install Gateway trust bundle for One handoff
   ansible.builtin.copy:
