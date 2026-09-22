@@ -29,17 +29,30 @@
     update_cache: true
     lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
 
+- name: Verify the shared Caddy group exists for Unix-socket frontend
+  ansible.builtin.getent:
+    database: group
+    key: "{{ xconnect_gateway_socket_group }}"
+  when: xconnect_gateway_frontend == 'caddy-unix-h2c'
+
 - name: Create XConnect Gateway protected directories
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     owner: root
-    group: "{{ xconnect_gateway_socket_group if xconnect_gateway_frontend == 'caddy-unix-h2c' else 'root' }}"
-    mode: "{{ '0750' if xconnect_gateway_frontend == 'caddy-unix-h2c' else '0700' }}"
+    group: root
+    mode: '0700'
   loop:
     - "{{ xconnect_gateway_state_dir }}"
     - /etc/xconnect-gateway
-    - /run/xconnect-gateway
+
+- name: Create XConnect Gateway runtime socket directory
+  ansible.builtin.file:
+    path: /run/xconnect-gateway
+    state: directory
+    owner: root
+    group: "{{ xconnect_gateway_socket_group if xconnect_gateway_frontend == 'caddy-unix-h2c' else 'root' }}"
+    mode: "{{ '0750' if xconnect_gateway_frontend == 'caddy-unix-h2c' else '0700' }}"
 
 - name: Install reviewed XConnect Gateway binary
   ansible.builtin.copy:
