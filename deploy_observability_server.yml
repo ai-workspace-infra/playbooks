@@ -6,4 +6,7 @@
   hosts: "{{ observability_server_hosts | default('observability_hosts') }}"
   become: true
   roles:
+    # Keep the split observability unit self-contained instead of relying on
+    # the legacy all-in-one host having installed Caddy already.
+    - vhosts/caddy
     - docker/observability-server
