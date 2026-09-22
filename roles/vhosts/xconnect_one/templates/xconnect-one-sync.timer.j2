@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically synchronize XConnect One {{ xconnect_one_environment }} signed configuration
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec={{ xconnect_one_sync_interval_seconds | int }}s
+RandomizedDelaySec=15s
+Persistent=true
+Unit=xconnect-one-sync@{{ xconnect_one_environment }}.service
+
+[Install]
+WantedBy=timers.target
