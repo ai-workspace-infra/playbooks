@@ -28,11 +28,39 @@
   run_once: true
   check_mode: false
   no_log: true
+  failed_when: >-
+    not zitadel_deploy_only and
+    (zitadel_vault_secret.status | default(0) | int != 200)
 
 - name: Set Zitadel admin password fact
   ansible.builtin.set_fact:
     zitadel_admin_password: "{{ zitadel_vault_secret.json.data.data['zitadel-admin@zitadel.iam.svc.plus'] }}"
   no_log: true
+  when:
+    - not zitadel_deploy_only
+    - zitadel_vault_secret.status | default(0) | int == 200
+    - zitadel_vault_secret.json.data.data['zitadel-admin@zitadel.iam.svc.plus'] is defined
+
+- name: Generate deployment-only Zitadel admin password when Vault data is not migrated
+  ansible.builtin.set_fact:
+    zitadel_admin_password: >-
+      {{ zitadel_admin_password_override
+         if (zitadel_admin_password_override | trim | length > 0)
+         else lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}
+  no_log: true
+  when:
+    - zitadel_deploy_only
+
+- name: Fail when Zitadel admin password is unavailable for a normal deployment
+  ansible.builtin.fail:
+    msg: >-
+      Zitadel admin password is missing from Vault at
+      kv/data/{{ zitadel_vault_path }}. Populate the environment-scoped IAM
+      secret or use OPEN_PLATFORM_DEPLOY_ONLY=true only for a deployment-only
+      bootstrap before business migration.
+  when:
+    - not zitadel_deploy_only
+    - zitadel_vault_secret.status | default(0) | int != 200
 
 - name: Ensure Zitadel directories exist
   become: true
