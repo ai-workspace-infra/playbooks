@@ -429,6 +429,23 @@
     - (vault_status_json.stdout | default('{}') | from_json).sealed | default(true) | bool
   no_log: true
 
+- name: Resolve the local Vault root token for post-init bootstrap
+  ansible.builtin.set_fact:
+    vault_bootstrap_root_token: >-
+      {{
+        (vault_new_init.stdout | from_json).root_token
+        if (vault_new_init.stdout is defined and (vault_new_init.stdout | trim | length > 0))
+        else (
+          (vault_init_slurp.content | b64decode | from_json).root_token
+          if vault_init_slurp.content is defined
+          else vault_server_root_access_token
+        )
+      }}
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+  no_log: true
+
 - name: Create unified root token alias in Vault
   ansible.builtin.shell: |
     export VAULT_TOKEN="{{ ((vault_init_slurp.content | b64decode | from_json).root_token) }}"
@@ -453,7 +470,7 @@
   environment:
     PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH }}"
     VAULT_ADDR: "{{ vault_admin_addr }}"
-    VAULT_TOKEN: "{{ vault_server_root_access_token }}"
+    VAULT_TOKEN: "{{ vault_bootstrap_root_token | default(vault_server_root_access_token) }}"
   changed_when: false
   when:
     - vault_deploy_mode in ["standalone", "external"]
@@ -464,7 +481,7 @@
     --username {{ vault_admin_username | quote }}
     --password {{ vault_admin_password | quote }}
     --vault-addr {{ vault_admin_addr | quote }}
-    --root-token {{ vault_server_root_access_token | quote }}
+    --root-token {{ (vault_bootstrap_root_token | default(vault_server_root_access_token)) | quote }}
     --output-dir {{ vault_admin_output_dir | quote }}
     --ui-url {{ vault_admin_ui_url | quote }}
   environment:
