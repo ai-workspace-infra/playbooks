@@ -5,6 +5,13 @@
 # bootstrap Vault or migrate any business data.
 - import_playbook: setup-postgres-standalone.yaml
   vars:
+    postgresql_deploy_mode: compose
+    postgresql_container_name: postgresql-svc-plus
+    postgresql_networks:
+      - docker_postgres_network
+    postgresql_compose_project_dir: /opt/open-platform/postgres
+    postgresql_compose_env_file: /opt/open-platform/postgres/postgres.env
+    postgresql_data_dir: /opt/open-platform/postgres/data
     postgresql_install_pgvector: false
 - import_playbook: create_databases_and_users.yml
 - import_playbook: deploy_zitadel_docker.yaml
