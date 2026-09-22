@@ -12,6 +12,7 @@ class SplitUatIdentityAndVaultDbUserTest(unittest.TestCase):
         for relative, user_var, home_var in (
             ("roles/vhosts/gateway_openclaw/defaults/main.yml", "gateway_openclaw_app_user", "gateway_openclaw_home"),
             ("roles/vhosts/xworkmate_bridge/defaults/main.yml", "xworkmate_bridge_app_user", "xworkmate_bridge_service_home"),
+            ("roles/vhosts/acp_server_hermes/defaults/main.yml", "acp_hermes_app_user", "acp_hermes_home"),
         ):
             defaults = (ROOT / relative).read_text()
             tasks = (ROOT / relative.replace("defaults/main.yml", "tasks/main.yml")).read_text()

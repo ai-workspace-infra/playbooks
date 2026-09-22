@@ -1,4 +1,26 @@
 ---
+- name: Resolve Hermes service account home from the target passwd database
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ acp_hermes_service_user }}"
+    fail_key: true
+  when: ansible_os_family not in ['Darwin', 'Windows']
+
+- name: Set Hermes home to the configured service account home
+  ansible.builtin.set_fact:
+    acp_hermes_home: "{{ ansible_facts.getent_passwd[acp_hermes_service_user][4] }}"
+  when: ansible_os_family not in ['Darwin', 'Windows']
+
+- name: Assert Hermes service account has a home directory
+  ansible.builtin.assert:
+    that:
+      - acp_hermes_home | default('') | trim | length > 0
+    fail_msg: >-
+      Could not resolve a home directory for Hermes service user
+      '{{ acp_hermes_service_user }}'. Set acp_hermes_app_user to an existing
+      account or configure ansible_user explicitly.
+  when: ansible_os_family not in ['Darwin', 'Windows']
+
 - name: Install Hermes ACP prerequisites
   ansible.builtin.import_tasks: install.yml
   tags: [acp_hermes, acp_hermes_install]
