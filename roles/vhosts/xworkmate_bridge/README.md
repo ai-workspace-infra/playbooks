@@ -20,7 +20,9 @@ The provider runtimes remain separate sibling roles:
 - [`roles/vhosts/acp_codex`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_codex)
 - [`roles/vhosts/acp_opencode`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_opencode)
 - [`roles/vhosts/acp_gemini`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_gemini)
-- [`roles/vhosts/acp_server_hermes`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_server_hermes)
+- OpenClaw Gateway is the default AI provider runtime. The standalone
+  `acp_server_hermes` role remains available only through the explicit
+  `deploy_agent_hermes.yml` opt-in playbook.
 
 ## Real Deployment
 
@@ -57,7 +59,7 @@ Applied areas:
 - Codex ACP bridge: `acp-codex.service`
 - OpenCode ACP bridge: `acp-opencode.service`
 - Gemini ACP adapter: `acp-gemini.service`
-- Hermes ACP adapter: `acp-hermes.service`
+- OpenClaw Gateway: `openclaw-gateway.service`
 
 Behavior after deployment:
 
