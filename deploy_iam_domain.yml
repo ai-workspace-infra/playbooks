@@ -1,6 +1,12 @@
 ---
 # Open Platform service unit: IAM (iam.svc.plus / Zitadel).
-# Run after deploy_vault_domain.yml on a new Open Platform host.
+# This unit is independently runnable on a new Open Platform host.  It owns
+# the shared PostgreSQL prerequisite and database roles, but it does not
+# bootstrap Vault or migrate any business data.
+- import_playbook: setup-postgres-standalone.yaml
+  vars:
+    postgresql_install_pgvector: false
+- import_playbook: create_databases_and_users.yml
 - import_playbook: deploy_zitadel_docker.yaml
   vars:
     domain: iam.svc.plus
