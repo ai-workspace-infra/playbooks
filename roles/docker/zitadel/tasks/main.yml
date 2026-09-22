@@ -46,7 +46,7 @@
     zitadel_admin_password: >-
       {{ zitadel_admin_password_override
          if (zitadel_admin_password_override | trim | length > 0)
-         else lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}
+         else (lookup('password', '/dev/null length=31 chars=ascii_letters,digits') ~ '!') }}
   no_log: true
   when:
     - zitadel_deploy_only
@@ -61,6 +61,17 @@
   when:
     - not zitadel_deploy_only
     - zitadel_vault_secret.status | default(0) | int != 200
+
+- name: Validate Zitadel admin password complexity
+  ansible.builtin.assert:
+    that:
+      - zitadel_admin_password is defined
+      - zitadel_admin_password | regex_search('[^A-Za-z0-9]')
+    fail_msg: >-
+      Zitadel admin password must contain at least one non-alphanumeric
+      symbol. Update the environment-scoped Vault secret or
+      ZITADEL_ADMIN_PASSWORD before running the IAM unit.
+  no_log: true
 
 - name: Ensure Zitadel directories exist
   become: true
