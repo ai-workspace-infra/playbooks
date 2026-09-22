@@ -6,7 +6,7 @@ xconnect_gateway_environment: uat
 xconnect_gateway_binary_source: ""
 xconnect_gateway_binary_path: /usr/local/bin/xconnect-gateway
 xconnect_gateway_xray_binary_source: ""
-xconnect_gateway_xray_binary_path: /usr/local/bin/xray
+xconnect_gateway_xray_binary_path: /usr/local/lib/xconnect-gateway/xray
 xconnect_gateway_state_dir: "/var/lib/xconnect-gateway/{{ xconnect_gateway_environment }}"
 xconnect_gateway_controller: ""
 xconnect_gateway_id: ""
@@ -16,6 +16,11 @@ xconnect_gateway_tls_cert_source: ""
 xconnect_gateway_tls_key_source: ""
 xconnect_gateway_tls_cert_path: /etc/xconnect-gateway/tls.crt
 xconnect_gateway_tls_key_path: /etc/xconnect-gateway/tls.key
+# `direct-tls` is the standalone Gateway mode. `caddy-unix-h2c` keeps the
+# Gateway Xray private and lets the shared Caddy terminate TLS on :443.
+xconnect_gateway_frontend: direct-tls
+xconnect_gateway_listen_socket: /run/xconnect-gateway/xray.sock
+xconnect_gateway_socket_group: caddy
 xconnect_gateway_trust_bundle_source: ""
 xconnect_gateway_trust_bundle_path: /etc/xconnect-gateway/ca.crt
 # Optional controller-local destination for the public CA handoff to One.

@@ -39,5 +39,22 @@
         }
     }
 
+{% if xconnect_gateway_caddy_enabled | bool %}
+    @xconnect_gateway_xhttp {
+        path {{ xconnect_gateway_caddy_path }} {{ xconnect_gateway_caddy_path }}/*
+    }
+
+    handle @xconnect_gateway_xhttp {
+        # Keep /xconnect intact; Xray's XHTTP server contract owns this path.
+        uri query -x_padding
+
+        reverse_proxy unix//{{ xconnect_gateway_caddy_socket | regex_replace('^/', '') }} {
+            transport http {
+                versions h2c 2
+            }
+        }
+    }
+{% endif %}
+
     respond "Agent Service Plus Node"
 }

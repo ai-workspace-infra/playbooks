@@ -55,6 +55,16 @@ class AgentProxyCaddyDomainsTest(unittest.TestCase):
         self.assertIn("Remove PROD-only compatibility fragment outside PROD", tasks)
         self.assertIn("import {{ agent_proxy_caddy_conf_dir }}/*.caddy", template)
 
+    def test_shared_xconnect_route_is_separate_from_agent_proxy_socket(self) -> None:
+        content = TEMPLATE.read_text()
+        self.assertIn("xconnect_gateway_caddy_enabled", content)
+        self.assertIn("xconnect_gateway_caddy_path", content)
+        self.assertIn("xconnect_gateway_caddy_socket", content)
+        self.assertIn("path /split /split/*", content)
+        self.assertIn("path {{ xconnect_gateway_caddy_path }} {{ xconnect_gateway_caddy_path }}/*", content)
+        self.assertIn("unix//{{ xconnect_gateway_caddy_socket", content)
+        self.assertIn("unix//dev/shm/xray.sock", content)
+
 
 if __name__ == "__main__":
     unittest.main()
