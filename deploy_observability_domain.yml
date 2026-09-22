@@ -12,3 +12,8 @@
     observability_mcp_enabled: >-
       {{ not (lookup('ansible.builtin.env', 'OPEN_PLATFORM_DEPLOY_ONLY')
       | default('false', true) | bool) }}
+    # A legacy host-level Blackbox Exporter may already own 127.0.0.1:9115
+    # while the split service unit is bootstrapped on the same machine.
+    observability_blackbox_host_port: >-
+      {{ '9116' if (lookup('ansible.builtin.env', 'OPEN_PLATFORM_DEPLOY_ONLY')
+      | default('false', true) | bool) else '9115' }}
