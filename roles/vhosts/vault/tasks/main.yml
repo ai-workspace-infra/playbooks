@@ -305,6 +305,16 @@
     - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
+- name: Fail when Vault initialization status cannot be determined
+  ansible.builtin.fail:
+    msg: >-
+      Vault operator init -status failed with exit code
+      {{ vault_init_status.rc }}. Refusing to read or create unseal keys.
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+    - vault_init_status.rc | int not in [0, 2]
+
 - name: Reset Vault tables if initialized without key file (lost keys)
   become: true
   ansible.builtin.shell: |
@@ -368,8 +378,12 @@
     # `vault operator init -status` is not consistent across storage backends
     # immediately after the reset. The reset condition is already the explicit
     # signal that a fresh initialization is required.
-    - vault_init_status.rc == 0
-    - not vault_init_file.stat.exists
+    # Vault returns rc=2 for a healthy but uninitialized server, and rc=0 for
+    # an initialized server. The former is the normal first-run path; the
+    # latter plus a missing key file is the lost-key recovery path above.
+    - >-
+      (vault_init_status.rc | int == 2) or
+      (vault_init_status.rc | int == 0 and not vault_init_file.stat.exists)
   no_log: true
 
 - name: Save Vault initialization keys to host
