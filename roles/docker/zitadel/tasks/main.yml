@@ -227,8 +227,8 @@
 
 - name: Create Zitadel database via Docker
   ansible.builtin.shell: |
-    docker exec postgresql-svc-plus psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='zitadel'" | grep -q 1 || \
-    docker exec postgresql-svc-plus psql -U postgres -c "CREATE DATABASE zitadel OWNER zitadel ENCODING 'UTF8';"
+    docker exec {{ zitadel_db_container_name }} psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='zitadel'" | grep -q 1 || \
+    docker exec {{ zitadel_db_container_name }} psql -U postgres -c "CREATE DATABASE zitadel OWNER {{ zitadel_db_user }} ENCODING 'UTF8';"
   changed_when: false
 
 # -------------------------------------------------------------------

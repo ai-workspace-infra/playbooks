@@ -92,6 +92,18 @@
     group: "{{ 'staff' if ansible_os_family == 'Darwin' else 'root' }}"
     mode: "0755"
 
+- name: Ensure requested PostgreSQL Docker networks exist
+  ansible.builtin.command: docker network inspect "{{ item }}"
+  register: postgresql_network_inspect
+  changed_when: false
+  failed_when: false
+  loop: "{{ postgresql_networks | default([]) }}"
+
+- name: Create missing PostgreSQL Docker networks
+  ansible.builtin.command: docker network create "{{ item.item }}"
+  when: item.rc != 0
+  loop: "{{ postgresql_network_inspect.results | default([]) }}"
+
 # 数据目录归容器内 postgres uid（默认 999），而非 root：否则重跑时这个 file
 # 任务会把 PGDATA 顶层重置回 root:root 0700，而非空 PGDATA 不再被 entrypoint
 # chown，导致 uid 999 无法进入 → "could not open file ... Permission denied"。

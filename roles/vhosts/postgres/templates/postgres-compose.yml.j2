@@ -9,8 +9,22 @@ services:
       - "{{ postgresql_listen_addresses }}:{{ postgresql_port }}:5432"
     volumes:
       - "{{ postgresql_data_dir }}:/var/lib/postgresql/data"
+{% if postgresql_networks | default([]) | length > 0 %}
+    networks:
+{% for network in postgresql_networks %}
+      - {{ network }}
+{% endfor %}
+{% endif %}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U {{ postgresql_admin_user }} -d {{ postgresql_database }}"]
       interval: 10s
       timeout: 5s
       retries: 5
+{% if postgresql_networks | default([]) | length > 0 %}
+
+networks:
+{% for network in postgresql_networks %}
+  {{ network }}:
+    external: true
+{% endfor %}
+{% endif %}

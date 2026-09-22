@@ -141,7 +141,7 @@
     # 异步拉起。此时我们给予最多 3 分钟的重试等待时间，避免刚触发部署就因为容器还
     # 没启动而宣告失败。
     - name: Detect running Postgres container
-      ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E '^web-saas-postgresql$'"
+      ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E '^(web-saas-postgresql|postgresql-svc-plus|postgresql)$'"
       register: detected_pg
       until: detected_pg.stdout != "" or lookup('env', 'POSTGRESQL_DEPLOY_MODE') != 'compose'
       retries: 36
