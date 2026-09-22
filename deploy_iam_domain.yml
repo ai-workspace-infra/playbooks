@@ -12,6 +12,10 @@
     postgresql_compose_project_dir: /opt/open-platform/postgres
     postgresql_compose_env_file: /opt/open-platform/postgres/postgres.env
     postgresql_data_dir: /opt/open-platform/postgres/data
+    # The generic node bootstrap may already provide native PostgreSQL on
+    # 127.0.0.1:5432.  IAM connects over docker_postgres_network, so use a
+    # separate host-side port and avoid taking over the existing listener.
+    postgresql_port: 15432
     postgresql_install_pgvector: false
 - import_playbook: create_databases_and_users.yml
 - import_playbook: deploy_zitadel_docker.yaml
