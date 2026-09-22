@@ -315,6 +315,30 @@
     zitadel_db_password_fact: "{{ lookup('env', 'ZITADEL_PG_PASSWORD') | default(zitadel_existing_vault_db_secrets.secret.zitadel_pg_password | default('CHANGE_ME', true), true) }}"
 - name: Bring up Zitadel stack
   become: true
-  command: docker compose -f {{ zitadel_workspace }}/docker-compose.yaml up -d --remove-orphans
-  args:
-    chdir: "{{ zitadel_workspace }}"
+  block:
+    - name: Start Zitadel stack
+      ansible.builtin.command:
+        cmd: docker compose -f {{ zitadel_workspace }}/docker-compose.yaml up -d --remove-orphans
+        chdir: "{{ zitadel_workspace }}"
+  rescue:
+    - name: Capture filtered Zitadel startup diagnostics
+      become: true
+      ansible.builtin.shell: |
+        set -o pipefail
+        docker compose -f {{ zitadel_workspace }}/docker-compose.yaml logs --no-color --tail=120 zitadel 2>&1 \
+          | sed -E 's#(postgres(ql)?://[^:]+:)[^@]+(@)#\1REDACTED\3#g' \
+          | tail -80
+      args:
+        chdir: "{{ zitadel_workspace }}"
+        executable: /bin/bash
+      register: zitadel_startup_diagnostics
+      changed_when: false
+      failed_when: false
+
+    - name: Print filtered Zitadel startup diagnostics
+      ansible.builtin.debug:
+        msg: "{{ zitadel_startup_diagnostics.stdout_lines | default([]) }}"
+
+    - name: Fail with actionable Zitadel startup error
+      ansible.builtin.fail:
+        msg: "Zitadel exited during startup; filtered container diagnostics were collected above."
