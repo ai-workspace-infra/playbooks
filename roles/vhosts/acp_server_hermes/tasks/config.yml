@@ -119,6 +119,18 @@
               })
           elif method == "session/new":
               respond(request, {"sessionId": "hermes-shim-" + uuid.uuid4().hex})
+          elif method == "acp.capabilities":
+              respond(request, {
+                  "singleAgent": True,
+                  "multiAgent": False,
+                  "providers": ["hermes"],
+                  "provider": {"id": "hermes", "label": "Hermes"},
+                  "capabilities": {
+                      "single_agent": True,
+                      "multi_agent": False,
+                      "providers": ["hermes"],
+                  },
+              })
           elif method in ("session/prompt", "session/start", "session/message"):
               params = request.get("params") or {}
               prompt = params.get("prompt") or params.get("taskPrompt") or ""
