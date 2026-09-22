@@ -12,8 +12,19 @@ vault_binary_path: "{{ '/opt/homebrew/bin/vault' if ansible_os_family == 'Darwin
 vault_config_dir: "{{ (ansible_env.HOME ~ '/Library/Application Support/vault') if ansible_os_family == 'Darwin' else '/etc/vault.d' }}"
 vault_data_dir: "{{ (ansible_env.HOME ~ '/Library/Application Support/vault/data') if ansible_os_family == 'Darwin' else '/opt/vault/data' }}"
 ai_workspace_auth_token: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN') | default('', true) }}"
-vault_server_root_access_token: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN') | default(ai_workspace_auth_token, true), true) }}"
-vault_admin_init_enabled: "{{ (vault_server_root_access_token | trim | length > 0) and (vault_admin_password | trim | length > 0) }}"
+vault_bootstrap_generate_root_token: "{{ lookup('ansible.builtin.env', 'VAULT_BOOTSTRAP_GENERATE_ROOT_TOKEN') | default('false', true) | bool }}"
+# VAULT_TOKEN may belong to an external control-plane Vault used to read CI/CD
+# KV data. Never reuse it as the root token for a newly initialized local
+# Vault. Callers that want a fixed local token can still provide the explicit
+# VAULT_SERVER_ROOT_ACCESS_TOKEN variable.
+vault_server_root_access_token: >-
+  {{
+    lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN')
+    if vault_bootstrap_generate_root_token
+    else lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN')
+      | default(lookup('ansible.builtin.env', 'VAULT_TOKEN') | default(ai_workspace_auth_token, true), true)
+  }}
+vault_admin_init_enabled: "{{ (vault_bootstrap_generate_root_token or (vault_server_root_access_token | trim | length > 0)) and (vault_admin_password | trim | length > 0) }}"
 vault_admin_username: admin
 vault_admin_password: "{{ lookup('ansible.builtin.env', 'VAULT_ADMIN_PASSWORD') | default(ai_workspace_auth_token, true) }}"
 vault_admin_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('http://127.0.0.1:8200', true) }}"
