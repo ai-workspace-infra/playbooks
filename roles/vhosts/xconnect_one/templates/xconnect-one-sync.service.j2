@@ -4,15 +4,10 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
-ExecStart={{ xconnect_one_binary_path }} sync --watch --interval={{ xconnect_one_sync_interval_seconds | int }}s --state-dir {{ xconnect_one_state_dir }}
-Restart=always
-RestartSec=5s
+Type=oneshot
+ExecStart={{ xconnect_one_binary_path }} sync --state-dir {{ xconnect_one_state_dir }}
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=full
 ReadWritePaths={{ xconnect_one_state_dir }} /run /etc/wireguard
-
-[Install]
-WantedBy=multi-user.target
