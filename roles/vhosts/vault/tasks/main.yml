@@ -446,6 +446,20 @@
     - ansible_os_family != 'Darwin'
   no_log: true
 
+- name: Publish local Vault runtime credentials for subsequent roles
+  ansible.builtin.set_fact:
+    # The bootstrap role initially reads the external CI/CD Vault. Once a
+    # standalone Vault is initialized, later roles (Zitadel, and any future
+    # platform service roles) must use the new local Vault instead.
+    vault_runtime_addr: "{{ vault_admin_addr }}"
+    vault_runtime_token: "{{ vault_bootstrap_root_token }}"
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+    - vault_bootstrap_root_token is defined
+    - vault_bootstrap_root_token | trim | length > 0
+  no_log: true
+
 - name: Create unified root token alias in Vault
   ansible.builtin.shell: |
     export VAULT_TOKEN="{{ ((vault_init_slurp.content | b64decode | from_json).root_token) }}"
