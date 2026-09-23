@@ -114,6 +114,13 @@
   notify:
     - Restart caddy
 
+- name: Remove unmanaged Caddy logging fragment now defined in the root Caddyfile
+  ansible.builtin.file:
+    path: "{{ agent_proxy_caddy_conf_dir }}/00-logging.caddy"
+    state: absent
+  notify:
+    - Restart caddy
+
 - name: Validate composed Agent Proxy Caddy configuration
   ansible.builtin.command:
     cmd: >-
