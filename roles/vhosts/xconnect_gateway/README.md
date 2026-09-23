@@ -1,5 +1,9 @@
 # Zero-driven XConnect Gateway
 
+`xconnect_gateway_environment` accepts `uat`, `prod`, or `shared`. Use the
+`shared` value for a shared-services Gateway; its invitation and credentials
+must still be supplied at runtime from a dedicated shared Vault path.
+
 This is the canonical OS-level Gateway role. It installs reviewed Gateway and
 external Xray artifacts, initializes protected local state, exchanges a
 short-lived Zero invitation, reconciles signed Gateway configuration, starts

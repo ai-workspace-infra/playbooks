@@ -5,6 +5,11 @@ network. It is for fixed service nodes and temporary pipeline nodes; it does
 not configure a Gateway and never changes host firewall, SSH, hostname or
 default routing.
 
+`xconnect_one_environment` accepts `uat`, `prod`, or `shared`. Use `shared`
+for shared-service nodes such as the Vault cluster; this only namespaces local
+state/configuration paths and telemetry labels, and does not reuse UAT/PROD
+network credentials.
+
 The controller must provide a reviewed CLI artifact and a short-lived join URI
 at runtime. The URI is written only to a mode `0600` transient file and is
 removed after the exchange. GitOps contains node identity, environment and
