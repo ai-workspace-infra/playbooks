@@ -1,5 +1,14 @@
 {
-	debug
+	# Keep production at the normal INFO level. The default logger omits
+	# reverse-proxy chatter (including expected client cancellations); retain
+	# only ERROR records from that module in its own logger.
+	log default {
+		exclude http.handlers.reverse_proxy
+	}
+	log reverseproxy_errors {
+		level ERROR
+		include http.handlers.reverse_proxy
+	}
 }
 
 # Agent Proxy virtual hosts are managed exclusively in conf.d. The same
