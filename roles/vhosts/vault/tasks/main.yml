@@ -25,6 +25,43 @@
     - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
+- name: Validate Vault Raft HA configuration
+  ansible.builtin.assert:
+    that:
+      - vault_storage_backend in ['postgresql', 'raft']
+      - (vault_storage_backend == 'raft') == (vault_ha_enabled | bool)
+      - vault_storage_backend == 'raft'
+      - vault_raft_node_id | string | length > 0
+      - vault_raft_api_addr is match('^https?://')
+      - vault_raft_cluster_addr is match('^https://[^/]+:8201$')
+      - vault_raft_listener_cluster_addr is match('^[^/]+:8201$')
+      - vault_listen_addr is not match('^(127\\.|localhost)')
+      - vault_raft_retry_join | length > 0
+      - vault_raft_retry_join | selectattr('leader_api_addr', 'defined') | list | length == vault_raft_retry_join | length
+      - vault_raft_retry_join | map(attribute='leader_api_addr') | select('match', '^https?://') | list | length == vault_raft_retry_join | length
+  fail_msg: >-
+    Raft HA requires storage_backend=raft, a stable node_id, HTTPS api_addr and
+    cluster_addr, a bindable cluster listener address, and retry_join peers.
+    Raft initialization and unseal are deliberately manual; no key shares or
+    root token are generated or stored by this role.
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+    - vault_ha_enabled | bool
+
+- name: Validate Vault storage backend selection
+  ansible.builtin.assert:
+    that:
+      - >-
+        (vault_storage_backend == 'postgresql' and not (vault_ha_enabled | bool)) or
+        (vault_storage_backend == 'raft' and (vault_ha_enabled | bool))
+    fail_msg: >-
+      Choose the PostgreSQL backend with HA disabled for the legacy mode, or
+      choose vault_storage_backend=raft and vault_ha_enabled=true together.
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - ansible_os_family != 'Darwin'
+
 - name: Skip local Vault install when using an existing Vault server
   ansible.builtin.debug:
     msg: "Using existing Vault server at {{ vault_admin_addr }}; skipping local Vault install."
@@ -73,6 +110,7 @@
   failed_when: false
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
 
 - name: Create Vault production configuration file
@@ -82,6 +120,39 @@
     group: root
     mode: "0600"
     content: |
+      {% if vault_ha_enabled | bool %}
+      storage "raft" {
+        path    = "{{ vault_data_dir }}"
+        node_id = "{{ vault_raft_node_id }}"
+      {% for peer in vault_raft_retry_join %}
+        retry_join {
+          leader_api_addr = "{{ peer.leader_api_addr }}"
+      {% if peer.leader_tls_servername is defined %}
+          leader_tls_servername = "{{ peer.leader_tls_servername }}"
+      {% endif %}
+      {% if peer.leader_ca_cert_file is defined %}
+          leader_ca_cert_file = "{{ peer.leader_ca_cert_file }}"
+      {% endif %}
+      {% if peer.leader_client_cert_file is defined %}
+          leader_client_cert_file = "{{ peer.leader_client_cert_file }}"
+      {% endif %}
+      {% if peer.leader_client_key_file is defined %}
+          leader_client_key_file = "{{ peer.leader_client_key_file }}"
+      {% endif %}
+        }
+      {% endfor %}
+      }
+
+      listener "tcp" {
+        address         = "{{ vault_listen_addr }}"
+        cluster_address = "{{ vault_raft_listener_cluster_addr }}"
+        tls_disable     = true
+      }
+
+      api_addr     = "{{ vault_raft_api_addr }}"
+      cluster_addr = "{{ vault_raft_cluster_addr }}"
+      ui           = true
+      {% else %}
       storage "postgresql" {
         connection_url = "postgres://vault_storage:{{ vault_pg_password | default('CHANGE_ME') }}@127.0.0.1:{{ vault_pg_port | default('5432') }}/vault_storage?sslmode=disable"
       }
@@ -93,8 +164,10 @@
 
       api_addr = "https://vault.svc.plus"
       ui = true
+      {% endif %}
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend in ["postgresql", "raft"]
     - ansible_os_family != 'Darwin'
 
 - name: Deploy standalone Vault systemd service
@@ -123,12 +196,14 @@
   no_log: true
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend in ["postgresql", "raft"]
     - ansible_os_family != 'Darwin'
 
 - name: Flush pending handlers before starting Vault (ensures PostgreSQL restart completes)
   ansible.builtin.meta: flush_handlers
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
 
 - name: Wait for PostgreSQL to be ready before starting Vault
@@ -140,6 +215,7 @@
     delay: 2
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
 
 # Vault's "postgresql" storage backend does not create its own schema on
@@ -169,6 +245,7 @@
   changed_when: false
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
 
 - name: Fail when no reachable PostgreSQL was found for Vault storage
@@ -179,6 +256,7 @@
       '{{ vault_postgres_container_name }}' nor a host 'postgres' user was found.
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
     - vault_postgres_topology.stdout | default('none') | trim == 'none'
 
@@ -192,6 +270,7 @@
       }}
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
 
 - name: Ensure Vault PostgreSQL storage schema exists
@@ -224,6 +303,7 @@
   no_log: true
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
 
 - name: Start standalone Vault service
@@ -234,6 +314,7 @@
     daemon_reload: true
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend in ["postgresql", "raft"]
     - ansible_os_family != 'Darwin'
 
 - name: Import macOS specific Vault tasks
@@ -292,6 +373,7 @@
   register: vault_init_file
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
 
 - name: Check Vault initialization status
@@ -303,6 +385,7 @@
   changed_when: false
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
 
 - name: Fail when Vault initialization status cannot be determined
@@ -312,6 +395,7 @@
       {{ vault_init_status.rc }}. Refusing to read or create unseal keys.
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
     - vault_init_status.rc | int not in [0, 2]
 
@@ -324,6 +408,7 @@
   no_log: true
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
     - vault_init_status.rc == 0
     - not vault_init_file.stat.exists
@@ -336,6 +421,7 @@
     daemon_reload: true
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
     - vault_init_status.rc == 0
     - not vault_init_file.stat.exists
@@ -349,6 +435,7 @@
     delay: 2
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
     - vault_init_status.rc == 0
     - not vault_init_file.stat.exists
@@ -362,6 +449,7 @@
   changed_when: false
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
     - vault_init_status.rc == 0
     - not vault_init_file.stat.exists
@@ -373,6 +461,7 @@
   register: vault_new_init
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
     # Resetting the storage tables removes the initialization state, but
     # `vault operator init -status` is not consistent across storage backends
@@ -395,6 +484,7 @@
     mode: "0600"
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
     - vault_new_init.stdout is defined
   no_log: true
@@ -405,6 +495,7 @@
   register: vault_init_slurp
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
 
 - name: Check if Vault is sealed
@@ -416,6 +507,7 @@
   changed_when: false
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
 
 - name: Unseal Vault
@@ -424,6 +516,7 @@
     VAULT_ADDR: "{{ vault_admin_addr }}"
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
     - vault_init_slurp.content is defined
     - (vault_status_json.stdout | default('{}') | from_json).sealed | default(true) | bool
@@ -443,6 +536,7 @@
       }}
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
   no_log: true
 
@@ -455,6 +549,7 @@
     vault_runtime_token: "{{ vault_bootstrap_root_token }}"
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
     - vault_bootstrap_root_token is defined
     - vault_bootstrap_root_token | trim | length > 0
@@ -469,6 +564,7 @@
     PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH }}"
   when:
     - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
     - vault_init_slurp.content is defined
     - vault_server_root_access_token | trim | length > 0
@@ -488,6 +584,7 @@
   changed_when: false
   when:
     - vault_deploy_mode in ["standalone", "external"]
+    - vault_storage_backend == 'postgresql'
 
 - name: Bootstrap Vault admin userpass auth
   ansible.builtin.script: >-
@@ -503,5 +600,6 @@
   no_log: true
   when:
     - not ansible_check_mode
+    - vault_storage_backend == 'postgresql'
     - vault_deploy_mode in ["standalone", "external"] or inventory_hostname in groups.get(group, [])
     - vault_admin_init_enabled | bool
