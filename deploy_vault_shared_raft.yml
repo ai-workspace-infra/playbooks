@@ -23,9 +23,11 @@
         that:
           - hostvars[inventory_hostname].vault_shared_private_ip is match('^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)')
           - vault_raft_retry_join | length > 0
+          - ansible_swaptotal_mb | int == 0
         fail_msg: >-
-          Shared Vault Raft must use private node addresses and an explicit
-          peer list. Never publish the Raft cluster listener.
+          Shared Vault Raft requires private node addresses, an explicit peer
+          list, and no swap because disable_mlock=true. Never publish the Raft
+          cluster listener.
   roles:
     - role: vhosts/vault
   tags: [vault-shared-raft, vault-shared-leader]
@@ -51,9 +53,11 @@
         that:
           - hostvars[inventory_hostname].vault_shared_private_ip is match('^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)')
           - vault_raft_retry_join | length > 0
+          - ansible_swaptotal_mb | int == 0
         fail_msg: >-
-          Shared Vault Raft must use private node addresses and an explicit
-          peer list. Never publish the Raft cluster listener.
+          Shared Vault Raft requires private node addresses, an explicit peer
+          list, and no swap because disable_mlock=true. Never publish the Raft
+          cluster listener.
   roles:
     - role: vhosts/vault
   tags: [vault-shared-raft, vault-shared-peers]
