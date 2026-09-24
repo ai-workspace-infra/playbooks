@@ -122,8 +122,8 @@ retry_max_duration_secs = 3600
 rate_limit_duration_secs = 1
 rate_limit_num = {{ vector_sink_rate_limit_num | default(5) }}
 [sinks.billing_snapshot_ingest.tls]
-verify_certificate = false
-verify_hostname = false
+verify_certificate = {{ 'true' if vector_tls_verify | default(false) | bool else 'false' }}
+verify_hostname = {{ 'true' if vector_tls_verify | default(false) | bool else 'false' }}
 [sinks.billing_snapshot_ingest.healthcheck]
 enabled = false
 [sinks.billing_snapshot_ingest.batch]
@@ -161,8 +161,8 @@ password = "{{ vector_auth_password }}"
 {% endif %}
 {% endif %}
 [sinks.prometheus_remote.tls]
-verify_certificate = false
-verify_hostname = false
+verify_certificate = {{ 'true' if vector_tls_verify | default(false) | bool else 'false' }}
+verify_hostname = {{ 'true' if vector_tls_verify | default(false) | bool else 'false' }}
 [sinks.prometheus_remote.healthcheck]
 enabled = false
 [sinks.prometheus_remote.batch]

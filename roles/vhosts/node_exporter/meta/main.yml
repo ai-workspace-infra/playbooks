@@ -1,2 +1,6 @@
 dependencies:
+  # Keep the baseline role available to existing generic deployments, while
+  # allowing narrowly-scoped shared-service runs to skip host-wide changes.
   - role: common
+    when: not (vault_shared_skip_common | default(false) | bool)
+    tags: [common_baseline]

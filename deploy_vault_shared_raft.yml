@@ -1,0 +1,59 @@
+---
+# Deliberately split the first Vault node from its peers. The operator must
+# initialize and unseal the leader between these stages; CI never handles
+# unseal shares or a Vault root token.
+- name: Install shared Vault Raft leader
+  hosts: "{{ vault_shared_leader_group | default('vault_shared_leader') }}"
+  become: true
+  gather_facts: true
+  vars:
+    vault_deploy_mode: standalone
+    vault_storage_backend: raft
+    vault_ha_enabled: true
+    vault_listen_addr: "{{ vault_shared_listen_addr | default('0.0.0.0:8200') }}"
+    vault_raft_node_id: "{{ hostvars[inventory_hostname].vault_shared_raft_node_id | default(inventory_hostname) }}"
+    vault_raft_api_addr: "http://{{ hostvars[inventory_hostname].vault_shared_private_ip }}:8200"
+    vault_raft_cluster_addr: "https://{{ hostvars[inventory_hostname].vault_shared_private_ip }}:8201"
+    vault_raft_listener_cluster_addr: "{{ hostvars[inventory_hostname].vault_shared_private_ip }}:8201"
+    vault_shared_join_target: "{{ groups['vault_shared_peers'] | first }}"
+    vault_raft_retry_join: "{{ [{'leader_api_addr': 'http://' ~ hostvars[vault_shared_join_target].vault_shared_private_ip ~ ':8200'}] }}"
+  pre_tasks:
+    - name: Require private address and at least one Raft peer
+      ansible.builtin.assert:
+        that:
+          - hostvars[inventory_hostname].vault_shared_private_ip is match('^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)')
+          - vault_raft_retry_join | length > 0
+        fail_msg: >-
+          Shared Vault Raft must use private node addresses and an explicit
+          peer list. Never publish the Raft cluster listener.
+  roles:
+    - role: vhosts/vault
+  tags: [vault-shared-raft, vault-shared-leader]
+
+- name: Install shared Vault Raft peers
+  hosts: "{{ vault_shared_peer_group | default('vault_shared_peers') }}"
+  become: true
+  gather_facts: true
+  vars:
+    vault_deploy_mode: standalone
+    vault_storage_backend: raft
+    vault_ha_enabled: true
+    vault_listen_addr: "{{ vault_shared_listen_addr | default('0.0.0.0:8200') }}"
+    vault_raft_node_id: "{{ hostvars[inventory_hostname].vault_shared_raft_node_id | default(inventory_hostname) }}"
+    vault_raft_api_addr: "http://{{ hostvars[inventory_hostname].vault_shared_private_ip }}:8200"
+    vault_raft_cluster_addr: "https://{{ hostvars[inventory_hostname].vault_shared_private_ip }}:8201"
+    vault_raft_listener_cluster_addr: "{{ hostvars[inventory_hostname].vault_shared_private_ip }}:8201"
+    vault_shared_join_target: "{{ groups['vault_shared_leader'] | first }}"
+    vault_raft_retry_join: "{{ [{'leader_api_addr': 'http://' ~ hostvars[vault_shared_join_target].vault_shared_private_ip ~ ':8200'}] }}"
+  pre_tasks:
+    - name: Require private address and at least one Raft peer
+      ansible.builtin.assert:
+        that:
+          - hostvars[inventory_hostname].vault_shared_private_ip is match('^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)')
+          - vault_raft_retry_join | length > 0
+        fail_msg: >-
+          Shared Vault Raft must use private node addresses and an explicit
+          peer list. Never publish the Raft cluster listener.
+  roles:
+    - role: vhosts/vault
+  tags: [vault-shared-raft, vault-shared-peers]
