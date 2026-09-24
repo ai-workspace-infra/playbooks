@@ -121,6 +121,10 @@
     mode: "0600"
     content: |
       {% if vault_ha_enabled | bool %}
+      # Integrated Storage on Vault 1.20+ requires an explicit mlock choice.
+      # The shared Raft entrypoint refuses hosts with swap before this is used.
+      disable_mlock = true
+
       storage "raft" {
         path    = "{{ vault_data_dir }}"
         node_id = "{{ vault_raft_node_id }}"

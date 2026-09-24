@@ -5,6 +5,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ENTRYPOINT = (ROOT / "deploy_vault_shared_services.yml").read_text()
 RAFT = (ROOT / "deploy_vault_shared_raft.yml").read_text()
+VAULT_TASKS = (ROOT / "roles/vhosts/vault/tasks/main.yml").read_text()
 NODE_EXPORTER_META = (ROOT / "roles/vhosts/node_exporter/meta/main.yml").read_text()
 PROCESS_EXPORTER_META = (ROOT / "roles/vhosts/process_exporter/meta/main.yml").read_text()
 NODE_EXPORTER_TASKS = (ROOT / "roles/vhosts/node_exporter/tasks/main.yml").read_text()
@@ -53,6 +54,10 @@ class VaultSharedServiceEntrypointTest(unittest.TestCase):
         self.assertNotIn("vault operator init", ENTRYPOINT + RAFT)
         self.assertNotIn("vault operator unseal", ENTRYPOINT + RAFT)
         self.assertNotIn("VAULT_SERVER_ROOT_ACCESS_TOKEN", ENTRYPOINT + RAFT)
+
+    def test_raft_explicitly_disables_mlock_only_without_swap(self):
+        self.assertIn("disable_mlock = true", VAULT_TASKS)
+        self.assertEqual(RAFT.count("ansible_swaptotal_mb | int == 0"), 2)
 
 
 if __name__ == "__main__":
