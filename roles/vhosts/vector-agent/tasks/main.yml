@@ -98,7 +98,7 @@
     owner: "{{ vector_user }}"
     group: "{{ vector_group }}"
     mode: '0600'
-  no_log: "{{ vector_billing_ingest_enabled | bool }}"
+  no_log: "{{ vector_billing_ingest_enabled | bool or (vector_auth_password | default('') | length > 0) }}"
   notify: Restart vector
 
 - name: Create systemd override directory for Vector
@@ -121,3 +121,4 @@
     name: vector
     enabled: true
     state: started
+  when: not ansible_check_mode

@@ -5,7 +5,8 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TASKS = (ROOT / "roles/vhosts/vault/tasks/main.yml").read_text()
-DEFAULTS = (ROOT / "roles/vhosts/vault/vars/main.yml").read_text()
+DEFAULTS = (ROOT / "roles/vhosts/vault/defaults/main.yml").read_text()
+ROLE_VARS = (ROOT / "roles/vhosts/vault/vars/main.yml").read_text()
 README = (ROOT / "roles/vhosts/vault/readme.md").read_text()
 
 
@@ -22,6 +23,8 @@ class VaultRaftHAContractTest(unittest.TestCase):
     def test_existing_single_node_backend_remains_the_default(self):
         self.assertRegex(DEFAULTS, r"(?m)^vault_storage_backend: postgresql$")
         self.assertRegex(DEFAULTS, r"(?m)^vault_ha_enabled: false$")
+        self.assertNotRegex(ROLE_VARS, r"(?m)^vault_storage_backend:")
+        self.assertNotRegex(ROLE_VARS, r"(?m)^vault_ha_enabled:")
 
     def test_raft_configuration_has_cluster_and_retry_join_settings(self):
         config = task_block("Create Vault production configuration file")

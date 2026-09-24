@@ -39,11 +39,11 @@
       - vault_raft_retry_join | length > 0
       - vault_raft_retry_join | selectattr('leader_api_addr', 'defined') | list | length == vault_raft_retry_join | length
       - vault_raft_retry_join | map(attribute='leader_api_addr') | select('match', '^https?://') | list | length == vault_raft_retry_join | length
-  fail_msg: >-
-    Raft HA requires storage_backend=raft, a stable node_id, HTTPS api_addr and
-    cluster_addr, a bindable cluster listener address, and retry_join peers.
-    Raft initialization and unseal are deliberately manual; no key shares or
-    root token are generated or stored by this role.
+    fail_msg: >-
+      Raft HA requires storage_backend=raft, a stable node_id, HTTPS api_addr and
+      cluster_addr, a bindable cluster listener address, and retry_join peers.
+      Raft initialization and unseal are deliberately manual; no key shares or
+      root token are generated or stored by this role.
   when:
     - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'

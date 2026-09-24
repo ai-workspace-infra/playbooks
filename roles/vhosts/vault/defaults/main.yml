@@ -1,0 +1,13 @@
+# Overridable deployment parameters. Keep these in defaults so inventory and
+# play vars can select Raft HA without role vars silently restoring PostgreSQL.
+vault_listen_addr: 127.0.0.1:8200
+vault_storage_backend: postgresql
+vault_ha_enabled: false
+vault_raft_node_id: "{{ inventory_hostname }}"
+vault_raft_api_addr: https://vault.svc.plus
+vault_raft_cluster_addr: ""
+vault_raft_listener_cluster_addr: ""
+# Each item is a mapping with leader_api_addr; optional TLS fields are
+# leader_tls_servername, leader_ca_cert_file, leader_client_cert_file,
+# and leader_client_key_file. Never put unseal shares or root tokens here.
+vault_raft_retry_join: []
