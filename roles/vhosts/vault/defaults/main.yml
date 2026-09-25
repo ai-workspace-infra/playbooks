@@ -3,6 +3,9 @@
 vault_listen_addr: 127.0.0.1:8200
 vault_storage_backend: postgresql
 vault_ha_enabled: false
+# A single Raft node is supported for portable deployments; three members
+# opt into HA. The legacy PostgreSQL default remains unchanged.
+vault_raft_expected_members: "{{ 3 if vault_ha_enabled | bool else 1 }}"
 vault_raft_node_id: "{{ inventory_hostname }}"
 vault_raft_api_addr: https://vault.svc.plus
 vault_raft_cluster_addr: ""

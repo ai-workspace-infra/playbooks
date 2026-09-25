@@ -25,39 +25,40 @@
     - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
-- name: Validate Vault Raft HA configuration
+- name: Validate Vault Raft configuration
   ansible.builtin.assert:
     that:
-      - vault_storage_backend in ['postgresql', 'raft']
-      - (vault_storage_backend == 'raft') == (vault_ha_enabled | bool)
       - vault_storage_backend == 'raft'
+      - vault_raft_expected_members | int in [1, 3]
+      - (vault_ha_enabled | bool) == (vault_raft_expected_members | int == 3)
       - vault_raft_node_id | string | length > 0
       - vault_raft_api_addr is match('^https?://')
       - vault_raft_cluster_addr is match('^https://[^/]+:8201$')
       - vault_raft_listener_cluster_addr is match('^[^/]+:8201$')
-      - vault_listen_addr is not match('^(127\\.|localhost)')
-      - vault_raft_retry_join | length > 0
+      - vault_raft_expected_members | int == 1 or vault_listen_addr is not match('^(127\\.|localhost)')
+      - (vault_raft_expected_members | int == 1 and vault_raft_retry_join | length == 0) or (vault_raft_expected_members | int == 3 and vault_raft_retry_join | length > 0)
       - vault_raft_retry_join | selectattr('leader_api_addr', 'defined') | list | length == vault_raft_retry_join | length
       - vault_raft_retry_join | map(attribute='leader_api_addr') | select('match', '^https?://') | list | length == vault_raft_retry_join | length
+      - ansible_swaptotal_mb | int == 0
     fail_msg: >-
-      Raft HA requires storage_backend=raft, a stable node_id, HTTPS api_addr and
-      cluster_addr, a bindable cluster listener address, and retry_join peers.
+      Raft requires a stable node_id and cluster address with swap disabled.
+      A single node uses no retry_join; three-node HA requires reachable peers.
       Raft initialization and unseal are deliberately manual; no key shares or
       root token are generated or stored by this role.
   when:
     - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
-    - vault_ha_enabled | bool
+    - vault_storage_backend == 'raft'
 
 - name: Validate Vault storage backend selection
   ansible.builtin.assert:
     that:
       - >-
         (vault_storage_backend == 'postgresql' and not (vault_ha_enabled | bool)) or
-        (vault_storage_backend == 'raft' and (vault_ha_enabled | bool))
+        (vault_storage_backend == 'raft')
     fail_msg: >-
-      Choose the PostgreSQL backend with HA disabled for the legacy mode, or
-      choose vault_storage_backend=raft and vault_ha_enabled=true together.
+      Choose PostgreSQL without HA for the legacy mode, or Raft with one
+      member (no HA) or three members (HA).
   when:
     - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
@@ -77,6 +78,16 @@
     - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
 
+- name: Check whether an existing Raft Vault service is active
+  ansible.builtin.command: "systemctl is-active {{ vault_service_name }}"
+  register: vault_raft_service_before
+  changed_when: false
+  failed_when: false
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'raft'
+    - ansible_os_family != 'Darwin'
+
 - name: Download standalone Vault release
   ansible.builtin.unarchive:
     src: "https://releases.hashicorp.com/vault/{{ vault_version }}/vault_{{ vault_version }}_linux_amd64.zip"
@@ -87,6 +98,7 @@
     - vault_deploy_mode in ["standalone", "native"]
     - ansible_os_family != 'Darwin'
     - vault_binary_check.rc != 0 or (vault_binary_check.stdout | default('')) is not search(vault_version)
+  register: vault_release_write
   become: true
 
 - name: Ensure standalone Vault directories exist
@@ -120,7 +132,7 @@
     group: root
     mode: "0600"
     content: |
-      {% if vault_ha_enabled | bool %}
+      {% if vault_storage_backend == 'raft' %}
       # Integrated Storage on Vault 1.20+ requires an explicit mlock choice.
       # The shared Raft entrypoint refuses hosts with swap before this is used.
       disable_mlock = true
@@ -169,10 +181,12 @@
       api_addr = "https://vault.svc.plus"
       ui = true
       {% endif %}
+  no_log: true
   when:
     - vault_deploy_mode in ["standalone", "native"]
     - vault_storage_backend in ["postgresql", "raft"]
     - ansible_os_family != 'Darwin'
+  register: vault_config_write
 
 - name: Deploy standalone Vault systemd service
   ansible.builtin.copy:
@@ -198,10 +212,50 @@
       [Install]
       WantedBy=multi-user.target
   no_log: true
+  register: vault_systemd_unit_write
   when:
     - vault_deploy_mode in ["standalone", "native"]
     - vault_storage_backend in ["postgresql", "raft"]
     - ansible_os_family != 'Darwin'
+
+- name: Record pending operator restart for changed active Raft node
+  ansible.builtin.file:
+    path: "{{ vault_config_dir }}/.restart-required"
+    state: touch
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'raft'
+    - ansible_os_family != 'Darwin'
+    - vault_raft_service_before.rc | default(1) == 0
+    - >-
+      (vault_release_write.changed | default(false)) or
+      (vault_config_write.changed | default(false)) or
+      (vault_systemd_unit_write.changed | default(false))
+
+- name: Check pending operator restart for Raft
+  ansible.builtin.stat:
+    path: "{{ vault_config_dir }}/.restart-required"
+  register: vault_raft_restart_pending
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'raft'
+    - ansible_os_family != 'Darwin'
+
+- name: Require operator-controlled restart for changed active Raft node
+  ansible.builtin.fail:
+    msg: >-
+      Vault Raft files changed on an active node. The role will not restart a
+      live Raft server or seal it unexpectedly. Schedule a one-node-at-a-time
+      operator restart and manual unseal, then remove
+      {{ vault_config_dir }}/.restart-required and rerun the playbook.
+  when:
+    - vault_deploy_mode in ["standalone", "native"]
+    - vault_storage_backend == 'raft'
+    - ansible_os_family != 'Darwin'
+    - vault_raft_restart_pending.stat.exists | default(false)
 
 - name: Flush pending handlers before starting Vault (ensures PostgreSQL restart completes)
   ansible.builtin.meta: flush_handlers
@@ -314,7 +368,7 @@
   ansible.builtin.systemd:
     name: "{{ vault_service_name }}"
     enabled: true
-    state: restarted
+    state: "{{ 'started' if vault_storage_backend == 'raft' else 'restarted' }}"
     daemon_reload: true
   when:
     - vault_deploy_mode in ["standalone", "native"]
@@ -403,54 +457,12 @@
     - ansible_os_family != 'Darwin'
     - vault_init_status.rc | int not in [0, 2]
 
-- name: Reset Vault tables if initialized without key file (lost keys)
-  become: true
-  ansible.builtin.shell: |
-    {{ vault_psql_cmd }} -d vault_storage -c "TRUNCATE TABLE vault_kv_store; TRUNCATE TABLE vault_ha_locks;"
-  environment:
-    PGPASSWORD: "{{ vault_pg_password | default('') }}"
-  no_log: true
-  when:
-    - vault_deploy_mode in ["standalone", "native"]
-    - vault_storage_backend == 'postgresql'
-    - ansible_os_family != 'Darwin'
-    - vault_init_status.rc == 0
-    - not vault_init_file.stat.exists
-
-- name: Restart Vault after clearing storage state
-  become: true
-  ansible.builtin.systemd:
-    name: "{{ vault_service_name }}"
-    state: restarted
-    daemon_reload: true
-  when:
-    - vault_deploy_mode in ["standalone", "native"]
-    - vault_storage_backend == 'postgresql'
-    - ansible_os_family != 'Darwin'
-    - vault_init_status.rc == 0
-    - not vault_init_file.stat.exists
-
-- name: Wait for Vault API after storage reset
-  ansible.builtin.wait_for:
-    host: 127.0.0.1
-    port: 8200
-    state: started
-    timeout: 60
-    delay: 2
-  when:
-    - vault_deploy_mode in ["standalone", "native"]
-    - vault_storage_backend == 'postgresql'
-    - ansible_os_family != 'Darwin'
-    - vault_init_status.rc == 0
-    - not vault_init_file.stat.exists
-
-- name: Re-check Vault initialization status after reset
-  ansible.builtin.command: vault operator init -status
-  environment:
-    VAULT_ADDR: "{{ vault_admin_addr }}"
-  register: vault_init_status_after_reset
-  failed_when: false
-  changed_when: false
+- name: Fail closed when initialized PostgreSQL Vault has no local key file
+  ansible.builtin.fail:
+    msg: >-
+      Vault storage is initialized but vault_init.json is absent. Never clear
+      PostgreSQL tables or reinitialize this server. Recover the original seal
+      shares through the operator procedure and take a verified backup first.
   when:
     - vault_deploy_mode in ["standalone", "native"]
     - vault_storage_backend == 'postgresql'
@@ -467,16 +479,9 @@
     - vault_deploy_mode in ["standalone", "native"]
     - vault_storage_backend == 'postgresql'
     - ansible_os_family != 'Darwin'
-    # Resetting the storage tables removes the initialization state, but
-    # `vault operator init -status` is not consistent across storage backends
-    # immediately after the reset. The reset condition is already the explicit
-    # signal that a fresh initialization is required.
-    # Vault returns rc=2 for a healthy but uninitialized server, and rc=0 for
-    # an initialized server. The former is the normal first-run path; the
-    # latter plus a missing key file is the lost-key recovery path above.
-    - >-
-      (vault_init_status.rc | int == 2) or
-      (vault_init_status.rc | int == 0 and not vault_init_file.stat.exists)
+    # Only an uninitialized server may be initialized. A missing host key
+    # file on an initialized server is a recovery incident, never a reset.
+    - vault_init_status.rc | int == 2
   no_log: true
 
 - name: Save Vault initialization keys to host
@@ -594,13 +599,13 @@
   ansible.builtin.script: >-
     files/init_vault_admin.sh
     --username {{ vault_admin_username | quote }}
-    --password {{ vault_admin_password | quote }}
     --vault-addr {{ vault_admin_addr | quote }}
-    --root-token {{ (vault_bootstrap_root_token | default(vault_server_root_access_token)) | quote }}
     --output-dir {{ vault_admin_output_dir | quote }}
     --ui-url {{ vault_admin_ui_url | quote }}
   environment:
     PATH: "/opt/homebrew/bin:/usr/local/bin:{{ ansible_env.PATH }}"
+    VAULT_TOKEN: "{{ vault_bootstrap_root_token | default(vault_server_root_access_token) }}"
+    VAULT_ADMIN_PASSWORD: "{{ vault_admin_password }}"
   no_log: true
   when:
     - not ansible_check_mode

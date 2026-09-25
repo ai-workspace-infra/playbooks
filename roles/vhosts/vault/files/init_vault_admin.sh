@@ -1,20 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 usage() {
   cat <<'EOF'
 Usage:
-  init_vault_admin.sh --password <password> [options]
+  VAULT_TOKEN=<operator-token> VAULT_ADMIN_PASSWORD=<password> init_vault_admin.sh [options]
 
 Options:
   --username <name>        Admin username. Default: admin
-  --password <password>    Required. Password for the admin userpass account.
   --vault-addr <addr>      Vault API address. Default: http://127.0.0.1:8200
-  --root-token <token>     Root token. Defaults to VAULT_TOKEN or
-                           VAULT_SERVER_ROOT_ACCESS_TOKEN if set.
   --issuer <label>         TOTP issuer label. Default: Vault
   --method-name <name>     TOTP method name. Default: vault-admin-totp
-  --output-dir <dir>       Enrollment output directory. Default: /tmp
+  --output-dir <dir>       Private enrollment directory. Default: ~/.local/share/vault-admin-enrollment
   --ui-url <url>           UI login URL. Default: http://127.0.0.1:8200/ui/vault/auth?with=userpass
   -h, --help               Show this help message
 EOF
@@ -36,15 +34,12 @@ b64decode() {
 }
 
 USERNAME="admin"
-PASSWORD=""
+PASSWORD="${VAULT_ADMIN_PASSWORD:-}"
 VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}"
 ROOT_TOKEN="${VAULT_TOKEN:-}"
-if [[ -z "$ROOT_TOKEN" && -n "${VAULT_SERVER_ROOT_ACCESS_TOKEN:-}" ]]; then
-  ROOT_TOKEN="${VAULT_SERVER_ROOT_ACCESS_TOKEN}"
-fi
 ISSUER="Vault"
 METHOD_NAME="vault-admin-totp"
-OUTPUT_DIR="/tmp"
+OUTPUT_DIR="${HOME}/.local/share/vault-admin-enrollment"
 UI_URL="http://127.0.0.1:8200/ui/vault/auth?with=userpass"
 POLICY_NAME="vault-admins"
 ENFORCEMENT_NAME="admin-userpass"
@@ -55,17 +50,13 @@ while [[ $# -gt 0 ]]; do
       USERNAME="${2:-}"
       shift 2
       ;;
-    --password)
-      PASSWORD="${2:-}"
-      shift 2
-      ;;
     --vault-addr)
       VAULT_ADDR="${2:-}"
       shift 2
       ;;
-    --root-token)
-      ROOT_TOKEN="${2:-}"
-      shift 2
+    --password|--root-token)
+      echo "Refusing secret command-line arguments; set VAULT_ADMIN_PASSWORD and VAULT_TOKEN in a protected operator session." >&2
+      exit 2
       ;;
     --issuer)
       ISSUER="${2:-}"
@@ -96,19 +87,32 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$PASSWORD" ]]; then
-  echo "--password is required" >&2
+  echo "VAULT_ADMIN_PASSWORD is required" >&2
   usage >&2
   exit 1
 fi
 
 if [[ -z "$ROOT_TOKEN" ]]; then
-  echo "root token missing: pass --root-token or export VAULT_TOKEN first" >&2
+  echo "VAULT_TOKEN is required in the operator session" >&2
   exit 1
+fi
+if [[ ! "$USERNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+  echo "username must contain only letters, digits, _ or -" >&2
+  exit 2
+fi
+case "${OUTPUT_DIR%/}" in
+  /|/tmp|/var/tmp|/root|"${HOME}")
+    echo "--output-dir must be a dedicated private directory, not a shared or home root" >&2
+    exit 2
+    ;;
+esac
+if [[ -L "${OUTPUT_DIR}" ]]; then
+  echo "--output-dir must not be a symlink" >&2
+  exit 2
 fi
 
 require_cmd vault
 require_cmd jq
-require_cmd curl
 require_cmd base64
 
 export VAULT_ADDR
@@ -137,18 +141,25 @@ path "*" {
 POL
 vault policy write "$POLICY_NAME" "$tmp_policy" >/dev/null
 
-vault write "auth/userpass/users/${USERNAME}" \
-  password="$PASSWORD" \
-  token_policies="$POLICY_NAME" >/dev/null
+if ! vault read "auth/userpass/users/${USERNAME}" >/dev/null 2>&1; then
+  vault write "auth/userpass/users/${USERNAME}" \
+    password="$PASSWORD" \
+    token_policies="$POLICY_NAME" >/dev/null
+fi
 
 userpass_accessor="$(vault auth list -format=json | jq -r '."userpass/".accessor')"
 
-methods_json="$(curl -sS \
-  -H "X-Vault-Token: ${VAULT_TOKEN}" \
-  -H "X-Vault-Request: true" \
-  -X LIST \
-  "${VAULT_ADDR}/v1/identity/mfa/method/totp")"
-method_id="$(printf '%s' "$methods_json" | jq -r --arg method_name "$METHOD_NAME" '.data.key_info // {} | to_entries[]? | select(.value.name == $method_name) | .key' | head -n1)"
+methods_json="$(vault list -format=json identity/mfa/method/totp 2>/dev/null || printf '[]')"
+method_id=""
+while IFS= read -r candidate; do
+  [[ -n "$candidate" ]] || continue
+  candidate_json="$(vault read -format=json "identity/mfa/method/totp/${candidate}" 2>/dev/null || true)"
+  candidate_name="$(printf '%s' "$candidate_json" | jq -r '.data.method_name // .data.name // empty')"
+  if [[ "$candidate_name" == "$METHOD_NAME" ]]; then
+    method_id="$candidate"
+    break
+  fi
+done < <(printf '%s' "$methods_json" | jq -r '.[]?')
 
 if [[ -z "$method_id" ]]; then
   method_json="$(vault write -format=json identity/mfa/method/totp \
@@ -208,26 +219,43 @@ if [[ "$alias_exists" != true ]]; then
     mount_accessor="$userpass_accessor" >/dev/null
 fi
 
-mkdir -p "$OUTPUT_DIR"
+mkdir -p -m 0700 "$OUTPUT_DIR"
+chmod 0700 "$OUTPUT_DIR"
 enrollment_json="${OUTPUT_DIR}/vault-${USERNAME}-totp.json"
 enrollment_png="${OUTPUT_DIR}/vault-${USERNAME}-totp.png"
 enrollment_uri="${OUTPUT_DIR}/vault-${USERNAME}-totp-uri.txt"
 
-vault write identity/mfa/method/totp/admin-destroy \
-  method_id="$method_id" \
-  entity_id="$entity_id" >/dev/null 2>&1 || true
-
-vault write -format=json identity/mfa/method/totp/admin-generate \
-  method_id="$method_id" \
-  entity_id="$entity_id" >"$enrollment_json"
-
-jq -r '.data.barcode' "$enrollment_json" | b64decode >"$enrollment_png"
-jq -r '.data.url' "$enrollment_json" >"$enrollment_uri"
-chmod 600 "$enrollment_json" "$enrollment_png" "$enrollment_uri"
-
-vault write "identity/mfa/login-enforcement/${ENFORCEMENT_NAME}" \
-  mfa_method_ids="$method_id" \
-  auth_method_accessors="$userpass_accessor" >/dev/null
+enforcement_json="$(vault read -format=json "identity/mfa/login-enforcement/${ENFORCEMENT_NAME}" 2>/dev/null || true)"
+if [[ -n "$enforcement_json" ]]; then
+  printf '%s' "$enforcement_json" | jq -e --arg method "$method_id" \
+    --arg accessor "$userpass_accessor" \
+    '.data.mfa_method_ids | index($method)' >/dev/null || {
+      echo "Existing MFA enforcement differs; refusing to replace it" >&2
+      exit 1
+    }
+  printf '%s' "$enforcement_json" | jq -e --arg accessor "$userpass_accessor" \
+    '.data.auth_method_accessors | index($accessor)' >/dev/null || {
+      echo "Existing MFA enforcement belongs to another auth mount" >&2
+      exit 1
+    }
+  echo "MFA enforcement already exists; TOTP secret was not regenerated."
+else
+  for path in "$enrollment_json" "$enrollment_png" "$enrollment_uri"; do
+    [[ ! -e "$path" && ! -L "$path" ]] || {
+      echo "Enrollment output exists; refusing to overwrite $path" >&2
+      exit 1
+    }
+  done
+  vault write -format=json identity/mfa/method/totp/admin-generate \
+    method_id="$method_id" \
+    entity_id="$entity_id" >"$enrollment_json"
+  jq -r '.data.barcode' "$enrollment_json" | b64decode >"$enrollment_png"
+  jq -r '.data.url' "$enrollment_json" >"$enrollment_uri"
+  chmod 0600 "$enrollment_json" "$enrollment_png" "$enrollment_uri"
+  vault write "identity/mfa/login-enforcement/${ENFORCEMENT_NAME}" \
+    mfa_method_ids="$method_id" \
+    auth_method_accessors="$userpass_accessor" >/dev/null
+fi
 
 
 cat <<EOF
@@ -237,8 +265,8 @@ policy=$POLICY_NAME
 method_id=$method_id
 userpass_accessor=$userpass_accessor
 entity_id=$entity_id
-enrollment_json=$enrollment_json
-enrollment_png=$enrollment_png
-enrollment_uri=$enrollment_uri
 ui_url=$UI_URL
 EOF
+if [[ -f "$enrollment_png" && -f "$enrollment_uri" ]]; then
+  printf 'enrollment_png=%s\nenrollment_uri=%s\n' "$enrollment_png" "$enrollment_uri"
+fi
