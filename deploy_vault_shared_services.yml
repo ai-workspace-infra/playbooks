@@ -4,6 +4,8 @@
 #   vault-shared-leader  install only vault-prod-0
 #   vault-shared-peers   install vault-prod-1/2 after the leader is initialized
 #   node-process-metrics install node_exporter, process_exporter, and Vector
+#   vault-gateway-frontend  Caddy on vault-prod-0: TLS 443, /xconnect -> Gateway
+#                        Xray socket only (run before xconnect-gateway)
 #   xconnect-gateway     enroll vault-prod-0 (requires a one-use invite file)
 #   xconnect-one         enroll selected peer nodes (requires one-use invite files)
 #
@@ -32,6 +34,14 @@
       ansible.builtin.import_role:
         name: vhosts/vector-agent
   tags: [node-process-metrics]
+
+- name: Front the shared Vault XConnect Gateway with Caddy
+  hosts: "{{ xconnect_gateway_hosts | default('xconnect_gateway') }}"
+  become: true
+  gather_facts: true
+  roles:
+    - role: vhosts/vault_gateway_frontend
+  tags: [vault-gateway-frontend]
 
 - import_playbook: deploy_xconnect_gateway.yml
 - import_playbook: deploy_xconnect_one.yml
