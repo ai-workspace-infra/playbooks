@@ -35,6 +35,7 @@ class VaultSharedServiceEntrypointTest(unittest.TestCase):
         self.assertIn("vault-shared-peers", ENTRYPOINT)
         self.assertIn("vault_shared_leader_group", RAFT)
         self.assertIn("vault_shared_peer_group", RAFT)
+        self.assertEqual(RAFT.count("vault_admin_addr: http://127.0.0.1:8200"), 2)
 
     def test_shared_monitoring_can_skip_host_wide_common_dependency(self):
         for role_meta in (NODE_EXPORTER_META, PROCESS_EXPORTER_META):
