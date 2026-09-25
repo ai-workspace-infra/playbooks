@@ -1,0 +1,214 @@
+---
+# Move the existing Vault from local PostgreSQL storage to single-node Raft,
+# in place, reading PostgreSQL exactly once over 127.0.0.1. PostgreSQL itself
+# is never restarted, reconfigured, or written. Vault stays stopped when this
+# file finishes; deploy_vault_single_raft.yml (imported at the end of
+# deploy_vault_legacy_migration.yml) writes the Raft configuration and starts
+# the service.
+- name: Require the confirmation phrase before changing a live Vault
+  ansible.builtin.assert:
+    that:
+      - vault_legacy_migration_confirm == 'CONVERT-VAULT-TO-RAFT'
+    fail_msg: Set vault_legacy_migration_confirm=CONVERT-VAULT-TO-RAFT to run this migration.
+
+- name: Require a node id and a private XConnect overlay address
+  ansible.builtin.assert:
+    that:
+      - vault_legacy_migration_node_id | length > 0
+      - vault_legacy_migration_overlay_address is match('^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)')
+    fail_msg: Raft must bind to a private overlay address, never a public one.
+
+- name: Check the current Vault storage backend
+  ansible.builtin.command:
+    cmd: grep -E '^[[:space:]]*storage[[:space:]]+"(postgresql|raft)"' {{ vault_legacy_migration_config_dir }}/vault.hcl
+  register: vault_legacy_migration_backend_line
+  changed_when: false
+
+- name: Determine the current storage backend
+  ansible.builtin.set_fact:
+    vault_legacy_migration_current_backend: "{{ 'raft' if '\"raft\"' in vault_legacy_migration_backend_line.stdout else 'postgresql' }}"
+
+# Idempotent: re-running this stage after a successful conversion (which
+# rewrites vault.hcl to storage "raft") is a no-op rather than an error.
+- name: Skip conversion when the host is already Raft-backed
+  ansible.builtin.meta: end_host
+  when: vault_legacy_migration_current_backend == 'raft'
+
+- name: Check free disk space on the root filesystem
+  ansible.builtin.set_fact:
+    vault_legacy_migration_free_mb: >-
+      {{ (ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_available') | first | int) // 1048576 }}
+
+- name: Require enough free disk space for the backup and Raft data
+  ansible.builtin.assert:
+    that:
+      - vault_legacy_migration_free_mb | int >= vault_legacy_migration_min_free_mb | int
+    fail_msg: "Less than {{ vault_legacy_migration_min_free_mb }} MiB free on /."
+
+- name: Ensure the Raft data directory exists
+  ansible.builtin.file:
+    path: "{{ vault_legacy_migration_data_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Check the Raft data directory is empty
+  ansible.builtin.find:
+    paths: "{{ vault_legacy_migration_data_dir }}"
+  register: vault_legacy_migration_data_dir_listing
+
+- name: Refuse to overwrite existing Raft data
+  ansible.builtin.assert:
+    that:
+      - vault_legacy_migration_data_dir_listing.files | length == 0
+    fail_msg: "{{ vault_legacy_migration_data_dir }} is not empty; refusing to convert."
+
+- name: Read the local Vault PostgreSQL password
+  ansible.builtin.slurp:
+    src: "{{ vault_legacy_migration_pg_password_file }}"
+  register: vault_legacy_migration_pg_password_slurp
+  no_log: true
+
+- name: Resolve the local Vault PostgreSQL password
+  ansible.builtin.set_fact:
+    vault_legacy_migration_pg_password: "{{ vault_legacy_migration_pg_password_slurp.content | b64decode | trim }}"
+  no_log: true
+
+- name: Ensure the migration backup directory exists
+  ansible.builtin.file:
+    path: "{{ vault_legacy_migration_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Resolve the migration timestamp
+  ansible.builtin.set_fact:
+    vault_legacy_migration_stamp: "{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+
+- name: Back up the current Vault configuration
+  ansible.builtin.copy:
+    src: "{{ vault_legacy_migration_config_dir }}/vault.hcl"
+    dest: "{{ vault_legacy_migration_backup_dir }}/vault.hcl.postgresql-{{ vault_legacy_migration_stamp }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Back up the current systemd unit file if present
+  ansible.builtin.copy:
+    src: "/etc/systemd/system/{{ vault_legacy_migration_service_name }}.service"
+    dest: "{{ vault_legacy_migration_backup_dir }}/{{ vault_legacy_migration_service_name }}.service.postgresql-{{ vault_legacy_migration_stamp }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0644'
+  failed_when: false
+
+# Same host/container detection idiom as roles/vhosts/vault/tasks/main.yml,
+# because a web-saas single-host topology can run PostgreSQL in a container.
+- name: Detect whether PostgreSQL runs on the host or in a container
+  become: true
+  ansible.builtin.shell: |
+    set -o pipefail
+    if command -v docker >/dev/null 2>&1 \
+       && docker ps --format '{{ "{{" }}.Names{{ "}}" }}' | grep -qx '{{ vault_legacy_migration_postgres_container_name }}'; then
+      echo container
+    elif id -u postgres >/dev/null 2>&1; then
+      echo host
+    else
+      echo none
+    fi
+  args:
+    executable: /bin/bash
+  register: vault_legacy_migration_postgres_topology
+  changed_when: false
+
+- name: Fail when no reachable PostgreSQL was found for the backup
+  ansible.builtin.fail:
+    msg: >-
+      Neither a running container named '{{ vault_legacy_migration_postgres_container_name }}'
+      nor a host 'postgres' user was found.
+  when: vault_legacy_migration_postgres_topology.stdout | default('none') | trim == 'none'
+
+- name: Back up vault_storage before migrating
+  ansible.builtin.shell: |
+    set -euo pipefail
+    dump="{{ vault_legacy_migration_backup_dir }}/vault_storage-{{ vault_legacy_migration_stamp }}.dump"
+    if [ "{{ vault_legacy_migration_postgres_topology.stdout | trim }}" = container ]; then
+      docker exec -e PGPASSWORD -i "{{ vault_legacy_migration_postgres_container_name }}" \
+        pg_dump -h 127.0.0.1 -U "{{ vault_legacy_migration_postgres_database_user }}" -Fc vault_storage >"$dump"
+    else
+      pg_dump -h 127.0.0.1 -p "{{ vault_legacy_migration_postgres_port }}" \
+        -U "{{ vault_legacy_migration_postgres_database_user }}" -Fc vault_storage >"$dump"
+    fi
+    [ -s "$dump" ]
+    chmod 0600 "$dump"
+    sha256sum "$dump" >"$dump.sha256"
+  args:
+    executable: /bin/bash
+  environment:
+    PGPASSWORD: "{{ vault_legacy_migration_pg_password }}"
+  changed_when: true
+  no_log: true
+
+- name: Stop Vault before the offline migration
+  ansible.builtin.systemd:
+    name: "{{ vault_legacy_migration_service_name }}"
+    state: stopped
+
+- name: Write the private offline-migration configuration
+  ansible.builtin.copy:
+    dest: "{{ vault_legacy_migration_backup_dir }}/migrate-{{ vault_legacy_migration_stamp }}.hcl"
+    owner: root
+    group: root
+    mode: '0600'
+    content: |
+      storage_source "postgresql" {
+        connection_url = "postgres://{{ vault_legacy_migration_postgres_database_user }}:{{ vault_legacy_migration_pg_password }}@127.0.0.1:{{ vault_legacy_migration_postgres_port }}/vault_storage?sslmode=disable"
+      }
+      storage_destination "raft" {
+        path    = "{{ vault_legacy_migration_data_dir }}"
+        node_id = "{{ vault_legacy_migration_node_id }}"
+      }
+      cluster_addr = "https://{{ vault_legacy_migration_overlay_address }}:8201"
+  no_log: true
+  register: vault_legacy_migration_config_write
+
+- name: Run the offline PostgreSQL-to-Raft migration
+  block:
+    - name: Invoke the reviewed migrate-offline operator tool
+      ansible.builtin.script: >-
+        {{ vault_legacy_migration_operator_data_script }}
+        migrate-offline
+        --config {{ vault_legacy_migration_backup_dir }}/migrate-{{ vault_legacy_migration_stamp }}.hcl
+        --destination-path {{ vault_legacy_migration_data_dir }}
+        --source-health-url http://127.0.0.1:8200/v1/sys/health
+        --confirm MIGRATE-POSTGRESQL-TO-RAFT
+      changed_when: true
+  rescue:
+    - name: Clear a partially written Raft data directory
+      ansible.builtin.shell: rm -rf -- "{{ vault_legacy_migration_data_dir }}"/*
+      changed_when: true
+
+    - name: Restart the unchanged PostgreSQL-backed Vault after a failed migration
+      ansible.builtin.systemd:
+        name: "{{ vault_legacy_migration_service_name }}"
+        state: started
+
+    - name: Fail with the migration error
+      ansible.builtin.fail:
+        msg: "vault operator migrate failed; the PostgreSQL data was only read, and Vault was restarted unchanged."
+  always:
+    - name: Remove the private migration configuration
+      ansible.builtin.file:
+        path: "{{ vault_legacy_migration_backup_dir }}/migrate-{{ vault_legacy_migration_stamp }}.hcl"
+        state: absent
+
+- name: Install the Vault port guard for the private Raft channel
+  ansible.builtin.include_role:
+    name: vhosts/vault_port_guard
+  vars:
+    vault_port_guard_enabled: true
+    vault_port_guard_interface: "{{ vault_legacy_migration_overlay_interface }}"

@@ -1,0 +1,18 @@
+---
+- name: Validate migration action selection
+  ansible.builtin.assert:
+    that:
+      - vault_legacy_migration_action in ['convert', 'rollback', 'retire']
+    fail_msg: "vault_legacy_migration_action must be convert, rollback, or retire"
+
+- name: Convert the existing Vault storage backend to Raft
+  ansible.builtin.include_tasks: convert.yml
+  when: vault_legacy_migration_action == 'convert'
+
+- name: Roll back to the PostgreSQL-backed Vault
+  ansible.builtin.include_tasks: rollback.yml
+  when: vault_legacy_migration_action == 'rollback'
+
+- name: Retire the Vault service on this host
+  ansible.builtin.include_tasks: retire.yml
+  when: vault_legacy_migration_action == 'retire'

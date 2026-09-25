@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep Vault API and Raft ports on loopback and the XConnect overlay
+Before={{ vault_port_guard_service_name }}.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f {{ vault_port_guard_ruleset_path }}
+
+[Install]
+WantedBy=multi-user.target
