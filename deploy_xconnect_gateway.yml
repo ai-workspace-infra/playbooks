@@ -1,6 +1,24 @@
 ---
 # Deploy the Zero-driven Gateway role to explicitly selected Linux hosts.
 # Cloud resources, DNS and security groups remain outside this playbook.
+#
+#   xconnect-gateway-identity  install the reviewed runtime and create the
+#                              local identity only (no invitation needed);
+#                              the control plane then reads the WireGuard
+#                              public key and issues a device-bound invite
+#   xconnect-gateway           enroll with that invite (skipped when already
+#                              enrolled), reconcile config, start services
+- name: Create the XConnect Gateway local identity
+  hosts: "{{ xconnect_gateway_hosts | default('xconnect_gateway') }}"
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Install runtime and initialize state
+      ansible.builtin.include_role:
+        name: vhosts/xconnect_gateway
+        tasks_from: identity
+  tags: [xconnect-gateway-identity]
+
 - name: Reconcile XConnect Gateway from Zero
   hosts: "{{ xconnect_gateway_hosts | default('xconnect_gateway') }}"
   become: true
