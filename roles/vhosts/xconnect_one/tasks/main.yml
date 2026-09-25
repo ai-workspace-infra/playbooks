@@ -8,9 +8,6 @@
       - (xconnect_one_device_id | trim) is match('^[a-z0-9][a-z0-9._-]{0,127}$')
       - xconnect_one_device_name | trim | length > 0
       - xconnect_one_expected_network_id | trim | length > 0
-      - >-
-        (xconnect_one_invite_file_source | trim | length > 0) or
-        ((xconnect_one_invite_uri | trim) is match('^xconnect://join/'))
       - (xconnect_one_expected_overlay_cidr | trim) is match('^[0-9.]+/[0-9]{1,2}$')
       - xconnect_one_expected_overlay_cidr != '0.0.0.0/0'
       - (xconnect_one_expected_wireguard_interface | trim) is match('^[a-zA-Z0-9_.-]{1,15}$')
@@ -106,6 +103,18 @@
   ansible.builtin.stat:
     path: "{{ xconnect_one_state_dir }}/state.json"
   register: xconnect_one_existing_state
+
+# A joined node re-runs without an invitation, so a re-run never needs or
+# consumes a new one-use invite.
+- name: Require an invitation only for a node that has not joined yet
+  ansible.builtin.assert:
+    that:
+      - >-
+        xconnect_one_existing_state.stat.exists or
+        (xconnect_one_invite_file_source | trim | length > 0) or
+        ((xconnect_one_invite_uri | trim) is match('^xconnect://join/'))
+    fail_msg: This node has not joined XConnect and no one-use invitation was provided.
+  no_log: true
 
 - name: Write short-lived XConnect One invite file
   ansible.builtin.copy:
