@@ -1,0 +1,19 @@
+---
+# Public HTTPS frontend for the shared Vault XConnect Gateway (vault-prod-0).
+#
+# Caddy owns 443 and forwards only the XHTTP path to the Gateway's Xray Unix
+# socket over h2c. Nothing else is proxied: the Vault API (8200/8201) is never
+# published through this site. The hostname is separate from vault.svc.plus,
+# which stays on the existing Vault node until migrate-cutover.
+vault_gateway_frontend_domain: vault-xconnect.svc.plus
+vault_gateway_frontend_path: /xconnect
+# Must match xconnect_gateway_listen_socket in vhosts/xconnect_gateway.
+vault_gateway_frontend_socket: /run/xconnect-gateway/xray.sock
+vault_gateway_frontend_caddy_config_dir: /etc/caddy
+vault_gateway_frontend_tls_dir: /etc/caddy/tls/vault-gateway
+
+# Wildcard svc.plus material from Vault kv/data/CICD/domains/svc.plus
+# (tls_fullchain_pem_b64 / tls_key_pem_b64). The CI stage reads it with the
+# scoped xconnect role and passes it in the environment; it never enters Git.
+vault_gateway_frontend_fullchain_b64: "{{ lookup('ansible.builtin.env', 'VAULT_GATEWAY_TLS_FULLCHAIN_B64') | default('', true) }}"
+vault_gateway_frontend_key_b64: "{{ lookup('ansible.builtin.env', 'VAULT_GATEWAY_TLS_KEY_B64') | default('', true) }}"
