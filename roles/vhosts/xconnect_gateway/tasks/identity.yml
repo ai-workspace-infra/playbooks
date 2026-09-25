@@ -1,0 +1,85 @@
+---
+# Install the reviewed runtime and create the Gateway's local identity
+# (WireGuard key pair in state.json). Safe to re-run: init is skipped once
+# state.json exists. Enrollment (join) is in main.yml, so the control plane
+# can read the public key and issue a device-bound invitation in between.
+- name: Validate Zero-driven XConnect Gateway role inputs
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_enabled | bool
+      - xconnect_gateway_environment in ['uat', 'prod', 'shared']
+      - xconnect_gateway_binary_source | trim | length > 0
+      - xconnect_gateway_xray_binary_source | trim | length > 0
+      - (xconnect_gateway_controller | trim) is match('^https://')
+      - (xconnect_gateway_id | trim) is match('^[a-z0-9][a-z0-9._-]{0,127}$')
+      - xconnect_gateway_frontend in ['direct-tls', 'caddy-unix-h2c']
+      - xconnect_gateway_frontend != 'caddy-unix-h2c' or (xconnect_gateway_listen_socket | trim) is match('^/')
+      - xconnect_gateway_sync_interval_seconds | int >= 60
+  no_log: true
+
+- name: Install XConnect Gateway runtime dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - jq
+      - openssl
+      - wireguard-tools
+    state: present
+    update_cache: true
+    lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
+
+- name: Verify the shared Caddy group exists for Unix-socket frontend
+  ansible.builtin.getent:
+    database: group
+    key: "{{ xconnect_gateway_socket_group }}"
+  when: xconnect_gateway_frontend == 'caddy-unix-h2c'
+
+- name: Create XConnect Gateway protected directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop:
+    - "{{ xconnect_gateway_state_dir }}"
+    - /etc/xconnect-gateway
+
+- name: Create XConnect Gateway runtime socket directory
+  ansible.builtin.file:
+    path: /run/xconnect-gateway
+    state: directory
+    owner: root
+    group: "{{ xconnect_gateway_socket_group if xconnect_gateway_frontend == 'caddy-unix-h2c' else 'root' }}"
+    mode: "{{ '0750' if xconnect_gateway_frontend == 'caddy-unix-h2c' else '0700' }}"
+
+- name: Install reviewed XConnect Gateway binary
+  ansible.builtin.copy:
+    src: "{{ xconnect_gateway_binary_source }}"
+    dest: "{{ xconnect_gateway_binary_path }}"
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install reviewed external Xray binary
+  ansible.builtin.copy:
+    src: "{{ xconnect_gateway_xray_binary_source }}"
+    dest: "{{ xconnect_gateway_xray_binary_path }}"
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Initialize XConnect Gateway local state
+  ansible.builtin.command:
+    argv:
+      - "{{ xconnect_gateway_binary_path }}"
+      - init
+      - --state-dir
+      - "{{ xconnect_gateway_state_dir }}"
+      - --controller
+      - "{{ xconnect_gateway_controller }}"
+      - --gateway-id
+      - "{{ xconnect_gateway_id }}"
+    creates: "{{ xconnect_gateway_state_dir }}/state.json"
+  no_log: true

@@ -1,0 +1,49 @@
+import unittest
+from pathlib import Path
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[1]
+TASKS = ROOT / "roles/vhosts/xconnect_gateway/tasks"
+PLAYBOOK = (ROOT / "deploy_xconnect_gateway.yml").read_text(encoding="utf-8")
+
+
+class XConnectGatewayIdentityContractTest(unittest.TestCase):
+    def setUp(self):
+        self.identity = (TASKS / "identity.yml").read_text(encoding="utf-8")
+        self.main = (TASKS / "main.yml").read_text(encoding="utf-8")
+
+    def test_task_files_parse(self):
+        self.assertTrue(yaml.safe_load(self.identity))
+        self.assertTrue(yaml.safe_load(self.main))
+        self.assertTrue(yaml.safe_load(PLAYBOOK))
+
+    def test_identity_creates_state_without_an_invitation(self):
+        self.assertIn(" init", self.identity.replace("- init", " init"))
+        self.assertIn('creates: "{{ xconnect_gateway_state_dir }}/state.json"', self.identity)
+        self.assertNotIn("invite", self.identity)
+        self.assertNotIn(" join", self.identity)
+
+    def test_enrollment_reuses_identity_and_needs_an_invite_only_when_not_enrolled(self):
+        self.assertIn("import_tasks: identity.yml", self.main)
+        self.assertIn(
+            "xconnect_gateway_enrolled | bool or (xconnect_gateway_invite_file_source | trim | length > 0)",
+            self.main,
+        )
+        # The invite is staged and consumed only for a Gateway that is not enrolled.
+        self.assertEqual(self.main.count("when: not (xconnect_gateway_enrolled | default(false) | bool)"), 2)
+        self.assertIn("Remove short-lived Gateway invitation", self.main)
+
+    def test_success_requires_a_stored_credential_not_just_state_json(self):
+        self.assertIn("device_credential.credential", self.main.split("Verify the Gateway holds")[1])
+
+    def test_playbook_exposes_identity_and_enrollment_as_separate_tags(self):
+        self.assertIn("tags: [xconnect-gateway-identity]", PLAYBOOK)
+        self.assertIn("tasks_from: identity", PLAYBOOK)
+        self.assertIn("tags: [xconnect-gateway]", PLAYBOOK)
+        self.assertLess(PLAYBOOK.index("xconnect-gateway-identity"), PLAYBOOK.index("tags: [xconnect-gateway]"))
+
+
+if __name__ == "__main__":
+    unittest.main()

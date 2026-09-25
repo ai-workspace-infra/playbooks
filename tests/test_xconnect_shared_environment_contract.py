@@ -7,7 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class XConnectSharedEnvironmentContractTest(unittest.TestCase):
     def test_gateway_and_one_accept_shared_without_changing_defaults(self):
-        gateway_tasks = (ROOT / "roles/vhosts/xconnect_gateway/tasks/main.yml").read_text()
+        gateway_tasks = "".join(
+            (ROOT / f"roles/vhosts/xconnect_gateway/tasks/{name}.yml").read_text() for name in ("identity", "main")
+        )
         one_tasks = (ROOT / "roles/vhosts/xconnect_one/tasks/main.yml").read_text()
         gateway_defaults = (ROOT / "roles/vhosts/xconnect_gateway/defaults/main.yml").read_text()
         one_defaults = (ROOT / "roles/vhosts/xconnect_one/defaults/main.yml").read_text()
