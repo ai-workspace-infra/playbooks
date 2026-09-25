@@ -25,6 +25,12 @@ class XConnectGatewayIdentityContractTest(unittest.TestCase):
         self.assertNotIn("invite", self.identity)
         self.assertNotIn(" join", self.identity)
 
+    def test_xray_destination_directory_is_created_before_binary_install(self):
+        create_dir = self.identity.index("Create XConnect Gateway Xray binary directory")
+        install_xray = self.identity.index("Install reviewed external Xray binary")
+        self.assertLess(create_dir, install_xray)
+        self.assertIn('path: "{{ xconnect_gateway_xray_binary_path | dirname }}"', self.identity)
+
     def test_enrollment_reuses_identity_and_needs_an_invite_only_when_not_enrolled(self):
         self.assertIn("import_tasks: identity.yml", self.main)
         self.assertIn(
