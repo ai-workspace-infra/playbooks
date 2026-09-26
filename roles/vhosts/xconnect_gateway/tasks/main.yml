@@ -146,6 +146,8 @@
 - name: Reconcile signed Gateway configuration
   environment:
     PATH: "{{ xconnect_gateway_xray_binary_path | dirname }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    XCONNECT_GATEWAY_FRONTEND: "{{ xconnect_gateway_frontend }}"
+    XCONNECT_GATEWAY_LISTEN_SOCKET: "{{ xconnect_gateway_listen_socket }}"
   ansible.builtin.command:
     argv:
       - "{{ xconnect_gateway_binary_path }}"
@@ -156,6 +158,10 @@
       - "{{ xconnect_gateway_tls_cert_path }}"
       - --tls-key
       - "{{ xconnect_gateway_tls_key_path }}"
+      - --frontend
+      - "{{ xconnect_gateway_frontend }}"
+      - --listen-socket
+      - "{{ xconnect_gateway_listen_socket }}"
   register: xconnect_gateway_up
   changed_when: false
   failed_when: false
