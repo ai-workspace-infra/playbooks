@@ -54,6 +54,23 @@
     - xconnect_one_ca_certificate_source | trim | length > 0
     - xconnect_one_transport_ca.changed
 
+- name: Install the foreign XConnect network release
+  ansible.builtin.template:
+    src: release_foreign.py.j2
+    dest: "/usr/local/lib/xconnect-one/release-foreign-{{ xconnect_one_environment }}.py"
+    owner: root
+    group: root
+    mode: '0700'
+  when: xconnect_one_release_foreign_overlays | bool
+
+# Only for a node the caller declares may move (the Vault migration source):
+# every One binds the same loopback port, so it must leave its other network.
+- name: Take this host off other XConnect networks
+  ansible.builtin.command: "/usr/local/lib/xconnect-one/release-foreign-{{ xconnect_one_environment }}.py"
+  register: xconnect_one_release_foreign
+  changed_when: "'xconnect released: none' not in xconnect_one_release_foreign.stdout"
+  when: xconnect_one_release_foreign_overlays | bool
+
 - name: Install XConnect One collision preflight
   ansible.builtin.template:
     src: preflight.py.j2
