@@ -1,0 +1,10 @@
+---
+vault_public_frontend_domain: vault.svc.plus
+vault_public_frontend_caddy_config_dir: /etc/caddy
+vault_public_frontend_tls_dir: /etc/caddy/tls/vault-gateway
+vault_public_frontend_upstream: 127.0.0.1:8200
+
+# Wildcard svc.plus material from Vault kv/data/CICD/domains/svc.plus.
+# The node stage reads it with a scoped JWT role and passes it in the environment.
+vault_public_frontend_fullchain_b64: "{{ lookup('ansible.builtin.env', 'VAULT_GATEWAY_TLS_FULLCHAIN_B64') | default('', true) }}"
+vault_public_frontend_key_b64: "{{ lookup('ansible.builtin.env', 'VAULT_GATEWAY_TLS_KEY_B64') | default('', true) }}"

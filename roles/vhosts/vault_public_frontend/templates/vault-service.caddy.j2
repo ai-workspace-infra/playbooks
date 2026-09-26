@@ -1,0 +1,7 @@
+# Managed by vhosts/vault_public_frontend. Each DNS target serves its local
+# Vault API; Caddy keeps the public TLS listener separate from Raft ports.
+{{ vault_public_frontend_domain }} {
+    tls {{ vault_public_frontend_tls_dir }}/fullchain.pem {{ vault_public_frontend_tls_dir }}/key.pem
+
+    reverse_proxy {{ vault_public_frontend_upstream }}
+}
