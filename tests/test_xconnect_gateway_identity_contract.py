@@ -19,6 +19,12 @@ class XConnectGatewayIdentityContractTest(unittest.TestCase):
         self.assertTrue(yaml.safe_load(self.main))
         self.assertTrue(yaml.safe_load(PLAYBOOK))
 
+    def test_reconcile_and_timer_can_find_reviewed_xray(self):
+        task = next(t for t in yaml.safe_load(self.main) if t.get("name") == "Reconcile signed Gateway configuration")
+        self.assertIn("xconnect_gateway_xray_binary_path | dirname", task["environment"]["PATH"])
+        service = (ROOT / "roles/vhosts/xconnect_gateway/templates/xconnect-gateway-sync.service.j2").read_text()
+        self.assertIn('Environment="PATH={{ xconnect_gateway_xray_binary_path | dirname }}:', service)
+
     def test_identity_creates_state_without_an_invitation(self):
         self.assertIn(" init", self.identity.replace("- init", " init"))
         self.assertIn('creates: "{{ xconnect_gateway_state_dir }}/state.json"', self.identity)
