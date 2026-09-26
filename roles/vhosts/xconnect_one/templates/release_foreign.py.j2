@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""Take this host off any other XConnect network before it joins this one.
+
+Every One runtime binds the same loopback Xray port, so a host can be a One
+on one network at a time. Enabled only for a node the caller declares may
+move (the Vault migration source). Foreign state is kept, not deleted:
+`xconnect up --state-dir DIR` puts the node back.
+"""
+import glob
+import json
+import os
+import re
+import shutil
+import socket
+import subprocess
+import sys
+
+# ROOT is empty on hosts; tests point it at a scratch tree.
+ROOT = os.environ.get("XCONNECT_ONE_RELEASE_ROOT", "")
+own_state = os.path.realpath(ROOT + "{{ xconnect_one_state_dir }}/state.json")
+expected_network_id = "{{ xconnect_one_expected_network_id }}"
+interface = "{{ xconnect_one_expected_wireguard_interface }}"
+port = {{ xconnect_one_expected_xray_loopback_port | int }}
+unit_dir = ROOT + "/etc/systemd/system"
+
+
+def run(*args, check=True):
+    return subprocess.run(args, check=check, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+
+def units_for(state_dir):
+    """Sync units that drive this state dir, plus their timers."""
+    found = []
+    for path in sorted(glob.glob(os.path.join(unit_dir, "*.service"))):
+        try:
+            text = open(path, encoding="utf-8").read()
+        except OSError:
+            continue
+        if re.search(r"--state-dir[ =]" + re.escape(state_dir[len(ROOT):]) + r"(\s|$)", text):
+            name = os.path.basename(path)
+            found.append((name, text))
+    return found
+
+
+released = []
+for path in sorted(set(glob.glob(ROOT + "/var/lib/xconnect-one/state.json") + glob.glob(ROOT + "/var/lib/xconnect-one/*/state.json"))):
+    if os.path.realpath(path) == own_state:
+        continue
+    try:
+        state = json.load(open(path, encoding="utf-8"))
+    except (OSError, ValueError):
+        continue
+    network_id = state.get("network_id") or ""
+    if not network_id or network_id == expected_network_id:
+        continue
+    state_dir = os.path.dirname(path)
+    binary = None
+    for name, text in units_for(state_dir):
+        match = re.search(r"^ExecStart=(\S+)", text, re.MULTILINE)
+        if match and binary is None:
+            binary = match.group(1)
+        timer = name[: -len(".service")] + ".timer"
+        run("systemctl", "disable", "--now", timer, check=False)
+        run("systemctl", "stop", name, check=False)
+    binary = binary or shutil.which("xconnect")
+    if not binary:
+        raise SystemExit("no xconnect binary to take " + network_id + " down")
+    result = run(binary, "down", "--state-dir", state_dir[len(ROOT):], check=False)
+    if result.returncode != 0:
+        raise SystemExit("xconnect down failed for " + network_id + " (rc=" + str(result.returncode) + ")")
+    released.append(network_id)
+
+if run("ip", "link", "show", interface, check=False).returncode == 0 and released:
+    raise SystemExit(interface + " is still up after leaving " + ", ".join(released))
+probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+try:
+    probe.bind(("127.0.0.1", port))
+except OSError as exc:
+    if released:
+        raise SystemExit("loopback port %d still in use after leaving %s: %s" % (port, ", ".join(released), exc))
+finally:
+    probe.close()
+print("xconnect released: " + (", ".join(released) if released else "none"))
