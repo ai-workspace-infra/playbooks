@@ -74,6 +74,18 @@ class ReleaseForeignOverlayTests(unittest.TestCase):
             self.assertNotIn("shared", calls)
             self.assertTrue((root / "var/lib/xconnect-one/state.json").exists())
 
+    def test_ignores_backup_and_pre_reenroll_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, port = Path(directory), free_port()
+            bin_dir, log = self.host(root)
+            backup = root / "var/lib/xconnect-one/uat.pre-reenroll.20260922"
+            backup.mkdir(parents=True)
+            (backup / "state.json").write_text(json.dumps({"network_id": "net_uat", "device_id": "vault-legacy"}))
+            result = self.run_script(root, bin_dir, port)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            calls = log.read_text()
+            self.assertNotIn("pre-reenroll", calls)
+
     def test_fails_when_the_interface_is_still_up(self):
         with tempfile.TemporaryDirectory() as directory:
             root, port = Path(directory), free_port()

@@ -54,6 +54,8 @@ for path in sorted(set(glob.glob(ROOT + "/var/lib/xconnect-one/state.json") + gl
     if not network_id or network_id == expected_network_id:
         continue
     state_dir = os.path.dirname(path)
+    if any(tag in os.path.basename(state_dir) for tag in (".pre-", ".bak", ".backup", ".old")):
+        continue
     binary = None
     for name, text in units_for(state_dir):
         match = re.search(r"^ExecStart=(\S+)", text, re.MULTILINE)
@@ -66,8 +68,8 @@ for path in sorted(set(glob.glob(ROOT + "/var/lib/xconnect-one/state.json") + gl
     if not binary:
         raise SystemExit("no xconnect binary to take " + network_id + " down")
     result = run(binary, "down", "--state-dir", state_dir[len(ROOT):], check=False)
-    if result.returncode != 0:
-        raise SystemExit("xconnect down failed for " + network_id + " (rc=" + str(result.returncode) + ")")
+    if result.returncode != 0 and "runtime_process_stale" not in result.stdout:
+        raise SystemExit("xconnect down failed for " + network_id + " (rc=" + str(result.returncode) + "): " + result.stdout)
     released.append(network_id)
 
 if run("ip", "link", "show", interface, check=False).returncode == 0 and released:
