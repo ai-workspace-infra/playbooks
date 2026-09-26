@@ -169,7 +169,20 @@
         "$(cat {{ xconnect_one_invite_path | quote }})"
       args:
         executable: /bin/sh
+      register: xconnect_one_join
+      failed_when: false
       no_log: true
+
+    # The join result stays hidden (it carries the invitation), but its error
+    # must not: report the last lines with anything token-shaped redacted.
+    - name: Report why the XConnect One join failed
+      ansible.builtin.fail:
+        msg: >-
+          xconnect join failed (rc={{ xconnect_one_join.rc | default('unknown') }}):
+          {{ ((xconnect_one_join.stderr_lines | default([])) + (xconnect_one_join.stdout_lines | default([])))[-6:]
+             | map('regex_replace', '[A-Za-z0-9+/_=-]{32,}', '<redacted>')
+             | map('regex_replace', 'xconnect://[^ ]+', 'xconnect://<redacted>') | list }}
+      when: (xconnect_one_join.rc | default(1)) != 0
   always:
     - name: Remove short-lived XConnect One invite file
       ansible.builtin.file:

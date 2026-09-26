@@ -107,3 +107,20 @@ class ReleaseForeignOverlayTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JoinDiagnosticTests(unittest.TestCase):
+    def test_join_failure_is_reported_without_leaking_the_invitation(self):
+        tasks = yaml.safe_load((ROLE / "tasks/main.yml").read_text(encoding="utf-8"))
+        block = next(task for task in tasks if task.get("name") == "Join XConnect One with protected invite file")
+        names = [task["name"] for task in block["block"]]
+        join = block["block"][names.index("Join the signed XConnect Zero network")]
+        report = block["block"][names.index("Report why the XConnect One join failed")]
+        self.assertIs(join["no_log"], True)
+        self.assertIs(join["failed_when"], False)
+        self.assertEqual(names.index("Report why the XConnect One join failed"),
+                         names.index("Join the signed XConnect Zero network") + 1)
+        message = report["ansible.builtin.fail"]["msg"]
+        self.assertIn("'[A-Za-z0-9+/_=-]{32,}', '<redacted>'", message)
+        self.assertIn("'xconnect://[^ ]+', 'xconnect://<redacted>'", message)
+        self.assertEqual(report["when"], "(xconnect_one_join.rc | default(1)) != 0")
