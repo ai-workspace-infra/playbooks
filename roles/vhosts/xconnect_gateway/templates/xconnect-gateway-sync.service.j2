@@ -5,6 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment="PATH={{ xconnect_gateway_xray_binary_path | dirname }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart={{ xconnect_gateway_binary_path }} up --state-dir {{ xconnect_gateway_state_dir }} --tls-cert {{ xconnect_gateway_tls_cert_path }} --tls-key {{ xconnect_gateway_tls_key_path }}
 ExecStartPost=/bin/systemctl restart xconnect-gateway-xray.service
 NoNewPrivileges=true
