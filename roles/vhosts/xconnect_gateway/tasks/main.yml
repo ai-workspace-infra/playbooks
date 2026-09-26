@@ -158,7 +158,20 @@
       - "{{ xconnect_gateway_tls_key_path }}"
   register: xconnect_gateway_up
   changed_when: false
+  failed_when: false
   no_log: true
+
+# The reconcile result stays hidden (it runs with the device credential), but
+# its error must not: `xconnect-gateway up` prints only status lines and plain
+# error messages (signed-config, `xray run -test` or wg-quick failures). Show
+# the last lines with anything key- or token-shaped redacted.
+- name: Report why the signed Gateway configuration did not reconcile
+  ansible.builtin.fail:
+    msg: >-
+      xconnect-gateway up failed (rc={{ xconnect_gateway_up.rc | default('unknown') }}):
+      {{ ((xconnect_gateway_up.stderr_lines | default([])) + (xconnect_gateway_up.stdout_lines | default([])))[-6:]
+         | map('regex_replace', '[A-Za-z0-9+/_=-]{32,}', '<redacted>') | list }}
+  when: (xconnect_gateway_up.rc | default(1)) != 0
 
 - name: Enable Gateway data-plane and sync services
   ansible.builtin.systemd:
