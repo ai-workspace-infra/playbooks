@@ -6,6 +6,8 @@
 #   node-process-metrics install node_exporter, process_exporter, and Vector
 #   vault-gateway-frontend  Caddy on vault-prod-0: TLS 443, /xconnect -> Gateway
 #                        Xray socket only (run before xconnect-gateway)
+#   vault-public-frontend   Caddy on all three Raft nodes: vault.svc.plus ->
+#                        each node's local Vault API (run before DNS cutover)
 #   xconnect-gateway     enroll vault-prod-0 (requires a one-use invite file)
 #   xconnect-one         enroll selected peer nodes (requires one-use invite files)
 #
@@ -42,6 +44,14 @@
   roles:
     - role: vhosts/vault_gateway_frontend
   tags: [vault-gateway-frontend]
+
+- name: Front each shared Vault Raft node with public HTTPS
+  hosts: "{{ vault_shared_all_group | default('vault_shared_nodes') }}"
+  become: true
+  gather_facts: true
+  roles:
+    - role: vhosts/vault_public_frontend
+  tags: [vault-public-frontend]
 
 - import_playbook: deploy_xconnect_gateway.yml
 - import_playbook: deploy_xconnect_one.yml
