@@ -1,0 +1,115 @@
+---
+- name: Validate the Vault public frontend inputs
+  ansible.builtin.assert:
+    that:
+      - vault_public_frontend_domain == 'vault.svc.plus'
+      - vault_public_frontend_tls_dir is match('^/etc/caddy/tls/[A-Za-z0-9._-]+$')
+      - vault_public_frontend_upstream == '127.0.0.1:8200'
+    fail_msg: The public Vault frontend must use the reviewed hostname, TLS path and local API.
+
+- name: Require TLS material restored from Vault
+  ansible.builtin.assert:
+    that:
+      - vault_public_frontend_fullchain_b64 | length > 0
+      - vault_public_frontend_key_b64 | length > 0
+    fail_msg: Vault public TLS certificate and key are required.
+  no_log: true
+
+- name: Ensure the Caddy conf.d directory exists
+  ansible.builtin.file:
+    path: "{{ vault_public_frontend_caddy_config_dir }}/conf.d"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install Caddy with the shared import-only base Caddyfile
+  ansible.builtin.import_role:
+    name: vhosts/caddy
+  vars:
+    caddy_config_dir: "{{ vault_public_frontend_caddy_config_dir }}"
+    caddy_portal_domains: []
+    caddy_download_domain: ''
+
+- name: Ensure the TLS parent directory is accessible to Caddy
+  ansible.builtin.file:
+    path: "{{ vault_public_frontend_caddy_config_dir }}/tls"
+    state: directory
+    owner: root
+    group: caddy
+    mode: '0750'
+
+- name: Ensure the TLS directory is accessible to Caddy
+  ansible.builtin.file:
+    path: "{{ vault_public_frontend_tls_dir }}"
+    state: directory
+    owner: root
+    group: caddy
+    mode: '0750'
+
+- name: Stage the certificate and key for Caddy
+  ansible.builtin.copy:
+    content: "{{ item.content | b64decode }}"
+    dest: "{{ vault_public_frontend_tls_dir }}/{{ item.name }}"
+    owner: root
+    group: caddy
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: fullchain.pem, content: "{{ vault_public_frontend_fullchain_b64 }}", mode: '0644' }
+    - { name: key.pem, content: "{{ vault_public_frontend_key_b64 }}", mode: '0640' }
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+  notify: Reload caddy for the Vault public frontend
+
+- name: Check the certificate is current, covers the hostname and matches the key
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cert="{{ vault_public_frontend_tls_dir }}/fullchain.pem"
+    key="{{ vault_public_frontend_tls_dir }}/key.pem"
+    openssl x509 -in "${cert}" -noout -checkend 86400
+    openssl x509 -in "${cert}" -noout -checkhost "{{ vault_public_frontend_domain }}" | grep -q 'does match'
+    [ "$(openssl x509 -in "${cert}" -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256)" = \
+      "$(openssl pkey -in "${key}" -pubout -outform DER | openssl dgst -sha256)" ]
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Render the Vault public site
+  ansible.builtin.template:
+    src: vault-service.caddy.j2
+    dest: "{{ vault_public_frontend_caddy_config_dir }}/conf.d/vault-service.caddy"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload caddy for the Vault public frontend
+
+- name: Validate the full Caddy configuration before reloading
+  ansible.builtin.command:
+    cmd: caddy validate --adapter caddyfile --config {{ vault_public_frontend_caddy_config_dir }}/Caddyfile
+  changed_when: false
+
+- name: Apply the public site
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure Caddy is running and enabled
+  ansible.builtin.service:
+    name: caddy
+    state: started
+    enabled: true
+
+- name: Verify local public HTTPS serves this node's Vault API
+  ansible.builtin.command:
+    cmd: >-
+      curl --fail-with-body --silent --show-error --noproxy '*'
+      --connect-timeout 5 --max-time 10
+      --resolve {{ vault_public_frontend_domain }}:443:127.0.0.1
+      https://{{ vault_public_frontend_domain }}/v1/sys/health?standbycode=200&perfstandbyok=true
+  register: vault_public_frontend_health
+  changed_when: false
+
+- name: Require local Vault to be initialized and unsealed
+  ansible.builtin.assert:
+    that:
+      - (vault_public_frontend_health.stdout | from_json).initialized | bool
+      - not (vault_public_frontend_health.stdout | from_json).sealed | bool
