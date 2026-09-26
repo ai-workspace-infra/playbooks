@@ -25,6 +25,21 @@ class XConnectGatewayIdentityContractTest(unittest.TestCase):
         service = (ROOT / "roles/vhosts/xconnect_gateway/templates/xconnect-gateway-sync.service.j2").read_text()
         self.assertIn('Environment="PATH={{ xconnect_gateway_xray_binary_path | dirname }}:', service)
 
+    def test_reconcile_failure_is_reported_without_leaking_the_result(self):
+        tasks = yaml.safe_load(self.main)
+        names = [t.get("name") for t in tasks]
+        reconcile = tasks[names.index("Reconcile signed Gateway configuration")]
+        report = tasks[names.index("Report why the signed Gateway configuration did not reconcile")]
+        # The command result stays hidden; only a redacted tail of its error is shown.
+        self.assertIs(reconcile["no_log"], True)
+        self.assertIs(reconcile["failed_when"], False)
+        self.assertEqual(names.index("Report why the signed Gateway configuration did not reconcile"),
+                         names.index("Reconcile signed Gateway configuration") + 1)
+        self.assertIn("ansible.builtin.fail", report)
+        self.assertIn("regex_replace', '[A-Za-z0-9+/_=-]{32,}', '<redacted>'", report["ansible.builtin.fail"]["msg"])
+        self.assertIn("[-6:]", report["ansible.builtin.fail"]["msg"])
+        self.assertEqual(report["when"], "(xconnect_gateway_up.rc | default(1)) != 0")
+
     def test_identity_creates_state_without_an_invitation(self):
         self.assertIn(" init", self.identity.replace("- init", " init"))
         self.assertIn('creates: "{{ xconnect_gateway_state_dir }}/state.json"', self.identity)
