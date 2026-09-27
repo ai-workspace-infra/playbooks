@@ -174,12 +174,12 @@ services:
     env_file:
       - mcp-victoriametrics.env
     ports:
-      - "{{ observability_mcp_bind_address | default('127.0.0.1') }}:{{ observability_mcp_victoriametrics_port | default(8080) }}:{{ observability_mcp_victoriametrics_port | default(8080) }}"
+      - "{{ observability_mcp_bind_address | default('127.0.0.1') }}:{{ observability_mcp_victoriametrics_port | default(8088) }}:{{ observability_mcp_victoriametrics_port | default(8088) }}"
     depends_on:
       - victoria-metrics
 {% endif %}
 
-{% if observability_mcp_victorialogs_enabled | default(false) | bool %}
+{% if observability_mcp_victorialogs_enabled | default(true) | bool %}
   mcp-victorialogs:
     image: {{ observability_mcp_victorialogs_image | default('ghcr.io/victoriametrics/mcp-victorialogs:latest') }}
     container_name: xstream_mcp_victorialogs
@@ -187,12 +187,12 @@ services:
     env_file:
       - mcp-victorialogs.env
     ports:
-      - "{{ observability_mcp_bind_address | default('127.0.0.1') }}:{{ observability_mcp_victorialogs_port | default(8081) }}:{{ observability_mcp_victorialogs_port | default(8081) }}"
+      - "{{ observability_mcp_bind_address | default('127.0.0.1') }}:{{ observability_mcp_victorialogs_port | default(8083) }}:{{ observability_mcp_victorialogs_port | default(8083) }}"
     depends_on:
       - victoria-logs
 {% endif %}
 
-{% if observability_mcp_victoriatraces_enabled | default(false) | bool %}
+{% if observability_mcp_victoriatraces_enabled | default(true) | bool %}
   mcp-victoriatraces:
     image: {{ observability_mcp_victoriatraces_image | default('ghcr.io/victoriametrics/mcp-victoriatraces:latest') }}
     container_name: xstream_mcp_victoriatraces
