@@ -10,6 +10,12 @@ vector_batch_timeout: 5
 vector_batch_max_events: 500
 vector_buffer_max_events: 1000
 
+# Stable labels on every metric and log let shared backends separate UAT and
+# PROD without relying on host IPs.
+vector_observability_environment: "{{ lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('unknown', true) }}"
+vector_observability_provider: "{{ cloud_provider | default('unknown', true) }}"
+vector_observability_service_domain: "{{ observability_service_domain | default(inventory_hostname, true) }}"
+
 # Disk buffer & rate limiting optimization for off-peak snapshot fanout
 vector_disk_buffer_max_bytes: 536870912 # 512 MiB persistent disk buffer
 vector_sink_rate_limit_num: 5 # Rate limit to prevent IO/bandwidth spikes
