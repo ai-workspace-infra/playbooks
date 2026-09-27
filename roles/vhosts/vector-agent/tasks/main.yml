@@ -101,6 +101,30 @@
   no_log: "{{ vector_billing_ingest_enabled | bool or (vector_auth_password | default('') | length > 0) }}"
   notify: Restart vector
 
+- name: Validate rendered Vector configuration before service start
+  ansible.builtin.shell: |
+    set -o pipefail
+    /usr/bin/vector validate --no-environment --config-toml "{{ vector_config_dir }}/vector.toml" 2>&1 |
+      sed -E \
+        -e 's/(Authorization[[:space:]]*=[[:space:]]*")[^"]*"/\1<redacted>"/Ig' \
+        -e 's/(Bearer[[:space:]]+)[^[:space:]]+/\1<redacted>/Ig' \
+        -e 's/((token|password|secret)[[:space:]]*[=:][[:space:]]*")[^"]*"/\1<redacted>"/Ig' \
+        -e 's/((token|password|secret)[[:space:]]*[=:][[:space:]]*)[^[:space:]]+/\1<redacted>/Ig'
+  args:
+    executable: /bin/bash
+  register: vector_config_validation
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Reject invalid rendered Vector configuration
+  ansible.builtin.fail:
+    msg: >-
+      Rendered Vector configuration failed validation. The sanitized Vector
+      diagnostic follows:
+      {{ vector_config_validation.stdout | default('no diagnostic output') | trim }}
+  when: not ansible_check_mode and vector_config_validation.rc | int != 0
+
 - name: Create systemd override directory for Vector
   ansible.builtin.file:
     path: /etc/systemd/system/vector.service.d
@@ -116,9 +140,57 @@
     - Reload systemd
     - Restart vector
 
-- name: Enable and start Vector service
-  ansible.builtin.systemd:
-    name: vector
-    enabled: true
-    state: started
-  when: not ansible_check_mode
+- name: Enable and start Vector service with safe failure diagnostics
+  block:
+    - name: Enable and start Vector service
+      ansible.builtin.systemd:
+        name: vector
+        enabled: true
+        state: started
+      when: not ansible_check_mode
+  rescue:
+    - name: Read Vector service state after failed start
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - vector.service
+          - -p
+          - ActiveState
+          - -p
+          - SubState
+          - -p
+          - Result
+          - -p
+          - ExecMainCode
+          - -p
+          - ExecMainStatus
+          - -p
+          - NRestarts
+      register: vector_service_state
+      changed_when: false
+      failed_when: false
+
+    - name: Read sanitized Vector journal after failed start
+      ansible.builtin.shell: |
+        set -o pipefail
+        journalctl -u vector.service -b --no-pager -n 80 2>&1 |
+          sed -E \
+            -e 's/(Authorization[[:space:]]*=[[:space:]]*")[^"]*"/\1<redacted>"/Ig' \
+            -e 's/(Bearer[[:space:]]+)[^[:space:]]+/\1<redacted>/Ig' \
+            -e 's/((token|password|secret)[[:space:]]*[=:][[:space:]]*")[^"]*"/\1<redacted>"/Ig' \
+            -e 's/((token|password|secret)[[:space:]]*[=:][[:space:]]*)[^[:space:]]+/\1<redacted>/Ig'
+      args:
+        executable: /bin/bash
+      register: vector_service_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Fail with safe Vector service diagnostics
+      ansible.builtin.fail:
+        msg: >-
+          Vector service failed to start.
+          systemd state:
+          {{ vector_service_state.stdout | default('unavailable') | trim }}
+          Sanitized journal:
+          {{ vector_service_journal.stdout | default('unavailable') | trim }}
