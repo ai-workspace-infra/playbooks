@@ -147,8 +147,8 @@ services:
     ports:
       - "127.0.0.1:9202:9100"
 
-{% if observability_mcp_enabled | default(true) | bool %}
-{% if observability_mcp_grafana_enabled | default(true) | bool %}
+{% if observability_mcp_enabled | default(false) | bool %}
+{% if observability_mcp_grafana_enabled | default(false) | bool %}
   mcp-grafana:
     image: {{ observability_mcp_grafana_image | default('ghcr.io/grafana/mcp-grafana:latest') }}
     container_name: xstream_mcp_grafana
@@ -166,7 +166,7 @@ services:
       - grafana
 {% endif %}
 
-{% if observability_mcp_victoriametrics_enabled | default(true) | bool %}
+{% if observability_mcp_victoriametrics_enabled | default(false) | bool %}
   mcp-victoriametrics:
     image: {{ observability_mcp_victoriametrics_image | default('ghcr.io/victoriametrics/mcp-victoriametrics:latest') }}
     container_name: xstream_mcp_victoriametrics
@@ -179,7 +179,7 @@ services:
       - victoria-metrics
 {% endif %}
 
-{% if observability_mcp_victorialogs_enabled | default(true) | bool %}
+{% if observability_mcp_victorialogs_enabled | default(false) | bool %}
   mcp-victorialogs:
     image: {{ observability_mcp_victorialogs_image | default('ghcr.io/victoriametrics/mcp-victorialogs:latest') }}
     container_name: xstream_mcp_victorialogs
@@ -192,7 +192,7 @@ services:
       - victoria-logs
 {% endif %}
 
-{% if observability_mcp_victoriatraces_enabled | default(true) | bool %}
+{% if observability_mcp_victoriatraces_enabled | default(false) | bool %}
   mcp-victoriatraces:
     image: {{ observability_mcp_victoriatraces_image | default('ghcr.io/victoriametrics/mcp-victoriatraces:latest') }}
     container_name: xstream_mcp_victoriatraces
