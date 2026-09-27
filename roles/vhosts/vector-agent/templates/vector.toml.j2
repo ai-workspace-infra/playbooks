@@ -35,6 +35,10 @@ type = "remap"
 inputs = ["xray_xhttp_metrics"]
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
 .tags.job = "xray"
 .tags.transport = "xhttp"
 '''
@@ -44,6 +48,10 @@ type = "remap"
 inputs = ["xray_tcp_metrics"]
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
 .tags.job = "xray"
 .tags.transport = "tcp"
 '''
@@ -62,6 +70,10 @@ inputs = ["postgres_metrics"]
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
 .tags.job = "postgres"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
 '''
 {% endif %}
 
@@ -70,7 +82,13 @@ type = "remap"
 inputs = ["internal_metrics", "node_metrics", "process_metrics"]
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
-.tags.job = "xray"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
+if exists(.name) && starts_with(string!(.name), "node_") { .tags.job = "node-exporter" }
+else if exists(.name) && starts_with(string!(.name), "namedprocess_") { .tags.job = "process-exporter" }
+else { .tags.job = "vector" }
 '''
 
 {% set ssl_targets = blackbox_ssl_targets | default(blackbox_exporter_role_defaults.blackbox_ssl_targets | default([])) %}
@@ -95,7 +113,10 @@ source = '''
    有意的集中收集, 区分靠标签而不是靠分开的后端。 #}
 .tags.company = "{{ blackbox_probe_domain_base | default('svc.plus') }}"
 .tags.project = "{{ blackbox_probe_domain_base | default('svc.plus') }}"
+.tags.environment = "{{ blackbox_probe_env | default(vector_observability_environment) }}"
 .tags.env = "{{ blackbox_probe_env | default('production') }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
 .tags.name = "{{ target.name }}"
 .tags.target = "{{ target.url }}"
 '''
@@ -198,6 +219,10 @@ inputs = ["system_logs"]
 source = '''
 .instance = "{{ inventory_hostname }}"
 .host = "{{ inventory_hostname }}"
+.environment = "{{ vector_observability_environment }}"
+.env = "{{ vector_observability_environment }}"
+.provider = "{{ vector_observability_provider }}"
+.service_domain = "{{ vector_observability_service_domain }}"
 .source_type = "system_logs"
 '''
 
@@ -216,6 +241,10 @@ source = '''
 .host = "{{ inventory_hostname }}"
 .source_type = "docker_logs"
 .instance = "{{ inventory_hostname }}"
+.environment = "{{ vector_observability_environment }}"
+.env = "{{ vector_observability_environment }}"
+.provider = "{{ vector_observability_provider }}"
+.service_domain = "{{ vector_observability_service_domain }}"
 
 # Application services emit JSON slog/Node records. Promote the structured
 # fields so VictoriaLogs and Grafana can correlate logs with OTel spans.
