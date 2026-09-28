@@ -35,6 +35,11 @@
     lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
   when: xconnect_one_dns_enabled | bool
 
+- name: Capture the host default route before XConnect changes
+  ansible.builtin.command: ip route show default
+  register: xconnect_one_default_route_before
+  changed_when: false
+
 - name: Create XConnect One runtime directories
   ansible.builtin.file:
     path: "{{ item }}"
@@ -223,7 +228,7 @@
 - name: Fail when XConnect One removed the host default route
   ansible.builtin.assert:
     that:
-      - xconnect_one_default_route.stdout | trim | length > 0
+      - xconnect_one_default_route.stdout | trim == xconnect_one_default_route_before.stdout | trim
     fail_msg: XConnect One must only add the declared private overlay route and must not replace the host default route.
 
 - name: Install XConnect One overlay DNS configuration script

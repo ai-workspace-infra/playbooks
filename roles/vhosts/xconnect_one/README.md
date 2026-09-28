@@ -5,6 +5,11 @@ network. It is for fixed service nodes and temporary pipeline nodes; it does
 not configure a Gateway and never changes host firewall, SSH, hostname or
 default routing.
 
+The default join is intentionally minimal: observability and overlay DNS are
+off, foreign overlay release is off, and the role verifies that the exact host
+default route is unchanged after the join. Enable those features explicitly
+per node only after the overlay handshake and private connectivity pass.
+
 `xconnect_one_environment` accepts `uat`, `prod`, or `shared`. Use `shared`
 for shared-service nodes such as the Vault cluster; this only namespaces local
 state/configuration paths and telemetry labels, and does not reuse UAT/PROD
