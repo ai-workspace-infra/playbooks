@@ -256,6 +256,15 @@
     mode: '0644'
   when: xconnect_gateway_dns_enabled | bool
 
+- name: Create readable XConnect Gateway DNS hosts directory
+  ansible.builtin.file:
+    path: "{{ xconnect_gateway_dns_hosts_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: xconnect_gateway_dns_enabled | bool
+
 - name: Generate DNS records from the current signed Gateway peer configuration
   ansible.builtin.command:
     argv:
