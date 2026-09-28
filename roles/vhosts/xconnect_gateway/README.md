@@ -29,6 +29,10 @@ address; removed/revoked peers disappear on the next Gateway sync. Explicit
 service aliases map a DNS name to a `device_id`, so the service IP follows that
 One if its overlay address is reallocated.
 
+On Gateway hosts, dnsmasq binds the Gateway's `xconzero0` interface. The
+`xconone0` interface belongs to XConnect One clients and is configured
+separately by the One resolver role.
+
 For example, after the SecOPS One enrolls with device ID
 `xconnect-linux-secops-shenlan-inspiron-5415-ops`, the Gateway sync reads its
 allocated `/32` from the verified peer configuration and writes
