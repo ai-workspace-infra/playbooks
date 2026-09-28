@@ -229,6 +229,15 @@
     label: "{{ item.name | default('invalid') }}"
   when: xconnect_gateway_dns_enabled | bool
 
+- name: Create XConnect Gateway DNS helper directory
+  ansible.builtin.file:
+    path: "{{ xconnect_gateway_dns_sync_script_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: xconnect_gateway_dns_enabled | bool
+
 - name: Install dynamic XConnect One DNS registration helper
   ansible.builtin.copy:
     src: xconnect-gateway-dns-sync.py
