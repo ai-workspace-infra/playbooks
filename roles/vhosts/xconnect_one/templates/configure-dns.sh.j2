@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+
+interface={{ xconnect_one_expected_wireguard_interface | quote }}
+server={{ xconnect_one_dns_server | quote }}
+
+if ! command -v resolvectl >/dev/null 2>&1; then
+  echo "resolvectl is required for XConnect overlay DNS" >&2
+  exit 1
+fi
+
+for attempt in $(seq 1 30); do
+  if ip link show "$interface" >/dev/null 2>&1; then
+    resolvectl dns "$interface" "$server"
+    resolvectl domain "$interface"{% for domain in xconnect_one_dns_domains %} "~{{ domain }}"{% endfor %}
+    exit 0
+  fi
+  sleep 2
+done
+
+echo "XConnect interface $interface did not appear before DNS setup timeout" >&2
+exit 1

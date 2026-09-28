@@ -1,0 +1,21 @@
+# Managed by vhosts/xconnect_gateway. The Gateway is the DNS server for the
+# XConnect overlay: declared private records are authoritative here and every
+# other query is forwarded to the configured public recursive resolvers.
+port=53
+bind-dynamic
+interface={{ xconnect_gateway_dns_interface }}
+listen-address={{ xconnect_gateway_dns_listen_address }}
+except-interface=lo
+no-resolv
+domain-needed
+bogus-priv
+cache-size=1000
+{% for upstream in xconnect_gateway_dns_upstream_servers %}
+server={{ upstream }}
+{% endfor %}
+{% if xconnect_gateway_dns_zone | trim | length > 0 %}
+local=/{{ xconnect_gateway_dns_zone }}/
+{% endif %}
+{% for record in xconnect_gateway_dns_records %}
+host-record={{ record.name }},{{ record.address }}
+{% endfor %}

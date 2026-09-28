@@ -1,4 +1,10 @@
-{{ xworkmate_bridge_domain }} {
+{{ xworkmate_bridge_domain }}{% if xworkmate_bridge_internal_domain | default('') | trim | length > 0 and xworkmate_bridge_internal_domain != xworkmate_bridge_domain %}, {{ xworkmate_bridge_internal_domain }}{% endif %} {
+{% if xworkmate_bridge_caddy_bind | default('') | trim | length > 0 %}
+    bind {{ xworkmate_bridge_caddy_bind }}
+{% endif %}
+{% if xworkmate_bridge_tls_enabled | bool %}
+    tls {{ xworkmate_bridge_tls_dir }}/fullchain.pem {{ xworkmate_bridge_tls_dir }}/key.pem
+{% endif %}
     # Authentication is evaluated by xworkmate-bridge against Accounts. Caddy
     # only preserves the request Authorization header and contains no user token.
 

@@ -194,6 +194,78 @@
     name: xconnect-gateway-xray.service
     state: restarted
 
+- name: Install lightweight XConnect overlay DNS forwarder
+  ansible.builtin.apt:
+    name: "{{ xconnect_gateway_dns_package }}"
+    state: present
+    update_cache: true
+    lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
+  when: xconnect_gateway_dns_enabled | bool
+
+- name: Validate XConnect overlay DNS upstream resolvers
+  ansible.builtin.assert:
+    that:
+      - item is match('^[0-9]+(\\.[0-9]+){3}$')
+    fail_msg: XConnect overlay DNS upstream resolvers must be IPv4 addresses.
+  loop: "{{ xconnect_gateway_dns_upstream_servers }}"
+  when: xconnect_gateway_dns_enabled | bool
+
+- name: Validate XConnect overlay DNS configuration
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_dns_interface | trim | length > 0
+      - xconnect_gateway_dns_interface is match('^[A-Za-z0-9_.-]{1,15}$')
+      - xconnect_gateway_dns_listen_address is match('^[0-9]+(\\.[0-9]+){3}$')
+      - xconnect_gateway_dns_upstream_servers | length > 0
+      - >-
+        (xconnect_gateway_dns_zone | trim | length == 0) or
+        (xconnect_gateway_dns_zone is match('^[A-Za-z0-9][A-Za-z0-9.-]*$'))
+      - xconnect_gateway_dns_records is sequence
+      - item.name is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+      - item.address is match('^[0-9]+(\\.[0-9]+){3}$')
+    fail_msg: >-
+      XConnect overlay DNS requires a WireGuard interface, a listener address,
+      public recursive upstreams, and valid name/address records.
+  loop: "{{ xconnect_gateway_dns_records }}"
+  loop_control:
+    label: "{{ item.name | default('invalid') }}"
+  when: xconnect_gateway_dns_enabled | bool
+
+- name: Render XConnect overlay dnsmasq configuration
+  ansible.builtin.template:
+    src: xconnect-gateway-dnsmasq.conf.j2
+    dest: "{{ xconnect_gateway_dns_config_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart XConnect overlay DNS
+  when: xconnect_gateway_dns_enabled | bool
+
+- name: Validate XConnect overlay dnsmasq configuration
+  ansible.builtin.command:
+    argv:
+      - dnsmasq
+      - --test
+      - --conf-file={{ xconnect_gateway_dns_config_path }}
+  changed_when: false
+  when: xconnect_gateway_dns_enabled | bool
+
+- name: Enable XConnect overlay DNS forwarder
+  ansible.builtin.systemd:
+    name: "{{ xconnect_gateway_dns_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: xconnect_gateway_dns_enabled | bool
+
+- name: Disable XConnect overlay DNS forwarder when not declared
+  ansible.builtin.systemd:
+    name: "{{ xconnect_gateway_dns_service_name }}"
+    enabled: false
+    state: stopped
+  failed_when: false
+  when: not (xconnect_gateway_dns_enabled | bool)
+
 # state.json already exists after identity.yml; only a stored device
 # credential proves the Gateway actually enrolled.
 - name: Verify the Gateway holds an enrollment credential

@@ -76,6 +76,7 @@ xworkmate_bridge_domain: >-
      | default((service_domains | default('', true) | string | split(',')
                | map('trim') | reject('equalto', '') | list | first | default('', true)), true)
      | default(ai_workspace_public_domain, true) }}
+xworkmate_bridge_internal_domain: "internal-{{ xworkmate_bridge_domain }}"
 
 # When false, disables public Caddy access to XWorkmate Bridge.
 xworkmate_bridge_public_access: true
@@ -87,6 +88,13 @@ caddy_enabled: "{{ ansible_os_family != 'Darwin' }}"
 xworkmate_bridge_public_base_url: "https://{{ xworkmate_bridge_domain }}"
 xworkmate_bridge_service_domain: "{{ xworkmate_bridge_domain }}"
 xworkmate_bridge_service_public_base_url: "https://{{ xworkmate_bridge_domain }}"
+# Caddy uses ACME by default. Internal/split-horizon deployments can restore
+# the publicly trusted wildcard material from Vault and bind the site to XConnect.
+xworkmate_bridge_tls_enabled: false
+xworkmate_bridge_tls_dir: /etc/caddy/tls/xworkmate-bridge
+xworkmate_bridge_tls_fullchain_b64: "{{ lookup('ansible.builtin.env', 'VAULT_GATEWAY_TLS_FULLCHAIN_B64') | default('', true) }}"
+xworkmate_bridge_tls_key_b64: "{{ lookup('ansible.builtin.env', 'VAULT_GATEWAY_TLS_KEY_B64') | default('', true) }}"
+xworkmate_bridge_caddy_bind: ""
 xworkmate_bridge_validation_base_url: "{{ xworkmate_bridge_service_public_base_url }}"
 xworkmate_bridge_validation_validate_certs: true
 xworkmate_bridge_validation_origin: https://xworkmate.svc.plus
