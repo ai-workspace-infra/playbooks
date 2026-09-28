@@ -4,6 +4,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TASKS = (ROOT / "roles/vhosts/vector-agent/tasks/main.yml").read_text()
+TEMPLATE = (ROOT / "roles/vhosts/vector-agent/templates/vector.toml.j2").read_text()
 
 
 class VectorAgentContractTest(unittest.TestCase):
@@ -20,6 +21,13 @@ class VectorAgentContractTest(unittest.TestCase):
     def test_service_start_diagnostics_do_not_disable_existing_restart_handler(self):
         self.assertIn("notify: Restart vector", TASKS)
         self.assertIn("state: started", TASKS)
+
+    def test_add_labels_uses_valid_multiline_vrl_control_flow(self):
+        self.assertIn('.tags.job = "vector"', TEMPLATE)
+        self.assertIn('if exists(.name) && starts_with(string!(.name), "node_") {', TEMPLATE)
+        self.assertIn('if exists(.name) && starts_with(string!(.name), "namedprocess_") {', TEMPLATE)
+        self.assertNotIn("\nelse if", TEMPLATE)
+        self.assertNotIn("\nelse {", TEMPLATE)
 
 
 if __name__ == "__main__":

@@ -86,9 +86,13 @@ source = '''
 .tags.env = "{{ vector_observability_environment }}"
 .tags.provider = "{{ vector_observability_provider }}"
 .tags.service_domain = "{{ vector_observability_service_domain }}"
-if exists(.name) && starts_with(string!(.name), "node_") { .tags.job = "node-exporter" }
-else if exists(.name) && starts_with(string!(.name), "namedprocess_") { .tags.job = "process-exporter" }
-else { .tags.job = "vector" }
+.tags.job = "vector"
+if exists(.name) && starts_with(string!(.name), "node_") {
+  .tags.job = "node-exporter"
+}
+if exists(.name) && starts_with(string!(.name), "namedprocess_") {
+  .tags.job = "process-exporter"
+}
 '''
 
 {% set ssl_targets = blackbox_ssl_targets | default(blackbox_exporter_role_defaults.blackbox_ssl_targets | default([])) %}
