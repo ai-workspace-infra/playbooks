@@ -33,3 +33,12 @@ public CA into the system trust store before `join`/`sync`; it never reads Vault
 creates a CA, or accepts a Gateway private key. For the standard UAT Gateway,
 the source ultimately comes from the domain certificate record
 `kv/data/CICD/domains/svc.plus`, not from a runner-generated certificate.
+
+Set `xconnect_one_dns_enabled: true` with `xconnect_one_dns_server` pointing
+to the Gateway overlay address and `xconnect_one_dns_domains` containing the
+route-only private suffixes (for example `shared.internal` and `svc.plus`).
+The role uses `systemd-resolved` on the WireGuard interface, so public names
+continue to use the host's normal resolver while the declared private suffixes
+go to the Gateway DNS forwarder. It points `/etc/resolv.conf` at the
+`systemd-resolved` stub by default; set `xconnect_one_dns_manage_resolv_conf`
+to `false` when the host owns resolver configuration elsewhere.

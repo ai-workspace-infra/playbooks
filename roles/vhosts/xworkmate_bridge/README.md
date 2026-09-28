@@ -6,6 +6,18 @@ This document records the current real deployment and runtime validation state f
 
 `roles/vhosts/xworkmate_bridge` owns the public ingress and validation contract for `xworkmate-bridge.svc.plus`.
 
+For a split-horizon/internal deployment, use the internal alias
+`internal-xworkmate-bridge.svc.plus` and point it at the WireGuard overlay
+address. The Caddy site and Bridge allowed-origin list serve both the existing
+public hostname and the internal alias. Set `xworkmate_bridge_tls_enabled: true` and pass the Vault
+fields `tls_fullchain_pem_b64` and `tls_key_pem_b64` as
+`VAULT_GATEWAY_TLS_FULLCHAIN_B64` and `VAULT_GATEWAY_TLS_KEY_B64`. The role
+validates the certificate SANs for both names, expiry, and private-key match
+before reloading Caddy. Set `xworkmate_bridge_caddy_bind` to the overlay
+address when Caddy must not listen on the public interfaces. In XWorkMate App,
+use `https://internal-xworkmate-bridge.svc.plus` and provide a valid Bridge
+user Bearer token as the access token; do not use a Vault or XConnect token.
+
 The private distributed bridge transport is managed by
 [`roles/vhosts/xworkmate_bridge_distributed_vpn`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/xworkmate_bridge_distributed_vpn/README.md)
 and deployed through

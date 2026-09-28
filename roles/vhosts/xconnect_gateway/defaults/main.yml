@@ -27,3 +27,20 @@ xconnect_gateway_trust_bundle_path: /etc/xconnect-gateway/ca.crt
 # The private TLS key is never fetched or exposed by this mechanism.
 xconnect_gateway_ca_fetch_dest: ""
 xconnect_gateway_sync_interval_seconds: 300
+
+# Optional lightweight DNS forwarder for the XConnect overlay. The Gateway
+# serves declared private records and forwards all other names to public
+# recursive resolvers. The control-plane topology supplies these values for
+# the shared Vault network; the role remains disabled for older networks.
+xconnect_gateway_dns_enabled: false
+xconnect_gateway_dns_package: dnsmasq
+xconnect_gateway_dns_service_name: dnsmasq
+xconnect_gateway_dns_interface: xconone0
+xconnect_gateway_dns_listen_address: ""
+xconnect_gateway_dns_zone: ""
+xconnect_gateway_dns_domains: []
+xconnect_gateway_dns_upstream_servers:
+  - 1.1.1.1
+  - 8.8.8.8
+xconnect_gateway_dns_records: []
+xconnect_gateway_dns_config_path: /etc/dnsmasq.d/xconnect-gateway.conf

@@ -14,6 +14,8 @@
       - xconnect_one_expected_xray_loopback_port | int > 1023
       - xconnect_one_expected_xray_loopback_port | int < 65536
       - xconnect_one_sync_interval_seconds | int >= 60
+      - not (xconnect_one_dns_enabled | bool) or (xconnect_one_dns_server | trim) is match('^[0-9]+(\\.[0-9]+){3}$')
+      - not (xconnect_one_dns_enabled | bool) or xconnect_one_dns_domains | length > 0
   no_log: true
 
 - name: Install XConnect One preflight dependencies
@@ -24,6 +26,14 @@
     state: present
     update_cache: true
     lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
+
+- name: Install systemd-resolved for XConnect overlay DNS
+  ansible.builtin.apt:
+    name: systemd-resolved
+    state: present
+    update_cache: true
+    lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
+  when: xconnect_one_dns_enabled | bool
 
 - name: Create XConnect One runtime directories
   ansible.builtin.file:
@@ -215,6 +225,49 @@
     that:
       - xconnect_one_default_route.stdout | trim | length > 0
     fail_msg: XConnect One must only add the declared private overlay route and must not replace the host default route.
+
+- name: Install XConnect One overlay DNS configuration script
+  ansible.builtin.template:
+    src: configure-dns.sh.j2
+    dest: "{{ xconnect_one_dns_script_path }}"
+    owner: root
+    group: root
+    mode: '0700'
+  when: xconnect_one_dns_enabled | bool
+
+- name: Install XConnect One overlay DNS systemd service
+  ansible.builtin.template:
+    src: xconnect-one-dns.service.j2
+    dest: "/etc/systemd/system/xconnect-one-dns@{{ xconnect_one_environment }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  when: xconnect_one_dns_enabled | bool
+
+- name: Enable systemd-resolved for XConnect overlay DNS
+  ansible.builtin.systemd:
+    name: systemd-resolved
+    enabled: true
+    state: started
+  when: xconnect_one_dns_enabled | bool
+
+- name: Point resolv.conf at systemd-resolved for XConnect overlay DNS
+  ansible.builtin.file:
+    src: /run/systemd/resolve/stub-resolv.conf
+    dest: /etc/resolv.conf
+    state: link
+    force: true
+  when:
+    - xconnect_one_dns_enabled | bool
+    - xconnect_one_dns_manage_resolv_conf | bool
+
+- name: Enable XConnect One overlay DNS service
+  ansible.builtin.systemd:
+    name: "xconnect-one-dns@{{ xconnect_one_environment }}.service"
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: xconnect_one_dns_enabled | bool
 
 - name: Install XConnect One signed-config synchronization service
   ansible.builtin.template:

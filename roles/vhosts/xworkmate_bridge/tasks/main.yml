@@ -234,6 +234,75 @@
 - name: Configure xworkmate-bridge Caddy ingress
   when: caddy_enabled | default(true) | bool
   block:
+    - name: Validate Vault TLS material for internal xworkmate-bridge ingress
+      ansible.builtin.assert:
+        that:
+          - xworkmate_bridge_tls_fullchain_b64 | trim | length > 0
+          - xworkmate_bridge_tls_key_b64 | trim | length > 0
+          - xworkmate_bridge_tls_dir is match('^/etc/caddy/tls/[A-Za-z0-9._-]+$')
+        fail_msg: >-
+          xworkmate_bridge_tls_enabled requires the base64 encoded fullchain and
+          private key from Vault (VAULT_GATEWAY_TLS_FULLCHAIN_B64 and
+          VAULT_GATEWAY_TLS_KEY_B64), plus a safe Caddy TLS directory.
+      no_log: true
+      when:
+        - xworkmate_bridge_public_access | bool
+        - xworkmate_bridge_tls_enabled | bool
+
+    - name: Ensure xworkmate-bridge TLS directory exists
+      ansible.builtin.file:
+        path: "{{ xworkmate_bridge_tls_dir }}"
+        state: directory
+        owner: root
+        group: caddy
+        mode: "0750"
+      when:
+        - xworkmate_bridge_public_access | bool
+        - xworkmate_bridge_tls_enabled | bool
+      become: true
+
+    - name: Restore xworkmate-bridge TLS certificate from Vault material
+      ansible.builtin.copy:
+        content: "{{ item.content | b64decode }}"
+        dest: "{{ xworkmate_bridge_tls_dir }}/{{ item.name }}"
+        owner: root
+        group: caddy
+        mode: "{{ item.mode }}"
+      loop:
+        - name: fullchain.pem
+          content: "{{ xworkmate_bridge_tls_fullchain_b64 }}"
+          mode: "0644"
+        - name: key.pem
+          content: "{{ xworkmate_bridge_tls_key_b64 }}"
+          mode: "0640"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+      notify: Reload caddy
+      when:
+        - xworkmate_bridge_public_access | bool
+        - xworkmate_bridge_tls_enabled | bool
+
+    - name: Validate restored xworkmate-bridge TLS certificate and key
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cert="{{ xworkmate_bridge_tls_dir }}/fullchain.pem"
+        key="{{ xworkmate_bridge_tls_dir }}/key.pem"
+        openssl x509 -in "${cert}" -noout -checkend 86400
+        openssl x509 -in "${cert}" -noout -checkhost "{{ xworkmate_bridge_domain }}" | grep -q 'does match'
+        {% if xworkmate_bridge_internal_domain | default('') | trim | length > 0 and xworkmate_bridge_internal_domain != xworkmate_bridge_domain %}
+        openssl x509 -in "${cert}" -noout -checkhost "{{ xworkmate_bridge_internal_domain }}" | grep -q 'does match'
+        {% endif %}
+        [ "$(openssl x509 -in "${cert}" -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256)" = \
+          "$(openssl pkey -in "${key}" -pubout -outform DER | openssl dgst -sha256)" ]
+      args:
+        executable: /bin/bash
+      changed_when: false
+      when:
+        - xworkmate_bridge_public_access | bool
+        - xworkmate_bridge_tls_enabled | bool
+      no_log: true
+
     - name: Ensure Caddy fragment directory exists
       ansible.builtin.file:
         path: "{{ xworkmate_bridge_caddy_conf_dir }}"

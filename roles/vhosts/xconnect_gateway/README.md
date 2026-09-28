@@ -18,6 +18,19 @@ or Portal/Accounts data. Binary sources, TLS material, trust bundles, and
 invitations are runtime inputs; GitOps remains limited to non-sensitive
 topology and release selection.
 
+## Overlay DNS on the Gateway
+
+The shared Vault XConnect topology can enable the optional `dnsmasq` forwarder
+on the Gateway. It listens only on the WireGuard interface/address, serves the
+declared private `host-record` entries, and forwards all other names to the
+declared public recursive resolvers. This keeps DNS data-plane traffic inside
+the XConnect network without changing public DNS ownership.
+
+The pipeline passes `xconnect_gateway_dns_*` values from the topology's `dns`
+section. XConnect One Linux nodes receive the same resolver address and
+route-only domains; macOS clients use `/etc/resolver/<domain>` because the
+native CLI does not change the host resolver configuration.
+
 `xconnect_gateway_trust_bundle_source` is the Gateway-owned public trust
 material (for example Vault `kv/data/CICD/domains/svc.plus` field
 `tls_trust_bundle_pem_b64` decoded by the caller). The role installs it at
