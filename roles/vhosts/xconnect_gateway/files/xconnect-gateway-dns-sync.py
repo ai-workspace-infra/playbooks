@@ -101,7 +101,7 @@ def build_hosts(raw_config: str, zone: str, gateway_id: str, aliases: list[dict[
         device_id = str(alias.get("device_id", "")).strip()
         if not DNS_NAME.fullmatch(name) or "." not in name or not DEVICE_ID.fullmatch(device_id):
             raise ValueError(f"invalid DNS alias declaration: {alias!r}")
-        address = peers.get(device_id)
+        address = gateway_ip if device_id == gateway_id else peers.get(device_id)
         if address is None:
             # An alias only exists while its enrolled One appears in the
             # current signed Gateway peer snapshot.

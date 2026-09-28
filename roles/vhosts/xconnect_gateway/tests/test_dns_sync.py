@@ -29,9 +29,12 @@ class DynamicDNSTests(unittest.TestCase):
             WIREGUARD_CONFIG,
             "shared.internal",
             "vault-prod-0",
-            [{"name": "internal-xworkmate-bridge.svc.plus", "device_id": "xconnect-linux-secops-shenlan-inspiron-5415-ops"}],
+            [
+                {"name": "internal-xworkmate-bridge.svc.plus", "device_id": "xconnect-linux-secops-shenlan-inspiron-5415-ops"},
+                {"name": "vault-xconnect.svc.plus", "device_id": "vault-prod-0"},
+            ],
         )
-        self.assertIn("10.79.0.1 vault-prod-0.shared.internal\n", hosts)
+        self.assertIn("10.79.0.1 vault-prod-0.shared.internal vault-xconnect.svc.plus\n", hosts)
         self.assertIn("10.79.0.2 vault-prod-1.shared.internal\n", hosts)
         self.assertIn(
             "10.79.0.7 internal-xworkmate-bridge.svc.plus xconnect-linux-secops-shenlan-inspiron-5415-ops.shared.internal\n",
