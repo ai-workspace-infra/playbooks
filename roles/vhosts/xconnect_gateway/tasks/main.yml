@@ -217,18 +217,51 @@
       - xconnect_gateway_dns_interface is match('^[A-Za-z0-9_.-]{1,15}$')
       - xconnect_gateway_dns_listen_address is match('^[0-9]+(\\.[0-9]+){3}$')
       - xconnect_gateway_dns_upstream_servers | length > 0
-      - >-
-        (xconnect_gateway_dns_zone | trim | length == 0) or
-        (xconnect_gateway_dns_zone is match('^[A-Za-z0-9][A-Za-z0-9.-]*$'))
+      - xconnect_gateway_dns_zone is match('^[A-Za-z0-9][A-Za-z0-9.-]*$')
       - xconnect_gateway_dns_records is sequence
       - item.name is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
-      - item.address is match('^[0-9]+(\\.[0-9]+){3}$')
+      - item.device_id is match('^[a-z0-9][a-z0-9._-]{0,127}$')
     fail_msg: >-
       XConnect overlay DNS requires a WireGuard interface, a listener address,
-      public recursive upstreams, and valid name/address records.
+      public recursive upstreams, and valid name/device records.
   loop: "{{ xconnect_gateway_dns_records }}"
   loop_control:
     label: "{{ item.name | default('invalid') }}"
+  when: xconnect_gateway_dns_enabled | bool
+
+- name: Install dynamic XConnect One DNS registration helper
+  ansible.builtin.copy:
+    src: xconnect-gateway-dns-sync.py
+    dest: "{{ xconnect_gateway_dns_sync_script_path }}"
+    owner: root
+    group: root
+    mode: '0755'
+  when: xconnect_gateway_dns_enabled | bool
+
+- name: Install dynamic XConnect DNS service aliases
+  ansible.builtin.copy:
+    content: "{{ xconnect_gateway_dns_records | to_nice_json }}\n"
+    dest: "{{ xconnect_gateway_dns_aliases_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  when: xconnect_gateway_dns_enabled | bool
+
+- name: Generate DNS records from the current signed Gateway peer configuration
+  ansible.builtin.command:
+    argv:
+      - "{{ xconnect_gateway_dns_sync_script_path }}"
+      - --wireguard-config
+      - "{{ xconnect_gateway_state_dir }}/runtime/{{ xconnect_gateway_dns_interface }}.conf"
+      - --zone
+      - "{{ xconnect_gateway_dns_zone }}"
+      - --gateway-id
+      - "{{ xconnect_gateway_id }}"
+      - --hosts
+      - "{{ xconnect_gateway_dns_hosts_path }}"
+      - --aliases
+      - "{{ xconnect_gateway_dns_aliases_path }}"
+  changed_when: false
   when: xconnect_gateway_dns_enabled | bool
 
 - name: Render XConnect overlay dnsmasq configuration

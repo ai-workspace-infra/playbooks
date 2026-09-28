@@ -22,14 +22,27 @@ topology and release selection.
 
 The shared Vault XConnect topology can enable the optional `dnsmasq` forwarder
 on the Gateway. It listens only on the WireGuard interface/address, serves the
-declared private `host-record` entries, and forwards all other names to the
-declared public recursive resolvers. This keeps DNS data-plane traffic inside
-the XConnect network without changing public DNS ownership.
+records generated from the latest signed WireGuard peer configuration, and
+forwards all other names to the declared public recursive resolvers. Every
+active One automatically gets `<device-id>.<zone>` using its assigned overlay
+address; removed/revoked peers disappear on the next Gateway sync. Explicit
+service aliases map a DNS name to a `device_id`, so the service IP follows that
+One if its overlay address is reallocated.
+
+For example, after the SecOPS One enrolls with device ID
+`xconnect-linux-secops-shenlan-inspiron-5415-ops`, the Gateway sync reads its
+allocated `/32` from the verified peer configuration and writes
+`xconnect-linux-secops-shenlan-inspiron-5415-ops.shared.internal`. The declared
+`internal-xworkmate-bridge.svc.plus` alias points to that same device ID. On
+revocation, the next signed snapshot removes both records automatically.
 
 The pipeline passes `xconnect_gateway_dns_*` values from the topology's `dns`
-section. XConnect One Linux nodes receive the same resolver address and
-route-only domains; macOS clients use `/etc/resolver/<domain>` because the
-native CLI does not change the host resolver configuration.
+section. The role reads the Gateway's verified, generated WireGuard
+configuration, atomically rebuilds dnsmasq's hosts file after each signed
+configuration sync, and reloads dnsmasq when records change. XConnect One Linux
+nodes receive the same resolver address and route-only domains; macOS clients
+use `/etc/resolver/<domain>` because the native CLI does not change the host
+resolver configuration.
 
 `xconnect_gateway_trust_bundle_source` is the Gateway-owned public trust
 material (for example Vault `kv/data/CICD/domains/svc.plus` field
