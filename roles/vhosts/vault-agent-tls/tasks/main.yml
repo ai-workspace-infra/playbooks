@@ -12,10 +12,11 @@
     that:
       - vault_agent_tls_addr | length > 0
       - vault_agent_tls_token | length > 0
-      - vault_agent_tls_secret_path | length > 0
+      - vault_agent_tls_secret_path is match('.*/data/.+')
       - vault_agent_tls_archive_sha256 | length == 64
     fail_msg: >-
-      Set VAULT_ADDR, VAULT_TOKEN, VAULT_TLS_SECRET_PATH, and the
+      Set VAULT_ADDR, VAULT_TOKEN, VAULT_TLS_SECRET_PATH as a KV v2 API path
+      (for example kv/data/CICD/domains/example.com), and the
       architecture-specific Vault Agent checksums at runtime.
 
 - name: Install Vault Agent archive extraction dependency
