@@ -1,0 +1,32 @@
+#!/bin/sh
+set -eu
+
+stage_dir={{ vault_agent_tls_stage_dir | quote }}
+cert_source="${stage_dir}/current/fullchain.pem"
+key_source="${stage_dir}/current/key.pem"
+cert_dest={{ vault_agent_tls_cert_path | quote }}
+key_dest={{ vault_agent_tls_key_path | quote }}
+caddyfile={{ vault_agent_tls_caddyfile | quote }}
+domain={{ vault_agent_tls_domain | quote }}
+
+openssl x509 -in "$cert_source" -noout -checkend {{ vault_agent_tls_expiry_margin_seconds }}
+if [ -n "$domain" ]; then
+    openssl x509 -in "$cert_source" -noout -checkhost "$domain"
+fi
+
+cert_public_key="$(openssl x509 -in "$cert_source" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | awk '{print $1}')"
+key_public_key="$(openssl pkey -in "$key_source" -pubout -outform DER | sha256sum | awk '{print $1}')"
+if [ "$cert_public_key" != "$key_public_key" ]; then
+    echo "Vault-rendered TLS certificate and key do not match" >&2
+    exit 1
+fi
+
+install -o root -g caddy -m 0644 "$cert_source" "${cert_dest}.next"
+install -o root -g caddy -m 0640 "$key_source" "${key_dest}.next"
+mv -f "${cert_dest}.next" "$cert_dest"
+mv -f "${key_dest}.next" "$key_dest"
+
+caddy validate --config "$caddyfile" --adapter caddyfile
+if systemctl is-active --quiet caddy; then
+    systemctl reload caddy
+fi
