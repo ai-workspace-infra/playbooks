@@ -1,0 +1,119 @@
+---
+- name: Select Vault Agent release architecture
+  ansible.builtin.set_fact:
+    vault_agent_tls_arch: >-
+      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
+    vault_agent_tls_archive_sha256: >-
+      {{ vault_agent_tls_archive_sha256_arm64 if ansible_architecture in ['aarch64', 'arm64']
+         else vault_agent_tls_archive_sha256_amd64 }}
+
+- name: Validate Vault Agent TLS inputs
+  ansible.builtin.assert:
+    that:
+      - vault_agent_tls_addr | length > 0
+      - vault_agent_tls_token | length > 0
+      - vault_agent_tls_secret_path | length > 0
+      - vault_agent_tls_archive_sha256 | length == 64
+    fail_msg: >-
+      Set VAULT_ADDR, VAULT_TOKEN, VAULT_TLS_SECRET_PATH, and the
+      architecture-specific Vault Agent checksums at runtime.
+
+- name: Install Vault Agent archive extraction dependency
+  ansible.builtin.package:
+    name: unzip
+    state: present
+
+- name: Download the pinned Vault Agent release archive
+  ansible.builtin.get_url:
+    url: "https://releases.hashicorp.com/vault/{{ vault_agent_tls_version }}/vault_{{ vault_agent_tls_version }}_linux_{{ vault_agent_tls_arch }}.zip"
+    dest: "/var/cache/vault-agent-{{ vault_agent_tls_version }}-{{ vault_agent_tls_arch }}.zip"
+    checksum: "sha256:{{ vault_agent_tls_archive_sha256 }}"
+    mode: "0600"
+
+- name: Install Vault Agent binary
+  ansible.builtin.unarchive:
+    src: "/var/cache/vault-agent-{{ vault_agent_tls_version }}-{{ vault_agent_tls_arch }}.zip"
+    dest: /usr/local/bin
+    remote_src: true
+    creates: /usr/local/bin/vault
+
+- name: Set Vault Agent binary permissions
+  ansible.builtin.file:
+    path: /usr/local/bin/vault
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create Vault Agent and Caddy TLS directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ vault_agent_tls_config_dir }}", owner: root, group: root, mode: "0750" }
+    - { path: /var/lib/vault-agent, owner: root, group: root, mode: "0750" }
+    - { path: "{{ vault_agent_tls_stage_dir }}", owner: root, group: caddy, mode: "0750" }
+    - { path: "{{ vault_agent_tls_stage_dir }}/current", owner: root, group: caddy, mode: "0750" }
+    - { path: "{{ vault_agent_tls_cert_path | dirname }}", owner: root, group: caddy, mode: "0750" }
+    - { path: "{{ vault_agent_tls_caddyfile | dirname }}", owner: root, group: root, mode: "0755" }
+
+- name: Install Vault Agent server token
+  ansible.builtin.copy:
+    content: "{{ vault_agent_tls_token }}\n"
+    dest: "{{ vault_agent_tls_token_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart Vault Agent TLS
+
+- name: Install Vault Agent certificate template
+  ansible.builtin.copy:
+    src: vault-agent-tls.ctmpl
+    dest: "{{ vault_agent_tls_config_dir }}/tls.ctmpl"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Configure Vault Agent token authentication and KV certificate rendering
+  ansible.builtin.template:
+    src: vault-agent.hcl.j2
+    dest: "{{ vault_agent_tls_config_dir }}/agent.hcl"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Install certificate validation and Caddy reload helper
+  ansible.builtin.template:
+    src: sync-caddy-tls.sh.j2
+    dest: /usr/local/sbin/sync-vault-agent-caddy-tls
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Install Vault Agent TLS systemd unit
+  ansible.builtin.template:
+    src: vault-agent-tls.service.j2
+    dest: /etc/systemd/system/vault-agent-tls.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Vault Agent TLS
+
+- name: Enable and start Vault Agent TLS sync
+  ansible.builtin.systemd:
+    name: vault-agent-tls.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for Vault Agent to render the certificate and key
+  ansible.builtin.wait_for:
+    path: "{{ item }}"
+    state: present
+    timeout: 90
+  loop:
+    - "{{ vault_agent_tls_stage_dir }}/current/fullchain.pem"
+    - "{{ vault_agent_tls_stage_dir }}/current/key.pem"

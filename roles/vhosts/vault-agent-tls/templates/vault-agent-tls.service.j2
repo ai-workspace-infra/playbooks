@@ -1,0 +1,21 @@
+[Unit]
+Description=Vault Agent certificate sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+Environment="VAULT_TLS_SECRET_PATH={{ vault_agent_tls_secret_path }}"
+Environment="VAULT_TLS_CERT_FIELD={{ vault_agent_tls_cert_field }}"
+Environment="VAULT_TLS_KEY_FIELD={{ vault_agent_tls_key_field }}"
+Environment="VAULT_AGENT_TLS_STAGE_DIR={{ vault_agent_tls_stage_dir }}"
+ExecStart=/usr/local/bin/vault agent -config={{ vault_agent_tls_config_dir }}/agent.hcl
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

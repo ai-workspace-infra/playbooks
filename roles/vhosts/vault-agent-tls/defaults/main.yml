@@ -1,0 +1,19 @@
+---
+vault_agent_tls_enabled: false
+vault_agent_tls_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('', true) }}"
+vault_agent_tls_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
+vault_agent_tls_token_file: /etc/vault.d/token
+vault_agent_tls_secret_path: "{{ hostvars[inventory_hostname].get('vault_tls_secret_path', lookup('ansible.builtin.env', 'VAULT_TLS_SECRET_PATH') | default('', true)) }}"
+vault_agent_tls_cert_field: "tls_fullchain_pem_b64"
+vault_agent_tls_key_field: "tls_key_pem_b64"
+vault_agent_tls_version: "{{ lookup('ansible.builtin.env', 'VAULT_AGENT_VERSION') | default('1.21.4', true) }}"
+vault_agent_tls_archive_sha256_amd64: "{{ lookup('ansible.builtin.env', 'VAULT_AGENT_SHA256_AMD64') | default('', true) }}"
+vault_agent_tls_archive_sha256_arm64: "{{ lookup('ansible.builtin.env', 'VAULT_AGENT_SHA256_ARM64') | default('', true) }}"
+vault_agent_tls_config_dir: /etc/vault.d
+vault_agent_tls_stage_dir: /var/lib/vault-agent/tls
+vault_agent_tls_cert_path: "{{ agent_tls_cert_path | default('/etc/caddy/tls/agent-proxy.crt') }}"
+vault_agent_tls_key_path: "{{ agent_tls_key_path | default('/etc/caddy/tls/agent-proxy.key') }}"
+vault_agent_tls_caddyfile: "{{ agent_proxy_caddy_config_dir | default('/etc/caddy') }}/Caddyfile"
+vault_agent_tls_domain: "{{ (hostvars[inventory_hostname].get('service_domains', []) | first) | default(inventory_hostname, true) }}"
+vault_agent_tls_refresh_interval: "5m"
+vault_agent_tls_expiry_margin_seconds: 86400

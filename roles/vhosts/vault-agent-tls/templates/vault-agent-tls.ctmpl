@@ -1,0 +1,5 @@
+{{- with secret (env "VAULT_TLS_SECRET_PATH") -}}
+{{ .Data.metadata.version }}
+{{ index .Data.data (env "VAULT_TLS_CERT_FIELD") | base64Decode | writeToFile (printf "%s/current/fullchain.pem" (env "VAULT_AGENT_TLS_STAGE_DIR")) "root" "caddy" "0640" }}
+{{ index .Data.data (env "VAULT_TLS_KEY_FIELD") | base64Decode | writeToFile (printf "%s/current/key.pem" (env "VAULT_AGENT_TLS_STAGE_DIR")) "root" "caddy" "0640" }}
+{{- end -}}
