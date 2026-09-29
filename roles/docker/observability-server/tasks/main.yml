@@ -227,6 +227,18 @@
     - observability_mcp
     - mcp
 
+- name: Ensure Caddy configuration directory for observability exists
+  ansible.builtin.file:
+    path: "{{ observability_caddy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - observability
+    - observability_mcp
+    - mcp
+
 - name: Template Caddy configuration for observability
   ansible.builtin.template:
     src: observability.caddy.j2
