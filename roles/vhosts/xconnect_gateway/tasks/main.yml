@@ -110,7 +110,19 @@
         "$(cat {{ xconnect_gateway_invite_path | quote }})"
       args:
         executable: /bin/bash
+      register: xconnect_gateway_join_result
       no_log: true
+  rescue:
+    # Never print the command, invitation URI, or raw CLI output. The CLI's
+    # documented HTTP error contains only the status code, which is enough to
+    # distinguish an authorization failure from an enrollment conflict.
+    - name: Report a redacted Gateway enrollment failure
+      ansible.builtin.fail:
+        msg: >-
+          Gateway enrollment failed (exit {{ xconnect_gateway_join_result.rc | default('unknown') }};
+          {{ (xconnect_gateway_join_result.stderr | default('') |
+              regex_search('Zero API returned HTTP [0-9]{3}|invalid gateway enrollment response|existing gateway state does not match this enrollment|invalid XConnect invite URI|invalid join token|controller must be an HTTPS origin|redirect rejected'))
+              | default('reason redacted', true) }}).
   always:
     - name: Remove short-lived Gateway invitation
       ansible.builtin.file:
