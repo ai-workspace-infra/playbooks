@@ -18,10 +18,16 @@ Database:
       Password: {{ zitadel_db_admin_password | to_json }}
       SSL:
         Mode: disable
+# start-from-init reads FirstInstance through --steps (GitOps passes this same
+# file); --config alone ignores it. An email-shaped UserName is kept verbatim
+# as the admin login name instead of gaining the org domain suffix.
 FirstInstance:
   Org:
     Human:
-      UserName: zitadel-admin
+      UserName: {{ ('zitadel-admin@' ~ zitadel_domain) | to_json }}
+      Email:
+        Address: {{ ('zitadel-admin@' ~ zitadel_domain) | to_json }}
+        Verified: true
       Password: {{ zitadel_admin_password_override | to_json }}
       PasswordChangeRequired: false
     LoginClient:
