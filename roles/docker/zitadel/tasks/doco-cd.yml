@@ -107,6 +107,10 @@
     argv: [caddy, validate, --config, "{{ zitadel_caddyfile_path }}"]
   changed_when: false
 
+- name: Rebuild the ZITADEL database of an unbootstrapped instance
+  ansible.builtin.include_tasks: reset-unbootstrapped.yml
+  when: zitadel_reset_unbootstrapped_instance | bool
+
 - name: Install independently scoped IAM GitOps reconciler
   ansible.builtin.include_role:
     name: vhosts/Doco-CD
@@ -139,7 +143,8 @@
           - "shared-zitadel-{{ item.service }}-1"
       register: zitadel_gitops_health
       until: zitadel_gitops_health.rc == 0 and (zitadel_gitops_health.stdout | trim) == (item.image ~ ' healthy')
-      retries: 36
+      # Covers a first-instance setup inside the API's 300s start_period.
+      retries: 60
       delay: 10
       changed_when: false
       loop:
@@ -152,6 +157,11 @@
       register: zitadel_doco_cd_log
       changed_when: false
       failed_when: false
+
+    - name: Check whether the Login client PAT was written
+      ansible.builtin.stat:
+        path: "{{ zitadel_workspace }}/login-client.pat"
+      register: zitadel_rescue_login_pat
 
     - name: Read the ZITADEL stack container state
       ansible.builtin.command:
@@ -194,6 +204,7 @@
       ansible.builtin.fail:
         msg: >-
           ZITADEL stack did not reach the GitOps digests.
+          Login client PAT present: {{ zitadel_rescue_login_pat.stat.exists | default(false) }}.
           Containers: {{ zitadel_stack_state.stdout_lines | default([]) }}.
           {% for result in zitadel_service_health.results | default([]) %}
           {{ result.item }} health: {{ result.stdout | default('') }}.
