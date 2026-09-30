@@ -3,7 +3,7 @@
 `node-operator-prep` creates `/etc/vault.d/operator` (root, `0700`), two
 root-readable examples (`vault-token.example`, `unseal-share.example`), and
 empty live `vault-token` and `unseal-share` files (root, `0600`). Reruns do not
-overwrite existing files. The role checks metadata without reading secret
+overwrite existing files; they correct owner and mode on regular files. The role checks metadata without reading secret
 contents. It succeeds only after both live files are regular, nonempty,
 root-owned, and mode `0600`.
 
