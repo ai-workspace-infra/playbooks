@@ -3,6 +3,7 @@
 #
 #   vault-shared-leader  install only vault-prod-0
 #   vault-shared-peers   install vault-prod-1/2 after the leader is initialized
+#   node-operator-prep   prepare/check root-only migration operator files
 #   node-process-metrics install node_exporter, process_exporter, and Vector
 #   vault-gateway-frontend  Caddy on vault-prod-0: TLS 443, /xconnect -> Gateway
 #                        Xray socket only (run before xconnect-gateway)
@@ -14,6 +15,14 @@
 # Pass -e vault_shared_skip_common=true for these narrowly-scoped service
 # stages; the shared common dependency remains available to legacy callers.
 - import_playbook: deploy_vault_shared_raft.yml
+
+- name: Prepare Vault operator material on shared migration targets
+  hosts: "{{ vault_shared_all_group | default('vault_shared_nodes') }}"
+  become: true
+  gather_facts: false
+  roles:
+    - role: vhosts/vault_operator_material
+  tags: [node-operator-prep]
 
 - name: Install shared Vault node exporters and log agent
   hosts: "{{ vault_shared_all_group | default('vault_shared_nodes') }}"
