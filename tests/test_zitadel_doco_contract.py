@@ -87,5 +87,25 @@ class ZitadelDocoContract(unittest.TestCase):
         # Diagnostics must never turn a failed deploy green.
         self.assertIn('ansible.builtin.fail', rescue[-1])
 
+    def test_login_env_is_literal_dotenv_for_doco_cd(self):
+        # compose-go (Doco-CD) rejects env_file format "raw"; the file must be
+        # dotenv whose single-quoted values survive $, #, spaces and quotes.
+        import re
+        from jinja2 import Environment
+        # trim_blocks matches the ansible.builtin.template default.
+        template = Environment(trim_blocks=True).from_string(
+            (ROOT / 'roles/docker/zitadel/templates/login.env.j2').read_text())
+        secret = 'a$b{c}#d "e" f\\g' + 'x' * 32
+        rendered = template.render(zitadel_domain='iam.svc.plus', zitadel_login_session_cookie_secret=secret)
+        values = {}
+        for line in rendered.splitlines():
+            match = re.fullmatch(r"([A-Z_]+)='([^']*)'", line)
+            self.assertIsNotNone(match, line)
+            values[match.group(1)] = match.group(2)
+        self.assertEqual(values['ZITADEL_SESSION_COOKIE_SECRET'], secret)
+        self.assertEqual(values['CUSTOM_REQUEST_HEADERS'], 'Host:iam.svc.plus,X-Forwarded-Proto:https')
+        guard = (ROOT / 'roles/docker/zitadel/tasks/doco-cd.yml').read_text()
+        self.assertIn('"\\"\'\\" not in zitadel_login_session_cookie_secret"', guard)
+
 if __name__ == '__main__':
     unittest.main()
