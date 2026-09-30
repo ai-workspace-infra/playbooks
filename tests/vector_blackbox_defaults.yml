@@ -1,0 +1,18 @@
+---
+- name: Verify Vector Blackbox defaults resolve without installing software
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: vhosts/vector-agent
+  post_tasks:
+    - name: Check resolved probe list
+      ansible.builtin.assert:
+        that:
+          - blackbox_probe_domain_base == expected_probe_domain_base
+          - blackbox_probe_env == expected_probe_env
+          - blackbox_ssl_targets | length == (9 if expected_probe_domain_base == 'svc.plus' else 2)
+      tags: [vector-blackbox-defaults]
+  vars:
+    expected_probe_domain_base: "{{ lookup('ansible.builtin.env', 'TARGET_DOMAIN_BASE') | default('svc.plus', true) }}"
+    expected_probe_env: "{{ lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('production', true) }}"
