@@ -84,11 +84,14 @@ class ZitadelDocoContract(unittest.TestCase):
         self.assertEqual(log['ansible.builtin.command']['argv'][-1], 'doco-cd-zitadel')
         state = next(t for t in rescue if t['name'] == 'Read the ZITADEL stack container state')
         self.assertIn('label=com.docker.compose.project=shared-zitadel', state['ansible.builtin.command']['argv'])
-        health = next(t for t in rescue if t['name'] == 'Read the ZITADEL API health probe results')
-        self.assertEqual(health['ansible.builtin.command']['argv'][-1], 'shared-zitadel-zitadel-1')
-        api_log = next(t for t in rescue if t['name'] == 'Read the ZITADEL API log')
-        self.assertEqual(api_log['ansible.builtin.command']['argv'][:2], ['docker', 'logs'])
-        self.assertEqual(api_log['ansible.builtin.command']['argv'][-1], 'shared-zitadel-zitadel-1')
+        # Both the API and the Login service report probe output and logs.
+        health = next(t for t in rescue if t['name'] == 'Read the ZITADEL service health probe results')
+        self.assertEqual(health['ansible.builtin.command']['argv'][-1], 'shared-zitadel-{{ item }}-1')
+        self.assertEqual(health['loop'], ['zitadel', 'login'])
+        service_logs = next(t for t in rescue if t['name'] == 'Read the ZITADEL service logs')
+        self.assertEqual(service_logs['ansible.builtin.command']['argv'][:2], ['docker', 'logs'])
+        self.assertEqual(service_logs['ansible.builtin.command']['argv'][-1], 'shared-zitadel-{{ item }}-1')
+        self.assertEqual(service_logs['loop'], ['zitadel', 'login'])
         # Evidence reads are read-only and never mask the original failure.
         for task in rescue[:-1]:
             self.assertEqual(task['failed_when'], False)

@@ -167,24 +167,26 @@
       changed_when: false
       failed_when: false
 
-    # An unhealthy API only shows up as "dependency failed to start" in the
+    # An unhealthy service only shows up as "... is unhealthy" in the
     # reconciler log; its own probe output and log carry the actual cause.
-    - name: Read the ZITADEL API health probe results
+    - name: Read the ZITADEL service health probe results
       ansible.builtin.command:
         argv:
           - docker
           - inspect
           - --format
           - "{{ '{{' }}json .State.Health{{ '}}' }}"
-          - shared-zitadel-zitadel-1
-      register: zitadel_api_health
+          - "shared-zitadel-{{ item }}-1"
+      loop: [zitadel, login]
+      register: zitadel_service_health
       changed_when: false
       failed_when: false
 
-    - name: Read the ZITADEL API log
+    - name: Read the ZITADEL service logs
       ansible.builtin.command:
-        argv: [docker, logs, --tail, "80", shared-zitadel-zitadel-1]
-      register: zitadel_api_log
+        argv: [docker, logs, --tail, "60", "shared-zitadel-{{ item }}-1"]
+      loop: [zitadel, login]
+      register: zitadel_service_logs
       changed_when: false
       failed_when: false
 
@@ -193,8 +195,12 @@
         msg: >-
           ZITADEL stack did not reach the GitOps digests.
           Containers: {{ zitadel_stack_state.stdout_lines | default([]) }}.
-          API health: {{ zitadel_api_health.stdout | default('') }}.
-          API log: {{ (zitadel_api_log.stdout_lines | default([])) + (zitadel_api_log.stderr_lines | default([])) }}.
+          {% for result in zitadel_service_health.results | default([]) %}
+          {{ result.item }} health: {{ result.stdout | default('') }}.
+          {% endfor %}
+          {% for result in zitadel_service_logs.results | default([]) %}
+          {{ result.item }} log: {{ (result.stdout_lines | default([])) + (result.stderr_lines | default([])) }}.
+          {% endfor %}
           Doco-CD log: {{ (zitadel_doco_cd_log.stdout_lines | default([])) + (zitadel_doco_cd_log.stderr_lines | default([])) }}
 
 - name: Apply validated Caddy entry
