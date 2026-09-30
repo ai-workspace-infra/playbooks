@@ -167,11 +167,34 @@
       changed_when: false
       failed_when: false
 
+    # An unhealthy API only shows up as "dependency failed to start" in the
+    # reconciler log; its own probe output and log carry the actual cause.
+    - name: Read the ZITADEL API health probe results
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{{ '{{' }}json .State.Health{{ '}}' }}"
+          - shared-zitadel-zitadel-1
+      register: zitadel_api_health
+      changed_when: false
+      failed_when: false
+
+    - name: Read the ZITADEL API log
+      ansible.builtin.command:
+        argv: [docker, logs, --tail, "80", shared-zitadel-zitadel-1]
+      register: zitadel_api_log
+      changed_when: false
+      failed_when: false
+
     - name: Fail with the reconciler evidence
       ansible.builtin.fail:
         msg: >-
           ZITADEL stack did not reach the GitOps digests.
           Containers: {{ zitadel_stack_state.stdout_lines | default([]) }}.
+          API health: {{ zitadel_api_health.stdout | default('') }}.
+          API log: {{ (zitadel_api_log.stdout_lines | default([])) + (zitadel_api_log.stderr_lines | default([])) }}.
           Doco-CD log: {{ (zitadel_doco_cd_log.stdout_lines | default([])) + (zitadel_doco_cd_log.stderr_lines | default([])) }}
 
 - name: Apply validated Caddy entry
