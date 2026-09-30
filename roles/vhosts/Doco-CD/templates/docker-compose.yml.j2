@@ -22,7 +22,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - data:/data
       - /etc/xcontrol:/etc/xcontrol:ro
+{% if doco_cd_mount_docker_config | default(false) | bool %}
       - /root/.docker/config.json:/root/.docker/config.json:ro
+{% endif %}
     cap_drop:
       - ALL
     healthcheck:
