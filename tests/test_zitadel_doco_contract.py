@@ -21,7 +21,8 @@ class ZitadelDocoContract(unittest.TestCase):
         poll = delegate['vars']['doco_cd_poll_config'][0]
         self.assertEqual(poll['target'], 'zitadel')
         self.assertEqual(poll['reference'], '{{ zitadel_gitops_revision }}')
-        health = next(t for t in tasks if t.get('until'))
+        gate = next(t for t in tasks if t.get('name') == 'Wait for Doco-CD to reconcile the ZITADEL stack')
+        health = next(t for t in gate['block'] if t.get('until'))
         self.assertIn("item.image ~ ' healthy'", health['until'])
         self.assertEqual(len(health['loop']), 2)
 
@@ -73,6 +74,18 @@ class ZitadelDocoContract(unittest.TestCase):
         gate = tasks[names.index('Wait for Doco-CD to become healthy')]
         self.assertIn("== 'healthy'", gate['block'][0]['until'])
         self.assertTrue(any('ansible.builtin.fail' in task for task in gate['rescue']))
+
+    def test_failed_reconcile_reports_doco_cd_log_and_stack_state(self):
+        tasks = yaml.safe_load((ROOT / 'roles/docker/zitadel/tasks/doco-cd.yml').read_text())
+        gate = next(t for t in tasks if t.get('name') == 'Wait for Doco-CD to reconcile the ZITADEL stack')
+        rescue = gate['rescue']
+        log = next(t for t in rescue if t['name'] == 'Read the Doco-CD reconciliation log')
+        self.assertEqual(log['ansible.builtin.command']['argv'][:2], ['docker', 'logs'])
+        self.assertEqual(log['ansible.builtin.command']['argv'][-1], 'doco-cd-zitadel')
+        state = next(t for t in rescue if t['name'] == 'Read the ZITADEL stack container state')
+        self.assertIn('label=com.docker.compose.project=shared-zitadel', state['ansible.builtin.command']['argv'])
+        # Diagnostics must never turn a failed deploy green.
+        self.assertIn('ansible.builtin.fail', rescue[-1])
 
 if __name__ == '__main__':
     unittest.main()

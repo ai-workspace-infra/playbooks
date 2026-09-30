@@ -122,22 +122,55 @@
         target: zitadel
         interval: 60
 
-- name: Wait for API and Login stack to match GitOps digests and become healthy
-  ansible.builtin.command:
-    argv:
-      - docker
-      - inspect
-      - --format
-      - "{{ '{{' }}.Config.Image{{ '}}' }} {{ '{{' }}.State.Health.Status{{ '}}' }}"
-      - "shared-zitadel-{{ item.service }}-1"
-  register: zitadel_gitops_health
-  until: zitadel_gitops_health.rc == 0 and (zitadel_gitops_health.stdout | trim) == (item.image ~ ' healthy')
-  retries: 36
-  delay: 10
-  changed_when: false
-  loop:
-    - {service: zitadel, image: "{{ zitadel_image }}"}
-    - {service: login, image: "{{ zitadel_login_image }}"}
+# A healthy reconciler can still fail to deploy the stack. Without its log the
+# only symptom is "no such object: shared-zitadel-*", so report what Doco-CD
+# and Docker saw before failing.
+- name: Wait for Doco-CD to reconcile the ZITADEL stack
+  block:
+    - name: Wait for API and Login stack to match GitOps digests and become healthy
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{{ '{{' }}.Config.Image{{ '}}' }} {{ '{{' }}.State.Health.Status{{ '}}' }}"
+          - "shared-zitadel-{{ item.service }}-1"
+      register: zitadel_gitops_health
+      until: zitadel_gitops_health.rc == 0 and (zitadel_gitops_health.stdout | trim) == (item.image ~ ' healthy')
+      retries: 36
+      delay: 10
+      changed_when: false
+      loop:
+        - {service: zitadel, image: "{{ zitadel_image }}"}
+        - {service: login, image: "{{ zitadel_login_image }}"}
+  rescue:
+    - name: Read the Doco-CD reconciliation log
+      ansible.builtin.command:
+        argv: [docker, logs, --tail, "120", doco-cd-zitadel]
+      register: zitadel_doco_cd_log
+      changed_when: false
+      failed_when: false
+
+    - name: Read the ZITADEL stack container state
+      ansible.builtin.command:
+        argv:
+          - docker
+          - ps
+          - --all
+          - --filter
+          - label=com.docker.compose.project=shared-zitadel
+          - --format
+          - "{{ '{{' }}.Names{{ '}}' }} {{ '{{' }}.Image{{ '}}' }} {{ '{{' }}.Status{{ '}}' }}"
+      register: zitadel_stack_state
+      changed_when: false
+      failed_when: false
+
+    - name: Fail with the reconciler evidence
+      ansible.builtin.fail:
+        msg: >-
+          ZITADEL stack did not reach the GitOps digests.
+          Containers: {{ zitadel_stack_state.stdout_lines | default([]) }}.
+          Doco-CD log: {{ (zitadel_doco_cd_log.stdout_lines | default([])) + (zitadel_doco_cd_log.stderr_lines | default([])) }}
 
 - name: Apply validated Caddy entry
   ansible.builtin.meta: flush_handlers
