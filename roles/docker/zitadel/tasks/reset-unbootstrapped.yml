@@ -1,0 +1,110 @@
+---
+# One-time recovery for an IAM instance whose first-instance bootstrap never
+# wrote the Login client PAT (for example setup killed mid-way). ZITADEL only
+# writes FirstInstance.LoginClientPatPath when it creates the first instance,
+# so the Login container waits for the file forever. Recovery rebuilds only
+# the ZITADEL database after a verified backup; it never touches other
+# databases, the Postgres container or data directory, Vault or any volume.
+
+- name: Require the explicit reset confirmation
+  ansible.builtin.assert:
+    that: zitadel_reset_confirmation | default('') == 'RESET-ZITADEL-DATABASE'
+    fail_msg: The ZITADEL database reset requires the exact confirmation token.
+
+# Fix the backup name once; a lazily evaluated timestamp would differ between
+# the dump and its verification.
+- name: Name the pre-reset backup
+  ansible.builtin.set_fact:
+    zitadel_reset_backup_file: "{{ zitadel_reset_backup_dir }}/zitadel-before-reset-{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}.dump"
+
+- name: Check whether the first-instance Login client PAT exists
+  ansible.builtin.stat:
+    path: "{{ zitadel_workspace }}/login-client.pat"
+  register: zitadel_reset_login_pat
+
+- name: Refuse to reset a completed bootstrap
+  ansible.builtin.assert:
+    that: not zitadel_reset_login_pat.stat.exists
+    fail_msg: >-
+      {{ zitadel_workspace }}/login-client.pat exists, so the first instance
+      finished bootstrapping. Refusing to reset the ZITADEL database.
+
+- name: Pause the IAM reconciler and the ZITADEL services
+  ansible.builtin.command:
+    argv: [docker, stop, "{{ item }}"]
+  loop: [doco-cd-zitadel, shared-zitadel-login-1, shared-zitadel-zitadel-1]
+  register: zitadel_reset_stop
+  changed_when: zitadel_reset_stop.rc == 0
+  failed_when: zitadel_reset_stop.rc != 0 and 'No such container' not in zitadel_reset_stop.stderr
+
+- name: Create the root-only ZITADEL backup directory
+  ansible.builtin.file:
+    path: "{{ zitadel_reset_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Back up the ZITADEL database before the reset
+  ansible.builtin.shell: >-
+    set -o pipefail &&
+    umask 077 &&
+    docker exec {{ zitadel_db_container_name | quote }} pg_dump -U {{ zitadel_db_admin_user | quote }}
+    -Fc {{ zitadel_db_name | quote }} > {{ zitadel_reset_backup_file | quote }}
+  args:
+    executable: /bin/bash
+  changed_when: true
+
+# Capture the whole listing: piping into `grep -q` could SIGPIPE pg_restore
+# on a large table of contents and fail a valid backup under pipefail.
+- name: Verify the backup is a readable custom-format dump
+  ansible.builtin.shell: >-
+    set -o pipefail &&
+    test -s {{ zitadel_reset_backup_file | quote }} &&
+    listing="$(docker exec -i {{ zitadel_db_container_name | quote }} pg_restore --list
+    < {{ zitadel_reset_backup_file | quote }})" &&
+    test -n "${listing}"
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Drop only the ZITADEL database
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ zitadel_db_container_name }}"
+      - psql
+      - -U
+      - "{{ zitadel_db_admin_user }}"
+      - -d
+      - postgres
+      - -v
+      - ON_ERROR_STOP=1
+      - -c
+      - "DROP DATABASE {{ zitadel_db_name }} WITH (FORCE);"
+  changed_when: true
+
+- name: Recreate the empty ZITADEL database as the normal flow does
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ zitadel_db_container_name }}"
+      - psql
+      - -U
+      - "{{ zitadel_db_admin_user }}"
+      - -d
+      - postgres
+      - -v
+      - ON_ERROR_STOP=1
+      - -c
+      - "CREATE DATABASE {{ zitadel_db_name }} OWNER {{ zitadel_db_user }} ENCODING 'UTF8';"
+  changed_when: true
+
+- name: Report the reset
+  ansible.builtin.debug:
+    msg: >-
+      ZITADEL database {{ zitadel_db_name }} rebuilt empty; backup kept at
+      {{ zitadel_reset_backup_file }}. Doco-CD restarts the stack next, and
+      start-from-init creates the first instance and its Login client PAT.

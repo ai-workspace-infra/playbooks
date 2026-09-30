@@ -94,6 +94,8 @@ class ZitadelDocoContract(unittest.TestCase):
         self.assertEqual(service_logs['loop'], ['zitadel', 'login'])
         # Evidence reads are read-only and never mask the original failure.
         for task in rescue[:-1]:
+            if 'ansible.builtin.stat' in task:
+                continue
             self.assertEqual(task['failed_when'], False)
             self.assertEqual(task['changed_when'], False)
             self.assertIn(task['ansible.builtin.command']['argv'][1], ('logs', 'ps', 'inspect'))
@@ -119,6 +121,42 @@ class ZitadelDocoContract(unittest.TestCase):
         self.assertEqual(values['CUSTOM_REQUEST_HEADERS'], 'Host:iam.svc.plus,X-Forwarded-Proto:https')
         guard = (ROOT / 'roles/docker/zitadel/tasks/doco-cd.yml').read_text()
         self.assertIn('"\\"\'\\" not in zitadel_login_session_cookie_secret"', guard)
+
+    def test_unbootstrapped_reset_is_explicit_backed_up_and_scoped(self):
+        tasks = yaml.safe_load((ROOT / 'roles/docker/zitadel/tasks/doco-cd.yml').read_text())
+        names = [task.get('name') for task in tasks]
+        reset = tasks[names.index('Rebuild the ZITADEL database of an unbootstrapped instance')]
+        self.assertEqual(reset['ansible.builtin.include_tasks'], 'reset-unbootstrapped.yml')
+        self.assertEqual(reset['when'], 'zitadel_reset_unbootstrapped_instance | bool')
+        # The database is rebuilt before Doco-CD starts the stack again.
+        self.assertLess(names.index('Rebuild the ZITADEL database of an unbootstrapped instance'),
+                        names.index('Install independently scoped IAM GitOps reconciler'))
+        defaults = yaml.safe_load((ROOT / 'roles/docker/zitadel/defaults/main.yml').read_text())
+        self.assertIs(defaults['zitadel_reset_unbootstrapped_instance'], False)
+        self.assertEqual(defaults['zitadel_reset_confirmation'], '')
+
+        path = ROOT / 'roles/docker/zitadel/tasks/reset-unbootstrapped.yml'
+        steps = yaml.safe_load(path.read_text())
+        order = [step['name'] for step in steps]
+        self.assertIn("== 'RESET-ZITADEL-DATABASE'", steps[0]['ansible.builtin.assert']['that'])
+        refuse = order.index('Refuse to reset a completed bootstrap')
+        self.assertEqual(steps[refuse]['ansible.builtin.assert']['that'], 'not zitadel_reset_login_pat.stat.exists')
+        sequence = [order.index(name) for name in (
+            'Refuse to reset a completed bootstrap',
+            'Pause the IAM reconciler and the ZITADEL services',
+            'Back up the ZITADEL database before the reset',
+            'Verify the backup is a readable custom-format dump',
+            'Drop only the ZITADEL database',
+            'Recreate the empty ZITADEL database as the normal flow does',
+        )]
+        self.assertEqual(sequence, sorted(sequence))
+        drop = steps[order.index('Drop only the ZITADEL database')]['ansible.builtin.command']['argv']
+        self.assertEqual(drop[-1], 'DROP DATABASE {{ zitadel_db_name }} WITH (FORCE);')
+        create = steps[order.index('Recreate the empty ZITADEL database as the normal flow does')]['ansible.builtin.command']['argv']
+        self.assertEqual(create[-1], "CREATE DATABASE {{ zitadel_db_name }} OWNER {{ zitadel_db_user }} ENCODING 'UTF8';")
+        text = '\n'.join(line for line in path.read_text().splitlines() if not line.lstrip().startswith('#'))
+        for forbidden in ('volume', 'down', 'rm ', '|| true', 'docker compose', 'data_dir', '/opt/open-platform'):
+            self.assertNotIn(forbidden, text)
 
 if __name__ == '__main__':
     unittest.main()
