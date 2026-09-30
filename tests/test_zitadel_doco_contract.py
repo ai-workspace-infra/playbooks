@@ -158,5 +158,27 @@ class ZitadelDocoContract(unittest.TestCase):
         for forbidden in ('volume', 'down', 'rm ', '|| true', 'docker compose', 'data_dir', '/opt/open-platform'):
             self.assertNotIn(forbidden, text)
 
+    def test_first_instance_steps_create_admin_and_login_client(self):
+        # start-from-init reads FirstInstance through --steps; GitOps passes
+        # this rendered file for both --config and --steps.
+        import json
+        from jinja2 import Environment
+        env = Environment(trim_blocks=True)
+        env.filters['to_json'] = json.dumps
+        env.globals['lookup'] = lambda plugin, name: 'env-' + name  # Ansible lookup shim
+        template = env.from_string((ROOT / 'roles/docker/zitadel/templates/config.yaml.j2').read_text())
+        values = dict(zitadel_domain='iam.svc.plus', zitadel_db_host='postgresql-svc-plus', zitadel_db_port=5432,
+                      zitadel_db_name='zitadel', zitadel_db_user='zitadel_user', zitadel_db_password='p1',
+                      zitadel_db_admin_user='postgres', zitadel_db_admin_password='p2',
+                      zitadel_admin_password_override='Adm1n!pass', zitadel_admin_password='Adm1n!pass')
+        first = yaml.safe_load(template.render(**values))['FirstInstance']
+        human = first['Org']['Human']
+        self.assertEqual(human['UserName'], 'zitadel-admin@iam.svc.plus')
+        self.assertEqual(human['Email'], {'Address': 'zitadel-admin@iam.svc.plus', 'Verified': True})
+        self.assertIs(human['PasswordChangeRequired'], False)
+        self.assertNotEqual(human['Password'], 'Password1!')
+        self.assertEqual(first['Org']['LoginClient']['Machine']['Username'], 'login-client')
+        self.assertEqual(first['LoginClientPatPath'], '/current-dir/login-client.pat')
+
 if __name__ == '__main__':
     unittest.main()
