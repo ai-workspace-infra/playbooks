@@ -73,3 +73,20 @@ ansible-playbook -i inventory.ini deploy_zitadel_docker.yaml \
 *   `zitadel_login_port`: `19081`
 *   `zitadel_caddy_conf_dir`: `/etc/caddy/conf.d`
 *   `zitadel_caddy_fragment_path`: `/etc/caddy/conf.d/{{ zitadel_domain }}.caddy`
+
+## ZITADEL 单机 GitOps（新入口）
+
+`deploy_zitadel_docker.yaml` 默认 `zitadel_deployment_mode=doco-cd`。
+`deploy_iam_domain.yml` 先准备单机 PostgreSQL 和 IAM 数据库，再调用该入口。
+Ansible 管主机秘密与 Caddy，Doco-CD 独占应用容器生命周期。
+
+输入 `ZITADEL_GITOPS_URL`、`ZITADEL_GITOPS_SHA` 和 GitOps 提供的三个镜像 digest；
+使用独立 reconciler、数据卷、localhost 控制端口与 `target: zitadel`，
+不能误读默认 Web SaaS 配置。Secrets 从 Vault 会话注入，不使用生产长期管理 token。
+`ZITADEL_LOGIN_SESSION_COOKIE_SECRET` 至少 32 字符；masterkey 已存在时禁止静默轮换。
+主机秘密 root/0600，PAT 和 PostgreSQL 数据不随重部署清理。
+
+GitOps Compose 使用原生 `start-from-init`，初始化失败必须使应用不健康。
+等待实际 API/Login 镜像 digest 和 health，再由上层验证公网 OIDC。
+旧直接 Compose 只能显式 `-e zitadel_deployment_mode=compose`；检测到旧 Compose
+配置时 Doco-CD 入口拒绝启动，需另行规划无损接管，不能自动删除旧栈。
