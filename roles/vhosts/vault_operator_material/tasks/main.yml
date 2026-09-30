@@ -1,0 +1,48 @@
+---
+- name: Create root-only Vault operator directory
+  ansible.builtin.file:
+    path: "{{ vault_operator_material_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Install Vault operator file templates without replacing local files
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ vault_operator_material_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  loop:
+    - vault-token.example
+    - unseal-share.example
+
+- name: Check live Vault operator files without reading their contents
+  ansible.builtin.stat:
+    path: "{{ vault_operator_material_dir }}/{{ item }}"
+    follow: false
+  loop:
+    - vault-token
+    - unseal-share
+  register: vault_operator_material_files
+  no_log: true
+
+- name: Require root-only nonempty operator files before migration
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists | default(false)
+      - item.stat.isreg | default(false)
+      - item.stat.pw_name | default('') == 'root'
+      - item.stat.gr_name | default('') == 'root'
+      - item.stat.mode | default('') == '0600'
+      - item.stat.size | default(0) | int > 0
+    fail_msg: >-
+      {{ vault_operator_material_dir }}/{{ item.item }} must be a nonempty
+      root-owned regular file with mode 0600. Fill it on the node through
+      the approved secure operator path, then rerun this stage.
+    quiet: true
+  loop: "{{ vault_operator_material_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
