@@ -180,5 +180,17 @@ class ZitadelDocoContract(unittest.TestCase):
         self.assertEqual(first['Org']['LoginClient']['Machine']['Username'], 'login-client')
         self.assertEqual(first['LoginClientPatPath'], '/current-dir/login-client.pat')
 
+    def test_caddy_reloads_the_validated_entry_before_the_stack_wait(self):
+        # A handler is lost when the play fails before flushing; the reload must
+        # not depend on it, and must follow validation and precede the wait.
+        tasks = yaml.safe_load((ROOT / 'roles/docker/zitadel/tasks/doco-cd.yml').read_text())
+        names = [task.get('name') for task in tasks]
+        apply = tasks[names.index('Apply validated Caddy entry')]
+        self.assertEqual(apply['ansible.builtin.service'], {'name': 'caddy', 'state': 'reloaded'})
+        self.assertNotIn('when', apply)
+        self.assertLess(names.index('Validate Caddy entry before continuing'), names.index('Apply validated Caddy entry'))
+        self.assertLess(names.index('Apply validated Caddy entry'), names.index('Install independently scoped IAM GitOps reconciler'))
+        self.assertLess(names.index('Apply validated Caddy entry'), names.index('Wait for Doco-CD to reconcile the ZITADEL stack'))
+
 if __name__ == '__main__':
     unittest.main()
