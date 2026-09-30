@@ -19,6 +19,18 @@
     - vault-token.example
     - unseal-share.example
 
+- name: Create empty root-only operator files without replacing supplied values
+  ansible.builtin.copy:
+    dest: "{{ vault_operator_material_dir }}/{{ item }}"
+    content: ''
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  loop:
+    - vault-token
+    - unseal-share
+
 - name: Check live Vault operator files without reading their contents
   ansible.builtin.stat:
     path: "{{ vault_operator_material_dir }}/{{ item }}"
