@@ -1,0 +1,57 @@
+---
+# Caddy's apt repository (dl.cloudsmith.io) is signed by one key. When that key
+# expires upstream, apt refuses the repository and every `apt update` on the
+# host fails, not only Caddy installs. Drop the source while its key is
+# expired and re-add it once the key is renewed; never trust it unsigned.
+- name: Caddy apt source | look for the signing keyring
+  ansible.builtin.stat:
+    path: /etc/apt/keyrings/caddy-stable.gpg
+  register: caddy_apt_keyring
+  become: true
+
+- name: Caddy apt source | read the signing key
+  ansible.builtin.command:
+    argv: [gpg, --show-keys, --with-colons, /etc/apt/keyrings/caddy-stable.gpg]
+  register: caddy_apt_key_listing
+  changed_when: false
+  failed_when: false
+  become: true
+  when: caddy_apt_keyring.stat.exists
+
+# with-colons `pub` records: field 2 is the validity ("e" = expired) and
+# field 7 the expiry as epoch seconds.
+- name: Caddy apt source | decide whether the signing key has expired
+  ansible.builtin.set_fact:
+    caddy_apt_key_expired: >-
+      {{
+        caddy_apt_keyring.stat.exists
+        and (caddy_apt_key_listing.stdout_lines | default([])
+             | select('match', '^pub:')
+             | map('split', ':')
+             | selectattr('1', 'equalto', 'e')
+             | list | length > 0
+             or caddy_apt_key_listing.stdout_lines | default([])
+             | select('match', '^pub:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:[0-9]+:')
+             | map('split', ':') | map(attribute=6) | map('int')
+             | select('lt', (ansible_facts['date_time']['epoch'] | int))
+             | list | length > 0)
+      }}
+
+- name: Caddy apt source | remove the source while its signing key is expired
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/sources.list.d/caddy-stable.list
+    - /etc/apt/keyrings/caddy-stable.gpg
+    - /etc/apt/keyrings/caddy-stable.asc
+  become: true
+  when: caddy_apt_key_expired | bool
+
+- name: Caddy apt source | report the removal
+  ansible.builtin.debug:
+    msg: >-
+      Removed the Caddy apt source: its signing key has expired upstream, so
+      apt refuses it. Installed Caddy keeps running; the source is re-added
+      once the key is renewed.
+  when: caddy_apt_key_expired | bool

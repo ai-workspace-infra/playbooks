@@ -8,6 +8,12 @@
   changed_when: false
   when: caddy_enabled | default(true) | bool
 
+- name: Drop the Caddy apt source while its signing key is expired
+  ansible.builtin.include_tasks: "{{ role_path }}/../common/tasks/caddy_apt_source.yml"
+  when:
+    - caddy_enabled | default(true) | bool
+    - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
+
 - name: Configure Caddy reverse proxy
   when: caddy_enabled | default(true) | bool
   block:
@@ -43,6 +49,23 @@
         cmd: gpg --dearmor -o /etc/apt/keyrings/caddy-stable.gpg /etc/apt/keyrings/caddy-stable.asc
         creates: /etc/apt/keyrings/caddy-stable.gpg
       when: caddy_bin_check.rc != 0
+
+    - name: Check the freshly downloaded Caddy signing key
+      ansible.builtin.include_tasks: "{{ role_path }}/../common/tasks/caddy_apt_source.yml"
+      when:
+        - caddy_bin_check.rc != 0
+        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
+
+    - name: Refuse to install Caddy from a source with an expired signing key
+      ansible.builtin.fail:
+        msg: >-
+          Caddy is not installed and the upstream Caddy apt signing key has
+          expired (apt reports EXPKEYSIG). Refusing to install from an
+          unverifiable source; retry once the Caddy maintainers renew the key.
+      when:
+        - caddy_bin_check.rc != 0
+        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
+        - caddy_apt_key_expired | default(false) | bool
 
     - name: Add Caddy repository (Debian)
       ansible.builtin.apt_repository:
