@@ -1,9 +1,9 @@
 {{ ai_aggregator_spec.entrypoint.domain }} {
-    # Caddy owns HTTPS and automatic certificate management only. Kong owns
+    # Caddy owns HTTPS and automatic certificate management only. The gateway owns
     # Host/Path routing, tenant authentication, ACL, rate limits and auditing.
     # With no explicit tls directive, Caddy provisions certificates through
     # its configured ACME issuer; DNS/ACME reachability is an environment gate.
-    reverse_proxy {{ ai_aggregator_spec.kong.bind_address }}:{{ ai_aggregator_spec.kong.proxy_port }} {
+    reverse_proxy {{ ai_aggregator_spec[ai_aggregator_adapter].bind_address }}:{{ ai_aggregator_spec[ai_aggregator_adapter].proxy_port }} {
         flush_interval -1
     }
 }

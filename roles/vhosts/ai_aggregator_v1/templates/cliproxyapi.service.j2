@@ -2,9 +2,11 @@
 Description=CLIProxyAPI {{ item.id }}
 After=network-online.target
 Wants=network-online.target
+{% if ai_aggregator_adapter != 'apisix' %}
 After=ai-aggregator-runtime.mount
 Requires=ai-aggregator-runtime.mount
-ConditionPathExists={{ ai_aggregator_runtime_root }}/cpa/{{ item.id }}/auth
+{% endif %}
+ConditionPathExists={{ item.local_auth_dir if ai_aggregator_adapter == 'apisix' else ai_aggregator_runtime_root ~ '/cpa/' ~ item.id ~ '/auth' }}
 
 [Service]
 Type=simple
@@ -18,7 +20,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths={{ ai_aggregator_runtime_root }}/cpa/{{ item.id }}
+ReadWritePaths={{ item.local_auth_dir if ai_aggregator_adapter == 'apisix' else ai_aggregator_runtime_root ~ '/cpa/' ~ item.id }}
 
 [Install]
 WantedBy=multi-user.target
