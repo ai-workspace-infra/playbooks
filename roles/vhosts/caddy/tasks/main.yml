@@ -41,13 +41,21 @@
       ansible.builtin.get_url:
         url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
         dest: /etc/apt/keyrings/caddy-stable.asc
+        force: true
         mode: '0644'
       when: caddy_bin_check.rc != 0
 
     - name: Dearmor Caddy GPG key
       ansible.builtin.command:
-        cmd: gpg --dearmor -o /etc/apt/keyrings/caddy-stable.gpg /etc/apt/keyrings/caddy-stable.asc
-        creates: /etc/apt/keyrings/caddy-stable.gpg
+        cmd: gpg --batch --yes --dearmor --output /etc/apt/keyrings/caddy-stable.gpg /etc/apt/keyrings/caddy-stable.asc
+      when: caddy_bin_check.rc != 0
+
+    - name: Set Caddy GPG keyring permissions
+      ansible.builtin.file:
+        path: /etc/apt/keyrings/caddy-stable.gpg
+        owner: root
+        group: root
+        mode: '0644'
       when: caddy_bin_check.rc != 0
 
     - name: Check the freshly downloaded Caddy signing key
