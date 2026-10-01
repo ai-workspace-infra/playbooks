@@ -3,12 +3,27 @@
 # root (for example Debian 12), so assuming an ubuntu account makes the first
 # directory ownership task fail before the gateway can be installed.
 gateway_openclaw_app_user: ""
+# GCP OS Login maps the deploy principal to a POSIX login (sa_<id> for a
+# service account, ext_<name> for an external identity). That login is the
+# deployer's transient identity, not a runtime owner: systemd-logind cannot
+# keep a linger for it and its SSH key expires. Run OpenClaw as this local
+# account instead; the role creates it.
+gateway_openclaw_oslogin_service_user: openclaw
+gateway_openclaw_login_user: "{{ ansible_user | default(ansible_env.USER | default('root', true), true) }}"
+gateway_openclaw_uses_oslogin_login: >-
+  {{
+    ansible_os_family not in ['Darwin', 'Windows']
+    and (gateway_openclaw_app_user | default('', true) | trim | length == 0)
+    and (gateway_openclaw_login_user is match('^(sa|ext)_'))
+  }}
 gateway_openclaw_service_user: >-
   {{
     (ansible_env.USER | default('ubuntu', true))
     if ansible_os_family == 'Darwin'
     else (gateway_openclaw_app_user | default('', true) | trim
-          or ansible_user | default(ansible_env.USER | default('root', true), true))
+          or (gateway_openclaw_oslogin_service_user
+              if gateway_openclaw_login_user is match('^(sa|ext)_')
+              else gateway_openclaw_login_user))
   }}
 gateway_openclaw_service_group: >-
   {{
