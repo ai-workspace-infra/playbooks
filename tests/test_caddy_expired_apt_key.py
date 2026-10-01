@@ -1,10 +1,4 @@
-"""An expired Caddy apt signing key must not break apt on the host.
-
-Daily UAT (Selfhost run 36816438929) failed on jp-xconnect with
-"EXPKEYSIG 531A6B20FA058A70 Caddy Web Server ... is not signed": the upstream
-key expired, so every `apt update` on a host with the source fails. The
-source is dropped while its key is expired and never trusted unsigned.
-"""
+"""Caddy installs stay verifiable while the Cloudsmith apt key is expired."""
 
 import unittest
 from pathlib import Path
@@ -12,7 +6,9 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-CHECK = ROOT / "roles" / "vhosts" / "common" / "tasks" / "caddy_apt_source.yml"
+CADDY_DEFAULTS = ROOT / "roles" / "vhosts" / "caddy" / "defaults" / "main.yml"
+CADDY_TASKS = ROOT / "roles" / "vhosts" / "caddy" / "tasks" / "main.yml"
+APT_KEY_TASKS = ROOT / "roles" / "vhosts" / "common" / "tasks" / "caddy_apt_source.yml"
 
 
 def load(path):
@@ -20,44 +16,52 @@ def load(path):
 
 
 class CaddyExpiredAptKeyTest(unittest.TestCase):
-    def test_check_removes_only_the_caddy_source_when_the_key_expired(self):
-        tasks = {task["name"]: task for task in load(CHECK)}
-        listing = tasks["Caddy apt source | read the signing key"]
-        self.assertEqual(listing["ansible.builtin.command"]["argv"],
-                         ["gpg", "--show-keys", "--with-colons", "/etc/apt/keyrings/caddy-stable.gpg"])
+    def test_caddy_release_deb_is_version_and_sha512_pinned(self):
+        defaults = load(CADDY_DEFAULTS)
+        self.assertRegex(defaults["caddy_package_version"], r"^\d+\.\d+\.\d+$")
+        self.assertEqual(set(defaults["caddy_package_arch_map"].values()),
+                         set(defaults["caddy_package_sha512"]))
+        for checksum in defaults["caddy_package_sha512"].values():
+            self.assertRegex(checksum, r"^[0-9a-f]{128}$")
+
+    def test_install_uses_pinned_github_release_and_never_adds_caddy_apt_repo(self):
+        tasks_text = CADDY_TASKS.read_text(encoding="utf-8")
+        tasks = load(CADDY_TASKS)
+        block = next(task["block"] for task in tasks
+                     if task.get("name") == "Configure Caddy reverse proxy")
+        by_name = {task["name"]: task for task in block}
+
+        source_cleanup = by_name["Remove the stale Caddy stable apt source before refreshing apt"]
+        prereq = by_name["Ensure Caddy package prerequisites"]
+        download = by_name["Download checksum-pinned official Caddy release package"]
+        install = by_name["Install the verified Caddy release package"]
+
+        self.assertLess(block.index(source_cleanup), block.index(prereq))
+        self.assertIn("/etc/apt/sources.list.d/caddy-stable.list", source_cleanup["loop"])
+        self.assertEqual(prereq["ansible.builtin.apt"]["update_cache"], True)
+        self.assertIn("github.com/caddyserver/caddy/releases/download/v", download["ansible.builtin.get_url"]["url"])
+        self.assertIn("checksum", download["ansible.builtin.get_url"])
+        self.assertEqual(install["ansible.builtin.apt"]["state"], "present")
+        self.assertIn("deb", install["ansible.builtin.apt"])
+        self.assertNotIn("apt_repository", tasks_text)
+        self.assertNotIn("trusted=yes", tasks_text)
+
+    def test_expired_subkey_is_detected_and_only_caddy_source_is_removed(self):
+        tasks = {task["name"]: task for task in load(APT_KEY_TASKS)}
+        decision = tasks["Caddy apt source | decide whether the signing key has expired"]
+        expression = decision["ansible.builtin.set_fact"]["caddy_apt_key_expired"]
+        self.assertIn("^(pub|sub):", expression)
+        self.assertIn("ansible_facts['date_time']['epoch']", expression)
+
         removal = tasks["Caddy apt source | remove the source while its signing key is expired"]
         self.assertEqual(removal["when"], "caddy_apt_key_expired | bool")
         self.assertEqual(removal["loop"], [
             "/etc/apt/sources.list.d/caddy-stable.list",
+            "/etc/apt/sources.list.d/caddy-stable.sources",
             "/etc/apt/keyrings/caddy-stable.gpg",
             "/etc/apt/keyrings/caddy-stable.asc",
         ])
-        decision = tasks["Caddy apt source | decide whether the signing key has expired"]
-        expression = decision["ansible.builtin.set_fact"]["caddy_apt_key_expired"]
-        self.assertIn("'equalto', 'e'", expression)
-        self.assertIn("date_time']['epoch']", expression)
-        self.assertNotIn("trusted=yes", CHECK.read_text(encoding="utf-8"))
-
-    def test_common_runs_the_check_before_any_apt_refresh(self):
-        tasks = load(ROOT / "roles" / "vhosts" / "common" / "tasks" / "main.yml")
-        names = [task["name"] for task in tasks]
-        check = names.index("Base | drop the Caddy apt source while its signing key is expired")
-        self.assertEqual(tasks[check]["ansible.builtin.import_tasks"], "caddy_apt_source.yml")
-        self.assertLess(check, names.index("Base | configure fail2ban"))
-
-    def test_caddy_role_refuses_a_fresh_install_from_an_expired_source(self):
-        tasks = load(ROOT / "roles" / "vhosts" / "caddy" / "tasks" / "main.yml")
-        names = [task["name"] for task in tasks]
-        self.assertLess(names.index("Drop the Caddy apt source while its signing key is expired"),
-                        names.index("Configure Caddy reverse proxy"))
-        block = tasks[names.index("Configure Caddy reverse proxy")]["block"]
-        inner = [task["name"] for task in block]
-        order = [inner.index(name) for name in (
-            "Dearmor Caddy GPG key", "Check the freshly downloaded Caddy signing key",
-            "Refuse to install Caddy from a source with an expired signing key", "Add Caddy repository (Debian)")]
-        self.assertEqual(order, sorted(order))
-        refuse = block[inner.index("Refuse to install Caddy from a source with an expired signing key")]
-        self.assertIn("caddy_apt_key_expired | default(false) | bool", refuse["when"])
+        self.assertNotIn("trusted=yes", APT_KEY_TASKS.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
