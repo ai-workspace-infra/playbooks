@@ -2,8 +2,8 @@
 - name: Validate AI Desktop remote access selection
   ansible.builtin.assert:
     that:
-      - ai_desktop_remote_type in ['xrdp']
-    fail_msg: "Unsupported ai_desktop_remote_type. The supported connection method is xrdp."
+      - ai_desktop_remote_type in ['xrdp', 'webrtc']
+    fail_msg: "ai_desktop_remote_type must be xrdp or webrtc."
   when: ai_desktop_remote_enabled | bool
 
 - name: Validate AI Desktop desktop selection
@@ -65,7 +65,10 @@
     icewm_desktop_user_password: "{{ ai_desktop_user_password }}"
     icewm_desktop_manage_user: "{{ ai_desktop_manage_user }}"
     icewm_desktop_user_groups: "{{ ai_desktop_user_groups }}"
-    icewm_desktop_remote_enabled: "{{ ai_desktop_remote_enabled }}"
+    icewm_desktop_remote_enabled: "{{ ai_desktop_remote_enabled | bool and ai_desktop_remote_type == 'xrdp' }}"
+    icewm_desktop_browser: "{{ ai_desktop_icewm_browser }}"
+    icewm_desktop_chrome_download_url: "{{ ai_desktop_icewm_chrome_download_url }}"
+    icewm_desktop_chrome_checksum: "{{ ai_desktop_icewm_chrome_checksum }}"
   when:
     - ai_desktop_enabled | bool
     - ai_desktop_desktop_type == 'icewm'
@@ -79,10 +82,14 @@
     xfce_manage_user: "{{ ai_desktop_manage_user }}"
     xfce_user_password_plaintext: "{{ ai_desktop_user_password }}"
     xfce_user_groups: "{{ ai_desktop_user_groups }}"
+    remote_desktop_session: "{{ ai_desktop_desktop_type }}"
+    remote_desktop_browser_command: >-
+      {{ '/usr/bin/google-chrome' if (ai_desktop_browser == 'chrome' and ansible_architecture in ['x86_64', 'amd64']) else '/usr/bin/chromium' }}
   when:
     - ai_desktop_enabled | bool
     - ai_desktop_remote_enabled | bool
     - ai_desktop_remote_type == 'xrdp'
+    - ai_desktop_desktop_type in ['xfce', 'icewm']
     - ansible_os_family != 'Darwin'
 
 - name: Reserve AI Agent capability slot
@@ -109,5 +116,5 @@
   loop: "{{ ai_desktop_webrtc_roles }}"
   when:
     - ai_desktop_enabled | bool
-    - ai_desktop_webrtc_enabled | bool
+    - (ai_desktop_webrtc_enabled | bool or (ai_desktop_remote_enabled | bool and ai_desktop_remote_type == 'webrtc'))
     - ai_desktop_webrtc_roles | length > 0

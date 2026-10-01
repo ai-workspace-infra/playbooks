@@ -11,7 +11,6 @@ overlay address instead of all interfaces. Set `xworkmate_bridge_listen_host`
 to the allocated One address (for example `10.79.0.7`) and keep Caddy/public
 ingress separate. This keeps port `8787` off the Wi-Fi/LAN and public
 interfaces while allowing XWorkmate App to connect over XConnect.
-
 For a split-horizon/internal deployment, use the internal alias
 `internal-xworkmate-bridge.svc.plus` and point it at the WireGuard overlay
 address. The Caddy site and Bridge allowed-origin list serve both the existing

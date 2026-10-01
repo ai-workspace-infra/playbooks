@@ -4,8 +4,14 @@ This role reads the selected GitOps `PersonalAIAggregator` declaration.
 `plan` validates topology and prints the roles assigned to each target. `stage`
 creates non-secret directories, units and Caddy fragments, but deliberately
 does not enable or start a service. `activate` is a separate, explicit
-operation: the playbook starts CPA groups first, then LiteLLM and New API, and
-reloads Caddy only after `caddy validate` succeeds.
+operation: the playbook starts CPA groups first, then LiteLLM and New API, then
+Kong, and reloads Caddy only after `caddy validate` succeeds.
+
+Caddy is a thin HTTPS edge: it automatically manages certificates and forwards
+both configured hosts to the Kong proxy listener. Kong owns Host/Path routing,
+tenant authentication, ACL, rate limits, and audit metadata. New API and
+LiteLLM are not direct Caddy upstreams. Automatic certificate issuance depends
+on the environment's ACME validation path being reachable for both hostnames.
 
 The artifact installer and Vault-authentication synchronizer are separate
 implementation gates: they require pinned upstream release assets, a verified

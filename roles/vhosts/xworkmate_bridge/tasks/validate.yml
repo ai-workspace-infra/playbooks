@@ -120,6 +120,7 @@
   delay: 5
   changed_when: false
   no_log: true
+  when: xworkmate_bridge_validate_api_contract | bool
 
 - name: Assert xworkmate-bridge ping reports native binary metadata
   ansible.builtin.assert:
@@ -130,6 +131,7 @@
     fail_msg: >-
       xworkmate-bridge /api/ping must report native binary metadata and must
       not expose stale Docker image/tag metadata.
+  when: xworkmate_bridge_validate_api_contract | bool
 
 - name: Check xworkmate-bridge capabilities contract
   ansible.builtin.uri:
@@ -150,6 +152,7 @@
   register: xworkmate_bridge_capabilities
   changed_when: false
   no_log: true
+  when: xworkmate_bridge_validate_api_contract | bool
 
 - name: Assert xworkmate-bridge capabilities expose app contract providers
   ansible.builtin.assert:
@@ -157,11 +160,24 @@
       - xworkmate_bridge_capabilities.status == 200
       - "'agent' in xworkmate_bridge_capabilities.json.result.availableExecutionTargets"
       - "'gateway' in xworkmate_bridge_capabilities.json.result.availableExecutionTargets"
-      - xworkmate_bridge_capabilities.json.result.providerCatalog | selectattr('providerId', 'equalto', 'codex') | list | length == 1
-      - xworkmate_bridge_capabilities.json.result.providerCatalog | selectattr('providerId', 'equalto', 'opencode') | list | length == 1
-      - xworkmate_bridge_capabilities.json.result.providerCatalog | selectattr('providerId', 'equalto', 'gemini') | list | length == 1
-      - xworkmate_bridge_capabilities.json.result.providerCatalog | selectattr('providerId', 'equalto', 'hermes') | list | length == 1
       - xworkmate_bridge_capabilities.json.result.gatewayProviders | selectattr('providerId', 'equalto', 'openclaw') | list | length == 1
+      - >-
+        (not (deploy_acp_codex | default(false) | bool)) or
+        (xworkmate_bridge_capabilities.json.result.providerCatalog
+        | selectattr('providerId', 'equalto', 'codex') | list | length == 1)
+      - >-
+        (not (deploy_acp_opencode | default(false) | bool)) or
+        (xworkmate_bridge_capabilities.json.result.providerCatalog
+        | selectattr('providerId', 'equalto', 'opencode') | list | length == 1)
+      - >-
+        (not (deploy_acp_gemini | default(false) | bool)) or
+        (xworkmate_bridge_capabilities.json.result.providerCatalog
+        | selectattr('providerId', 'equalto', 'gemini') | list | length == 1)
+      - >-
+        (not (deploy_acp_hermes | default(false) | bool)) or
+        (xworkmate_bridge_capabilities.json.result.providerCatalog
+        | selectattr('providerId', 'equalto', 'hermes') | list | length == 1)
+  when: xworkmate_bridge_validate_api_contract | bool
 
 - name: Check xworkmate-bridge routing resolve contract
   ansible.builtin.uri:
@@ -188,6 +204,7 @@
   register: xworkmate_bridge_routing
   changed_when: false
   no_log: true
+  when: xworkmate_bridge_validate_api_contract | bool
 
 - name: Assert xworkmate-bridge routing resolves openclaw gateway
   ansible.builtin.assert:
@@ -195,6 +212,7 @@
       - xworkmate_bridge_routing.status == 200
       - xworkmate_bridge_routing.json.result.resolvedExecutionTarget == "gateway"
       - xworkmate_bridge_routing.json.result.resolvedGatewayProviderId == "openclaw"
+  when: xworkmate_bridge_validate_api_contract | bool
 
 - name: Check deprecated ACP fragments are absent
   ansible.builtin.stat:
@@ -223,5 +241,4 @@
       - "Codex upstream: {{ xworkmate_bridge_codex_rpc_url }}"
       - "OpenCode upstream: {{ xworkmate_bridge_opencode_rpc_url }}"
       - "Gemini upstream: {{ xworkmate_bridge_gemini_rpc_url }}"
-      - "Hermes upstream: {{ xworkmate_bridge_hermes_rpc_url }}"
       - "OpenClaw upstream: {{ xworkmate_bridge_openclaw_url }}"

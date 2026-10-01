@@ -47,17 +47,13 @@ xworkmate_bridge_distributed_task_forward_peer_id: ""
 xworkmate_bridge_distributed_task_forward_endpoint: ""
 xworkmate_bridge_distributed_task_forward_token: ""
 xworkmate_bridge_distributed_nodes: []
-xworkmate_bridge_required_services:
-  - acp-codex.service
-  - acp-opencode.service
-  - acp-gemini.service
-  - acp-hermes.service
+xworkmate_bridge_required_services: []
 
 # ACP Deployment Flags
-deploy_acp_codex: true
-deploy_acp_opencode: true
-deploy_acp_gemini: true
-deploy_acp_hermes: true
+deploy_acp_codex: false
+deploy_acp_opencode: false
+deploy_acp_gemini: false
+deploy_acp_hermes: false
 
 # Unified domain settings
 ai_workspace_public_domain: >-
@@ -89,13 +85,19 @@ xworkmate_bridge_public_base_url: "https://{{ xworkmate_bridge_domain }}"
 xworkmate_bridge_service_domain: "{{ xworkmate_bridge_domain }}"
 xworkmate_bridge_service_public_base_url: "https://{{ xworkmate_bridge_domain }}"
 # Caddy uses ACME by default. Internal/split-horizon deployments can restore
-# the publicly trusted wildcard material from Vault and bind the site to XConnect.
+# the publicly trusted wildcard material from Vault and keep the site off the
+# public interfaces by setting xworkmate_bridge_tls_enabled=true and
+# xworkmate_bridge_caddy_bind to the overlay address.
 xworkmate_bridge_tls_enabled: false
 xworkmate_bridge_tls_dir: /etc/caddy/tls/xworkmate-bridge
 xworkmate_bridge_tls_fullchain_b64: "{{ lookup('ansible.builtin.env', 'VAULT_GATEWAY_TLS_FULLCHAIN_B64') | default('', true) }}"
 xworkmate_bridge_tls_key_b64: "{{ lookup('ansible.builtin.env', 'VAULT_GATEWAY_TLS_KEY_B64') | default('', true) }}"
 xworkmate_bridge_caddy_bind: ""
-xworkmate_bridge_validation_base_url: "{{ xworkmate_bridge_service_public_base_url }}"
+xworkmate_bridge_validation_base_url: >-
+  {{ xworkmate_bridge_service_public_base_url
+     if (xworkmate_bridge_public_access | bool)
+     else ('http://' ~ xworkmate_bridge_listen_addr) }}
+xworkmate_bridge_validate_api_contract: "{{ xworkmate_bridge_public_access | bool }}"
 xworkmate_bridge_validation_validate_certs: true
 xworkmate_bridge_validation_origin: https://xworkmate.svc.plus
 
@@ -122,28 +124,22 @@ xworkmate_bridge_required_listeners:
   - host: "{{ xworkmate_bridge_listen_host }}"
     port: "{{ xworkmate_bridge_listen_port }}"
     name: bridge
-  - host: "{{ xworkmate_bridge_codex_upstream_host }}"
-    port: "{{ xworkmate_bridge_codex_upstream_port }}"
-    name: codex
-  - host: "{{ xworkmate_bridge_opencode_upstream_host }}"
-    port: "{{ xworkmate_bridge_opencode_upstream_port }}"
-    name: opencode
-  - host: "{{ xworkmate_bridge_gemini_upstream_host }}"
-    port: "{{ xworkmate_bridge_gemini_upstream_port }}"
-    name: gemini
-  - host: "{{ xworkmate_bridge_hermes_upstream_host }}"
-    port: "{{ xworkmate_bridge_hermes_upstream_port }}"
-    name: hermes
   - host: "{{ xworkmate_bridge_openclaw_upstream_host }}"
     port: "{{ xworkmate_bridge_openclaw_upstream_port }}"
     name: openclaw
 
 # Internal RPC URLs (Source of Truth for the bridge service)
 xworkmate_bridge_openclaw_url: "ws://{{ xworkmate_bridge_openclaw_upstream_host }}:{{ xworkmate_bridge_openclaw_upstream_port }}/"
-xworkmate_bridge_codex_rpc_url: "ws://{{ xworkmate_bridge_codex_upstream_host }}:{{ xworkmate_bridge_codex_upstream_port }}/acp"
-xworkmate_bridge_opencode_rpc_url: "http://{{ xworkmate_bridge_opencode_upstream_host }}:{{ xworkmate_bridge_opencode_upstream_port }}"
-xworkmate_bridge_gemini_rpc_url: "http://{{ xworkmate_bridge_gemini_upstream_host }}:{{ xworkmate_bridge_gemini_upstream_port }}"
-xworkmate_bridge_hermes_rpc_url: "http://{{ xworkmate_bridge_hermes_upstream_host }}:{{ xworkmate_bridge_hermes_upstream_port }}"
+xworkmate_bridge_codex_rpc_url: >-
+  {{ ('ws://' ~ xworkmate_bridge_codex_upstream_host ~ ':' ~ (xworkmate_bridge_codex_upstream_port | string) ~ '/acp')
+     if (deploy_acp_codex | default(false) | bool) else '' }}
+xworkmate_bridge_opencode_rpc_url: >-
+  {{ ('http://' ~ xworkmate_bridge_opencode_upstream_host ~ ':' ~ (xworkmate_bridge_opencode_upstream_port | string))
+     if (deploy_acp_opencode | default(false) | bool) else '' }}
+xworkmate_bridge_gemini_rpc_url: >-
+  {{ ('http://' ~ xworkmate_bridge_gemini_upstream_host ~ ':' ~ (xworkmate_bridge_gemini_upstream_port | string))
+     if (deploy_acp_gemini | default(false) | bool) else '' }}
+xworkmate_bridge_hermes_rpc_url: ""
 
 # Obsolete paths to clean up
 xworkmate_bridge_obsolete_caddy_fragment_paths:

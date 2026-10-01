@@ -1,8 +1,9 @@
 # Minimal AI Desktop
 
-Installs the repository's minimal XFCE desktop and optional XRDP access. This
-role is only the desktop base for CPA and CLI setup/debugging; it does not
-install AI agents, monitoring, containers, or proxy services.
+Installs the repository's minimal XFCE or IceWM desktop and optional XRDP or
+WebRTC access. This role is only the desktop base for CPA and CLI
+setup/debugging; it does not install AI agents, monitoring, containers, or
+proxy services.
 
 Select the desktop backend with `ai_desktop_desktop_type`: `xfce` is the
 default; `icewm` uses the independent IceWM minimal role.
@@ -11,13 +12,13 @@ Set `ai_desktop_user_password` through inventory or an encrypted vars file when
 `ai_desktop_manage_user` is enabled.
 
 XRDP is optional. Set `ai_desktop_remote_enabled: false` to skip the XRDP
-role and its Xorg server package while retaining the XFCE base.
+role and its Xorg server package while retaining the selected desktop base.
 
 The default connection method is `ai_desktop_remote_type: xrdp`, selected for
-its broad native-client support. The desktop stack retains the XFCE panel and
-terminal, Google Chrome on amd64 (Chromium fallback on other supported
-architectures), CJK fonts, and the existing browser task's snap cleanup, apt
-repository, launcher, and desktop shortcut handling.
+its broad native-client support. Set it to `webrtc` to prepare the X11 capture
+runtime used by the xworkmate bridge. IceWM provides a terminal, file manager,
+and Google Chrome on amd64; set `ai_desktop_browser: chromium` to use the
+distribution browser instead.
 
 Each node is intentionally scoped to one account set:
 `ai_desktop_account_scope: single`. Multi-account rotation or aggregation must
@@ -34,8 +35,8 @@ because it prevents snap-backed browser packages from being pulled in.
 and provisioning connection. Disable it with `ai_desktop_sshd_enabled: false`
 only when SSH is managed elsewhere.
 
-WebRTC remote desktop is an optional reserved capability and is disabled by
-default with `ai_desktop_webrtc_enabled: false`. When a standalone WebRTC
-bridge role is available, list it in `ai_desktop_webrtc_roles` and enable the
-switch. The disabled default installs no capture, encoder, input-injection, or
-WebRTC service dependencies.
+WebRTC remote desktop is optional. `ai_desktop_remote_type: webrtc` enables the
+capture/input runtime role without starting a second standalone desktop
+server; signaling remains the responsibility of xworkmate-bridge. The
+explicit `ai_desktop_webrtc_enabled` switch can also prepare those dependencies
+alongside XRDP.
