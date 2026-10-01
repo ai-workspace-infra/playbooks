@@ -1,0 +1,7 @@
+[Unit]
+Requires=ai-aggregator-vault.service
+After=network-online.target ai-aggregator-vault.service
+
+[Service]
+ExecStartPre=/usr/bin/test -r {{ ai_aggregator_runtime_root }}/tls/fullchain.pem
+ExecStartPre=/usr/bin/test -r {{ ai_aggregator_runtime_root }}/tls/privkey.pem
