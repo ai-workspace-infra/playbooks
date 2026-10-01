@@ -31,10 +31,14 @@
       - ai_aggregator_manifest.metadata.mode == 'selfhost'
       - ai_aggregator_operation in ['plan', 'stage', 'activate']
       - ai_aggregator_spec.entrypoint.source_cidrs is iterable
-      - ai_aggregator_spec.entrypoint.direct_api_domain | length > 0
-      - ai_aggregator_spec.entrypoint.admin_basic_auth_ref.startswith('vault://')
+      - ai_aggregator_spec.entrypoint.domain | length > 0
       - ai_aggregator_spec.new_api.bind_address in ['127.0.0.1', '::1']
       - ai_aggregator_spec.litellm.bind_address in ['127.0.0.1', '::1']
+      - ai_aggregator_spec.kong.bind_address in ['127.0.0.1', '::1']
+      - ai_aggregator_spec.kong.proxy_port | int > 0
+      - ai_aggregator_spec.kong.routes.new_api.path == '/'
+      - ai_aggregator_spec.kong.routes.litellm.path_prefix == '/litellm'
+      - ai_aggregator_spec.kong.routes.litellm.strip_path | bool
       - ai_aggregator_spec.litellm.port != ai_aggregator_spec.new_api.port
       - ai_aggregator_spec.new_api.persistence.driver == 'postgresql'
       - ai_aggregator_spec.litellm.persistence.driver == 'postgresql'

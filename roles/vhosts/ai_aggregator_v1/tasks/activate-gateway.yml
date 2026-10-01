@@ -25,6 +25,15 @@
     enabled: true
     state: started
 
+- name: Start and enable Kong as the tenant-aware routing gateway
+  ansible.builtin.systemd:
+    name: ai-aggregator-kong.service
+    enabled: true
+    state: started
+
+- name: Reconcile single-host New API and LiteLLM routes in Kong
+  ansible.builtin.include_tasks: kong-routes.yml
+
 - name: Validate Caddy configuration before reload
   ansible.builtin.command: caddy validate --config {{ caddy_config_dir | default('/etc/caddy') }}/Caddyfile --adapter caddyfile
   changed_when: false

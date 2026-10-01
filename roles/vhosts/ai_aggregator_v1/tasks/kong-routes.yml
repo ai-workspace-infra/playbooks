@@ -1,0 +1,50 @@
+---
+- name: Create or update New API Kong upstream service
+  ansible.builtin.uri:
+    url: "http://{{ ai_aggregator_spec.kong.admin_bind_address }}:{{ ai_aggregator_spec.kong.admin_port }}/services/ai-aggregator-new-api"
+    method: PUT
+    body_format: json
+    body:
+      name: ai-aggregator-new-api
+      url: "http://{{ ai_aggregator_spec.new_api.bind_address }}:{{ ai_aggregator_spec.new_api.port }}"
+    status_code: [200, 201]
+  no_log: true
+
+- name: Create or update LiteLLM Kong upstream service
+  ansible.builtin.uri:
+    url: "http://{{ ai_aggregator_spec.kong.admin_bind_address }}:{{ ai_aggregator_spec.kong.admin_port }}/services/ai-aggregator-litellm"
+    method: PUT
+    body_format: json
+    body:
+      name: ai-aggregator-litellm
+      url: "http://{{ ai_aggregator_spec.litellm.bind_address }}:{{ ai_aggregator_spec.litellm.port }}"
+    status_code: [200, 201]
+  no_log: true
+
+- name: Route the single public hostname to New API by default
+  ansible.builtin.uri:
+    url: "http://{{ ai_aggregator_spec.kong.admin_bind_address }}:{{ ai_aggregator_spec.kong.admin_port }}/services/ai-aggregator-new-api/routes/ai-aggregator-new-api"
+    method: PUT
+    body_format: json
+    body:
+      name: ai-aggregator-new-api
+      hosts: ["{{ ai_aggregator_spec.entrypoint.domain }}"]
+      paths: ["{{ ai_aggregator_spec.kong.routes.new_api.path }}"]
+      strip_path: false
+      preserve_host: true
+    status_code: [200, 201]
+  no_log: true
+
+- name: Route the LiteLLM path prefix to official API aggregation
+  ansible.builtin.uri:
+    url: "http://{{ ai_aggregator_spec.kong.admin_bind_address }}:{{ ai_aggregator_spec.kong.admin_port }}/services/ai-aggregator-litellm/routes/ai-aggregator-litellm"
+    method: PUT
+    body_format: json
+    body:
+      name: ai-aggregator-litellm
+      hosts: ["{{ ai_aggregator_spec.entrypoint.domain }}"]
+      paths: ["{{ ai_aggregator_spec.kong.routes.litellm.path_prefix }}"]
+      strip_path: true
+      preserve_host: true
+    status_code: [200, 201]
+  no_log: true

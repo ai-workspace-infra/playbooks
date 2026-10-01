@@ -7,7 +7,8 @@
     state: present
     password_lock: false
   become: true
-  when: xfce_manage_user | bool
+  when:
+    - xfce_manage_user | bool
 
 - name: Fail when the desktop user password is not provided
   ansible.builtin.assert:
@@ -41,7 +42,7 @@
     - xfce_manage_user | bool
     - xfce_user_groups | length > 0
 
-- name: Ensure XFCE session file is present
+- name: Ensure selected desktop session file is present
   ansible.builtin.template:
     src: xsession.j2
     dest: "{{ xfce_xsession_file }}"
@@ -62,4 +63,6 @@
     group: "{{ xfce_user }}"
     mode: "0755"
   become: true
-  when: xfce_manage_user | bool
+  when:
+    - xfce_manage_user | bool
+    - remote_desktop_session | default('xfce') == 'xfce'
