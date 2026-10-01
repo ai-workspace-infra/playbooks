@@ -1,4 +1,12 @@
 ---
+- name: Create the local OpenClaw service account for an OS Login host
+  ansible.builtin.user:
+    name: "{{ gateway_openclaw_service_user }}"
+    shell: /bin/bash
+    create_home: true
+    state: present
+  when: gateway_openclaw_uses_oslogin_login | bool
+
 - name: Resolve OpenClaw service account home from the target passwd database
   ansible.builtin.getent:
     database: passwd
