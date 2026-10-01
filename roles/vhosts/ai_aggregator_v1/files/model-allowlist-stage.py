@@ -70,7 +70,9 @@ def apply_policy(bundle: dict, runtime: dict, models: list[str]) -> tuple[dict, 
     models_route = copy.deepcopy(base)
     models_route.update(id="new-api-models-allowlist", uri="/v1/models", priority=100)
     models_route["plugins"]["response-rewrite"] = {
-        "status_code": 200,
+        # Rewriting an authentication error would expose the catalog and
+        # change a 401 into 200. Only rewrite a successful upstream reply.
+        "vars": [["status", "==", 200]],
         "body": json.dumps(catalog, separators=(",", ":")),
         "headers": {"set": {"Content-Type": "application/json"}},
     }

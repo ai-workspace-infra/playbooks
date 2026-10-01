@@ -37,6 +37,8 @@ class ModelAllowlistStageTests(unittest.TestCase):
     catalog = result["routes"][2]
     inference = result["routes"][3]
     assert catalog["uri"] == "/v1/models"
+    assert catalog["plugins"]["response-rewrite"]["vars"] == [["status", "==", 200]]
+    assert "status_code" not in catalog["plugins"]["response-rewrite"]
     assert [entry["id"] for entry in json.loads(catalog["plugins"]["response-rewrite"]["body"])["data"]] == models
     assert inference["plugins"]["request-validation"]["body_schema"]["properties"]["model"]["enum"] == models
     assert inference["plugins"]["key-auth"]["header"] == "apikey"
