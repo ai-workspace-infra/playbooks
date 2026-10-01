@@ -17,87 +17,85 @@
 - name: Configure Caddy reverse proxy
   when: caddy_enabled | default(true) | bool
   block:
-    - name: Ensure Caddy repo prerequisites
-      ansible.builtin.apt:
-        name:
-          - ca-certificates
-          - gnupg
-        state: present
-        update_cache: true
+    - name: Require a supported operating system for a fresh Caddy installation
+      ansible.builtin.assert:
+        that:
+          - caddy_bin_check.rc == 0 or ansible_facts['distribution'] in ['Debian', 'Ubuntu']
+        fail_msg: >-
+          Fresh Caddy installation is currently supported only on Debian and
+          Ubuntu; refusing an unverified package source.
+
+    - name: Remove the stale Caddy stable apt source before refreshing apt
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/caddy-stable.list
+        - /etc/apt/sources.list.d/caddy-stable.sources
+      become: true
       when:
         - caddy_bin_check.rc != 0
         - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
 
-    - name: Ensure apt keyring directory exists
-      ansible.builtin.file:
-        path: /etc/apt/keyrings
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
-      when: caddy_bin_check.rc != 0
+    - name: Ensure Caddy package prerequisites
+      ansible.builtin.apt:
+        name: ca-certificates
+        state: present
+        update_cache: true
+      become: true
+      when:
+        - caddy_bin_check.rc != 0
+        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
 
-    - name: Download Caddy GPG key
+    - name: Select the pinned Caddy release package architecture
+      ansible.builtin.set_fact:
+        caddy_package_arch: "{{ caddy_package_arch_map[ansible_facts['architecture']] | default('') }}"
+      when:
+        - caddy_bin_check.rc != 0
+        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
+
+    - name: Require a pinned Caddy package checksum for this architecture
+      ansible.builtin.assert:
+        that:
+          - caddy_package_arch | length > 0
+          - caddy_package_arch in caddy_package_sha512
+        fail_msg: >-
+          No checksum-pinned Caddy package is configured for architecture
+          {{ ansible_facts['architecture'] }}; refusing an unverified install.
+      when:
+        - caddy_bin_check.rc != 0
+        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
+
+    - name: Download checksum-pinned official Caddy release package
       ansible.builtin.get_url:
-        url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
-        dest: /etc/apt/keyrings/caddy-stable.asc
-        force: true
+        url: >-
+          https://github.com/caddyserver/caddy/releases/download/v{{ caddy_package_version
+          }}/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb
+        dest: >-
+          /tmp/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb
+        checksum: "sha512:{{ caddy_package_sha512[caddy_package_arch] }}"
         mode: '0644'
-      when: caddy_bin_check.rc != 0
-
-    - name: Dearmor Caddy GPG key
-      ansible.builtin.command:
-        cmd: gpg --batch --yes --dearmor --output /etc/apt/keyrings/caddy-stable.gpg /etc/apt/keyrings/caddy-stable.asc
-      when: caddy_bin_check.rc != 0
-
-    - name: Set Caddy GPG keyring permissions
-      ansible.builtin.file:
-        path: /etc/apt/keyrings/caddy-stable.gpg
-        owner: root
-        group: root
-        mode: '0644'
-      when: caddy_bin_check.rc != 0
-
-    - name: Check the freshly downloaded Caddy signing key
-      ansible.builtin.include_tasks: "{{ role_path }}/../common/tasks/caddy_apt_source.yml"
+      become: true
       when:
         - caddy_bin_check.rc != 0
         - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
 
-    - name: Refuse to install Caddy from a source with an expired signing key
-      ansible.builtin.fail:
-        msg: >-
-          Caddy is not installed and the upstream Caddy apt signing key has
-          expired (apt reports EXPKEYSIG). Refusing to install from an
-          unverifiable source; retry once the Caddy maintainers renew the key.
-      when:
-        - caddy_bin_check.rc != 0
-        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
-        - caddy_apt_key_expired | default(false) | bool
-
-    - name: Add Caddy repository (Debian)
-      ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/caddy-stable.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main"
-        filename: caddy-stable
-        state: present
-      when:
-        - caddy_bin_check.rc != 0
-        - ansible_facts['distribution'] == 'Debian'
-
-    - name: Add Caddy repository (Ubuntu)
-      ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/caddy-stable.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/ubuntu any-version main"
-        filename: caddy-stable
-        state: present
-      when:
-        - caddy_bin_check.rc != 0
-        - ansible_facts['distribution'] == 'Ubuntu'
-
-    - name: Install Caddy
+    - name: Install the verified Caddy release package
       ansible.builtin.apt:
-        name: caddy
+        deb: >-
+          /tmp/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb
         state: present
-        update_cache: true
+      become: true
+      when:
+        - caddy_bin_check.rc != 0
+        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
+
+    - name: Remove the downloaded Caddy package after installation
+      ansible.builtin.file:
+        path: >-
+          /tmp/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb
+        state: absent
+      become: true
       when:
         - caddy_bin_check.rc != 0
         - ansible_facts['distribution'] in ['Debian', 'Ubuntu']

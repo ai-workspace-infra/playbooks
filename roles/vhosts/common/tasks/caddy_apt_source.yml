@@ -18,20 +18,21 @@
   become: true
   when: caddy_apt_keyring.stat.exists
 
-# with-colons `pub` records: field 2 is the validity ("e" = expired) and
-# field 7 the expiry as epoch seconds.
+# with-colons `pub` and `sub` records: field 2 is the validity ("e" = expired)
+# and field 7 the expiry as epoch seconds. APT can reject an expired signing
+# subkey even while the primary key remains valid.
 - name: Caddy apt source | decide whether the signing key has expired
   ansible.builtin.set_fact:
     caddy_apt_key_expired: >-
       {{
         caddy_apt_keyring.stat.exists
         and (caddy_apt_key_listing.stdout_lines | default([])
-             | select('match', '^pub:')
+             | select('match', '^(pub|sub):')
              | map('split', ':')
              | selectattr('1', 'equalto', 'e')
              | list | length > 0
              or caddy_apt_key_listing.stdout_lines | default([])
-             | select('match', '^pub:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:[0-9]+:')
+             | select('match', '^(pub|sub):[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:[0-9]+:')
              | map('split', ':') | map(attribute=6) | map('int')
              | select('lt', (ansible_facts['date_time']['epoch'] | int))
              | list | length > 0)
@@ -43,6 +44,7 @@
     state: absent
   loop:
     - /etc/apt/sources.list.d/caddy-stable.list
+    - /etc/apt/sources.list.d/caddy-stable.sources
     - /etc/apt/keyrings/caddy-stable.gpg
     - /etc/apt/keyrings/caddy-stable.asc
   become: true
