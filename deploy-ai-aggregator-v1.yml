@@ -2,11 +2,12 @@
 # Control-plane entrypoint. The manifest is checked out from GitOps by the
 # toolkit and passed in as ai_aggregator_manifest_file.
 - name: Plan or stage the personal AI aggregator
-  hosts: all
+  hosts: ai_aggregator_cpa:ai_aggregator_gateway
   become: true
   gather_facts: true
   roles:
     - role: roles/vhosts/ai_aggregator_v1
+      when: ai_aggregator_operation | default('plan') != 'activate'
 
 # Activation is deliberately split into ordered plays. CPA hosts are started
 # before the gateway host; Caddy is reloaded last after its config validates.
@@ -16,6 +17,7 @@
   gather_facts: true
   roles:
     - role: roles/vhosts/ai_aggregator_v1
+      when: ai_aggregator_operation | default('plan') == 'activate'
 
 - name: Activate gateway services after CPA instances
   hosts: ai_aggregator_gateway
@@ -23,3 +25,4 @@
   gather_facts: true
   roles:
     - role: roles/vhosts/ai_aggregator_v1
+      when: ai_aggregator_operation | default('plan') == 'activate'

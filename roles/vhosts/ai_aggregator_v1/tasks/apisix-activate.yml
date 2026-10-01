@@ -1,0 +1,50 @@
+---
+- name: Require OAuth and protocol acceptance before activation
+  ansible.builtin.assert:
+    that: ai_aggregator_spec.apisix.activation_validated | default(false) | bool
+    fail_msg: Record OAuth, consumer authentication and protocol smoke-test acceptance in GitOps before activation.
+
+- name: Require the upstream and gateway runtime environments
+  ansible.builtin.stat:
+    path: "{{ ai_aggregator_runtime_root }}/{{ item }}/environment"
+  loop: [new-api, apisix]
+  register: ai_aggregator_apisix_runtime_files
+
+- name: Block activation with missing credentials
+  ansible.builtin.assert:
+    that: item.stat.exists
+  loop: "{{ ai_aggregator_apisix_runtime_files.results }}"
+
+- name: Start New API before APISIX
+  ansible.builtin.systemd:
+    name: new-api.service
+    enabled: true
+    state: started
+
+- name: Check the New API listener
+  ansible.builtin.wait_for:
+    host: "{{ ai_aggregator_spec.new_api.bind_address }}"
+    port: "{{ ai_aggregator_spec.new_api.port }}"
+    timeout: 30
+
+- name: Start APISIX with injected runtime credentials
+  ansible.builtin.systemd:
+    name: "{{ ai_aggregator_apisix_service }}"
+    enabled: true
+    state: restarted
+
+- name: Check the APISIX loopback listener
+  ansible.builtin.wait_for:
+    host: "{{ ai_aggregator_spec.apisix.bind_address }}"
+    port: "{{ ai_aggregator_spec.apisix.proxy_port }}"
+    timeout: 30
+
+- name: Validate Caddy before reload
+  ansible.builtin.command:
+    argv: [caddy, validate, --config, "{{ caddy_config_dir }}/Caddyfile", --adapter, caddyfile]
+  changed_when: false
+
+- name: Reload the HTTPS entrypoint
+  ansible.builtin.systemd:
+    name: caddy.service
+    state: reloaded

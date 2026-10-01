@@ -1,0 +1,62 @@
+---
+- name: Validate APISIX topology and operation
+  ansible.builtin.assert:
+    that:
+      - ai_aggregator_manifest.kind == 'PersonalAIAggregator'
+      - ai_aggregator_operation in ['plan', 'stage', 'activate']
+      - ai_aggregator_spec.gateway.mode == 'standalone'
+      - ai_aggregator_spec.gateway.runtime_config_backend == 'gitops-file'
+      - not ai_aggregator_spec.gateway.etcd | bool
+      - ai_aggregator_spec.apisix.bind_address == '127.0.0.1'
+      - ai_aggregator_spec.apisix.proxy_port | int == 9080
+      - ai_aggregator_spec.entrypoint.domain | length > 0
+      - ai_aggregator_spec.new_api.bind_address in ['127.0.0.1', '::1']
+
+- name: Select this host's declared nodes
+  ansible.builtin.set_fact:
+    ai_aggregator_local_nodes: "{{ ai_aggregator_spec.nodes | selectattr('inventory_host', 'equalto', inventory_hostname) | list }}"
+
+- name: Select local CPA instances and gateway role
+  ansible.builtin.set_fact:
+    ai_aggregator_local_cpas: "{{ ai_aggregator_spec.cpa_instances | selectattr('node', 'in', ai_aggregator_local_nodes | map(attribute='id') | list) | list }}"
+    ai_aggregator_is_gateway: "{{ ai_aggregator_local_nodes | selectattr('role', 'equalto', 'gateway') | list | length > 0 }}"
+
+- name: Report the APISIX plan
+  ansible.builtin.debug:
+    msg:
+      adapter: apisix
+      config_backend: gitops-file
+      operation: "{{ ai_aggregator_operation }}"
+      roles: "{{ ai_aggregator_local_nodes | map(attribute='role') | list }}"
+  when: ai_aggregator_operation == 'plan'
+
+- name: Require enabled desired state before applying
+  ansible.builtin.assert:
+    that:
+      - ai_aggregator_spec.enabled | bool
+      - ai_aggregator_local_nodes | length > 0
+  when: ai_aggregator_operation != 'plan'
+
+- name: Stage CPA instances with node-local OAuth
+  ansible.builtin.include_tasks: cpa.yml
+  when:
+    - ai_aggregator_operation == 'stage'
+    - ai_aggregator_local_cpas | length > 0
+
+- name: Stage APISIX files and runtime credentials
+  ansible.builtin.include_tasks: apisix-stage.yml
+  when:
+    - ai_aggregator_operation == 'stage'
+    - ai_aggregator_is_gateway | bool
+
+- name: Activate node-local CPA instances
+  ansible.builtin.include_tasks: activate-cpa.yml
+  when:
+    - ai_aggregator_operation == 'activate'
+    - ai_aggregator_local_cpas | length > 0
+
+- name: Activate APISIX after upstream services
+  ansible.builtin.include_tasks: apisix-activate.yml
+  when:
+    - ai_aggregator_operation == 'activate'
+    - ai_aggregator_is_gateway | bool
