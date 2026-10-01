@@ -1,0 +1,99 @@
+---
+# Incremental Home-Lab model policy delivery. Existing Vault bootstrap owns
+# secrets, Caddy, New API and CPA; this play only installs APISIX model rules.
+- name: Publish the GitOps model catalog on the Home-Lab gateway
+  hosts: ai_aggregator_gateway
+  become: true
+  gather_facts: false
+  vars:
+    ai_aggregator_manifest_file: ""
+    ai_aggregator_runtime_routes: /run/ai-aggregator/apisix/apisix.yaml
+    ai_aggregator_runtime_config: /opt/ai-aggregator/apisix-3.16.0/conf/config.yaml
+    ai_aggregator_models_file: /etc/ai-aggregator/model-allowlist.json
+    ai_aggregator_model_stage: /opt/ai-aggregator/bootstrap/model-allowlist-stage.py
+  tasks:
+    - name: Load the merged GitOps declaration
+      ansible.builtin.include_vars:
+        file: "{{ ai_aggregator_manifest_file }}"
+        name: ai_aggregator_manifest
+
+    - name: Check the intended Home-Lab entrypoint and catalog
+      ansible.builtin.assert:
+        that:
+          - ai_aggregator_manifest.metadata.environment == 'uat'
+          - ai_aggregator_manifest.spec.entrypoint.domain == 'ai-internal.onwalk.net'
+          - ai_aggregator_manifest.spec.gateway.adapter == 'apisix'
+          - ai_aggregator_manifest.spec.new_api.public_models | length == 22
+          - ai_aggregator_manifest.spec.apisix.model_allowlist_source == 'new_api.public_models'
+
+    - name: Confirm the current APISIX runtime files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ ai_aggregator_runtime_routes }}"
+        - "{{ ai_aggregator_runtime_config }}"
+      register: ai_aggregator_runtime_files
+
+    - name: Refuse to replace a missing runtime configuration
+      ansible.builtin.assert:
+        that: ai_aggregator_runtime_files.results | map(attribute='stat.exists') | min
+
+    - name: Install the public model catalog
+      ansible.builtin.copy:
+        content: "{{ ai_aggregator_manifest.spec.new_api.public_models | to_nice_json }}\n"
+        dest: "{{ ai_aggregator_models_file }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install the runtime model policy stage
+      ansible.builtin.copy:
+        src: roles/vhosts/ai_aggregator_v1/files/model-allowlist-stage.py
+        dest: "{{ ai_aggregator_model_stage }}"
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Persist the stage after the existing Vault bootstrap
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/ai-aggregator-apisix.service.d/20-model-allowlist.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Service]
+          ExecStartPre=/usr/bin/python3 {{ ai_aggregator_model_stage }} --models-file {{ ai_aggregator_models_file }} --routes-file {{ ai_aggregator_runtime_routes }} --runtime-file {{ ai_aggregator_runtime_config }}
+          ExecStartPre=/usr/bin/python3 /opt/ai-aggregator/bootstrap/apisix-run.py test
+
+    - name: Stage the policy against the currently running bundle
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ ai_aggregator_model_stage }}"
+          - --models-file
+          - "{{ ai_aggregator_models_file }}"
+          - --routes-file
+          - "{{ ai_aggregator_runtime_routes }}"
+          - --runtime-file
+          - "{{ ai_aggregator_runtime_config }}"
+      changed_when: false
+
+    - name: Validate APISIX syntax before service restart
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /opt/ai-aggregator/bootstrap/apisix-run.py, test]
+      changed_when: false
+
+    - name: Reload the service definition
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Restart APISIX to load the added native plugins
+      ansible.builtin.systemd:
+        name: ai-aggregator-apisix.service
+        state: restarted
+
+    - name: Wait for the loopback listener
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 9080
+        timeout: 30
