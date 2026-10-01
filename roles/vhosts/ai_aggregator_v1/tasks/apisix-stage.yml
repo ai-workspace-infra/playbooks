@@ -114,6 +114,7 @@
     mode: '0600'
   vars:
     ai_aggregator_environment_results: "{{ item.results }}"
+    ai_aggregator_runtime_environment_name: "{{ item.name }}"
   loop:
     - name: apisix
       results: "{{ ai_aggregator_apisix_secrets.results }}"
@@ -121,15 +122,32 @@
       results: "{{ ai_aggregator_new_api_runtime_secrets.results }}"
   no_log: true
 
-- name: Publish complete GitOps APISIX files atomically
+- name: Require the APISIX client key reference
+  ansible.builtin.assert:
+    that:
+      - ai_aggregator_apisix_secrets.results | selectattr('item.key', 'equalto', 'AI_GATEWAY_CLIENT_KEY') | list | length == 1
+    fail_msg: "AI_GATEWAY_CLIENT_KEY must be provided by Vault for APISIX"
+
+- name: Write APISIX client key to an isolated tmpfs credential file
   ansible.builtin.copy:
-    src: "{{ ai_aggregator_apisix_bundle_dir }}/{{ item }}"
-    dest: "{{ ai_aggregator_apisix_home }}/conf/{{ item }}"
+    dest: "{{ ai_aggregator_runtime_root }}/apisix/client-key"
     owner: root
     group: root
     mode: '0600'
+    content: "{{ (ai_aggregator_apisix_secrets.results | selectattr('item.key', 'equalto', 'AI_GATEWAY_CLIENT_KEY') | first).json.data.data[(ai_aggregator_apisix_secrets.results | selectattr('item.key', 'equalto', 'AI_GATEWAY_CLIENT_KEY') | first).item.value.split('#')[1]] }}\n"
+  no_log: true
+
+- name: Publish complete GitOps APISIX files atomically
+  ansible.builtin.copy:
+    src: "{{ ai_aggregator_apisix_bundle_dir }}/{{ item.name }}"
+    dest: "{{ ai_aggregator_apisix_home }}/conf/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
     backup: true
-  loop: [config.yaml, apisix.yaml]
+  loop:
+    - {name: config.yaml, mode: '0644'}
+    - {name: apisix.yaml, mode: '0640'}
 
 - name: Render APISIX and New API systemd units
   ansible.builtin.template:
@@ -147,6 +165,49 @@
     src: Caddyfile.ai-aggregator.j2
     dest: "{{ caddy_config_dir }}/conf.d/ai-aggregator.caddy"
     mode: '0644'
+
+- name: Create the Caddy systemd drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/caddy.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install Caddy dependency on Vault TLS runtime material
+  ansible.builtin.template:
+    src: caddy.service.d.ai-aggregator-runtime.conf.j2
+    dest: /etc/systemd/system/caddy.service.d/ai-aggregator-runtime.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when: ai_aggregator_vault_tls_runtime_enabled | bool
+
+- name: Enable the Vault runtime refresh service before Caddy
+  ansible.builtin.systemd:
+    name: ai-aggregator-vault.service
+    enabled: true
+  when: ai_aggregator_vault_tls_runtime_enabled | bool
+
+- name: Reload systemd after Caddy dependency staging
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Require Vault TLS material before Caddy validation
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ ai_aggregator_runtime_root }}/tls/fullchain.pem"
+    - "{{ ai_aggregator_runtime_root }}/tls/privkey.pem"
+  register: ai_aggregator_tls_files
+  when: ai_aggregator_vault_tls_runtime_enabled | bool
+
+- name: Block deployment when Vault TLS material is missing
+  ansible.builtin.assert:
+    that: item.stat.exists and item.stat.isreg
+    fail_msg: "Missing Vault-managed TLS material: {{ item.item }}"
+  loop: "{{ ai_aggregator_tls_files.results | default([]) }}"
+  when: ai_aggregator_vault_tls_runtime_enabled | bool
 
 - name: Reload systemd after staging
   ansible.builtin.systemd:
