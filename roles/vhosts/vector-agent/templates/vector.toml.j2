@@ -217,9 +217,20 @@ include = ["/var/log/syslog", "/var/log/auth.log"]
 {% endif %}
 ignore_older_secs = 86400
 
+{% if vector_system_journald_enabled | default(false) | bool %}
+[sources.system_journal]
+type = "journald"
+current_boot_only = true
+include_units = {{ vector_system_journald_units | to_json }}
+{% endif %}
+
 [transforms.process_logs]
 type = "remap"
+{% if vector_system_journald_enabled | default(false) | bool %}
+inputs = ["system_logs", "system_journal"]
+{% else %}
 inputs = ["system_logs"]
+{% endif %}
 source = '''
 .instance = "{{ inventory_hostname }}"
 .host = "{{ inventory_hostname }}"
