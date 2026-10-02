@@ -212,6 +212,53 @@ raw byte cap (1MiB default; 32MiB maximum). Gateway commits these bytes into the
 prepared artifact directory. OpenCode v2 diff/test-log receipts are produced through
 the Gateway adapter's versioned HTTP export, not arbitrary DSH filesystem access.
 
+Cancellation uses a separate restricted capability:
+
+```sh
+sudo -n /usr/local/libexec/xworkmate-worker-launch cancel dsh-acp CANONICAL_RUN_UUID
+```
+
+Replace only the profile/UUID with that owned worker scope (`dsh-sdk` is also
+supported). This command does not load model configuration or read any runtime
+credentials. It acquires the same root-owned per-scope advisory lock as launch, writes a
+root-owned cancellation tombstone, runs only
+`systemctl stop xworkmate-PROFILE-UUID.service`, then verifies `is-active` reports
+`inactive` or notloaded (`unknown`, exit 3/4). The complete operation is bounded
+by 65 seconds, including lock admission. Exit zero emits exactly `{profile,runId,workerStopped:true}`; timeout,
+active/failed/deactivating state, unsafe marker or other stop/verification error
+returns nonzero and must block artifact export and parent completion. Already
+notloaded scopes are idempotently accepted after the fence is present.
+
+Gateway first disposes stdin/launcher and proves wrapper exit, then independently
+runs this scoped cancel command even if disposal failed, allowing a 70-second
+command budget. It validates the exact receipt scope. Any wrapper/stop cleanup
+failure remains a failed closure, even if the other cleanup step succeeded. A
+launcher exit alone, including SIGKILL after one second, is not evidence that the
+systemd worker cgroup stopped. Runtime credentials expiring/removing cannot block
+this cancellation capability.
+
+Launch holds the per-scope advisory lock across repeated tombstone/namespace
+admission checks, process creation and reliable unit registration: `systemctl show
+LoadState=loaded`, or a successful exit from `systemd-run --wait` for a completed
+short task. Registration has a 10-second cap; failure fences/stops the pending
+scope before releasing the lock. Cancel acquires this same lock before it fences
+and stops, so it cannot return notloaded while an admitted launch is between the
+check and systemd registration. This ordering is exercised by a threaded fixture
+using real advisory locks and scripted systemd replies.
+
+A hard-killed launcher releases its lock without running cleanup. To cover an
+already queued manager request in that case, new DSH transient units also carry a
+manager-side negative `ConditionPathExists` for the exact root-owned tombstone.
+The marker remains present when a delayed transient start reaches the manager,
+so it cannot execute the worker. The launcher also rejects a cancelled UUID before
+preflight. The condition is a separate defense; a one-time file check alone does
+not close this registration race. Transient conditions are supported by upstream
+[systemd's transient settings contract](https://github.com/systemd/systemd/blob/main/docs/TRANSIENT-SETTINGS.md).
+Tombstones are retained; retries use new attempt UUIDs. Linux acceptance must
+exercise pre-initialize cancellation, delayed registration, hard-killed launchers,
+credential removal, timeout and child-process reaping. These local fixture tests
+do not prove real systemd behavior.
+
 Cancellation stops the full DSH control group; SDK cancellation abandons the whole
 owned runtime because upstream SDK has no per-turn cancel. Never declare parent
 completion on a bare `agent_end` before worker exit and artifact collection. Stop:

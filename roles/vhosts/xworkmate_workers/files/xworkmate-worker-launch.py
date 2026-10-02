@@ -1,11 +1,13 @@
 #!/usr/bin/python3
 """Bounded root launcher; configuration contains references, never secrets.
 
-Public Gateway argv: dsh-acp|dsh-sdk UUID; export PROFILE UUID.
+Public Gateway argv: dsh-acp|dsh-sdk UUID; export|cancel PROFILE UUID.
 Admin argv: validate, preflight, verify [--models], stop, network-check,
 archive-check ARCHIVE, artifact-check ENGINE DIRECTORY.
 """
 import base64
+from contextlib import contextmanager
+import fcntl
 import errno
 import hashlib
 import ipaddress
@@ -23,6 +25,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -30,6 +33,7 @@ import uuid
 
 CONFIG_PATH = Path('/etc/xworkmate-workers/worker-config.json')
 PROFILES = {'dsh-acp': 'acp', 'dsh-sdk': 'sdk'}
+CANCEL_ROOT = Path('/var/lib/xworkmate-workers/cancelled')
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -50,6 +54,97 @@ def namespace(profile, run_id):
     require(profile in PROFILES, 'unsupported DSH profile')
     require(str(uuid.UUID(run_id)) == run_id, 'run ID must be a canonical UUID')
     return profile + '-' + run_id
+
+
+def cancellation_marker(profile, run_id):
+    return CANCEL_ROOT / namespace(profile, run_id)
+
+
+def marker_directory():
+    parent = CANCEL_ROOT.parent.lstat()
+    require(stat.S_ISDIR(parent.st_mode) and parent.st_uid == 0 and not parent.st_mode & 0o022,
+            'managed state parent must be a root-owned non-writable directory')
+    CANCEL_ROOT.mkdir(mode=0o755, exist_ok=True)
+    metadata = CANCEL_ROOT.lstat()
+    require(stat.S_ISDIR(metadata.st_mode) and metadata.st_uid == 0 and not metadata.st_mode & 0o022,
+            'cancellation markers require a root-owned non-writable directory')
+
+
+@contextmanager
+def scope_lock(profile, run_id):
+    # Root-owned per-scope lock serializes start registration and cancellation.
+    name = namespace(profile, run_id)
+    deadline = time.monotonic() + 65
+    marker_directory()
+    fd = os.open(CANCEL_ROOT / (name + '.lock'), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        metadata = os.fstat(fd)
+        require(stat.S_ISREG(metadata.st_mode) and metadata.st_uid == 0 and not metadata.st_mode & 0o022,
+                'scope lock must be a root-owned non-writable regular file')
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                require(time.monotonic() < deadline, 'scope lock deadline exceeded')
+                time.sleep(0.025)
+        yield deadline
+    finally:
+        os.close(fd) # Closing also releases the advisory lock after hard kill.
+
+
+def cancel_locked(profile, run_id, deadline):
+    marker = cancellation_marker(profile, run_id)
+    try:
+        fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except FileExistsError:
+        metadata = marker.lstat()
+        require(stat.S_ISREG(metadata.st_mode) and metadata.st_uid == 0 and not metadata.st_mode & 0o022,
+                'existing cancellation marker is unsafe')
+    else:
+        os.close(fd)
+    unit = 'xworkmate-' + namespace(profile, run_id) + '.service'
+    environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}
+    remaining = deadline - time.monotonic()
+    require(remaining > 0, 'worker cancellation exceeded its deadline')
+    stopped = subprocess.run(['/usr/bin/systemctl', 'stop', unit], timeout=min(60, remaining),
+                             capture_output=True, env=environment)
+    remaining = deadline - time.monotonic()
+    require(remaining > 0, 'worker cancellation exceeded its deadline')
+    state = subprocess.run(['/usr/bin/systemctl', 'is-active', unit], timeout=remaining,
+                           capture_output=True, text=True, env=environment)
+    require(state.returncode in (3, 4) and state.stdout.strip() in ('inactive', 'unknown'),
+            'owned worker unit has not reached inactive or notloaded state')
+    require(stopped.returncode == 0 or state.stdout.strip() == 'unknown', 'owned worker stop failed')
+    return {'profile': profile, 'runId': run_id, 'workerStopped': True}
+
+
+def cancel(profile, run_id):
+    """Fence later admission, stop exactly the owned unit, then prove inactive.
+
+    No model config/credentials. The same lock covers launch admission and actual
+    unit registration. A manager-side negative ConditionPathExists fences a queued
+    start if the launcher was hard killed while StartTransientUnit was in flight.
+    """
+    with scope_lock(profile, run_id) as deadline:
+        return cancel_locked(profile, run_id, deadline)
+
+
+def await_registration(child, unit, deadline):
+    deadline = min(deadline, time.monotonic() + 10)
+    environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}
+    while True:
+        remaining = deadline - time.monotonic()
+        require(remaining > 0, 'owned worker unit registration deadline exceeded')
+        state = subprocess.run(['/usr/bin/systemctl', 'show', '--property=LoadState', '--value', unit],
+                               timeout=min(1, remaining), capture_output=True, text=True, env=environment)
+        if state.returncode == 0 and state.stdout.strip() == 'loaded':
+            return
+        code = child.poll()
+        if code == 0:
+            return # --wait exited successfully: the short-lived unit settled.
+        require(code is None, 'owned worker launcher exited before registration')
+        time.sleep(0.025)
 
 
 def validate_config(config, resolve_dns=False):
@@ -187,6 +282,7 @@ def launch_argv(config, profile, run_id):
             '--unit=xworkmate-' + name]
     for value in run_properties(config, root):
         argv.extend(['--property', value])
+    argv.extend(['--property', 'ConditionPathExists=!' + str(cancellation_marker(profile, run_id))])
     argv.extend([str(Path(config['dsh']['releaseDir']) / config['dsh']['entrypoint']), '--profile', PROFILES[profile],
                  '--patch', config['configDir'] + '/dsh-model.patch.yml',
                  '--patch', config['configDir'] + '/' + profile + '.patch.yml'])
@@ -194,22 +290,34 @@ def launch_argv(config, profile, run_id):
 
 
 def launch(config, profile, run_id):
+    marker = cancellation_marker(profile, run_id)
+    require(not marker.exists(), 'run UUID has been cancelled; use a new attempt UUID')
     preflight(config)
     argv, root, unit = launch_argv(config, profile, run_id)
-    # Never chown a reused worker-controlled directory: a previous attempt could
-    # replace a child with a link between checking it and privileged chown. The
-    # root-owned immutable namespace name and exclusive mkdir prevent that race.
     require(not root.exists() and not root.is_symlink(), 'run UUID already exists; use a new attempt UUID')
-    uid, gid = pwd.getpwnam(config['user']).pw_uid, grp.getgrnam(config['group']).gr_gid
-    root.mkdir(mode=0o755)
-    for child in (root / 'home', root / 'workspace', root / 'workspace' / 'output'):
-        child.mkdir(mode=0o700)
-        os.chown(child, uid, gid)
-        os.chmod(child, 0o700)
     environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}
-    child = subprocess.Popen(argv, env=environment)
+    with scope_lock(profile, run_id) as deadline:
+        # Repeat admission checks under the shared lock. Cancel cannot return
+        # "notloaded" while this start is between admission and registration.
+        require(not marker.exists(), 'run UUID has been cancelled; use a new attempt UUID')
+        require(not root.exists() and not root.is_symlink(), 'run UUID already exists; use a new attempt UUID')
+        uid, gid = pwd.getpwnam(config['user']).pw_uid, grp.getgrnam(config['group']).gr_gid
+        root.mkdir(mode=0o755)
+        for directory in (root / 'home', root / 'workspace', root / 'workspace' / 'output'):
+            directory.mkdir(mode=0o700)
+            os.chown(directory, uid, gid)
+            os.chmod(directory, 0o700)
+        child = subprocess.Popen(argv, env=environment)
+        try:
+            await_registration(child, unit, deadline)
+        except BaseException:
+            # Fence a pending start before releasing the lock even on startup
+            # failure. SIGKILL cannot run this handler; the manager condition and
+            # independent Gateway cancel remain the closure in that case.
+            cancel_locked(profile, run_id, deadline)
+            raise
     def terminate(_number, _frame):
-        subprocess.run(['/usr/bin/systemctl', 'stop', unit], check=True, timeout=65, env=environment)
+        cancel(profile, run_id)
     signal.signal(signal.SIGTERM, terminate)
     signal.signal(signal.SIGINT, terminate)
     return child.wait()
@@ -296,6 +404,9 @@ def stop():
 
 def main(argv):
     require(os.geteuid() == 0, 'launcher requires root via the restricted sudo rule')
+    if len(argv) == 3 and argv[0] == 'cancel':
+        print(json.dumps(cancel(argv[1], argv[2])))
+        return 0
     config = load_config()
     if len(argv) == 2 and argv[0] in PROFILES:
         return launch(config, *argv)

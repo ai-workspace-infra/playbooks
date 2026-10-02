@@ -8,6 +8,8 @@ import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
+import threading
 from jinja2 import Environment, StrictUndefined
 import yaml
 
@@ -65,6 +67,7 @@ class WorkerRuntimeContractTest(unittest.TestCase):
             self.assertIn('--wait', argv)
             self.assertEqual(argv[argv.index('--profile') + 1], upstream)
             self.assertIn('User=xworkmate-worker', argv)
+            self.assertIn('ConditionPathExists=!/var/lib/xworkmate-workers/cancelled/' + profile + '-' + RUN_ID, argv)
             self.assertIn('KillMode=control-group', argv)
             self.assertIn('IPAddressDeny=any', argv)
             self.assertIn('BindPaths=' + str(root), argv)
@@ -202,6 +205,147 @@ class WorkerRuntimeContractTest(unittest.TestCase):
                 case[field] = value
             with self.subTest(field=field), self.assertRaises(ValueError):
                 launcher.validate_config(case)
+
+    def test_cancel_scope_receipt_no_config_or_runtime_credential_read(self):
+        original_lstat = Path.lstat
+        original_fstat = launcher.os.fstat
+        root_fd = lambda fd: SimpleNamespace(st_mode=original_fstat(fd).st_mode, st_uid=0)
+        root_metadata = lambda path: SimpleNamespace(st_mode=original_lstat(path).st_mode, st_uid=0)
+        with tempfile.TemporaryDirectory() as directory:
+            marker_root = Path(directory).resolve() / 'cancelled'
+            replies = [SimpleNamespace(returncode=0), SimpleNamespace(returncode=3, stdout='inactive\n')]
+            with patch.object(launcher, 'CANCEL_ROOT', marker_root), patch.object(Path, 'lstat', root_metadata), patch.object(launcher.os, 'fstat', root_fd), \
+                 patch.object(launcher.os, 'geteuid', return_value=0), \
+                 patch.object(launcher, 'load_config', side_effect=AssertionError('cancel must not load configuration')), \
+                 patch.object(launcher, 'read_runtime_env', side_effect=AssertionError('cancel must not read credentials')), \
+                 patch.object(launcher.subprocess, 'run', side_effect=replies) as execute, patch('builtins.print') as output:
+                self.assertEqual(launcher.main(['cancel', 'dsh-acp', RUN_ID]), 0)
+                receipt = json.loads(output.call_args.args[0])
+                self.assertEqual(receipt, {'profile': 'dsh-acp', 'runId': RUN_ID, 'workerStopped': True})
+                self.assertTrue((marker_root / ('dsh-acp-' + RUN_ID)).is_file())
+                self.assertEqual(execute.call_args_list[0].args[0], ['/usr/bin/systemctl', 'stop', 'xworkmate-dsh-acp-' + RUN_ID + '.service'])
+                self.assertEqual(execute.call_args_list[0].kwargs['timeout'], 60)
+                self.assertLessEqual(execute.call_args_list[1].kwargs['timeout'], 65)
+
+    def test_cancel_rejects_live_unknown_failures_and_accepts_notloaded_idempotently(self):
+        original_lstat = Path.lstat
+        original_fstat = launcher.os.fstat
+        root_fd = lambda fd: SimpleNamespace(st_mode=original_fstat(fd).st_mode, st_uid=0)
+        root_metadata = lambda path: SimpleNamespace(st_mode=original_lstat(path).st_mode, st_uid=0)
+        with tempfile.TemporaryDirectory() as directory:
+            marker_root = Path(directory).resolve() / 'cancelled'
+            cases = [(0, 0, 'active', False), (0, 3, 'failed', False),
+                     (0, 3, 'deactivating', False), (0, 1, '', False),
+                     (1, 3, 'inactive', False), (5, 4, 'unknown', True), (0, 3, 'inactive', True)]
+            for stop_rc, state_rc, state, accepted in cases:
+                replies = [SimpleNamespace(returncode=stop_rc), SimpleNamespace(returncode=state_rc, stdout=state)]
+                with self.subTest(state=state, stop=stop_rc), patch.object(launcher, 'CANCEL_ROOT', marker_root), \
+                     patch.object(Path, 'lstat', root_metadata), patch.object(launcher.os, 'fstat', root_fd), patch.object(launcher.subprocess, 'run', side_effect=replies):
+                    if accepted:
+                        self.assertTrue(launcher.cancel('dsh-sdk', RUN_ID)['workerStopped'])
+                    else:
+                        with self.assertRaises(ValueError):
+                            launcher.cancel('dsh-sdk', RUN_ID)
+
+    def test_cancel_timeout_keeps_fence_and_invalid_scope_has_no_privileged_side_effects(self):
+        with patch.object(launcher.subprocess, 'run') as execute:
+            for profile, run in [('shell', RUN_ID), ('dsh-acp', '../etc'), ('dsh-sdk', RUN_ID + ' extra')]:
+                with self.subTest(profile=profile, run=run), self.assertRaises(ValueError):
+                    launcher.cancel(profile, run)
+            execute.assert_not_called()
+        original_lstat = Path.lstat
+        original_fstat = launcher.os.fstat
+        root_fd = lambda fd: SimpleNamespace(st_mode=original_fstat(fd).st_mode, st_uid=0)
+        root_metadata = lambda path: SimpleNamespace(st_mode=original_lstat(path).st_mode, st_uid=0)
+        with tempfile.TemporaryDirectory() as directory:
+            marker_root = Path(directory).resolve() / 'cancelled'
+            with patch.object(launcher, 'CANCEL_ROOT', marker_root), patch.object(Path, 'lstat', root_metadata), patch.object(launcher.os, 'fstat', root_fd), \
+                 patch.object(launcher.subprocess, 'run', side_effect=launcher.subprocess.TimeoutExpired('systemctl', 60)):
+                with self.assertRaises(launcher.subprocess.TimeoutExpired):
+                    launcher.cancel('dsh-acp', RUN_ID)
+                self.assertTrue((marker_root / ('dsh-acp-' + RUN_ID)).exists())
+
+    def test_cancelled_uuid_cannot_launch_or_read_model_credentials(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker_root = Path(directory) / 'cancelled'
+            marker_root.mkdir()
+            (marker_root / ('dsh-acp-' + RUN_ID)).touch()
+            with patch.object(launcher, 'CANCEL_ROOT', marker_root), patch.object(launcher, 'preflight') as inspect, \
+                 patch.object(launcher.subprocess, 'Popen') as execute:
+                with self.assertRaises(ValueError):
+                    launcher.launch(config(), 'dsh-acp', RUN_ID)
+                inspect.assert_not_called()
+                execute.assert_not_called()
+
+    def test_cancel_waits_for_launch_registration_under_same_real_advisory_lock(self):
+        original_lstat, original_fstat = Path.lstat, launcher.os.fstat
+        root_metadata = lambda path: SimpleNamespace(st_mode=original_lstat(path).st_mode, st_uid=0)
+        root_fd = lambda fd: SimpleNamespace(st_mode=original_fstat(fd).st_mode, st_uid=0)
+        registration_started, permit_registration = threading.Event(), threading.Event()
+        cancel_started, cancelled = threading.Event(), threading.Event()
+        registered = []
+        errors, receipts = [], []
+        def manager(argv, **kwargs):
+            if argv[1] == 'show':
+                registration_started.set()
+                if not permit_registration.wait(2):
+                    raise AssertionError('fixture registration was not released')
+                registered.append(True)
+                return SimpleNamespace(returncode=0, stdout='loaded\n')
+            if argv[1] == 'stop':
+                if not registered:
+                    raise AssertionError('cancel raced ahead of admitted unit registration')
+                return SimpleNamespace(returncode=0)
+            return SimpleNamespace(returncode=3, stdout='inactive\n')
+        def settled_wait():
+            if not cancelled.wait(2):
+                raise AssertionError('fixture owned worker was not cancelled')
+            return 0
+        child = SimpleNamespace(poll=lambda: None, wait=settled_wait)
+        with tempfile.TemporaryDirectory() as directory:
+            case = config()
+            case['stateRoot'] = str(Path(directory).resolve())
+            (Path(case['stateRoot']) / 'runs/dsh-acp').mkdir(parents=True)
+            marker_root = Path(case['stateRoot']) / 'cancelled'
+            def start():
+                try:
+                    launcher.launch(case, 'dsh-acp', RUN_ID)
+                except BaseException as error:
+                    errors.append(error)
+            def stop_owned():
+                cancel_started.set()
+                try:
+                    receipts.append(launcher.cancel('dsh-acp', RUN_ID))
+                except BaseException as error:
+                    errors.append(error)
+                finally:
+                    cancelled.set()
+            with patch.object(launcher, 'CANCEL_ROOT', marker_root), patch.object(Path, 'lstat', root_metadata), \
+                 patch.object(launcher.os, 'fstat', root_fd), patch.object(launcher, 'preflight'), \
+                 patch.object(launcher.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=os.getuid())), \
+                 patch.object(launcher.grp, 'getgrnam', return_value=SimpleNamespace(gr_gid=os.getgid())), \
+                 patch.object(launcher.os, 'chown'), patch.object(launcher.signal, 'signal'), \
+                 patch.object(launcher.subprocess, 'Popen', return_value=child) as execute, \
+                 patch.object(launcher.subprocess, 'run', side_effect=manager):
+                start_thread = threading.Thread(target=start)
+                cancel_thread = threading.Thread(target=stop_owned)
+                start_thread.start()
+                self.assertTrue(registration_started.wait(2))
+                cancel_thread.start()
+                self.assertTrue(cancel_started.wait(2))
+                self.assertFalse(cancelled.wait(0.1), 'cancel returned before unit registration settled')
+                self.assertFalse((marker_root / ('dsh-acp-' + RUN_ID)).exists())
+                permit_registration.set()
+                start_thread.join(2)
+                cancel_thread.join(2)
+                self.assertFalse(start_thread.is_alive() or cancel_thread.is_alive())
+                self.assertFalse(errors)
+                self.assertTrue(receipts[0]['workerStopped'])
+                condition = 'ConditionPathExists=!' + str(marker_root / ('dsh-acp-' + RUN_ID))
+                self.assertIn(condition, execute.call_args.args[0])
+                # A manager-side delayed start after launcher hard kill reads the
+                # negative condition against the now-present root-owned fence.
+                self.assertTrue((marker_root / ('dsh-acp-' + RUN_ID)).exists())
 
     def test_release_candidate_rejects_external_dependency_links(self):
         spec = importlib.util.spec_from_file_location('worker_builder', ROOT / 'scripts/build_xworkmate_workers.py')
