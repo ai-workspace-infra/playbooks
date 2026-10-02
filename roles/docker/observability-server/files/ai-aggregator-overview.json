@@ -1,0 +1,187 @@
+{
+  "id": null,
+  "uid": "ai-aggregator-overview",
+  "title": "AI Aggregator Overview",
+  "description": "AI Aggregator RED, model traffic, service probes, and host saturation. Select the gateway host and environment before investigating.",
+  "tags": ["ai-aggregator", "gateway", "uat"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "editable": true,
+  "graphTooltip": 1,
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "label": "Environment",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+        "definition": "label_values(node_uname_info, environment)",
+        "query": {"query": "label_values(node_uname_info, environment)", "refId": "PrometheusVariableQueryEditor-Environment"},
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "current": {"selected": false, "text": "uat", "value": "uat"}
+      },
+      {
+        "name": "instance",
+        "label": "AI Aggregator host",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+        "definition": "label_values(node_uname_info{environment=\"$environment\"}, instance)",
+        "query": {"query": "label_values(node_uname_info{environment=\"$environment\"}, instance)", "refId": "PrometheusVariableQueryEditor-Instance"},
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "current": {"selected": false, "text": "ai-aggregator-uat-01", "value": "ai-aggregator-uat-01"}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Requests / second",
+      "description": "APISIX requests observed at the gateway. Counts include all responses.",
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "targets": [{"refId": "A", "expr": "sum(rate(apisix_http_status{instance=\"$instance\",environment=\"$environment\"}[$__rate_interval]))", "legendFormat": "requests/s", "range": true}],
+      "fieldConfig": {"defaults": {"unit": "reqps", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 12}}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "5xx error rate",
+      "description": "Share of gateway responses with a 5xx status. Sustained increases are user-visible failures.",
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "targets": [{"refId": "A", "expr": "sum(rate(apisix_http_status{instance=\"$instance\",environment=\"$environment\",code=~\"5..\"}[$__rate_interval])) / clamp_min(sum(rate(apisix_http_status{instance=\"$instance\",environment=\"$environment\"}[$__rate_interval])), 1e-9)", "legendFormat": "5xx share", "range": true}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 0.01}, {"color": "red", "value": 0.05}]}, "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 12}}, "overrides": []},
+      "options": {"legend": {"displayMode": "hidden"}, "tooltip": {"mode": "single"}}
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Gateway request latency p95",
+      "description": "APISIX request latency histogram. Confirm the installed APISIX version exports the request latency type used by this panel.",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(apisix_http_latency_bucket{instance=\"$instance\",environment=\"$environment\",type=\"request\"}[$__rate_interval]))) / 1000", "legendFormat": "p95", "range": true}],
+      "fieldConfig": {"defaults": {"unit": "s", "min": 0, "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 12}}, "overrides": []},
+      "options": {"legend": {"displayMode": "hidden"}, "tooltip": {"mode": "single"}}
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Upstream latency p95 by LLM instance",
+      "description": "APISIX upstream latency grouped by the ai-proxy-multi instance label.",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le,node) (rate(apisix_http_latency_bucket{instance=\"$instance\",environment=\"$environment\",type=\"upstream\"}[$__rate_interval]))) / 1000", "legendFormat": "{{node}}", "range": true}],
+      "fieldConfig": {"defaults": {"unit": "s", "min": 0, "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "LLM response latency and TTFT p95",
+      "description": "APISIX total response latency applies to streaming and non-streaming requests; TTFT applies only to streaming responses.",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "targets": [
+        {"refId": "A", "expr": "histogram_quantile(0.95, sum by (le,node) (rate(apisix_llm_latency_bucket{instance=\"$instance\",environment=\"$environment\",type=\"total\"}[$__rate_interval]))) / 1000", "legendFormat": "total · {{node}}", "range": true},
+        {"refId": "B", "expr": "histogram_quantile(0.95, sum by (le,node) (rate(apisix_llm_latency_bucket{instance=\"$instance\",environment=\"$environment\",type=\"ttft\"}[$__rate_interval]))) / 1000", "legendFormat": "TTFT · {{node}}", "range": true}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s", "min": 0, "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10}}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "LiteLLM rollback path traffic",
+      "description": "LiteLLM native counters provide a separate view of its rollback path. Caller identity labels are excluded in the LiteLLM config.",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "targets": [
+        {"refId": "A", "expr": "sum(rate(litellm_proxy_total_requests_metric_total{instance=\"$instance\",environment=\"$environment\"}[$__rate_interval]))", "legendFormat": "requests/s", "range": true},
+        {"refId": "B", "expr": "sum(rate(litellm_total_tokens_metric_total{instance=\"$instance\",environment=\"$environment\"}[$__rate_interval]))", "legendFormat": "tokens/s", "range": true}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0, "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Service reachability probes",
+      "description": "Local TCP/HTTP probes for the service chain, plus an optional external HTTPS/TLS probe for Caddy. Reachability does not prove a successful model inference.",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "targets": [{"refId": "A", "expr": "probe_success{instance=\"$instance\",environment=\"$environment\",job=\"ai-aggregator-probe\"}", "format": "table", "instant": true, "range": false}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}]
+        },
+        "overrides": [{"matcher": {"id": "byName", "options": "Value"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-text"}}]}]
+      },
+      "options": {"showHeader": true, "cellHeight": "sm", "sortBy": [{"displayName": "component", "desc": false}]}
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Host CPU and memory utilization",
+      "description": "Use this row to identify resource saturation after confirming a user-visible latency or error symptom.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "targets": [
+        {"refId": "A", "expr": "1 - avg by (instance) (rate(node_cpu_seconds_total{instance=\"$instance\",environment=\"$environment\",mode=\"idle\"}[$__rate_interval]))", "legendFormat": "CPU busy", "range": true},
+        {"refId": "B", "expr": "1 - (node_memory_MemAvailable_bytes{instance=\"$instance\",environment=\"$environment\"} / node_memory_MemTotal_bytes{instance=\"$instance\",environment=\"$environment\"})", "legendFormat": "Memory used", "range": true}
+      ],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10}}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Root filesystem available",
+      "description": "Available bytes on the root filesystem; filesystem labels vary by node exporter configuration.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "targets": [{"refId": "A", "expr": "node_filesystem_avail_bytes{instance=\"$instance\",environment=\"$environment\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"}", "legendFormat": "available", "range": true}],
+      "fieldConfig": {"defaults": {"unit": "bytes", "min": 0, "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10}}, "overrides": []},
+      "options": {"legend": {"displayMode": "hidden"}, "tooltip": {"mode": "single"}}
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Prompt and completion tokens / second by model",
+      "description": "APISIX AI proxy counters grouped by effective model. The dashboard aggregates away consumer identity.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "targets": [
+        {"refId": "A", "expr": "sum by (llm_model) (rate(apisix_llm_prompt_tokens{instance=\"$instance\",environment=\"$environment\"}[$__rate_interval]))", "legendFormat": "prompt · {{llm_model}}", "range": true},
+        {"refId": "B", "expr": "sum by (llm_model) (rate(apisix_llm_completion_tokens{instance=\"$instance\",environment=\"$environment\"}[$__rate_interval]))", "legendFormat": "completion · {{llm_model}}", "range": true}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0, "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    }
+  ]
+}

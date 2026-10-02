@@ -24,6 +24,35 @@
       - "lookup('ansible.builtin.file', ai_aggregator_apisix_bundle_dir ~ '/apisix.yaml').rstrip().endswith('#END')"
       - ai_aggregator_apisix_routes.routes | map(attribute='hosts') | flatten | unique | list == [ai_aggregator_spec.entrypoint.domain]
 
+- name: Add loopback-only APISIX Prometheus exporter configuration
+  ansible.builtin.set_fact:
+    ai_aggregator_apisix_config: >-
+      {{ ai_aggregator_apisix_config | combine({
+        'apisix': (
+          (ai_aggregator_apisix_config.apisix | combine({
+            'plugins': ((ai_aggregator_apisix_config.apisix.plugins + ['prometheus']) | unique | list)
+          }, recursive=true))
+          if ai_aggregator_apisix_config.apisix.plugins is defined
+          else (ai_aggregator_apisix_config.apisix | default({}))
+        ),
+        'plugin_attr': (ai_aggregator_apisix_config.plugin_attr | default({})) | combine({
+          'prometheus': (ai_aggregator_apisix_config.plugin_attr | default({})).prometheus | default({}) | combine({
+            'enable_export_server': true,
+            'export_uri': '/apisix/prometheus/metrics',
+            'export_addr': {'ip': '127.0.0.1', 'port': ai_aggregator_apisix_metrics_port | int}
+          }, recursive=true)
+        }, recursive=true)
+      }, recursive=true) }}
+
+- name: Add APISIX Prometheus plugin as a global rule when absent
+  ansible.builtin.set_fact:
+    ai_aggregator_apisix_routes: >-
+      {{ ai_aggregator_apisix_routes | combine({
+        'global_rules': (ai_aggregator_apisix_routes.global_rules | default([])) +
+          ([] if (ai_aggregator_apisix_routes.global_rules | default([]) | selectattr('plugins.prometheus', 'defined') | list | length > 0)
+             else [{'id': ai_aggregator_apisix_metrics_global_rule_id | int, 'plugins': {'prometheus': {'prefer_name': true}}}])
+      }, recursive=true) }}
+
 - name: Check the preinstalled APISIX distribution
   ansible.builtin.command:
     argv: ["{{ ai_aggregator_apisix_binary }}", version]
@@ -137,17 +166,23 @@
     content: "{{ (ai_aggregator_apisix_secrets.results | selectattr('item.key', 'equalto', 'AI_GATEWAY_CLIENT_KEY') | first).json.data.data[(ai_aggregator_apisix_secrets.results | selectattr('item.key', 'equalto', 'AI_GATEWAY_CLIENT_KEY') | first).item.value.split('#')[1]] }}\n"
   no_log: true
 
-- name: Publish complete GitOps APISIX files atomically
+- name: Publish APISIX configuration with metrics enabled atomically
   ansible.builtin.copy:
-    src: "{{ ai_aggregator_apisix_bundle_dir }}/{{ item.name }}"
-    dest: "{{ ai_aggregator_apisix_home }}/conf/{{ item.name }}"
+    content: "{{ ai_aggregator_apisix_config | to_nice_yaml }}#END\n"
+    dest: "{{ ai_aggregator_apisix_home }}/conf/config.yaml"
     owner: root
     group: root
-    mode: "{{ item.mode }}"
+    mode: '0644'
     backup: true
-  loop:
-    - {name: config.yaml, mode: '0644'}
-    - {name: apisix.yaml, mode: '0640'}
+
+- name: Publish APISIX routes with the Prometheus global rule atomically
+  ansible.builtin.copy:
+    content: "{{ ai_aggregator_apisix_routes | to_nice_yaml }}#END\n"
+    dest: "{{ ai_aggregator_apisix_home }}/conf/apisix.yaml"
+    owner: root
+    group: root
+    mode: '0640'
+    backup: true
 
 - name: Render APISIX and New API systemd units
   ansible.builtin.template:

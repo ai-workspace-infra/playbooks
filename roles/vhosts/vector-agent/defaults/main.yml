@@ -38,3 +38,35 @@ vector_system_journald_units:
   - caddy.service
   - xray.service
   - xray-tcp.service
+
+# Opt in on the AI Aggregator gateway host. Application metrics remain on
+# loopback and Vector forwards them through the existing authenticated sink.
+vector_ai_aggregator_enabled: false
+vector_ai_aggregator_metrics_targets:
+  - name: apisix
+    endpoint: http://127.0.0.1:9091/apisix/prometheus/metrics
+  - name: litellm
+    endpoint: http://127.0.0.1:4000/metrics
+vector_ai_aggregator_probe_targets:
+  - name: apisix
+    target: 127.0.0.1:9080
+    module: tcp_connect
+  - name: new-api
+    target: http://127.0.0.1:3000/api/status
+    module: http_2xx
+  - name: litellm
+    target: 127.0.0.1:4000
+    module: tcp_connect
+  - name: cpa-0
+    target: 127.0.0.1:8317
+    module: tcp_connect
+  - name: cpa-1
+    target: 127.0.0.1:8318
+    module: tcp_connect
+  - name: cpa-2
+    target: 127.0.0.1:8319
+    module: tcp_connect
+  - name: cpa-3
+    target: 127.0.0.1:8320
+    module: tcp_connect
+vector_ai_aggregator_public_target: ""
