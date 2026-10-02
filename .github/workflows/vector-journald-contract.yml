@@ -1,0 +1,20 @@
+name: Vector journald contract
+on:
+  pull_request:
+    paths:
+      - roles/vhosts/vector-agent/defaults/main.yml
+      - roles/vhosts/vector-agent/templates/vector.toml.j2
+      - tests/test_vector_journald_render.py
+      - .github/workflows/vector-journald-contract.yml
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install 'jinja2==3.1.6'
+      - run: python3 -B -m unittest discover -s tests -p test_vector_journald_render.py -v
