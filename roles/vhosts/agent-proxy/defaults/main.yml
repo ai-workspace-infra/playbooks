@@ -40,6 +40,10 @@ agent_proxy_data_dir: "/var/lib/agent-proxy"
 agent_id: "{{ lookup('ansible.builtin.env', 'AGENT_ID') | default(inventory_hostname, true) }}"
 agent_region: "{{ xconnect_region | default(lookup('ansible.builtin.env', 'AGENT_REGION') | default('', true), true) }}"
 agent_pool: "{{ xconnect_pool | default(lookup('ansible.builtin.env', 'AGENT_POOL') | default('', true), true) }}"
+# Advertised entry can differ from the physical agent ID. A GitOps node can stay closed
+# until deployment acceptance has verified its public listener.
+agent_entry_point: "{{ xconnect_fqdn | default(agent_proxy_regional_domain | default(lookup('ansible.builtin.env', 'AGENT_ENTRY_POINT') | default('', true), true), true) }}"
+agent_open_to_users: "{{ xconnect_open_to_users | default(true) | bool }}"
 agent_tls_cert_name: "{{ agent_id }}"
 agent_tls_cert_path: "/etc/caddy/tls/agent-proxy.crt"
 agent_tls_key_path: "/etc/caddy/tls/agent-proxy.key"
