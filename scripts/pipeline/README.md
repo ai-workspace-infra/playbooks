@@ -26,3 +26,23 @@ local-development path (sibling checkouts) and is only used when no CMDB invento
 ## Tests
 
 `scripts/pipeline/tests/*_test.sh` run in `.github/workflows/pipeline-scripts.yml`.
+
+## Repository boundary and change order
+
+This directory owns Ansible-phase behavior only. Terraform and provision-phase behavior
+stays in
+[`iac_modules/scripts/pipeline/`](https://github.com/ai-workspace-infra/iac_modules/tree/main/scripts/pipeline),
+orchestration and GitOps readers stay in
+[`platform-ops-toolkit/.github/scripts/`](https://github.com/ai-workspace-infra/platform-ops-toolkit/tree/main/.github/scripts),
+and [`gitops`](https://github.com/ai-workspace-infra/gitops) contains YAML/Markdown
+desired-state data only.
+
+For a cross-repository change, merge the IaC and playbooks additions first, then update
+the dependent toolkit call sites. Record those dependency PRs and the merge order in the
+toolkit PR. New scripts use short-hyphen names, have a test under `scripts/pipeline/tests/`,
+and are `100755` when called directly. Do not add one-line wrappers or compatibility
+shims.
+
+`lib/require-env.sh` is intentionally byte-identical to the copies in iac_modules and
+toolkit, but remains local to this checkout. Branch and release rules are maintained in
+[`skills/release-branch-policy/SKILL.md`](../../skills/release-branch-policy/SKILL.md).
