@@ -38,6 +38,8 @@ agent_proxy_config_path: "{{ agent_proxy_config_dir }}/{{ agent_proxy_config_fil
 agent_proxy_data_dir: "/var/lib/agent-proxy"
 
 agent_id: "{{ lookup('ansible.builtin.env', 'AGENT_ID') | default(inventory_hostname, true) }}"
+agent_region: "{{ xconnect_region | default(lookup('ansible.builtin.env', 'AGENT_REGION') | default('', true), true) }}"
+agent_pool: "{{ xconnect_pool | default(lookup('ansible.builtin.env', 'AGENT_POOL') | default('', true), true) }}"
 agent_tls_cert_name: "{{ agent_id }}"
 agent_tls_cert_path: "/etc/caddy/tls/agent-proxy.crt"
 agent_tls_key_path: "/etc/caddy/tls/agent-proxy.key"
