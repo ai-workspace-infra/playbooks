@@ -1,0 +1,20 @@
+{{ {
+  'model': {'providerID': 'xworkmate', 'model': xworkmate_workers_llm_model},
+  'update': 'disable', 'share': 'disabled', 'plugins': [],
+  'providers': {'xworkmate': {
+    'name': 'XWorkmate model service', 'package': '@opencode/ai/providers/openai-compatible',
+    'env': ['XWORKMATE_LLM_API_KEY'],
+    'settings': {'baseURL': xworkmate_workers_llm_base_url, 'apiKey': '{env:XWORKMATE_LLM_API_KEY}'},
+    'models': {xworkmate_workers_llm_model: {'name': xworkmate_workers_llm_model, 'capabilities': {'tools': True}}}
+  }},
+  'experimental': {'policies': [
+    {'action': 'provider.use', 'resource': '*', 'effect': 'deny'},
+    {'action': 'provider.use', 'resource': 'xworkmate', 'effect': 'allow'}
+  ]},
+  'permissions': [
+    {'action': '*', 'resource': '*', 'effect': 'deny'},
+    {'action': 'read', 'resource': '*', 'effect': 'allow'},
+    {'action': 'edit', 'resource': '*', 'effect': 'allow'},
+    {'action': 'external_directory', 'resource': '*', 'effect': 'deny'}
+  ] + xworkmate_workers_opencode_shell_allowlist
+} | to_nice_json }}

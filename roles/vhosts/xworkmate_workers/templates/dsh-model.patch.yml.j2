@@ -1,0 +1,33 @@
+# Same approved model route for ACP and SDK. No provider secrets in this file.
+- id: llm-pi-ai
+  config:
+    providers:
+      xworkmate:
+        api: openai-completions
+        apiKeyEnv: XWORKMATE_LLM_API_KEY
+        baseURL: {{ xworkmate_workers_llm_base_url | to_json }}
+        models:
+          - id: {{ xworkmate_workers_llm_model | to_json }}
+            contextWindow: {{ xworkmate_workers_model_context_window | int }}
+            maxTokens: {{ xworkmate_workers_model_max_tokens | int }}
+- id: agent-default-model
+  config:
+    provider: xworkmate
+    model: {{ xworkmate_workers_llm_model | to_json }}
+- id: llm-deepseek
+  disabled: true
+- id: llm-deepseek-account
+  disabled: true
+- id: deepseek-account
+  disabled: true
+- id: plugin-manager
+  disabled: true
+- id: tool-plugin-manager
+  disabled: true
+- id: sandbox-policy
+  config:
+    mode: workspace-write
+    workspaceRoot: !!js process.cwd()
+- id: approval
+  config:
+    policy: ask

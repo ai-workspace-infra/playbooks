@@ -1,0 +1,16 @@
+{{ {
+  'secrets': {'providers': {'default': {'source': 'env'}}},
+  'models': {'mode': 'merge', 'providers': {'xworkmate': {
+    'baseUrl': xworkmate_workers_llm_base_url,
+    'api': 'openai-completions',
+    'apiKey': {'source': 'env', 'provider': 'default', 'id': 'XWORKMATE_LLM_API_KEY'},
+    'models': [{'id': xworkmate_workers_llm_model, 'name': xworkmate_workers_llm_model,
+      'input': ['text'], 'reasoning': False,
+      'contextWindow': xworkmate_workers_model_context_window | int,
+      'maxTokens': xworkmate_workers_model_max_tokens | int}]
+  }}},
+  'agents': {
+    'defaults': {'model': 'xworkmate/' ~ xworkmate_workers_llm_model},
+    'list': [{'id': 'main', 'model': 'xworkmate/' ~ xworkmate_workers_llm_model}]
+  }
+} | to_nice_json }}

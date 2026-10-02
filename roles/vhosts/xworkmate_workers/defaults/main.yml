@@ -1,0 +1,49 @@
+---
+# No existing gateway or desktop deploy enables workers implicitly.
+xworkmate_workers_enabled: false
+xworkmate_workers_action: deploy # deploy, verify, stop; rollback is a pinned redeploy
+xworkmate_workers_user: xworkmate-worker
+xworkmate_workers_group: xworkmate-worker
+xworkmate_workers_gateway_user: openclaw
+# Only the Gateway's prepared artifact tasks subtree is shared with OpenCode.
+xworkmate_workers_gateway_tasks_root: ""
+xworkmate_workers_opencode_shell_allowlist: []
+xworkmate_workers_root: /opt/xworkmate-workers
+xworkmate_workers_config_dir: /etc/xworkmate-workers
+xworkmate_workers_state_root: /var/lib/xworkmate-workers
+xworkmate_workers_launcher: /usr/local/libexec/xworkmate-worker-launch
+xworkmate_workers_runtime_env_dir: /run/xworkmate-workers
+xworkmate_workers_model_env_file: "{{ xworkmate_workers_runtime_env_dir }}/model.env"
+xworkmate_workers_opencode_env_file: "{{ xworkmate_workers_runtime_env_dir }}/opencode.env"
+# Vault Agent/operator supplies private 0600 files on tmpfs, owned by the
+# Gateway UID if its plugin reads them (root-owned otherwise).
+# model.env: XWORKMATE_LLM_API_KEY; opencode.env: OPENCODE_PASSWORD.
+xworkmate_workers_llm_base_url: ""
+xworkmate_workers_llm_model: ""
+# Kernel-enforced CIDRs, including exact aggregator and DNS addresses.
+# No global 0.0.0.0/0 or ::/0. DNS/model IP changes require explicit revalidation.
+xworkmate_workers_egress_cidrs: []
+xworkmate_workers_opencode_port: 4097
+xworkmate_workers_memory_max: 2G
+xworkmate_workers_cpu_quota: 200%
+xworkmate_workers_tasks_max: 256
+xworkmate_workers_max_runtime_sec: 900
+xworkmate_workers_stop_timeout_sec: 30
+xworkmate_workers_export_max_bytes: 1048576
+xworkmate_workers_verify_models: false
+xworkmate_workers_dsh_source_revision: 639ed015397290b3745d163aafe02ffee4aa3f84
+xworkmate_workers_opencode_source_revision: 35a41b5d53c71ae0337e614ec192fd5d1a5c7eb8
+# Supply real self-contained Linux archives from your release pipeline. No URL
+# or digest is invented, and no npm install/build scripts run on the target.
+xworkmate_workers_dsh_artifact_url: ""
+xworkmate_workers_dsh_artifact_sha256: ""
+xworkmate_workers_dsh_entrypoint: bin/dsh
+xworkmate_workers_opencode_artifact_url: ""
+xworkmate_workers_opencode_artifact_sha256: ""
+xworkmate_workers_opencode_entrypoint: bin/opencode
+xworkmate_workers_dsh_release_dir: "{{ xworkmate_workers_root }}/releases/dsh-{{ xworkmate_workers_dsh_source_revision }}-{{ xworkmate_workers_dsh_artifact_sha256[:12] }}"
+xworkmate_workers_opencode_release_dir: "{{ xworkmate_workers_root }}/releases/opencode-{{ xworkmate_workers_opencode_source_revision }}-{{ xworkmate_workers_opencode_artifact_sha256[:12] }}"
+
+# Explicit catalog metadata for the Gateway; tune to the aggregator model contract.
+xworkmate_workers_model_context_window: 32768
+xworkmate_workers_model_max_tokens: 8192
