@@ -18,6 +18,75 @@ type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:9256/metrics"]
 scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
 
+{% set ai_aggregator_remote_inputs = [] %}
+{% if vector_ai_aggregator_enabled | default(false) | bool %}
+{% for target in vector_ai_aggregator_metrics_targets | default([]) %}
+{% set target_id = target.name | regex_replace('[^A-Za-z0-9_]', '_') %}
+[sources.ai_aggregator_{{ target_id }}_metrics]
+type = "prometheus_scrape"
+endpoints = ["{{ target.endpoint }}"]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+
+[transforms.ai_aggregator_{{ target_id }}_labels]
+type = "remap"
+inputs = ["ai_aggregator_{{ target_id }}_metrics"]
+source = '''
+.tags.instance = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.job = "ai-aggregator"
+.tags.component = "{{ target.name }}"
+del(.tags.consumer)
+'''
+{% set _ = ai_aggregator_remote_inputs.append('ai_aggregator_' ~ target_id ~ '_labels') %}
+{% endfor %}
+{% for target in vector_ai_aggregator_probe_targets | default([]) %}
+{% set target_id = target.name | regex_replace('[^A-Za-z0-9_]', '_') %}
+[sources.ai_aggregator_{{ target_id }}_probe]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:9115/probe?module={{ target.module }}&target={{ target.target | urlencode }}"]
+scrape_interval_secs = 15
+scrape_timeout_secs = 5
+
+[transforms.ai_aggregator_{{ target_id }}_probe_labels]
+type = "remap"
+inputs = ["ai_aggregator_{{ target_id }}_probe"]
+source = '''
+.tags.instance = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.job = "ai-aggregator-probe"
+.tags.component = "{{ target.name }}"
+'''
+{% set _ = ai_aggregator_remote_inputs.append('ai_aggregator_' ~ target_id ~ '_probe_labels') %}
+{% endfor %}
+{% if vector_ai_aggregator_public_target | default('') | trim | length > 0 %}
+[sources.ai_aggregator_caddy_public_probe]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:9115/probe?module=https_ssl&target={{ vector_ai_aggregator_public_target | urlencode }}"]
+scrape_interval_secs = 60
+scrape_timeout_secs = 20
+
+[transforms.ai_aggregator_caddy_public_probe_labels]
+type = "remap"
+inputs = ["ai_aggregator_caddy_public_probe"]
+source = '''
+.tags.instance = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.job = "ai-aggregator-probe"
+.tags.component = "caddy-public"
+'''
+{% set _ = ai_aggregator_remote_inputs.append('ai_aggregator_caddy_public_probe_labels') %}
+{% endif %}
+{% endif %}
+
 {% set xray_exporter_enabled = vector_xray_exporter_enabled | default(inventory_hostname in groups.get('xray_exporter', []), true) | bool %}
 {% if xray_exporter_enabled %}
 [sources.xray_xhttp_metrics]
@@ -163,6 +232,9 @@ max_size = {{ vector_disk_buffer_max_bytes | default(536870912) }}
 [sinks.prometheus_remote]
 type = "prometheus_remote_write"
 {% set remote_inputs = ["add_labels"] %}
+{% for source_name in ai_aggregator_remote_inputs %}
+  {% set _ = remote_inputs.append(source_name) %}
+{% endfor %}
 {% if xray_exporter_enabled %}
   {% set _ = remote_inputs.append("add_xray_xhttp_labels") %}
   {% set _ = remote_inputs.append("add_xray_tcp_labels") %}

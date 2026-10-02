@@ -14,6 +14,7 @@ copies by hand.
 | --- | --- | --- |
 | `Node-Exporter-Dashboard.json` | `StarsL-JOB-node` | Node Exporter Dashboard 20240520 通用JOB分组版 |
 | `agent-ai-application-observability-dashboard.json` | `agent-ai-observability` | Agent / AI Application Observability |
+| `ai-aggregator-overview.json` | `ai-aggregator-overview` | AI Aggregator Overview |
 | `blackbox-exporter-dashboard.json` | `blackbox-exporter-overview` | Blackbox Exporter & SSL Probe Overview |
 | `dashboard.json` | `begqoward2epsf` | Xray Dashboard |
 | `homepage-navigation.json` | `homepage-navigation` | 平台导航与总览 (Navigation Homepage) |
@@ -23,6 +24,9 @@ copies by hand.
 | `serverless-edge-cloudrun-supabase-dashboard.json` | `serverless-fullstack-architecture` | 全栈无服务器与边缘架构总览 (Serverless & Edge Full-Stack Topology) |
 | `victoria-logs-overview.json` | `victoria-logs-overview` | Victoria Logs Overview |
 | `victoria-traces-dashboard.json` | `victoria-traces-overview` | VictoriaTraces Distributed Tracing APM |
+
+The AI Aggregator collection and dashboard contract is documented in
+[`ai-aggregator-observability.md`](ai-aggregator-observability.md).
 
 The source-host SQLite `dashboard` table contained zero rows during the
 2026-09-27 migration inventory, confirming that the active dashboards were
