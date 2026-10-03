@@ -23,10 +23,19 @@
     status_code: 200
   when: ai_aggregator_operation != 'plan'
 
+- name: Create a staging directory outside all active Caddy imports
+  ansible.builtin.file:
+    path: "{{ ai_aggregator_root }}/caddy-staging"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  when: ai_aggregator_operation == 'stage'
+
 - name: Stage a Caddy candidate outside the active fragment glob
   ansible.builtin.template:
     src: Caddyfile.ai-aggregator.j2
-    dest: "{{ caddy_config_dir }}/conf.d/ai-aggregator.caddy.candidate"
+    dest: "{{ ai_aggregator_root }}/caddy-staging/ai-aggregator.caddy.candidate"
     owner: root
     group: root
     mode: '0644'
@@ -34,7 +43,7 @@
 
 - name: Read the candidate required for direct-mode activation
   ansible.builtin.slurp:
-    src: "{{ caddy_config_dir }}/conf.d/ai-aggregator.caddy.candidate"
+    src: "{{ ai_aggregator_root }}/caddy-staging/ai-aggregator.caddy.candidate"
   register: ai_aggregator_direct_candidate
   when: ai_aggregator_operation == 'activate'
 
@@ -50,14 +59,14 @@
     - name: Preserve the current active Caddy fragment
       ansible.builtin.copy:
         src: "{{ caddy_config_dir }}/conf.d/ai-aggregator.caddy"
-        dest: "{{ caddy_config_dir }}/conf.d/ai-aggregator.caddy.pre-direct"
+        dest: "{{ ai_aggregator_root }}/caddy-staging/ai-aggregator.caddy.pre-direct"
         remote_src: true
         owner: root
         group: root
         mode: '0600'
     - name: Publish the staged candidate
       ansible.builtin.copy:
-        src: "{{ caddy_config_dir }}/conf.d/ai-aggregator.caddy.candidate"
+        src: "{{ ai_aggregator_root }}/caddy-staging/ai-aggregator.caddy.candidate"
         dest: "{{ caddy_config_dir }}/conf.d/ai-aggregator.caddy"
         remote_src: true
         owner: root
@@ -74,7 +83,7 @@
   rescue:
     - name: Restore the previous active Caddy fragment
       ansible.builtin.copy:
-        src: "{{ caddy_config_dir }}/conf.d/ai-aggregator.caddy.pre-direct"
+        src: "{{ ai_aggregator_root }}/caddy-staging/ai-aggregator.caddy.pre-direct"
         dest: "{{ caddy_config_dir }}/conf.d/ai-aggregator.caddy"
         remote_src: true
         mode: '0644'
