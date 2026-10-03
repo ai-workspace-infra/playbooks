@@ -1,9 +1,18 @@
 {{ ai_aggregator_spec.entrypoint.domain }} {
     # Caddy owns HTTPS and automatic certificate management only. The gateway owns
-    # Host/Path routing, tenant authentication, ACL, rate limits and auditing.
+    # In direct mode New API owns user authentication and accounting.
     # With no explicit tls directive, Caddy provisions certificates through
     # its configured ACME issuer; DNS/ACME reachability is an environment gate.
+{% if ai_aggregator_vault_tls_runtime_enabled | default(false) | bool %}
+    tls {{ ai_aggregator_runtime_root }}/tls/fullchain.pem {{ ai_aggregator_runtime_root }}/tls/privkey.pem
+{% endif %}
+{% if ai_aggregator_entry_mode | default('gateway') == 'direct-new-api' %}
+    reverse_proxy {{ ai_aggregator_spec.new_api.bind_address }}:{{ ai_aggregator_spec.new_api.port }} {
+        flush_interval -1
+    }
+{% else %}
     reverse_proxy {{ ai_aggregator_spec[ai_aggregator_adapter].bind_address }}:{{ ai_aggregator_spec[ai_aggregator_adapter].proxy_port }} {
         flush_interval -1
     }
+{% endif %}
 }

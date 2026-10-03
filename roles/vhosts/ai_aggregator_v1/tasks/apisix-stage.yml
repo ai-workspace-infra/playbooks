@@ -4,7 +4,8 @@
     that:
       - ai_aggregator_apisix_bundle_dir | length > 0
       - ai_aggregator_spec.apisix.runtime_secret_refs is mapping
-      - ai_aggregator_spec.apisix.runtime_secret_refs | length > 0
+      - ai_aggregator_spec.apisix.runtime_secret_refs | length == 0
+      - "'AI_GATEWAY_CLIENT_KEY' not in ai_aggregator_spec.apisix.runtime_secret_refs"
       - ai_aggregator_vault_token | length > 0
 
 - name: Load non-sensitive rendered files
@@ -12,7 +13,7 @@
     ai_aggregator_apisix_config: "{{ lookup('ansible.builtin.file', ai_aggregator_apisix_bundle_dir ~ '/config.yaml') | from_yaml }}"
     ai_aggregator_apisix_routes: "{{ lookup('ansible.builtin.file', ai_aggregator_apisix_bundle_dir ~ '/apisix.yaml') | from_yaml }}"
 
-- name: Require Standalone loopback configuration and the AI plugin
+- name: Require Standalone loopback configuration and New API user-token routing
   ansible.builtin.assert:
     that:
       - ai_aggregator_apisix_config.deployment.role == 'data_plane'
@@ -20,9 +21,16 @@
       - not ai_aggregator_apisix_config.apisix.enable_admin | bool
       - not ai_aggregator_apisix_config.apisix.enable_control | bool
       - "ai_aggregator_apisix_config.apisix.node_listen == [{'ip': '127.0.0.1', 'port': 9080}]"
-      - ai_aggregator_apisix_routes.routes | selectattr('plugins.ai-proxy-multi', 'defined') | list | length > 0
+      - ai_aggregator_apisix_routes.routes | selectattr('plugins.ai-proxy-multi', 'defined') | list | length == 0
+      - ai_aggregator_apisix_routes.routes | selectattr('plugins.key-auth', 'defined') | list | length == 0
+      - ai_aggregator_apisix_routes.routes | selectattr('plugins.jwt-auth', 'defined') | list | length == 0
+      - ai_aggregator_apisix_routes.routes | selectattr('plugins.serverless-pre-function', 'defined') | list | length > 0
       - "lookup('ansible.builtin.file', ai_aggregator_apisix_bundle_dir ~ '/apisix.yaml').rstrip().endswith('#END')"
       - ai_aggregator_apisix_routes.routes | map(attribute='hosts') | flatten | unique | list == [ai_aggregator_spec.entrypoint.domain]
+      - ai_aggregator_apisix_routes.upstreams | length == 1
+      - ai_aggregator_apisix_routes.upstreams[0].name == 'new-api'
+      - "ai_aggregator_apisix_routes.upstreams[0].nodes == {(ai_aggregator_spec.new_api.bind_address ~ ':' ~ (ai_aggregator_spec.new_api.port | string)): 100}"
+      - "ai_aggregator_apisix_routes.routes | map(attribute='upstream_id') | unique | list == [ai_aggregator_apisix_routes.upstreams[0].id]"
 
 - name: Add loopback-only APISIX Prometheus exporter configuration
   ansible.builtin.set_fact:
@@ -149,21 +157,6 @@
       results: "{{ ai_aggregator_apisix_secrets.results }}"
     - name: new-api
       results: "{{ ai_aggregator_new_api_runtime_secrets.results }}"
-  no_log: true
-
-- name: Require the APISIX client key reference
-  ansible.builtin.assert:
-    that:
-      - ai_aggregator_apisix_secrets.results | selectattr('item.key', 'equalto', 'AI_GATEWAY_CLIENT_KEY') | list | length == 1
-    fail_msg: "AI_GATEWAY_CLIENT_KEY must be provided by Vault for APISIX"
-
-- name: Write APISIX client key to an isolated tmpfs credential file
-  ansible.builtin.copy:
-    dest: "{{ ai_aggregator_runtime_root }}/apisix/client-key"
-    owner: root
-    group: root
-    mode: '0600'
-    content: "{{ (ai_aggregator_apisix_secrets.results | selectattr('item.key', 'equalto', 'AI_GATEWAY_CLIENT_KEY') | first).json.data.data[(ai_aggregator_apisix_secrets.results | selectattr('item.key', 'equalto', 'AI_GATEWAY_CLIENT_KEY') | first).item.value.split('#')[1]] }}\n"
   no_log: true
 
 - name: Publish APISIX configuration with metrics enabled atomically
