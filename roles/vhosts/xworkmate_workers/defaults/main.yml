@@ -18,6 +18,10 @@ xworkmate_workers_opencode_env_file: "{{ xworkmate_workers_runtime_env_dir }}/op
 # Vault Agent/operator supplies private 0600 files on tmpfs, owned by the
 # Gateway UID if its plugin reads them (root-owned otherwise).
 # model.env: XWORKMATE_LLM_API_KEY; opencode.env: OPENCODE_PASSWORD.
+# Optional root-only bridge from an existing Vault-rendered private /run key.
+# Empty source keeps externally supplied env files as the default contract.
+xworkmate_workers_model_key_source_file: ""
+xworkmate_workers_model_key_source_unit: ai-aggregator-vault.service
 xworkmate_workers_llm_base_url: ""
 xworkmate_workers_llm_model: ""
 # Kernel-enforced CIDRs, including exact aggregator and DNS addresses.
@@ -35,6 +39,7 @@ xworkmate_workers_dsh_source_revision: 639ed015397290b3745d163aafe02ffee4aa3f84
 xworkmate_workers_opencode_source_revision: 35a41b5d53c71ae0337e614ec192fd5d1a5c7eb8
 # Supply real self-contained Linux archives from your release pipeline. No URL
 # or digest is invented, and no npm install/build scripts run on the target.
+xworkmate_workers_artifact_transport: https # https or explicitly SSH-staged
 xworkmate_workers_dsh_artifact_url: ""
 xworkmate_workers_dsh_artifact_sha256: ""
 xworkmate_workers_dsh_entrypoint: bin/dsh

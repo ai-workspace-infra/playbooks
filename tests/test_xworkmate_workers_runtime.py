@@ -35,6 +35,56 @@ def config():
 
 
 class WorkerRuntimeContractTest(unittest.TestCase):
+    def test_staged_archive_is_digest_owned_regular_file_not_mutable_source(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'staged'
+            root.mkdir(mode=0o755)
+            source = root / 'source.tar.gz'
+            with tarfile.open(source, 'w:gz') as archive:
+                archive.addfile(tarfile.TarInfo('runtime-manifest.json'))
+            checksum = hashlib.sha256(source.read_bytes()).hexdigest()
+            target = root / ('dsh-' + checksum + '.tar.gz')
+            source.rename(target)
+            target.chmod(0o600)
+            native_lstat = Path.lstat
+            def root_owned(path):
+                value = native_lstat(path)
+                return SimpleNamespace(st_mode=value.st_mode, st_uid=0, st_nlink=value.st_nlink)
+            with patch.object(launcher, 'STAGED_ROOT', root), patch.object(Path, 'lstat', root_owned):
+                self.assertEqual(launcher.staged_archive_check('dsh', checksum), target)
+                with self.assertRaises(ValueError):
+                    launcher.staged_archive_check('dsh', '../escape')
+                with self.assertRaises(ValueError):
+                    launcher.staged_archive_check('other', checksum)
+                target.write_bytes(b'changed after build')
+                with self.assertRaises(ValueError):
+                    launcher.staged_archive_check('dsh', checksum)
+                target.unlink()
+                target.symlink_to('/etc/passwd')
+                with self.assertRaises(ValueError):
+                    launcher.staged_archive_check('dsh', checksum)
+
+    def test_network_gate_requires_reachable_same_user_before_and_after_deny(self):
+        import subprocess
+        calls = []
+        def run(argv, **kwargs):
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0)
+        with patch.object(launcher.subprocess, 'run', side_effect=run):
+            launcher.network_check({'user': 'gateway-test'})
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all('User=gateway-test' in argv for argv in calls))
+        self.assertNotIn('IPAddressDeny=any', calls[0])
+        self.assertIn('IPAddressDeny=any', calls[1])
+        self.assertIn('IPAddressDeny=any', calls[2])
+        self.assertIn('IPAddressAllow=localhost', calls[2])
+        self.assertEqual({argv[-2] for argv in calls}, {calls[0][-2]})
+        for index in range(3):
+            outcomes = [subprocess.CompletedProcess([], 0)] * index + [subprocess.CalledProcessError(1, [])]
+            with patch.object(launcher.subprocess, 'run', side_effect=outcomes), self.assertRaises(subprocess.CalledProcessError):
+                launcher.network_check({'user': 'gateway-test'})
+
     def test_no_implicit_deployment_or_unpinned_release(self):
         defaults = yaml.safe_load((ROLE / 'defaults/main.yml').read_text())
         self.assertFalse(defaults['xworkmate_workers_enabled'])
@@ -161,7 +211,7 @@ class WorkerRuntimeContractTest(unittest.TestCase):
         self.assertEqual(rules[0], {'action': '*', 'resource': '*', 'effect': 'deny'})
         self.assertEqual(rules[-1], {'action': 'external_directory', 'resource': '*', 'effect': 'deny'})
         self.assertFalse(any(rule['action'] == 'shell' for rule in rules))
-        self.assertEqual(json.loads(rendered('gateway-tool-opt-in.json.j2')), {'tools': {'allow': ['xworkmate_worker']}})
+        self.assertEqual(json.loads(rendered('gateway-tool-opt-in.json.j2')), {'tools': {'alsoAllow': ['xworkmate_worker']}})
         gateway = json.loads(rendered('gateway-model-service.json.j2'))
         self.assertEqual(gateway['models']['providers']['xworkmate']['apiKey'],
                          {'source': 'env', 'provider': 'default', 'id': 'XWORKMATE_LLM_API_KEY'})
@@ -171,6 +221,10 @@ class WorkerRuntimeContractTest(unittest.TestCase):
         self.assertEqual(sdk[0]['config']['policy'], 'never')
         self.assertFalse(sdk[1]['config']['maxTokensAsSuccess'])
         worker = json.loads(rendered('gateway-worker-runtime.json.j2'))['workerRuntime']
+        self.assertEqual(worker['opencode']['permissions'], [
+            {'action': 'read', 'resource': '*', 'effect': 'allow'},
+            {'action': 'edit', 'resource': '*', 'effect': 'allow'},
+        ])
         self.assertEqual(worker['command'], ['/usr/bin/sudo', '-n', '/usr/local/libexec/xworkmate-worker-launch'])
         self.assertEqual(worker['stateRoot'], '/var/lib/xworkmate-workers/runs')
         self.assertEqual(worker['modelService']['credentialEnvFile'], '/run/xworkmate-workers/model.env')

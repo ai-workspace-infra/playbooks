@@ -11,8 +11,12 @@ there is no ACP/SDK daemon. OpenCode v2 is an authenticated loopback service.
 
 Pinned sources are DSH `639ed015397290b3745d163aafe02ffee4aa3f84` and OpenCode
 `35a41b5d53c71ae0337e614ec192fd5d1a5c7eb8` (v2 source, package version 2.0.22).
-Deployment requires real immutable HTTPS tar.gz URLs and SHA256 values. Empty
-inputs fail closed. Targets never run package-manager installation or build scripts.
+Deployment requires generated SHA256 values and either immutable HTTPS tar.gz
+URLs (default) or explicit `artifact_transport: staged`. Staged archives must be
+root-owned 0600 regular files, without hardlinks, at
+`/var/lib/xworkmate-workers/staged/ENGINE-SHA256.tar.gz`; the launcher validates
+ownership, content digest and tar safety before admission. URLs remain empty for
+SSH staging. Empty digest/revision inputs fail closed. Targets never run package-manager installation or build scripts.
 Each archive root contains `bin/dsh` or `bin/opencode`, required runtime libraries,
 licenses, and `runtime-manifest.json` with exact `engine` and `sourceRevision`.
 Archives cannot contain absolute/traversal paths, special files or escaping links.
@@ -26,13 +30,24 @@ python3 scripts/build_xworkmate_workers.py \
   --linux-node-archive /build/verified/node-linux.tar.xz \
   --linux-node-sha256 VERIFIED_64_HEX_DIGEST \
   --pnpm /build/tools/bin/pnpm --bun /build/tools/bin/bun \
+  --worker-only --musl-license /build/tools/musl/usr/share/doc/musl/copyright \
   --output /build/releases
 ```
 
 Run this with Python 3.12+ only on a disposable Linux glibc x64/arm64 build host, with reviewed
 dependency lifecycle scripts and existing build toolchains (including DSH native
 addon build requirements). It uses `git archive` of the exact commits, pnpm 11.7.0
-and Bun 1.4.2, frozen lockfiles, DSH's own full build and OpenCode's own CLI compiler.
+and Bun 1.4.2, frozen lockfiles, DSH's upstream build commands and OpenCode's own CLI compiler.
+`--worker-only` builds DSH's original host-reference TypeScript projects in
+separate processes, host tsdown and full Linux native components (glibc/musl
+addons and static Landlock), excluding root test aggregation and client/desktop/web
+bundles. Three shared Node entries which upstream mounts in ACP/SDK but places in
+its client build pass are generated using their original package configs filtered
+to Node output. Missing entries or profile activation warnings fail the keyless gate. The package retains upstream source and dependencies for plugin
+resolution; this is not a reduced dependency tree. OpenCode skips its separate web
+UI bundle while retaining the API worker. Without this flag the full upstream
+build remains the default. `--engine` supports serial per-engine builds; an explicit
+fresh `--work-root` preserves task-owned diagnostics after failure.
 It bundles a separately verified compatible Linux Node archive for DSH, and selects
 the x64 baseline binary where appropriate. Ambient credentials, the caller's home,
 working-tree files and existing auth caches are not copied. The manifest includes
@@ -40,16 +55,18 @@ the source revision. Actual generated archives and checksums are emitted; the
 script neither invents URLs nor publishes them. Upstream dependency/build downloads
 still require supply-chain review; this is not a claim of bit-for-bit reproducibility.
 
-The script runs keyless DSH ACP/SDK configuration inspection and OpenCode version
-smoke checks. Those checks do not prove real stdio boot, native tool operation,
-provider adapter availability offline, cancellation, or inference. Before publishing
+The script runs keyless DSH configuration inspection, real ACP initialize/newSession/close
+and SDK initialize/shutdown, and OpenCode authenticated `/api/info` 200 plus
+anonymous 401/version checks. Dummy model configuration receives no prompts or
+model requests. These checks do not prove native tool isolation, provider first-use
+loading offline, cancellation, or inference. Before publishing
 any candidate, test a fresh Linux runtime with the final archive and restricted
 egress: ACP initialize/newSession/set_config_option/close, SDK initialize/shutdown,
 OpenCode authenticated `/api/info` and provider loading, followed by separately
 authorized per-model inference. If provider resolution needs registry downloads,
 the artifact/cache must be completed in the release pipeline; broad registry egress
-must not be added to make runtime installation work. This lane has not built Linux
-archives or published a release.
+must not be added to make runtime installation work. Build/runtime acceptance evidence belongs with each generated candidate; source
+checks alone do not prove a deployed Linux runtime.
 
 ## Inputs and runtime credentials
 
@@ -85,6 +102,16 @@ Vault Agent/operator supplies `/run/xworkmate-workers/model.env` containing only
 Gateway plugin to read these references directly, render files owned by its UID
 and make the parent directory traversable by that account. Root-owned files are
 accepted by the systemd launcher but cannot be read by a non-root Gateway plugin.
+Optionally set `xworkmate_workers_model_key_source_file` to an existing root-owned
+0600 regular `/run` key file and `xworkmate_workers_model_key_source_unit` to its
+producer unit. The optional root-only bootstrap validates every parent, strips
+only one final LF, accepts a restricted Bearer literal, and atomically creates the
+two env files with Gateway ownership. It preserves a valid existing OpenCode
+password on redeploy. The source reference is nonsecret; no key enters Ansible
+variables or output. Empty source retains the externally supplied env contract.
+After key rotation, explicitly restart `xworkmate-workers-runtime`, then the actual
+Gateway and OpenCode units; the oneshot does not provide automatic live reload.
+
 Use literal one-line values, optionally quoted; no shell expansion or extra env
 keys. This role never materializes or reads Vault tokens. Systemd reads env files
 before applying the service mount namespace; agents cannot open the credential
@@ -100,7 +127,12 @@ defaults to 900 seconds and cannot exceed the adapter's 900000ms timeout.
 
 Preinstall Python 3.9+, sudo, systemd, bubblewrap, POSIX ACL tooling and find. The role
 does not install a toolchain on production hosts. It requires Linux systemd and
-tests kernel cgroup IP deny enforcement with a real reachable listener; missing BPF
+tests kernel cgroup IP deny enforcement with a real listener and same-user
+positive controls before denial and after an explicit localhost allow. TCP denial
+may return EPERM/EACCES or silently drop packets until timeout; refused or
+unreachable destinations do not pass the gate. The implementation matches systemd
+[cgroup-SKB filtering](https://github.com/systemd/systemd/blob/v259/src/core/bpf-firewall.c).
+A missing or ineffective rule fails the contrast check; missing BPF
 support fails deployment. Both runtimes allow only localhost plus explicit CIDRs.
 Include the required DNS resolver addresses and all current aggregator addresses;
 DNS re-addressing requires explicit revalidation. IP rules do not restrict URL paths
@@ -133,7 +165,9 @@ acceptance gate.
 
 Native OpenCode v2 ordered permissions deny all actions, then allow `read`/`edit`
 with resource `*` relative to the current prepared task location, while denying
-external directories. Shell, git, build, tests, web fetch and MCP default to deny.
+external directories. The same reviewed read/edit and shell rules are explicitly
+forwarded in the Gateway workerRuntime fragment because each prepared session
+receives its own permissions; service-wide config alone is insufficient. Shell, git, build, tests, web fetch and MCP default to deny.
 To authorize reviewed commands, supply explicit rules:
 
 ```yaml
@@ -156,7 +190,8 @@ The role emits three non-secret merge fragments:
   into `plugins.entries.openclaw-multi-session-plugins.config`; includes bounded
   command/env references, prepared-output collection and matching timeout.
 - `/etc/xworkmate-workers/gateway-tool-opt-in.json`: union `xworkmate_worker` into
-  the existing `tools.allow` list; preserve every other tool setting and allow entry.
+  the existing `tools.alsoAllow` list; preserve every other tool setting and allow entry. This keeps the default built-in
+  tools available; a new `tools.allow` list would replace them.
   The plugin manifest must declare `contracts.tools` and
   `toolMetadata.xworkmate_worker.optional: true`. Validate that plugin tool discovery
   exposes this tool after opt-in.

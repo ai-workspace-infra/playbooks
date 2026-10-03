@@ -6,6 +6,7 @@
       ansible.builtin.assert:
         that:
           - xworkmate_workers_action in ['deploy', 'verify', 'stop']
+          - xworkmate_workers_artifact_transport in ['https', 'staged']
           - ansible_system == 'Linux'
           - ansible_service_mgr == 'systemd'
           - xworkmate_workers_config_dir == '/etc/xworkmate-workers'
@@ -29,6 +30,9 @@
           - xworkmate_workers_user != xworkmate_workers_gateway_user
           - xworkmate_workers_gateway_user is match('^[a-z_][a-z0-9_-]{0,30}$')
           - xworkmate_workers_model_env_file != xworkmate_workers_opencode_env_file
+          - xworkmate_workers_model_key_source_file == '' or xworkmate_workers_model_key_source_file is match('^/run/[A-Za-z0-9_./-]+$')
+          - "'..' not in xworkmate_workers_model_key_source_file.split('/')"
+          - xworkmate_workers_model_key_source_unit is match('^[A-Za-z0-9_.@-]+\.service$')
         fail_msg: Workers require an explicit Linux systemd configuration and dedicated runtime credential references.
 
     - name: Validate operator shell rules cannot authorize other actions
@@ -62,15 +66,16 @@
         - name: Validate immutable artifact inputs
           ansible.builtin.assert:
             that:
-              - item.url is match('^https://[^ /]+/.+')
-              - not (item.url | urlsplit('username'))
-              - not (item.url | urlsplit('password'))
-              - not (item.url | urlsplit('query'))
-              - not (item.url | urlsplit('fragment'))
-              - "'/latest/' not in item.url and '/latest' not in item.url"
+              - xworkmate_workers_artifact_transport == 'staged' or item.url is match('^https://[^ /]+/.+')
+              - xworkmate_workers_artifact_transport == 'staged' or not (item.url | urlsplit('username'))
+              - xworkmate_workers_artifact_transport == 'staged' or not (item.url | urlsplit('password'))
+              - xworkmate_workers_artifact_transport == 'staged' or not (item.url | urlsplit('query'))
+              - xworkmate_workers_artifact_transport == 'staged' or not (item.url | urlsplit('fragment'))
+              - "xworkmate_workers_artifact_transport == 'staged' or ('/latest/' not in item.url and '/latest' not in item.url)"
+              - xworkmate_workers_artifact_transport != 'staged' or item.url == ''
               - item.sha256 is match('^[0-9a-f]{64}$')
               - item.revision is match('^[0-9a-f]{40}$')
-            fail_msg: Supply real immutable HTTPS archives and their SHA256; this role never fabricates or builds a release.
+            fail_msg: Supply immutable SHA256 artifacts via HTTPS or explicit root-owned SSH staging; no target-side build.
           loop:
             - {url: "{{ xworkmate_workers_dsh_artifact_url }}", sha256: "{{ xworkmate_workers_dsh_artifact_sha256 }}", revision: "{{ xworkmate_workers_dsh_source_revision }}"}
             - {url: "{{ xworkmate_workers_opencode_artifact_url }}", sha256: "{{ xworkmate_workers_opencode_artifact_sha256 }}", revision: "{{ xworkmate_workers_opencode_source_revision }}"}
@@ -124,6 +129,7 @@
             - "{{ xworkmate_workers_state_root }}"
             - "{{ xworkmate_workers_state_root }}/runs"
             - "{{ xworkmate_workers_state_root }}/cancelled"
+            - "{{ xworkmate_workers_state_root }}/staged"
             - "{{ xworkmate_workers_state_root }}/runs/dsh-acp"
             - "{{ xworkmate_workers_state_root }}/runs/dsh-sdk"
             - "{{ xworkmate_workers_launcher | dirname }}"
@@ -190,6 +196,44 @@
           changed_when: false
           when: not ansible_check_mode
 
+        - name: Materialize optional runtime env from an existing private Vault-rendered key
+          when: xworkmate_workers_model_key_source_file != ''
+          block:
+            - name: Install fixed root-only runtime environment renderer
+              ansible.builtin.copy:
+                src: xworkmate-worker-runtime-env.py
+                dest: /usr/local/libexec/xworkmate-worker-runtime-env
+                owner: root
+                group: root
+                mode: '0755'
+              register: xworkmate_workers_runtime_renderer
+
+            - name: Render non-secret runtime key source reference
+              ansible.builtin.template:
+                src: runtime-env-source.json.j2
+                dest: /etc/xworkmate-workers/runtime-env-source.json
+                owner: root
+                group: root
+                mode: '0600'
+              register: xworkmate_workers_runtime_source
+
+            - name: Render ordered runtime environment bootstrap service
+              ansible.builtin.template:
+                src: runtime-env.service.j2
+                dest: /etc/systemd/system/xworkmate-workers-runtime.service
+                owner: root
+                group: root
+                mode: '0644'
+              register: xworkmate_workers_runtime_unit
+
+            - name: Start optional bootstrap without exposing credential contents
+              ansible.builtin.systemd_service:
+                name: xworkmate-workers-runtime
+                enabled: true
+                daemon_reload: true
+                state: "{{ 'restarted' if (xworkmate_workers_runtime_renderer.changed or xworkmate_workers_runtime_source.changed or xworkmate_workers_runtime_unit.changed) else 'started' }}"
+              when: not ansible_check_mode
+
         - name: Inspect external Vault Agent runtime env file metadata
           ansible.builtin.stat:
             path: "{{ item }}"
@@ -213,6 +257,7 @@
           when: not ansible_check_mode
 
         - name: Download verified immutable archives
+          when: xworkmate_workers_artifact_transport == 'https'
           ansible.builtin.get_url:
             url: "{{ item.url }}"
             dest: "{{ xworkmate_workers_root }}/archives/{{ item.engine }}-{{ item.sha256 }}.tar.gz"
@@ -225,6 +270,28 @@
             - {engine: opencode, url: "{{ xworkmate_workers_opencode_artifact_url }}", sha256: "{{ xworkmate_workers_opencode_artifact_sha256 }}"}
           loop_control:
             label: "{{ item.engine }}"
+
+        - name: Verify explicitly SSH-staged archive ownership digest and safety
+          ansible.builtin.command:
+            argv: ["{{ xworkmate_workers_launcher }}", staged-archive-check, "{{ item.engine }}", "{{ item.sha256 }}"]
+          loop:
+            - {engine: dsh, sha256: "{{ xworkmate_workers_dsh_artifact_sha256 }}"}
+            - {engine: opencode, sha256: "{{ xworkmate_workers_opencode_artifact_sha256 }}"}
+          changed_when: false
+          when: xworkmate_workers_artifact_transport == 'staged' and not ansible_check_mode
+
+        - name: Admit verified SSH-staged archives into immutable archive storage
+          ansible.builtin.copy:
+            src: "{{ xworkmate_workers_state_root }}/staged/{{ item.engine }}-{{ item.sha256 }}.tar.gz"
+            dest: "{{ xworkmate_workers_root }}/archives/{{ item.engine }}-{{ item.sha256 }}.tar.gz"
+            remote_src: true
+            owner: root
+            group: root
+            mode: '0600'
+          loop:
+            - {engine: dsh, sha256: "{{ xworkmate_workers_dsh_artifact_sha256 }}"}
+            - {engine: opencode, sha256: "{{ xworkmate_workers_opencode_artifact_sha256 }}"}
+          when: xworkmate_workers_artifact_transport == 'staged' and not ansible_check_mode
 
         - name: Reject unsafe tar entries before root extraction
           ansible.builtin.command:

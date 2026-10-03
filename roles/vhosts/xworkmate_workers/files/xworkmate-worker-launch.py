@@ -34,6 +34,7 @@ import uuid
 CONFIG_PATH = Path('/etc/xworkmate-workers/worker-config.json')
 PROFILES = {'dsh-acp': 'acp', 'dsh-sdk': 'sdk'}
 CANCEL_ROOT = Path('/var/lib/xworkmate-workers/cancelled')
+STAGED_ROOT = Path('/var/lib/xworkmate-workers/staged')
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -220,6 +221,28 @@ def archive_check(path):
                         stack.append(part)
 
 
+def staged_archive_check(engine, checksum):
+    """SSH-staged artifacts use the same digest/archive safety as HTTPS input."""
+    require(engine in ('dsh', 'opencode') and re.fullmatch(r'[0-9a-f]{64}', checksum),
+            'staged artifact requires a known engine and full SHA256')
+    for directory in (STAGED_ROOT.parent, STAGED_ROOT):
+        metadata = directory.lstat()
+        require(stat.S_ISDIR(metadata.st_mode) and metadata.st_uid == 0 and not metadata.st_mode & 0o022,
+                'artifact staging directories must be root-owned and non-writable')
+    path = STAGED_ROOT / (engine + '-' + checksum + '.tar.gz')
+    metadata = path.lstat()
+    require(stat.S_ISREG(metadata.st_mode) and metadata.st_uid == 0
+            and stat.S_IMODE(metadata.st_mode) == 0o600 and metadata.st_nlink == 1,
+            'staged archive must be a private root-owned regular file without links')
+    with path.open('rb') as archive:
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: archive.read(1024 * 1024), b''):
+            digest.update(chunk)
+    require(digest.hexdigest() == checksum, 'staged artifact SHA256 mismatch')
+    archive_check(path)
+    return path
+
+
 def read_runtime_env(path, allowed, required, owners=(0,)):
     path = Path(path)
     metadata = path.lstat()
@@ -378,19 +401,25 @@ def verify(config, models=False):
 
 
 def network_check(config):
-    # An accepting parent listener proves the destination exists. A cgroup
-    # with IPAddressDeny=any must fail with EPERM/EACCES, not ECONNREFUSED.
+    # systemd cgroup-SKB deny can silently drop TCP packets (TimeoutError),
+    # rather than return EPERM. Require same-user positive controls both before
+    # deny and after adding an explicit localhost allow to the otherwise denied
+    # cgroup. Refused/unreachable sockets never count as firewall enforcement.
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
-        listener.listen(2)
+        listener.listen(8)
         port = listener.getsockname()[1]
-        with socket.create_connection(('127.0.0.1', port), timeout=2):
-            pass
-        script = "import socket,errno,sys\ns=socket.socket();s.settimeout(2)\ntry:\n s.connect(('127.0.0.1',int(sys.argv[1])));sys.exit(1)\nexcept OSError as e:\n sys.exit(0 if e.errno in (errno.EACCES,errno.EPERM) else 2)"
-        subprocess.run(['/usr/bin/systemd-run', '--quiet', '--pipe', '--wait', '--collect',
-                        '--property', 'User=' + config['user'], '--property', 'IPAddressDeny=any',
-                        '/usr/bin/python3', '-c', script, str(port)], check=True, timeout=15,
-                       env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
+        script = "import socket,errno,sys\ns=socket.socket();s.settimeout(2)\nblocked=sys.argv[2]=='deny'\ntry:\n s.connect(('127.0.0.1',int(sys.argv[1])));sys.exit(1 if blocked else 0)\nexcept TimeoutError:\n sys.exit(0 if blocked else 2)\nexcept OSError as e:\n sys.exit(0 if blocked and e.errno in (errno.EACCES,errno.EPERM) else 2)"
+        for properties, expected in (([], 'allow'),
+                                     (['IPAddressDeny=any'], 'deny'),
+                                     (['IPAddressDeny=any', 'IPAddressAllow=localhost'], 'allow')):
+            argv = ['/usr/bin/systemd-run', '--quiet', '--pipe', '--wait', '--collect',
+                    '--property', 'User=' + config['user']]
+            for value in properties:
+                argv.extend(['--property', value])
+            argv.extend(['/usr/bin/python3', '-c', script, str(port), expected])
+            subprocess.run(argv, check=True, timeout=15,
+                           env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
 
 
 def stop():
@@ -427,6 +456,8 @@ def main(argv):
         stop()
     elif len(argv) == 2 and argv[0] == 'archive-check':
         archive_check(argv[1])
+    elif len(argv) == 3 and argv[0] == 'staged-archive-check':
+        staged_archive_check(argv[1], argv[2])
     elif len(argv) == 3 and argv[0] == 'artifact-check':
         artifact_check(config, argv[1], argv[2])
     else:

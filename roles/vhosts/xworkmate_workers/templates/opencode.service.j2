@@ -2,6 +2,10 @@
 Description=XWorkmate pinned OpenCode v2 execution server
 After=network-online.target
 Wants=network-online.target
+{% if xworkmate_workers_model_key_source_file %}
+After=xworkmate-workers-runtime.service
+Requires=xworkmate-workers-runtime.service
+{% endif %}
 ConditionPathExists={{ xworkmate_workers_model_env_file }}
 ConditionPathExists={{ xworkmate_workers_opencode_env_file }}
 
