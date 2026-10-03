@@ -1,15 +1,14 @@
 # Personal AI Aggregator v1 role
 
-## Default: APISIX Standalone
+The GitOps `spec.gateway` selects the entry mode and adapter. New API issues user API tokens and maintains the user, plan, quota and usage ledger. CPA and LiteLLM are its upstream channels.
 
-`deploy_ai_aggregator.yaml` defaults to APISIX. Declare `spec.gateway.adapter:
-apisix`, `mode: standalone`, `runtime_config_backend: gitops-file`, `etcd: false`.
-Set `spec.apisix.bind_address: 127.0.0.1`, `proxy_port: 9080`, and provide
-`runtime_secret_refs` mapping environment variable names to environment-scoped
-Vault references. Set `ai_aggregator_apisix_bundle_dir` to the controller-side
-directory produced by the public gateway renderer. Its bundle must include
-`ai-proxy-multi`, the selected entrypoint host, disabled Admin/Control APIs,
-loopback binding and the `#END` marker. Consumer credentials use runtime references.
+## APISIX mode
+
+Select `entry_mode: gateway`, `adapter: apisix`, `mode: standalone`, `runtime_config_backend: gitops-file`, and `etcd: false`. APISIX listens on loopback port 9080. Set `auth_mode: new-api-token-pass-through` and `runtime_secret_refs: {}`.
+
+`bootstrap_client_key` is an old APISIX Consumer credential. It cannot authenticate a New API user. The role does not fetch or write this key. Candidate New API routes must normalize and pass the original user token; gateway Key Auth, JWT Auth and direct AI provider plugins are rejected in this profile.
+
+Generate the bundle from the gateway component's `contracts/ai-internal-new-api.yaml`, adapting the hostname to the selected environment. The bundle must have Standalone loopback configuration, disabled Admin/Control APIs and the `#END` marker. Existing Prometheus configuration is preserved.
 
 ```bash
 ansible-playbook -i inventory.ini deploy_ai_aggregator.yaml \
@@ -18,43 +17,22 @@ ansible-playbook -i inventory.ini deploy_ai_aggregator.yaml \
   -e ai_aggregator_operation=plan
 ```
 
-Use `stage` to publish units/configuration and fetch Vault values into tmpfs.
-APISIX/OpenResty, New API and CPA binaries must already be installed and pinned.
-New API runtime credentials are injected separately from APISIX provider values.
-CPA OAuth directories are node-local, mode 0700, on operator-provided encrypted
-storage. CPA nodes are prepared separately with `deploy_ai_desktop.yml` and
-`ai_desktop_cpa_codeagent=true`. This role does not implement disk encryption.
+`stage` publishes configurations and units, fetching New API runtime secrets from Vault into tmpfs. Binaries must already be installed and pinned. CPA OAuth is node-local, mode 0700, on operator-provided encrypted storage. Prepare CPA nodes with `deploy_ai_desktop.yml` and `ai_desktop_cpa_codeagent=true`.
 
-Before `activate`, record `spec.apisix.activation_validated: true` after manual
-OAuth, consumer authentication and protocol checks. Activation runs CPA hosts
-first, then New API and APISIX, validates Caddy and reloads HTTPS last. APISIX uses
-systemd, no etcd or Docker. Backed-up configuration files support manual rollback;
-provider environment changes require an APISIX restart. Runtime injection must be
-repeated after reboot because `/run` is volatile. Real-node testing remains required.
+Before `activate`, record `spec.apisix.activation_validated: true` after user-token, OAuth and protocol verification. CPA starts before New API and APISIX; Caddy reloads after configuration validation. Runtime secrets require reinjection after reboot.
 
-## Legacy Kong compatibility
+## Direct mode
 
-Explicit `spec.gateway.adapter: kong` selects the retained legacy implementation.
+Select `entry_mode: direct-new-api`. Caddy forwards to the existing healthy New API service; New API authenticates and accounts for both CPA and LiteLLM channels. A dormant `adapter` configuration may remain for rollback.
 
-This role reads the selected GitOps `PersonalAIAggregator` declaration.
-`plan` validates topology and prints the roles assigned to each target. `stage`
-creates non-secret directories, units and Caddy fragments, but deliberately
-does not enable or start a service. `activate` is a separate, explicit
-operation: the playbook starts CPA groups first, then LiteLLM and New API, then
-Kong, and reloads Caddy only after `caddy validate` succeeds.
+This mode changes the Caddy route only. `stage` writes `ai-aggregator.caddy.candidate`; `activate` preserves the active fragment, publishes the candidate, validates Caddy and reloads. Failure restores the previous fragment. APISIX/Kong processes are left unchanged and receive no traffic from this route. New API and its Vault runtime material must already be provisioned.
 
-Caddy is a thin HTTPS edge: it automatically manages certificates and forwards
-both configured hosts to the Kong proxy listener. Kong owns Host/Path routing,
-tenant authentication, ACL, rate limits, and audit metadata. New API and
-LiteLLM are not direct Caddy upstreams. Automatic certificate issuance depends
-on the environment's ACME validation path being reachable for both hostnames.
+## Kong compatibility
 
-The artifact installer and Vault-authentication synchronizer are separate
-implementation gates: they require pinned upstream release assets, a verified
-New API loopback bind mechanism, and a node identity with least-privilege Vault
-policies. Do not start the rendered units until those gates are complete.
+`entry_mode: gateway` and `adapter: kong` select the retained legacy Kong deployment tasks. Kong requires its own Traditional/PostgreSQL runtime and loopback Admin API. The public gateway renderer supports New API token pass-through, but the legacy deployment tasks still require separate migration and node-level acceptance. Contract/render tests do not establish runtime interchangeability.
 
-CPA endpoints are not taken from the `cmdb://` placeholder in GitOps at
-runtime. The gateway resolves each target node's `private_ip` from generated or
-existing inventory, then writes the resulting channel map to `/run/ai-aggregator`
-tmpfs. Missing private CMDB data blocks gateway staging.
+## Verification
+
+Use a New API user token for `/v1/models` and a minimum inference request, then confirm the same user's usage record in New API. OpenAI uses Bearer authentication; Anthropic's `x-api-key` and the legacy `apikey` header are normalized by the gateway. Missing/invalid tokens must be rejected. Never store user tokens or OAuth bundles in Git, unit files, CI output or artifacts.
+
+An unauthenticated 401 proves the rejection path only. APISIX/Kong cutover requires an authorized request and a rollback check on the target host.

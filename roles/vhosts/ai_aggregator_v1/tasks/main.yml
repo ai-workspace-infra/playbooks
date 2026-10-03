@@ -7,16 +7,26 @@
 - name: Select the gateway adapter
   ansible.builtin.set_fact:
     ai_aggregator_spec: "{{ ai_aggregator_manifest.spec }}"
+    ai_aggregator_entry_mode: "{{ ai_aggregator_manifest.spec.gateway.entry_mode | default('gateway') }}"
     ai_aggregator_adapter: "{{ ai_aggregator_manifest.spec.gateway.adapter | default(ai_aggregator_gateway_adapter) }}"
 
-- name: Require a supported gateway adapter
+- name: Require a supported entry mode and gateway adapter
   ansible.builtin.assert:
-    that: ai_aggregator_adapter in ['apisix', 'kong']
+    that:
+      - ai_aggregator_entry_mode in ['gateway', 'direct-new-api']
+      - ai_aggregator_entry_mode == 'direct-new-api' or ai_aggregator_adapter in ['apisix', 'kong']
+      - ai_aggregator_manifest.spec.gateway.client_token_source | default('new-api') == 'new-api'
 
 - name: Deploy APISIX Standalone from GitOps files
   ansible.builtin.include_tasks: apisix.yml
-  when: ai_aggregator_adapter == 'apisix'
+  when: ai_aggregator_entry_mode == 'gateway' and ai_aggregator_adapter == 'apisix'
 
-- name: Deploy the legacy Kong adapter
+- name: Deploy the Kong adapter
   ansible.builtin.include_tasks: legacy-kong.yml
-  when: ai_aggregator_adapter == 'kong'
+  when: ai_aggregator_entry_mode == 'gateway' and ai_aggregator_adapter == 'kong'
+
+- name: Stage or activate a direct route to the existing New API service
+  ansible.builtin.include_tasks: direct-new-api.yml
+  when:
+    - ai_aggregator_entry_mode == 'direct-new-api'
+    - ai_aggregator_spec.nodes | selectattr('inventory_host', 'equalto', inventory_hostname) | selectattr('role', 'equalto', 'gateway') | list | length > 0

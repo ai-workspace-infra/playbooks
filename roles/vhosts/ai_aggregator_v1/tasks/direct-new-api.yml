@@ -1,0 +1,100 @@
+---
+- name: Validate direct-mode selection
+  ansible.builtin.assert:
+    that:
+      - ai_aggregator_operation in ['plan', 'stage', 'activate']
+      - ai_aggregator_spec.new_api.bind_address in ['127.0.0.1', '::1']
+      - ai_aggregator_spec.new_api.port | int > 0
+
+- name: Require enabled desired state for a route change
+  ansible.builtin.assert:
+    that: ai_aggregator_spec.enabled | bool
+  when: ai_aggregator_operation != 'plan'
+
+- name: Report the direct-mode plan
+  ansible.builtin.debug:
+    msg: "Caddy -> existing New API; New API authenticates and accounts for CPA and LiteLLM channels."
+  when: ai_aggregator_operation == 'plan'
+
+- name: Verify the existing New API service before staging or activation
+  ansible.builtin.uri:
+    url: "http://{{ ai_aggregator_spec.new_api.bind_address }}:{{ ai_aggregator_spec.new_api.port }}/api/status"
+    return_content: false
+    status_code: 200
+  when: ai_aggregator_operation != 'plan'
+
+- name: Create a staging directory outside all active Caddy imports
+  ansible.builtin.file:
+    path: "{{ ai_aggregator_root }}/caddy-staging"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  when: ai_aggregator_operation == 'stage'
+
+- name: Stage a Caddy candidate outside the active fragment glob
+  ansible.builtin.template:
+    src: Caddyfile.ai-aggregator.j2
+    dest: "{{ ai_aggregator_root }}/caddy-staging/ai-aggregator.caddy.candidate"
+    owner: root
+    group: root
+    mode: '0644'
+  when: ai_aggregator_operation == 'stage'
+
+- name: Read the candidate required for direct-mode activation
+  ansible.builtin.slurp:
+    src: "{{ ai_aggregator_root }}/caddy-staging/ai-aggregator.caddy.candidate"
+  register: ai_aggregator_direct_candidate
+  when: ai_aggregator_operation == 'activate'
+
+- name: Require a candidate staged from the current manifest
+  ansible.builtin.assert:
+    that: ai_aggregator_direct_candidate.content | b64decode == lookup('ansible.builtin.template', 'Caddyfile.ai-aggregator.j2')
+    fail_msg: The direct-mode candidate is stale; run stage with the current manifest first.
+  when: ai_aggregator_operation == 'activate'
+
+- name: Activate the staged direct route with rollback
+  when: ai_aggregator_operation == 'activate'
+  block:
+    - name: Preserve the current active Caddy fragment
+      ansible.builtin.copy:
+        src: "{{ caddy_config_dir }}/conf.d/ai-aggregator.caddy"
+        dest: "{{ ai_aggregator_root }}/caddy-staging/ai-aggregator.caddy.pre-direct"
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0600'
+    - name: Publish the staged candidate
+      ansible.builtin.copy:
+        src: "{{ ai_aggregator_root }}/caddy-staging/ai-aggregator.caddy.candidate"
+        dest: "{{ caddy_config_dir }}/conf.d/ai-aggregator.caddy"
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Validate Caddy before switching traffic
+      ansible.builtin.command:
+        argv: [caddy, validate, --config, "{{ caddy_config_dir }}/Caddyfile", --adapter, caddyfile]
+      changed_when: false
+    - name: Reload the validated direct route
+      ansible.builtin.systemd:
+        name: caddy.service
+        state: reloaded
+  rescue:
+    - name: Restore the previous active Caddy fragment
+      ansible.builtin.copy:
+        src: "{{ ai_aggregator_root }}/caddy-staging/ai-aggregator.caddy.pre-direct"
+        dest: "{{ caddy_config_dir }}/conf.d/ai-aggregator.caddy"
+        remote_src: true
+        mode: '0644'
+    - name: Validate the restored Caddy configuration
+      ansible.builtin.command:
+        argv: [caddy, validate, --config, "{{ caddy_config_dir }}/Caddyfile", --adapter, caddyfile]
+      changed_when: false
+    - name: Reload the restored route
+      ansible.builtin.systemd:
+        name: caddy.service
+        state: reloaded
+    - name: Report that the route change was rolled back
+      ansible.builtin.fail:
+        msg: Direct-mode activation failed; the previous Caddy route was restored.
