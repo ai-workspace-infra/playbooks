@@ -236,6 +236,48 @@ class WorkerRuntimeContractTest(unittest.TestCase):
         self.assertIn('IPAddressAllow=192.0.2.11/32', service)
         self.assertNotIn('fixture-only', service)
 
+    def test_launch_run_parent_is_traversable_under_restrictive_inherited_umask(self):
+        from contextlib import nullcontext
+        import time
+        for mask in (0o007, 0o077):
+            with self.subTest(mask=mask), tempfile.TemporaryDirectory() as directory:
+                case = config()
+                case['stateRoot'] = str(Path(directory).resolve())
+                (Path(directory) / 'runs/dsh-acp').mkdir(parents=True)
+                root = Path(directory) / 'runs/dsh-acp' / RUN_ID
+                child = SimpleNamespace(wait=lambda: 0)
+                previous = os.umask(mask)
+                try:
+                    with patch.object(launcher, 'preflight'), \
+                         patch.object(launcher, 'scope_lock', return_value=nullcontext(time.monotonic() + 65)), \
+                         patch.object(launcher, 'await_registration'), \
+                         patch.object(launcher.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=os.getuid())), \
+                         patch.object(launcher.grp, 'getgrnam', return_value=SimpleNamespace(gr_gid=os.getgid())), \
+                         patch.object(launcher.os, 'chown'), patch.object(launcher.signal, 'signal'), \
+                         patch.object(launcher.subprocess, 'Popen', return_value=child):
+                        self.assertEqual(launcher.launch(case, 'dsh-acp', RUN_ID), 0)
+                    self.assertEqual(root.stat().st_mode & 0o777, 0o755)
+                    self.assertEqual(root.stat().st_uid, os.getuid())
+                    self.assertEqual((root / 'home').stat().st_mode & 0o777, 0o700)
+                    self.assertEqual((root / 'workspace').stat().st_mode & 0o777, 0o700)
+                finally:
+                    os.umask(previous)
+
+    def test_collected_unit_inactive_requires_exact_not_found_on_failed_stop(self):
+        import time
+        for load_rc, load_state, accepted in [(0, 'not-found', True), (0, 'loaded', False), (1, 'not-found', False), (0, 'error', False)]:
+            with self.subTest(load_state=load_state, rc=load_rc), tempfile.TemporaryDirectory() as directory:
+                with patch.object(launcher, 'CANCEL_ROOT', Path(directory)), \
+                     patch.object(launcher.subprocess, 'run', side_effect=[
+                         SimpleNamespace(returncode=5), SimpleNamespace(returncode=4, stdout='inactive\n'),
+                         SimpleNamespace(returncode=load_rc, stdout=load_state+'\n')]) as execute:
+                    if accepted:
+                        self.assertTrue(launcher.cancel_locked('dsh-acp', RUN_ID, time.monotonic()+65)['workerStopped'])
+                        self.assertEqual(execute.call_args_list[-1].args[0], ['/usr/bin/systemctl', 'show', '--property=LoadState', '--value', 'xworkmate-dsh-acp-' + RUN_ID + '.service'])
+                    else:
+                        with self.assertRaises(ValueError):
+                            launcher.cancel_locked('dsh-acp', RUN_ID, time.monotonic()+65)
+
     def test_reused_run_namespace_is_rejected_before_root_chown_or_exec(self):
         with tempfile.TemporaryDirectory() as directory:
             case = config()
@@ -292,7 +334,7 @@ class WorkerRuntimeContractTest(unittest.TestCase):
                      (0, 3, 'deactivating', False), (0, 1, '', False),
                      (1, 3, 'inactive', False), (5, 4, 'unknown', True), (0, 3, 'inactive', True)]
             for stop_rc, state_rc, state, accepted in cases:
-                replies = [SimpleNamespace(returncode=stop_rc), SimpleNamespace(returncode=state_rc, stdout=state)]
+                replies = [SimpleNamespace(returncode=stop_rc), SimpleNamespace(returncode=state_rc, stdout=state), SimpleNamespace(returncode=0, stdout=('not-found' if state == 'unknown' else 'loaded')+'\n')]
                 with self.subTest(state=state, stop=stop_rc), patch.object(launcher, 'CANCEL_ROOT', marker_root), \
                      patch.object(Path, 'lstat', root_metadata), patch.object(launcher.os, 'fstat', root_fd), patch.object(launcher.subprocess, 'run', side_effect=replies):
                     if accepted:

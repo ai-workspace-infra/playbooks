@@ -116,7 +116,15 @@ def cancel_locked(profile, run_id, deadline):
                            capture_output=True, text=True, env=environment)
     require(state.returncode in (3, 4) and state.stdout.strip() in ('inactive', 'unknown'),
             'owned worker unit has not reached inactive or notloaded state')
-    require(stopped.returncode == 0 or state.stdout.strip() == 'unknown', 'owned worker stop failed')
+    if stopped.returncode != 0:
+        # systemd 259 reports is-active=inactive/exit4 for a collected unit.
+        # Accept failed stop only after exact manager proof that it is absent.
+        remaining = deadline - time.monotonic()
+        require(remaining > 0, 'worker cancellation exceeded its deadline')
+        loaded = subprocess.run(['/usr/bin/systemctl', 'show', '--property=LoadState', '--value', unit],
+                                timeout=remaining, capture_output=True, text=True, env=environment)
+        require(state.returncode == 4 and loaded.returncode == 0 and loaded.stdout.strip() == 'not-found',
+                'owned worker stop failed')
     return {'profile': profile, 'runId': run_id, 'workerStopped': True}
 
 
@@ -326,6 +334,8 @@ def launch(config, profile, run_id):
         require(not root.exists() and not root.is_symlink(), 'run UUID already exists; use a new attempt UUID')
         uid, gid = pwd.getpwnam(config['user']).pw_uid, grp.getgrnam(config['group']).gr_gid
         root.mkdir(mode=0o755)
+        # Gateway/sudo may inherit 0007 or 0077; worker must traverse its root-owned parent.
+        os.chmod(root, 0o755)
         for directory in (root / 'home', root / 'workspace', root / 'workspace' / 'output'):
             directory.mkdir(mode=0o700)
             os.chown(directory, uid, gid)
