@@ -1,0 +1,14 @@
+- name: Snapshot, transfer and restore one telemetry store
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ role_path }}/files/observability_data_migrate.sh"
+  environment:
+    SOURCE_IP: "{{ lookup('env', 'SOURCE_IP') }}"
+    TARGET_IP: "{{ lookup('env', 'TARGET_IP') }}"
+    COMPONENT: "{{ lookup('env', 'COMPONENT') }}"
+    MIGRATION_MODE: "{{ lookup('env', 'MIGRATION_MODE') }}"
+    RUN_KEY: "{{ lookup('env', 'RUN_KEY') }}"
+    SSH_PRIVATE_KEY_PATH: "{{ lookup('env', 'SSH_PRIVATE_KEY_PATH') }}"
+    RUNNER_TEMP: "{{ lookup('env', 'RUNNER_TEMP') }}"
+  changed_when: true

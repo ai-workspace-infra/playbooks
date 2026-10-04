@@ -1,0 +1,14 @@
+- name: Require UAT for Observability data operations
+  ansible.builtin.assert:
+    that:
+      - observability_operations_environment == 'uat'
+    fail_msg: Observability host data and verification operations are UAT-only.
+
+- name: Validate selected Observability operation
+  ansible.builtin.assert:
+    that:
+      - observability_operation | default('') in ['data_migrate', 'verify_store', 'verify_target', 'verify_mcp']
+    fail_msg: Unsupported Observability operation.
+
+- name: Run selected Observability operation
+  ansible.builtin.include_tasks: "{{ observability_operation }}.yml"

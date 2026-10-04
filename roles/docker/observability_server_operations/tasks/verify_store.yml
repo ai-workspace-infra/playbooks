@@ -1,0 +1,11 @@
+- name: Verify restored telemetry store and preserved history
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ role_path }}/files/observability_verify_store.sh"
+  environment:
+    TARGET_IP: "{{ lookup('env', 'TARGET_IP') }}"
+    COMPONENT: "{{ lookup('env', 'COMPONENT') }}"
+    RUN_KEY: "{{ lookup('env', 'RUN_KEY') }}"
+    SSH_PRIVATE_KEY_PATH: "{{ lookup('env', 'SSH_PRIVATE_KEY_PATH') }}"
+  changed_when: false

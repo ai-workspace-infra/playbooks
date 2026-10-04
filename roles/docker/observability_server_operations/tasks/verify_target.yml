@@ -1,0 +1,25 @@
+- name: Verify legacy Observability host and Git-managed dashboards
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ role_path }}/files/observability_verify_target.sh"
+  environment:
+    TARGET_IP: "{{ lookup('env', 'TARGET_IP') }}"
+    SOURCE_IP: "{{ lookup('env', 'SOURCE_IP') }}"
+    SSH_PRIVATE_KEY_PATH: "{{ lookup('env', 'SSH_PRIVATE_KEY_PATH') }}"
+    DASHBOARD_SOURCE: "{{ observability_dashboard_source }}"
+    DNS_ACTION: "{{ lookup('env', 'DNS_ACTION') }}"
+    VERIFY_SOURCE_NODE: "{{ lookup('env', 'VERIFY_SOURCE_NODE') }}"
+  changed_when: false
+  when: lookup('env', 'TARGET_PLATFORM') == 'legacy-akamai'
+
+- name: Verify shared GCP Observability HTTPS entrypoint
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ role_path }}/files/verify_shared_target.sh"
+  environment:
+    TARGET_IP: "{{ lookup('env', 'TARGET_IP') }}"
+    GITHUB_STEP_SUMMARY: "{{ lookup('env', 'GITHUB_STEP_SUMMARY') }}"
+  changed_when: false
+  when: lookup('env', 'TARGET_PLATFORM') == 'shared-gcp'
