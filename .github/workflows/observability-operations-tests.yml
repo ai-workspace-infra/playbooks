@@ -1,0 +1,39 @@
+name: Observability Operations Tests
+
+on:
+  pull_request:
+    paths:
+      - observability_operations.yml
+      - roles/docker/observability_server_operations/**
+      - tests/test_observability_operations_role_contract.py
+      - tests/test_observability_post_dns_cutover.py
+      - .github/workflows/observability-operations-tests.yml
+  push:
+    branches: [main]
+    paths:
+      - observability_operations.yml
+      - roles/docker/observability_server_operations/**
+      - tests/test_observability_operations_role_contract.py
+      - tests/test_observability_post_dns_cutover.py
+      - .github/workflows/observability-operations-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  role-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test runtime
+        run: python3 -m pip install ansible-core PyYAML
+      - name: Verify role and simulate post-cutover host checks
+        run: >-
+          python3 -m unittest
+          tests/test_observability_operations_role_contract.py
+          tests/test_observability_post_dns_cutover.py
+      - name: Validate role shell and playbook syntax
+        run: |
+          for script in roles/docker/observability_server_operations/files/*.sh; do bash -n "$script"; done
+          ansible-playbook --syntax-check -i 'localhost,' observability_operations.yml
+          git diff --check

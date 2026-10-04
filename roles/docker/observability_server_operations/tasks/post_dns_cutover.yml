@@ -1,0 +1,13 @@
+- name: Refresh Caddy if requested and verify public TLS on the selected origin
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ role_path }}/files/verify_post_dns_cutover.sh"
+  environment:
+    POST_DNS_DOMAIN: "{{ observability_cutover_domain }}"
+    POST_DNS_TARGET_IP: "{{ observability_cutover_target_ip }}"
+    POST_DNS_RESTART_CADDY: "{{ observability_cutover_restart_caddy | lower }}"
+    POST_DNS_HEALTH_PATH: "{{ observability_cutover_health_path }}"
+    POST_DNS_SSH_USER: "{{ observability_cutover_ssh_user }}"
+    SSH_PRIVATE_KEY_PATH: "{{ lookup('env', 'SSH_PRIVATE_KEY_PATH') }}"
+  changed_when: observability_cutover_restart_caddy | bool
