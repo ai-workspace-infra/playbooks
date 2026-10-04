@@ -1,0 +1,31 @@
+name: Caddy certificate restore tests
+on:
+  pull_request:
+    paths:
+      - caddy_certificate_restore.yml
+      - roles/docker/caddy_certificate_restore/**
+      - tests/test_caddy_certificate_restore.py
+      - .github/workflows/caddy-certificate-restore-tests.yml
+  push:
+    branches: [main]
+    paths:
+      - caddy_certificate_restore.yml
+      - roles/docker/caddy_certificate_restore/**
+      - tests/test_caddy_certificate_restore.py
+      - .github/workflows/caddy-certificate-restore-tests.yml
+permissions:
+  contents: read
+jobs:
+  owner-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Ansible for syntax and target validation
+        run: pip install ansible-core==2.19.3
+      - name: Real local PEM positive and fail-closed tests (no environment deployment)
+        run: python3 -m unittest discover -s tests -p test_caddy_certificate_restore.py -v
+      - name: Check owner playbook syntax
+        run: ansible-playbook -i localhost, caddy_certificate_restore.yml --syntax-check
