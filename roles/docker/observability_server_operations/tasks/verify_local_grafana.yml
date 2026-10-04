@@ -1,0 +1,50 @@
+- name: Require one explicit inventory host and bounded local Grafana probe
+  ansible.builtin.assert:
+    that:
+      - observability_local_health_host is match('^[a-zA-Z0-9][a-zA-Z0-9_.-]*$')
+      - observability_local_health_host in groups.get('all', [])
+      - observability_local_health_host not in ['localhost', '127.0.0.1', '::1']
+      - observability_local_grafana_port | string is match('^[0-9]+$')
+      - observability_local_grafana_port | int >= 1
+      - observability_local_grafana_port | int <= 65535
+      - observability_local_health_retries | string is match('^[0-9]+$')
+      - observability_local_health_retries | int >= 1
+      - observability_local_health_retries | int <= 10
+      - observability_local_health_delay | string is match('^[0-9]+$')
+      - observability_local_health_delay | int >= 0
+      - observability_local_health_delay | int <= 10
+      - observability_local_health_timeout | string is match('^[0-9]+$')
+      - observability_local_health_timeout | int >= 1
+      - observability_local_health_timeout | int <= 30
+    fail_msg: Select one existing inventory host and bounded probe settings; no target is inferred.
+
+- name: Verify Grafana HTTP and database health on the selected host
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ observability_local_grafana_port }}/api/health"
+    return_content: true
+    status_code: 200
+    follow_redirects: none
+    use_proxy: false
+    timeout: "{{ observability_local_health_timeout | int }}"
+  delegate_to: "{{ observability_local_health_host }}"
+  become: true
+  register: observability_local_grafana_health
+  changed_when: false
+  retries: "{{ observability_local_health_retries | int }}"
+  delay: "{{ observability_local_health_delay | int }}"
+  until:
+    - observability_local_grafana_health.status | default(0) == 200
+    - observability_local_grafana_health.json | default({}) is mapping
+    - (observability_local_grafana_health.json | default({})).get('database', '') == 'ok'
+  no_log: true
+
+- name: Report sanitized local Grafana verification evidence
+  ansible.builtin.debug:
+    msg:
+      operation: verify_local_grafana
+      environment: "{{ observability_operations_environment }}"
+      inventory_host: "{{ observability_local_health_host }}"
+      target: "{{ hostvars[observability_local_health_host].ansible_host | default(observability_local_health_host) }}"
+      status: passed
+      http_status: 200
+      database: ok
