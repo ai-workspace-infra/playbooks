@@ -1,10 +1,10 @@
 name: Data Operations Owner Contracts
 on:
   pull_request:
-    paths: [scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*operations*.yml, .github/workflows/uat-data-import.yaml]
+    paths: [scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_release_upgrade/**, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
   push:
     branches: [main, feature/release-upgrade-role]
-    paths: [scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*operations*.yml, .github/workflows/uat-data-import.yaml]
+    paths: [scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_release_upgrade/**, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
 permissions:
   contents: read
 jobs:
@@ -21,6 +21,14 @@ jobs:
           for test in tests/data_operations/import/*test.sh; do bash "$test"; done
           bash tests/data_operations/selfhost/web_saas_upgrade_acceptance_test.sh
           bash tests/data_operations/selfhost/acceptance_rules_test.sh
+      - name: Verify parameterized data roles and controller-only manifest guards
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_web_saas_*roles.py'
+          for file in roles/web_saas_data_*/files/*.sh; do bash -n "$file"; done
+          python3 -m pip install ansible-core==2.18.12
+          ansible-playbook web-saas-release-upgrade.yml --syntax-check
+          ansible-playbook web-saas-data-operations.yml --syntax-check
   selfhost-postgres17:
     runs-on: ubuntu-latest
     services:
@@ -40,3 +48,9 @@ jobs:
           PGPORT: '5432'
           PGUSER: postgres
           PGPASSWORD: postgres
+      - name: Provision private archive fixture on disposable CI runner only
+        run: sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" /data/backups/web-saas/uat/ci-role-contract
+      - name: Real encrypted backup and isolated restore role scripts (not live acceptance)
+        run: python3 tests/data_operations/selfhost/backup_restore_roles_postgres_test.py
+        env:
+          TEST_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}

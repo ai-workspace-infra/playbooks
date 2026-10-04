@@ -8,9 +8,12 @@
       - web_saas_release_mode != 'rehearsal' or web_saas_release_environment == 'uat'
       - web_saas_release_run_id | default('') is match('^[1-9][0-9]*$')
       - web_saas_release_expected_version | default('') | string is match('^[1-9][0-9]*$')
-      - web_saas_release_tag | default('') is match('^[A-Za-z0-9._-]+$')
+      - web_saas_release_tag | default('') is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
       - web_saas_release_candidate_sha256 | default('') is match('^[0-9a-f]{64}$')
       - web_saas_release_receipt_file | length > 0
+      - web_saas_release_source_database_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
+      - web_saas_release_baseline_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
+      - web_saas_release_authorized_subscription_sample_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
       - inventory_hostname == web_saas_release_target_host
       - web_saas_release_database == 'account'
       - web_saas_release_postgres_container == 'web-saas-postgresql'
@@ -22,11 +25,80 @@
       - inventory_hostname == 'web-saas-' ~ web_saas_release_environment
     fail_msg: The release target must be the exact environment web-saas host
 
-- name: Read primary database baseline without writing
-  ansible.builtin.include_tasks: preflight.yml
+- name: Run reusable read-only database preflight
+  ansible.builtin.include_role:
+    name: web_saas_data_preflight
+  vars:
+    web_saas_data_preflight_database: '{{ web_saas_release_database }}'
+    web_saas_data_preflight_postgres_container: '{{ web_saas_release_postgres_container }}'
+    web_saas_data_preflight_expected_version: '{{ web_saas_release_expected_version }}'
+    web_saas_data_preflight_source_database_id: '{{ web_saas_release_source_database_id }}'
+    web_saas_data_preflight_baseline_id: '{{ web_saas_release_baseline_id }}'
+    web_saas_data_preflight_authorized_subscription_sample_id: '{{ web_saas_release_authorized_subscription_sample_id }}'
 
-- name: Create same-environment encrypted backup and verify isolated restore
-  ansible.builtin.include_tasks: backup.yml
+- name: Retain the existing preflight receipt shape
+  ansible.builtin.set_fact:
+    web_saas_release_evidence: '{{ web_saas_data_preflight_evidence | combine({"candidate_sha256": web_saas_release_candidate_sha256, "environment": web_saas_release_environment}) }}'
+  when: web_saas_release_phase == 'preflight'
+
+- name: Create one encrypted same-environment checkpoint
+  ansible.builtin.include_role:
+    name: web_saas_data_backup
+  vars:
+    web_saas_data_backup_root: '{{ web_saas_release_backup_root }}'
+    web_saas_data_backup_database: '{{ web_saas_release_database }}'
+    web_saas_data_backup_postgres_container: '{{ web_saas_release_postgres_container }}'
+    web_saas_data_backup_environment: '{{ web_saas_release_environment }}'
+    web_saas_data_backup_release_tag: '{{ web_saas_release_tag }}'
+    web_saas_data_backup_run_id: '{{ web_saas_release_run_id }}'
+    web_saas_data_backup_expected_version: '{{ web_saas_release_expected_version }}'
+    web_saas_data_backup_source_database_id: '{{ web_saas_release_source_database_id }}'
+    web_saas_data_backup_baseline_id: '{{ web_saas_release_baseline_id }}'
+    web_saas_data_backup_authorized_subscription_sample_id: '{{ web_saas_release_authorized_subscription_sample_id }}'
+    web_saas_data_backup_passphrase: '{{ web_saas_release_backup_passphrase }}'
+  when: web_saas_release_phase == 'backup'
+
+- name: Verify encrypted checkpoint in a separate isolated restore role
+  ansible.builtin.include_role:
+    name: web_saas_data_restore_verify
+  vars:
+    web_saas_data_restore_verify_database: '{{ web_saas_release_database }}'
+    web_saas_data_restore_verify_restore_database_prefix: '{{ web_saas_release_restore_database_prefix }}'
+    web_saas_data_restore_verify_source_database_id: '{{ web_saas_release_source_database_id }}'
+    web_saas_data_restore_verify_baseline_id: '{{ web_saas_release_baseline_id }}'
+    web_saas_data_restore_verify_authorized_subscription_sample_id: '{{ web_saas_release_authorized_subscription_sample_id }}'
+    web_saas_data_restore_verify_expected_version: '{{ web_saas_release_expected_version }}'
+    web_saas_data_restore_verify_source_schema_sha256: '{{ web_saas_data_backup_evidence.schema_sha256 }}'
+    web_saas_data_restore_verify_source_data_sha256: '{{ web_saas_data_backup_evidence.data_sha256 }}'
+    web_saas_data_restore_verify_database_system_identifier: '{{ web_saas_data_backup_evidence.database_system_identifier }}'
+    web_saas_data_restore_verify_expected_users: '{{ web_saas_data_backup_evidence.existing_users }}'
+    web_saas_data_restore_verify_expected_subscriptions: '{{ web_saas_data_backup_evidence.subscriptions }}'
+    web_saas_data_restore_verify_archive_path: '{{ web_saas_data_backup_evidence.archive_path }}'
+    web_saas_data_restore_verify_archive_sha256: '{{ web_saas_data_backup_evidence.archive_sha256 }}'
+    web_saas_data_restore_verify_environment: '{{ web_saas_release_environment }}'
+    web_saas_data_restore_verify_run_id: '{{ web_saas_release_run_id }}'
+    web_saas_data_restore_verify_postgres_container: '{{ web_saas_release_postgres_container }}'
+    web_saas_data_restore_verify_passphrase: '{{ web_saas_release_backup_passphrase }}'
+  when: web_saas_release_phase == 'backup'
+
+- name: Read stable host identity for backup receipt
+  ansible.builtin.command:
+    argv: [cat, /etc/machine-id]
+  register: web_saas_release_machine_id
+  changed_when: false
+  no_log: true
+  when: web_saas_release_phase == 'backup'
+
+- name: Validate stable host identity before recording it in backup evidence
+  ansible.builtin.assert:
+    that:
+      - web_saas_release_machine_id.stdout | trim is match('^[0-9a-f]{32}$')
+    fail_msg: The selected backup host has no stable machine identity
+  when: web_saas_release_phase == 'backup'
+
+- name: Retain the existing backup receipt shape and expose restore evidence
+  ansible.builtin.set_fact:
+    web_saas_release_evidence: '{{ web_saas_data_backup_evidence | combine({"candidate_sha256": web_saas_release_candidate_sha256, "backup_backend": "selfhost-web-saas", "backup_environment": web_saas_release_environment, "backup_host_identity": (web_saas_release_machine_id.stdout | trim | hash("sha256")), "isolated_restore_verified": true, "restored_data_matches": true, "restore_verification": web_saas_data_restore_verify_evidence}) }}'
   when: web_saas_release_phase == 'backup'
 
 - name: Publish non-sensitive receipt to workflow controller

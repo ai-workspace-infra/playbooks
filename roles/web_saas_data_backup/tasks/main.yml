@@ -1,0 +1,122 @@
+---
+- name: Validate immutable backup identity and secret input
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_backup_database == 'account'
+      - web_saas_data_backup_postgres_container == 'web-saas-postgresql'
+      - web_saas_data_backup_environment in ['uat', 'prod']
+      - web_saas_data_backup_release_tag is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+      - web_saas_data_backup_run_id is match('^[1-9][0-9]*$')
+      - web_saas_data_backup_expected_version | string is match('^[1-9][0-9]*$')
+      - web_saas_data_backup_source_database_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
+      - web_saas_data_backup_baseline_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
+      - web_saas_data_backup_authorized_subscription_sample_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
+      - web_saas_data_backup_passphrase | length >= 32
+    fail_msg: Backup identity, source, sample, exact schema target, or encryption input is missing or unsafe
+  no_log: true
+
+- name: Require a real separately mounted /data filesystem
+  ansible.builtin.command:
+    argv: [findmnt, --noheadings, --output, TARGET, --target, /data]
+  register: web_saas_data_backup_mount
+  changed_when: false
+
+- name: Refuse backup unless /data itself is a mountpoint
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_backup_mount.stdout | trim == '/data'
+      - web_saas_data_backup_root == '/data/backups/web-saas'
+    fail_msg: Refusing to place a database archive on the root filesystem
+
+- name: Inspect backup parent without following links
+  ansible.builtin.stat:
+    path: '{{ web_saas_data_backup_root }}'
+    follow: false
+  register: web_saas_data_backup_root_stat
+
+- name: Resolve all existing backup parent components
+  ansible.builtin.command:
+    argv: [realpath, -m, --, '{{ web_saas_data_backup_root }}']
+  register: web_saas_data_backup_canonical_root
+  changed_when: false
+
+- name: Refuse a symlink or non-directory backup parent
+  ansible.builtin.assert:
+    that:
+      - not web_saas_data_backup_root_stat.stat.islnk | default(false)
+      - web_saas_data_backup_canonical_root.stdout | trim == web_saas_data_backup_root
+      - not web_saas_data_backup_root_stat.stat.exists or web_saas_data_backup_root_stat.stat.isdir
+    fail_msg: Backup parent must be a real directory on mounted /data
+
+- name: Inspect environment and release path components without following links
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ web_saas_data_backup_root }}/{{ web_saas_data_backup_environment }}'
+    - '{{ web_saas_data_backup_root }}/{{ web_saas_data_backup_environment }}/{{ web_saas_data_backup_release_tag }}'
+  register: web_saas_data_backup_parent_stats
+
+- name: Refuse linked or non-directory existing path components
+  ansible.builtin.assert:
+    that:
+      - not item.stat.islnk | default(false)
+      - not item.stat.exists or item.stat.isdir
+    fail_msg: Environment and release backup path components must be real directories
+  loop: '{{ web_saas_data_backup_parent_stats.results }}'
+
+- name: Create protected backup parent directories
+  ansible.builtin.file:
+    path: '{{ web_saas_data_backup_root }}/{{ web_saas_data_backup_environment }}/{{ web_saas_data_backup_release_tag }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Refuse reuse of this run's checkpoint directory
+  ansible.builtin.stat:
+    path: '{{ web_saas_data_backup_root }}/{{ web_saas_data_backup_environment }}/{{ web_saas_data_backup_release_tag }}/{{ web_saas_data_backup_run_id }}'
+    follow: false
+  register: web_saas_data_backup_run_dir_stat
+
+- name: Require a unique checkpoint directory
+  ansible.builtin.assert:
+    that:
+      - not web_saas_data_backup_run_dir_stat.stat.exists
+    fail_msg: This run already has a checkpoint path; refusing to reuse or overwrite it
+
+- name: Create this run's private checkpoint directory
+  ansible.builtin.file:
+    path: '{{ web_saas_data_backup_root }}/{{ web_saas_data_backup_environment }}/{{ web_saas_data_backup_release_tag }}/{{ web_saas_data_backup_run_id }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Stream one encrypted archive without creating a plaintext dump
+  ansible.builtin.script:
+    cmd: '{{ role_path }}/files/create_encrypted_backup.sh'
+    executable: /bin/bash
+  environment:
+    WEB_SAAS_BACKUP_ROOT: '{{ web_saas_data_backup_root }}/{{ web_saas_data_backup_environment }}/{{ web_saas_data_backup_release_tag }}/{{ web_saas_data_backup_run_id }}'
+    WEB_SAAS_DATABASE: '{{ web_saas_data_backup_database }}'
+    WEB_SAAS_POSTGRES_CONTAINER: '{{ web_saas_data_backup_postgres_container }}'
+    WEB_SAAS_ENVIRONMENT: '{{ web_saas_data_backup_environment }}'
+    WEB_SAAS_RUN_ID: '{{ web_saas_data_backup_run_id }}'
+    WEB_SAAS_EXPECTED_VERSION: '{{ web_saas_data_backup_expected_version }}'
+    WEB_SAAS_SOURCE_DATABASE_ID: '{{ web_saas_data_backup_source_database_id }}'
+    WEB_SAAS_BASELINE_ID: '{{ web_saas_data_backup_baseline_id }}'
+    WEB_SAAS_AUTHORIZED_SUBSCRIPTION_SAMPLE_ID: '{{ web_saas_data_backup_authorized_subscription_sample_id }}'
+    WEB_SAAS_BACKUP_PASSPHRASE: '{{ web_saas_data_backup_passphrase }}'
+  register: web_saas_data_backup_command
+  changed_when: web_saas_data_backup_command.rc == 0
+  no_log: true
+
+- name: Parse nonsecret source and archive evidence
+  ansible.builtin.set_fact:
+    web_saas_data_backup_evidence: '{{ web_saas_data_backup_command.stdout | from_json }}'
+
+- name: Flush verified encrypted checkpoint to persistent storage
+  ansible.builtin.command:
+    argv: [sync, -f, '{{ web_saas_data_backup_evidence.archive_path }}']
+  changed_when: false

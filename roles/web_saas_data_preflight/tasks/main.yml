@@ -1,0 +1,90 @@
+---
+- name: Require source provenance, sample reference, exact schema target, and fixed database
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_preflight_database == 'account'
+      - web_saas_data_preflight_postgres_container == 'web-saas-postgresql'
+      - web_saas_data_preflight_expected_version | string is match('^[1-9][0-9]*$')
+      - web_saas_data_preflight_source_database_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
+      - web_saas_data_preflight_baseline_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
+      - web_saas_data_preflight_authorized_subscription_sample_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
+    fail_msg: 'reason_code=SOURCE_OR_SAMPLE_PROVENANCE_MISSING; source id, baseline id, authorized sample reference, and exact schema target are required'
+
+- name: Confirm the expected PostgreSQL container is running
+  ansible.builtin.command:
+    argv: [docker, inspect, --format, '{{ '{{' }}.State.Status{{ '}}' }}', '{{ web_saas_data_preflight_postgres_container }}']
+  register: web_saas_data_preflight_pg_state
+  changed_when: false
+
+- name: Refuse an absent primary PostgreSQL container
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_preflight_pg_state.stdout | trim == 'running'
+    fail_msg: The primary PostgreSQL container is not running
+
+- name: Read only the exact migration row and nonempty business sample counts
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - -i
+      - '{{ web_saas_data_preflight_postgres_container }}'
+      - psql
+      - -U
+      - postgres
+      - -d
+      - '{{ web_saas_data_preflight_database }}'
+      - -XAtq
+      - -v
+      - ON_ERROR_STOP=1
+      - -c
+      - >-
+        SELECT (SELECT count(*) FROM public.schema_migrations)::text
+        || ':' || (SELECT version::text || ':' || dirty::text FROM public.schema_migrations LIMIT 1)
+        || ',' || (SELECT count(*) FROM public.users)::text
+        || ',' || (SELECT count(*) FROM public.subscriptions)::text
+  register: web_saas_data_preflight_db_state
+  changed_when: false
+  no_log: true
+
+- name: Parse primary database preflight values
+  ansible.builtin.set_fact:
+    web_saas_data_preflight_db_parts: "{{ (web_saas_data_preflight_db_state.stdout | default('')) | trim | split(',') }}"
+
+- name: Refuse a missing, dirty, duplicated, or mismatched migration baseline
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_preflight_db_parts | length == 3
+      - web_saas_data_preflight_db_parts[0] == '1:' ~ (web_saas_data_preflight_expected_version | string) ~ ':false'
+    fail_msg: 'reason_code=SCHEMA_BASELINE_MISMATCH; expected one clean migration row at the exact requested version'
+
+- name: Refuse a database with no original users
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_preflight_db_parts[1] is match('^[1-9][0-9]*$')
+    fail_msg: 'reason_code=NONEMPTY_USER_SAMPLE_REQUIRED; source database has no users'
+
+- name: Refuse a database with no authorized nonempty subscription sample
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_preflight_db_parts[2] is match('^[1-9][0-9]*$')
+    fail_msg: >-
+      reason_code=NONEMPTY_SUBSCRIPTION_SAMPLE_REQUIRED;
+      observed_subscriptions={{ web_saas_data_preflight_db_parts[2] | default('unavailable') }};
+      backup and later phases are blocked
+
+- name: Record read-only database component evidence without claiming business acceptance
+  ansible.builtin.set_fact:
+    web_saas_data_preflight_evidence:
+      schema: 1
+      phase: database_preflight_component
+      status: passed
+      database: '{{ web_saas_data_preflight_database }}'
+      source_database_id: '{{ web_saas_data_preflight_source_database_id }}'
+      baseline_id: '{{ web_saas_data_preflight_baseline_id }}'
+      authorized_subscription_sample_id: '{{ web_saas_data_preflight_authorized_subscription_sample_id }}'
+      schema_version: '{{ web_saas_data_preflight_expected_version | int }}'
+      existing_users: '{{ web_saas_data_preflight_db_parts[1] | int }}'
+      subscriptions: '{{ web_saas_data_preflight_db_parts[2] | int }}'
+      clean: true
+      business_acceptance: false

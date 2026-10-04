@@ -23,7 +23,10 @@ selfhost_cmdb_ssh_login "${cmdb_file}" "${host}" "${environment}"
 
 ssh_opts=(-i "$HOME/.ssh/id_deploy" -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new)
 remote_command=("${sudo_prefix[@]}" bash -s -- "$action" "$run_id" "$release_tag" "$expected_version")
-ssh "${ssh_opts[@]}" "${ssh_user}@${host_ip}" "${remote_command[*]}" <<'REMOTE'
+# SSH re-parses its command on the remote shell. Preserve empty optional tag
+# and version arguments, rather than collapsing them through array joining.
+printf -v remote_shell '%q ' "${remote_command[@]}"
+ssh "${ssh_opts[@]}" "${ssh_user}@${host_ip}" "$remote_shell" <<'REMOTE'
 set -euo pipefail
 action="$1"; run_id="$2"; release_tag="$3"; expected_version="$4"
 root=/var/lib/platform-ops/upgrade-acceptance

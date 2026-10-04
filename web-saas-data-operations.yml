@@ -1,0 +1,28 @@
+---
+# Owner playbook. Workflow exposes only UAT preflight / backup components.
+# Baseline is a manifest freeze only; migration remains explicitly blocked.
+- name: Run exact-scope data operation roles without implicit data sync
+  hosts: "{{ web_saas_release_target_host | default('never-matches') }}"
+  gather_facts: false
+  become: true
+  pre_tasks:
+    - name: Require explicit UAT phase and exact target
+      ansible.builtin.assert:
+        that:
+          - web_saas_data_operation | default('') in ['baseline', 'preflight', 'backup', 'migration']
+          - web_saas_release_environment | default('') == 'uat'
+          - inventory_hostname == 'web-saas-uat'
+        fail_msg: No implicit environment, host, initialization, or data synchronization is permitted
+  tasks:
+    - name: Validate and freeze manifest metadata without copying data
+      ansible.builtin.include_role:
+        name: web_saas_data_baseline
+      when: web_saas_data_operation == 'baseline'
+    - name: Run preflight, encrypted backup, and isolated restore components
+      ansible.builtin.include_role:
+        name: web_saas_release_upgrade
+      when: web_saas_data_operation in ['preflight', 'backup']
+    - name: Validate migration request then stop at unimplemented official interface
+      ansible.builtin.include_role:
+        name: web_saas_data_migration
+      when: web_saas_data_operation == 'migration'
