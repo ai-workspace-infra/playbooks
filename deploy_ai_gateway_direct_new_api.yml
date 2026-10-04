@@ -1,0 +1,142 @@
+---
+# Temporary Home-Lab diagnostic route: Caddy -> New API, bypassing APISIX.
+# APISIX stays running on loopback for fast rollback, but receives no public traffic.
+- name: Temporarily route the AI Gateway directly to New API
+  hosts: ai_aggregator_gateway
+  become: true
+  gather_facts: false
+  vars:
+    ai_gateway_manifest_file: ""
+    ai_gateway_direct_backup: /var/backups/ai-aggregator/ai-aggregator.caddy.pre-direct-newapi
+    ai_gateway_caddy_fragment: /etc/caddy/conf.d/ai-aggregator.caddy
+  tasks:
+    - name: Load the Home-Lab GitOps declaration
+      ansible.builtin.include_vars:
+        file: "{{ ai_gateway_manifest_file }}"
+        name: direct_manifest
+
+    - name: Confirm this operation targets the declared Home-Lab node
+      ansible.builtin.assert:
+        that:
+          - direct_manifest.kind == 'UnifiedAIGateway'
+          - direct_manifest.spec.host == 'ai-internal.onwalk.net'
+          - ansible_host == direct_manifest.spec.dns_target
+          - direct_manifest.spec.new_api.bind_address in ['127.0.0.1', '::1']
+          - direct_manifest.spec.new_api.port | int == 3000
+
+    - name: Verify New API is healthy before changing Caddy
+      ansible.builtin.uri:
+        url: "http://{{ direct_manifest.spec.new_api.bind_address }}:{{ direct_manifest.spec.new_api.port }}/api/status"
+        method: GET
+        status_code: 200
+        return_content: false
+      changed_when: false
+
+    - name: Ensure the Caddy rollback directory exists
+      ansible.builtin.file:
+        path: "{{ ai_gateway_direct_backup | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Preserve the pre-switch Caddy fragment for rollback
+      ansible.builtin.copy:
+        src: "{{ ai_gateway_caddy_fragment }}"
+        dest: "{{ ai_gateway_direct_backup }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0600'
+        force: false
+
+    - name: Switch Caddy directly to New API with automatic TLS unchanged
+      block:
+        - name: Install the temporary direct New API Caddy route
+          ansible.builtin.copy:
+            dest: "{{ ai_gateway_caddy_fragment }}"
+            owner: root
+            group: root
+            mode: '0644'
+            content: |
+              {{ direct_manifest.spec.host }} {
+                  bind {{ direct_manifest.spec.dns_target }}
+                  tls /run/ai-aggregator/tls/fullchain.pem /run/ai-aggregator/tls/privkey.pem
+                  reverse_proxy {{ direct_manifest.spec.new_api.bind_address }}:{{ direct_manifest.spec.new_api.port }} {
+                      flush_interval -1
+                  }
+              }
+
+        - name: Validate the candidate Caddy configuration
+          ansible.builtin.command:
+            argv: [caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+          changed_when: false
+
+        - name: Reload Caddy onto the direct New API upstream
+          ansible.builtin.systemd:
+            name: caddy
+            state: reloaded
+
+        - name: Verify the HTTPS New API status endpoint
+          ansible.builtin.command:
+            argv:
+              - curl
+              - --silent
+              - --show-error
+              - --output
+              - /dev/null
+              - --write-out
+              - '%{http_code}'
+              - --resolve
+              - "{{ direct_manifest.spec.host }}:443:{{ direct_manifest.spec.dns_target }}"
+              - "https://{{ direct_manifest.spec.host }}/api/status"
+          register: new_api_https_status
+          changed_when: false
+          failed_when: new_api_https_status.stdout != '200'
+
+        - name: Verify unauthenticated model-list requests reach New API auth
+          ansible.builtin.command:
+            argv:
+              - curl
+              - --silent
+              - --show-error
+              - --output
+              - /dev/null
+              - --write-out
+              - '%{http_code}'
+              - --resolve
+              - "{{ direct_manifest.spec.host }}:443:{{ direct_manifest.spec.dns_target }}"
+              - "https://{{ direct_manifest.spec.host }}/v1/models"
+          register: new_api_models_unauth_status
+          changed_when: false
+          failed_when: new_api_models_unauth_status.stdout != '401'
+
+      rescue:
+        - name: Restore the original Caddy fragment
+          ansible.builtin.copy:
+            src: "{{ ai_gateway_direct_backup }}"
+            dest: "{{ ai_gateway_caddy_fragment }}"
+            remote_src: true
+            owner: root
+            group: root
+            mode: '0644'
+
+        - name: Validate the restored Caddy configuration
+          ansible.builtin.command:
+            argv: [caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+          changed_when: false
+
+        - name: Reload the restored Caddy route
+          ansible.builtin.systemd:
+            name: caddy
+            state: reloaded
+
+        - name: Report that direct routing was rolled back
+          ansible.builtin.fail:
+            msg: Direct New API verification failed; the prior APISIX route was restored.
+
+    - name: Report the temporary route state without credentials
+      ansible.builtin.debug:
+        msg: >-
+          Caddy now proxies directly to New API. APISIX remains running but is out of
+          the request path. Backup: {{ ai_gateway_direct_backup }}

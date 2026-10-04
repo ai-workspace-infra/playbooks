@@ -1,0 +1,267 @@
+---
+# Incremental delivery; stage never changes the active configuration.
+# Explicit inventory required: avoid deploying a Home-Lab policy to another host.
+- name: Stage or activate the unified AI Gateway
+  hosts: ai_aggregator_gateway
+  become: true
+  gather_facts: false
+  vars:
+    ai_gateway_operation: stage
+    ai_gateway_manifest_file: ""
+    ai_gateway_component_root: "{{ playbook_dir }}/../../ai-workspace-service/gateway"
+    ai_gateway_policy_path: /etc/ai-aggregator/unified-gateway.yaml
+    ai_gateway_stage_script: /opt/ai-aggregator/bootstrap/unified-gateway-stage.py
+    ai_gateway_routes: /run/ai-aggregator/apisix/apisix.yaml
+    ai_gateway_seed: /etc/ai-aggregator/unified-security.yaml
+    ai_gateway_config: /opt/ai-aggregator/apisix-3.16.0/conf/config.yaml
+    ai_gateway_tenant_token_file: /run/ai-aggregator/new-api/tenant-acceptance-token
+  tasks:
+    - name: Load the environment declaration
+      ansible.builtin.include_vars:
+        file: "{{ ai_gateway_manifest_file }}"
+        name: unified_manifest
+
+    - name: Validate operation and the inventory target
+      ansible.builtin.assert:
+        that:
+          - ai_gateway_operation in ['stage', 'activate']
+          - unified_manifest.kind == 'UnifiedAIGateway'
+          - ansible_host == unified_manifest.spec.dns_target
+          - not unified_manifest.spec.cross_backend_fallback | bool
+
+    - name: Install the public component's runtime staging program
+      ansible.builtin.copy:
+        src: "{{ ai_gateway_component_root }}/gatewayctl/unified.py"
+        dest: "{{ ai_gateway_stage_script }}"
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install non-sensitive desired model policy
+      ansible.builtin.copy:
+        content: "{{ unified_manifest | to_nice_yaml }}"
+        dest: "{{ ai_gateway_policy_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Validate the model and billing contract
+      ansible.builtin.command:
+        argv: [python3, "{{ ai_gateway_stage_script }}", --manifest, "{{ ai_gateway_policy_path }}", --validate-only]
+      changed_when: false
+
+    - name: Preserve only non-sensitive existing authentication policy
+      ansible.builtin.command:
+        argv: [python3, "{{ ai_gateway_stage_script }}", --manifest, "{{ ai_gateway_policy_path }}", --routes-file, "{{ ai_gateway_routes }}", --export-seed, "{{ ai_gateway_seed }}"]
+      args:
+        creates: "{{ ai_gateway_seed }}"
+
+    - name: Validate a candidate bundle on tmpfs without replacing running routes
+      ansible.builtin.shell: |
+        set -eu
+        candidate=$(mktemp -d /run/ai-aggregator/apisix/unified-stage.XXXXXX)
+        trap 'rm -f "$candidate/apisix.yaml" "$candidate/config.yaml"; rmdir "$candidate"' EXIT
+        cp {{ ai_gateway_routes | quote }} "$candidate/apisix.yaml"
+        cp {{ ai_gateway_config | quote }} "$candidate/config.yaml"
+        python3 {{ ai_gateway_stage_script | quote }} --manifest {{ ai_gateway_policy_path | quote }} \
+          --routes-file "$candidate/apisix.yaml" --runtime-file "$candidate/config.yaml" \
+          --seed-file {{ ai_gateway_seed | quote }}
+        python3 - "$candidate/apisix.yaml" <<'PY'
+        import subprocess, sys, yaml
+        bundle = yaml.safe_load(open(sys.argv[1]))
+        route = next(r for r in bundle['routes'] if r['id'] == 'unified-ai-gateway')
+        function = route['plugins']['serverless-pre-function']['functions'][0]
+        assert route['plugins']['forward-auth']['uri'].endswith('/api/usage/token')
+        assert route['upstream']['nodes'] == {'127.0.0.1:3000': 1}
+        # Compile only; user tokens are validated separately and never printed.
+        check = "local f=assert(loadstring(io.read('*a'))); assert(type(f())=='function')"
+        result = subprocess.run(['/usr/local/openresty/luajit/bin/luajit', '-e', check],
+                                input=function.encode(), capture_output=True)
+        if result.returncode:
+            raise SystemExit('New API auth-normalization Lua compilation failed')
+        PY
+        chmod 0600 "$candidate/config.yaml" "$candidate/apisix.yaml"
+        python3 /opt/ai-aggregator/bootstrap/apisix-run.py test -c "$candidate/config.yaml"
+      changed_when: false
+      no_log: true
+
+    - name: Require New API tenant and quota acceptance before replacing the existing route
+      ansible.builtin.assert:
+        that:
+          - unified_manifest.spec.enabled | bool
+          - unified_manifest.spec.acceptance.tls_dns_verified | bool
+          - unified_manifest.spec.acceptance.new_api_quota_accounting_verified | default(false) | bool
+          - unified_manifest.spec.acceptance.cpa_subscription_smoke_tested | default(false) | bool
+          - unified_manifest.spec.acceptance.litellm_official_channel_smoke_tested | default(false) | bool
+        fail_msg: >-
+          Activation requires TLS/DNS and a completed New API tenant-token and
+          quota-accounting smoke test. Staging remains safe; no active route was changed.
+      when: ai_gateway_operation == 'activate'
+
+    - name: Verify the staged New API tenant token and model catalog before cutover
+      ansible.builtin.shell: |
+        python3 - <<'PY'
+        import json, urllib.request
+        from pathlib import Path
+        token = Path('{{ ai_gateway_tenant_token_file }}').read_text().strip()
+        if not token:
+            raise SystemExit('New API tenant token is missing')
+        base = 'http://127.0.0.1:3000'
+        usage = urllib.request.Request(base + '/api/usage/token', headers={'Authorization': 'Bearer ' + token})
+        with urllib.request.urlopen(usage, timeout=10) as response:
+            assert response.status == 200
+            json.load(response)
+        models = urllib.request.Request(base + '/v1/models', headers={'Authorization': 'Bearer ' + token})
+        with urllib.request.urlopen(models, timeout=15) as response:
+            payload = json.load(response)
+            assert response.status == 200 and payload.get('data')
+        PY
+      changed_when: false
+      no_log: true
+      when: ai_gateway_operation == 'activate'
+
+    - name: Preserve rollback routes on protected tmpfs
+      ansible.builtin.copy:
+        src: "{{ ai_gateway_routes }}"
+        dest: /run/ai-aggregator/apisix/pre-unified.yaml
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0600'
+        force: false
+      no_log: true
+      when: ai_gateway_operation == 'activate'
+
+    - name: Preserve rollback APISIX runtime configuration on protected tmpfs
+      ansible.builtin.copy:
+        src: "{{ ai_gateway_config }}"
+        dest: /run/ai-aggregator/apisix/pre-unified-config.yaml
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0600'
+        force: false
+      no_log: true
+      when: ai_gateway_operation == 'activate'
+
+    - name: Start and enable New API for the integrated dashboard
+      ansible.builtin.systemd:
+        name: ai-aggregator-new-api.service
+        state: started
+        enabled: true
+      when: ai_gateway_operation == 'activate'
+
+    - name: Wait for the New API console backend
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 3000
+        timeout: 45
+      when: ai_gateway_operation == 'activate'
+
+    - name: Install New API ledger routing as the APISIX startup policy
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/ai-aggregator-apisix.service.d/30-unified-gateway.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Service]
+          ExecStartPre=
+          ExecStartPre=/usr/bin/python3 {{ ai_gateway_stage_script }} --manifest {{ ai_gateway_policy_path }} --routes-file {{ ai_gateway_routes }} --runtime-file {{ ai_gateway_config }} --seed-file {{ ai_gateway_seed }}
+          ExecStartPre=/usr/bin/python3 /opt/ai-aggregator/bootstrap/apisix-run.py init
+          ExecStartPre=/usr/bin/chmod 0644 {{ ai_gateway_config }}
+          ExecStartPre=/usr/bin/python3 /opt/ai-aggregator/bootstrap/apisix-run.py test
+      when: ai_gateway_operation == 'activate'
+
+    - name: Restart the accepted policy with startup rollback
+      block:
+        - name: Restart APISIX
+          ansible.builtin.systemd:
+            name: ai-aggregator-apisix.service
+            daemon_reload: true
+            state: restarted
+        - name: Wait for APISIX readiness
+          ansible.builtin.wait_for:
+            host: 127.0.0.1
+            port: 9080
+            timeout: 30
+      rescue:
+        - name: Remove the failed New API ledger override
+          ansible.builtin.file:
+            path: /etc/systemd/system/ai-aggregator-apisix.service.d/30-unified-gateway.conf
+            state: absent
+        - name: Restore the prior routes from tmpfs
+          ansible.builtin.copy:
+            src: /run/ai-aggregator/apisix/pre-unified.yaml
+            dest: "{{ ai_gateway_routes }}"
+            remote_src: true
+            mode: '0640'
+          no_log: true
+        - name: Restore the prior APISIX runtime configuration from tmpfs
+          ansible.builtin.copy:
+            src: /run/ai-aggregator/apisix/pre-unified-config.yaml
+            dest: "{{ ai_gateway_config }}"
+            remote_src: true
+            mode: '0640'
+          no_log: true
+        - name: Restart the previous routing chain
+          ansible.builtin.systemd:
+            name: ai-aggregator-apisix.service
+            daemon_reload: true
+            state: restarted
+        - name: Report a rolled-back activation
+          ansible.builtin.fail:
+            msg: New API ledger routing failed and the previous configuration was restored.
+      when: ai_gateway_operation == 'activate'
+
+    - name: Bind the existing TLS site only to the stable declared VPN address
+      ansible.builtin.lineinfile:
+        path: /etc/caddy/conf.d/ai-aggregator.caddy
+        regexp: '^\s+bind\s+'
+        line: "    bind {{ unified_manifest.spec.dns_target }}"
+        backup: true
+      register: unified_caddy_bind
+      when: ai_gateway_operation == 'activate'
+
+    - name: Validate Caddy before reload
+      ansible.builtin.command:
+        argv: [caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+      changed_when: false
+      when: ai_gateway_operation == 'activate'
+
+    - name: Reload Caddy only when its bind configuration changed
+      ansible.builtin.systemd:
+        name: caddy
+        state: reloaded
+      when:
+        - ai_gateway_operation == 'activate'
+        - unified_caddy_bind.changed
+
+    - name: Verify the HTTPS New API model catalog after cutover
+      ansible.builtin.shell: |
+        python3 - <<'PY'
+        import json, urllib.request, yaml
+        from pathlib import Path
+        spec = yaml.safe_load(Path('{{ ai_gateway_policy_path }}').read_text())['spec']
+        key = Path('{{ ai_gateway_tenant_token_file }}').read_text().strip()
+        req = urllib.request.Request('https://' + spec['host'] + '/v1/models',
+                                     headers={'Authorization': 'Bearer ' + key})
+        with urllib.request.urlopen(req, timeout=15) as response:
+            body = json.load(response)
+            assert response.status == 200 and body.get('data')
+        PY
+      changed_when: false
+      no_log: true
+      when: ai_gateway_operation == 'activate'
+
+    - name: Verify VPN-restricted New API console and status endpoint
+      ansible.builtin.shell: |
+        set -eu
+        for path in / /api/status; do
+          code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --resolve {{ unified_manifest.spec.host | quote }}:443:{{ unified_manifest.spec.dns_target | quote }} \
+            "https://{{ unified_manifest.spec.host }}$path")
+          test "$code" = 200
+        done
+      changed_when: false
+      when: ai_gateway_operation == 'activate'
