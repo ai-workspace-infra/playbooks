@@ -181,11 +181,11 @@ class IncrementalMigrationContractTests(unittest.TestCase):
             "restore_evidence": self.restore if restore is None else restore,
         })
 
-    def test_valid_inputs_still_block_as_unsupported_without_mock_pass(self):
+    def test_valid_inputs_still_block_until_execution_adapter_is_wired(self):
         result = self.validate()
         self.assertEqual(result["status"], "blocked")
         self.assertFalse(result["capability_supported"])
-        self.assertEqual(result["reason_code"], "UNSUPPORTED_SELFHOST_MIGRATOR_CONTRACT")
+        self.assertEqual(result["reason_code"], "UNWIRED_SELFHOST_EXECUTION_ADAPTER")
 
     def test_rejects_dirty_or_non_exact_version_inputs(self):
         for changes in (
@@ -239,7 +239,7 @@ class IncrementalMigrationContractTests(unittest.TestCase):
     def test_role_has_no_migration_command_or_secret_database_inputs(self):
         tasks = (ROOT / "roles/web_saas_data_migration/tasks/main.yml").read_text()
         validator = (ROOT / "roles/web_saas_data_migration/files/validate_contract.py").read_text()
-        self.assertIn("UNSUPPORTED_SELFHOST_MIGRATOR_CONTRACT", validator)
+        self.assertIn("UNWIRED_SELFHOST_EXECUTION_ADAPTER", validator)
         self.assertIn("ansible.builtin.fail", tasks)
         self.assertNotIn("docker", tasks)
         self.assertNotIn("psql", tasks)

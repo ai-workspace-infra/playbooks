@@ -23,8 +23,14 @@ if ! docker exec -i postgresql psql -U postgres -tc "SELECT 1 FROM pg_database W
   docker exec -i postgresql psql -U postgres -c 'CREATE DATABASE account;'
 fi
 
-if ! docker exec -i postgresql psql -U postgres -d account -tAc "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'" | grep -q 1; then
+required_tables="$(docker exec -i postgresql psql -U postgres -d account -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('users','subscriptions')")"
+if [[ "${required_tables}" != 2 ]]; then
   docker exec -i postgresql psql -U postgres -d account -v ON_ERROR_STOP=1 -f "${schema_file}"
+  verified_tables="$(docker exec -i postgresql psql -U postgres -d account -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('users','subscriptions')")"
+  if [[ "${verified_tables}" != 2 ]]; then
+    echo "account baseline schema is incomplete: expected users and subscriptions" >&2
+    exit 1
+  fi
   echo "account baseline schema applied"
 else
   echo "account schema already present; skipping baseline init"

@@ -133,21 +133,18 @@ def validate(payload):
     require(checkpoint_match is not None, "backup checkpoint_id is not a UAT run identity")
     require(restore.get("restore_database") == f"release_verify_{checkpoint_match.group(1)}", "restore database is not the isolated database for this backup run")
     require(restore.get("authorized_subscription_sample_id") == backup["authorized_subscription_sample_id"], "restore subscription sample reference differs from backup")
-    # Hard false until the upstream official migrator implements and documents
-    # this exact bounded, locked, checksum-verifying Selfhost interface.
+    # Hard false until Playbooks wires the reviewed bounded Accounts migrator
+    # into canonicalAccount and binds its receipt to the validated restore.
     return {
         "status": "blocked",
-        "reason_code": "UNSUPPORTED_SELFHOST_MIGRATOR_CONTRACT",
+        "reason_code": "UNWIRED_SELFHOST_EXECUTION_ADAPTER",
         "capability_supported": False,
         "manifest_status": "manifest_validated",
         "backup_restore_status": "shape_validated_only",
         "required_interface": [
-            "official Accounts migrator invoked inside canonicalAccount with DSN supplied only through environment",
-            "exact expected and target schema versions with a single-version upper bound",
-            "reviewed migration checksum verified by the official migrator",
-            "database advisory lock plus lock and statement timeout controls",
-            "preflight and postflight clean-version checks that refuse dirty state without force-clear",
             "real encrypted backup and isolated-restore receipt bound to baseline_id and target_db_id",
+            "bounded Accounts migratectl interface invoked inside canonicalAccount with DSN supplied only through environment",
+            "sanitized migration receipt bound to the same candidate, database, and restore evidence",
         ],
     }
 
