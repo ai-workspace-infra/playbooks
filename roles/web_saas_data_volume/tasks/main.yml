@@ -1,0 +1,56 @@
+---
+- name: Validate the exact host and stable block-device path
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_target_host | default('') == inventory_hostname
+      - web_saas_data_environment | default('') in ['uat', 'prod']
+      - inventory_hostname == 'web-saas-' ~ web_saas_data_environment
+      - web_saas_data_action in ['inspect', 'prepare_empty']
+      - web_saas_data_mount_path == '/data'
+      - web_saas_data_device_path is match('^/dev/disk/by-id/[A-Za-z0-9._+-]+$')
+    fail_msg: Persistent data volume target, action, or device is unsafe
+
+- name: Inspect declared persistent block device without writing
+  ansible.builtin.stat:
+    path: "{{ web_saas_data_device_path }}"
+    follow: true
+  register: web_saas_data_device
+
+- name: Refuse a missing or non-block device
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_device.stat.exists
+      - web_saas_data_device.stat.isblk
+    fail_msg: The declared data disk is not attached as a block device
+
+- name: Read data disk filesystem UUID and type
+  ansible.builtin.command:
+    argv: [lsblk, -dnro, UUID,FSTYPE, "{{ web_saas_data_device_path }}"]
+  register: web_saas_data_blkid
+  changed_when: false
+
+- name: Read current /data mount source and UUID
+  ansible.builtin.command:
+    argv: [findmnt, -nro, SOURCE,UUID, --target, "{{ web_saas_data_mount_path }}"]
+  register: web_saas_data_mount
+  changed_when: false
+
+- name: Refuse an unexpected filesystem on the declared disk
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_blkid.stdout | trim == '' or (web_saas_data_blkid.stdout | trim).endswith(web_saas_data_fstype)
+    fail_msg: The data disk has an unexpected filesystem; never reformat it automatically
+
+- name: Return read-only disk and mount facts
+  ansible.builtin.set_fact:
+    web_saas_data_evidence:
+      action: inspect
+      environment: "{{ web_saas_data_environment }}"
+      device: "{{ web_saas_data_device_path }}"
+      filesystem: "{{ web_saas_data_blkid.stdout | trim }}"
+      current_mount: "{{ web_saas_data_mount.stdout | trim }}"
+  when: web_saas_data_action == 'inspect'
+
+- name: Prepare only a blank data disk and empty mountpoint
+  ansible.builtin.include_tasks: prepare_empty.yml
+  when: web_saas_data_action == 'prepare_empty'

@@ -1,0 +1,9 @@
+---
+# Caller supplies an exact CMDB inventory and --limit web-saas-<environment>.
+# This playbook neither resolves a host by guessing nor initializes a schema.
+- name: Run reviewed web-saas release preflight or backup phase
+  hosts: "{{ web_saas_release_target_host | default('never-matches') }}"
+  gather_facts: false
+  become: true
+  roles:
+    - web_saas_release_upgrade

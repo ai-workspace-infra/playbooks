@@ -1,0 +1,38 @@
+---
+- name: Validate immutable release and exact environment target
+  ansible.builtin.assert:
+    that:
+      - web_saas_release_environment | default('') in ['uat', 'prod']
+      - web_saas_release_phase in ['preflight', 'backup']
+      - web_saas_release_mode | default('') in ['preflight', 'rehearsal', 'upgrade']
+      - web_saas_release_mode != 'rehearsal' or web_saas_release_environment == 'uat'
+      - web_saas_release_run_id | default('') is match('^[1-9][0-9]*$')
+      - web_saas_release_expected_version | default('') | string is match('^[1-9][0-9]*$')
+      - web_saas_release_tag | default('') is match('^[A-Za-z0-9._-]+$')
+      - web_saas_release_candidate_sha256 | default('') is match('^[0-9a-f]{64}$')
+      - web_saas_release_receipt_file | length > 0
+      - inventory_hostname == web_saas_release_target_host
+      - web_saas_release_database == 'account'
+      - web_saas_release_postgres_container == 'web-saas-postgresql'
+    fail_msg: Release upgrade target or receipt contract is missing or unsafe
+
+- name: Require the exact environment-specific inventory target
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname == 'web-saas-' ~ web_saas_release_environment
+    fail_msg: The release target must be the exact environment web-saas host
+
+- name: Read primary database baseline without writing
+  ansible.builtin.include_tasks: preflight.yml
+
+- name: Create same-environment encrypted backup and verify isolated restore
+  ansible.builtin.include_tasks: backup.yml
+  when: web_saas_release_phase == 'backup'
+
+- name: Publish non-sensitive receipt to workflow controller
+  ansible.builtin.copy:
+    dest: "{{ web_saas_release_receipt_file }}"
+    mode: '0600'
+    content: "{{ web_saas_release_evidence | to_json }}\n"
+  delegate_to: localhost
+  become: false

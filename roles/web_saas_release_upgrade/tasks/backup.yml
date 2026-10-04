@@ -1,0 +1,245 @@
+---
+- name: Require environment-scoped backup encryption key
+  ansible.builtin.assert:
+    that:
+      - web_saas_release_backup_passphrase | length >= 32
+  no_log: true
+
+- name: Verify that /data is a separate mounted volume
+  ansible.builtin.command:
+    argv: [findmnt, --noheadings, --output, TARGET, --target, /data]
+  register: web_saas_release_data_mount
+  changed_when: false
+
+- name: Refuse a backup path on the root filesystem
+  ansible.builtin.assert:
+    that:
+      - web_saas_release_data_mount.stdout | trim == '/data'
+      - web_saas_release_backup_root == '/data/backups/web-saas'
+
+- name: Inspect existing backup root without following symbolic links
+  ansible.builtin.stat:
+    path: "{{ web_saas_release_backup_root }}"
+    follow: false
+  register: web_saas_release_backup_root_stat
+
+- name: Refuse a backup root that redirects to another filesystem
+  ansible.builtin.assert:
+    that:
+      - not web_saas_release_backup_root_stat.stat.islnk | default(false)
+      - not web_saas_release_backup_root_stat.stat.exists or web_saas_release_backup_root_stat.stat.isdir
+
+- name: Set immutable backup and isolated restore names
+  ansible.builtin.set_fact:
+    web_saas_release_checkpoint_id: "{{ web_saas_release_environment }}_{{ web_saas_release_run_id }}"
+    web_saas_release_backup_dir: >-
+      {{ web_saas_release_backup_root }}/{{ web_saas_release_environment }}/{{ web_saas_release_tag }}/{{ web_saas_release_run_id }}
+    web_saas_release_restore_database: "{{ web_saas_release_restore_database_prefix }}{{ web_saas_release_run_id }}"
+
+- name: Ensure backup path is private and stays on the selected host
+  ansible.builtin.file:
+    path: "{{ web_saas_release_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Refuse a checkpoint filename that already exists
+  ansible.builtin.stat:
+    path: "{{ web_saas_release_backup_dir }}/account.dump.enc"
+    follow: false
+  register: web_saas_release_existing_checkpoint
+
+- name: Require a unique checkpoint for this run
+  ansible.builtin.assert:
+    that:
+      - not web_saas_release_existing_checkpoint.stat.exists
+
+- name: Export and encrypt the account database on the environment host
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    temp="{{ web_saas_release_backup_dir }}/.account.dump.enc.pending"
+    trap 'rm -f -- "${temp}"' EXIT
+    docker exec {{ web_saas_release_postgres_container }} pg_dump \
+      -U postgres -d {{ web_saas_release_database }} -Fc --schema=public \
+      --no-owner --no-privileges \
+      | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 \
+          -pass env:WEB_SAAS_RELEASE_BACKUP_PASSPHRASE >"${temp}"
+    test -s "${temp}"
+    mv -n -- "${temp}" "{{ web_saas_release_backup_dir }}/account.dump.enc"
+    test ! -e "${temp}"
+  args:
+    executable: /bin/bash
+  environment:
+    WEB_SAAS_RELEASE_BACKUP_PASSPHRASE: "{{ web_saas_release_backup_passphrase }}"
+  register: web_saas_release_backup_command
+  changed_when: web_saas_release_backup_command.rc == 0
+  no_log: true
+
+- name: Verify the encrypted archive exists and is nonempty
+  ansible.builtin.stat:
+    path: "{{ web_saas_release_backup_dir }}/account.dump.enc"
+    checksum_algorithm: sha256
+    get_checksum: true
+  register: web_saas_release_archive
+
+- name: Refuse an empty or missing archive
+  ansible.builtin.assert:
+    that:
+      - web_saas_release_archive.stat.isreg | default(false)
+      - web_saas_release_archive.stat.size | default(0) | int > 128
+      - web_saas_release_archive.stat.mode == '0600'
+
+- name: Flush the verified checkpoint to the mounted data volume
+  ansible.builtin.command:
+    argv: [sync, -f, '{{ web_saas_release_backup_dir }}/account.dump.enc']
+  changed_when: false
+
+- name: Confirm the isolated restore database does not already exist
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - '{{ web_saas_release_postgres_container }}'
+      - psql
+      - -U
+      - postgres
+      - -d
+      - postgres
+      - -XAtq
+      - -v
+      - ON_ERROR_STOP=1
+      - -c
+      - "SELECT count(*) FROM pg_database WHERE datname = '{{ web_saas_release_restore_database }}'"
+  register: web_saas_release_restore_exists
+  changed_when: false
+
+- name: Refuse an existing database or an unsafe restore name
+  ansible.builtin.assert:
+    that:
+      - web_saas_release_restore_database is match('^release_verify_[1-9][0-9]*$')
+      - web_saas_release_restore_database != web_saas_release_database
+      - web_saas_release_restore_exists.stdout | trim == '0'
+
+- name: Verify backup by restoring into a new isolated database
+  block:
+    - name: Create the run-specific temporary restore database
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - '{{ web_saas_release_postgres_container }}'
+          - psql
+          - -U
+          - postgres
+          - -d
+          - postgres
+          - -Xq
+          - -v
+          - ON_ERROR_STOP=1
+          - -c
+          - 'CREATE DATABASE {{ web_saas_release_restore_database }}'
+      register: web_saas_release_restore_create
+      changed_when: web_saas_release_restore_create.rc == 0
+
+    - name: Remember exact temporary database ownership
+      ansible.builtin.set_fact:
+        web_saas_release_restore_created: true
+
+    - name: Decrypt and restore backup without modifying source database
+      ansible.builtin.shell: |
+        set -euo pipefail
+        openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+          -pass env:WEB_SAAS_RELEASE_BACKUP_PASSPHRASE \
+          -in "{{ web_saas_release_backup_dir }}/account.dump.enc" \
+          | docker exec -i {{ web_saas_release_postgres_container }} pg_restore \
+              -U postgres -d {{ web_saas_release_restore_database }} \
+              --no-owner --no-privileges --exit-on-error
+      args:
+        executable: /bin/bash
+      environment:
+        WEB_SAAS_RELEASE_BACKUP_PASSPHRASE: "{{ web_saas_release_backup_passphrase }}"
+      register: web_saas_release_restore_command
+      changed_when: web_saas_release_restore_command.rc == 0
+      no_log: true
+
+    - name: Verify restored migration version and old-user/subscription sample counts
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - '{{ web_saas_release_postgres_container }}'
+          - psql
+          - -U
+          - postgres
+          - -d
+          - '{{ web_saas_release_restore_database }}'
+          - -XAtq
+          - -v
+          - ON_ERROR_STOP=1
+          - -c
+          - >-
+            SELECT (SELECT version::text || ':' || dirty::text FROM public.schema_migrations LIMIT 1)
+            || ',' || (SELECT count(*) FROM public.users)::text
+            || ',' || (SELECT count(*) FROM public.subscriptions)::text
+      register: web_saas_release_restore_state
+      changed_when: false
+      no_log: true
+
+    - name: Require restored state to match source state
+      ansible.builtin.assert:
+        that:
+          - web_saas_release_restore_state.stdout | trim == web_saas_release_db_state.stdout | trim
+        fail_msg: Restored database version or original user/subscription samples do not match
+  always:
+    - name: Remove only this run's temporary restore database
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - '{{ web_saas_release_postgres_container }}'
+          - psql
+          - -U
+          - postgres
+          - -d
+          - postgres
+          - -Xq
+          - -v
+          - ON_ERROR_STOP=1
+          - -c
+          - 'DROP DATABASE {{ web_saas_release_restore_database }}'
+      when: web_saas_release_restore_created | default(false) | bool
+      changed_when: true
+
+- name: Read runtime identity after backup verification
+  ansible.builtin.command:
+    argv: [cat, /etc/machine-id]
+  register: web_saas_release_machine_id
+  changed_when: false
+  no_log: true
+
+- name: Require a real host identity for the checkpoint
+  ansible.builtin.assert:
+    that:
+      - web_saas_release_machine_id.stdout | trim is match('^[0-9a-f]{32}$')
+    fail_msg: The selected backup host has no stable machine identity
+
+- name: Record verified database backup component evidence
+  ansible.builtin.set_fact:
+    web_saas_release_evidence:
+      schema: 1
+      phase: database_backup_component
+      status: passed
+      candidate_sha256: "{{ web_saas_release_candidate_sha256 }}"
+      environment: "{{ web_saas_release_environment }}"
+      backup_backend: selfhost-web-saas
+      backup_environment: "{{ web_saas_release_environment }}"
+      backup_host_identity: "{{ web_saas_release_machine_id.stdout | trim | hash('sha256') }}"
+      checkpoint_id: "{{ web_saas_release_checkpoint_id }}"
+      schema_version: "{{ web_saas_release_expected_version | int }}"
+      archive_sha256: "{{ web_saas_release_archive.stat.checksum }}"
+      encrypted: true
+      durable: true
+      isolated_restore_verified: true
+      restored_data_matches: true

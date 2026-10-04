@@ -1,0 +1,115 @@
+name: Serverless Database Operations Tests
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/serverless-database-operations*.yml"
+      - "scripts/data_operations/serverless/**"
+      - "scripts/data_operations/database/**"
+      - "tests/data_operations/serverless/**"
+      - "tests/data_operations/test_serverless_operation_gates.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/serverless-database-operations*.yml"
+      - "scripts/data_operations/serverless/**"
+      - "scripts/data_operations/database/**"
+      - "tests/data_operations/serverless/**"
+      - "tests/data_operations/test_serverless_operation_gates.py"
+
+permissions:
+  contents: read
+
+jobs:
+  offline-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install YAML parser for workflow contract checks
+        run: python3 -m pip install pyyaml
+
+      - name: Check shell and Python syntax
+        run: |
+          set -euo pipefail
+          for file in scripts/data_operations/serverless/*.sh scripts/data_operations/database/*.sh tests/data_operations/serverless/*.sh; do
+            bash -n "$file"
+          done
+          python3 -B - <<'PY'
+          from pathlib import Path
+          for path in [*Path("scripts/data_operations/serverless").glob("*.py"),
+                       *Path("tests/data_operations/serverless").glob("*.py"),
+                       Path("tests/data_operations/test_serverless_operation_gates.py")]:
+              compile(path.read_text(), str(path), "exec")
+          PY
+
+      - name: Run offline operation and receipt gates
+        run: python3 -B -m unittest discover -s tests/data_operations -p 'test_serverless_operation_gates.py' -v
+
+      - name: Run offline schema and checkpoint safeguards
+        run: |
+          set -euo pipefail
+          bash tests/data_operations/serverless/uat_accounts_schema_apply_test.sh
+          bash tests/data_operations/serverless/uat_accounts_schema_probe_test.sh
+          bash tests/data_operations/serverless/uat_accounts_durable_checkpoint_test.sh
+          python3 -B tests/data_operations/serverless/uat_schema_repair_evidence_test.py
+          python3 -B tests/data_operations/serverless/uat_upgrade_readiness_probe_test.py
+
+  postgres17-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install --yes postgresql-client
+
+      - name: Check out immutable Accounts sentinel source
+        uses: actions/checkout@v4
+        with:
+          repository: ai-workspace-services/accounts
+          ref: 9ebd21c134f9b98f47c848f99a154f503c6b59ce
+          path: accounts-sentinel
+
+      - name: Check out immutable Accounts finance migration source
+        uses: actions/checkout@v4
+        with:
+          repository: ai-workspace-services/accounts
+          ref: c2c343fe2c91bb31e7f7f9b4fa60512a66e2b4c9
+          path: accounts-finance
+
+      - name: Set up Go for the official Accounts migrator
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: accounts-finance/go.mod
+          cache-dependency-path: accounts-finance/go.sum
+
+      - name: Run core full-row sentinel against the pinned Accounts migration
+        run: bash tests/data_operations/serverless/uat_accounts_schema_sentinel_postgres17_test.sh
+        env:
+          ACCOUNTS_REPO_ROOT: ${{ github.workspace }}/accounts-sentinel
+          TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+
+      - name: Prove read-only readiness diagnostics never authorize business promotion
+        run: python3 -B tests/data_operations/serverless/uat_upgrade_readiness_postgres17_test.py
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+
+      - name: Run official finance migrator twice against its disposable fixture
+        run: python3 -B tests/data_operations/serverless/uat_finance_migration_postgres17_test.py
+        env:
+          ACCOUNTS_REPO_ROOT: ${{ github.workspace }}/accounts-finance
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres

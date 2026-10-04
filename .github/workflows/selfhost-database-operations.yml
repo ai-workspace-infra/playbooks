@@ -1,0 +1,238 @@
+name: Selfhost Database Operations
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Explicit target environment.
+        required: true
+        type: string
+      operation:
+        description: selfhost_probe, selfhost_init, or selfhost_verify.
+        required: true
+        type: string
+      release_tag:
+        description: Immutable application tag used by verification.
+        required: false
+        default: ''
+        type: string
+      accounts_ref:
+        description: Accounts schema/import source ref.
+        required: false
+        default: main
+        type: string
+      config_json:
+        description: Nonsecret operation configuration.
+        required: false
+        default: '{}'
+        type: string
+      correlation_id:
+        description: Parent operation correlation identifier.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: selfhost-database-${{ inputs.environment }}-${{ inputs.correlation_id }}
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    name: ${{ inputs.environment }} / ${{ inputs.operation }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      VAULT_ADDR: https://vault.svc.plus
+      VAULT_ROLE: github-actions-platform-ops-toolkit-${{ inputs.environment }}
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+      ANSIBLE_SSH_ARGS: "-o BatchMode=yes -o IdentitiesOnly=yes -o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      CONFIG_JSON: ${{ inputs.config_json }}
+      REQUESTED_ENVIRONMENT: ${{ inputs.environment }}
+      REQUESTED_OPERATION: ${{ inputs.operation }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      ACCOUNTS_REF: ${{ inputs.accounts_ref }}
+      CORRELATION_ID: ${{ inputs.correlation_id }}
+    steps:
+      - name: Check out Playbooks execution owner
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+
+      - name: Validate nonsecret request before Vault access
+        run: python3 scripts/data_operations/selfhost/validate_operation.py
+
+      - name: Download caller CMDB for its exact target host
+        if: ${{ contains(fromJSON('["selfhost_probe","selfhost_init","selfhost_verify"]'), inputs.operation) }}
+        uses: actions/download-artifact@v8
+        with:
+          name: platform-ops-toolkit-cmdb
+          repository: ${{ github.repository }}
+          run-id: ${{ fromJSON(inputs.config_json).caller_run_id }}
+          github-token: ${{ github.token }}
+          path: cmdb
+
+      - name: Verify trusted caller run and its canonical CMDB host identity
+        if: ${{ contains(fromJSON('["selfhost_probe","selfhost_init","selfhost_verify"]'), inputs.operation) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          CALLER_RUN_ID: ${{ fromJSON(inputs.config_json).caller_run_id }}
+          REQUESTED_ENVIRONMENT: ${{ inputs.environment }}
+          CONFIG_JSON: ${{ inputs.config_json }}
+          CMDB_FILE: cmdb/cmdb.json
+        run: python3 scripts/data_operations/selfhost/verify_caller_cmdb.py
+
+      - name: Download accepted baseline receipt from its dispatch run
+        if: ${{ inputs.operation == 'selfhost_verify' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: selfhost-baseline-${{ fromJSON(inputs.config_json).target_host }}
+          repository: ai-workspace-infra/platform-ops-toolkit
+          run-id: ${{ fromJSON(inputs.config_json).baseline_data_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/selfhost-baseline
+
+      - name: Verify baseline receipt belongs to this parent, host, and baseline run
+        if: ${{ inputs.operation == 'selfhost_verify' }}
+        env:
+          BASELINE_RECEIPT: ${{ runner.temp }}/selfhost-baseline/baseline.json
+          EXPECTED_PARENT_RUN_ID: ${{ fromJSON(inputs.config_json).caller_run_id }}
+          EXPECTED_BASELINE_RUN_ID: ${{ fromJSON(inputs.config_json).baseline_data_run_id }}
+          EXPECTED_HOST: ${{ fromJSON(inputs.config_json).target_host }}
+          EXPECTED_ACCEPTANCE_RUN_ID: ${{ fromJSON(inputs.config_json).acceptance_run_id }}
+        run: python3 scripts/data_operations/selfhost/verify_baseline_receipt.py
+
+      - name: Check out Accounts source for schema initialization and verification
+        if: ${{ contains(fromJSON('["selfhost_init","selfhost_verify"]'), inputs.operation) }}
+        uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-services/accounts
+          ref: ${{ inputs.accounts_ref }}
+          path: accounts
+          persist-credentials: false
+
+      - name: Resolve exact Accounts schema target from the release source
+        if: ${{ inputs.operation == 'selfhost_verify' }}
+        env:
+          VERIFIED_RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import os, re, subprocess
+          from pathlib import Path
+          tag = os.environ["VERIFIED_RELEASE_TAG"]
+          if not re.fullmatch(r"(?:uat-)?daily-build-\d{4}\.\d{2}\.\d{2}(?:-r[1-9]\d*)?|v\d[0-9.r-]*", tag):
+              raise SystemExit("BLOCKED: release_tag must be an immutable Accounts tag")
+          def git(*args):
+              return subprocess.check_output(["git", "-C", "accounts", *args], text=True).strip()
+          if git("rev-parse", f"refs/tags/{tag}^{{commit}}") != git("rev-parse", "HEAD"):
+              raise SystemExit("BLOCKED: checked out Accounts source does not match release_tag")
+          versions = []
+          for path in Path("accounts/sql/migrations").glob("*.up.sql"):
+              match = re.fullmatch(r"([1-9][0-9]*)_.+\.up\.sql", path.name)
+              if not match:
+                  raise SystemExit("BLOCKED: unrecognized Accounts migration filename")
+              versions.append(int(match.group(1)))
+          if not versions or len(versions) != len(set(versions)):
+              raise SystemExit("BLOCKED: Accounts migration target is missing or duplicated")
+          print(f"EXPECTED_SCHEMA_VERSION={max(versions)}")
+          PY
+
+      - name: Require immutable Accounts release tag for initialization
+        if: ${{ inputs.operation == 'selfhost_init' }}
+        env:
+          REQUESTED_ACCOUNTS_REF: ${{ inputs.accounts_ref }}
+        run: |
+          python3 - <<'PY'
+          import os, re, subprocess
+          ref = os.environ["REQUESTED_ACCOUNTS_REF"]
+          if not re.fullmatch(r"(?:uat-)?daily-build-\d{4}\.\d{2}\.\d{2}(?:-r[1-9]\d*)?|v\d[0-9.r-]*", ref):
+              raise SystemExit("BLOCKED: selfhost_init requires an immutable Accounts release tag")
+          actual = subprocess.check_output(["git", "-C", "accounts", "rev-parse", f"refs/tags/{ref}^{{commit}}"], text=True).strip()
+          head = subprocess.check_output(["git", "-C", "accounts", "rev-parse", "HEAD"], text=True).strip()
+          if actual != head:
+              raise SystemExit("BLOCKED: checked out Accounts source does not match accounts_ref")
+          PY
+
+      - name: Install execution tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ansible jq postgresql-client
+
+      - name: Load environment-scoped deployment credential
+        id: vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          role: ${{ env.VAULT_ROLE }}
+          method: jwt
+          jwtGithubAudience: vault
+          ignoreNotFound: true
+          secrets: |
+            kv/data/CICD/${{ inputs.environment }} SSH_PRIVATE_DEPLOY_KEY_B64 | SSH_PRIVATE_DEPLOY_KEY_B64 ;
+      - name: Load environment-scoped database credentials for explicit init only
+        if: ${{ inputs.operation == 'selfhost_init' }}
+        id: init_vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          role: ${{ env.VAULT_ROLE }}
+          method: jwt
+          jwtGithubAudience: vault
+          ignoreNotFound: true
+          secrets: |
+            kv/data/${{ inputs.environment }}/databases postgres_root_password | POSTGRES_PASSWORD ;
+            kv/data/${{ inputs.environment }}/databases account_pg_password | ACCOUNT_PG_PASSWORD
+
+      - name: Install SSH keys
+        env:
+          DEPLOY_KEY_B64: ${{ steps.vault.outputs.SSH_PRIVATE_DEPLOY_KEY_B64 }}
+        run: |
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s' "$DEPLOY_KEY_B64" | base64 -d > "$HOME/.ssh/id_deploy"
+          chmod 600 "$HOME/.ssh/id_deploy"
+
+      - name: Run selfhost probe or capture baseline
+        if: ${{ inputs.operation == 'selfhost_probe' }}
+        run: |
+          if [ "$SELFHOST_ACTION" = baseline ]; then
+            bash scripts/data_operations/selfhost/acceptance.sh baseline | tee "$RUNNER_TEMP/selfhost-baseline.out"
+            python3 scripts/data_operations/selfhost/write_baseline_receipt.py \
+              "$RUNNER_TEMP/selfhost-baseline.out" "$RUNNER_TEMP/selfhost-baseline-artifact/baseline.json"
+          else
+            bash scripts/data_operations/selfhost/acceptance.sh probe
+          fi
+        env:
+          SELFHOST_ACTION: ${{ fromJSON(inputs.config_json).action }}
+          GITHUB_PARENT_RUN_ID: ${{ fromJSON(inputs.config_json).caller_run_id }}
+
+      - name: Upload sanitized baseline receipt
+        if: ${{ inputs.operation == 'selfhost_probe' && fromJSON(inputs.config_json).action == 'baseline' && success() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: selfhost-baseline-${{ fromJSON(inputs.config_json).target_host }}
+          path: ${{ runner.temp }}/selfhost-baseline-artifact/baseline.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Initialize schema only when explicitly requested
+        if: ${{ inputs.operation == 'selfhost_init' }}
+        env:
+          TARGET_HOST: ${{ fromJSON(inputs.config_json).target_host }}
+          POSTGRES_PASSWORD: ${{ steps.init_vault.outputs.POSTGRES_PASSWORD }}
+          ACCOUNT_PG_PASSWORD: ${{ steps.init_vault.outputs.ACCOUNT_PG_PASSWORD }}
+          ACCOUNTS_SCHEMA_REF: ${{ inputs.accounts_ref }}
+          VAULT_ENV_PATH: ${{ inputs.environment }}
+        run: |
+          test -n "$TARGET_HOST"
+          bash scripts/data_operations/selfhost/init_guard.sh "$TARGET_HOST"
+          ansible-playbook -i "$GITHUB_WORKSPACE/cmdb/inventory.ini" create_databases_and_users.yml --limit "$TARGET_HOST"
+          ansible-playbook -i "$GITHUB_WORKSPACE/cmdb/inventory.ini" initialize-web-saas-schemas.yml --limit "$TARGET_HOST"
+
+      - name: Verify deployed release and retained baseline
+        if: ${{ inputs.operation == 'selfhost_verify' }}
+        run: bash scripts/data_operations/selfhost/acceptance.sh verify
