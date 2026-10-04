@@ -1,0 +1,162 @@
+---
+- name: Validate the explicit XConnect remote observation contract
+  ansible.builtin.assert:
+    that:
+      - observability_operations_environment == 'uat'
+      - xconnect_remote_observation_gateway_host | string is match('^[a-zA-Z0-9][a-zA-Z0-9_.-]*$')
+      - xconnect_remote_observation_client_host | string is match('^[a-zA-Z0-9][a-zA-Z0-9_.-]*$')
+      - xconnect_remote_observation_gateway_host in groups.get('all', [])
+      - xconnect_remote_observation_client_host in groups.get('all', [])
+      - xconnect_remote_observation_gateway_host not in ['localhost', '127.0.0.1', '::1']
+      - xconnect_remote_observation_client_host not in ['localhost', '127.0.0.1', '::1']
+      - xconnect_remote_observation_gateway_host != xconnect_remote_observation_client_host
+      - xconnect_remote_observation_run_id | string is match('^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$')
+      - xconnect_remote_observation_gateway_id | string is match('^[a-z0-9][a-z0-9._-]{0,127}$')
+      - xconnect_remote_observation_client_id | string is match('^[a-z0-9][a-z0-9._-]{0,127}$')
+      - xconnect_remote_observation_network_id | string is match('^[a-z0-9][a-z0-9._-]{0,127}$')
+      - xconnect_remote_observation_gateway_public_key | string is match('^[A-Za-z0-9+/]{43}=$')
+      - xconnect_remote_observation_gateway_state_dir | string is match('^/[A-Za-z0-9][A-Za-z0-9_./-]*$')
+      - "'..' not in xconnect_remote_observation_gateway_state_dir"
+      - xconnect_remote_observation_client_state_dir | string is match('^/[A-Za-z0-9][A-Za-z0-9_./-]*$')
+      - "'..' not in xconnect_remote_observation_client_state_dir"
+      - xconnect_remote_observation_gateway_interface | string is match('^[A-Za-z0-9_.-]{1,15}$')
+      - xconnect_remote_observation_client_interface | string is match('^[A-Za-z0-9_.-]{1,15}$')
+      - xconnect_remote_observation_max_handshake_age_seconds | string is match('^[0-9]+$')
+      - xconnect_remote_observation_max_handshake_age_seconds | int >= 1
+      - xconnect_remote_observation_max_handshake_age_seconds | int <= 3600
+      - xconnect_remote_observation_path | string | length > 0
+      - xconnect_remote_observation_become is boolean
+    fail_msg: Select two explicit inventory hosts and bounded read-only XConnect observation inputs.
+  no_log: true
+
+- name: Read Gateway runtime status without changing the host
+  ansible.builtin.command:
+    argv:
+      - xconnect-gateway
+      - status
+      - --state-dir
+      - "{{ xconnect_remote_observation_gateway_state_dir }}"
+  delegate_to: "{{ xconnect_remote_observation_gateway_host }}"
+  become: "{{ xconnect_remote_observation_become | bool }}"
+  environment:
+    PATH: "{{ xconnect_remote_observation_path }}"
+  register: xconnect_remote_gateway_status
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Verify the Gateway state binding without exposing its contents
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      jq -e \
+        --arg gateway {{ xconnect_remote_observation_gateway_id | quote }} \
+        --arg network {{ xconnect_remote_observation_network_id | quote }} \
+        '.gateway_id == $gateway and .network_id == $network and
+         .applied_generation > 0 and (.applied_config_id | length) > 0' \
+        {{ (xconnect_remote_observation_gateway_state_dir ~ '/state.json') | quote }} \
+        >/dev/null
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ xconnect_remote_observation_gateway_host }}"
+  become: "{{ xconnect_remote_observation_become | bool }}"
+  environment:
+    PATH: "{{ xconnect_remote_observation_path }}"
+  register: xconnect_remote_gateway_state
+  changed_when: false
+  failed_when: false
+  when: xconnect_remote_gateway_status.rc | default(1) == 0
+  no_log: true
+
+- name: Observe the Gateway peer handshake with a bounded read-only probe
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      set -- {{ xconnect_remote_observation_gateway_state_dir | quote }}/runtime/*.conf
+      test "$#" -eq 1 && test -f "$1"
+      device=''; client_key=''
+      while IFS= read -r line; do
+        case "$line" in
+          '# DeviceID = '*) device="${line#'# DeviceID = '}" ;;
+          'PublicKey = '*)
+            if [[ "$device" == {{ xconnect_remote_observation_client_id | quote }} ]]; then client_key="${line#'PublicKey = '}"; fi
+            device='';;
+        esac
+      done < "$1"
+      test "$client_key" != ''
+      now=$(date +%s)
+      wg show {{ xconnect_remote_observation_gateway_interface | quote }} latest-handshakes |
+        awk -v peer="$client_key" -v now="$now" -v max_age={{ xconnect_remote_observation_max_handshake_age_seconds | int }} \
+          '$1 == peer && $2 > 0 && now >= $2 && now - $2 < max_age { found=1 } END { exit(found ? 0 : 1) }'
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ xconnect_remote_observation_gateway_host }}"
+  become: "{{ xconnect_remote_observation_become | bool }}"
+  environment:
+    PATH: "{{ xconnect_remote_observation_path }}"
+  register: xconnect_remote_gateway_peer
+  changed_when: false
+  failed_when: false
+  when:
+    - xconnect_remote_gateway_status.rc | default(1) == 0
+    - xconnect_remote_gateway_state.rc | default(1) == 0
+  no_log: true
+
+- name: Read XConnect One status without refreshing or applying configuration
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      xconnect status --state-dir {{ xconnect_remote_observation_client_state_dir | quote }} |
+        jq -e \
+          --arg device {{ xconnect_remote_observation_client_id | quote }} \
+          --arg network {{ xconnect_remote_observation_network_id | quote }} \
+          '.joined == true and .device_id == $device and .network_id == $network and
+           ((.config_id // .revision) | type == "string" and length > 0) and
+           .generations.state > 0 and .runtime.applied == true and
+           .runtime.core_id == "xray" and .credential.present == true and
+           .credential.expired == false' \
+          >/dev/null
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ xconnect_remote_observation_client_host }}"
+  become: "{{ xconnect_remote_observation_become | bool }}"
+  environment:
+    PATH: "{{ xconnect_remote_observation_path }}"
+  register: xconnect_remote_client_status
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Observe the XConnect One peer handshake with a bounded read-only probe
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      now=$(date +%s)
+      wg show {{ xconnect_remote_observation_client_interface | quote }} latest-handshakes |
+        awk -v peer={{ xconnect_remote_observation_gateway_public_key | quote }} -v now="$now" -v max_age={{ xconnect_remote_observation_max_handshake_age_seconds | int }} \
+          '$1 == peer && $2 > 0 && now >= $2 && now - $2 < max_age { found=1 } END { exit(found ? 0 : 1) }'
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ xconnect_remote_observation_client_host }}"
+  become: "{{ xconnect_remote_observation_become | bool }}"
+  environment:
+    PATH: "{{ xconnect_remote_observation_path }}"
+  register: xconnect_remote_client_peer
+  changed_when: false
+  failed_when: false
+  when: xconnect_remote_client_status.rc | default(1) == 0
+  no_log: true
+
+- name: Emit the stable sanitized node observation contract
+  ansible.builtin.debug:
+    msg: >-
+      NODE_OBSERVATION run={{ xconnect_remote_observation_run_id }}
+      refresh={{ 'OK' if (xconnect_remote_gateway_status.rc | default(1) == 0 and xconnect_remote_gateway_state.rc | default(1) == 0) else 'UNVERIFIED' }}
+      sync={{ 'OK' if xconnect_remote_client_status.rc | default(1) == 0 else 'UNVERIFIED' }}
+      gateway_peer={{ 'OBSERVED' if xconnect_remote_gateway_peer.rc | default(1) == 0 else 'UNVERIFIED' }}
+      client_peer={{ 'OBSERVED' if xconnect_remote_client_peer.rc | default(1) == 0 else 'UNVERIFIED' }}
+      SUMMARY_ONLY
+
+- name: Emit the independent acceptance boundary
+  ansible.builtin.debug:
+    msg: NODE_OBSERVATION_RESULT=SUMMARY_ONLY read_only=true local_independent_acceptance_required=true

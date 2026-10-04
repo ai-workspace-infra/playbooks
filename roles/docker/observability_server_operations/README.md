@@ -8,7 +8,7 @@ eligibility, operator confirmations, job ordering, and DNS cutover approval.
 
 The role accepts `observability_operation` values `data_migrate`,
 `verify_store`, `verify_target`, `verify_mcp`, `post_dns_cutover`, or
-`verify_local_grafana`, and requires
+`verify_local_grafana`, or `xconnect_remote_observation`, and requires
 `observability_operations_environment: uat`. Data mutation behavior is
 preserved: source snapshots are version checked; target restore retains the
 pre-migration target data and restores it on failure; post-restore checks
@@ -45,3 +45,22 @@ checks HTTPS with normal certificate validation, resolving the supplied domain
 to that exact target IP. The control workflow decides when to run it and invokes
 the IaC DNS executor to restore its checkpoint on failure. No DNS/provider token
 or record write belongs to this role.
+
+`xconnect_remote_observation` is a separate read-only operation for an
+explicit Gateway host and One host. It validates the signed state binding,
+runtime status, and bounded WireGuard handshakes, then emits only the stable
+`NODE_OBSERVATION` summary contract. The One probe reads `xconnect status`
+without refreshing the runtime. State directories, device/network identifiers,
+interfaces, and the public peer key are required inputs; no host or target is
+inferred. Raw command output is hidden and the operation never prints
+credentials, signed configuration, or peer material.
+
+Example:
+
+```sh
+ansible-playbook -i "$ACCESS_DIR/inventory.ini" observability_operations.yml \
+  -e observability_operations_environment=uat \
+  -e observability_operation=xconnect_remote_observation \
+  -e xconnect_remote_observation_gateway_host=xconnect-gateway \
+  -e xconnect_remote_observation_client_host=xconnect-one
+```
