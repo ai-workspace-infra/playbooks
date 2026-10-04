@@ -1,0 +1,164 @@
+name: UAT Data Import
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Target environment; this workflow only permits uat.
+        required: true
+        type: string
+      config_json:
+        description: Legacy migration options as JSON. Must set confirm_legacy_import=true.
+        required: false
+        default: '{}'
+        type: string
+      accounts_ref:
+        description: Accounts repository ref used to build migratectl.
+        required: false
+        default: main
+        type: string
+      dry_run:
+        description: Preview without target database writes.
+        required: false
+        default: true
+        type: boolean
+      correlation_id:
+        description: Caller-provided execution correlation identifier.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: uat-data-import-${{ inputs.correlation_id }}
+  cancel-in-progress: false
+
+jobs:
+  import:
+    name: Import data into UAT
+    runs-on: ubuntu-latest
+    environment: uat
+    env:
+      VAULT_ADDR: https://vault.svc.plus
+      VAULT_ROLE: github-actions-platform-ops-toolkit-uat
+      VAULT_KV_ENV: kv/data/uat/accounts-migration
+      CONFIG_JSON: ${{ inputs.config_json }}
+      REQUESTED_ENVIRONMENT: ${{ inputs.environment }}
+      REQUESTED_DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+      CORRELATION_ID: ${{ inputs.correlation_id }}
+    steps:
+      - name: Check out playbooks execution owner
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+
+      - name: Validate request before external checkout or Vault access
+        id: request_guard
+        run: python3 roles/uat_data_import/files/validate_config.py
+
+      - name: Validate CMDB caller workflow run
+        if: ${{ steps.request_guard.outputs.caller_run_id != '' }}
+        env:
+          CALLER_RUN_ID: ${{ steps.request_guard.outputs.caller_run_id }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CALLER_RUN_ID}" \
+            | python3 roles/uat_data_import/files/validate_caller_run.py \
+                --repository "$GITHUB_REPOSITORY" --run-id "$CALLER_RUN_ID"
+
+      - name: Download CMDB from the validated caller run
+        if: ${{ steps.request_guard.outputs.caller_run_id != '' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: platform-ops-toolkit-cmdb
+          path: cmdb
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.request_guard.outputs.caller_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Validate downloaded caller CMDB
+        if: ${{ steps.request_guard.outputs.caller_run_id != '' }}
+        run: python3 roles/uat_data_import/files/validate_cmdb.py
+
+      - name: Check out Accounts service
+        uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-services/accounts
+          ref: ${{ inputs.accounts_ref }}
+          path: accounts
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: accounts/go.mod
+          cache-dependency-path: accounts/go.sum
+
+      - name: Install migration runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ansible jq postgresql-client
+
+      - name: Load legacy migration credentials from Vault
+        id: vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          role: ${{ env.VAULT_ROLE }}
+          method: jwt
+          jwtGithubAudience: vault
+          ignoreNotFound: true
+          secrets: |
+            kv/data/uat/accounts-migration MIGRATION_SOURCE_DSN | MIGRATION_SOURCE_DSN ;
+            kv/data/uat/accounts-migration MIGRATION_TARGET_DSN | MIGRATION_TARGET_DSN ;
+            ${{ fromJSON(inputs.config_json).supabase_source_vault_path || 'kv/data/uat/accounts-migration' }} MIGRATION_SOURCE_DSN | SUPABASE_SOURCE_DSN ;
+            ${{ fromJSON(inputs.config_json).supabase_source_vault_path || 'kv/data/uat/accounts-migration' }} MIGRATION_SOURCE_SSH_PRIVATE_KEY_B64 | MIGRATION_SOURCE_SSH_PRIVATE_KEY_B64 ;
+            ${{ fromJSON(inputs.config_json).supabase_vault_path || 'kv/data/uat/serverless/supabase' }} ${{ fromJSON(inputs.config_json).supabase_target_dsn_key || 'DATABASE_SESSION_POOLER_URL' }} | SUPABASE_TARGET_DSN ;
+            ${{ fromJSON(inputs.config_json).supabase_vault_path || 'kv/data/uat/serverless/supabase' }} PROJECT_REF | SUPABASE_VAULT_PROJECT_REF ;
+            kv/data/CICD/uat SSH_PRIVATE_DEPLOY_KEY_B64 | VAULT_ANSIBLE_SSH_KEY_B64 ;
+
+      - name: Prepare SSH key material
+        env:
+          VAULT_ANSIBLE_SSH_KEY_B64: ${{ steps.vault.outputs.VAULT_ANSIBLE_SSH_KEY_B64 }}
+          MIGRATION_SOURCE_SSH_PRIVATE_KEY_B64: ${{ steps.vault.outputs.MIGRATION_SOURCE_SSH_PRIVATE_KEY_B64 }}
+        run: |
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$VAULT_ANSIBLE_SSH_KEY_B64" ]; then
+            printf '%s' "$VAULT_ANSIBLE_SSH_KEY_B64" | base64 -d > "$HOME/.ssh/id_deploy"
+            chmod 600 "$HOME/.ssh/id_deploy"
+          fi
+          if [ -n "$MIGRATION_SOURCE_SSH_PRIVATE_KEY_B64" ]; then
+            printf '%s' "$MIGRATION_SOURCE_SSH_PRIVATE_KEY_B64" | base64 -d > "$HOME/.ssh/id_migration_source"
+            chmod 600 "$HOME/.ssh/id_migration_source"
+          fi
+
+      - name: Execute UAT data import role
+        env:
+          MIGRATION_SOURCE_DSN: ${{ steps.vault.outputs.MIGRATION_SOURCE_DSN }}
+          MIGRATION_TARGET_DSN: ${{ steps.vault.outputs.MIGRATION_TARGET_DSN }}
+          SUPABASE_TARGET_DSN: ${{ steps.vault.outputs.SUPABASE_TARGET_DSN }}
+          SUPABASE_SOURCE_DSN: ${{ steps.vault.outputs.SUPABASE_SOURCE_DSN }}
+          SUPABASE_VAULT_PROJECT_REF: ${{ steps.vault.outputs.SUPABASE_VAULT_PROJECT_REF }}
+          MIGRATION_SOURCE_SSH_KEY_PATH: /home/runner/.ssh/id_migration_source
+          MIGRATION_SSH_KEY_PATH: /home/runner/.ssh/id_deploy
+        id: execute
+        run: |
+          ANSIBLE_ROLES_PATH="$GITHUB_WORKSPACE/roles" ansible-playbook \
+            roles/uat_data_import/uat-data-import.yml -i 'localhost,' -c local
+
+      - name: Write sanitized execution receipt
+        if: ${{ always() }}
+        env:
+          EXECUTION_SUCCESS: ${{ steps.execute.outcome == 'success' && 'true' || 'false' }}
+        run: python3 roles/uat_data_import/files/write_receipt.py
+
+      - name: Publish sanitized execution receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: uat-data-import-receipt-${{ github.run_id }}
+          path: uat-data-import-receipt.json
+          if-no-files-found: error
+          retention-days: 30

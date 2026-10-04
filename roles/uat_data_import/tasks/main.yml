@@ -1,0 +1,128 @@
+---
+- name: Parse caller migration configuration
+  ansible.builtin.set_fact:
+    uat_data_import_config: "{{ uat_data_import_config_json | from_json }}"
+  no_log: true
+
+- name: Enforce UAT-only legacy import opt-in and safe strategy
+  ansible.builtin.assert:
+    that:
+      - uat_data_import_environment == 'uat'
+      - uat_data_import_config is mapping
+      - uat_data_import_config.confirm_legacy_import is sameas true
+      - uat_data_import_correlation_id | length > 0
+      - (uat_data_import_config.supabase_target_existing_strategy | default('reject')) != 'replace_public'
+    fail_msg: >-
+      Import requires environment=uat, a correlation_id, explicit
+      config.confirm_legacy_import=true, and a target strategy other than
+      replace_public. PROD writes and public-schema replacement are refused.
+  no_log: true
+
+- name: Validate supported migration path
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ playbook_dir }}/../../scripts/data_operations/validate_accounts_migration_target.sh"
+  environment:
+    ACCOUNTS_SOURCE_BACKEND: "{{ uat_data_import_config.accounts_source_backend | default('supabase') }}"
+    ACCOUNTS_TARGET_BACKEND: "{{ uat_data_import_config.accounts_target_backend | default('vps') }}"
+    ACCOUNTS_MIGRATION_MODE: "{{ uat_data_import_config.accounts_migration_mode | default('data') }}"
+    SUPABASE_PROJECT_REF: "{{ uat_data_import_config.supabase_project_ref | default('') }}"
+    SUPABASE_TARGET_EXISTING_STRATEGY: "{{ uat_data_import_config.supabase_target_existing_strategy | default('reject') }}"
+  changed_when: false
+  no_log: true
+
+- name: Build reviewed Accounts migratectl
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ playbook_dir }}/../../scripts/data_operations/data-migration_accounts_build-migratectl.sh"
+  environment:
+    ACCOUNTS_DIR: "{{ playbook_dir }}/../../accounts"
+    GITHUB_WORKSPACE: "{{ playbook_dir }}/../.."
+  changed_when: true
+  no_log: true
+
+- name: Assemble migration runtime variables
+  ansible.builtin.set_fact:
+    uat_data_import_environment_vars:
+      VAULT_ENV_PATH: uat
+      MIGRATECTL_BIN: "{{ playbook_dir }}/../../bin/migratectl"
+      DRY_RUN: "{{ uat_data_import_dry_run | bool | ternary('true', 'false') }}"
+      SNAPSHOT_FILE: "{{ lookup('env', 'RUNNER_TEMP') | default('/tmp', true) }}/account-prod-snapshot.yaml"
+      MIGRATION_SOURCE_DSN: "{{ lookup('env', 'MIGRATION_SOURCE_DSN') }}"
+      MIGRATION_TARGET_DSN: "{{ lookup('env', 'MIGRATION_TARGET_DSN') }}"
+      MIGRATION_SOURCE_HOST: "{{ uat_data_import_config.accounts_source_host | default('') }}"
+      MIGRATION_TARGET_HOST: "{{ uat_data_import_config.accounts_target_host | default('') }}"
+      MIGRATION_EMAIL_FILTER: "{{ uat_data_import_config.accounts_email_filter | default('') }}"
+      MIGRATION_SOURCE_SSH_KEY_PATH: "{{ lookup('env', 'MIGRATION_SOURCE_SSH_KEY_PATH') }}"
+      MIGRATION_SSH_KEY_PATH: "{{ lookup('env', 'MIGRATION_SSH_KEY_PATH') }}"
+      SSH_USER: "{{ uat_data_import_config.ssh_user | default('root') }}"
+      CMDB_FILE: "{{ playbook_dir }}/../../cmdb/cmdb.json"
+      SUPABASE_TARGET_DSN: "{{ lookup('env', 'SUPABASE_TARGET_DSN') }}"
+      SUPABASE_SOURCE_DSN: "{{ lookup('env', 'SUPABASE_SOURCE_DSN') }}"
+      SUPABASE_EXPECTED_PROJECT_REF: "{{ uat_data_import_config.supabase_project_ref | default('') }}"
+      SUPABASE_VAULT_PROJECT_REF: "{{ lookup('env', 'SUPABASE_VAULT_PROJECT_REF') }}"
+      SUPABASE_MIGRATION_MODE: "{{ uat_data_import_config.accounts_migration_mode | default('data') }}"
+      SUPABASE_METADATA_DRY_RUN: "{{ uat_data_import_dry_run | bool | ternary('true', 'false') }}"
+      SUPABASE_SOURCE_BACKEND: "{{ uat_data_import_config.accounts_source_backend | default('supabase') }}"
+      SUPABASE_SOURCE_TUNNEL_HOST: "{{ uat_data_import_config.supabase_source_tunnel_host | default('') }}"
+      SUPABASE_SOURCE_SSH_KEY_PATH: "{{ lookup('env', 'MIGRATION_SOURCE_SSH_KEY_PATH') }}"
+      SUPABASE_SOURCE_SSH_USER: "{{ uat_data_import_config.supabase_source_ssh_user | default('root') }}"
+      SUPABASE_TARGET_CONNECTION_MODE: "{{ uat_data_import_config.supabase_target_connection_mode | default('session_pooler') }}"
+      SUPABASE_TARGET_EXISTING_STRATEGY: "{{ uat_data_import_config.supabase_target_existing_strategy | default('reject') }}"
+      SUPABASE_TARGET_CONFIRM_REPLACE: 'false'
+      SUPABASE_TARGET_BACKUP_FILE: "{{ lookup('env', 'RUNNER_TEMP') | default('/tmp', true) }}/supabase-public-backup.sql"
+      SUPABASE_ACCOUNTS_SNAPSHOT_FILE: "{{ lookup('env', 'RUNNER_TEMP') | default('/tmp', true) }}/supabase-accounts-snapshot.yaml"
+      SUPABASE_SOURCE_DB_CONTAINER: "{{ uat_data_import_config.supabase_source_db_container | default('postgresql-svc-plus') }}"
+      SUPABASE_SOURCE_DB_USER: readonly
+      SUPABASE_SOURCE_DATABASE: "{{ uat_data_import_config.supabase_source_database | default('account') }}"
+  no_log: true
+
+- name: Run VPS-target data migration over direct PostgreSQL connections
+  block:
+    - name: Assert direct migration Vault credentials and direction
+      ansible.builtin.command:
+        argv: [bash, "{{ playbook_dir }}/../../scripts/data_operations/data-migration_accounts_assert-credentials.sh"]
+      environment: "{{ uat_data_import_environment_vars }}"
+      changed_when: false
+      no_log: true
+    - name: Run direct PostgreSQL migration
+      ansible.builtin.command:
+        argv: [bash, "{{ playbook_dir }}/../../scripts/data_operations/accounts_data_migration.sh"]
+      environment: "{{ uat_data_import_environment_vars }}"
+      no_log: true
+  when:
+    - (uat_data_import_config.accounts_target_backend | default('vps')) == 'vps'
+    - (uat_data_import_config.accounts_migration_mode | default('data')) == 'data'
+    - (uat_data_import_config.accounts_transport | default('ssh')) == 'direct'
+  environment: "{{ uat_data_import_environment_vars }}"
+  no_log: true
+
+- name: Run VPS-target data migration over SSH
+  ansible.builtin.command:
+    argv: [bash, "{{ playbook_dir }}/../../scripts/data_operations/accounts_data_migration_ssh.sh"]
+  when:
+    - (uat_data_import_config.accounts_target_backend | default('vps')) == 'vps'
+    - (uat_data_import_config.accounts_migration_mode | default('data')) == 'data'
+    - (uat_data_import_config.accounts_transport | default('ssh')) == 'ssh'
+  environment: "{{ uat_data_import_environment_vars }}"
+  no_log: true
+
+- name: Run Supabase metadata migration
+  ansible.builtin.command:
+    argv: [bash, "{{ playbook_dir }}/../../scripts/data_operations/supabase_metadata_migration.sh"]
+  when:
+    - (uat_data_import_config.accounts_target_backend | default('vps')) == 'supabase'
+    - (uat_data_import_config.supabase_target_existing_strategy | default('reject')) != 'accounts_merge'
+  environment: "{{ uat_data_import_environment_vars }}"
+  no_log: true
+
+- name: Run Supabase Accounts merge migration
+  ansible.builtin.command:
+    argv: [bash, "{{ playbook_dir }}/../../scripts/data_operations/supabase_accounts_merge_migration.sh"]
+  when:
+    - (uat_data_import_config.accounts_target_backend | default('vps')) == 'supabase'
+    - (uat_data_import_config.supabase_target_existing_strategy | default('reject')) == 'accounts_merge'
+  environment: "{{ uat_data_import_environment_vars }}"
+  no_log: true
