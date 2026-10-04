@@ -1,0 +1,11 @@
+{{ {'workerRuntime': {
+  'command': ['/usr/bin/sudo', '-n', xworkmate_workers_launcher],
+  'stateRoot': xworkmate_workers_state_root + '/runs',
+  'modelService': {'baseUrl': xworkmate_workers_llm_base_url, 'model': xworkmate_workers_llm_model, 'credentialEnvFile': xworkmate_workers_model_env_file},
+  'opencode': {'baseUrl': 'http://127.0.0.1:' + xworkmate_workers_opencode_port|string, 'authEnvFile': xworkmate_workers_opencode_env_file,
+    'permissions': [{'action': 'read', 'resource': '*', 'effect': 'allow'},
+                    {'action': 'edit', 'resource': '*', 'effect': 'allow'}] + xworkmate_workers_opencode_shell_allowlist},
+  'timeoutMs': xworkmate_workers_max_runtime_sec|int * 1000,
+  'maxOutputBytes': xworkmate_workers_export_max_bytes|int * 2 + 8192,
+  'collectArtifacts': True
+}} | to_nice_json }}

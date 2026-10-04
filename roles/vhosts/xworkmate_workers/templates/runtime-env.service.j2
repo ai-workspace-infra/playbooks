@@ -1,0 +1,27 @@
+[Unit]
+Description=XWorkmate private runtime environment bootstrap
+After={{ xworkmate_workers_model_key_source_unit }}
+Requires={{ xworkmate_workers_model_key_source_unit }}
+Before=xworkmate-opencode.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+Group=root
+ExecStart=/usr/local/libexec/xworkmate-worker-runtime-env
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+TimeoutStartSec=30
+# Re-read Vault's model source on an explicit restart. Restart Gateway/OpenCode
+# after rotation; this oneshot does not claim automatic live credential reload.
+
+[Install]
+WantedBy=multi-user.target

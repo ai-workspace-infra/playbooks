@@ -1,0 +1,55 @@
+[Unit]
+Description=XWorkmate pinned OpenCode v2 execution server
+After=network-online.target
+Wants=network-online.target
+{% if xworkmate_workers_model_key_source_file %}
+After=xworkmate-workers-runtime.service
+Requires=xworkmate-workers-runtime.service
+{% endif %}
+ConditionPathExists={{ xworkmate_workers_model_env_file }}
+ConditionPathExists={{ xworkmate_workers_opencode_env_file }}
+
+[Service]
+Type=simple
+User={{ xworkmate_workers_user }}
+Group={{ xworkmate_workers_group }}
+WorkingDirectory={{ xworkmate_workers_state_root }}/opencode/workspace
+EnvironmentFile={{ xworkmate_workers_model_env_file }}
+EnvironmentFile={{ xworkmate_workers_opencode_env_file }}
+Environment=HOME={{ xworkmate_workers_state_root }}/opencode/home
+Environment=OPENCODE_CONFIG={{ xworkmate_workers_config_dir }}/opencode.json
+Environment=OPENCODE_CONFIG_PROJECT_DISABLE=1
+Environment=OPENCODE_DISABLE_MODELS_FETCH=1
+Environment=OPENCODE_DISABLE_AUTOUPDATE=1
+Environment=OPENCODE_DISABLE_FFF=1
+ExecStart={{ xworkmate_workers_opencode_release_dir }}/{{ xworkmate_workers_opencode_entrypoint }} serve --hostname 127.0.0.1 --port {{ xworkmate_workers_opencode_port }}
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec={{ xworkmate_workers_stop_timeout_sec }}
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=tmpfs
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths={{ xworkmate_workers_state_root }}/opencode
+ReadWritePaths={{ xworkmate_workers_gateway_tasks_root }}
+BindPaths={{ xworkmate_workers_gateway_tasks_root }}
+InaccessiblePaths={{ xworkmate_workers_state_root }}/runs -{{ xworkmate_workers_runtime_env_dir }}
+IPAddressDeny=any
+IPAddressAllow=localhost
+{% for cidr in xworkmate_workers_egress_cidrs %}
+IPAddressAllow={{ cidr }}
+{% endfor %}
+MemoryMax={{ xworkmate_workers_memory_max }}
+CPUQuota={{ xworkmate_workers_cpu_quota }}
+TasksMax={{ xworkmate_workers_tasks_max }}
+
+[Install]
+WantedBy=multi-user.target

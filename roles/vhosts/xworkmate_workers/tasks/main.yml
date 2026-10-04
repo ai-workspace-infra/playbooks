@@ -1,0 +1,431 @@
+---
+- name: Manage explicitly enabled workers
+  when: xworkmate_workers_enabled | bool
+  block:
+    - name: Validate supported action and Linux systemd target
+      ansible.builtin.assert:
+        that:
+          - xworkmate_workers_action in ['deploy', 'verify', 'stop']
+          - xworkmate_workers_artifact_transport in ['https', 'staged']
+          - ansible_system == 'Linux'
+          - ansible_service_mgr == 'systemd'
+          - xworkmate_workers_config_dir == '/etc/xworkmate-workers'
+          - xworkmate_workers_state_root == '/var/lib/xworkmate-workers'
+          - xworkmate_workers_launcher == '/usr/local/libexec/xworkmate-worker-launch'
+          - xworkmate_workers_runtime_env_dir == '/run/xworkmate-workers'
+          - xworkmate_workers_model_env_file == '/run/xworkmate-workers/model.env'
+          - xworkmate_workers_opencode_env_file == '/run/xworkmate-workers/opencode.env'
+          - xworkmate_workers_opencode_port | int == 4097
+          - xworkmate_workers_max_runtime_sec | int >= 1
+          - xworkmate_workers_max_runtime_sec | int <= 900
+          - xworkmate_workers_gateway_tasks_root is match('^/[A-Za-z0-9_./-]+/tasks$')
+          - "'..' not in xworkmate_workers_gateway_tasks_root.split('/')"
+          - xworkmate_workers_llm_base_url is match('^https://[^ /]+/.*/?v1/?$')
+          - not (xworkmate_workers_llm_base_url | urlsplit('username'))
+          - not (xworkmate_workers_llm_base_url | urlsplit('password'))
+          - not (xworkmate_workers_llm_base_url | urlsplit('query'))
+          - not (xworkmate_workers_llm_base_url | urlsplit('fragment'))
+          - xworkmate_workers_llm_model is match('^[A-Za-z0-9_.:/-]{1,160}$')
+          - xworkmate_workers_user != 'root'
+          - xworkmate_workers_user != xworkmate_workers_gateway_user
+          - xworkmate_workers_gateway_user is match('^[a-z_][a-z0-9_-]{0,30}$')
+          - xworkmate_workers_model_env_file != xworkmate_workers_opencode_env_file
+          - xworkmate_workers_model_key_source_file == '' or xworkmate_workers_model_key_source_file is match('^/run/[A-Za-z0-9_./-]+$')
+          - "'..' not in xworkmate_workers_model_key_source_file.split('/')"
+          - xworkmate_workers_model_key_source_unit is match('^[A-Za-z0-9_.@-]+\.service$')
+        fail_msg: Workers require an explicit Linux systemd configuration and dedicated runtime credential references.
+
+    - name: Validate operator shell rules cannot authorize other actions
+      ansible.builtin.assert:
+        that:
+          - item.action == 'shell'
+          - item.effect == 'allow'
+          - item.resource is string
+          - item.resource | length > 0
+          - item.resource != '*'
+        fail_msg: Only explicit shell command patterns may supplement the default deny policy.
+      loop: "{{ xworkmate_workers_opencode_shell_allowlist }}"
+
+    - name: Stop managed worker processes without deleting state
+      when: xworkmate_workers_action == 'stop'
+      block:
+        - name: Stop and disable OpenCode
+          ansible.builtin.systemd_service:
+            name: xworkmate-opencode
+            state: stopped
+            enabled: false
+        - name: Stop active DSH transient units
+          ansible.builtin.command:
+            argv: ["{{ xworkmate_workers_launcher }}", stop]
+          when: not ansible_check_mode
+          changed_when: true
+
+    - name: Deploy pinned worker artifacts and controlled launchers
+      when: xworkmate_workers_action == 'deploy'
+      block:
+        - name: Validate immutable artifact inputs
+          ansible.builtin.assert:
+            that:
+              - xworkmate_workers_artifact_transport == 'staged' or item.url is match('^https://[^ /]+/.+')
+              - xworkmate_workers_artifact_transport == 'staged' or not (item.url | urlsplit('username'))
+              - xworkmate_workers_artifact_transport == 'staged' or not (item.url | urlsplit('password'))
+              - xworkmate_workers_artifact_transport == 'staged' or not (item.url | urlsplit('query'))
+              - xworkmate_workers_artifact_transport == 'staged' or not (item.url | urlsplit('fragment'))
+              - "xworkmate_workers_artifact_transport == 'staged' or ('/latest/' not in item.url and '/latest' not in item.url)"
+              - xworkmate_workers_artifact_transport != 'staged' or item.url == ''
+              - item.sha256 is match('^[0-9a-f]{64}$')
+              - item.revision is match('^[0-9a-f]{40}$')
+            fail_msg: Supply immutable SHA256 artifacts via HTTPS or explicit root-owned SSH staging; no target-side build.
+          loop:
+            - {url: "{{ xworkmate_workers_dsh_artifact_url }}", sha256: "{{ xworkmate_workers_dsh_artifact_sha256 }}", revision: "{{ xworkmate_workers_dsh_source_revision }}"}
+            - {url: "{{ xworkmate_workers_opencode_artifact_url }}", sha256: "{{ xworkmate_workers_opencode_artifact_sha256 }}", revision: "{{ xworkmate_workers_opencode_source_revision }}"}
+          loop_control:
+            label: "{{ item.revision }}"
+
+        - name: Verify preinstalled worker base tools
+          ansible.builtin.command:
+            argv: [/usr/bin/test, -x, "{{ item }}"]
+          loop: [/usr/bin/python3, /usr/bin/sudo, /usr/bin/systemd-run, /usr/bin/systemctl, /usr/bin/bwrap, /usr/bin/setfacl, /usr/bin/find]
+          changed_when: false
+          check_mode: false
+
+        - name: Require compatible system Python for the bounded launcher
+          ansible.builtin.command:
+            argv: [/usr/bin/python3, -c, "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)"]
+          changed_when: false
+          check_mode: false
+
+        - name: Create the dedicated worker group
+          ansible.builtin.group:
+            name: "{{ xworkmate_workers_group }}"
+            system: true
+
+        - name: Create the worker service account without a login shell
+          ansible.builtin.user:
+            name: "{{ xworkmate_workers_user }}"
+            group: "{{ xworkmate_workers_group }}"
+            system: true
+            create_home: false
+            shell: /usr/sbin/nologin
+
+        - name: Verify Gateway caller account already exists
+          ansible.builtin.getent:
+            database: passwd
+            key: "{{ xworkmate_workers_gateway_user }}"
+            fail_key: true
+
+        - name: Create root-managed install and run parents
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: root
+            group: root
+            mode: '0755'
+          loop:
+            - "{{ xworkmate_workers_root }}"
+            - "{{ xworkmate_workers_root }}/releases"
+            - "{{ xworkmate_workers_root }}/archives"
+            - "{{ xworkmate_workers_config_dir }}"
+            - "{{ xworkmate_workers_state_root }}"
+            - "{{ xworkmate_workers_state_root }}/runs"
+            - "{{ xworkmate_workers_state_root }}/cancelled"
+            - "{{ xworkmate_workers_state_root }}/staged"
+            - "{{ xworkmate_workers_state_root }}/runs/dsh-acp"
+            - "{{ xworkmate_workers_state_root }}/runs/dsh-sdk"
+            - "{{ xworkmate_workers_launcher | dirname }}"
+
+        - name: Create dedicated OpenCode writable directories
+          ansible.builtin.file:
+            path: "{{ xworkmate_workers_state_root }}/opencode/{{ item }}"
+            state: directory
+            owner: "{{ xworkmate_workers_user }}"
+            group: "{{ xworkmate_workers_group }}"
+            mode: '0700'
+          loop: [home, workspace]
+
+        - name: Create only the declared Gateway tasks share
+          ansible.builtin.file:
+            path: "{{ xworkmate_workers_gateway_tasks_root }}"
+            state: directory
+            owner: "{{ xworkmate_workers_gateway_user }}"
+            group: "{{ xworkmate_workers_group }}"
+            mode: '2770'
+
+        - name: Grant worker access only within the declared existing task tree
+          ansible.builtin.command:
+            argv: [/usr/bin/setfacl, -R, -P, -m, "u:{{ xworkmate_workers_user }}:rwX", "{{ xworkmate_workers_gateway_tasks_root }}"]
+          changed_when: true
+          when: not ansible_check_mode
+
+        - name: Make future prepared task directories inherit worker access
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/find
+              - "{{ xworkmate_workers_gateway_tasks_root }}"
+              - -xdev
+              - -type
+              - d
+              - -exec
+              - /usr/bin/setfacl
+              - -m
+              - "d:u:{{ xworkmate_workers_user }}:rwx,d:m:rwx"
+              - '{}'
+              - '+'
+          changed_when: true
+          when: not ansible_check_mode
+
+        - name: Install root-owned bounded worker launcher
+          ansible.builtin.copy:
+            src: xworkmate-worker-launch.py
+            dest: "{{ xworkmate_workers_launcher }}"
+            owner: root
+            group: root
+            mode: '0755'
+
+        - name: Render non-secret pinned worker configuration
+          ansible.builtin.template:
+            src: worker-config.json.j2
+            dest: "{{ xworkmate_workers_config_dir }}/worker-config.json"
+            owner: root
+            group: root
+            mode: '0644'
+
+        - name: Validate model URL, fixed profiles and bounded configuration
+          ansible.builtin.command:
+            argv: ["{{ xworkmate_workers_launcher }}", validate]
+          changed_when: false
+          when: not ansible_check_mode
+
+        - name: Materialize optional runtime env from an existing private Vault-rendered key
+          when: xworkmate_workers_model_key_source_file != ''
+          block:
+            - name: Install fixed root-only runtime environment renderer
+              ansible.builtin.copy:
+                src: xworkmate-worker-runtime-env.py
+                dest: /usr/local/libexec/xworkmate-worker-runtime-env
+                owner: root
+                group: root
+                mode: '0755'
+              register: xworkmate_workers_runtime_renderer
+
+            - name: Render non-secret runtime key source reference
+              ansible.builtin.template:
+                src: runtime-env-source.json.j2
+                dest: /etc/xworkmate-workers/runtime-env-source.json
+                owner: root
+                group: root
+                mode: '0600'
+              register: xworkmate_workers_runtime_source
+
+            - name: Render ordered runtime environment bootstrap service
+              ansible.builtin.template:
+                src: runtime-env.service.j2
+                dest: /etc/systemd/system/xworkmate-workers-runtime.service
+                owner: root
+                group: root
+                mode: '0644'
+              register: xworkmate_workers_runtime_unit
+
+            - name: Start optional bootstrap without exposing credential contents
+              ansible.builtin.systemd_service:
+                name: xworkmate-workers-runtime
+                enabled: true
+                daemon_reload: true
+                state: "{{ 'restarted' if (xworkmate_workers_runtime_renderer.changed or xworkmate_workers_runtime_source.changed or xworkmate_workers_runtime_unit.changed) else 'started' }}"
+              when: not ansible_check_mode
+
+        - name: Inspect external Vault Agent runtime env file metadata
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            follow: false
+          loop: ["{{ xworkmate_workers_model_env_file }}", "{{ xworkmate_workers_opencode_env_file }}"]
+          register: xworkmate_workers_runtime_env_metadata
+          no_log: true
+          when: not ansible_check_mode
+
+        - name: Require private runtime env files before downloading
+          ansible.builtin.assert:
+            that:
+              - item.stat.exists | default(false)
+              - item.stat.isreg | default(false)
+              - not (item.stat.islnk | default(false))
+              - item.stat.uid in [0, ansible_facts.getent_passwd[xworkmate_workers_gateway_user][1] | int]
+              - item.stat.mode == '0600'
+            fail_msg: Vault Agent must materialize private 0600 /run credentials for root or the Gateway UID before deployment.
+          loop: "{{ xworkmate_workers_runtime_env_metadata.results }}"
+          no_log: true
+          when: not ansible_check_mode
+
+        - name: Download verified immutable archives
+          when: xworkmate_workers_artifact_transport == 'https'
+          ansible.builtin.get_url:
+            url: "{{ item.url }}"
+            dest: "{{ xworkmate_workers_root }}/archives/{{ item.engine }}-{{ item.sha256 }}.tar.gz"
+            checksum: "sha256:{{ item.sha256 }}"
+            owner: root
+            group: root
+            mode: '0600'
+          loop:
+            - {engine: dsh, url: "{{ xworkmate_workers_dsh_artifact_url }}", sha256: "{{ xworkmate_workers_dsh_artifact_sha256 }}"}
+            - {engine: opencode, url: "{{ xworkmate_workers_opencode_artifact_url }}", sha256: "{{ xworkmate_workers_opencode_artifact_sha256 }}"}
+          loop_control:
+            label: "{{ item.engine }}"
+
+        - name: Verify explicitly SSH-staged archive ownership digest and safety
+          ansible.builtin.command:
+            argv: ["{{ xworkmate_workers_launcher }}", staged-archive-check, "{{ item.engine }}", "{{ item.sha256 }}"]
+          loop:
+            - {engine: dsh, sha256: "{{ xworkmate_workers_dsh_artifact_sha256 }}"}
+            - {engine: opencode, sha256: "{{ xworkmate_workers_opencode_artifact_sha256 }}"}
+          changed_when: false
+          when: xworkmate_workers_artifact_transport == 'staged' and not ansible_check_mode
+
+        - name: Admit verified SSH-staged archives into immutable archive storage
+          ansible.builtin.copy:
+            src: "{{ xworkmate_workers_state_root }}/staged/{{ item.engine }}-{{ item.sha256 }}.tar.gz"
+            dest: "{{ xworkmate_workers_root }}/archives/{{ item.engine }}-{{ item.sha256 }}.tar.gz"
+            remote_src: true
+            owner: root
+            group: root
+            mode: '0600'
+          loop:
+            - {engine: dsh, sha256: "{{ xworkmate_workers_dsh_artifact_sha256 }}"}
+            - {engine: opencode, sha256: "{{ xworkmate_workers_opencode_artifact_sha256 }}"}
+          when: xworkmate_workers_artifact_transport == 'staged' and not ansible_check_mode
+
+        - name: Reject unsafe tar entries before root extraction
+          ansible.builtin.command:
+            argv: ["{{ xworkmate_workers_launcher }}", archive-check, "{{ xworkmate_workers_root }}/archives/{{ item.engine }}-{{ item.sha256 }}.tar.gz"]
+          loop:
+            - {engine: dsh, sha256: "{{ xworkmate_workers_dsh_artifact_sha256 }}"}
+            - {engine: opencode, sha256: "{{ xworkmate_workers_opencode_artifact_sha256 }}"}
+          changed_when: false
+          when: not ansible_check_mode
+
+        - name: Create immutable version directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: root
+            group: root
+            mode: '0755'
+          loop: ["{{ xworkmate_workers_dsh_release_dir }}", "{{ xworkmate_workers_opencode_release_dir }}"]
+
+        - name: Extract already-built self-contained worker releases
+          ansible.builtin.unarchive:
+            src: "{{ xworkmate_workers_root }}/archives/{{ item.engine }}-{{ item.sha256 }}.tar.gz"
+            dest: "{{ item.directory }}"
+            remote_src: true
+            owner: root
+            group: root
+            mode: 'u=rwX,g=rX,o=rX'
+            creates: "{{ item.directory }}/runtime-manifest.json"
+          loop:
+            - {engine: dsh, sha256: "{{ xworkmate_workers_dsh_artifact_sha256 }}", directory: "{{ xworkmate_workers_dsh_release_dir }}"}
+            - {engine: opencode, sha256: "{{ xworkmate_workers_opencode_artifact_sha256 }}", directory: "{{ xworkmate_workers_opencode_release_dir }}"}
+          when: not ansible_check_mode
+
+        - name: Validate artifact source revision and contained executable
+          ansible.builtin.command:
+            argv: ["{{ xworkmate_workers_launcher }}", artifact-check, "{{ item.engine }}", "{{ item.directory }}"]
+          loop:
+            - {engine: dsh, directory: "{{ xworkmate_workers_dsh_release_dir }}"}
+            - {engine: opencode, directory: "{{ xworkmate_workers_opencode_release_dir }}"}
+          changed_when: false
+          when: not ansible_check_mode
+
+        - name: Render fixed ACP and SDK profile overlays and native OpenCode config
+          ansible.builtin.template:
+            src: "{{ item }}.j2"
+            dest: "{{ xworkmate_workers_config_dir }}/{{ item }}"
+            owner: root
+            group: root
+            mode: '0644'
+          loop: [dsh-model.patch.yml, dsh-acp.patch.yml, dsh-sdk.patch.yml, opencode.json]
+          register: xworkmate_workers_model_configs
+
+        - name: Render standalone non-secret Gateway workerRuntime merge fragment
+          ansible.builtin.template:
+            src: gateway-worker-runtime.json.j2
+            dest: "{{ xworkmate_workers_config_dir }}/gateway-worker-runtime.json"
+            owner: root
+            group: root
+            mode: '0644'
+
+        - name: Render Gateway optional-worker-tool merge fragment
+          ansible.builtin.template:
+            src: gateway-tool-opt-in.json.j2
+            dest: "{{ xworkmate_workers_config_dir }}/gateway-tool-opt-in.json"
+            owner: root
+            group: root
+            mode: '0644'
+
+        - name: Render Gateway main-agent unified-model merge fragment
+          ansible.builtin.template:
+            src: gateway-model-service.json.j2
+            dest: "{{ xworkmate_workers_config_dir }}/gateway-model-service.json"
+            owner: root
+            group: root
+            mode: '0644'
+
+        - name: Validate runtime references and model DNS against egress allowlist
+          ansible.builtin.command:
+            argv: ["{{ xworkmate_workers_launcher }}", preflight]
+          changed_when: false
+          no_log: true
+          when: not ansible_check_mode
+
+        - name: Prove kernel cgroup network deny enforcement before starting agents
+          ansible.builtin.command:
+            argv: ["{{ xworkmate_workers_launcher }}", network-check]
+          changed_when: false
+          when: not ansible_check_mode
+
+        - name: Render restricted Gateway sudo capability
+          ansible.builtin.template:
+            src: sudoers.j2
+            dest: /etc/sudoers.d/xworkmate-workers
+            owner: root
+            group: root
+            mode: '0440'
+            validate: /usr/sbin/visudo -cf %s
+
+        - name: Render least-privilege loopback OpenCode systemd service
+          ansible.builtin.template:
+            src: opencode.service.j2
+            dest: /etc/systemd/system/xworkmate-opencode.service
+            owner: root
+            group: root
+            mode: '0644'
+          register: xworkmate_workers_opencode_unit
+
+        - name: Start or restart the explicitly deployed OpenCode server
+          ansible.builtin.systemd_service:
+            name: xworkmate-opencode
+            enabled: true
+            daemon_reload: true
+            state: "{{ 'restarted' if (xworkmate_workers_opencode_unit.changed or xworkmate_workers_model_configs.changed) else 'started' }}"
+          when: not ansible_check_mode
+
+    - name: Verify deployed readiness without spending model tokens
+      ansible.builtin.command:
+        argv: "{{ [xworkmate_workers_launcher, 'verify'] + (['--models'] if xworkmate_workers_verify_models | bool else []) }}"
+      register: xworkmate_workers_readiness
+      changed_when: false
+      until: xworkmate_workers_readiness.rc == 0
+      retries: 6
+      delay: 5
+      when:
+        - xworkmate_workers_action in ['deploy', 'verify']
+        - not ansible_check_mode
+
+    - name: Report non-secret deployment contract
+      ansible.builtin.debug:
+        msg:
+          dsh_command: [/usr/bin/sudo, -n, "{{ xworkmate_workers_launcher }}"]
+          dsh_state_root: "{{ xworkmate_workers_state_root }}/runs"
+          opencode_base_url: "http://127.0.0.1:{{ xworkmate_workers_opencode_port }}"
+          opencode_auth_env_file: "{{ xworkmate_workers_opencode_env_file }}"
+          model_credential_env_file: "{{ xworkmate_workers_model_env_file }}"
+          inference_verified: false
+      when: xworkmate_workers_action != 'stop'
