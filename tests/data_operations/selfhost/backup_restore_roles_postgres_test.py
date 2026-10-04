@@ -82,6 +82,11 @@ class BackupRestoreRolesPostgresTests(unittest.TestCase):
         self.assertTrue(json.loads(restored.stdout)["restored_data_matches"])
         self.assertEqual(self.psql("postgres", "SELECT count(*) FROM pg_database WHERE datname='release_verify_" +
                                   env["WEB_SAAS_RUN_ID"] + "'"), "0")
+        wrong_key = self.script("web_saas_data_restore_verify", "restore_verify.sh",
+                                env | dict(WEB_SAAS_BACKUP_PASSPHRASE='incorrect-fixture-key-not-a-real-secret-32'))
+        self.assertNotEqual(wrong_key.returncode, 0)
+        self.assertEqual(self.psql("postgres", "SELECT count(*) FROM pg_database WHERE datname='release_verify_" +
+                                  env["WEB_SAAS_RUN_ID"] + "'"), "0")
         # Same row counts, changed financial value: not a valid restore receipt.
         self.psql("account", "UPDATE subscriptions SET amount=9999")
         changed = self.script("web_saas_data_restore_verify", "restore_verify.sh", env)

@@ -9,6 +9,10 @@ only the temporary database created by this process and only while its database
 OID still matches the recorded OID. The `account` database is never a restore
 target.
 
+The run-owned verification database is created from template0; only its empty
+default public schema is removed (without CASCADE) so the archive can create
+the schema. No existing or primary schema is dropped or rewritten.
+
 Required inputs are the same source ID, frozen baseline ID, authorized sample
 reference, expected schema version, expected sample counts and schema hash,
 run/environment-bound archive path and checksum, PostgreSQL system identifier,

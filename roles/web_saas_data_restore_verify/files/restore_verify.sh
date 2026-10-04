@@ -74,10 +74,14 @@ source_data="$(data_fingerprint "$WEB_SAAS_DATABASE")" || fail 'could not re-fin
 source_system_identifier="$(psql_value "$WEB_SAAS_DATABASE" 'SELECT system_identifier::text FROM pg_control_system()')" || fail 'could not re-read PostgreSQL system identity'
 [[ "$source_system_identifier" == "$WEB_SAAS_DATABASE_SYSTEM_IDENTIFIER" ]] || fail 'PostgreSQL source identity changed after backup'
 
-docker exec "$WEB_SAAS_POSTGRES_CONTAINER" psql -U postgres -d postgres -Xq -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${restore_database}"
+docker exec "$WEB_SAAS_POSTGRES_CONTAINER" psql -U postgres -d postgres -Xq -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${restore_database} TEMPLATE template0"
 restore_created=1
 restore_oid="$(psql_value postgres "SELECT oid FROM pg_database WHERE datname = '${restore_database}'")"
 [[ "$restore_oid" =~ ^[0-9]+$ ]] || fail 'could not record temporary database identity'
+# The public-only archive creates its schema. Remove ONLY the empty default
+# schema in the brand-new, OID-bound verification database; never the source.
+# No CASCADE: unexpected template contents make this fail safely.
+docker exec "$WEB_SAAS_POSTGRES_CONTAINER" psql -U postgres -d "$restore_database" -Xq -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public'
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:WEB_SAAS_BACKUP_PASSPHRASE -in "$WEB_SAAS_ARCHIVE_PATH" \
   | docker exec -i "$WEB_SAAS_POSTGRES_CONTAINER" pg_restore -U postgres -d "$restore_database" --no-owner --no-privileges --exit-on-error
 
