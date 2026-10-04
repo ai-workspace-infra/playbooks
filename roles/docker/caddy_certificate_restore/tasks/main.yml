@@ -1,0 +1,88 @@
+---
+- name: Validate restore path and validity contract
+  ansible.builtin.assert:
+    that:
+      - caddy_certificate_restore_root is match('^/[^\n]+$')
+      - caddy_certificate_restore_root != '/'
+      - "'..' not in caddy_certificate_restore_root.split('/')"
+      - caddy_certificate_restore_directory.startswith(caddy_certificate_restore_root + '/')
+      - caddy_certificate_restore_directory | dirname == caddy_certificate_restore_root
+      - caddy_certificate_restore_directory | basename is match('^[A-Za-z0-9][A-Za-z0-9_.-]*$')
+      - caddy_certificate_restore_min_validity_seconds | int >= 0
+    fail_msg: Require an explicit single-domain TLS directory beneath the approved root.
+
+- name: Validate complete runtime PEM contract
+  ansible.builtin.assert:
+    that:
+      - caddy_certificate_restore_material[item] | default('') | length > 0
+  loop: [fullchain, cert, key, ca, trust_bundle]
+  no_log: true
+
+- name: Inspect approved restore directories without following symlinks
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ caddy_certificate_restore_root }}"
+    - "{{ caddy_certificate_restore_directory }}"
+    - "{{ caddy_certificate_restore_directory }}/versions"
+  register: caddy_certificate_restore_paths
+
+- name: Reject non-directory and symlink restore paths before writing
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (item.stat.isdir | default(false) and not item.stat.islnk | default(false))
+  loop: "{{ caddy_certificate_restore_paths.results }}"
+
+- name: Restore a complete validated certificate generation
+  when: not ansible_check_mode
+  block:
+    - name: Create restricted version parent
+      ansible.builtin.file:
+        path: "{{ caddy_certificate_restore_directory }}/versions"
+        state: directory
+        mode: '0700'
+        owner: root
+        group: root
+
+    - name: Create private staging directory on the destination filesystem
+      ansible.builtin.tempfile:
+        state: directory
+        path: "{{ caddy_certificate_restore_directory }}/versions"
+        prefix: .restore-
+      register: caddy_certificate_restore_stage
+
+    - name: Stage PEM without logging or diffing secrets
+      ansible.builtin.copy:
+        content: "{{ caddy_certificate_restore_material[item.key] }}"
+        dest: "{{ caddy_certificate_restore_stage.path }}/{{ item.value }}"
+        mode: "{{ '0600' if item.key == 'key' else '0644' }}"
+        owner: root
+        group: root
+      loop:
+        - {key: fullchain, value: fullchain.pem}
+        - {key: cert, value: cert.pem}
+        - {key: key, value: key.pem}
+        - {key: ca, value: ca.pem}
+        - {key: trust_bundle, value: trust-bundle.pem}
+      no_log: true
+      diff: false
+
+    - name: Validate PEM and publish an immutable generation atomically
+      ansible.builtin.script:
+        cmd: "restore.py {{ caddy_certificate_restore_stage.path | quote }} {{ caddy_certificate_restore_directory | quote }} {{ caddy_certificate_restore_min_validity_seconds | int }}"
+        executable: /usr/bin/python3
+      register: caddy_certificate_restore_result
+      changed_when: "'published' in caddy_certificate_restore_result.stdout"
+      no_log: true
+
+    - name: Report only the file restore boundary
+      ansible.builtin.debug:
+        msg: PEM generation is current; Caddy configuration and served TLS are verified by the later deployment stage.
+  always:
+    - name: Remove only this operation's private staging directory
+      ansible.builtin.file:
+        path: "{{ caddy_certificate_restore_stage.path }}"
+        state: absent
+      when: caddy_certificate_restore_stage.path is defined
+      no_log: true

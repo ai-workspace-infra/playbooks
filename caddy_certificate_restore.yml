@@ -1,0 +1,19 @@
+---
+# Inventory and credentials come from the control plane, not this entrypoint.
+- name: Require a single existing certificate restore target
+  hosts: all:localhost
+  gather_facts: false
+  tasks:
+    - name: Reject missing hosts and inventory patterns
+      ansible.builtin.assert:
+        that:
+          - caddy_certificate_restore_target | default('') | length > 0
+          - caddy_certificate_restore_target in (groups['all'] | union(['localhost']))
+      run_once: true
+
+- name: Restore reviewed PEM material without restarting services
+  hosts: "{{ caddy_certificate_restore_target | default('localhost') }}"
+  gather_facts: false
+  become: true
+  roles:
+    - docker/caddy_certificate_restore
