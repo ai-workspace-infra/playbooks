@@ -1,5 +1,6 @@
 """Real local PEM publication tests; no Vault, cloud or target host access."""
 import importlib.util
+import json
 import os
 from pathlib import Path
 import shutil
@@ -99,6 +100,43 @@ class CertificateRestoreTest(unittest.TestCase):
         self.assertNotIn('service:', task)
         self.assertNotIn('systemd:', task)
         self.assertNotIn('lookup(', task)
+
+    @unittest.skipUnless(shutil.which('ansible-playbook'), 'Ansible unavailable')
+    def test_ansible_check_mode_validates_contract_without_writes(self):
+        variables = {
+            'ansible_become': False,
+            'ansible_remote_tmp': str(self.root / 'ansible-remote'),
+            'caddy_certificate_restore_target': 'localhost',
+            'caddy_certificate_restore_root': str(self.root),
+            'caddy_certificate_restore_directory': str(self.base),
+            'caddy_certificate_restore_material': {
+                key: (self.fixture / name).read_text()
+                for key, name in [('fullchain', 'fullchain.pem'), ('cert', 'cert.pem'),
+                                  ('key', 'key.pem'), ('ca', 'ca.pem'), ('trust_bundle', 'trust-bundle.pem')]
+            },
+        }
+        runtime_vars = self.root / 'vars.json'
+        runtime_vars.write_text(json.dumps(variables))
+        runtime_vars.chmod(0o600)
+        env = dict(os.environ, ANSIBLE_LOCAL_TEMP=str(self.root / 'ansible-local'))
+        cmd = ['ansible-playbook', '-i', 'localhost,', '-c', 'local',
+               str(ROOT / 'caddy_certificate_restore.yml'), '--check', '-e', '@' + str(runtime_vars)]
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=60)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertFalse((self.base / 'current').exists())
+        self.assertNotIn('BEGIN PRIVATE KEY', result.stdout)
+        variables['caddy_certificate_restore_target'] = 'unknown-target'
+        runtime_vars.write_text(json.dumps(variables))
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=60)
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse((self.base / 'current').exists())
+
+    def test_insecure_existing_key_cannot_be_reused(self):
+        original = self.publish()
+        (self.base / 'current/key.pem').chmod(0o644)
+        with self.assertRaises(ValueError):
+            restore.restore(self.stage(), self.base, 0)
+        self.assertEqual(original, os.readlink(self.base / 'current'))
 
 
 if __name__ == '__main__':
