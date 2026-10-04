@@ -16,8 +16,9 @@
 # 了容器名 postgresql(实际是 web-saas-postgresql)。这里把它接回 web-saas 链路
 # 并修正容器名。
 #
-# 幂等判据是"users 表在不在", 与 postsetup.sh.j2 一致: 在就跳过, 不在才灌。
-# 因此可以每次部署都跑, 反复执行不会破坏已有数据。
+# 幂等判据不能只看 users: 旧逻辑会把只灌了一部分的 schema 当成完整
+# baseline, 让 accounts 在运行时才撞上 `relation "subscriptions" does not exist`。
+# 空库才允许灌完整 baseline；已有表的主机只走显式、增量、不可破坏的修复。
 # =============================================================================
 - name: Initialize web-saas baseline schemas
   hosts: all
@@ -57,7 +58,7 @@
       ansible.builtin.set_fact:
         pg_container: "{{ (detected_pg.stdout | default('') | trim) or pg_container_default }}"
 
-    - name: Check whether the account baseline schema is already present
+    - name: Check whether the account users table is present
       ansible.builtin.command: >-
         docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
         "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'"
@@ -65,13 +66,35 @@
       changed_when: false
       failed_when: false
 
+    - name: Check whether the account subscriptions table is present
+      ansible.builtin.command: >-
+        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
+        "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='subscriptions'"
+      register: subscriptions_table_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check whether the account database is empty
+      ansible.builtin.command: >-
+        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
+        "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'"
+      register: public_table_count_check
+      changed_when: false
+      failed_when: false
+
+    - name: Classify the account schema state
+      ansible.builtin.set_fact:
+        account_schema_is_empty: "{{ (public_table_count_check.stdout | default('0') | trim | int) == 0 }}"
+        account_schema_is_complete: "{{ (users_table_check.stdout | default('') | trim) == '1' and (subscriptions_table_check.stdout | default('') | trim) == '1' }}"
+        account_schema_is_partial: "{{ (public_table_count_check.stdout | default('0') | trim | int) > 0 and not ((users_table_check.stdout | default('') | trim) == '1' and (subscriptions_table_check.stdout | default('') | trim) == '1') }}"
+
     - name: Fetch the account baseline schema matching the deployed ref
       ansible.builtin.get_url:
         url: "{{ accounts_schema_url }}"
         dest: /tmp/accounts-schema.sql
         mode: "0600"
         force: true
-      when: (users_table_check.stdout | default('') | trim) != '1'
+      when: account_schema_is_empty
 
     # ON_ERROR_STOP=1 很关键: 没有它 psql 会带着报错跑完并 exit 0,
     # 半截 schema 照样报成功。
@@ -82,30 +105,101 @@
         -v ON_ERROR_STOP=1 -f - < /tmp/accounts-schema.sql
       args:
         executable: /bin/bash
-      when: (users_table_check.stdout | default('') | trim) != '1'
+      when: account_schema_is_empty
       register: schema_apply
 
     - name: Remove the downloaded schema file
       ansible.builtin.file:
         path: /tmp/accounts-schema.sql
         state: absent
-      when: (users_table_check.stdout | default('') | trim) != '1'
+      when: account_schema_is_empty
 
-    # 灌完必须复验。前一步 exit 0 只说明 psql 没报错, 不说明 users 真的建出来了
-    # (例如 schema 文件被 CDN 截断成 0 字节时, psql 也会安静地成功)。
-    - name: Verify the account baseline schema is present
-      ansible.builtin.command: >-
-        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
-        "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'"
-      register: users_table_verify
-      changed_when: false
+    # Never re-run sql/schema.sql against a non-empty database: that file starts
+    # with DROP TABLE ... CASCADE. A partially initialized host therefore gets
+    # only this additive repair path. It is deliberately limited to the missing
+    # subscriptions relation that is required by the deployed Accounts service.
+    - name: Repair the missing subscriptions table without touching existing data
+      ansible.builtin.shell: |
+        set -eo pipefail
+        docker exec -i {{ pg_container }} psql -U postgres -d account \
+          -v ON_ERROR_STOP=1 -f - <<'SQL'
+        CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+        CREATE OR REPLACE FUNCTION public.set_updated_at() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          NEW.updated_at := now();
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TABLE IF NOT EXISTS public.subscriptions (
+          uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_uuid UUID NOT NULL REFERENCES public.users(uuid) ON DELETE CASCADE,
+          provider TEXT NOT NULL,
+          payment_method TEXT NOT NULL DEFAULT 'paypal',
+          kind TEXT NOT NULL DEFAULT 'subscription',
+          plan_id TEXT,
+          external_id TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          payment_qr TEXT,
+          meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          cancelled_at TIMESTAMPTZ,
+          CONSTRAINT subscriptions_user_external_uk UNIQUE (user_uuid, external_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_user_uuid
+          ON public.subscriptions (user_uuid);
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_status
+          ON public.subscriptions (status);
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1
+            FROM pg_trigger
+            WHERE tgrelid = 'public.subscriptions'::regclass
+              AND tgname = 'trg_subscriptions_set_updated_at'
+              AND NOT tgisinternal
+          ) THEN
+            CREATE TRIGGER trg_subscriptions_set_updated_at
+              BEFORE UPDATE ON public.subscriptions
+              FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+          END IF;
+        END
+        $$;
+        SQL
+      args:
+        executable: /bin/bash
+      when: >-
+        (users_table_check.stdout | default('') | trim) == '1' and
+        (subscriptions_table_check.stdout | default('') | trim) != '1'
+      register: subscriptions_repair
 
-    - name: Fail when the schema still is not present after applying it
+    - name: Fail closed on an unsupported partial account schema
       ansible.builtin.fail:
         msg: >-
-          account baseline schema still missing after applying
-          {{ accounts_schema_url }} — refusing to report success.
-      when: (users_table_verify.stdout | default('') | trim) != '1'
+          account database has existing public tables but is missing the required
+          users table. Refusing to run the destructive baseline schema against a
+          non-empty database; repair the schema through a reviewed additive change.
+      when: >-
+        account_schema_is_partial and
+        (users_table_check.stdout | default('') | trim) != '1'
+
+    # 灌完或增量修复后必须复验完整性；只验证 users 会再次把部分 schema 当成成功。
+    - name: Verify the required account baseline tables are present
+      ansible.builtin.command: >-
+        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
+        "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('users','subscriptions')"
+      register: required_tables_verify
+      changed_when: false
+
+    - name: Fail when the required account baseline is still incomplete
+      ansible.builtin.fail:
+        msg: >-
+          account baseline is incomplete after initialization/repair: expected
+          users and subscriptions in public schema, got
+          {{ required_tables_verify.stdout | default('0') | trim }} tables.
+          Refusing to report success.
+      when: (required_tables_verify.stdout | default('0') | trim | int) != 2
 
     # A fresh Accounts schema only contains the runtime fallback plans (Free
     # and Trial). Seed the purchasable catalog before the application starts
@@ -260,5 +354,6 @@
       ansible.builtin.debug:
         msg: >-
           account baseline schema
-          {{ 'already present; skipped' if (users_table_check.stdout | default('') | trim) == '1'
-             else 'applied from ' ~ accounts_schema_url }}
+          {{ 'already complete; skipped' if account_schema_is_complete
+             else 'applied from ' ~ accounts_schema_url if account_schema_is_empty
+             else 'repaired additively (subscriptions)' }}
