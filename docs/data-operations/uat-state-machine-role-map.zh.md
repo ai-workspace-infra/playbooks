@@ -1,6 +1,8 @@
 # UAT 数据状态机：角色映射与执行边界
 
-设计依据：[UAT 数据同步与 PROD 晋级状态机](https://github.com/ai-workspace-services/knowledge/blob/main/content/02-iac-devops/cloud-infrastructure-devsecops-baseline/12-uat-database-sync-and-prod-promotion-state-machine.zh.md)。该文档是目标设计，不是现成运行证据或 PROD 执行授权。
+设计依据：用户提供的本地 `knowledge/content/02-iac-devops/cloud-infrastructure-devsecops-baseline/12-uat-database-sync-and-prod-promotion-state-machine.zh.md`。本次审阅版本的 SHA-256 为 `75ce682f47dc47bce1c9941779c43dc4edf7e3fae220e27ce5478c5842162c16`。
+
+截至本次核验，该文件尚未进入 `knowledge/main`，因此不提供失效的公开链接，也不擅自提交其原文。该文档是目标设计，不是现成运行证据或 PROD 执行授权。
 
 ## 三条独立数据流
 
