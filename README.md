@@ -5,6 +5,8 @@
 这个仓库不是单一工具，而是一个**按角色（role）组织、按场景（playbook）编排**的主机自动化集合：
 从裸机基线、K3s/GPU 集群、可观测性栈、网关与 DNS，到业务服务上线、跨云搬站与容灾，全部以声明式 role 沉淀，用顶层 playbook 拼装成可重复执行的场景入口。
 
+从 Toolkit 迁入通用执行逻辑时，先落地可参数化的 Role/Workflow，再切换调用方、验证并删除旧副本；参见[执行逻辑归属迁移规范](https://github.com/ai-workspace-lab/xworkspace-core-skills/blob/main/skills/engineering-standards/execution-ownership-migration/SKILL.md)。环境拓扑仍由 GitOps 声明，云资源渲染与执行仍由 `iac_modules` 负责。
+
 | 规模 | 数量 |
 | --- | --- |
 | 顶层 playbook（`*.yml` / `*.yaml`） | 137 |
