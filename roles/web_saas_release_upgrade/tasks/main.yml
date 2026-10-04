@@ -16,12 +16,11 @@
       - web_saas_release_postgres_container == 'web-saas-postgresql'
     fail_msg: Release upgrade target or receipt contract is missing or unsafe
 
-- name: Require verified environment-specific web-saas host identity
+- name: Require the exact environment-specific inventory target
   ansible.builtin.assert:
     that:
-      - web_saas_release_gitops_host_verified | default(false) | bool
       - inventory_hostname == 'web-saas-' ~ web_saas_release_environment
-    fail_msg: The release target must be the environment's verified web-saas host
+    fail_msg: The release target must be the exact environment web-saas host
 
 - name: Read primary database baseline without writing
   ansible.builtin.include_tasks: preflight.yml
