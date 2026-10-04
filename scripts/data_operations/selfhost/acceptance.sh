@@ -68,7 +68,7 @@ case "$action" in
     if db_present; then
       {
         echo state=present
-        echo "migration=$(q 'SELECT version::text || ":" || dirty::text FROM public.schema_migrations LIMIT 1' 2>/dev/null || echo absent)"
+        echo "migration=$(q "SELECT version::text || ':' || dirty::text FROM public.schema_migrations LIMIT 1" 2>/dev/null || echo absent)"
         for table in users identities subscriptions; do
           row_fingerprints "$table" >"$tmp/$table.rows"
           echo "rows_${table}=$(wc -l <"$tmp/$table.rows" | tr -d ' ')"
@@ -115,7 +115,7 @@ case "$action" in
     for status in "$readyz" "$ping" "$console_status"; do
       [[ "$status" =~ ^[23][0-9][0-9]$ ]] || { echo "selfhost HTTP readiness probe failed" >&2; exit 1; }
     done
-    migration="$(q 'SELECT version::text || ":" || dirty::text FROM public.schema_migrations LIMIT 1')"
+    migration="$(q "SELECT version::text || ':' || dirty::text FROM public.schema_migrations LIMIT 1")"
     [[ "$migration" != *:true ]] || { echo "schema migration is dirty" >&2; exit 1; }
     if [ -n "$expected_version" ]; then
       [[ "$migration" == "${expected_version}:false" ]] || { echo "schema version differs from expected_schema_version" >&2; exit 1; }

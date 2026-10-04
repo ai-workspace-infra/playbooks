@@ -94,8 +94,8 @@ if ACCEPTANCE_ID=missing-baseline run verify >"$tmp/no-baseline.out" 2>&1; then 
 expect 'verification without a real prior baseline fails' grep -q 'No pre-upgrade baseline' "$tmp/no-baseline.out"
 
 # Empty subscription samples are not accepted as proof of preservation.
-if ACCEPTANCE_ID=empty-sample run baseline >"$tmp/empty-baseline.out" 2>&1; then :; fi
 psql -XAtq -d account -c 'DELETE FROM subscriptions' >/dev/null
+ACCEPTANCE_ID=empty-sample run baseline >"$tmp/empty-baseline.out" 2>&1
 if ACCEPTANCE_ID=empty-sample run verify >"$tmp/empty-verify.out" 2>&1; then echo 'empty baseline sample unexpectedly passed' >&2; exit 1; fi
 expect 'empty baseline subscription sample fails closed' grep -q 'no subscription sample' "$tmp/empty-verify.out"
 
