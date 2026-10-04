@@ -19,14 +19,17 @@ class BackupRestoreRolesPostgresTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.docker = shutil.which("docker")
+        cls.fixture_database = "ci_role_fixture_" + os.environ["GITHUB_RUN_ID"]
         cls.temporary = tempfile.TemporaryDirectory()
         shim = Path(cls.temporary.name) / "docker"
         # Redirect only the canonical fixture container name to the CI service.
         shim.write_text("#!/bin/bash\nset -euo pipefail\nargs=(\"$@\")\nfor i in \"${!args[@]}\"; do\n"
                         " if [[ \"${args[$i]}\" == web-saas-postgresql ]]; then args[$i]=\"$TEST_POSTGRES_CONTAINER\"; fi\n"
+                        " if [[ \"${args[$i]}\" == account ]]; then args[$i]=\"$TEST_FIXTURE_DATABASE\"; fi\n"
                         "done\nexec \"$TEST_REAL_DOCKER\" \"${args[@]}\"\n")
         shim.chmod(0o700)
         cls.env = dict(os.environ, PATH=cls.temporary.name + ":" + os.environ["PATH"], TEST_REAL_DOCKER=cls.docker,
+                       TEST_FIXTURE_DATABASE=cls.fixture_database,
                        WEB_SAAS_DATABASE="account", WEB_SAAS_POSTGRES_CONTAINER="web-saas-postgresql",
                        WEB_SAAS_ENVIRONMENT="uat", WEB_SAAS_RUN_ID=os.environ["GITHUB_RUN_ID"],
                        WEB_SAAS_EXPECTED_VERSION="2026092801", WEB_SAAS_SOURCE_DATABASE_ID="ci-fixture-account",
@@ -35,7 +38,7 @@ class BackupRestoreRolesPostgresTests(unittest.TestCase):
         cls.archive_dir = Path("/data/backups/web-saas/uat/ci-role-contract") / cls.env["WEB_SAAS_RUN_ID"]
         cls.archive_dir.mkdir(parents=True, mode=0o700)
         cls.env["WEB_SAAS_BACKUP_ROOT"] = str(cls.archive_dir)
-        cls.psql("postgres", "CREATE DATABASE account")
+        cls.psql("postgres", "CREATE DATABASE " + cls.fixture_database)
         cls.psql("account", """
           CREATE TABLE schema_migrations(version bigint PRIMARY KEY, dirty boolean NOT NULL);
           INSERT INTO schema_migrations VALUES (2026092801,false);
@@ -49,6 +52,8 @@ class BackupRestoreRolesPostgresTests(unittest.TestCase):
 
     @classmethod
     def psql(cls, database, sql):
+        if database == 'account':
+            database = cls.fixture_database
         result = subprocess.run([cls.docker, "exec", "-i", CONTAINER, "psql", "-U", "postgres", "-d", database,
                                  "-XAtq", "-v", "ON_ERROR_STOP=1"], input=sql, capture_output=True, text=True)
         if result.returncode:
@@ -109,6 +114,7 @@ class BackupRestoreRolesPostgresTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        cls.psql("postgres", "DROP DATABASE " + cls.fixture_database)
         cls.temporary.cleanup()
 
 
