@@ -1,0 +1,40 @@
+---
+- name: Require a controller-side manifest receipt path
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_baseline_receipt_file | default('') | length > 0
+    fail_msg: A new controller-side manifest receipt path is required
+
+- name: Validate and normalize the reviewed UAT baseline manifest
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ role_path }}/files/validate_contract.py"
+      - baseline
+    stdin: "{{ {'environment': web_saas_data_baseline_environment, 'manifest': web_saas_data_baseline_manifest} | to_json }}"
+  register: web_saas_data_baseline_validation
+  changed_when: false
+  delegate_to: localhost
+  become: false
+
+- name: Refuse to replace an existing manifest receipt
+  ansible.builtin.stat:
+    path: "{{ web_saas_data_baseline_receipt_file }}"
+  register: web_saas_data_baseline_existing_receipt
+  delegate_to: localhost
+  become: false
+
+- name: Require a new explicit receipt path
+  ansible.builtin.assert:
+    that:
+      - not web_saas_data_baseline_existing_receipt.stat.exists
+    fail_msg: A new controller-side manifest receipt path is required; frozen evidence is immutable
+
+- name: Record validated manifest metadata once without touching database data
+  ansible.builtin.copy:
+    dest: "{{ web_saas_data_baseline_receipt_file }}"
+    content: "{{ web_saas_data_baseline_validation.stdout | from_json | to_nice_json }}\n"
+    mode: '0600'
+    force: false
+  delegate_to: localhost
+  become: false

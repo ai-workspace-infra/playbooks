@@ -1,0 +1,109 @@
+name: Selfhost Data Lifecycle Components
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      operation:
+        required: true
+        type: string
+      release_tag:
+        required: true
+        type: string
+      expected_schema_version:
+        required: true
+        type: string
+      config_json:
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+jobs:
+  component:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ inputs.environment }}
+    env:
+      REQUESTED_ENVIRONMENT: ${{ inputs.environment }}
+      REQUESTED_OPERATION: ${{ inputs.operation }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      EXPECTED_SCHEMA_VERSION: ${{ inputs.expected_schema_version }}
+      CONFIG_JSON: ${{ inputs.config_json }}
+      CMDB_FILE: cmdb/cmdb.json
+      VAULT_ADDR: https://vault.svc.plus
+      VAULT_ROLE: github-actions-platform-ops-toolkit-uat
+      ANSIBLE_HOST_KEY_CHECKING: 'False'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          persist-credentials: false
+      - name: Validate UAT-only component before credentials
+        run: python3 scripts/data_operations/selfhost/role_runner.py validate
+      - uses: actions/download-artifact@v8
+        with:
+          name: platform-ops-toolkit-cmdb
+          repository: ai-workspace-infra/platform-ops-toolkit
+          run-id: ${{ fromJSON(inputs.config_json).caller_run_id }}
+          github-token: ${{ github.token }}
+          path: cmdb
+      - name: Verify approved caller and environment-bound CMDB
+        run: python3 scripts/data_operations/selfhost/verify_caller_cmdb.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CALLER_RUN_ID: ${{ fromJSON(inputs.config_json).caller_run_id }}
+      - uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-services/accounts
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+          path: accounts
+          persist-credentials: false
+      - name: Bind immutable source and exact CMDB-derived inventory
+        run: python3 scripts/data_operations/selfhost/role_runner.py prepare
+      - name: Install Ansible execution tools
+        run: sudo apt-get update && sudo apt-get install --yes ansible
+      - id: ssh
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          role: ${{ env.VAULT_ROLE }}
+          method: jwt
+          jwtGithubAudience: vault
+          secrets: |
+            kv/data/CICD/uat SSH_PRIVATE_DEPLOY_KEY_B64 | SSH_PRIVATE_DEPLOY_KEY_B64 ;
+      - id: backup_key
+        if: ${{ inputs.operation == 'backup' }}
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          role: ${{ env.VAULT_ROLE }}
+          method: jwt
+          jwtGithubAudience: vault
+          secrets: |
+            kv/data/uat/backups web_saas_release_passphrase | WEB_SAAS_RELEASE_BACKUP_PASSPHRASE ;
+      - name: Install transient SSH identity
+        env:
+          DEPLOY_KEY_B64: ${{ steps.ssh.outputs.SSH_PRIVATE_DEPLOY_KEY_B64 }}
+        run: |
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s' "$DEPLOY_KEY_B64" | base64 -d > "$HOME/.ssh/id_deploy"
+          chmod 600 "$HOME/.ssh/id_deploy"
+          printf 'ANSIBLE_PRIVATE_KEY_FILE=%s/.ssh/id_deploy\n' "$HOME" >> "$GITHUB_ENV"
+      - name: Execute isolated component roles (not G1/G2/G3 acceptance)
+        run: python3 scripts/data_operations/selfhost/role_runner.py execute
+      - name: Publish only sanitized component status
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: selfhost-data-component-${{ github.run_id }}
+          path: ${{ runner.temp }}/selfhost-data-roles/public/receipt.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Remove runner SSH identity
+        if: ${{ always() }}
+        run: rm -f "$HOME/.ssh/id_deploy"

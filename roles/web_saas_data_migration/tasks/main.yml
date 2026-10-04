@@ -1,0 +1,22 @@
+---
+- name: Validate UAT request and paired backup/restore evidence shapes
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ role_path }}/files/validate_contract.py"
+      - migration
+    stdin: "{{ {'environment': web_saas_data_migration_environment, 'request': web_saas_data_migration_request, 'baseline_manifest': web_saas_data_migration_baseline_manifest, 'backup_evidence': web_saas_data_migration_backup_evidence, 'restore_evidence': web_saas_data_migration_restore_evidence} | to_json }}"
+  register: web_saas_data_migration_validation
+  changed_when: false
+  delegate_to: localhost
+  become: false
+
+- name: Block until the official Selfhost migration contract is implemented
+  ansible.builtin.fail:
+    msg: >-
+      {{ (web_saas_data_migration_validation.stdout | from_json).reason_code }}:
+      no approved Accounts Selfhost interface currently provides exact-version
+      bounds, checksum verification, advisory locking and bounded timeouts.
+      The request, baseline manifest and backup/restore evidence shapes were
+      validated, but no migration command was run. See the role README for the
+      evidence required from the Accounts owner.
