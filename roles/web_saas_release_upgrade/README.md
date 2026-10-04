@@ -23,6 +23,10 @@ database on the same PostgreSQL instance, compares the clean migration version
 and nonempty user/subscription samples, then drops only that generated test
 database. The serving `account` database is never used as the restore target.
 The archive remains on the environment's web-saas host for recovery.
+For the current UAT candidate, CMDB identifies a GCP Spot host while the
+checked-in resource declaration does not declare a separate `/data` disk.
+This role deliberately refuses to use the root disk; it must not be invoked
+for a real rehearsal until the mounted storage and capacity are verified.
 
 The role checks the exact inventory host name and reads a remote machine ID,
 but cannot authenticate where the inventory came from. The calling workflow
