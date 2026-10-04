@@ -1,0 +1,33 @@
+name: XConnect Remote Observation Tests
+
+on:
+  pull_request:
+    paths:
+      - observability_operations.yml
+      - roles/docker/observability_server_operations/**
+      - tests/test_xconnect_remote_observation_role_contract.py
+      - .github/workflows/xconnect-remote-observation-tests.yml
+  push:
+    branches: [main]
+    paths:
+      - observability_operations.yml
+      - roles/docker/observability_server_operations/**
+      - tests/test_xconnect_remote_observation_role_contract.py
+      - .github/workflows/xconnect-remote-observation-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  role-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install offline test runtime
+        run: python3 -m pip install ansible-core PyYAML
+      - name: Run role contract and fixture tests
+        run: python3 -m unittest tests/test_xconnect_remote_observation_role_contract.py
+      - name: Validate playbook syntax
+        run: |
+          ansible-playbook --syntax-check -i 'localhost,' observability_operations.yml
+          git diff --check
