@@ -1,0 +1,33 @@
+- name: Verify Agent Proxy runtime config files exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ agent_proxy_runtime_config_files }}"
+  register: agent_proxy_runtime_config_stats
+
+- name: Require non-empty Agent Proxy runtime config files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.size | int > 0
+    fail_msg: "Agent Proxy runtime config is missing or empty: {{ item.item }}"
+  loop: "{{ agent_proxy_runtime_config_stats.results }}"
+
+- name: Start Xray services after DNS reconciliation
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: started
+  loop:
+    - xray.service
+    - xray-tcp.service
+
+- name: Verify Agent Proxy readiness after Xray convergence
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/check_services.sh
+      {{ agent_proxy_post_dns_ready_timeout_seconds }}
+      {{ agent_proxy_post_dns_ready_poll_seconds }}
+  environment:
+    AGENT_PROXY_READY_TIMEOUT_SECONDS: "{{ agent_proxy_post_dns_ready_timeout_seconds }}"
+    AGENT_PROXY_READY_POLL_SECONDS: "{{ agent_proxy_post_dns_ready_poll_seconds }}"
+    AGENT_PROXY_RUNTIME_CONFIG_FILES: "{{ agent_proxy_runtime_config_files | join(' ') }}"
+  changed_when: false

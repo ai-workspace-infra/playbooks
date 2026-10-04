@@ -1,0 +1,25 @@
+- name: Require the canonical local probe hostname
+  ansible.builtin.assert:
+    that:
+      - web_saas_canonical_probe_host is defined
+      - web_saas_canonical_probe_host | trim | length > 0
+    fail_msg: Set web_saas_canonical_probe_host to the environment-specific Console hostname.
+
+- name: Verify Web SaaS containers and published ingress ports
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/verify_containers.sh
+      {{ web_saas_container_ready_timeout_seconds }}
+      {{ web_saas_container_ready_poll_seconds }}
+  environment:
+    WEB_SAAS_CONTAINER_READY_TIMEOUT_SECONDS: "{{ web_saas_container_ready_timeout_seconds }}"
+    WEB_SAAS_CONTAINER_READY_POLL_SECONDS: "{{ web_saas_container_ready_poll_seconds }}"
+  changed_when: false
+
+- name: Collect Caddy ingress diagnostics
+  ansible.builtin.script:
+    cmd: "{{ role_path }}/files/diagnose_ingress.sh"
+  environment:
+    WEB_SAAS_CANONICAL_PROBE_HOST: "{{ web_saas_canonical_probe_host }}"
+  changed_when: false
+  failed_when: false
