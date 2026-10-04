@@ -56,6 +56,16 @@ except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
     raise SystemExit(f"cannot verify trusted caller workflow metadata: {type(exc).__name__}") from exc
 if workflow.get("path") != ".github/workflows/selfhost-orchestrator.yml":
     raise SystemExit("caller run is not from the approved selfhost orchestrator workflow")
+branch = str(run.get("head_branch", ""))
+if run.get("event") != "workflow_dispatch" or not (
+    branch == "main" or re.fullmatch(r"(?:uat-)?daily-build-\d{4}\.\d{2}\.\d{2}(?:-r[1-9]\d*)?|v\d[0-9.r-]*", branch)
+):
+    raise SystemExit("caller CMDB must originate from a reviewed main/tag workflow_dispatch, not a PR or feature branch")
+if run.get("status") == "completed":
+    if run.get("conclusion") != "success":
+        raise SystemExit("completed caller run must have succeeded")
+elif run.get("status") != "in_progress":
+    raise SystemExit("caller run must be the active approved deployment or a successful prior run")
 
 try:
     cmdb = json.loads(Path(os.environ["CMDB_FILE"]).read_text(encoding="utf-8"))
