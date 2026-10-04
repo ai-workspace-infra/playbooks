@@ -1,0 +1,24 @@
+---
+# Controlled ZITADEL service operations. The Toolkit workflow selects the
+# target, holds the Vault/OIDC identity and judges the result; this entry only
+# reads service state. Deployment stays in deploy_iam_domain.yml.
+#
+# A missing or unknown target must fail, not match no hosts and report success.
+- name: Require exactly one known ZITADEL operation target
+  hosts: all:localhost
+  gather_facts: false
+  tasks:
+    - name: Refuse a missing, unknown or pattern target
+      ansible.builtin.assert:
+        that:
+          - zitadel_operations_target | default('') | length > 0
+          - zitadel_operations_target in (groups['all'] | union(['localhost']))
+        fail_msg: Set zitadel_operations_target to exactly one inventory host.
+      run_once: true
+
+- name: Run a controlled ZITADEL service operation
+  hosts: "{{ zitadel_operations_target }}"
+  become: true
+  gather_facts: false
+  roles:
+    - docker/zitadel_server_operations

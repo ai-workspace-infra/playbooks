@@ -1,0 +1,12 @@
+---
+- name: Verify public OIDC discovery for the declared domain
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ role_path }}/files/verify_public_oidc.sh"
+  environment:
+    ZITADEL_DOMAIN: "{{ zitadel_operations_domain }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
