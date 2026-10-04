@@ -1,0 +1,119 @@
+---
+- name: Check whether /data is already its own mountpoint
+  ansible.builtin.command:
+    argv: [findmnt, -nro, TARGET, --target, "{{ web_saas_data_mount_path }}"]
+  register: web_saas_data_mount_target
+  changed_when: false
+
+- name: Refuse to replace an existing /data mount automatically
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_mount_target.stdout | trim != web_saas_data_mount_path
+    fail_msg: /data is already mounted; verify its device and migrate explicitly
+
+- name: Inspect /data before any mountpoint change
+  ansible.builtin.stat:
+    path: "{{ web_saas_data_mount_path }}"
+    follow: false
+  register: web_saas_data_directory
+
+- name: Refuse a symlink or non-directory /data
+  ansible.builtin.assert:
+    that:
+      - not web_saas_data_directory.stat.exists or web_saas_data_directory.stat.isdir | default(false)
+    fail_msg: /data must be absent or a real directory
+
+- name: Check whether /data contains pre-existing files
+  ansible.builtin.command:
+    argv: [find, "{{ web_saas_data_mount_path }}", -mindepth, '1', -maxdepth, '1', -print, -quit]
+  register: web_saas_data_existing_files
+  changed_when: false
+  when: web_saas_data_directory.stat.exists
+
+- name: Refuse to hide live data under a new mount
+  ansible.builtin.assert:
+    that:
+      - not web_saas_data_directory.stat.exists or web_saas_data_existing_files.stdout | trim == ''
+    fail_msg: /data is not empty; back up, quiesce and migrate existing data before mounting
+
+- name: Check for partitions or dependent block devices
+  ansible.builtin.command:
+    argv: [lsblk, -nro, NAME, "{{ web_saas_data_device_path }}"]
+  register: web_saas_data_block_tree
+  changed_when: false
+
+- name: Refuse to format a disk with partitions or dependent devices
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_block_tree.stdout_lines | length == 1
+
+- name: Inspect existing disk signatures before formatting
+  ansible.builtin.command:
+    argv: [wipefs, --no-act, --noheadings, "{{ web_saas_data_device_path }}"]
+  register: web_saas_data_signatures
+  changed_when: false
+
+- name: Refuse unknown signatures on an unformatted disk
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_blkid.stdout | trim != '' or web_saas_data_signatures.stdout | trim == ''
+    fail_msg: Disk contains a signature; do not initialize automatically
+
+- name: Require explicit initialization authorization for an unformatted disk
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_blkid.stdout | trim != '' or web_saas_data_allow_initialize | bool
+    fail_msg: Unformatted disk needs explicit allow_initialize=true after CMDB identity review
+
+- name: Create a previously absent empty mountpoint
+  ansible.builtin.file:
+    path: "{{ web_saas_data_mount_path }}"
+    state: directory
+    mode: '0755'
+  when: not web_saas_data_directory.stat.exists
+
+- name: Create ext4 only on an empty new disk
+  community.general.filesystem:
+    dev: "{{ web_saas_data_device_path }}"
+    fstype: "{{ web_saas_data_fstype }}"
+    force: false
+  when: web_saas_data_blkid.stdout | trim == ''
+
+- name: Read the resulting disk UUID
+  ansible.builtin.command:
+    argv: [blkid, -s, UUID, -o, value, "{{ web_saas_data_device_path }}"]
+  register: web_saas_data_uuid
+  changed_when: false
+
+- name: Require a usable UUID before persistence in fstab
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_uuid.stdout | trim is match('^[0-9a-fA-F-]{8,}$')
+
+- name: Mount the independent disk by UUID without deleting old files
+  ansible.posix.mount:
+    path: "{{ web_saas_data_mount_path }}"
+    src: "UUID={{ web_saas_data_uuid.stdout | trim }}"
+    fstype: "{{ web_saas_data_fstype }}"
+    opts: defaults,nofail
+    state: mounted
+
+- name: Verify /data is actually the expected disk
+  ansible.builtin.command:
+    argv: [findmnt, -nro, UUID, --target, "{{ web_saas_data_mount_path }}"]
+  register: web_saas_data_verified_uuid
+  changed_when: false
+
+- name: Reject a mount to the wrong filesystem
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_verified_uuid.stdout | trim == web_saas_data_uuid.stdout | trim
+
+- name: Record mount component evidence
+  ansible.builtin.set_fact:
+    web_saas_data_evidence:
+      action: prepare_empty
+      environment: "{{ web_saas_data_environment }}"
+      mounted: true
+      mount_path: "{{ web_saas_data_mount_path }}"
+      filesystem_uuid: "{{ web_saas_data_verified_uuid.stdout | trim }}"
