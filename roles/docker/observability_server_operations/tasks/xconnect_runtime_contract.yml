@@ -1,0 +1,107 @@
+---
+- name: Validate the explicit XConnect runtime contract inputs
+  ansible.builtin.assert:
+    that:
+      - observability_operations_environment == 'uat'
+      - xconnect_runtime_contract_role | string is match('^(gateway|one)$')
+      - xconnect_runtime_contract_path | string is match('^/[A-Za-z0-9][A-Za-z0-9_./-]*$')
+      - "'..' not in xconnect_runtime_contract_path"
+      - xconnect_runtime_contract_remote_address | string is match('^[A-Za-z0-9][A-Za-z0-9_.:-]{0,254}$')
+      - xconnect_runtime_contract_server_name | string is match('^[A-Za-z0-9][A-Za-z0-9_.-]{0,253}$')
+      - xconnect_runtime_contract_xhttp_path | string is match('^/[A-Za-z0-9._~!$&+,;=:@%/-]+$')
+      - xconnect_runtime_contract_xhttp_mode | string is match('^[A-Za-z0-9_-]{1,32}$')
+      - xconnect_runtime_contract_xhttp_host | string is match('^[A-Za-z0-9][A-Za-z0-9_.:-]{0,253}$')
+      - xconnect_runtime_contract_path_env | string | length > 0
+      - xconnect_runtime_contract_become is boolean
+    fail_msg: Select an explicit UAT XConnect runtime contract and bounded read-only inputs.
+  no_log: true
+
+- name: Verify the XConnect runtime contract without changing the host
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      role={{ xconnect_runtime_contract_role | quote }}
+      path={{ xconnect_runtime_contract_path | quote }}
+      remote_address={{ xconnect_runtime_contract_remote_address | quote }}
+      server_name={{ xconnect_runtime_contract_server_name | quote }}
+      xhttp_path={{ xconnect_runtime_contract_xhttp_path | quote }}
+      xhttp_mode={{ xconnect_runtime_contract_xhttp_mode | quote }}
+      xhttp_host={{ xconnect_runtime_contract_xhttp_host | quote }}
+
+      if [[ "$role" == one ]]; then
+        active="$path/runtime/active.json"
+        config_path=$(jq -er '.xray_config_path | select(type == "string" and startswith("/") and (contains("..") | not))' "$active")
+        jq -e \
+          --arg address "$remote_address" \
+          --arg server_name "$server_name" \
+          --arg path "$xhttp_path" \
+          --arg mode "$xhttp_mode" \
+          --arg host "$xhttp_host" \
+          '
+            (.inbounds | any(.[];
+              .listen == "127.0.0.1" and
+              .port == 51830 and
+              .protocol == "dokodemo-door" and
+              .settings.network == "udp"
+            )) and
+            (.outbounds | any(.[];
+              .protocol == "vless" and
+              .settings.vnext[0].address == $address and
+              .settings.vnext[0].port == 443 and
+              .streamSettings.network == "xhttp" and
+              .streamSettings.security == "tls" and
+              .streamSettings.tlsSettings.serverName == $server_name and
+              .streamSettings.xhttpSettings.path == $path and
+              .streamSettings.xhttpSettings.mode == $mode and
+              .streamSettings.xhttpSettings.host == $host
+            ))
+          ' "$config_path" >/dev/null
+      elif [[ "$role" == gateway ]]; then
+        config_path="$path"
+        runtime_mode=$(jq -er \
+          --arg path "$xhttp_path" \
+          --arg mode "$xhttp_mode" \
+          --arg host "$xhttp_host" \
+          '
+            first(.inbounds[] | select(
+              .protocol == "vless" and
+              .streamSettings.network == "xhttp" and
+              .streamSettings.xhttpSettings.path == $path and
+              .streamSettings.xhttpSettings.mode == $mode and
+              .streamSettings.xhttpSettings.host == $host
+            )) |
+            if .listen == "0.0.0.0" and .port == 443 and
+               .streamSettings.security == "tls" and
+               .streamSettings.tlsSettings.rejectUnknownSni == true
+            then "direct-tls"
+            elif .listen == "/run/xconnect-gateway/xray.sock,0660" and
+                 (.port == null) and (.streamSettings.security == null)
+            then "caddy-unix"
+            else empty
+            end
+          ' "$config_path")
+        jq -e \
+          --arg runtime_mode "$runtime_mode" \
+          '
+            ($runtime_mode == "direct-tls" or $runtime_mode == "caddy-unix") and
+            (.outbounds | any(.[];
+              .tag == "xconnect-wireguard" and
+              .protocol == "freedom" and
+              .settings.redirect == "127.0.0.1:51820"
+            ))
+          ' "$config_path" >/dev/null
+      fi
+  delegate_to: "{{ xconnect_runtime_contract_delegate_host | default(inventory_hostname, true) }}"
+  become: "{{ xconnect_runtime_contract_become | bool }}"
+  environment:
+    PATH: "{{ xconnect_runtime_contract_path_env }}"
+  register: xconnect_runtime_contract_result
+  changed_when: false
+  failed_when: xconnect_runtime_contract_result.rc != 0
+  no_log: true
+
+- name: Emit the stable sanitized XConnect runtime contract
+  ansible.builtin.debug:
+    msg: >-
+      XCONNECT_RUNTIME_CONTRACT role={{ xconnect_runtime_contract_role }}
+      result=valid read_only=true SUMMARY_ONLY

@@ -38,6 +38,31 @@ ansible-playbook -i "$ACCESS_DIR/inventory.ini" observability_operations.yml \
   -e "observability_local_health_host=$NODE_NAME"
 ```
 
+`xconnect_runtime_contract` is a separate read-only operation for one explicit
+Gateway or One host. It validates the XHTTP/Xray JSON contract previously
+checked by the Toolkit's remote helper: One must have the local UDP
+`dokodemo-door` and the expected VLESS/XHTTP/TLS outbound; Gateway must have
+either the direct TLS or managed Caddy Unix-socket inbound plus the local
+WireGuard freedom outbound. The role reads only the supplied paths, never
+refreshes configuration, restarts Xray/Caddy, or mutates state. The operation is
+UAT-only and prints only a stable summary.
+
+Example:
+
+```sh
+ansible-playbook -i "$ACCESS_DIR/inventory.ini" observability_operations.yml \
+  -e observability_operations_environment=uat \
+  -e observability_operation=xconnect_runtime_contract \
+  -e xconnect_runtime_contract_delegate_host=xconnect-gateway \
+  -e xconnect_runtime_contract_role=gateway \
+  -e xconnect_runtime_contract_path=/var/lib/xconnect-gateway/runtime/xray.json \
+  -e xconnect_runtime_contract_remote_address=tw-xconnect.svc.plus \
+  -e xconnect_runtime_contract_server_name=tw-xconnect.svc.plus \
+  -e xconnect_runtime_contract_xhttp_path=/xconnect \
+  -e xconnect_runtime_contract_xhttp_mode=auto \
+  -e xconnect_runtime_contract_xhttp_host=tw-xconnect.svc.plus
+```
+
 `post_dns_cutover` receives an explicit domain, target IPv4, health path and
 `RESTART_CADDY=true|false`. When a restart is requested it also requires an
 SSH user and runtime key path. The role restarts Caddy on the selected host and
