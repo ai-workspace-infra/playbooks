@@ -1,15 +1,20 @@
 # Minimal AI Desktop
 
 Installs the repository's minimal XFCE or IceWM desktop and optional XRDP or
-WebRTC access. This role is only the desktop base for CPA and CLI
-setup/debugging; it does not install AI agents, monitoring, containers, or
-proxy services.
+WebRTC access. The `deploy_ai_desktop.yml` entrypoint targets the generated
+`ai_aggregator_cpa` inventory group and enables the existing `node_exporter`
+role as basic monitoring. This role is the desktop base for CPA and CLI
+setup/debugging; it does not install AI agents, containers, or proxy services
+unless explicitly enabled through its capability slots.
 
 Select the desktop backend with `ai_desktop_desktop_type`: `xfce` is the
 default; `icewm` uses the independent IceWM minimal role.
 
 Set `ai_desktop_user_password` through inventory or an encrypted vars file when
-`ai_desktop_manage_user` is enabled.
+`ai_desktop_manage_user` is enabled. For UAT, inject it from Vault only for
+the Ansible process. Do not put it in Git, inventory, systemd units, or CI
+logs. CPA OAuth bundles are separate credentials and must not be reused as
+the XRDP password.
 
 XRDP is optional. Set `ai_desktop_remote_enabled: false` to skip the XRDP
 role and its Xorg server package while retaining the selected desktop base.
