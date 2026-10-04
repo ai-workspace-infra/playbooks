@@ -1,0 +1,12 @@
+- name: Verify selected Observability MCP protocol and backend authentication
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ role_path }}/files/observability_verify_mcp.sh"
+  environment:
+    TARGET_IP: "{{ lookup('env', 'TARGET_IP') }}"
+    COMPONENT: "{{ lookup('env', 'COMPONENT') }}"
+    CONTAINER: "{{ lookup('env', 'CONTAINER') }}"
+    PORT: "{{ lookup('env', 'PORT') }}"
+    SSH_PRIVATE_KEY_PATH: "{{ lookup('env', 'SSH_PRIVATE_KEY_PATH') }}"
+  changed_when: false
