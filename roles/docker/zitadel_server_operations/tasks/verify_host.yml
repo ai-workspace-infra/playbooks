@@ -1,0 +1,40 @@
+---
+- name: Require exactly one IAM host
+  ansible.builtin.assert:
+    that:
+      - ansible_play_hosts_all | length == 1
+    fail_msg: Run ZITADEL host verification against exactly one IAM host.
+
+- name: Verify the ZITADEL service on the IAM host and publicly
+  block:
+    - name: Verify stack health, bootstrap completion, Caddy and local TLS discovery
+      ansible.builtin.script:
+        cmd: "{{ role_path }}/files/verify_host_service.sh"
+      environment: &zitadel_operations_host_env
+        ZITADEL_DOMAIN: "{{ zitadel_operations_domain }}"
+        ZITADEL_WORKSPACE: "{{ zitadel_operations_workspace }}"
+        ZITADEL_API_PORT: "{{ zitadel_operations_api_port }}"
+        ZITADEL_CADDY_CONF_DIR: "{{ zitadel_operations_caddy_conf_dir }}"
+        ZITADEL_READY_TIMEOUT_SECONDS: "{{ zitadel_operations_ready_timeout_seconds }}"
+        ZITADEL_READY_POLL_SECONDS: "{{ zitadel_operations_ready_poll_seconds }}"
+      changed_when: false
+
+    - name: Verify public OIDC discovery after the host checks
+      ansible.builtin.include_tasks: verify_public.yml
+
+  rescue:
+    - name: Collect read-only ZITADEL host evidence
+      ansible.builtin.script:
+        cmd: "{{ role_path }}/files/diagnose_service.sh"
+      environment: *zitadel_operations_host_env
+      register: zitadel_operations_diagnostics
+      changed_when: false
+      failed_when: false
+
+    # Evidence never turns a failed verification green.
+    - name: Fail with the host evidence
+      ansible.builtin.fail:
+        msg: >-
+          ZITADEL service verification failed for {{ zitadel_operations_domain }}:
+          {{ ansible_failed_result.stderr_lines | default([ansible_failed_result.msg | default('')]) }}.
+          Host evidence: {{ zitadel_operations_diagnostics.stdout_lines | default([]) }}

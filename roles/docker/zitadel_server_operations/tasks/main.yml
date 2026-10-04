@@ -1,0 +1,15 @@
+---
+- name: Validate selected ZITADEL operation
+  ansible.builtin.assert:
+    that:
+      - zitadel_operation | default('') in ['verify_host', 'verify_public']
+    fail_msg: Unsupported ZITADEL operation.
+
+- name: Require the declared ZITADEL public domain
+  ansible.builtin.assert:
+    that:
+      - zitadel_operations_domain is match('^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$')
+    fail_msg: Set zitadel_operations_domain to the declared IAM domain.
+
+- name: Run selected ZITADEL operation
+  ansible.builtin.include_tasks: "{{ zitadel_operation }}.yml"

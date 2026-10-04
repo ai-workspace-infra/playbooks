@@ -1,0 +1,38 @@
+name: ZITADEL Operations Tests
+
+on:
+  pull_request:
+    paths:
+      - zitadel_operations.yml
+      - roles/docker/zitadel_server_operations/**
+      - roles/docker/zitadel/defaults/main.yml
+      - roles/docker/zitadel/tasks/doco-cd.yml
+      - tests/test_zitadel_service_operations.py
+      - .github/workflows/zitadel-operations-tests.yml
+  push:
+    branches: [main]
+    paths:
+      - zitadel_operations.yml
+      - roles/docker/zitadel_server_operations/**
+      - roles/docker/zitadel/defaults/main.yml
+      - roles/docker/zitadel/tasks/doco-cd.yml
+      - tests/test_zitadel_service_operations.py
+      - .github/workflows/zitadel-operations-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  role-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test runtime
+        run: python3 -m pip install ansible-core PyYAML
+      - name: Verify role and simulate host and public checks
+        run: python3 -m unittest tests/test_zitadel_service_operations.py
+      - name: Validate role shell and playbook syntax
+        run: |
+          for script in roles/docker/zitadel_server_operations/files/*.sh; do bash -n "$script"; done
+          ansible-playbook --syntax-check -i 'localhost,' -e zitadel_operations_target=localhost zitadel_operations.yml
+          git diff --check
