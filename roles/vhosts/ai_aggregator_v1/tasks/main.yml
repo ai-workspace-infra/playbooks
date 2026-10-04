@@ -1,120 +1,32 @@
 ---
-- name: Require a GitOps manifest on the control host
-  ansible.builtin.stat:
-    path: "{{ ai_aggregator_manifest_file }}"
-  delegate_to: localhost
-  become: false
-  register: ai_aggregator_manifest_stat
-  run_once: true
-
-- name: Reject a missing GitOps manifest
-  ansible.builtin.assert:
-    that:
-      - ai_aggregator_manifest_file | length > 0
-      - ai_aggregator_manifest_stat.stat.exists
-    fail_msg: "Set ai_aggregator_manifest_file to a checked-out GitOps declaration."
-  run_once: true
-
-- name: Load non-sensitive desired state from GitOps
+- name: Load GitOps declaration to select the gateway adapter
   ansible.builtin.include_vars:
     file: "{{ ai_aggregator_manifest_file }}"
     name: ai_aggregator_manifest
 
-- name: Select the aggregator specification
+- name: Select the gateway adapter
   ansible.builtin.set_fact:
     ai_aggregator_spec: "{{ ai_aggregator_manifest.spec }}"
+    ai_aggregator_entry_mode: "{{ ai_aggregator_manifest.spec.gateway.entry_mode | default('gateway') }}"
+    ai_aggregator_adapter: "{{ ai_aggregator_manifest.spec.gateway.adapter | default(ai_aggregator_gateway_adapter) }}"
 
-- name: Validate manifest identity and operation
+- name: Require a supported entry mode and gateway adapter
   ansible.builtin.assert:
     that:
-      - ai_aggregator_manifest.kind == 'PersonalAIAggregator'
-      - ai_aggregator_manifest.metadata.mode == 'selfhost'
-      - ai_aggregator_operation in ['plan', 'stage', 'activate']
-      - ai_aggregator_spec.entrypoint.source_cidrs is iterable
-      - ai_aggregator_spec.entrypoint.direct_api_domain | length > 0
-      - ai_aggregator_spec.entrypoint.admin_basic_auth_ref.startswith('vault://')
-      - ai_aggregator_spec.new_api.bind_address in ['127.0.0.1', '::1']
-      - ai_aggregator_spec.litellm.bind_address in ['127.0.0.1', '::1']
-      - ai_aggregator_spec.litellm.port != ai_aggregator_spec.new_api.port
-      - ai_aggregator_spec.new_api.persistence.driver == 'postgresql'
-      - ai_aggregator_spec.litellm.persistence.driver == 'postgresql'
-      - ai_aggregator_spec.cpa_instances | length > 0
-    fail_msg: "The GitOps aggregator declaration is incomplete or unsafe."
+      - ai_aggregator_entry_mode in ['gateway', 'direct-new-api']
+      - ai_aggregator_entry_mode == 'direct-new-api' or ai_aggregator_adapter in ['apisix', 'kong']
+      - ai_aggregator_manifest.spec.gateway.client_token_source | default('new-api') == 'new-api'
 
-- name: Validate unique CPA instance IDs and ports
-  ansible.builtin.assert:
-    that:
-      - ai_aggregator_spec.cpa_instances | map(attribute='id') | unique | list | length == ai_aggregator_spec.cpa_instances | length
-      - ai_aggregator_spec.cpa_instances | map(attribute='port') | unique | list | length == ai_aggregator_spec.cpa_instances | length
-      - ai_aggregator_spec.cpa_instances | map(attribute='network_endpoint') | unique | list | length == ai_aggregator_spec.cpa_instances | length
-    fail_msg: "CPA instance IDs and ports must be unique."
-  run_once: true
+- name: Deploy APISIX Standalone from GitOps files
+  ansible.builtin.include_tasks: apisix.yml
+  when: ai_aggregator_entry_mode == 'gateway' and ai_aggregator_adapter == 'apisix'
 
-- name: Require immutable artifacts and access policy before staging
-  ansible.builtin.assert:
-    that:
-      - ai_aggregator_spec.enabled | bool
-      - ai_aggregator_spec.entrypoint.source_cidrs | length > 0
-      - ai_aggregator_spec.artifacts.new_api.revision | length > 0
-      - ai_aggregator_spec.artifacts.new_api.sha256 | length == 64
-      - ai_aggregator_spec.artifacts.cliproxyapi.revision | length > 0
-      - ai_aggregator_spec.artifacts.cliproxyapi.sha256 | length == 64
-      - ai_aggregator_spec.new_api.start_command | length > 0
-    fail_msg: "Staging requires enabled GitOps state, an allowlist, and pinned artifact checksums."
-  when: ai_aggregator_operation == 'stage'
-  run_once: true
+- name: Deploy the Kong adapter
+  ansible.builtin.include_tasks: legacy-kong.yml
+  when: ai_aggregator_entry_mode == 'gateway' and ai_aggregator_adapter == 'kong'
 
-- name: Find this host's declared node records
-  ansible.builtin.set_fact:
-    ai_aggregator_local_nodes: >-
-      {{ ai_aggregator_spec.nodes | selectattr('inventory_host', 'equalto', inventory_hostname) | list }}
-
-- name: Validate CPA instance contract
-  ansible.builtin.assert:
-    that:
-      - item.account_email is string
-      - "'@' in item.account_email"
-      - item.network_endpoint is string
-      - item.network_endpoint.startswith('cmdb://')
-      - item.auth_secret_ref.startswith('vault://')
-      - item.channel_token_ref.startswith('vault://')
-    fail_msg: "CPA {{ item.id }} must declare identity metadata, CMDB endpoint, and Vault references."
-  loop: "{{ ai_aggregator_spec.cpa_instances }}"
-  run_once: true
-
-- name: Stage Vault runtime material
-  ansible.builtin.include_tasks: vault.yml
-  when: ai_aggregator_operation == 'stage'
-
-- name: Show plan result
-  ansible.builtin.debug:
-    msg:
-      host: "{{ inventory_hostname }}"
-      operation: "{{ ai_aggregator_operation }}"
-      declared_roles: "{{ ai_aggregator_local_nodes | map(attribute='role') | list }}"
-      enabled: "{{ ai_aggregator_spec.enabled }}"
-  when: ai_aggregator_operation == 'plan'
-
-- name: Stage gateway configuration
-  ansible.builtin.include_tasks: gateway.yml
+- name: Stage or activate a direct route to the existing New API service
+  ansible.builtin.include_tasks: direct-new-api.yml
   when:
-    - ai_aggregator_operation == 'stage'
-    - ai_aggregator_local_nodes | selectattr('role', 'equalto', 'gateway') | list | length > 0
-
-- name: Stage CPA configuration
-  ansible.builtin.include_tasks: cpa.yml
-  when:
-    - ai_aggregator_operation == 'stage'
-    - ai_aggregator_local_nodes | selectattr('role', 'equalto', 'cpa') | list | length > 0
-
-- name: Activate CPA services after Vault staging
-  ansible.builtin.include_tasks: activate-cpa.yml
-  when:
-    - ai_aggregator_operation == 'activate'
-    - ai_aggregator_local_nodes | selectattr('role', 'equalto', 'cpa') | list | length > 0
-
-- name: Activate gateway services after CPA services
-  ansible.builtin.include_tasks: activate-gateway.yml
-  when:
-    - ai_aggregator_operation == 'activate'
-    - ai_aggregator_local_nodes | selectattr('role', 'equalto', 'gateway') | list | length > 0
+    - ai_aggregator_entry_mode == 'direct-new-api'
+    - ai_aggregator_spec.nodes | selectattr('inventory_host', 'equalto', inventory_hostname) | selectattr('role', 'equalto', 'gateway') | list | length > 0

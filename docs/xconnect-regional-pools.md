@@ -51,3 +51,13 @@ ansible-playbook -i localhost, reconcile_xconnect_entrypoint.yml
 ```
 
 该操作会修改所选区域的 DNS。合并 Git 或运行节点验证 playbook 本身不会切换 DNS。
+
+## Agent report metadata
+
+The GitOps host variables `xconnect_region`, `xconnect_pool`, `xconnect_fqdn`,
+and `xconnect_open_to_users` render to `region`, `pool`, `entryPoint`, and
+`openToUsers` in `/etc/agent/account-agent.yaml`. `entryPoint` is the public
+regional domain and can differ from the physical agent ID. A new UAT node
+should declare `xconnect_open_to_users: false` until public TLS acceptance
+passes; closed entries remain visible to administrators and produce no
+subscription URI or QR code in the user panel.

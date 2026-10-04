@@ -1,0 +1,208 @@
+---
+- name: Assert IceWM minimal desktop is supported
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == 'Debian'
+    fail_msg: "icewm_desktop_minimal currently supports Debian-family hosts only."
+
+- name: Validate IceWM browser selection
+  ansible.builtin.assert:
+    that:
+      - icewm_desktop_browser in ['chrome', 'chromium']
+    fail_msg: "icewm_desktop_browser must be chrome or chromium."
+
+- name: Resolve IceWM browser command
+  ansible.builtin.set_fact:
+    icewm_desktop_effective_browser_command: >-
+      {{ icewm_desktop_browser_command | trim
+         if (icewm_desktop_browser_command | trim | length > 0)
+         else ('/usr/bin/google-chrome' if (icewm_desktop_browser == 'chrome' and ansible_architecture in ['x86_64', 'amd64'])
+               else '/usr/bin/chromium') }}
+
+- name: Install IceWM minimal desktop packages
+  ansible.builtin.apt:
+    name: "{{ icewm_desktop_packages }}"
+    state: present
+    install_recommends: false
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+  when: icewm_desktop_enabled | bool
+
+- name: Ensure Chrome download cache directory exists
+  ansible.builtin.file:
+    path: "{{ icewm_desktop_chrome_deb_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_browser == 'chrome'
+    - ansible_architecture in ['x86_64', 'amd64']
+
+- name: Download Google Chrome package
+  ansible.builtin.get_url:
+    url: "{{ icewm_desktop_chrome_download_url }}"
+    dest: "{{ icewm_desktop_chrome_deb_path }}"
+    mode: "0644"
+    checksum: "{{ icewm_desktop_chrome_checksum | trim or omit }}"
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_browser == 'chrome'
+    - ansible_architecture in ['x86_64', 'amd64']
+
+- name: Install Google Chrome package
+  ansible.builtin.apt:
+    deb: "{{ icewm_desktop_chrome_deb_path }}"
+    state: present
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_browser == 'chrome'
+    - ansible_architecture in ['x86_64', 'amd64']
+
+- name: Install Chromium browser fallback
+  ansible.builtin.apt:
+    name: "{{ icewm_desktop_chromium_package }}"
+    state: present
+    install_recommends: false
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_browser == 'chromium' or ansible_architecture not in ['x86_64', 'amd64']
+
+- name: Install optional XRDP remote desktop packages
+  ansible.builtin.apt:
+    name: "{{ icewm_desktop_remote_packages }}"
+    state: present
+    install_recommends: false
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_manage_user | bool
+
+- name: Ensure IceWM desktop user exists
+  ansible.builtin.user:
+    name: "{{ icewm_desktop_user }}"
+    shell: /bin/bash
+    create_home: true
+    groups: "{{ icewm_desktop_user_groups }}"
+    append: true
+    state: present
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_manage_user | bool
+
+- name: Require a password for XRDP-managed users
+  ansible.builtin.assert:
+    that:
+      - icewm_desktop_user_password | length > 0
+    fail_msg: "icewm_desktop_user_password must be set when managing an XRDP user."
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_remote_enabled | bool
+    - icewm_desktop_manage_user | bool
+
+- name: Set IceWM desktop user password
+  ansible.builtin.user:
+    name: "{{ icewm_desktop_user }}"
+    password: "{{ icewm_desktop_user_password | password_hash('sha512') }}"
+    update_password: on_create
+    password_lock: false
+  become: true
+  no_log: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_remote_enabled | bool
+    - icewm_desktop_manage_user | bool
+    - not ansible_check_mode
+
+- name: Configure IceWM user session
+  ansible.builtin.template:
+    src: xsession.j2
+    dest: "/home/{{ icewm_desktop_user }}/.xsession"
+    owner: "{{ icewm_desktop_user }}"
+    group: "{{ icewm_desktop_user }}"
+    mode: '0644'
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_manage_user | bool
+
+- name: Ensure IceWM user configuration directory exists
+  ansible.builtin.file:
+    path: "/home/{{ icewm_desktop_user }}/.icewm"
+    state: directory
+    owner: "{{ icewm_desktop_user }}"
+    group: "{{ icewm_desktop_user }}"
+    mode: "0755"
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_manage_user | bool
+
+- name: Install AI Desktop IceWM preferences
+  ansible.builtin.template:
+    src: preferences.j2
+    dest: "/home/{{ icewm_desktop_user }}/.icewm/preferences"
+    owner: "{{ icewm_desktop_user }}"
+    group: "{{ icewm_desktop_user }}"
+    mode: "0644"
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_manage_user | bool
+
+- name: Install AI Desktop IceWM key bindings
+  ansible.builtin.template:
+    src: keys.j2
+    dest: "/home/{{ icewm_desktop_user }}/.icewm/keys"
+    owner: "{{ icewm_desktop_user }}"
+    group: "{{ icewm_desktop_user }}"
+    mode: "0644"
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_manage_user | bool
+
+- name: Install AI Desktop IceWM application menu
+  ansible.builtin.template:
+    src: menu.j2
+    dest: "/home/{{ icewm_desktop_user }}/.icewm/menu"
+    owner: "{{ icewm_desktop_user }}"
+    group: "{{ icewm_desktop_user }}"
+    mode: "0644"
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_manage_user | bool
+
+- name: Enable and start XRDP services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - xrdp-sesman
+    - xrdp
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_remote_enabled | bool

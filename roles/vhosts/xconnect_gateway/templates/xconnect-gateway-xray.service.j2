@@ -6,6 +6,11 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
+{% if xconnect_gateway_frontend == 'caddy-unix-h2c' %}
+Group={{ xconnect_gateway_socket_group }}
+RuntimeDirectory=xconnect-gateway
+RuntimeDirectoryMode=0750
+{% endif %}
 ExecStart={{ xconnect_gateway_xray_binary_path }} run -config {{ xconnect_gateway_state_dir }}/runtime/xray.json
 Restart=on-failure
 RestartSec=3

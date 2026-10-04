@@ -1,0 +1,228 @@
+---
+- name: Validate immutable GitOps and image identities
+  ansible.builtin.assert:
+    that:
+      - zitadel_gitops_url is match('^https://github.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+[.]git$')
+      - zitadel_gitops_revision is match('^[0-9a-f]{40}$')
+      - zitadel_image is match('^ghcr[.]io/zitadel/zitadel@sha256:[0-9a-f]{64}$')
+      - zitadel_login_image is match('^ghcr[.]io/zitadel/zitadel-login@sha256:[0-9a-f]{64}$')
+      - zitadel_doco_cd_image is match('^ghcr[.]io/kimdre/doco-cd@sha256:[0-9a-f]{64}$')
+    fail_msg: Provide the reviewed GitOps SHA and digest-pinned images.
+
+- name: Check for legacy IAM stack that requires explicit adoption
+  ansible.builtin.stat:
+    path: "{{ zitadel_workspace }}/docker-compose.yaml"
+  register: zitadel_legacy_compose
+
+- name: Prevent two deployment owners from managing the same IAM host
+  ansible.builtin.assert:
+    that: not zitadel_legacy_compose.stat.exists
+    fail_msg: Legacy Compose found; plan an explicit data-preserving adoption first.
+
+- name: Validate Vault-sourced service secrets without logging them
+  ansible.builtin.assert:
+    that:
+      - zitadel_masterkey | length == 32
+      - zitadel_masterkey != 'MasterkeyNeedsToHave32Characters'
+      - zitadel_admin_password_override | length >= 8
+      - zitadel_admin_password_override is search('[^A-Za-z0-9]')
+      - lookup('ansible.builtin.env', 'ZITADEL_PG_PASSWORD') | length > 0
+      - zitadel_db_admin_password | length > 0
+      - zitadel_login_session_cookie_secret | length >= 32
+      - "'\n' not in zitadel_login_session_cookie_secret"
+      - "'\r' not in zitadel_login_session_cookie_secret"
+      - "\"'\" not in zitadel_login_session_cookie_secret"
+      - "\"'\" not in zitadel_domain"
+    fail_msg: Missing or invalid Vault IAM/database credentials.
+  no_log: true
+
+- name: Ensure protected host configuration and persistent bootstrap directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - /etc/xcontrol/zitadel
+    - "{{ zitadel_workspace }}"
+
+- name: Read persisted ZITADEL masterkey before update
+  ansible.builtin.stat:
+    path: /etc/xcontrol/zitadel/masterkey
+  register: zitadel_masterkey_stat
+
+- name: Load persisted masterkey for preservation check
+  ansible.builtin.slurp:
+    src: /etc/xcontrol/zitadel/masterkey
+  register: zitadel_existing_masterkey
+  when: zitadel_masterkey_stat.stat.exists
+  no_log: true
+
+- name: Reject accidental masterkey rotation on existing data
+  ansible.builtin.assert:
+    that: (zitadel_existing_masterkey.content | b64decode) == zitadel_masterkey
+    fail_msg: Existing masterkey differs; use an explicit recovery procedure.
+  when: zitadel_masterkey_stat.stat.exists
+  no_log: true
+
+- name: Render runtime-only configuration and login secret
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/etc/xcontrol/zitadel/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0600"
+  loop:
+    - {src: config.yaml.j2, dest: config.yaml}
+    - {src: login.env.j2, dest: login.env}
+  no_log: true
+
+- name: Persist unchanged ZITADEL masterkey without command-line exposure
+  ansible.builtin.copy:
+    content: "{{ zitadel_masterkey }}"
+    dest: /etc/xcontrol/zitadel/masterkey
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Ensure Caddy fragment directory
+  ansible.builtin.file:
+    path: "{{ zitadel_caddy_conf_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Configure public IAM entry
+  ansible.builtin.template:
+    src: zitadel-site.caddy.j2
+    dest: "{{ zitadel_caddy_fragment_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy
+
+- name: Validate Caddy entry before continuing
+  ansible.builtin.command:
+    argv: [caddy, validate, --config, "{{ zitadel_caddyfile_path }}"]
+  changed_when: false
+
+# Apply the validated entry now, on every run. A notified handler is dropped
+# when the play fails before flushing (for example while waiting for the
+# stack), and later runs see an unchanged fragment and never notify again, so
+# Caddy kept serving a config without iam.svc.plus. A Caddy reload is
+# graceful and a no-op for an unchanged config.
+- name: Apply validated Caddy entry
+  ansible.builtin.service:
+    name: caddy
+    state: reloaded
+
+- name: Rebuild the ZITADEL database of an unbootstrapped instance
+  ansible.builtin.include_tasks: reset-unbootstrapped.yml
+  when: zitadel_reset_unbootstrapped_instance | bool
+
+- name: Install independently scoped IAM GitOps reconciler
+  ansible.builtin.include_role:
+    name: vhosts/Doco-CD
+  vars:
+    doco_cd_image: "{{ zitadel_doco_cd_image }}"
+    doco_cd_base_dir: /opt/doco-cd-zitadel
+    doco_cd_project_name: doco-cd-zitadel
+    doco_cd_container_name: doco-cd-zitadel
+    doco_cd_webhook_port: 127.0.0.1:9081
+    doco_cd_metrics_port: 127.0.0.1:9121
+    doco_cd_enable_webhook: false
+    doco_cd_poll_config:
+      - url: "{{ zitadel_gitops_url }}"
+        reference: "{{ zitadel_gitops_revision }}"
+        target: zitadel
+        interval: 60
+
+# A healthy reconciler can still fail to deploy the stack. Without its log the
+# only symptom is "no such object: shared-zitadel-*", so report what Doco-CD
+# and Docker saw before failing.
+- name: Wait for Doco-CD to reconcile the ZITADEL stack
+  block:
+    - name: Wait for API and Login stack to match GitOps digests and become healthy
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{{ '{{' }}.Config.Image{{ '}}' }} {{ '{{' }}.State.Health.Status{{ '}}' }}"
+          - "shared-zitadel-{{ item.service }}-1"
+      register: zitadel_gitops_health
+      until: zitadel_gitops_health.rc == 0 and (zitadel_gitops_health.stdout | trim) == (item.image ~ ' healthy')
+      # Covers a first-instance setup inside the API's 300s start_period.
+      retries: 60
+      delay: 10
+      changed_when: false
+      loop:
+        - {service: zitadel, image: "{{ zitadel_image }}"}
+        - {service: login, image: "{{ zitadel_login_image }}"}
+  rescue:
+    - name: Read the Doco-CD reconciliation log
+      ansible.builtin.command:
+        argv: [docker, logs, --tail, "120", doco-cd-zitadel]
+      register: zitadel_doco_cd_log
+      changed_when: false
+      failed_when: false
+
+    - name: Check whether the Login client PAT was written
+      ansible.builtin.stat:
+        path: "{{ zitadel_workspace }}/login-client.pat"
+      register: zitadel_rescue_login_pat
+
+    - name: Read the ZITADEL stack container state
+      ansible.builtin.command:
+        argv:
+          - docker
+          - ps
+          - --all
+          - --filter
+          - label=com.docker.compose.project=shared-zitadel
+          - --format
+          - "{{ '{{' }}.Names{{ '}}' }} {{ '{{' }}.Image{{ '}}' }} {{ '{{' }}.Status{{ '}}' }}"
+      register: zitadel_stack_state
+      changed_when: false
+      failed_when: false
+
+    # An unhealthy service only shows up as "... is unhealthy" in the
+    # reconciler log; its own probe output and log carry the actual cause.
+    - name: Read the ZITADEL service health probe results
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{{ '{{' }}json .State.Health{{ '}}' }}"
+          - "shared-zitadel-{{ item }}-1"
+      loop: [zitadel, login]
+      register: zitadel_service_health
+      changed_when: false
+      failed_when: false
+
+    - name: Read the ZITADEL service logs
+      ansible.builtin.command:
+        argv: [docker, logs, --tail, "60", "shared-zitadel-{{ item }}-1"]
+      loop: [zitadel, login]
+      register: zitadel_service_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Fail with the reconciler evidence
+      ansible.builtin.fail:
+        msg: >-
+          ZITADEL stack did not reach the GitOps digests.
+          Login client PAT present: {{ zitadel_rescue_login_pat.stat.exists | default(false) }}.
+          Containers: {{ zitadel_stack_state.stdout_lines | default([]) }}.
+          {% for result in zitadel_service_health.results | default([]) %}
+          {{ result.item }} health: {{ result.stdout | default('') }}.
+          {% endfor %}
+          {% for result in zitadel_service_logs.results | default([]) %}
+          {{ result.item }} log: {{ (result.stdout_lines | default([])) + (result.stderr_lines | default([])) }}.
+          {% endfor %}
+          Doco-CD log: {{ (zitadel_doco_cd_log.stdout_lines | default([])) + (zitadel_doco_cd_log.stderr_lines | default([])) }}
+
+- name: Run any remaining notified handlers
+  ansible.builtin.meta: flush_handlers

@@ -10,6 +10,12 @@ vector_batch_timeout: 5
 vector_batch_max_events: 500
 vector_buffer_max_events: 1000
 
+# Stable labels on every metric and log let shared backends separate UAT and
+# PROD without relying on host IPs.
+vector_observability_environment: "{{ lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('unknown', true) }}"
+vector_observability_provider: "{{ cloud_provider | default('unknown', true) }}"
+vector_observability_service_domain: "{{ observability_service_domain | default(inventory_hostname, true) }}"
+
 # Disk buffer & rate limiting optimization for off-peak snapshot fanout
 vector_disk_buffer_max_bytes: 536870912 # 512 MiB persistent disk buffer
 vector_sink_rate_limit_num: 5 # Rate limit to prevent IO/bandwidth spikes
@@ -21,3 +27,46 @@ vector_billing_ingest_enabled: false
 vector_billing_ingest_address: "127.0.0.1:8686"
 vector_billing_ingest_url: ""
 vector_billing_ingest_token: ""
+
+# Minimal Debian nodes often only retain systemd journals. Opt in per node to
+# avoid duplicating syslog streams on existing fleet installations.
+vector_system_journald_enabled: false
+vector_system_journald_units:
+  - xconnect-edge-agent.service
+  - agent-proxy.service
+  - agent-svc-plus.service
+  - caddy.service
+  - xray.service
+  - xray-tcp.service
+
+# Opt in on the AI Aggregator gateway host. Application metrics remain on
+# loopback and Vector forwards them through the existing authenticated sink.
+vector_ai_aggregator_enabled: false
+vector_ai_aggregator_metrics_targets:
+  - name: apisix
+    endpoint: http://127.0.0.1:9091/apisix/prometheus/metrics
+  - name: litellm
+    endpoint: http://127.0.0.1:4000/metrics
+vector_ai_aggregator_probe_targets:
+  - name: apisix
+    target: 127.0.0.1:9080
+    module: tcp_connect
+  - name: new-api
+    target: http://127.0.0.1:3000/api/status
+    module: http_2xx
+  - name: litellm
+    target: 127.0.0.1:4000
+    module: tcp_connect
+  - name: cpa-0
+    target: 127.0.0.1:8317
+    module: tcp_connect
+  - name: cpa-1
+    target: 127.0.0.1:8318
+    module: tcp_connect
+  - name: cpa-2
+    target: 127.0.0.1:8319
+    module: tcp_connect
+  - name: cpa-3
+    target: 127.0.0.1:8320
+    module: tcp_connect
+vector_ai_aggregator_public_target: ""

@@ -60,10 +60,16 @@ flowchart LR
 ### 2.2 Model Context Protocol (MCP) Server 阵列 Endpoints
 | MCP 服务组件 | 容器服务名 | 宿主机端口 | Caddy 统一网关路径 (Legacy & AI Standard) | 默认状态 |
 | :--- | :--- | :--- | :--- | :--- |
-| **Grafana MCP Server** | `xstream_mcp_grafana` | `127.0.0.1:8000` | `/mcp/grafana/mcp`<br>`/mcp/v1/grafana/mcp` | 默认启用 |
-| **VictoriaMetrics MCP Server** | `xstream_mcp_victoriametrics` | `127.0.0.1:8088` | `/mcp/victoriametrics/mcp`<br>`/mcp/v1/metrics/mcp` | 默认启用 |
-| **VictoriaLogs MCP Server** | `xstream_mcp_victorialogs` | `127.0.0.1:8081` | `/mcp/victorialogs/mcp`<br>`/mcp/v1/logs/mcp` | 默认关闭（8081 由 xray-exporter 占用） |
-| **VictoriaTraces MCP Server** | `xstream_mcp_victoriatraces` | `127.0.0.1:8082` | `/mcp/victoriatraces/mcp`<br>`/mcp/v1/traces/mcp` | 默认启用 |
+| **Grafana MCP Server** | `xstream_mcp_grafana` | `127.0.0.1:8000` | `/mcp/grafana/mcp`<br>`/mcp/v1/grafana/mcp` | 默认关闭，可单独启用 |
+| **VictoriaMetrics MCP Server** | `xstream_mcp_victoriametrics` | `127.0.0.1:8088` | `/mcp/victoriametrics/mcp`<br>`/mcp/v1/metrics/mcp` | 默认关闭，可单独启用 |
+| **VictoriaLogs MCP Server** | `xstream_mcp_victorialogs` | `127.0.0.1:8083` | `/mcp/victorialogs/mcp`<br>`/mcp/v1/logs/mcp` | 默认关闭，可单独启用 |
+| **VictoriaTraces MCP Server** | `xstream_mcp_victoriatraces` | `127.0.0.1:8082` | `/mcp/victoriatraces/mcp`<br>`/mcp/v1/traces/mcp` | 默认关闭，可单独启用 |
+
+四个服务都由 Compose 模板声明，但不是核心服务部署的必需依赖。默认总开关
+`observability_mcp_enabled` 为 `false`；启用 MCP 时将总开关设为 `true`，再将
+需要的 `observability_mcp_<service>_enabled` 单独设为 `true`。关闭某项会同时从
+Compose、Caddy ingress 和 Prometheus scrape 配置中移除该项。每个 MCP 的端口
+变量也用于这三处配置，保证端口修改后服务、代理和抓取目标保持一致。
 
 ---
 
@@ -71,7 +77,7 @@ flowchart LR
 
 ```yaml
 # 全局控制变量
-observability_mcp_enabled: true
+observability_mcp_enabled: false
 observability_mcp_network: "observability"
 observability_mcp_bind_address: "127.0.0.1"
 
@@ -91,7 +97,7 @@ The server dry-run reports a warning when this field is absent; a real
 deployment still fails closed until the token is present.
 
 # Grafana MCP Server
-observability_mcp_grafana_enabled: true
+observability_mcp_grafana_enabled: false
 observability_mcp_grafana_image: "grafana/mcp-grafana:latest"
 observability_mcp_grafana_port: 8000
 observability_mcp_grafana_transport: "streamable-http"
@@ -101,18 +107,18 @@ observability_mcp_grafana_service_account_token: ""
 observability_mcp_grafana_allowed_hosts: "observability.svc.plus,127.0.0.1,127.0.0.1:8000,localhost,localhost:8000"
 
 # VictoriaMetrics MCP Server
-observability_mcp_victoriametrics_enabled: true
+observability_mcp_victoriametrics_enabled: false
 observability_mcp_victoriametrics_image: "ghcr.io/victoriametrics/mcp-victoriametrics:latest"
 observability_mcp_victoriametrics_port: 8088
 observability_mcp_victoriametrics_mode: "http"
 observability_mcp_victoriametrics_entrypoint: "http://victoria-metrics:8428"
-observability_mcp_victoriametrics_instance_type: "cluster"
+observability_mcp_victoriametrics_instance_type: "single"
 observability_mcp_victoriametrics_bearer_token: ""
 
-# VictoriaLogs MCP Server（默认关闭，避免与 xray-exporter 的 8081 端口冲突）
+# VictoriaLogs MCP Server
 observability_mcp_victorialogs_enabled: false
 observability_mcp_victorialogs_image: "ghcr.io/victoriametrics/mcp-victorialogs:latest"
-observability_mcp_victorialogs_port: 8081
+observability_mcp_victorialogs_port: 8083
 observability_mcp_victorialogs_entrypoint: "http://victoria-logs:9428"
 observability_mcp_victorialogs_bearer_token: ""
 

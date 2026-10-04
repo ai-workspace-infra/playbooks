@@ -1,0 +1,20 @@
+name: ZITADEL Doco-CD contract
+on:
+  pull_request:
+    paths:
+      - deploy_zitadel_docker.yaml
+      - deploy_iam_domain.yml
+      - roles/docker/zitadel/**
+      - roles/vhosts/Doco-CD/**
+      - tests/test_zitadel_doco_contract.py
+      - .github/workflows/zitadel-doco-contract.yml
+permissions:
+  contents: read
+jobs:
+  ownership:
+    name: ZITADEL Doco-CD ownership contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install 'pyyaml==6.0.2' 'jinja2==3.1.6'
+      - run: python3 -m unittest discover -s tests -p test_zitadel_doco_contract.py

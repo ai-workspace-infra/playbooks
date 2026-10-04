@@ -1,0 +1,32 @@
+---
+# Portable single-node Raft server. No init, unseal, or root token is handled
+# here; the operator performs those steps outside CI after installation.
+- name: Install a single Vault server with integrated storage
+  hosts: "{{ vault_single_node_group | default('vault_single_node') }}"
+  become: true
+  gather_facts: true
+  vars:
+    vault_deploy_mode: standalone
+    vault_storage_backend: raft
+    vault_ha_enabled: false
+    vault_raft_expected_members: 1
+    vault_admin_addr: http://127.0.0.1:8200
+    vault_listen_addr: "{{ vault_single_listen_addr | default('0.0.0.0:8200') }}"
+    vault_raft_node_id: "{{ inventory_hostname }}"
+    vault_raft_api_addr: "http://{{ hostvars[inventory_hostname].vault_shared_private_ip }}:8200"
+    vault_raft_cluster_addr: "https://{{ hostvars[inventory_hostname].vault_shared_private_ip }}:8201"
+    vault_raft_listener_cluster_addr: "{{ hostvars[inventory_hostname].vault_shared_private_ip }}:8201"
+    vault_raft_retry_join: []
+  pre_tasks:
+    - name: Require private address, one selected host and no swap
+      ansible.builtin.assert:
+        that:
+          - groups[vault_single_node_group | default('vault_single_node')] | length == 1
+          - hostvars[inventory_hostname].vault_shared_private_ip is match('^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)')
+          - ansible_swaptotal_mb | int == 0
+        fail_msg: >-
+          Single-node Raft requires exactly one host, a private node address,
+          no swap, and firewalls that keep 8200/8201 off the public Internet.
+  roles:
+    - role: vhosts/vault
+  tags: [vault-single-raft]

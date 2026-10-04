@@ -1,0 +1,15 @@
+[Unit]
+Description=Configure XConnect One overlay DNS for {{ xconnect_one_environment }}
+After=network-online.target systemd-resolved.service
+Wants=network-online.target systemd-resolved.service
+
+[Service]
+Type=oneshot
+ExecStart={{ xconnect_one_dns_script_path }}
+RemainAfterExit=true
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

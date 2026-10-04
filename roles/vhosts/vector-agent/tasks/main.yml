@@ -4,9 +4,25 @@
     vector_arch: >-
       {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
 
+- name: Resolve Blackbox defaults needed by the namespaced defaults file
+  tags: [vector-blackbox-defaults]
+  ansible.builtin.set_fact:
+    blackbox_version: "{{ blackbox_version | default('0.27.0', true) }}"
+    blackbox_probe_domain_base: >-
+      {{ blackbox_probe_domain_base | default(lookup('ansible.builtin.env', 'TARGET_DOMAIN_BASE') | default('svc.plus', true), true) }}
+    blackbox_probe_env: >-
+      {{ blackbox_probe_env | default(lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('production', true), true) }}
+
+- name: Resolve Blackbox environment suffix before loading the defaults file
+  tags: [vector-blackbox-defaults]
+  ansible.builtin.set_fact:
+    blackbox_probe_env_suffix: >-
+      {{ blackbox_probe_env_suffix | default('' if blackbox_probe_domain_base == 'svc.plus' else '-' ~ blackbox_probe_env, true) }}
+
 - name: Load Blackbox probe defaults
+  tags: [vector-blackbox-defaults]
   ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/roles/vhosts/blackbox_exporter/defaults/main.yml"
+    file: "{{ role_path }}/../blackbox_exporter/defaults/main.yml"
     name: blackbox_exporter_role_defaults
 
 # The Blackbox defaults are loaded under a namespace so this role does not
@@ -16,6 +32,7 @@
 # namespaced expression is rendered on the target with undefined variables and
 # Vector receives no blackbox sources at all.
 - name: Resolve Blackbox probe base and environment
+  tags: [vector-blackbox-defaults]
   ansible.builtin.set_fact:
     blackbox_probe_domain_base: >-
       {{ blackbox_probe_domain_base | default(
@@ -25,12 +42,14 @@
            blackbox_exporter_role_defaults.blackbox_probe_env, true) }}
 
 - name: Resolve Blackbox probe environment suffix
+  tags: [vector-blackbox-defaults]
   ansible.builtin.set_fact:
     blackbox_probe_env_suffix: >-
       {{ blackbox_probe_env_suffix | default(
            blackbox_exporter_role_defaults.blackbox_probe_env_suffix, true) }}
 
 - name: Resolve Blackbox SSL targets
+  tags: [vector-blackbox-defaults]
   ansible.builtin.set_fact:
     blackbox_ssl_targets: >-
       {{ blackbox_ssl_targets | default(
@@ -98,8 +117,32 @@
     owner: "{{ vector_user }}"
     group: "{{ vector_group }}"
     mode: '0600'
-  no_log: "{{ vector_billing_ingest_enabled | bool }}"
+  no_log: "{{ vector_billing_ingest_enabled | bool or (vector_auth_password | default('') | length > 0) }}"
   notify: Restart vector
+
+- name: Validate rendered Vector configuration before service start
+  ansible.builtin.shell: |
+    set -o pipefail
+    /usr/bin/vector validate --no-environment --config-toml "{{ vector_config_dir }}/vector.toml" 2>&1 |
+      sed -E \
+        -e 's/(Authorization[[:space:]]*=[[:space:]]*")[^"]*"/\1<redacted>"/Ig' \
+        -e 's/(Bearer[[:space:]]+)[^[:space:]]+/\1<redacted>/Ig' \
+        -e 's/((token|password|secret)[[:space:]]*[=:][[:space:]]*")[^"]*"/\1<redacted>"/Ig' \
+        -e 's/((token|password|secret)[[:space:]]*[=:][[:space:]]*)[^[:space:]]+/\1<redacted>/Ig'
+  args:
+    executable: /bin/bash
+  register: vector_config_validation
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Reject invalid rendered Vector configuration
+  ansible.builtin.fail:
+    msg: >-
+      Rendered Vector configuration failed validation. The sanitized Vector
+      diagnostic follows:
+      {{ vector_config_validation.stdout | default('no diagnostic output') | trim }}
+  when: not ansible_check_mode and vector_config_validation.rc | int != 0
 
 - name: Create systemd override directory for Vector
   ansible.builtin.file:
@@ -116,8 +159,57 @@
     - Reload systemd
     - Restart vector
 
-- name: Enable and start Vector service
-  ansible.builtin.systemd:
-    name: vector
-    enabled: true
-    state: started
+- name: Enable and start Vector service with safe failure diagnostics
+  block:
+    - name: Enable and start Vector service
+      ansible.builtin.systemd:
+        name: vector
+        enabled: true
+        state: started
+      when: not ansible_check_mode
+  rescue:
+    - name: Read Vector service state after failed start
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - vector.service
+          - -p
+          - ActiveState
+          - -p
+          - SubState
+          - -p
+          - Result
+          - -p
+          - ExecMainCode
+          - -p
+          - ExecMainStatus
+          - -p
+          - NRestarts
+      register: vector_service_state
+      changed_when: false
+      failed_when: false
+
+    - name: Read sanitized Vector journal after failed start
+      ansible.builtin.shell: |
+        set -o pipefail
+        journalctl -u vector.service -b --no-pager -n 80 2>&1 |
+          sed -E \
+            -e 's/(Authorization[[:space:]]*=[[:space:]]*")[^"]*"/\1<redacted>"/Ig' \
+            -e 's/(Bearer[[:space:]]+)[^[:space:]]+/\1<redacted>/Ig' \
+            -e 's/((token|password|secret)[[:space:]]*[=:][[:space:]]*")[^"]*"/\1<redacted>"/Ig' \
+            -e 's/((token|password|secret)[[:space:]]*[=:][[:space:]]*)[^[:space:]]+/\1<redacted>/Ig'
+      args:
+        executable: /bin/bash
+      register: vector_service_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Fail with safe Vector service diagnostics
+      ansible.builtin.fail:
+        msg: >-
+          Vector service failed to start.
+          systemd state:
+          {{ vector_service_state.stdout | default('unavailable') | trim }}
+          Sanitized journal:
+          {{ vector_service_journal.stdout | default('unavailable') | trim }}

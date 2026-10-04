@@ -1,0 +1,269 @@
+name: Serverless Database Operations
+
+on:
+  workflow_call:
+    outputs:
+      data_run_id:
+        description: Run ID of this child database operation; this is a locator, not backup or restore proof.
+        value: ${{ jobs.database_operation.outputs.data_run_id }}
+    inputs:
+      environment:
+        description: Target environment (uat or prod).
+        required: true
+        type: string
+      operation:
+        description: Database operation (checkpoint, probe, baseline, or migrate; init-schema is retired and fails closed).
+        required: true
+        type: string
+      release_tag:
+        description: Release or immutable snapshot tag.
+        required: false
+        default: ''
+        type: string
+      config_json:
+        description: >-
+          JSON object. checkpoint accepts require_durable_checkpoint. baseline and migrate
+          require checkpoint_run_id plus backup_receipt locator fields source_run_id,
+          source_repository, artifact_id, the exact artifact_name serverless-database-receipt,
+          and backup_sha256. The trusted artifact must contain only backup-receipt.json with the host's sanitized
+          same-environment encrypted /data backup and isolated restore evidence. migrate
+          also accepts repair_schema, expected_schema_version, target_schema_version,
+          and migration_sha256. A run ID or boolean alone is never restore proof.
+        required: false
+        default: '{}'
+        type: string
+      accounts_ref:
+        description: Accounts source ref fallback; migration uses the immutable release_tag as its source ref.
+        required: false
+        default: main
+        type: string
+      correlation_id:
+        description: Caller-provided operation correlation identifier.
+        required: true
+        type: string
+      toolkit_ref:
+        description: Optional toolkit ref for read-only snapshot evidence only; database operations use this Playbooks workflow's own snapshot.
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: serverless-database-${{ inputs.environment }}-${{ inputs.correlation_id }}
+  cancel-in-progress: false
+
+jobs:
+  database_operation:
+    name: ${{ inputs.environment }} / ${{ inputs.operation }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    outputs:
+      data_run_id: ${{ github.run_id }}
+    env:
+      VAULT_ADDR: ${{ vars.VAULT_ADDR || 'https://vault.svc.plus' }}
+      VAULT_ROLE: github-actions-platform-ops-toolkit-${{ inputs.environment }}
+      VAULT_ENV_PATH: ${{ inputs.environment }}
+      CONFIG_JSON: ${{ inputs.config_json }}
+      REQUESTED_ENVIRONMENT: ${{ inputs.environment }}
+      REQUESTED_OPERATION: ${{ inputs.operation }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      CORRELATION_ID: ${{ inputs.correlation_id }}
+    steps:
+      - name: Check out Playbooks execution owner
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+
+      - name: Validate request and evidence gates before Vault access
+        run: python3 scripts/data_operations/serverless/validate_serverless_operation.py
+
+      - name: Preflight trusted receipt run and metadata artifact before download
+        if: ${{ inputs.operation == 'baseline' || inputs.operation == 'migrate' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_REPOSITORY: ${{ github.repository }}
+          TRUSTED_CALLER_SHA: ${{ github.sha }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: python3 scripts/data_operations/serverless/verify_checkpoint_receipt.py --preflight
+
+      - name: Download sanitized trusted checkpoint receipt
+        if: ${{ inputs.operation == 'baseline' || inputs.operation == 'migrate' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ fromJSON(inputs.config_json).backup_receipt.artifact_name }}
+          repository: ${{ fromJSON(inputs.config_json).backup_receipt.source_repository }}
+          run-id: ${{ fromJSON(inputs.config_json).checkpoint_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/trusted-checkpoint-receipt
+
+      - name: Verify trusted source run and sanitized isolated restore receipt
+        id: checkpoint_receipt
+        if: ${{ inputs.operation == 'baseline' || inputs.operation == 'migrate' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_REPOSITORY: ${{ github.repository }}
+          TRUSTED_CALLER_SHA: ${{ github.sha }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: python3 scripts/data_operations/serverless/verify_checkpoint_receipt.py "$RUNNER_TEMP/trusted-checkpoint-receipt"
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Check out Accounts migration source
+        if: ${{ inputs.operation == 'migrate' }}
+        uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-services/accounts
+          ref: ${{ inputs.release_tag || inputs.accounts_ref }}
+          path: accounts
+
+      - name: Verify reviewed schema repair source
+        if: ${{ inputs.operation == 'migrate' && fromJSON(inputs.config_json).repair_schema == true }}
+        run: test "$(git -C accounts rev-parse HEAD)" = c2c343fe2c91bb31e7f7f9b4fa60512a66e2b4c9
+
+      - name: Set up Go for the official Accounts migrator
+        if: ${{ inputs.operation == 'migrate' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: accounts/go.mod
+          cache-dependency-path: accounts/go.sum
+
+      - name: Load database credentials from Vault with GitHub OIDC
+        id: vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          role: ${{ env.VAULT_ROLE }}
+          method: jwt
+          jwtGithubAudience: vault
+          secrets: |
+            ${{ fromJSON(inputs.config_json).supabase_vault_path || format('kv/data/{0}/serverless/supabase', inputs.environment) }} DATABASE_SESSION_POOLER_URL | TARGET_DSN ;
+            ${{ fromJSON(inputs.config_json).supabase_vault_path || format('kv/data/{0}/serverless/supabase', inputs.environment) }} PROJECT_REF | PROJECT_REF ;
+
+      - name: Load supplementary encrypted S3 checkpoint credentials
+        id: vault_checkpoint
+        if: ${{ inputs.operation == 'checkpoint' && fromJSON(inputs.config_json).require_durable_checkpoint == true }}
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          role: github-actions-platform-ops-toolkit-uat
+          method: jwt
+          jwtGithubAudience: vault
+          secrets: |
+            kv/data/CICD/uat/iac_state TF_STATE_BUCKET | S3_BUCKET ;
+            kv/data/CICD/uat/iac_state TF_STATE_ACCESS_KEY | AWS_ACCESS_KEY_ID ;
+            kv/data/CICD/uat/iac_state TF_STATE_SECRET_KEY | AWS_SECRET_ACCESS_KEY ;
+            kv/data/CICD/uat/iac_state TF_STATE_REGION | S3_REGION ;
+            kv/data/CICD/uat/iac_state TF_STATE_ENDPOINT | S3_ENDPOINT ;
+            kv/data/uat/serverless/database-backup BACKUP_ENCRYPTION_PASS | BACKUP_ENCRYPTION_PASS ;
+
+      - name: Load read-only serving probe identity from Vault
+        id: vault_gcp
+        if: ${{ inputs.operation == 'migrate' && fromJSON(inputs.config_json).repair_schema == true }}
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          role: github-actions-platform-ops-toolkit-uat
+          method: jwt
+          jwtGithubAudience: vault
+          secrets: |
+            kv/data/uat/serverless/gcp GCP_WORKLOAD_IDENTITY_PROVIDER | GCP_WORKLOAD_IDENTITY_PROVIDER ;
+            kv/data/uat/serverless/gcp GCP_SERVICE_ACCOUNT_EMAIL | GCP_SERVICE_ACCOUNT_EMAIL ;
+
+      - name: Authenticate for read-only Cloud Run repair evidence
+        if: ${{ inputs.operation == 'migrate' && fromJSON(inputs.config_json).repair_schema == true }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ steps.vault_gcp.outputs.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ steps.vault_gcp.outputs.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up gcloud for read-only serving evidence
+        if: ${{ inputs.operation == 'migrate' && fromJSON(inputs.config_json).repair_schema == true }}
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Create release checkpoint
+        if: ${{ inputs.operation == 'checkpoint' }}
+        run: scripts/data_operations/database/create_release_checkpoint.sh
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          DATABASE_BACKEND: supabase
+          DATABASE_ENV: ${{ inputs.environment }}
+          DATABASE_NAME: postgres
+          TARGET_DSN: ${{ steps.vault.outputs.TARGET_DSN }}
+          GIT_SHA: ${{ github.sha }}
+          REQUIRE_DURABLE_CHECKPOINT: ${{ fromJSON(inputs.config_json).require_durable_checkpoint == true && 'true' || 'false' }}
+          S3_BUCKET: ${{ steps.vault_checkpoint.outputs.S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ steps.vault_checkpoint.outputs.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.vault_checkpoint.outputs.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ steps.vault_checkpoint.outputs.S3_REGION }}
+          S3_REGION: ${{ steps.vault_checkpoint.outputs.S3_REGION }}
+          S3_ENDPOINT: ${{ steps.vault_checkpoint.outputs.S3_ENDPOINT }}
+          S3_PREFIX: database-checkpoints
+          BACKUP_ENCRYPTION_PASS: ${{ steps.vault_checkpoint.outputs.BACKUP_ENCRYPTION_PASS }}
+
+      # This existing encrypted S3 checkpoint is supplementary. It is not the
+      # same-environment /data backup and isolated restore receipt required by
+      # baseline and migration preflight.
+
+      - name: Probe Accounts schema without writes
+        if: ${{ inputs.operation == 'probe' }}
+        run: scripts/data_operations/serverless/probe_accounts_schema.sh
+        env:
+          TARGET_DSN: ${{ steps.vault.outputs.TARGET_DSN }}
+          PROJECT_REF: ${{ steps.vault.outputs.PROJECT_REF }}
+
+      - name: Adopt reviewed UAT Accounts baseline
+        if: ${{ inputs.operation == 'baseline' }}
+        run: scripts/data_operations/serverless/adopt_accounts_uat_baseline.sh
+        env:
+          TARGET_DSN: ${{ steps.vault.outputs.TARGET_DSN }}
+          PROJECT_REF: ${{ steps.vault.outputs.PROJECT_REF }}
+
+      - name: Capture private before-repair evidence
+        if: ${{ inputs.operation == 'migrate' && fromJSON(inputs.config_json).repair_schema == true }}
+        run: python3 scripts/data_operations/serverless/uat_schema_repair_evidence.py before --state "$RUNNER_TEMP/uat-repair-private.json" --report "$RUNNER_TEMP/uat-schema-repair-report.json"
+        env:
+          TARGET_DSN: ${{ steps.vault.outputs.TARGET_DSN }}
+          PROJECT_REF: ${{ steps.vault.outputs.PROJECT_REF }}
+          GCP_PROJECT_ID: open-platform-uat
+          GCP_REGION: ${{ fromJSON(inputs.config_json).gcp_region }}
+
+      - name: Apply reviewed Accounts incremental migration
+        id: migration_apply
+        if: ${{ inputs.operation == 'migrate' }}
+        run: scripts/data_operations/serverless/apply_accounts_incremental_schema.sh
+        env:
+          SNAPSHOT_TAG: ${{ inputs.release_tag }}
+          ACCOUNTS_DIR: ${{ github.workspace }}/accounts
+          TARGET_DSN: ${{ steps.vault.outputs.TARGET_DSN }}
+          PROJECT_REF: ${{ steps.vault.outputs.PROJECT_REF }}
+          ACCOUNTS_SCHEMA_EXPECTED_VERSION: ${{ fromJSON(inputs.config_json).expected_schema_version }}
+          ACCOUNTS_SCHEMA_TARGET_VERSION: ${{ fromJSON(inputs.config_json).target_schema_version }}
+          ACCOUNTS_SCHEMA_SHA256: ${{ fromJSON(inputs.config_json).migration_sha256 }}
+          RELEASE_CHECKPOINT_VERIFIED: ${{ steps.checkpoint_receipt.outputs.checkpoint_verified || 'false' }}
+
+      - name: Verify retained data and serving health after repair
+        if: ${{ inputs.operation == 'migrate' && fromJSON(inputs.config_json).repair_schema == true && success() }}
+        run: python3 scripts/data_operations/serverless/uat_schema_repair_evidence.py after --state "$RUNNER_TEMP/uat-repair-private.json" --report "$RUNNER_TEMP/uat-schema-repair-report.json"
+        env:
+          TARGET_DSN: ${{ steps.vault.outputs.TARGET_DSN }}
+          PROJECT_REF: ${{ steps.vault.outputs.PROJECT_REF }}
+          GCP_PROJECT_ID: open-platform-uat
+          GCP_REGION: ${{ fromJSON(inputs.config_json).gcp_region }}
+          OFFICIAL_MIGRATOR_REPEAT_VERIFIED: ${{ steps.migration_apply.outputs.official_migrator_repeat_verified }}
+
+      - name: Upload aggregate repair evidence only
+        if: ${{ inputs.operation == 'migrate' && fromJSON(inputs.config_json).repair_schema == true && success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: uat-schema-repair-${{ inputs.correlation_id }}
+          path: ${{ runner.temp }}/uat-schema-repair-report.json
+          if-no-files-found: error
+          retention-days: 7

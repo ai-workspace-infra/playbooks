@@ -1,0 +1,66 @@
+---
+# Shared Vault node service entrypoint. Each stage is independently selectable:
+#
+#   vault-shared-leader  install only vault-prod-0
+#   vault-shared-peers   install vault-prod-1/2 after the leader is initialized
+#   node-operator-prep   prepare/check root-only migration operator files
+#   node-process-metrics install node_exporter, process_exporter, and Vector
+#   vault-gateway-frontend  Caddy on vault-prod-0: TLS 443, /xconnect -> Gateway
+#                        Xray socket only (run before xconnect-gateway)
+#   vault-public-frontend   Caddy on all three Raft nodes: vault.svc.plus ->
+#                        each node's local Vault API (run before DNS cutover)
+#   xconnect-gateway     enroll vault-prod-0 (requires a one-use invite file)
+#   xconnect-one         enroll selected peer nodes (requires one-use invite files)
+#
+# Pass -e vault_shared_skip_common=true for these narrowly-scoped service
+# stages; the shared common dependency remains available to legacy callers.
+- import_playbook: deploy_vault_shared_raft.yml
+
+- name: Prepare Vault operator material on shared migration targets
+  hosts: "{{ vault_shared_all_group | default('vault_shared_nodes') }}"
+  become: true
+  gather_facts: false
+  roles:
+    - role: vhosts/vault_operator_material
+  tags: [node-operator-prep]
+
+- name: Install shared Vault node exporters and log agent
+  hosts: "{{ vault_shared_all_group | default('vault_shared_nodes') }}"
+  become: true
+  gather_facts: true
+  vars:
+    group: "{{ vault_shared_all_group | default('vault_shared_nodes') }}"
+    vault_shared_skip_common: true
+    vector_auth_user: "{{ lookup('ansible.builtin.env', 'VECTOR_AUTH_USER') | default('', true) }}"
+    vector_auth_password: "{{ lookup('ansible.builtin.env', 'VECTOR_AUTH_PASSWORD') | default('', true) }}"
+    vector_tls_verify: true
+  tasks:
+    - name: Install node_exporter
+      ansible.builtin.import_role:
+        name: vhosts/node_exporter
+    - name: Install process_exporter
+      ansible.builtin.import_role:
+        name: vhosts/process_exporter
+    - name: Configure Vector agent
+      ansible.builtin.import_role:
+        name: vhosts/vector-agent
+  tags: [node-process-metrics]
+
+- name: Front the shared Vault XConnect Gateway with Caddy
+  hosts: "{{ xconnect_gateway_hosts | default('xconnect_gateway') }}"
+  become: true
+  gather_facts: true
+  roles:
+    - role: vhosts/vault_gateway_frontend
+  tags: [vault-gateway-frontend]
+
+- name: Front each shared Vault Raft node with public HTTPS
+  hosts: "{{ vault_shared_all_group | default('vault_shared_nodes') }}"
+  become: true
+  gather_facts: true
+  roles:
+    - role: vhosts/vault_public_frontend
+  tags: [vault-public-frontend]
+
+- import_playbook: deploy_xconnect_gateway.yml
+- import_playbook: deploy_xconnect_one.yml

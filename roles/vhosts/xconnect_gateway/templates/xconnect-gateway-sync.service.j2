@@ -5,8 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart={{ xconnect_gateway_binary_path }} up --state-dir {{ xconnect_gateway_state_dir }} --tls-cert {{ xconnect_gateway_tls_cert_path }} --tls-key {{ xconnect_gateway_tls_key_path }}
+Environment="PATH={{ xconnect_gateway_xray_binary_path | dirname }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="XCONNECT_GATEWAY_FRONTEND={{ xconnect_gateway_frontend }}"
+Environment="XCONNECT_GATEWAY_LISTEN_SOCKET={{ xconnect_gateway_listen_socket }}"
+ExecStart={{ xconnect_gateway_binary_path }} up --state-dir {{ xconnect_gateway_state_dir }} --tls-cert {{ xconnect_gateway_tls_cert_path }} --tls-key {{ xconnect_gateway_tls_key_path }} --frontend {{ xconnect_gateway_frontend }} --listen-socket {{ xconnect_gateway_listen_socket }}
 ExecStartPost=/bin/systemctl restart xconnect-gateway-xray.service
+{% if xconnect_gateway_dns_enabled | bool %}
+ExecStartPost={{ xconnect_gateway_dns_sync_script_path }} --wireguard-config {{ xconnect_gateway_state_dir }}/runtime/{{ xconnect_gateway_dns_interface }}.conf --zone {{ xconnect_gateway_dns_zone }} --gateway-id {{ xconnect_gateway_id }} --hosts {{ xconnect_gateway_dns_hosts_path }} --aliases {{ xconnect_gateway_dns_aliases_path }} --reload --service {{ xconnect_gateway_dns_service_name }}
+{% endif %}
 NoNewPrivileges=true
 ProtectSystem=full
 ReadWritePaths={{ xconnect_gateway_state_dir }} /run /etc/xconnect-gateway /etc/wireguard

@@ -1,0 +1,42 @@
+---
+# Move the existing vault.svc.plus node to single-node Raft storage in place,
+# then hand off to deploy_vault_single_raft.yml to write the Raft config and
+# start the service. No init, unseal, or root token/unseal-share handling
+# happens here; see docs/vault/operator-runbook.md.
+- name: Convert the existing Vault to single-node Raft storage
+  hosts: "{{ vault_legacy_source_group | default('vault_legacy_source') }}"
+  become: true
+  gather_facts: true
+  vars:
+    vault_legacy_migration_action: convert
+  pre_tasks:
+    - name: Require exactly one declared legacy source host
+      ansible.builtin.assert:
+        that:
+          - groups[vault_legacy_source_group | default('vault_legacy_source')] | length == 1
+        fail_msg: Legacy migration targets exactly one existing Vault host.
+  roles:
+    - role: vhosts/vault_legacy_migration
+  tags: [vault-legacy-convert]
+
+- name: Roll back the existing Vault to its PostgreSQL backend
+  hosts: "{{ vault_legacy_source_group | default('vault_legacy_source') }}"
+  become: true
+  gather_facts: true
+  vars:
+    vault_legacy_migration_action: rollback
+  roles:
+    - role: vhosts/vault_legacy_migration
+  tags: [vault-legacy-rollback]
+
+- name: Retire the existing Vault after its Raft peer is removed
+  hosts: "{{ vault_legacy_source_group | default('vault_legacy_source') }}"
+  become: true
+  gather_facts: true
+  vars:
+    vault_legacy_migration_action: retire
+  roles:
+    - role: vhosts/vault_legacy_migration
+  tags: [vault-legacy-retire]
+
+- import_playbook: deploy_vault_single_raft.yml

@@ -18,6 +18,75 @@ type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:9256/metrics"]
 scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
 
+{% set ai_aggregator_remote_inputs = [] %}
+{% if vector_ai_aggregator_enabled | default(false) | bool %}
+{% for target in vector_ai_aggregator_metrics_targets | default([]) %}
+{% set target_id = target.name | regex_replace('[^A-Za-z0-9_]', '_') %}
+[sources.ai_aggregator_{{ target_id }}_metrics]
+type = "prometheus_scrape"
+endpoints = ["{{ target.endpoint }}"]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+
+[transforms.ai_aggregator_{{ target_id }}_labels]
+type = "remap"
+inputs = ["ai_aggregator_{{ target_id }}_metrics"]
+source = '''
+.tags.instance = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.job = "ai-aggregator"
+.tags.component = "{{ target.name }}"
+del(.tags.consumer)
+'''
+{% set _ = ai_aggregator_remote_inputs.append('ai_aggregator_' ~ target_id ~ '_labels') %}
+{% endfor %}
+{% for target in vector_ai_aggregator_probe_targets | default([]) %}
+{% set target_id = target.name | regex_replace('[^A-Za-z0-9_]', '_') %}
+[sources.ai_aggregator_{{ target_id }}_probe]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:9115/probe?module={{ target.module }}&target={{ target.target | urlencode }}"]
+scrape_interval_secs = 15
+scrape_timeout_secs = 5
+
+[transforms.ai_aggregator_{{ target_id }}_probe_labels]
+type = "remap"
+inputs = ["ai_aggregator_{{ target_id }}_probe"]
+source = '''
+.tags.instance = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.job = "ai-aggregator-probe"
+.tags.component = "{{ target.name }}"
+'''
+{% set _ = ai_aggregator_remote_inputs.append('ai_aggregator_' ~ target_id ~ '_probe_labels') %}
+{% endfor %}
+{% if vector_ai_aggregator_public_target | default('') | trim | length > 0 %}
+[sources.ai_aggregator_caddy_public_probe]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:9115/probe?module=https_ssl&target={{ vector_ai_aggregator_public_target | urlencode }}"]
+scrape_interval_secs = 60
+scrape_timeout_secs = 20
+
+[transforms.ai_aggregator_caddy_public_probe_labels]
+type = "remap"
+inputs = ["ai_aggregator_caddy_public_probe"]
+source = '''
+.tags.instance = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.job = "ai-aggregator-probe"
+.tags.component = "caddy-public"
+'''
+{% set _ = ai_aggregator_remote_inputs.append('ai_aggregator_caddy_public_probe_labels') %}
+{% endif %}
+{% endif %}
+
 {% set xray_exporter_enabled = vector_xray_exporter_enabled | default(inventory_hostname in groups.get('xray_exporter', []), true) | bool %}
 {% if xray_exporter_enabled %}
 [sources.xray_xhttp_metrics]
@@ -35,6 +104,10 @@ type = "remap"
 inputs = ["xray_xhttp_metrics"]
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
 .tags.job = "xray"
 .tags.transport = "xhttp"
 '''
@@ -44,6 +117,10 @@ type = "remap"
 inputs = ["xray_tcp_metrics"]
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
 .tags.job = "xray"
 .tags.transport = "tcp"
 '''
@@ -62,6 +139,10 @@ inputs = ["postgres_metrics"]
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
 .tags.job = "postgres"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
 '''
 {% endif %}
 
@@ -70,7 +151,17 @@ type = "remap"
 inputs = ["internal_metrics", "node_metrics", "process_metrics"]
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
-.tags.job = "xray"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.job = "vector"
+if exists(.name) && starts_with(string!(.name), "node_") {
+  .tags.job = "node-exporter"
+}
+if exists(.name) && starts_with(string!(.name), "namedprocess_") {
+  .tags.job = "process-exporter"
+}
 '''
 
 {% set ssl_targets = blackbox_ssl_targets | default(blackbox_exporter_role_defaults.blackbox_ssl_targets | default([])) %}
@@ -95,7 +186,10 @@ source = '''
    有意的集中收集, 区分靠标签而不是靠分开的后端。 #}
 .tags.company = "{{ blackbox_probe_domain_base | default('svc.plus') }}"
 .tags.project = "{{ blackbox_probe_domain_base | default('svc.plus') }}"
+.tags.environment = "{{ blackbox_probe_env | default(vector_observability_environment) }}"
 .tags.env = "{{ blackbox_probe_env | default('production') }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.service_domain = "{{ vector_observability_service_domain }}"
 .tags.name = "{{ target.name }}"
 .tags.target = "{{ target.url }}"
 '''
@@ -122,8 +216,8 @@ retry_max_duration_secs = 3600
 rate_limit_duration_secs = 1
 rate_limit_num = {{ vector_sink_rate_limit_num | default(5) }}
 [sinks.billing_snapshot_ingest.tls]
-verify_certificate = false
-verify_hostname = false
+verify_certificate = {{ 'true' if vector_tls_verify | default(false) | bool else 'false' }}
+verify_hostname = {{ 'true' if vector_tls_verify | default(false) | bool else 'false' }}
 [sinks.billing_snapshot_ingest.healthcheck]
 enabled = false
 [sinks.billing_snapshot_ingest.batch]
@@ -138,6 +232,9 @@ max_size = {{ vector_disk_buffer_max_bytes | default(536870912) }}
 [sinks.prometheus_remote]
 type = "prometheus_remote_write"
 {% set remote_inputs = ["add_labels"] %}
+{% for source_name in ai_aggregator_remote_inputs %}
+  {% set _ = remote_inputs.append(source_name) %}
+{% endfor %}
 {% if xray_exporter_enabled %}
   {% set _ = remote_inputs.append("add_xray_xhttp_labels") %}
   {% set _ = remote_inputs.append("add_xray_tcp_labels") %}
@@ -161,8 +258,8 @@ password = "{{ vector_auth_password }}"
 {% endif %}
 {% endif %}
 [sinks.prometheus_remote.tls]
-verify_certificate = false
-verify_hostname = false
+verify_certificate = {{ 'true' if vector_tls_verify | default(false) | bool else 'false' }}
+verify_hostname = {{ 'true' if vector_tls_verify | default(false) | bool else 'false' }}
 [sinks.prometheus_remote.healthcheck]
 enabled = false
 [sinks.prometheus_remote.batch]
@@ -192,12 +289,27 @@ include = ["/var/log/syslog", "/var/log/auth.log"]
 {% endif %}
 ignore_older_secs = 86400
 
+{% if vector_system_journald_enabled | default(false) | bool %}
+[sources.system_journal]
+type = "journald"
+current_boot_only = true
+include_units = {{ vector_system_journald_units | to_json }}
+{% endif %}
+
 [transforms.process_logs]
 type = "remap"
+{% if vector_system_journald_enabled | default(false) | bool %}
+inputs = ["system_logs", "system_journal"]
+{% else %}
 inputs = ["system_logs"]
+{% endif %}
 source = '''
 .instance = "{{ inventory_hostname }}"
 .host = "{{ inventory_hostname }}"
+.environment = "{{ vector_observability_environment }}"
+.env = "{{ vector_observability_environment }}"
+.provider = "{{ vector_observability_provider }}"
+.service_domain = "{{ vector_observability_service_domain }}"
 .source_type = "system_logs"
 '''
 
@@ -216,6 +328,10 @@ source = '''
 .host = "{{ inventory_hostname }}"
 .source_type = "docker_logs"
 .instance = "{{ inventory_hostname }}"
+.environment = "{{ vector_observability_environment }}"
+.env = "{{ vector_observability_environment }}"
+.provider = "{{ vector_observability_provider }}"
+.service_domain = "{{ vector_observability_service_domain }}"
 
 # Application services emit JSON slog/Node records. Promote the structured
 # fields so VictoriaLogs and Grafana can correlate logs with OTel spans.

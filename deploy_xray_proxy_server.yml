@@ -12,7 +12,7 @@
   vars:
 
     vault_env_path: "{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}"
-    vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+    vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default('', true) }}"
     vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('', true) }}"
     agent_proxy_repo_url: >-
       {{ lookup('ansible.builtin.env', 'AGENT_REPO_URL')
@@ -46,18 +46,15 @@
          | default('1.25.1', true) }}
     agent_id: >-
       {{ lookup('ansible.builtin.env', 'AGENT_ID')
-         | default('node-xhttp.svc.plus', true) }}
+         | default(hostvars[inventory_hostname].get('agent_id', inventory_hostname), true) }}
     agent_tls_cert_name: >-
       {{ lookup('ansible.builtin.env', 'AGENT_TLS_CERT_NAME')
          | default(agent_id, true) }}
-    agent_domain_tls_dir: >-
-      {{ lookup('ansible.builtin.env', 'AGENT_DOMAIN_TLS_DIR')
-         | default('/etc/xcontrol/tls/svc.plus', true) }}
     agent_tls_source_cert_path: "{{ agent_domain_tls_dir }}/current/fullchain.pem"
     agent_tls_source_key_path: "{{ agent_domain_tls_dir }}/current/key.pem"
     agent_controller_url: >-
       {{ lookup('ansible.builtin.env', 'AGENT_CONTROLLER_URL')
-         | default('https://accounts.svc.plus', true) }}
+         | default(hostvars[inventory_hostname].get('agent_controller_url', ''), true) }}
     # A newly provisioned replica is bootstrapped before public DNS is cut over.
     # The controller URL must keep its real hostname for TLS/SNI, while the
     # temporary address below lets the agent reach this run's web-saas host.
@@ -69,6 +66,12 @@
          | regex_replace('^https?://', '')
          | regex_replace('/.*$', '')
          | regex_replace(':.*$', '') }}
+    # Do not infer the environment from the region. A UAT JP node also has
+    # xconnect_pool=jp and must never receive a PROD compatibility hostname.
+    agent_proxy_environment: >-
+      {{ lookup('ansible.builtin.env', 'DEPLOY_ENV')
+         | default(lookup('ansible.builtin.env', 'VAULT_ENV_PATH')
+         | default('uat', true), true) }}
     # Keep the primary list separate because the legacy Caddy task temporarily
     # overrides agent_proxy_domains to render its own site fragment.
     agent_proxy_regional_domain: >-
@@ -80,24 +83,31 @@
              else '',
              true
            ), true) }}
-    agent_proxy_primary_domains:
-      - >-
-        {{ agent_proxy_regional_domain }}
-      - >-
-        {{ lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN')
-           | default(agent_id, true) }}
+    agent_proxy_primary_domains: >-
+      {{ hostvars[inventory_hostname].get('service_domains', [])
+         or ([agent_proxy_regional_domain] if agent_proxy_regional_domain else [])
+         or [lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN') | default(agent_id, true)] }}
     agent_proxy_domains: "{{ agent_proxy_primary_domains }}"
     # Explicit PROD compatibility hostname is rendered as a separate Caddy
     # site fragment so the legacy and primary files can coexist without
     # declaring the same site address twice. UAT/SIT leave this empty.
     agent_proxy_legacy_domain: >-
       {{ lookup('ansible.builtin.env', 'AGENT_PROXY_LEGACY_DOMAIN')
-         | default(
-             'tky-proxy.svc.plus'
-             if (agent_id is match('.*-(prod-jp|jpn-tky)\..*') or xconnect_pool | default('') == 'jp')
-             else '',
-             true
-           ) }}
+         | default(hostvars[inventory_hostname].get('agent_proxy_legacy_domain', ''), true) }}
+    vault_agent_tls_enabled: >-
+      {{ hostvars[inventory_hostname].get('vault_agent_tls_enabled',
+         lookup('ansible.builtin.env', 'AGENT_PROXY_VAULT_TLS_ENABLED') | default(false, true)) | bool }}
+    vault_agent_tls_secret_path: >-
+      {{ hostvars[inventory_hostname].get('vault_tls_secret_path',
+         lookup('ansible.builtin.env', 'VAULT_TLS_SECRET_PATH') | default('', true)) }}
+    vault_agent_tls_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('', true) }}"
+    vault_agent_tls_stage_dir: >-
+      {{ lookup('ansible.builtin.env', 'VAULT_AGENT_TLS_STAGE_DIR')
+         | default('/var/lib/vault-agent/tls', true) }}
+    agent_domain_tls_dir: >-
+      {{ vault_agent_tls_stage_dir if vault_agent_tls_enabled else
+         (lookup('ansible.builtin.env', 'AGENT_DOMAIN_TLS_DIR')
+          | default(hostvars[inventory_hostname].get('agent_domain_tls_dir', '/etc/xcontrol/tls/' ~ agent_tls_cert_name), true)) }}
     agent_api_token: >-
       {{ lookup('ansible.builtin.vars', 'INTERNAL_SERVICE_TOKEN', default=lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true)) }}
     agent_billing_enabled: >-
@@ -124,6 +134,12 @@
     agent_proxy_wait_for_runtime_config: >-
       {{ lookup('ansible.builtin.env', 'AGENT_PROXY_WAIT_FOR_RUNTIME_CONFIG')
          | default(false, true) | bool }}
+    # The existing Ulighthost relay may still have the legacy gateway unit
+    # bound to :443. Caddy is the supported regional entrypoint now, so stop
+    # that conflicting listener before rendering the conf.d sites.
+    tky_proxy_disable_legacy_xconnect_gateway: >-
+      {{ lookup('ansible.builtin.env', 'TKY_PROXY_DISABLE_LEGACY_GATEWAY')
+         | default(true, true) | bool }}
   pre_tasks:
 
     - name: Try to read agent-proxy secrets from Vault
@@ -197,5 +213,7 @@
 
   roles:
     - roles/vhosts/caddy
+    - role: roles/vhosts/vault-agent-tls
+      when: vault_agent_tls_enabled | bool
     - roles/vhosts/tky-proxy
     - roles/vhosts/agent-proxy

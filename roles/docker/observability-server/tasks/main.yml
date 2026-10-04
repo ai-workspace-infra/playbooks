@@ -25,6 +25,17 @@
     file: "{{ playbook_dir }}/roles/vhosts/blackbox_exporter/defaults/main.yml"
     name: blackbox_exporter_role_defaults
 
+- name: Check for an accidental OTEL config directory
+  ansible.builtin.stat:
+    path: "{{ observability_dir }}/otel/otel-collector.yml"
+  register: observability_otel_config_path
+
+- name: Remove an accidental OTEL config directory
+  ansible.builtin.file:
+    path: "{{ observability_dir }}/otel/otel-collector.yml"
+    state: absent
+  when: observability_otel_config_path.stat.isdir | default(false)
+
 - name: Read FinOps S3 secrets from Vault
   delegate_to: localhost
   become: false
@@ -126,6 +137,7 @@
   loop:
     - { src: 'docker-compose.yml.j2', dest: 'docker-compose.yml' }
     - { src: '.env.j2', dest: '.env' }
+    - { src: 'otel-collector.yml.j2', dest: 'otel/otel-collector.yml' }
     - { src: 'prometheus.yml.j2', dest: 'prometheus/prometheus.yml' }
     - { src: "{{ playbook_dir }}/roles/vhosts/blackbox_exporter/templates/blackbox.yml.j2", dest: 'blackbox/config.yml' }
     - { src: 'grafana-provisioning-datasources.yml.j2', dest: 'grafana/provisioning/datasources/datasources.yml' }
@@ -161,23 +173,29 @@
     - observability
     - observability_alerting
 
-- name: Copy Grafana dashboards
+- name: Discover Git-managed Grafana dashboard assets
+  ansible.builtin.set_fact:
+    observability_dashboard_files: >-
+      {{ lookup('ansible.builtin.fileglob', role_path ~ '/files/*.json', wantlist=True) | sort }}
+  tags:
+    - observability
+
+- name: Require a non-empty Git-managed Grafana dashboard bundle
+  ansible.builtin.assert:
+    that:
+      - observability_dashboard_files | length > 0
+    fail_msg: "No dashboard JSON files found in {{ role_path }}/files"
+  tags:
+    - observability
+
+- name: Copy every Git-managed Grafana dashboard
   ansible.builtin.copy:
     src: "{{ item }}"
-    dest: "{{ observability_dir }}/grafana/dashboards/{{ item }}"
+    dest: "{{ observability_dir }}/grafana/dashboards/{{ item | basename }}"
     mode: '0644'
-  loop:
-    - dashboard.json
-    - Node-Exporter-Dashboard.json
-    - process-exporter-dashboard-with-treemap.json
-    - homepage-navigation.json
-    - postgres-exporter-dashboard.json
-    - k6-performance-capacity-dashboard.json
-    - victoria-traces-dashboard.json
-    - blackbox-exporter-dashboard.json
-    - victoria-logs-overview.json
-    - serverless-edge-cloudrun-supabase-dashboard.json
-    - agent-ai-application-observability-dashboard.json
+  loop: "{{ observability_dashboard_files }}"
+  # Discover the role's JSON bundle instead of maintaining a second filename
+  # list. Any dashboard committed under files/ is now installed by this role.
   # Grafana provisions dashboards only during startup. A bind-mounted JSON
   # update alone leaves the running process on the prior revision.
   notify: Restart observability stack
@@ -204,6 +222,18 @@
   ansible.builtin.command: docker compose up -d --remove-orphans
   args:
     chdir: "{{ observability_dir }}"
+  tags:
+    - observability
+    - observability_mcp
+    - mcp
+
+- name: Ensure Caddy configuration directory for observability exists
+  ansible.builtin.file:
+    path: "{{ observability_caddy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
   tags:
     - observability
     - observability_mcp

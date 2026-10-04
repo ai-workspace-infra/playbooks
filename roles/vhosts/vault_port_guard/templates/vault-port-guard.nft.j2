@@ -1,0 +1,10 @@
+table inet {{ vault_port_guard_table }}
+delete table inet {{ vault_port_guard_table }}
+table inet {{ vault_port_guard_table }} {
+  chain input {
+    type filter hook input priority -10; policy accept;
+    iifname "lo" accept
+    iifname "{{ vault_port_guard_interface }}" tcp dport { {{ vault_port_guard_ports | join(', ') }} } accept
+    tcp dport { {{ vault_port_guard_ports | join(', ') }} } drop
+  }
+}

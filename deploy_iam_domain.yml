@@ -1,0 +1,34 @@
+---
+# Open Platform service unit: IAM (iam.svc.plus / Zitadel).
+# This unit is independently runnable on a new Open Platform host.  It owns
+# the shared PostgreSQL prerequisite and database roles, but it does not
+# bootstrap Vault or migrate any business data.
+- import_playbook: setup-postgres-standalone.yaml
+  vars:
+    # The workflow maps Vault's postgres_root_password to
+    # WEB_SAAS_POSTGRES_PASSWORD. Reuse that exact value for the Compose
+    # container and Zitadel's one-time init.
+    postgresql_admin_password: >-
+      {{ lookup('ansible.builtin.env', 'POSTGRESQL_ADMIN_PASSWORD')
+         | default(lookup('ansible.builtin.env', 'WEB_SAAS_POSTGRES_PASSWORD')
+         | default('', true), true) }}
+    postgresql_deploy_mode: compose
+    postgresql_container_name: postgresql-svc-plus
+    postgresql_networks:
+      - docker_postgres_network
+    postgresql_compose_project_dir: /opt/open-platform/postgres
+    postgresql_compose_env_file: /opt/open-platform/postgres/postgres.env
+    postgresql_data_dir: /opt/open-platform/postgres/data
+    # The generic node bootstrap may already provide native PostgreSQL on
+    # 127.0.0.1:5432.  IAM connects over docker_postgres_network, so use a
+    # separate host-side port and avoid taking over the existing listener.
+    postgresql_port: 15432
+    postgresql_install_pgvector: false
+- import_playbook: create_databases_and_users.yml
+- import_playbook: deploy_zitadel_docker.yaml
+  vars:
+    domain: iam.svc.plus
+    zitadel_db_admin_password: >-
+      {{ lookup('ansible.builtin.env', 'POSTGRESQL_ADMIN_PASSWORD')
+         | default(lookup('ansible.builtin.env', 'WEB_SAAS_POSTGRES_PASSWORD')
+         | default('', true), true) }}

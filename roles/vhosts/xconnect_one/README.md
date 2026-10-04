@@ -5,6 +5,16 @@ network. It is for fixed service nodes and temporary pipeline nodes; it does
 not configure a Gateway and never changes host firewall, SSH, hostname or
 default routing.
 
+The default join is intentionally minimal: observability and overlay DNS are
+off, foreign overlay release is off, and the role verifies that the exact host
+default route is unchanged after the join. Enable those features explicitly
+per node only after the overlay handshake and private connectivity pass.
+
+`xconnect_one_environment` accepts `uat`, `prod`, or `shared`. Use `shared`
+for shared-service nodes such as the Vault cluster; this only namespaces local
+state/configuration paths and telemetry labels, and does not reuse UAT/PROD
+network credentials.
+
 The controller must provide a reviewed CLI artifact and a short-lived join URI
 at runtime. The URI is written only to a mode `0600` transient file and is
 removed after the exchange. GitOps contains node identity, environment and
@@ -28,3 +38,12 @@ public CA into the system trust store before `join`/`sync`; it never reads Vault
 creates a CA, or accepts a Gateway private key. For the standard UAT Gateway,
 the source ultimately comes from the domain certificate record
 `kv/data/CICD/domains/svc.plus`, not from a runner-generated certificate.
+
+Set `xconnect_one_dns_enabled: true` with `xconnect_one_dns_server` pointing
+to the Gateway overlay address and `xconnect_one_dns_domains` containing the
+route-only private suffixes (for example `shared.internal` and `svc.plus`).
+The role uses `systemd-resolved` on the WireGuard interface, so public names
+continue to use the host's normal resolver while the declared private suffixes
+go to the Gateway DNS forwarder. It points `/etc/resolv.conf` at the
+`systemd-resolved` stub by default; set `xconnect_one_dns_manage_resolv_conf`
+to `false` when the host owns resolver configuration elsewhere.

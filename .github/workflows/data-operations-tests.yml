@@ -1,0 +1,42 @@
+name: Data Operations Owner Contracts
+on:
+  pull_request:
+    paths: [scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*operations*.yml, .github/workflows/uat-data-import.yaml]
+  push:
+    branches: [main, feature/release-upgrade-role]
+    paths: [scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*operations*.yml, .github/workflows/uat-data-import.yaml]
+permissions:
+  contents: read
+jobs:
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 -m pip install PyYAML==6.0.3
+      - name: Credential-free operation gates
+        run: |
+          set -euo pipefail
+          bash scripts/tests/uat_data_import_guard_test.sh
+          python3 -m unittest discover -s tests/data_operations -p 'test_*.py'
+          for test in tests/data_operations/import/*test.sh; do bash "$test"; done
+          bash tests/data_operations/selfhost/web_saas_upgrade_acceptance_test.sh
+          bash tests/data_operations/selfhost/acceptance_rules_test.sh
+  selfhost-postgres17:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install --yes postgresql-client
+      - name: Acceptance implementation against disposable PostgreSQL (loopback only)
+        run: bash tests/data_operations/selfhost/web_saas_upgrade_acceptance_postgres_test.sh
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres

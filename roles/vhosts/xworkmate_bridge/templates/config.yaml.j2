@@ -34,6 +34,9 @@ bridge:
   listenAddr: "{{ xworkmate_bridge_listen_addr }}"
   allowedOrigins:
     - "https://{{ xworkmate_bridge_domain | default('xworkmate-bridge.svc.plus') }}"
+{% if xworkmate_bridge_internal_domain | default('') | trim | length > 0 and xworkmate_bridge_internal_domain != xworkmate_bridge_domain %}
+    - "https://{{ xworkmate_bridge_internal_domain }}"
+{% endif %}
     - "http://localhost:*"
     - "http://127.0.0.1:*"
 

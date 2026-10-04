@@ -6,6 +6,23 @@ This document records the current real deployment and runtime validation state f
 
 `roles/vhosts/xworkmate_bridge` owns the public ingress and validation contract for `xworkmate-bridge.svc.plus`.
 
+For an XConnect-only self-hosted Bridge, bind the application to the node's
+overlay address instead of all interfaces. Set `xworkmate_bridge_listen_host`
+to the allocated One address (for example `10.79.0.7`) and keep Caddy/public
+ingress separate. This keeps port `8787` off the Wi-Fi/LAN and public
+interfaces while allowing XWorkmate App to connect over XConnect.
+For a split-horizon/internal deployment, use the internal alias
+`internal-xworkmate-bridge.svc.plus` and point it at the WireGuard overlay
+address. The Caddy site and Bridge allowed-origin list serve both the existing
+public hostname and the internal alias. Set `xworkmate_bridge_tls_enabled: true` and pass the Vault
+fields `tls_fullchain_pem_b64` and `tls_key_pem_b64` as
+`VAULT_GATEWAY_TLS_FULLCHAIN_B64` and `VAULT_GATEWAY_TLS_KEY_B64`. The role
+validates the certificate SANs for both names, expiry, and private-key match
+before reloading Caddy. Set `xworkmate_bridge_caddy_bind` to the overlay
+address when Caddy must not listen on the public interfaces. In XWorkMate App,
+use `https://internal-xworkmate-bridge.svc.plus` and provide a valid Bridge
+user Bearer token as the access token; do not use a Vault or XConnect token.
+
 The private distributed bridge transport is managed by
 [`roles/vhosts/xworkmate_bridge_distributed_vpn`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/xworkmate_bridge_distributed_vpn/README.md)
 and deployed through
@@ -20,7 +37,9 @@ The provider runtimes remain separate sibling roles:
 - [`roles/vhosts/acp_codex`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_codex)
 - [`roles/vhosts/acp_opencode`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_opencode)
 - [`roles/vhosts/acp_gemini`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_gemini)
-- [`roles/vhosts/acp_server_hermes`](/Users/shenlan/workspaces/cloud-neutral-toolkit/playbooks/roles/vhosts/acp_server_hermes)
+- OpenClaw Gateway is the default AI provider runtime. The standalone
+  `acp_server_hermes` role remains available only through the explicit
+  `deploy_agent_hermes.yml` opt-in playbook.
 
 ## Real Deployment
 
@@ -57,7 +76,7 @@ Applied areas:
 - Codex ACP bridge: `acp-codex.service`
 - OpenCode ACP bridge: `acp-opencode.service`
 - Gemini ACP adapter: `acp-gemini.service`
-- Hermes ACP adapter: `acp-hermes.service`
+- OpenClaw Gateway: `openclaw-gateway.service`
 
 Behavior after deployment:
 
@@ -65,8 +84,11 @@ Behavior after deployment:
 - requests with `Authorization: Bearer $INTERNAL_SERVICE_TOKEN` are accepted
 - this playbook only defines and validates the shared ingress token path
 - provider-specific authentication and ACP method compatibility are intentionally left to the individual runtimes
-- the Codex runtime user is a role variable and defaults to `ubuntu`, so it can be changed from inventory if needed
-- Gemini adapter is now also aligned to `ubuntu` home paths so it can reuse `/home/ubuntu/.gemini/oauth_creds.json`
+- the Linux service user is `xworkmate_bridge_app_user` when explicitly set,
+  otherwise it follows the controlled Ansible target identity (`ansible_user`);
+  the role resolves the account's actual home from the target passwd database
+- Gemini credentials are resolved relative to that account's home, so Debian
+  targets using `ansible_user: root` do not require an `ubuntu` account
 
 ## Public Endpoints
 

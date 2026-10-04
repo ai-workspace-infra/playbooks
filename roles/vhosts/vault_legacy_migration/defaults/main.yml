@@ -1,0 +1,23 @@
+---
+# convert | rollback | retire; nothing runs without one of these.
+vault_legacy_migration_action: ''
+# Exact phrase required for the selected action; see tasks/*.yml.
+vault_legacy_migration_confirm: ''
+vault_legacy_migration_node_id: "{{ inventory_hostname }}"
+# render_inventory.py puts the legacy node's XConnect overlay IP in both
+# private_address and overlay_address, which becomes this host var.
+vault_legacy_migration_overlay_address: "{{ vault_shared_private_ip | default('') }}"
+vault_legacy_migration_overlay_interface: xconone0
+vault_legacy_migration_config_dir: /etc/vault.d
+vault_legacy_migration_data_dir: /opt/vault/data
+vault_legacy_migration_backup_dir: /var/backups/vault-migration
+vault_legacy_migration_pg_password_file: /root/.ai_workspace_vault_pg_password
+vault_legacy_migration_min_free_mb: 1024
+vault_legacy_migration_service_name: vault
+vault_legacy_migration_postgres_container_name: "{{ vault_postgres_container_name | default('postgresql') }}"
+vault_legacy_migration_postgres_database_user: "{{ vault_postgres_database_user | default('vault_storage') }}"
+vault_legacy_migration_postgres_port: "{{ vault_pg_port | default('5432') }}"
+# Reuse the existing operator tool's migrate-offline command (confirm phrase,
+# permission and empty-destination checks, source-must-be-down check) instead
+# of re-implementing `vault operator migrate` safety checks here.
+vault_legacy_migration_operator_data_script: "{{ playbook_dir }}/roles/vhosts/vault/files/vault_operator_data.sh"

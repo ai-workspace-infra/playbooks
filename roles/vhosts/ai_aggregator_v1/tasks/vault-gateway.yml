@@ -49,21 +49,6 @@
   register: ai_aggregator_litellm_master_secret
   no_log: true
 
-- name: Read Caddy admin password hash from Vault
-  ansible.builtin.uri:
-    url: "{{ ai_aggregator_vault_addr }}/v1/{{ ai_aggregator_spec.entrypoint.admin_basic_auth_ref.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
-    headers:
-      X-Vault-Token: "{{ ai_aggregator_vault_token }}"
-    return_content: true
-    status_code: 200
-  register: ai_aggregator_caddy_admin_secret
-  no_log: true
-
-- name: Set Caddy admin password hash fact
-  ansible.builtin.set_fact:
-    ai_aggregator_caddy_basic_auth_hash: "{{ ai_aggregator_caddy_admin_secret.json.data.data[ai_aggregator_spec.entrypoint.admin_basic_auth_ref.split('#')[1]] }}"
-  no_log: true
-
 - name: Read LiteLLM provider keys from Vault
   ansible.builtin.uri:
     url: "{{ ai_aggregator_vault_addr }}/v1/{{ item.value.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"

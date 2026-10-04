@@ -6,19 +6,29 @@ vault_public_access: false
 # The role historically calls that implementation `standalone`.
 vault_deploy_mode: "{{ lookup('ansible.builtin.env', 'VAULT_DEPLOY_MODE') | default('standalone', true) | lower | regex_replace('^native$', 'standalone') }}"
 vault_version: "{{ lookup('ansible.builtin.env', 'VAULT_VERSION') | default('1.21.4', true) }}"
-vault_listen_addr: 127.0.0.1:8200
 vault_service_name: vault
 vault_binary_path: "{{ '/opt/homebrew/bin/vault' if ansible_os_family == 'Darwin' else '/usr/local/bin/vault' }}"
 vault_config_dir: "{{ (ansible_env.HOME ~ '/Library/Application Support/vault') if ansible_os_family == 'Darwin' else '/etc/vault.d' }}"
 vault_data_dir: "{{ (ansible_env.HOME ~ '/Library/Application Support/vault/data') if ansible_os_family == 'Darwin' else '/opt/vault/data' }}"
 ai_workspace_auth_token: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_AUTH_TOKEN') | default('', true) }}"
-vault_server_root_access_token: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN') | default(ai_workspace_auth_token, true), true) }}"
-vault_admin_init_enabled: "{{ (vault_server_root_access_token | trim | length > 0) and (vault_admin_password | trim | length > 0) }}"
+vault_bootstrap_generate_root_token: "{{ lookup('ansible.builtin.env', 'VAULT_BOOTSTRAP_GENERATE_ROOT_TOKEN') | default('false', true) | bool }}"
+# VAULT_TOKEN may belong to an external control-plane Vault used to read CI/CD
+# KV data. Never reuse it as the root token for a newly initialized local
+# Vault. Callers that want a fixed local token can still provide the explicit
+# VAULT_SERVER_ROOT_ACCESS_TOKEN variable.
+vault_server_root_access_token: >-
+  {{
+    lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN')
+    if vault_bootstrap_generate_root_token
+    else lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN')
+      | default(lookup('ansible.builtin.env', 'VAULT_TOKEN') | default(ai_workspace_auth_token, true), true)
+  }}
+vault_admin_init_enabled: "{{ (vault_bootstrap_generate_root_token or (vault_server_root_access_token | trim | length > 0)) and (vault_admin_password | trim | length > 0) }}"
 vault_admin_username: admin
 vault_admin_password: "{{ lookup('ansible.builtin.env', 'VAULT_ADMIN_PASSWORD') | default(ai_workspace_auth_token, true) }}"
 vault_admin_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('http://127.0.0.1:8200', true) }}"
 vault_admin_ui_url: "{{ vault_admin_addr }}/ui/vault/auth?with=userpass"
-vault_admin_output_dir: "{{ lookup('ansible.builtin.env', 'VAULT_ADMIN_OUTPUT_DIR') | default('/tmp', true) }}"
+vault_admin_output_dir: "{{ lookup('ansible.builtin.env', 'VAULT_ADMIN_OUTPUT_DIR') | default('/root/vault-admin-enrollment', true) }}"
 update_secret: true
 tls:
   - secret_name: vault-tls
@@ -28,3 +38,5 @@ tls:
 # web-saas 单机拓扑下 PostgreSQL 运行在容器里; 与 postgresql_service
 # 角色的 postgresql_service_postgres_container_name 保持一致。
 vault_postgres_container_name: postgresql
+vault_postgres_database_user: vault_storage
+vault_pg_port: 5432

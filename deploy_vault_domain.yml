@@ -1,0 +1,11 @@
+---
+# Open Platform service unit: Vault (vault.svc.plus).
+#
+# This unit owns the database prerequisite and Vault bootstrap. It is safe to
+# run before the IAM and Observability units; those units assume this host
+# foundation already exists.
+- import_playbook: setup-postgres-standalone.yaml
+  vars:
+    postgresql_install_pgvector: false
+- import_playbook: create_databases_and_users.yml
+- import_playbook: setup-vault.yaml

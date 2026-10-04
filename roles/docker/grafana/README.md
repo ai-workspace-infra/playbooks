@@ -11,6 +11,12 @@ This role deploys Grafana with Docker Compose, creating a persistent data direct
 - `grafana_admin_user`: `admin`
 - `grafana_admin_password`: `admin`
 
+OIDC is opt-in. Set `grafana_oidc_enabled: true` only after the ZITADEL
+application has been created and the runtime values have been read from Vault.
+The role writes a root-owned `0600` environment file, enables Authorization
+Code + PKCE, requires an explicit `role_attribute_path`, and denies sign-up by
+default. No client secret belongs in Git, inventory, or a Compose template.
+
 ## Run
 
 Example playbook execution:

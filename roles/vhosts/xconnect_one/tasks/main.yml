@@ -3,20 +3,19 @@
   ansible.builtin.assert:
     that:
       - xconnect_one_enabled | bool
-      - xconnect_one_environment in ['uat', 'prod']
+      - xconnect_one_environment in ['uat', 'prod', 'shared']
       - xconnect_one_binary_source | trim | length > 0
       - (xconnect_one_device_id | trim) is match('^[a-z0-9][a-z0-9._-]{0,127}$')
       - xconnect_one_device_name | trim | length > 0
       - xconnect_one_expected_network_id | trim | length > 0
-      - >-
-        (xconnect_one_invite_file_source | trim | length > 0) or
-        ((xconnect_one_invite_uri | trim) is match('^xconnect://join/'))
       - (xconnect_one_expected_overlay_cidr | trim) is match('^[0-9.]+/[0-9]{1,2}$')
       - xconnect_one_expected_overlay_cidr != '0.0.0.0/0'
       - (xconnect_one_expected_wireguard_interface | trim) is match('^[a-zA-Z0-9_.-]{1,15}$')
       - xconnect_one_expected_xray_loopback_port | int > 1023
       - xconnect_one_expected_xray_loopback_port | int < 65536
       - xconnect_one_sync_interval_seconds | int >= 60
+      - not (xconnect_one_dns_enabled | bool) or (xconnect_one_dns_server | trim) is match('^[0-9]+(\\.[0-9]+){3}$')
+      - not (xconnect_one_dns_enabled | bool) or xconnect_one_dns_domains | length > 0
   no_log: true
 
 - name: Install XConnect One preflight dependencies
@@ -28,6 +27,18 @@
     update_cache: true
     lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
 
+- name: Install systemd-resolved for XConnect overlay DNS
+  ansible.builtin.apt:
+    name: systemd-resolved
+    state: present
+    update_cache: true
+    lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
+  when: xconnect_one_dns_enabled | bool
+
+- name: Capture the host default route before XConnect changes
+  ansible.builtin.command: ip route show default
+  register: xconnect_one_default_route_before
+  changed_when: false
 - name: Create XConnect One runtime directories
   ansible.builtin.file:
     path: "{{ item }}"
@@ -56,6 +67,23 @@
   when:
     - xconnect_one_ca_certificate_source | trim | length > 0
     - xconnect_one_transport_ca.changed
+
+- name: Install the foreign XConnect network release
+  ansible.builtin.template:
+    src: release_foreign.py.j2
+    dest: "/usr/local/lib/xconnect-one/release-foreign-{{ xconnect_one_environment }}.py"
+    owner: root
+    group: root
+    mode: '0700'
+  when: xconnect_one_release_foreign_overlays | bool
+
+# Only for a node the caller declares may move (the Vault migration source):
+# every One binds the same loopback port, so it must leave its other network.
+- name: Take this host off other XConnect networks
+  ansible.builtin.command: "/usr/local/lib/xconnect-one/release-foreign-{{ xconnect_one_environment }}.py"
+  register: xconnect_one_release_foreign
+  changed_when: "'xconnect released: none' not in xconnect_one_release_foreign.stdout"
+  when: xconnect_one_release_foreign_overlays | bool
 
 - name: Install XConnect One collision preflight
   ansible.builtin.template:
@@ -107,6 +135,18 @@
     path: "{{ xconnect_one_state_dir }}/state.json"
   register: xconnect_one_existing_state
 
+# A joined node re-runs without an invitation, so a re-run never needs or
+# consumes a new one-use invite.
+- name: Require an invitation only for a node that has not joined yet
+  ansible.builtin.assert:
+    that:
+      - >-
+        xconnect_one_existing_state.stat.exists or
+        (xconnect_one_invite_file_source | trim | length > 0) or
+        ((xconnect_one_invite_uri | trim) is match('^xconnect://join/'))
+    fail_msg: This node has not joined XConnect and no one-use invitation was provided.
+  no_log: true
+
 - name: Write short-lived XConnect One invite file
   ansible.builtin.copy:
     content: "{{ xconnect_one_invite_uri }}\n"
@@ -143,7 +183,20 @@
         "$(cat {{ xconnect_one_invite_path | quote }})"
       args:
         executable: /bin/sh
+      register: xconnect_one_join
+      failed_when: false
       no_log: true
+
+    # The join result stays hidden (it carries the invitation), but its error
+    # must not: report the last lines with anything token-shaped redacted.
+    - name: Report why the XConnect One join failed
+      ansible.builtin.fail:
+        msg: >-
+          xconnect join failed (rc={{ xconnect_one_join.rc | default('unknown') }}):
+          {{ ((xconnect_one_join.stderr_lines | default([])) + (xconnect_one_join.stdout_lines | default([])))[-6:]
+             | map('regex_replace', '[A-Za-z0-9+/_=-]{32,}', '<redacted>')
+             | map('regex_replace', 'xconnect://[^ ]+', 'xconnect://<redacted>') | list }}
+      when: (xconnect_one_join.rc | default(1)) != 0
   always:
     - name: Remove short-lived XConnect One invite file
       ansible.builtin.file:
@@ -174,8 +227,51 @@
 - name: Fail when XConnect One removed the host default route
   ansible.builtin.assert:
     that:
-      - xconnect_one_default_route.stdout | trim | length > 0
+      - xconnect_one_default_route.stdout | trim == xconnect_one_default_route_before.stdout | trim
     fail_msg: XConnect One must only add the declared private overlay route and must not replace the host default route.
+
+- name: Install XConnect One overlay DNS configuration script
+  ansible.builtin.template:
+    src: configure-dns.sh.j2
+    dest: "{{ xconnect_one_dns_script_path }}"
+    owner: root
+    group: root
+    mode: '0700'
+  when: xconnect_one_dns_enabled | bool
+
+- name: Install XConnect One overlay DNS systemd service
+  ansible.builtin.template:
+    src: xconnect-one-dns.service.j2
+    dest: "/etc/systemd/system/xconnect-one-dns@{{ xconnect_one_environment }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  when: xconnect_one_dns_enabled | bool
+
+- name: Enable systemd-resolved for XConnect overlay DNS
+  ansible.builtin.systemd:
+    name: systemd-resolved
+    enabled: true
+    state: started
+  when: xconnect_one_dns_enabled | bool
+
+- name: Point resolv.conf at systemd-resolved for XConnect overlay DNS
+  ansible.builtin.file:
+    src: /run/systemd/resolve/stub-resolv.conf
+    dest: /etc/resolv.conf
+    state: link
+    force: true
+  when:
+    - xconnect_one_dns_enabled | bool
+    - xconnect_one_dns_manage_resolv_conf | bool
+
+- name: Enable XConnect One overlay DNS service
+  ansible.builtin.systemd:
+    name: "xconnect-one-dns@{{ xconnect_one_environment }}.service"
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: xconnect_one_dns_enabled | bool
 
 - name: Install XConnect One signed-config synchronization service
   ansible.builtin.template:

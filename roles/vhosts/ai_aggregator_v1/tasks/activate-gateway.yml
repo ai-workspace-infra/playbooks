@@ -13,6 +13,14 @@
     fail_msg: "Missing Vault-injected runtime file: {{ item.item }}"
   loop: "{{ ai_aggregator_gateway_runtime_files.results }}"
 
+- name: Require the LiteLLM Prometheus client dependency
+  ansible.builtin.command:
+    argv:
+      - "{{ ai_aggregator_litellm_python }}"
+      - -c
+      - import prometheus_client
+  changed_when: false
+
 - name: Start and enable LiteLLM after CPA activation
   ansible.builtin.systemd:
     name: litellm.service
@@ -24,6 +32,15 @@
     name: new-api.service
     enabled: true
     state: started
+
+- name: Start and enable Kong as the tenant-aware routing gateway
+  ansible.builtin.systemd:
+    name: ai-aggregator-kong.service
+    enabled: true
+    state: started
+
+- name: Reconcile single-host New API and LiteLLM routes in Kong
+  ansible.builtin.include_tasks: kong-routes.yml
 
 - name: Validate Caddy configuration before reload
   ansible.builtin.command: caddy validate --config {{ caddy_config_dir | default('/etc/caddy') }}/Caddyfile --adapter caddyfile

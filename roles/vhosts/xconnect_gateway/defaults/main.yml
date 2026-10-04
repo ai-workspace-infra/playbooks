@@ -6,7 +6,7 @@ xconnect_gateway_environment: uat
 xconnect_gateway_binary_source: ""
 xconnect_gateway_binary_path: /usr/local/bin/xconnect-gateway
 xconnect_gateway_xray_binary_source: ""
-xconnect_gateway_xray_binary_path: /usr/local/bin/xray
+xconnect_gateway_xray_binary_path: /usr/local/lib/xconnect-gateway/xray
 xconnect_gateway_state_dir: "/var/lib/xconnect-gateway/{{ xconnect_gateway_environment }}"
 xconnect_gateway_controller: ""
 xconnect_gateway_id: ""
@@ -16,9 +16,34 @@ xconnect_gateway_tls_cert_source: ""
 xconnect_gateway_tls_key_source: ""
 xconnect_gateway_tls_cert_path: /etc/xconnect-gateway/tls.crt
 xconnect_gateway_tls_key_path: /etc/xconnect-gateway/tls.key
+# `direct-tls` is the standalone Gateway mode. `caddy-unix-h2c` keeps the
+# Gateway Xray private and lets the shared Caddy terminate TLS on :443.
+xconnect_gateway_frontend: direct-tls
+xconnect_gateway_listen_socket: /run/xconnect-gateway/xray.sock
+xconnect_gateway_socket_group: caddy
 xconnect_gateway_trust_bundle_source: ""
 xconnect_gateway_trust_bundle_path: /etc/xconnect-gateway/ca.crt
 # Optional controller-local destination for the public CA handoff to One.
 # The private TLS key is never fetched or exposed by this mechanism.
 xconnect_gateway_ca_fetch_dest: ""
 xconnect_gateway_sync_interval_seconds: 300
+
+# Optional lightweight DNS forwarder for the XConnect overlay. The Gateway
+# serves declared private records and forwards all other names to public
+# recursive resolvers. The control-plane topology supplies these values for
+# the shared Vault network; the role remains disabled for older networks.
+xconnect_gateway_dns_enabled: false
+xconnect_gateway_dns_package: dnsmasq
+xconnect_gateway_dns_service_name: dnsmasq
+xconnect_gateway_dns_interface: xconzero0
+xconnect_gateway_dns_listen_address: ""
+xconnect_gateway_dns_zone: ""
+xconnect_gateway_dns_domains: []
+xconnect_gateway_dns_upstream_servers:
+  - 1.1.1.1
+  - 8.8.8.8
+xconnect_gateway_dns_records: []
+xconnect_gateway_dns_config_path: /etc/dnsmasq.d/xconnect-gateway.conf
+xconnect_gateway_dns_hosts_path: /run/xconnect-gateway-dns/hosts
+xconnect_gateway_dns_aliases_path: /etc/xconnect-gateway/dns-aliases.json
+xconnect_gateway_dns_sync_script_path: /usr/local/libexec/xconnect-gateway-dns-sync.py

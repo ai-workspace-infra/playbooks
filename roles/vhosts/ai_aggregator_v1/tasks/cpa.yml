@@ -48,3 +48,17 @@
 - name: Reload systemd after staging units
   ansible.builtin.systemd:
     daemon_reload: true
+
+- name: Initialize node-local CPA OAuth directories
+  ansible.builtin.file:
+    path: "{{ item.local_auth_dir }}"
+    state: directory
+    owner: "ai-cpa-{{ item.id }}"
+    group: "{{ ai_aggregator_service_group }}"
+    mode: '0700'
+  loop: "{{ ai_aggregator_local_cpas }}"
+  when: ai_aggregator_adapter == 'apisix'
+
+- name: Reload systemd after local authentication staging
+  ansible.builtin.systemd:
+    daemon_reload: true

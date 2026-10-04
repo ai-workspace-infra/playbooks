@@ -1,0 +1,27 @@
+[Unit]
+Description=AI Gateway APISIX Standalone GitOps
+After=network-online.target ai-aggregator-runtime.mount new-api.service
+Wants=network-online.target
+Requires=ai-aggregator-runtime.mount
+ConditionPathExists={{ ai_aggregator_runtime_root }}/apisix/environment
+ConditionPathExists={{ ai_aggregator_apisix_home }}/conf/apisix.yaml
+
+[Service]
+Type=forking
+User=root
+WorkingDirectory={{ ai_aggregator_apisix_home }}
+EnvironmentFile={{ ai_aggregator_runtime_root }}/apisix/environment
+PIDFile={{ ai_aggregator_apisix_home }}/logs/nginx.pid
+ExecStartPre={{ ai_aggregator_apisix_binary }} test
+ExecStart={{ ai_aggregator_apisix_binary }} start
+ExecStop={{ ai_aggregator_apisix_binary }} stop
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths={{ ai_aggregator_apisix_home }} {{ ai_aggregator_runtime_root }}/apisix
+
+[Install]
+WantedBy=multi-user.target

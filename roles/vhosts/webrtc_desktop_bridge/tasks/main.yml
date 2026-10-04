@@ -1,0 +1,23 @@
+---
+- name: Validate WebRTC desktop bridge runtime selection
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == 'Debian'
+      - webrtc_desktop_bridge_backend in ['x11']
+      - webrtc_desktop_bridge_capture_tool in ['gstreamer']
+      - not webrtc_desktop_bridge_service_enabled | bool
+    fail_msg: >-
+      The extracted WebRTC bridge currently supports only the Debian X11 and
+      GStreamer runtime preparation; service deployment remains disabled until
+      the standalone server entrypoint is implemented.
+
+- name: Install WebRTC desktop bridge runtime packages
+  ansible.builtin.apt:
+    name: "{{ webrtc_desktop_bridge_packages }}"
+    state: present
+    install_recommends: false
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    APT_LISTCHANGES_FRONTEND: none
+  become: true

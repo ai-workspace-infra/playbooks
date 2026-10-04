@@ -2,6 +2,7 @@
   hosts: all
   become: true
   vars:
+    zitadel_deployment_mode: doco-cd
     zitadel_target_host: auth.svc.plus
     zitadel_domain: "{{ domain }}"
     zitadel_masterkey: MasterkeyNeedsToHave32Characters
@@ -9,4 +10,7 @@
   roles:
     #- vhosts/common/
     - { role: vhosts/docker, tags: ['docker'] }
+    # The split IAM unit may run without the historical all-in-one
+    # prerequisite playbook, so install the shared Caddy runtime here.
+    - { role: vhosts/caddy, tags: ['caddy'] }
     - { role: docker/zitadel, tags: ['zitadel'] }

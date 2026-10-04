@@ -1,0 +1,100 @@
+---
+- name: Validate the Vault Gateway frontend inputs
+  ansible.builtin.assert:
+    that:
+      - vault_gateway_frontend_domain is match('^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$')
+      - vault_gateway_frontend_domain != 'vault.svc.plus'
+      - vault_gateway_frontend_path is match('^/[A-Za-z0-9._-]+$')
+      - vault_gateway_frontend_socket is match('^/run/[A-Za-z0-9._/-]+\.sock$')
+      - vault_gateway_frontend_tls_dir is match('^/etc/caddy/tls/[A-Za-z0-9._-]+$')
+    fail_msg: >-
+      Refusing to render the Vault Gateway frontend: check the domain (it must
+      not be vault.svc.plus, which stays on the existing Vault node), path,
+      socket and TLS directory.
+
+- name: Require the Vault-restored TLS material
+  ansible.builtin.assert:
+    that:
+      - vault_gateway_frontend_fullchain_b64 | length > 0
+      - vault_gateway_frontend_key_b64 | length > 0
+    fail_msg: >-
+      VAULT_GATEWAY_TLS_FULLCHAIN_B64 / VAULT_GATEWAY_TLS_KEY_B64 are empty.
+      The frontend never falls back to ACME on a fresh node.
+  no_log: true
+
+# conf.d must exist before the base Caddyfile (which imports conf.d/*.caddy)
+# is started by vhosts/caddy.
+- name: Ensure the Caddy conf.d directory exists
+  ansible.builtin.file:
+    path: "{{ vault_gateway_frontend_caddy_config_dir }}/conf.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install Caddy with the base Caddyfile (imports conf.d)
+  ansible.builtin.import_role:
+    name: vhosts/caddy
+  vars:
+    caddy_config_dir: "{{ vault_gateway_frontend_caddy_config_dir }}"
+    caddy_portal_domains: []
+    caddy_download_domain: ""
+
+- name: Ensure the TLS directory is readable only by root and caddy
+  ansible.builtin.file:
+    path: "{{ vault_gateway_frontend_tls_dir }}"
+    state: directory
+    owner: root
+    group: caddy
+    mode: "0750"
+
+- name: Stage the certificate and key for the caddy user
+  ansible.builtin.copy:
+    content: "{{ item.content | b64decode }}"
+    dest: "{{ vault_gateway_frontend_tls_dir }}/{{ item.name }}"
+    owner: root
+    group: caddy
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: fullchain.pem, content: "{{ vault_gateway_frontend_fullchain_b64 }}", mode: "0644" }
+    - { name: key.pem, content: "{{ vault_gateway_frontend_key_b64 }}", mode: "0640" }
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+  notify: Reload caddy for the Vault Gateway frontend
+
+- name: Check the certificate is current, covers the domain and matches the key
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cert="{{ vault_gateway_frontend_tls_dir }}/fullchain.pem"
+    key="{{ vault_gateway_frontend_tls_dir }}/key.pem"
+    openssl x509 -in "${cert}" -noout -checkend 86400
+    openssl x509 -in "${cert}" -noout -checkhost "{{ vault_gateway_frontend_domain }}" | grep -q 'does match'
+    [ "$(openssl x509 -in "${cert}" -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256)" = \
+      "$(openssl pkey -in "${key}" -pubout -outform DER | openssl dgst -sha256)" ]
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Render the Gateway site
+  ansible.builtin.template:
+    src: vault-gateway.caddy.j2
+    dest: "{{ vault_gateway_frontend_caddy_config_dir }}/conf.d/vault-gateway.caddy"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload caddy for the Vault Gateway frontend
+
+- name: Validate the full Caddy configuration before reloading
+  ansible.builtin.command:
+    cmd: caddy validate --adapter caddyfile --config {{ vault_gateway_frontend_caddy_config_dir }}/Caddyfile
+  changed_when: false
+
+- name: Ensure Caddy is running and enabled
+  ansible.builtin.service:
+    name: caddy
+    state: started
+    enabled: true
+
+- name: Apply the new site before the Gateway stage runs
+  ansible.builtin.meta: flush_handlers

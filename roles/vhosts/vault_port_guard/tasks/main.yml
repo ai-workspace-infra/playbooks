@@ -1,0 +1,58 @@
+---
+- name: Validate the port guard interface name
+  ansible.builtin.assert:
+    that:
+      - vault_port_guard_interface is match('^[A-Za-z0-9_.-]{1,15}$')
+    fail_msg: "Invalid network interface name: {{ vault_port_guard_interface }}"
+  when: vault_port_guard_enabled | bool
+
+- name: Require nftables when the port guard is enabled
+  ansible.builtin.command: which nft
+  changed_when: false
+  when: vault_port_guard_enabled | bool
+
+- name: Install the Vault port guard ruleset
+  ansible.builtin.template:
+    src: vault-port-guard.nft.j2
+    dest: "{{ vault_port_guard_ruleset_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+  when: vault_port_guard_enabled | bool
+
+- name: Install the Vault port guard systemd unit
+  ansible.builtin.template:
+    src: vault-port-guard.service.j2
+    dest: "/etc/systemd/system/{{ vault_port_guard_unit_name }}"
+    owner: root
+    group: root
+    mode: '0644'
+  when: vault_port_guard_enabled | bool
+  register: vault_port_guard_unit_write
+
+- name: Enable and start the Vault port guard
+  ansible.builtin.systemd:
+    name: "{{ vault_port_guard_unit_name }}"
+    enabled: true
+    state: started
+    daemon_reload: "{{ vault_port_guard_unit_write is changed }}"
+  when: vault_port_guard_enabled | bool
+
+- name: Verify the port guard table is loaded
+  ansible.builtin.command: nft list table inet {{ vault_port_guard_table }}
+  changed_when: false
+  when: vault_port_guard_enabled | bool
+
+- name: Disable the Vault port guard when no longer needed
+  ansible.builtin.systemd:
+    name: "{{ vault_port_guard_unit_name }}"
+    enabled: false
+    state: stopped
+  failed_when: false
+  when: not (vault_port_guard_enabled | bool)
+
+- name: Remove the port guard ruleset from the firewall
+  ansible.builtin.command: nft delete table inet {{ vault_port_guard_table }}
+  changed_when: true
+  failed_when: false
+  when: not (vault_port_guard_enabled | bool)

@@ -1,4 +1,11 @@
+{% if remote_desktop_session | default('xfce') == 'icewm' %}
+export DESKTOP_SESSION=icewm
+export XDG_CURRENT_DESKTOP=IceWM
+export BROWSER={{ remote_desktop_browser_command | default('/usr/bin/chromium') }}
+exec dbus-run-session -- icewm-session
+{% else %}
 export DESKTOP_SESSION=xfce
 export XDG_CURRENT_DESKTOP=XFCE
 export BROWSER=/usr/local/bin/chromium-xrdp
 exec dbus-launch --exit-with-session startxfce4
+{% endif %}

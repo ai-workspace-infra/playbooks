@@ -1,7 +1,19 @@
 ---
 # Default deployment directory for Zitadel Docker stack
+zitadel_deployment_mode: compose
+zitadel_gitops_url: "{{ lookup('ansible.builtin.env', 'ZITADEL_GITOPS_URL') }}"
+zitadel_gitops_revision: "{{ lookup('ansible.builtin.env', 'ZITADEL_GITOPS_SHA') }}"
+zitadel_doco_cd_image: "{{ lookup('ansible.builtin.env', 'ZITADEL_DOCO_CD_IMAGE') }}"
+zitadel_login_image: "{{ lookup('ansible.builtin.env', 'ZITADEL_LOGIN_IMAGE') }}"
+zitadel_image: "{{ lookup('ansible.builtin.env', 'ZITADEL_IMAGE') }}"
+zitadel_login_session_cookie_secret: "{{ lookup('ansible.builtin.env', 'ZITADEL_LOGIN_SESSION_COOKIE_SECRET') }}"
 zitadel_deploy_dir: /opt/zitadel
 zitadel_workspace: "{{ zitadel_deploy_dir }}"
+# One-time recovery of an instance whose bootstrap never wrote the Login client
+# PAT. Only zitadel-server.yml sets these, with an explicit confirmation token.
+zitadel_reset_unbootstrapped_instance: false
+zitadel_reset_confirmation: ""
+zitadel_reset_backup_dir: /var/backups/zitadel
 zitadel_domain: iam.svc.plus
 zitadel_masterkey: MasterkeyNeedsToHave32Characters
 zitadel_api_bind_host: 127.0.0.1
@@ -21,7 +33,11 @@ zitadel_db_user: zitadel_user
 zitadel_db_password: "{{ zitadel_db_password_fact | default('CHANGE_ME') }}"
 zitadel_db_admin_user: postgres
 zitadel_db_admin_password: "{{ lookup('ansible.builtin.env', 'ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD') }}"
+zitadel_db_container_name: "{{ zitadel_db_host }}"
 
 # Vault integration configuration
+zitadel_deploy_only: "{{ lookup('ansible.builtin.env', 'OPEN_PLATFORM_DEPLOY_ONLY') | default('false', true) | bool }}"
+zitadel_admin_password_override: "{{ lookup('ansible.builtin.env', 'ZITADEL_ADMIN_PASSWORD') | default('', true) }}"
 vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default(lookup('ansible.builtin.env', 'VAULT_SERVER_URL') | default('https://vault.svc.plus', true), true) }}"
 vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_SERVER_ROOT_ACCESS_TOKEN') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN'), true) }}"
+zitadel_vault_path: "{{ lookup('ansible.builtin.env', 'VAULT_ENV_PATH') | default('uat', true) }}/iam"

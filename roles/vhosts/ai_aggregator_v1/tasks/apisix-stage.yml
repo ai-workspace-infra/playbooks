@@ -1,0 +1,242 @@
+---
+- name: Require the rendered bundle and Vault identity
+  ansible.builtin.assert:
+    that:
+      - ai_aggregator_apisix_bundle_dir | length > 0
+      - ai_aggregator_spec.apisix.runtime_secret_refs is mapping
+      - ai_aggregator_spec.apisix.runtime_secret_refs | length == 0
+      - "'AI_GATEWAY_CLIENT_KEY' not in ai_aggregator_spec.apisix.runtime_secret_refs"
+      - ai_aggregator_vault_token | length > 0
+
+- name: Load non-sensitive rendered files
+  ansible.builtin.set_fact:
+    ai_aggregator_apisix_config: "{{ lookup('ansible.builtin.file', ai_aggregator_apisix_bundle_dir ~ '/config.yaml') | from_yaml }}"
+    ai_aggregator_apisix_routes: "{{ lookup('ansible.builtin.file', ai_aggregator_apisix_bundle_dir ~ '/apisix.yaml') | from_yaml }}"
+
+- name: Require Standalone loopback configuration and New API user-token routing
+  ansible.builtin.assert:
+    that:
+      - ai_aggregator_apisix_config.deployment.role == 'data_plane'
+      - ai_aggregator_apisix_config.deployment.role_data_plane.config_provider == 'yaml'
+      - not ai_aggregator_apisix_config.apisix.enable_admin | bool
+      - not ai_aggregator_apisix_config.apisix.enable_control | bool
+      - "ai_aggregator_apisix_config.apisix.node_listen == [{'ip': '127.0.0.1', 'port': 9080}]"
+      - ai_aggregator_apisix_routes.routes | selectattr('plugins.ai-proxy-multi', 'defined') | list | length == 0
+      - ai_aggregator_apisix_routes.routes | selectattr('plugins.key-auth', 'defined') | list | length == 0
+      - ai_aggregator_apisix_routes.routes | selectattr('plugins.jwt-auth', 'defined') | list | length == 0
+      - ai_aggregator_apisix_routes.routes | selectattr('plugins.serverless-pre-function', 'defined') | list | length > 0
+      - "lookup('ansible.builtin.file', ai_aggregator_apisix_bundle_dir ~ '/apisix.yaml').rstrip().endswith('#END')"
+      - ai_aggregator_apisix_routes.routes | map(attribute='hosts') | flatten | unique | list == [ai_aggregator_spec.entrypoint.domain]
+      - ai_aggregator_apisix_routes.upstreams | length == 1
+      - ai_aggregator_apisix_routes.upstreams[0].name == 'new-api'
+      - "ai_aggregator_apisix_routes.upstreams[0].nodes == {(ai_aggregator_spec.new_api.bind_address ~ ':' ~ (ai_aggregator_spec.new_api.port | string)): 100}"
+      - "ai_aggregator_apisix_routes.routes | map(attribute='upstream_id') | unique | list == [ai_aggregator_apisix_routes.upstreams[0].id]"
+
+- name: Add loopback-only APISIX Prometheus exporter configuration
+  ansible.builtin.set_fact:
+    ai_aggregator_apisix_config: >-
+      {{ ai_aggregator_apisix_config | combine({
+        'apisix': (
+          (ai_aggregator_apisix_config.apisix | combine({
+            'plugins': ((ai_aggregator_apisix_config.apisix.plugins + ['prometheus']) | unique | list)
+          }, recursive=true))
+          if ai_aggregator_apisix_config.apisix.plugins is defined
+          else (ai_aggregator_apisix_config.apisix | default({}))
+        ),
+        'plugin_attr': (ai_aggregator_apisix_config.plugin_attr | default({})) | combine({
+          'prometheus': (ai_aggregator_apisix_config.plugin_attr | default({})).prometheus | default({}) | combine({
+            'enable_export_server': true,
+            'export_uri': '/apisix/prometheus/metrics',
+            'export_addr': {'ip': '127.0.0.1', 'port': ai_aggregator_apisix_metrics_port | int}
+          }, recursive=true)
+        }, recursive=true)
+      }, recursive=true) }}
+
+- name: Add APISIX Prometheus plugin as a global rule when absent
+  ansible.builtin.set_fact:
+    ai_aggregator_apisix_routes: >-
+      {{ ai_aggregator_apisix_routes | combine({
+        'global_rules': (ai_aggregator_apisix_routes.global_rules | default([])) +
+          ([] if (ai_aggregator_apisix_routes.global_rules | default([]) | selectattr('plugins.prometheus', 'defined') | list | length > 0)
+             else [{'id': ai_aggregator_apisix_metrics_global_rule_id | int, 'plugins': {'prometheus': {'prefer_name': true}}}])
+      }, recursive=true) }}
+
+- name: Check the preinstalled APISIX distribution
+  ansible.builtin.command:
+    argv: ["{{ ai_aggregator_apisix_binary }}", version]
+  changed_when: false
+
+- name: Create the gateway group
+  ansible.builtin.group:
+    name: "{{ ai_aggregator_service_group }}"
+    system: true
+
+- name: Create APISIX and New API directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop:
+    - "{{ ai_aggregator_root }}/new-api"
+    - "{{ ai_aggregator_apisix_home }}/conf"
+    - "{{ ai_aggregator_apisix_home }}/logs"
+    - "{{ caddy_config_dir }}/conf.d"
+
+- name: Stage the volatile runtime mount
+  ansible.builtin.template:
+    src: ai-aggregator-runtime.mount.j2
+    dest: /etc/systemd/system/ai-aggregator-runtime.mount
+    mode: '0644'
+
+- name: Mount the volatile runtime filesystem
+  ansible.builtin.systemd:
+    name: ai-aggregator-runtime.mount
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: Create volatile credential directories
+  ansible.builtin.file:
+    path: "{{ ai_aggregator_runtime_root }}/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop: [apisix, new-api]
+
+- name: Select the New API runtime Vault references
+  ansible.builtin.set_fact:
+    ai_aggregator_new_api_runtime_refs:
+      SQL_DSN: "{{ ai_aggregator_spec.new_api.persistence.secret_ref }}"
+      SESSION_SECRET: "{{ ai_aggregator_spec.new_api.session_secret_ref }}"
+      CRYPTO_SECRET: "{{ ai_aggregator_spec.new_api.crypto_secret_ref }}"
+
+- name: Validate runtime Vault references and environment variable names
+  ansible.builtin.assert:
+    that:
+      - item.key is match('^[A-Z][A-Z0-9_]*$')
+      - "item.value is match('^vault://kv/' ~ ai_aggregator_manifest.metadata.environment ~ '/ai-aggregator/(database/(new-api|litellm)|gateway/[^/#]+|litellm/providers/[^/#]+)#[a-z_]+$')"
+  loop: "{{ (ai_aggregator_spec.apisix.runtime_secret_refs | combine(ai_aggregator_new_api_runtime_refs)) | dict2items }}"
+
+- name: Read APISIX runtime values from Vault
+  ansible.builtin.uri:
+    url: "{{ ai_aggregator_vault_addr }}/v1/{{ item.value.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
+    headers:
+      X-Vault-Token: "{{ ai_aggregator_vault_token }}"
+    return_content: true
+    status_code: 200
+  loop: "{{ ai_aggregator_spec.apisix.runtime_secret_refs | dict2items }}"
+  register: ai_aggregator_apisix_secrets
+  no_log: true
+
+- name: Read New API runtime values from Vault
+  ansible.builtin.uri:
+    url: "{{ ai_aggregator_vault_addr }}/v1/{{ item.value.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
+    headers:
+      X-Vault-Token: "{{ ai_aggregator_vault_token }}"
+    return_content: true
+    status_code: 200
+  loop: "{{ ai_aggregator_new_api_runtime_refs | dict2items }}"
+  register: ai_aggregator_new_api_runtime_secrets
+  no_log: true
+
+- name: Write runtime environments on tmpfs
+  ansible.builtin.template:
+    src: runtime-environment.j2
+    dest: "{{ ai_aggregator_runtime_root }}/{{ item.name }}/environment"
+    owner: root
+    group: root
+    mode: '0600'
+  vars:
+    ai_aggregator_environment_results: "{{ item.results }}"
+    ai_aggregator_runtime_environment_name: "{{ item.name }}"
+  loop:
+    - name: apisix
+      results: "{{ ai_aggregator_apisix_secrets.results }}"
+    - name: new-api
+      results: "{{ ai_aggregator_new_api_runtime_secrets.results }}"
+  no_log: true
+
+- name: Publish APISIX configuration with metrics enabled atomically
+  ansible.builtin.copy:
+    content: "{{ ai_aggregator_apisix_config | to_nice_yaml }}#END\n"
+    dest: "{{ ai_aggregator_apisix_home }}/conf/config.yaml"
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+
+- name: Publish APISIX routes with the Prometheus global rule atomically
+  ansible.builtin.copy:
+    content: "{{ ai_aggregator_apisix_routes | to_nice_yaml }}#END\n"
+    dest: "{{ ai_aggregator_apisix_home }}/conf/apisix.yaml"
+    owner: root
+    group: root
+    mode: '0640'
+    backup: true
+
+- name: Render APISIX and New API systemd units
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/etc/systemd/system/{{ item.name }}"
+    mode: '0644'
+  loop:
+    - src: apisix.service.j2
+      name: "{{ ai_aggregator_apisix_service }}"
+    - src: new-api.service.j2
+      name: new-api.service
+
+- name: Render the thin Caddy site fragment
+  ansible.builtin.template:
+    src: Caddyfile.ai-aggregator.j2
+    dest: "{{ caddy_config_dir }}/conf.d/ai-aggregator.caddy"
+    mode: '0644'
+
+- name: Create the Caddy systemd drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/caddy.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install Caddy dependency on Vault TLS runtime material
+  ansible.builtin.template:
+    src: caddy.service.d.ai-aggregator-runtime.conf.j2
+    dest: /etc/systemd/system/caddy.service.d/ai-aggregator-runtime.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when: ai_aggregator_vault_tls_runtime_enabled | bool
+
+- name: Enable the Vault runtime refresh service before Caddy
+  ansible.builtin.systemd:
+    name: ai-aggregator-vault.service
+    enabled: true
+  when: ai_aggregator_vault_tls_runtime_enabled | bool
+
+- name: Reload systemd after Caddy dependency staging
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Require Vault TLS material before Caddy validation
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ ai_aggregator_runtime_root }}/tls/fullchain.pem"
+    - "{{ ai_aggregator_runtime_root }}/tls/privkey.pem"
+  register: ai_aggregator_tls_files
+  when: ai_aggregator_vault_tls_runtime_enabled | bool
+
+- name: Block deployment when Vault TLS material is missing
+  ansible.builtin.assert:
+    that: item.stat.exists and item.stat.isreg
+    fail_msg: "Missing Vault-managed TLS material: {{ item.item }}"
+  loop: "{{ ai_aggregator_tls_files.results | default([]) }}"
+  when: ai_aggregator_vault_tls_runtime_enabled | bool
+
+- name: Reload systemd after staging
+  ansible.builtin.systemd:
+    daemon_reload: true

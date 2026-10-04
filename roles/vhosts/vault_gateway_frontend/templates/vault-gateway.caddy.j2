@@ -1,0 +1,24 @@
+# Managed by vhosts/vault_gateway_frontend. Only the XConnect XHTTP path is
+# forwarded; every other request is refused, so the Vault API is not exposed.
+{{ vault_gateway_frontend_domain }} {
+    tls {{ vault_gateway_frontend_tls_dir }}/fullchain.pem {{ vault_gateway_frontend_tls_dir }}/key.pem
+
+    @xconnect_gateway_xhttp {
+        path {{ vault_gateway_frontend_path }} {{ vault_gateway_frontend_path }}/*
+    }
+
+    handle @xconnect_gateway_xhttp {
+        # Keep the path intact; Xray's XHTTP server contract owns it.
+        uri query -x_padding
+
+        reverse_proxy unix//{{ vault_gateway_frontend_socket | regex_replace('^/', '') }} {
+            transport http {
+                versions h2c 2
+            }
+        }
+    }
+
+    handle {
+        respond 404
+    }
+}

@@ -109,7 +109,7 @@ observability.svc.plus {
 
     # Blackbox Exporter (网络与域名拨测)
     handle_path /blackbox/* {
-        reverse_proxy 127.0.0.1:9115
+        reverse_proxy 127.0.0.1:{{ observability_blackbox_host_port | default('9115') }}
     }
 
     # ==========================================
@@ -132,8 +132,8 @@ observability.svc.plus {
     # ==========================================
     # Model Context Protocol (MCP) Server Ingress
     # ==========================================
-{% if observability_mcp_enabled | default(true) | bool %}
-{% if observability_mcp_grafana_enabled | default(true) | bool %}
+{% if observability_mcp_enabled | default(false) | bool %}
+{% if observability_mcp_grafana_enabled | default(false) | bool %}
     handle_path /mcp/grafana/* {
 {% if observability_mcp_auth_enabled | default(true) | bool %}        basic_auth {
             {{ observability_mcp_basic_auth_user | default('mcp_agent') }} {{ observability_mcp_basic_auth_password_hash }}
@@ -150,7 +150,7 @@ observability.svc.plus {
     }
 {% endif %}
 
-{% if observability_mcp_victoriametrics_enabled | default(true) | bool %}
+{% if observability_mcp_victoriametrics_enabled | default(false) | bool %}
     handle_path /mcp/victoriametrics/* {
 {% if observability_mcp_auth_enabled | default(true) | bool %}        basic_auth {
             {{ observability_mcp_basic_auth_user | default('mcp_agent') }} {{ observability_mcp_basic_auth_password_hash }}
@@ -167,24 +167,24 @@ observability.svc.plus {
     }
 {% endif %}
 
-{% if observability_mcp_victorialogs_enabled | default(true) | bool %}
+{% if observability_mcp_victorialogs_enabled | default(false) | bool %}
     handle_path /mcp/victorialogs/* {
 {% if observability_mcp_auth_enabled | default(true) | bool %}        basic_auth {
             {{ observability_mcp_basic_auth_user | default('mcp_agent') }} {{ observability_mcp_basic_auth_password_hash }}
         }
 {% endif %}
-        reverse_proxy 127.0.0.1:{{ observability_mcp_victorialogs_port | default(8081) }}
+        reverse_proxy 127.0.0.1:{{ observability_mcp_victorialogs_port | default(8083) }}
     }
     handle_path /mcp/v1/logs/* {
 {% if observability_mcp_auth_enabled | default(true) | bool %}        basic_auth {
             {{ observability_mcp_basic_auth_user | default('mcp_agent') }} {{ observability_mcp_basic_auth_password_hash }}
         }
 {% endif %}
-        reverse_proxy 127.0.0.1:{{ observability_mcp_victorialogs_port | default(8081) }}
+        reverse_proxy 127.0.0.1:{{ observability_mcp_victorialogs_port | default(8083) }}
     }
 {% endif %}
 
-{% if observability_mcp_victoriatraces_enabled | default(true) | bool %}
+{% if observability_mcp_victoriatraces_enabled | default(false) | bool %}
     handle_path /mcp/victoriatraces/* {
 {% if observability_mcp_auth_enabled | default(true) | bool %}        basic_auth {
             {{ observability_mcp_basic_auth_user | default('mcp_agent') }} {{ observability_mcp_basic_auth_password_hash }}

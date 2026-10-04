@@ -1,0 +1,79 @@
+---
+# Restore the PostgreSQL-backed Vault from the configuration backup that
+# convert.yml wrote. Writes made to Raft since the conversion are not carried
+# back; this is a last-resort undo, not a merge.
+- name: Require the confirmation phrase before restoring PostgreSQL storage
+  ansible.builtin.assert:
+    that:
+      - vault_legacy_migration_confirm == 'ROLLBACK-VAULT-TO-POSTGRESQL'
+    fail_msg: Set vault_legacy_migration_confirm=ROLLBACK-VAULT-TO-POSTGRESQL to run this rollback.
+
+- name: Find PostgreSQL configuration backups
+  ansible.builtin.find:
+    paths: "{{ vault_legacy_migration_backup_dir }}"
+    patterns: 'vault.hcl.postgresql-*'
+  register: vault_legacy_migration_backups
+
+- name: Fail when no PostgreSQL configuration backup exists
+  ansible.builtin.assert:
+    that:
+      - vault_legacy_migration_backups.files | length > 0
+    fail_msg: No PostgreSQL configuration backup to restore from.
+
+- name: Resolve the most recent backup and its timestamp
+  ansible.builtin.set_fact:
+    vault_legacy_migration_latest_backup: "{{ (vault_legacy_migration_backups.files | sort(attribute='mtime') | last).path }}"
+    vault_legacy_migration_latest_stamp: >-
+      {{ ((vault_legacy_migration_backups.files | sort(attribute='mtime') | last).path | basename)
+         | regex_replace('^vault\.hcl\.postgresql-', '') }}
+
+- name: Stop Vault before restoring
+  ansible.builtin.systemd:
+    name: "{{ vault_legacy_migration_service_name }}"
+    state: stopped
+  failed_when: false
+
+- name: Move any partially migrated Raft data aside
+  ansible.builtin.command:
+    cmd: >-
+      mv {{ vault_legacy_migration_data_dir }}
+      {{ vault_legacy_migration_data_dir }}.rollback-{{ vault_legacy_migration_latest_stamp }}
+    removes: "{{ vault_legacy_migration_data_dir }}"
+  changed_when: true
+
+- name: Restore the PostgreSQL-backed configuration
+  ansible.builtin.copy:
+    src: "{{ vault_legacy_migration_latest_backup }}"
+    dest: "{{ vault_legacy_migration_config_dir }}/vault.hcl"
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Restore the matching systemd unit file if it was backed up
+  ansible.builtin.copy:
+    src: >-
+      {{ vault_legacy_migration_backup_dir }}/{{ vault_legacy_migration_service_name }}.service.postgresql-{{ vault_legacy_migration_latest_stamp }}
+    dest: "/etc/systemd/system/{{ vault_legacy_migration_service_name }}.service"
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0644'
+  failed_when: false
+  register: vault_legacy_migration_unit_restore
+
+- name: Reload systemd after restoring the unit file
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: vault_legacy_migration_unit_restore is changed
+
+- name: Remove the Vault port guard, if it was installed
+  ansible.builtin.include_role:
+    name: vhosts/vault_port_guard
+  vars:
+    vault_port_guard_enabled: false
+
+- name: Start the restored PostgreSQL-backed Vault
+  ansible.builtin.systemd:
+    name: "{{ vault_legacy_migration_service_name }}"
+    state: started

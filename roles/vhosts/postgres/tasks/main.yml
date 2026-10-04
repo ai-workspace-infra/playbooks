@@ -10,6 +10,22 @@
       - postgresql_deploy_mode_effective in ['compose', 'native', 'external']
     fail_msg: "postgresql_deploy_mode must be 'compose', 'native', or 'external'."
 
+- name: Persist effective PostgreSQL admin password as a host fact
+  ansible.builtin.set_fact:
+    _postgresql_admin_password_effective: "{{ postgresql_admin_password }}"
+  no_log: true
+  when: postgresql_deploy_mode_effective != 'external'
+
+- name: Persist PostgreSQL admin password on the target
+  ansible.builtin.copy:
+    dest: "{{ postgresql_admin_password_file }}"
+    content: "{{ postgresql_admin_password }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: postgresql_deploy_mode_effective != 'external'
+
 - name: Use external PostgreSQL service
   ansible.builtin.debug:
     msg: "postgresql_deploy_mode=external; skipping local PostgreSQL install/start."

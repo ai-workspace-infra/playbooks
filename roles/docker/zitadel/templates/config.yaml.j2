@@ -1,0 +1,39 @@
+ExternalDomain: {{ zitadel_domain | to_json }}
+ExternalPort: 443
+ExternalSecure: true
+TLS:
+  Enabled: false
+Database:
+  Postgres:
+    Host: {{ zitadel_db_host | to_json }}
+    Port: {{ zitadel_db_port }}
+    Database: {{ zitadel_db_name | to_json }}
+    User:
+      Username: {{ zitadel_db_user | to_json }}
+      Password: {{ lookup('ansible.builtin.env', 'ZITADEL_PG_PASSWORD') | to_json }}
+      SSL:
+        Mode: disable
+    Admin:
+      Username: {{ zitadel_db_admin_user | to_json }}
+      Password: {{ zitadel_db_admin_password | to_json }}
+      SSL:
+        Mode: disable
+# start-from-init reads FirstInstance through --steps (GitOps passes this same
+# file); --config alone ignores it. An email-shaped UserName is kept verbatim
+# as the admin login name instead of gaining the org domain suffix.
+FirstInstance:
+  Org:
+    Human:
+      UserName: {{ ('zitadel-admin@' ~ zitadel_domain) | to_json }}
+      Email:
+        Address: {{ ('zitadel-admin@' ~ zitadel_domain) | to_json }}
+        Verified: true
+      Password: {{ zitadel_admin_password_override | to_json }}
+      PasswordChangeRequired: false
+    LoginClient:
+      Machine:
+        Username: login-client
+        Name: IAM Login Client
+      Pat:
+        ExpirationDate: '2029-01-01T00:00:00Z'
+  LoginClientPatPath: /current-dir/login-client.pat

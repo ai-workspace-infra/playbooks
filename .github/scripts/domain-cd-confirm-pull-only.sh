@@ -4,6 +4,7 @@ set -euo pipefail
 : "${DOMAIN:?DOMAIN is required}"
 : "${DEPLOY_ENV:?DEPLOY_ENV is required}"
 : "${TARGET_HOST:?TARGET_HOST is required}"
+: "${PLAYBOOK:?PLAYBOOK is required}"
 
 : "${GITOPS_REPO:=ai-workspace-infra/gitops}"
 : "${GITOPS_BRANCH:=main}"
@@ -21,6 +22,10 @@ fi
 echo "Requested deployment ref: ${DEPLOY_TAG}"
 
 if [[ -z "${MANAGED_IMAGES:-}" && -z "${PINNED_IMAGES:-}" ]]; then
+  if [[ "${DOMAIN}" == "ai-workspace" && "${PLAYBOOK}" == "setup-ai-workspace-rootless.yml" ]]; then
+    echo "Confirmed: ${DOMAIN} is provider-managed by the OpenClaw Gateway Ansible playbook; image tag reconciliation is not applicable."
+    exit 0
+  fi
   echo "::error::${DOMAIN} has no managed or pinned images wired to this reusable workflow; refusing an unverifiable deployment." >&2
   exit 1
 fi

@@ -48,6 +48,10 @@
   tags: [ssh, security]
   when: ansible_os_family != 'Darwin'
 
+- name: Base | drop the Caddy apt source while its signing key is expired
+  ansible.builtin.import_tasks: caddy_apt_source.yml
+  when: ansible_os_family == 'Debian'
+
 - name: Base | configure fail2ban
   ansible.builtin.import_tasks: fail2ban.yml
   tags: [fail2ban, security]

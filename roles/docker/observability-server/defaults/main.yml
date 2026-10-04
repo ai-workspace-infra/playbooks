@@ -2,6 +2,7 @@
 observability_dir: "/opt/observability-server"
 observability_prometheus_port: "9090"
 observability_grafana_port: "3030"
+observability_blackbox_host_port: "9115"
 observability_scrape_interval: "15s"
 observability_retention_time: "30d"
 
@@ -47,7 +48,9 @@ observability_alerting_ssl_days: 14
 observability_vmalert_enabled: false
 
 # MCP Server Global Settings
-observability_mcp_enabled: true
+# MCP adapters are optional; the observability data stores and Grafana remain
+# enabled independently when this master switch is false.
+observability_mcp_enabled: false
 observability_mcp_network: "observability"
 observability_mcp_bind_address: "127.0.0.1"
 observability_mcp_auth_enabled: true
@@ -56,7 +59,7 @@ observability_mcp_basic_auth_user: "mcp_agent"
 observability_mcp_basic_auth_password_hash: ""
 
 # Grafana MCP Server
-observability_mcp_grafana_enabled: true
+observability_mcp_grafana_enabled: false
 observability_mcp_grafana_image: "grafana/mcp-grafana:latest"
 observability_mcp_grafana_port: 8000
 observability_mcp_grafana_transport: "streamable-http"
@@ -68,7 +71,7 @@ observability_mcp_grafana_service_account_token: ""
 observability_mcp_grafana_allowed_hosts: "observability.svc.plus,127.0.0.1,127.0.0.1:8000,localhost,localhost:8000"
 
 # VictoriaMetrics MCP Server
-observability_mcp_victoriametrics_enabled: true
+observability_mcp_victoriametrics_enabled: false
 observability_mcp_victoriametrics_image: "ghcr.io/victoriametrics/mcp-victoriametrics:latest"
 observability_mcp_victoriametrics_port: 8088
 observability_mcp_victoriametrics_mode: "http"
@@ -80,14 +83,14 @@ observability_mcp_victoriametrics_bearer_token: ""
 # VictoriaLogs MCP Server
 # Keep this enabled as part of the server-side observability bundle. Port 8081
 # is owned by xray-exporter on production, so the MCP adapter uses 8083.
-observability_mcp_victorialogs_enabled: true
+observability_mcp_victorialogs_enabled: false
 observability_mcp_victorialogs_image: "ghcr.io/victoriametrics/mcp-victorialogs:latest"
 observability_mcp_victorialogs_port: 8083
 observability_mcp_victorialogs_entrypoint: "http://victoria-logs:9428"
 observability_mcp_victorialogs_bearer_token: ""
 
 # VictoriaTraces MCP Server
-observability_mcp_victoriatraces_enabled: true
+observability_mcp_victoriatraces_enabled: false
 observability_mcp_victoriatraces_image: "ghcr.io/victoriametrics-community/mcp-victoriatraces:latest"
 observability_mcp_victoriatraces_port: 8082
 observability_mcp_victoriatraces_entrypoint: "http://victoria-traces:10428"

@@ -19,6 +19,32 @@
     group: "472"
     recurse: true
 
+- name: Validate Grafana OIDC settings
+  ansible.builtin.assert:
+    that:
+      - grafana_oidc_issuer | trim | length > 0
+      - grafana_oidc_client_id | trim | length > 0
+      - grafana_oidc_client_secret | trim | length > 0
+      - grafana_oidc_role_attribute_path | trim | length > 0
+      - grafana_oidc_issuer is match('^https://[^/\\s]+(?:/[^\\s]*)?$')
+      - grafana_protocol == 'https'
+    fail_msg: >-
+      Grafana OIDC requires issuer, client id, client secret and an explicit
+      role attribute path. Read the values from Vault before enabling it.
+  no_log: true
+  when: grafana_oidc_enabled | bool
+
+- name: Template Grafana runtime environment
+  become: true
+  ansible.builtin.template:
+    src: grafana.env.j2
+    dest: "{{ grafana_env_file }}"
+    mode: "0600"
+    owner: root
+    group: root
+  no_log: true
+  diff: false
+
 - name: Template Grafana Docker Compose file
   become: true
   ansible.builtin.template:

@@ -1,0 +1,20 @@
+---
+# Stop and disable the old Vault after its Raft peer has been removed
+# (M6/M7 in docs/vault/operator-runbook.md). The data directory is kept
+# until an operator explicitly decommissions the host.
+- name: Require the confirmation phrase before retiring this Vault
+  ansible.builtin.assert:
+    that:
+      - vault_legacy_migration_confirm == 'REMOVE-LEGACY-VAULT-PEER'
+    fail_msg: Set vault_legacy_migration_confirm=REMOVE-LEGACY-VAULT-PEER to retire this node.
+
+- name: Confirm this host is Raft-backed before retiring it
+  ansible.builtin.command:
+    cmd: grep -Fq 'storage "raft"' {{ vault_legacy_migration_config_dir }}/vault.hcl
+  changed_when: false
+
+- name: Stop and disable the Vault service
+  ansible.builtin.systemd:
+    name: "{{ vault_legacy_migration_service_name }}"
+    state: stopped
+    enabled: false

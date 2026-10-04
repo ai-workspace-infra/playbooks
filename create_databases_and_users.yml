@@ -18,7 +18,12 @@
     pg_root_port: "{{ lookup('env', 'POSTGRESQL_PORT') | default('5432', true) }}"
     pg_root_user: "{{ lookup('env', 'POSTGRESQL_ADMIN_USER') | default('postgres', true) }}"
     # 若配置了密码，可通过环境变量传入，或从本地密码影子文件读取
-    pg_root_password: "{{ lookup('env', 'POSTGRESQL_ADMIN_PASSWORD') | default(lookup('env', 'POSTGRES_PASSWORD') | default(lookup('file', '/root/.ai_workspace_postgres_password', errors='ignore') | default('postgres', true), true), true) }}"
+    pg_root_password: >-
+      {{ hostvars[inventory_hostname].get('_postgresql_admin_password_effective', '')
+         or lookup('env', 'POSTGRESQL_ADMIN_PASSWORD')
+         or lookup('env', 'POSTGRES_PASSWORD')
+         or lookup('env', 'POSTGRESQL_PASSWORD')
+         or 'postgres' }}
 
     vault_env_path: "{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}"
     vault_deploy_mode: "{{ lookup('env', 'VAULT_DEPLOY_MODE') | default('standalone', true) }}"
@@ -136,7 +141,7 @@
     # 异步拉起。此时我们给予最多 3 分钟的重试等待时间，避免刚触发部署就因为容器还
     # 没启动而宣告失败。
     - name: Detect running Postgres container
-      ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E '^web-saas-postgresql$'"
+      ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E '^(web-saas-postgresql|postgresql-svc-plus|postgresql)$'"
       register: detected_pg
       until: detected_pg.stdout != "" or lookup('env', 'POSTGRESQL_DEPLOY_MODE') != 'compose'
       retries: 36
