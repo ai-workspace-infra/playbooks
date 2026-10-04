@@ -1,0 +1,19 @@
+name: Grafana OIDC runtime
+on:
+  pull_request:
+    paths: ['roles/docker/grafana/**', 'tests/test_grafana_oidc_runtime.py', 'tests/requirements-iam.txt', '.github/workflows/iam-tests.yml']
+  push:
+    branches: [main]
+    paths: ['roles/docker/grafana/**', 'tests/test_grafana_oidc_runtime.py', 'tests/requirements-iam.txt', '.github/workflows/iam-tests.yml']
+permissions:
+  contents: read
+jobs:
+  grafana:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r tests/requirements-iam.txt
+      - run: python tests/test_grafana_oidc_runtime.py
