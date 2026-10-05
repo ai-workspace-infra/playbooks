@@ -39,7 +39,7 @@ source_state="$(psql_value "$WEB_SAAS_DATABASE" "SELECT (SELECT count(*) FROM pu
 IFS=',' read -r migration_state user_count subscription_count <<<"$source_state"
 [[ "$migration_state" == "1:${WEB_SAAS_EXPECTED_VERSION}:false" ]] || fail 'source migration state is missing, dirty, duplicated, or not the exact target'
 [[ "$user_count" =~ ^[1-9][0-9]*$ ]] || fail 'source user sample is empty'
-[[ "$subscription_count" =~ ^[1-9][0-9]*$ ]] || fail 'authorized nonempty subscription sample is not present'
+[[ "$subscription_count" =~ ^[0-9]+$ ]] || fail 'subscription count is invalid'
 source_schema="$(docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" --schema-only --schema=public --no-owner --no-privileges | sed '/^\\restrict /d; /^\\unrestrict /d' | sha256sum | awk '{print $1}')" || fail 'could not fingerprint source schema'
 [[ "$source_schema" =~ ^[0-9a-f]{64}$ ]] || fail 'source schema fingerprint is invalid'
 source_data="$(data_fingerprint "$WEB_SAAS_DATABASE")" || fail 'could not fingerprint source rows and sequences'
@@ -89,6 +89,9 @@ print(json.dumps({
     "archive_sha256": archive_sha256,
     "encrypted": True,
     "durable": True,
+    "restore_gate_status": "passed",
+    "g3_status": "passed" if int(subscriptions) > 0 else "blocked",
+    "g3_reason_code": None if int(subscriptions) > 0 else "NONEMPTY_SUBSCRIPTION_SAMPLE_REQUIRED",
     "business_acceptance": False,
 }, sort_keys=True))
 PY

@@ -104,7 +104,7 @@ def validate(payload):
         require(re.fullmatch(r"[0-9a-f]{64}", backup[key]) is not None, f"backup {key} must be lowercase SHA-256")
     require(backup.get("schema_version") == expected, "backup schema_version must equal expected_version")
     require(isinstance(backup.get("existing_users"), int) and backup["existing_users"] > 0, "backup user sample must be nonempty")
-    require(isinstance(backup.get("subscriptions"), int) and backup["subscriptions"] > 0, "backup subscription sample must be nonempty")
+    require(isinstance(backup.get("subscriptions"), int) and backup["subscriptions"] > 0, "G3 requires a nonempty subscription sample before migration acceptance")
     require(nonempty(backup.get("authorized_subscription_sample_id")), "authorized subscription sample reference is required")
 
     require(isinstance(restore, dict), "independent isolated-restore evidence is required")

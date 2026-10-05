@@ -22,7 +22,7 @@
       - web_saas_data_preflight_pg_state.stdout | trim == 'running'
     fail_msg: The primary PostgreSQL container is not running
 
-- name: Read only the exact migration row and nonempty business sample counts
+- name: Read only the exact migration row and business sample counts
   ansible.builtin.command:
     argv:
       - docker
@@ -64,14 +64,11 @@
       - web_saas_data_preflight_db_parts[1] is match('^[1-9][0-9]*$')
     fail_msg: 'reason_code=NONEMPTY_USER_SAMPLE_REQUIRED; source database has no users'
 
-- name: Refuse a database with no authorized nonempty subscription sample
+- name: Keep G3 subscription acceptance separate from restore readiness
   ansible.builtin.assert:
     that:
-      - web_saas_data_preflight_db_parts[2] is match('^[1-9][0-9]*$')
-    fail_msg: >-
-      reason_code=NONEMPTY_SUBSCRIPTION_SAMPLE_REQUIRED;
-      observed_subscriptions={{ web_saas_data_preflight_db_parts[2] | default('unavailable') }};
-      backup and later phases are blocked
+      - web_saas_data_preflight_db_parts[2] is match('^[0-9]+$')
+    fail_msg: 'reason_code=SUBSCRIPTION_COUNT_INVALID; restore readiness cannot be established'
 
 - name: Record read-only database component evidence without claiming business acceptance
   ansible.builtin.set_fact:
@@ -86,5 +83,8 @@
       schema_version: '{{ web_saas_data_preflight_expected_version | int }}'
       existing_users: '{{ web_saas_data_preflight_db_parts[1] | int }}'
       subscriptions: '{{ web_saas_data_preflight_db_parts[2] | int }}'
+      restore_gate_status: passed
+      g3_status: '{{ "passed" if (web_saas_data_preflight_db_parts[2] | int) > 0 else "blocked" }}'
+      g3_reason_code: '{{ "" if (web_saas_data_preflight_db_parts[2] | int) > 0 else "NONEMPTY_SUBSCRIPTION_SAMPLE_REQUIRED" }}'
       clean: true
       business_acceptance: false

@@ -72,7 +72,6 @@ class BaselineManifestContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "subscriptions_sample_count"):
             self.validate(users_sample_count=2, subscriptions_sample_count=0)
 
-
 class IncrementalMigrationContractTests(unittest.TestCase):
     def setUp(self):
         self.contract = load_contract("web_saas_data_migration")
@@ -180,6 +179,12 @@ class IncrementalMigrationContractTests(unittest.TestCase):
             "backup_evidence": self.backup if backup is None else backup,
             "restore_evidence": self.restore if restore is None else restore,
         })
+
+    def test_g3_is_still_required_for_migration_even_if_restore_evidence_can_pass(self):
+        backup = {**self.backup, "subscriptions": 0}
+        restore = {**self.restore, "subscriptions": 0}
+        with self.assertRaisesRegex(ValueError, "G3 requires"):
+            self.validate(backup=backup, restore=restore)
 
     def test_valid_inputs_are_ready_only_after_restore_evidence(self):
         result = self.validate()

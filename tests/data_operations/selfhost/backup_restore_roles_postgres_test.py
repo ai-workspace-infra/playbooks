@@ -101,7 +101,8 @@ class BackupRestoreRolesPostgresTests(unittest.TestCase):
         self.assertIn("exists before this run", occupied.stderr)
         self.assertEqual(self.psql("postgres", "SELECT count(*) FROM pg_database WHERE datname='" + isolated + "'"), "1")
         self.psql("postgres", "DROP DATABASE " + isolated)  # fixture created here
-        # A new checkpoint must refuse dirty state and an empty subscription.
+        # A new checkpoint must refuse dirty state, but an empty subscription
+        # set is still a valid isolated recovery rehearsal. G3 remains blocked.
         another = self.archive_dir.parent / (str(int(env["WEB_SAAS_RUN_ID"]) + 1))
         another.mkdir(mode=0o700)
         failure_env = self.env | dict(WEB_SAAS_BACKUP_ROOT=str(another), WEB_SAAS_RUN_ID=another.name)
@@ -111,9 +112,25 @@ class BackupRestoreRolesPostgresTests(unittest.TestCase):
         self.assertFalse((another / "account.dump.enc").exists())
         self.psql("account", "UPDATE schema_migrations SET dirty=false; DELETE FROM subscriptions")
         empty = self.script("web_saas_data_backup", "create_encrypted_backup.sh", failure_env)
-        self.assertNotEqual(empty.returncode, 0)
-        self.assertIn("nonempty subscription sample", empty.stderr)
-        self.assertFalse((another / "account.dump.enc").exists())
+        self.assertEqual(empty.returncode, 0, empty.stderr)
+        empty_receipt = json.loads(empty.stdout)
+        self.assertEqual(empty_receipt["subscriptions"], 0)
+        self.assertEqual(empty_receipt["restore_gate_status"], "passed")
+        self.assertEqual(empty_receipt["g3_status"], "blocked")
+        empty_restore_env = failure_env | dict(
+            WEB_SAAS_ARCHIVE_PATH=empty_receipt["archive_path"],
+            WEB_SAAS_ARCHIVE_SHA256=empty_receipt["archive_sha256"],
+            WEB_SAAS_EXPECTED_USERS=str(empty_receipt["existing_users"]),
+            WEB_SAAS_EXPECTED_SUBSCRIPTIONS="0",
+            WEB_SAAS_EXPECTED_SCHEMA_SHA256=empty_receipt["schema_sha256"],
+            WEB_SAAS_EXPECTED_DATA_SHA256=empty_receipt["data_sha256"],
+            WEB_SAAS_DATABASE_SYSTEM_IDENTIFIER=empty_receipt["database_system_identifier"],
+        )
+        empty_restore = self.script("web_saas_data_restore_verify", "restore_verify.sh", empty_restore_env)
+        self.assertEqual(empty_restore.returncode, 0, empty_restore.stderr)
+        empty_restore_receipt = json.loads(empty_restore.stdout)
+        self.assertEqual(empty_restore_receipt["restore_gate_status"], "passed")
+        self.assertEqual(empty_restore_receipt["g3_status"], "blocked")
         self.assertEqual(self.psql("account", "SELECT quota FROM users WHERE id=1"), "5368709120")
         self.assertEqual(self.psql("account", "SELECT password_hash FROM users WHERE id=1"), "original-password-fixture")
 

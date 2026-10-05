@@ -39,10 +39,12 @@ role requires `/data` itself to be a mountpoint and writes one immutable,
 encrypted archive to
 `/data/backups/web-saas/<environment>/<release-tag>/<run-id>/account.dump.enc`
 with private directories. The separate restore role compares the exact clean
-migration version, nonempty user/subscription counts, and source/restore schema
+migration version, nonempty user and exact subscription counts (zero is valid
+for restore rehearsal), and source/restore schema
 fingerprint, then drops only the temporary database created by this invocation.
 The serving `account` database is never used as the restore target. These are
-database component checks only; row counts do not prove G1/G2/G3 semantics.
+database component checks only; a zero subscription count leaves G3 blocked and
+row counts do not prove G1/G2/G3 semantics.
 The archive remains on the environment's web-saas host for recovery.
 For the current UAT candidate, CMDB identifies a GCP Spot host while the
 checked-in resource declaration does not declare a separate `/data` disk.
