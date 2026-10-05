@@ -1,0 +1,75 @@
+---
+- name: Validate the XConnect lab host/service operation boundary
+  ansible.builtin.assert:
+    that:
+      - xconnect_lab_runtime_environment == 'uat'
+      - xconnect_lab_runtime_operation in ['gateway_identity', 'gateway', 'one', 'gateway_verify', 'one_verify']
+      - xconnect_lab_runtime_target | trim | length > 0
+      - xconnect_lab_runtime_status_timeout_seconds | int > 0
+    fail_msg: >-
+      XConnect lab runtime accepts only an explicit UAT host/service operation;
+      cloud resources, DNS and PROD are not executable through this role.
+
+- name: Create or reuse the Gateway local identity
+  ansible.builtin.include_role:
+    name: vhosts/xconnect_gateway
+    tasks_from: identity
+  when: xconnect_lab_runtime_operation == 'gateway_identity'
+
+- name: Configure and reconcile the Gateway service
+  ansible.builtin.include_role:
+    name: vhosts/xconnect_gateway
+  when: xconnect_lab_runtime_operation == 'gateway'
+
+- name: Configure and reconcile the XConnect One service
+  ansible.builtin.include_role:
+    name: vhosts/xconnect_one
+  when: xconnect_lab_runtime_operation == 'one'
+
+- name: Verify the Gateway service and signed runtime state
+  block:
+    - name: Check the Gateway service is active
+      ansible.builtin.command:
+        argv: [systemctl, is-active, --quiet, xconnect-gateway-xray.service]
+      register: xconnect_lab_runtime_gateway_service
+      changed_when: false
+      failed_when: false
+
+    - name: Read the Gateway status without exposing credentials
+      ansible.builtin.command:
+        argv:
+          - xconnect-gateway
+          - status
+          - --state-dir
+          - '{{ xconnect_gateway_state_dir }}'
+      register: xconnect_lab_runtime_gateway_status
+      changed_when: false
+      no_log: true
+
+    - name: Require the Gateway status command to succeed
+      ansible.builtin.assert:
+        that:
+          - xconnect_lab_runtime_gateway_service.rc == 0
+          - xconnect_lab_runtime_gateway_status.rc == 0
+        fail_msg: XConnect Gateway service or signed runtime verification failed
+  when: xconnect_lab_runtime_operation == 'gateway_verify'
+
+- name: Verify the XConnect One service and signed runtime state
+  block:
+    - name: Read the XConnect One status without exposing credentials
+      ansible.builtin.command:
+        argv:
+          - xconnect
+          - status
+          - --state-dir
+          - '{{ xconnect_one_state_dir }}'
+      register: xconnect_lab_runtime_one_status
+      changed_when: false
+      no_log: true
+
+    - name: Require the XConnect One status command to succeed
+      ansible.builtin.assert:
+        that:
+          - xconnect_lab_runtime_one_status.rc == 0
+        fail_msg: XConnect One service or signed runtime verification failed
+  when: xconnect_lab_runtime_operation == 'one_verify'

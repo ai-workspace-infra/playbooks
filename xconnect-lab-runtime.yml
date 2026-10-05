@@ -1,0 +1,13 @@
+---
+# Host/service execution only. The caller supplies an exact inventory and
+# limit; this playbook never runs Terraform, changes DNS, or manages cloud
+# resources. PROD is intentionally not enabled until a separate release gate
+# is approved.
+- name: Execute a reviewed UAT XConnect lab runtime operation
+  hosts: '{{ xconnect_lab_runtime_hosts | default("never-matches") }}'
+  become: true
+  gather_facts: false
+  roles:
+    - role: vhosts/xconnect_lab_runtime
+  tags: [xconnect-lab-runtime]
+
