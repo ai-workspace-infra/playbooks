@@ -73,28 +73,29 @@ PY
 sql_sha256="$(sha256sum "$sql_file" | awk '{print $1}')"
 
 psql_value() {
-  psql -XAtq -v ON_ERROR_STOP=1 "$WEB_SAAS_TARGET_DSN" -c "$1"
+  psql --dbname="$WEB_SAAS_TARGET_DSN" -XAtq -v ON_ERROR_STOP=1 -c "$1"
 }
 
 [[ "$(psql_value 'SELECT current_database()')" == postgres ]] || fail 'target control connection must use the postgres database'
 target_exists="$(psql_value "SELECT count(*) FROM pg_database WHERE datname='${restore_database}'")" || fail 'could not inspect isolated target'
 [[ "$target_exists" == 0 ]] || fail 'isolated target database already exists; refusing reuse or overwrite'
+target_dsn="${WEB_SAAS_TARGET_DSN%%/postgres*}/${restore_database}${WEB_SAAS_TARGET_DSN#*/postgres}"
 
 # Create only the run-owned isolated target. Never connect to or modify the
 # source database, and never delete this target automatically on failure.
-psql -Xq -v ON_ERROR_STOP=1 "$WEB_SAAS_TARGET_DSN" -c "CREATE DATABASE ${restore_database} TEMPLATE template0" \
+psql --dbname="$WEB_SAAS_TARGET_DSN" -Xq -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${restore_database} TEMPLATE template0" \
   >/dev/null 2>/dev/null || fail 'could not create isolated UAT target'
-target_tables_before="$(psql -d "$restore_database" -XAtq -v ON_ERROR_STOP=1 "$WEB_SAAS_TARGET_DSN" -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")" || fail 'could not inspect isolated target contents'
+target_tables_before="$(psql --dbname="$target_dsn" -XAtq -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")" || fail 'could not inspect isolated target contents'
 [[ "$target_tables_before" == 0 ]] || fail 'isolated target is not empty'
 
-psql -d "$restore_database" -Xq -v ON_ERROR_STOP=1 --single-transaction "$WEB_SAAS_TARGET_DSN" -f "$sql_file" \
+psql --dbname="$target_dsn" -Xq -v ON_ERROR_STOP=1 --single-transaction -f "$sql_file" \
   >/dev/null 2>/dev/null || fail 'checkpoint SQL restore failed; isolated target retained for review'
 
-required_tables="$(psql -d "$restore_database" -XAtq -v ON_ERROR_STOP=1 "$WEB_SAAS_TARGET_DSN" -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('users','subscriptions')")" || fail 'could not verify restored schema'
+required_tables="$(psql --dbname="$target_dsn" -XAtq -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('users','subscriptions')")" || fail 'could not verify restored schema'
 [[ "$required_tables" == 2 ]] || fail 'restored schema is missing users or subscriptions'
-target_users="$(psql -d "$restore_database" -XAtq -v ON_ERROR_STOP=1 "$WEB_SAAS_TARGET_DSN" -c 'SELECT count(*) FROM public.users')" || fail 'could not count restored users'
-target_subscriptions="$(psql -d "$restore_database" -XAtq -v ON_ERROR_STOP=1 "$WEB_SAAS_TARGET_DSN" -c 'SELECT count(*) FROM public.subscriptions')" || fail 'could not count restored subscriptions'
-target_system_identifier="$(psql -d "$restore_database" -XAtq -v ON_ERROR_STOP=1 "$WEB_SAAS_TARGET_DSN" -c 'SELECT system_identifier::text FROM pg_control_system()')" || fail 'could not capture isolated target identity'
+target_users="$(psql --dbname="$target_dsn" -XAtq -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM public.users')" || fail 'could not count restored users'
+target_subscriptions="$(psql --dbname="$target_dsn" -XAtq -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM public.subscriptions')" || fail 'could not count restored subscriptions'
+target_system_identifier="$(psql --dbname="$target_dsn" -XAtq -v ON_ERROR_STOP=1 -c 'SELECT system_identifier::text FROM pg_control_system()')" || fail 'could not capture isolated target identity'
 [[ "$target_system_identifier" =~ ^[0-9]+$ ]] || fail 'isolated target identity is invalid'
 
 python3 - "$WEB_SAAS_RUN_ID" "$WEB_SAAS_SOURCE_DATABASE_ID" "$WEB_SAAS_TARGET_DATABASE_ID" "$WEB_SAAS_ARCHIVE_SHA256" "$sql_sha256" "$restore_database" "$target_system_identifier" "$target_users" "$target_subscriptions" <<'PY'
