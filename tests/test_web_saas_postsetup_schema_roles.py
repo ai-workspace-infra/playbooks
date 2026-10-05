@@ -13,9 +13,23 @@ class AccountsPostsetupSchemaSentinelTests(unittest.TestCase):
         source = POSTSETUP.read_text()
 
         self.assertIn("table_name IN ('users','subscriptions')", source)
+        self.assertIn('public_table_count=', source)
+        self.assertIn('[[ "${public_table_count}" == 0 ]]', source)
+        self.assertIn('[[ "${users_table_exists}" == 1 && "${subscriptions_table_exists}" != 1 ]]', source)
+        self.assertIn('CREATE TABLE IF NOT EXISTS public.subscriptions', source)
         self.assertIn('[[ "${required_tables}" != 2 ]]', source)
-        self.assertIn('[[ "${verified_tables}" != 2 ]]', source)
         self.assertIn("-v ON_ERROR_STOP=1", source)
+
+    def test_nonempty_database_never_runs_full_baseline(self) -> None:
+        source = POSTSETUP.read_text()
+
+        self.assertIn('Never run the full Accounts baseline against a non-empty database', source)
+        self.assertIn('refusing destructive initialization', source)
+        self.assertNotIn(
+            'if [[ "${required_tables}" != 2 ]]; then\n'
+            '  docker exec -i postgresql psql -U postgres -d account -v ON_ERROR_STOP=1 -f "${schema_file}"',
+            source,
+        )
 
     def test_legacy_users_only_sentinel_is_gone(self) -> None:
         source = POSTSETUP.read_text()
