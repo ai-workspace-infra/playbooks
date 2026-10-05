@@ -58,10 +58,10 @@ COPY public.subscriptions (id, user_id, status) FROM stdin;
         with archive.open("wb") as output:
             compressed = subprocess.Popen(["gzip", "-c", str(plain)], stdout=subprocess.PIPE)
             encrypted = subprocess.run(
-                ["openssl", "enc", "-aes-256-cbc", "-salt", "-pbkdf2", "-iter", "100000",
+                 ["openssl", "enc", "-aes-256-cbc", "-salt", "-pbkdf2", "-iter", "100000",
                  "-pass", "env:WEB_SAAS_BACKUP_PASSPHRASE"],
-                env={**os.environ, "WEB_SAAS_BACKUP_PASSPHRASE": passphrase},
-                stdin=compressed.stdout, stdout=output, capture_output=True, text=False)
+                 env={**os.environ, "WEB_SAAS_BACKUP_PASSPHRASE": passphrase},
+                stdin=compressed.stdout, stdout=output, stderr=subprocess.PIPE, text=False)
             assert compressed.stdout is not None
             compressed.stdout.close()
             compressed.wait()
