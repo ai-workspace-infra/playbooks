@@ -149,6 +149,9 @@ def main():
             assert psql(baseline_db, "SELECT dirty FROM schema_migrations").stdout.strip() == "f"
 
             first = bounded(baseline_db)
+            if first.returncode:
+                detail = re.sub(r"postgres(?:ql)?://\\S+", "[dsn]", first.stderr.strip())[-600:]
+                raise RuntimeError(f"bounded fixture migration failed: {detail or 'no diagnostic'}")
             assert first.returncode == 0
             upgraded = capture(baseline_db)
             assert upgraded["users"] == before["users"]
