@@ -15,11 +15,11 @@
       - web_saas_data_restore_verify_source_data_sha256 is match('^[0-9a-f]{64}$')
       - web_saas_data_restore_verify_database_system_identifier is match('^[0-9]+$')
       - web_saas_data_restore_verify_expected_users | string is match('^[1-9][0-9]*$')
-      - web_saas_data_restore_verify_expected_subscriptions | string is match('^[1-9][0-9]*$')
+      - web_saas_data_restore_verify_expected_subscriptions | string is match('^[0-9]+$')
       - web_saas_data_restore_verify_archive_path is match('^/data/backups/web-saas/(uat|prod)/[A-Za-z0-9._-]+/[1-9][0-9]*/account\.dump\.enc$')
       - web_saas_data_restore_verify_archive_sha256 is match('^[0-9a-f]{64}$')
       - web_saas_data_restore_verify_passphrase | length >= 32
-    fail_msg: Restore verification provenance, nonempty sample, source schema, archive, or isolated target is missing or unsafe
+    fail_msg: Restore verification provenance, source schema, archive, or isolated target is missing or unsafe
   no_log: true
 
 - name: Verify only the exact immutable archive exists with private permissions

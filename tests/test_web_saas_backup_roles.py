@@ -49,6 +49,7 @@ class WebSaaSBackupRoleContractTests(unittest.TestCase):
         self.assertIn('[[ "$WEB_SAAS_EXPECTED_SUBSCRIPTIONS" =~ ^[0-9]+$ ]] || fail', source)
         self.assertIn('"restore_gate_status": "passed"', source)
         self.assertIn('"g3_status": "passed" if int(subscriptions) > 0 else "blocked"', source)
+        self.assertIn("web_saas_data_restore_verify_expected_subscriptions | string is match('^[0-9]+$')", RESTORE_TASKS.read_text())
 
     def test_restore_rejects_invalid_expected_subscription_count(self) -> None:
         env = {
