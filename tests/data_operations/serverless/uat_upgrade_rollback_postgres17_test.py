@@ -38,6 +38,14 @@ def psql(database, sql, *, check=True):
     return run(["psql", "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-c", sql], env=env, check=check)
 
 
+def postgres17_tool(tool, directory, arguments):
+    return run([
+        "docker", "run", "--rm", "--network", "host",
+        "--env", "PGHOST", "--env", "PGPORT", "--env", "PGUSER", "--env", "PGPASSWORD",
+        "--volume", f"{directory}:/work", "postgres:17", tool, *arguments,
+    ], env=os.environ)
+
+
 def create_database(database):
     psql("postgres", f'CREATE DATABASE "{database}"')
 
@@ -111,7 +119,7 @@ def main():
             """)
             before = capture(baseline_db)
 
-            run(["pg_dump", "--format=custom", "--no-owner", "--no-acl", "--file", str(dump), baseline_db], env=os.environ)
+            postgres17_tool("pg_dump", directory, ["--format=custom", "--no-owner", "--no-acl", "--file", "/work/baseline.dump", baseline_db])
             run(["openssl", "enc", "-aes-256-cbc", "-pbkdf2", "-salt", "-pass", "env:FIXTURE_CHECKPOINT_KEY", "-in", str(dump), "-out", str(encrypted)], env=key_env)
             assert encrypted.stat().st_size > 0
             checkpoint_sha = hashlib.sha256(encrypted.read_bytes()).hexdigest()
@@ -120,7 +128,7 @@ def main():
             create_database(restore_db)
             decrypted = directory / "restored.dump"
             run(["openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-pass", "env:FIXTURE_CHECKPOINT_KEY", "-in", str(encrypted), "-out", str(decrypted)], env=key_env)
-            run(["pg_restore", "--exit-on-error", "--no-owner", "--no-acl", "--dbname", restore_db, str(decrypted)])
+            postgres17_tool("pg_restore", directory, ["--exit-on-error", "--no-owner", "--no-acl", "--dbname", restore_db, "/work/restored.dump"])
             assert capture(restore_db) == before
             assert database_identity(restore_db) != database_identity(baseline_db)
 
@@ -136,7 +144,7 @@ def main():
             # force-clear the dirty marker in the fixture or in an environment.
             drop_database(baseline_db)
             create_database(baseline_db)
-            run(["pg_restore", "--exit-on-error", "--no-owner", "--no-acl", "--dbname", baseline_db, str(decrypted)])
+            postgres17_tool("pg_restore", directory, ["--exit-on-error", "--no-owner", "--no-acl", "--dbname", baseline_db, "/work/restored.dump"])
             assert capture(baseline_db) == before
             assert psql(baseline_db, "SELECT dirty FROM schema_migrations").stdout.strip() == "f"
 
@@ -151,7 +159,7 @@ def main():
             assert capture(baseline_db) == upgraded
 
             create_database(rollback_db)
-            run(["pg_restore", "--exit-on-error", "--no-owner", "--no-acl", "--dbname", rollback_db, str(decrypted)])
+            postgres17_tool("pg_restore", directory, ["--exit-on-error", "--no-owner", "--no-acl", "--dbname", rollback_db, "/work/restored.dump"])
             assert capture(rollback_db) == before
             assert bounded(rollback_db).returncode == 0
             assert bounded(rollback_db).returncode == 0
