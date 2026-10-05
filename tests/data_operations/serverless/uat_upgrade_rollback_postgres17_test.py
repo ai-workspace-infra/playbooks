@@ -75,13 +75,13 @@ def database_identity(database):
 def bounded(database, *, checksum=MIGRATION_SHA):
     dsn = f"postgres://postgres:{os.environ['PGPASSWORD']}@127.0.0.1:{os.environ.get('PGPORT', '5432')}/{database}?sslmode=disable"
     env = dict(os.environ, UAT_FIXTURE_DATABASE_URL=dsn)
-    return run([
+    return subprocess.run([
         "go", "run", "./cmd/migratectl", "migrate",
         "--dsn-env", "UAT_FIXTURE_DATABASE_URL", "--dir", "sql/migrations",
         "--expected-version", EXPECTED, "--target-version", TARGET,
         "--migration-sha256", checksum, "--lock-timeout", "15s",
         "--statement-timeout", "5m",
-    ], env=env, check=False)
+    ], cwd=SOURCE, env=env, text=True, capture_output=True, timeout=300)
 
 
 def main():
