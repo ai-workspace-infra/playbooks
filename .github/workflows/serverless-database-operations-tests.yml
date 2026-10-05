@@ -125,6 +125,8 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
           PGDATABASE: postgres
+      - name: Provision private checkpoint fixture root on disposable CI runner only
+        run: sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" /data/backups/web-saas/uat
       - name: Prove Supabase SQL checkpoint isolated restore adapter
         run: python3 -B tests/data_operations/serverless/uat_supabase_checkpoint_restore_postgres17_test.py
         env:
