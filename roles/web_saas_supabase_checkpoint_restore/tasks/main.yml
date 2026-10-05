@@ -1,0 +1,63 @@
+---
+- name: Validate Supabase checkpoint restore contract
+  ansible.builtin.assert:
+    that:
+      - web_saas_supabase_restore_environment == 'uat'
+      - web_saas_supabase_restore_archive_format == 'supabase-public-sql-gzip-aes256-cbc-v1'
+      - web_saas_supabase_restore_target_host == 'web-saas-uat'
+      - web_saas_supabase_restore_run_id is match('^[1-9][0-9]*$')
+      - web_saas_supabase_restore_source_database_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
+      - web_saas_supabase_restore_target_database_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
+      - web_saas_supabase_restore_source_database_id != web_saas_supabase_restore_target_database_id
+      - web_saas_supabase_restore_archive_path is match('^/data/backups/web-saas/uat/[A-Za-z0-9][A-Za-z0-9._-]*/[1-9][0-9]*/supabase_[A-Za-z0-9._-]+_daily-build-[0-9]{4}\.[0-9]{2}\.[0-9]{2}-r[1-9][0-9]*\.sql\.gz\.enc$')
+      - web_saas_supabase_restore_archive_sha256 is match('^[0-9a-f]{64}$')
+      - web_saas_supabase_restore_source_identity_status == 'unavailable_from_historical_checkpoint'
+      - web_saas_supabase_restore_target_dsn | length > 0
+      - web_saas_supabase_restore_passphrase | length >= 32
+    fail_msg: Supabase checkpoint format, UAT target, source separation, or immutable evidence is missing
+  no_log: true
+
+- name: Verify the staged checkpoint archive without following links
+  ansible.builtin.stat:
+    path: '{{ web_saas_supabase_restore_archive_path }}'
+    follow: false
+    checksum_algorithm: sha256
+    get_checksum: true
+  register: web_saas_supabase_restore_archive
+
+- name: Refuse an altered, linked, or nonprivate checkpoint archive
+  ansible.builtin.assert:
+    that:
+      - web_saas_supabase_restore_archive.stat.isreg | default(false)
+      - web_saas_supabase_restore_archive.stat.mode == '0600'
+      - web_saas_supabase_restore_archive.stat.checksum == web_saas_supabase_restore_archive_sha256
+    fail_msg: Supabase checkpoint archive identity or checksum does not match
+
+- name: Restore the encrypted SQL checkpoint into one new isolated UAT database
+  ansible.builtin.script:
+    cmd: '{{ role_path }}/files/restore_supabase_sql_gzip_verify.sh'
+    executable: /bin/bash
+  environment:
+    WEB_SAAS_ARCHIVE_FORMAT: '{{ web_saas_supabase_restore_archive_format }}'
+    WEB_SAAS_ARCHIVE_PATH: '{{ web_saas_supabase_restore_archive_path }}'
+    WEB_SAAS_ARCHIVE_SHA256: '{{ web_saas_supabase_restore_archive_sha256 }}'
+    WEB_SAAS_ENVIRONMENT: '{{ web_saas_supabase_restore_environment }}'
+    WEB_SAAS_RUN_ID: '{{ web_saas_supabase_restore_run_id }}'
+    WEB_SAAS_SOURCE_DATABASE_ID: '{{ web_saas_supabase_restore_source_database_id }}'
+    WEB_SAAS_TARGET_DATABASE_ID: '{{ web_saas_supabase_restore_target_database_id }}'
+    WEB_SAAS_TARGET_HOST: '{{ web_saas_supabase_restore_target_host }}'
+    WEB_SAAS_TARGET_DSN: '{{ web_saas_supabase_restore_target_dsn }}'
+    WEB_SAAS_BACKUP_PASSPHRASE: '{{ web_saas_supabase_restore_passphrase }}'
+    WEB_SAAS_SOURCE_IDENTITY_STATUS: '{{ web_saas_supabase_restore_source_identity_status }}'
+  register: web_saas_supabase_restore_command
+  changed_when: web_saas_supabase_restore_command.rc == 0
+  no_log: true
+
+- name: Publish only the non-sensitive Supabase restore component receipt
+  ansible.builtin.copy:
+    dest: '{{ web_saas_supabase_restore_receipt_file }}'
+    mode: '0600'
+    content: '{{ web_saas_supabase_restore_command.stdout | trim }}\n'
+  delegate_to: localhost
+  become: false
+  when: web_saas_supabase_restore_receipt_file | length > 0
