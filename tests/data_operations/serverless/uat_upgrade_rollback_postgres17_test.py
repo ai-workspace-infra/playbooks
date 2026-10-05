@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import uuid
@@ -25,6 +26,9 @@ TARGET = "2026092801"
 def run(args, *, env=None, check=True):
     result = subprocess.run(args, text=True, capture_output=True, env=env, timeout=300)
     if check and result.returncode:
+        if args[0] == "pg_dump":
+            detail = re.sub(r"postgres(?:ql)?://\\S+", "[dsn]", result.stderr.strip())[-240:]
+            raise RuntimeError(f"fixture pg_dump failed: {detail or 'no diagnostic'}")
         raise RuntimeError(f"fixture command failed: {args[0]}")
     return result
 

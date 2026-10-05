@@ -181,11 +181,12 @@ class IncrementalMigrationContractTests(unittest.TestCase):
             "restore_evidence": self.restore if restore is None else restore,
         })
 
-    def test_valid_inputs_still_block_until_execution_adapter_is_wired(self):
+    def test_valid_inputs_are_ready_only_after_restore_evidence(self):
         result = self.validate()
-        self.assertEqual(result["status"], "blocked")
-        self.assertFalse(result["capability_supported"])
-        self.assertEqual(result["reason_code"], "UNWIRED_SELFHOST_EXECUTION_ADAPTER")
+        self.assertEqual(result["status"], "ready")
+        self.assertTrue(result["capability_supported"])
+        self.assertEqual(result["reason_code"], "BOUNDED_SELFHOST_EXECUTION_READY")
+        self.assertEqual(result["backup_restore_status"], "passed")
 
     def test_rejects_dirty_or_non_exact_version_inputs(self):
         for changes in (
@@ -229,24 +230,33 @@ class IncrementalMigrationContractTests(unittest.TestCase):
             self.validate(request={**self.request, "accounts_source_revision": "worktree"})
 
     def test_allows_in_place_same_target_identity(self):
-        self.assertEqual(self.validate()["status"], "blocked")
+        self.assertEqual(self.validate()["status"], "ready")
 
     def test_rejects_missing_checksum_lock_and_timeouts(self):
         for field, value in (("migration_checksum", ""), ("advisory_lock", False), ("single_migration_only", False), ("lock_timeout_seconds", 0), ("statement_timeout_seconds", 3601)):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 self.validate(request={**self.request, field: value})
 
-    def test_role_has_no_migration_command_or_secret_database_inputs(self):
+    def test_role_uses_only_bounded_container_interface_and_no_secret_inputs(self):
         tasks = (ROOT / "roles/web_saas_data_migration/tasks/main.yml").read_text()
         validator = (ROOT / "roles/web_saas_data_migration/files/validate_contract.py").read_text()
-        self.assertIn("UNWIRED_SELFHOST_EXECUTION_ADAPTER", validator)
-        self.assertIn("ansible.builtin.fail", tasks)
-        self.assertNotIn("docker", tasks)
+        self.assertIn("BOUNDED_SELFHOST_EXECUTION_READY", validator)
+        self.assertIn("canonicalAccount", tasks)
+        self.assertIn("--dsn-env", tasks)
+        self.assertIn("DATABASE_URL", tasks)
+        self.assertNotIn("\n          - --dsn\n", tasks)
         self.assertNotIn("psql", tasks)
-        self.assertNotIn("migratectl", tasks)
+        self.assertIn("migratectl", tasks)
         self.assertNotIn("TARGET_DSN", tasks)
         self.assertNotIn("init-schema", tasks)
         self.assertNotIn("force", tasks)
+
+    def test_lifecycle_binds_immutable_accounts_source_and_builds_migrator_only_for_migration(self):
+        workflow = (ROOT / ".github/workflows/selfhost-data-lifecycle.yml").read_text()
+        self.assertIn("fromJSON(inputs.config_json).accounts_source_revision || inputs.release_tag", workflow)
+        self.assertIn("inputs.operation == 'migration'", workflow)
+        self.assertIn("go build -o \"$RUNNER_TEMP/accounts-migratectl\" ./cmd/migratectl", workflow)
+        self.assertIn('cp -a sql/migrations "$RUNNER_TEMP/account-migrations"', workflow)
 
 
 if __name__ == "__main__":

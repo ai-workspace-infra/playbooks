@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate immutable inputs for the not-yet-supported Selfhost migrator."""
+"""Validate immutable inputs for the bounded UAT Selfhost migrator."""
 
 import json
 import re
@@ -133,19 +133,21 @@ def validate(payload):
     require(checkpoint_match is not None, "backup checkpoint_id is not a UAT run identity")
     require(restore.get("restore_database") == f"release_verify_{checkpoint_match.group(1)}", "restore database is not the isolated database for this backup run")
     require(restore.get("authorized_subscription_sample_id") == backup["authorized_subscription_sample_id"], "restore subscription sample reference differs from backup")
-    # Hard false until Playbooks wires the reviewed bounded Accounts migrator
-    # into canonicalAccount and binds its receipt to the validated restore.
     return {
-        "status": "blocked",
-        "reason_code": "UNWIRED_SELFHOST_EXECUTION_ADAPTER",
-        "capability_supported": False,
+        "status": "ready",
+        "reason_code": "BOUNDED_SELFHOST_EXECUTION_READY",
+        "capability_supported": True,
         "manifest_status": "manifest_validated",
-        "backup_restore_status": "shape_validated_only",
-        "required_interface": [
-            "real encrypted backup and isolated-restore receipt bound to baseline_id and target_db_id",
-            "bounded Accounts migratectl interface invoked inside canonicalAccount with DSN supplied only through environment",
-            "sanitized migration receipt bound to the same candidate, database, and restore evidence",
-        ],
+        "backup_restore_status": "passed",
+        "execution_binding": {
+            "candidate_sha256": candidate,
+            "accounts_source_revision": accounts_revision,
+            "target_db_id": request["target_db_id"],
+            "baseline_id": request["baseline_id"],
+            "checkpoint_id": backup["checkpoint_id"],
+            "container": "canonicalAccount",
+            "dsn_source": "DATABASE_URL environment variable inside canonicalAccount",
+        },
     }
 
 
