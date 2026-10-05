@@ -38,7 +38,7 @@ def main():
     created = []
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
-        archive_dir = Path("/data/backups/web-saas/uat/fixture") / "daily-build-2026.10.04-r3" / run_id
+        archive_dir = Path("/data/backups/web-saas/uat") / "daily-build-2026.10.04-r3" / run_id
         archive_dir.mkdir(parents=True, exist_ok=True)
         archive = archive_dir / "supabase_uat_daily-build-2026.10.04-r3.sql.gz.enc"
         plain = root / "checkpoint.sql"
