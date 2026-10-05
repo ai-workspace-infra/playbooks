@@ -79,7 +79,18 @@ psql_value() {
 [[ "$(psql_value 'SELECT current_database()')" == postgres ]] || fail 'target control connection must use the postgres database'
 target_exists="$(psql_value "SELECT count(*) FROM pg_database WHERE datname='${restore_database}'")" || fail 'could not inspect isolated target'
 [[ "$target_exists" == 0 ]] || fail 'isolated target database already exists; refusing reuse or overwrite'
-target_dsn="${WEB_SAAS_TARGET_DSN%%/postgres*}/${restore_database}${WEB_SAAS_TARGET_DSN#*/postgres}"
+target_dsn="$(python3 - "$WEB_SAAS_TARGET_DSN" "$restore_database" <<'PY'
+from urllib.parse import urlsplit, urlunsplit
+import sys
+
+dsn, database = sys.argv[1:]
+parts = urlsplit(dsn)
+if parts.scheme not in ("postgres", "postgresql") or not parts.netloc:
+    # Refuse ambiguous keyword DSNs instead of guessing how to retarget them.
+    raise SystemExit("target DSN must be a PostgreSQL URI with query parameters")
+print(urlunsplit((parts.scheme, parts.netloc, "/" + database, parts.query, parts.fragment)))
+PY
+)" || fail 'target DSN cannot be safely retargeted to the isolated database'
 
 # Create only the run-owned isolated target. Never connect to or modify the
 # source database, and never delete this target automatically on failure.
