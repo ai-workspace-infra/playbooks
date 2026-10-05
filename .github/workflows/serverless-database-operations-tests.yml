@@ -83,7 +83,7 @@ jobs:
           repository: ai-workspace-services/accounts
           # Bounded migratectl interface from Accounts PR #188; the migration
           # file itself remains the same reviewed 2026092801 candidate.
-          ref: 9a17040d70a6ff1aaa0483ec89975b3574ae39e6
+          ref: a83be53810e8114c11d0edf7d6dcace66241cf73
           path: accounts-finance
 
       - name: Set up Go for the official Accounts migrator
@@ -108,6 +108,15 @@ jobs:
 
       - name: Run official finance migrator twice against its disposable fixture
         run: python3 -B tests/data_operations/serverless/uat_finance_migration_postgres17_test.py
+        env:
+          ACCOUNTS_REPO_ROOT: ${{ github.workspace }}/accounts-finance
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
+      - name: Prove encrypted restore, rollback, and same-artifact re-upgrade
+        run: python3 -B tests/data_operations/serverless/uat_upgrade_rollback_postgres17_test.py
         env:
           ACCOUNTS_REPO_ROOT: ${{ github.workspace }}/accounts-finance
           PGHOST: 127.0.0.1

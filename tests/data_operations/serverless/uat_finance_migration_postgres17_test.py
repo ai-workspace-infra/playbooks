@@ -11,7 +11,7 @@ import uuid
 
 root = Path(__file__).resolve().parents[3]
 source = Path(os.environ["ACCOUNTS_REPO_ROOT"])
-sha = "9a17040d70a6ff1aaa0483ec89975b3574ae39e6"
+sha = "a83be53810e8114c11d0edf7d6dcace66241cf73"
 assert subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip() == sha
 migration = source / "sql/migrations/2026092801_local_finance_ledger.up.sql"
 assert hashlib.sha256(migration.read_bytes()).hexdigest() == "d066e223641b4eccbb65a00dce70f717b6dce02491d1d54edc1099baf2071433"
@@ -50,13 +50,14 @@ try:
     key = b"fixture-only"
     before = repair.capture(key)
     dsn = f"postgres://postgres:{os.environ['PGPASSWORD']}@127.0.0.1:{os.environ.get('PGPORT','5432')}/{database}?sslmode=disable"
+    env = dict(os.environ, UAT_FIXTURE_DATABASE_URL=dsn)
     for _ in range(2):
         migration_run = subprocess.run([
-            "go", "run", "./cmd/migratectl", "migrate", "--dsn", dsn, "--dir", "sql/migrations",
+            "go", "run", "./cmd/migratectl", "migrate", "--dsn-env", "UAT_FIXTURE_DATABASE_URL", "--dir", "sql/migrations",
             "--expected-version", "2026092703", "--target-version", "2026092801",
             "--migration-sha256", "d066e223641b4eccbb65a00dce70f717b6dce02491d1d54edc1099baf2071433",
             "--lock-timeout", "15s", "--statement-timeout", "5m",
-        ], cwd=source, text=True, capture_output=True, timeout=300)
+        ], cwd=source, env=env, text=True, capture_output=True, timeout=300)
         if migration_run.returncode:
             raise RuntimeError("bounded Accounts migrator failed: " + migration_run.stderr[-2000:])
         after = repair.capture(key)
