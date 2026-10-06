@@ -80,6 +80,7 @@
         path: "{{ vault_env_path }}/databases"
         engine_mount_point: "kv"
       register: existing_vault_db_secrets
+      no_log: true
       failed_when: false
       when: vault_token | length > 0
       delegate_to: localhost
@@ -99,6 +100,7 @@
         - (existing_vault_db_secrets.secret | default({})) | length == 0
 
     - name: Resolve database passwords (Env > Vault > Auto-generate)
+      no_log: true
       ansible.builtin.set_fact:
         resolved_db_configs: >-
           {%- set results = [] -%}

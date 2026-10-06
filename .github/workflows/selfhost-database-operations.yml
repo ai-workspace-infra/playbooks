@@ -37,7 +37,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: selfhost-database-${{ inputs.environment }}-${{ inputs.correlation_id }}
+  group: selfhost-database-${{ inputs.environment }}
   cancel-in-progress: false
 
 jobs:
@@ -219,6 +219,13 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Guard empty database and pause its application writers
+        id: pause
+        if: ${{ inputs.operation == 'selfhost_init' }}
+        run: |
+          bash scripts/data_operations/selfhost/init_guard.sh "$(jq -r '.target_host' <<<"$CONFIG_JSON")"
+          bash scripts/data_operations/selfhost/application-state.sh stop
+
       - name: Initialize schema only when explicitly requested
         if: ${{ inputs.operation == 'selfhost_init' }}
         env:
@@ -227,11 +234,15 @@ jobs:
           ACCOUNT_PG_PASSWORD: ${{ steps.init_vault.outputs.ACCOUNT_PG_PASSWORD }}
           ACCOUNTS_SCHEMA_REF: ${{ inputs.accounts_ref }}
           VAULT_ENV_PATH: ${{ inputs.environment }}
+          POSTGRESQL_DEPLOY_MODE: compose
         run: |
           test -n "$TARGET_HOST"
-          bash scripts/data_operations/selfhost/init_guard.sh "$TARGET_HOST"
-          ansible-playbook -i "$GITHUB_WORKSPACE/cmdb/inventory.ini" create_databases_and_users.yml --limit "$TARGET_HOST"
+          ansible-playbook -i "$GITHUB_WORKSPACE/cmdb/inventory.ini" create_databases_and_users.yml --limit "$TARGET_HOST" --extra-vars @scripts/data_operations/selfhost/account-database-config.json
           ansible-playbook -i "$GITHUB_WORKSPACE/cmdb/inventory.ini" initialize-web-saas-schemas.yml --limit "$TARGET_HOST"
+
+      - name: Resume application services after explicit initialization
+        if: ${{ always() && inputs.operation == 'selfhost_init' && steps.pause.outcome == 'success' }}
+        run: bash scripts/data_operations/selfhost/application-state.sh start
 
       - name: Verify deployed release and retained baseline
         if: ${{ inputs.operation == 'selfhost_verify' }}

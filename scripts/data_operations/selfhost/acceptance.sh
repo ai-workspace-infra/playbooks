@@ -87,19 +87,37 @@ case "$action" in
     cat "$dir/summary"
     ;;
   probe)
-    db_present || { echo "PostgreSQL account database is not ready" >&2; exit 1; }
-    docker inspect "$accounts" >/dev/null
-    docker inspect "$console" >/dev/null
-    echo "postgres=ready"
-    readyz="$(http_status "$accounts" 8080 /readyz)"
-    ping="$(http_status "$accounts" 8080 /api/ping)"
-    console_status="$(http_status "$console" 3000 /)"
+    # Pull-based CD is asynchronous. A bounded probe must observe the requested
+    # running release before accepting HTTP readiness; an old healthy image
+    # cannot satisfy a new release request.
+    ready=false
+    for attempt in $(seq 1 24); do
+      readyz=none; ping=none; console_status=none
+      if db_present; then
+        matching=true
+        for container in "$accounts" "$console"; do
+          state="$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || true)"
+          image="$(docker inspect -f '{{.Config.Image}}' "$container" 2>/dev/null || true)"
+          [[ "$state" == running ]] || matching=false
+          [[ -z "$release_tag" || "$image" == *":${release_tag}" ]] || matching=false
+        done
+        if [ "$matching" = true ]; then
+          readyz="$(http_status "$accounts" 8080 /readyz)"
+          ping="$(http_status "$accounts" 8080 /api/ping)"
+          console_status="$(http_status "$console" 3000 /)"
+          if [[ "$readyz" =~ ^[23][0-9][0-9]$ && "$ping" =~ ^[23][0-9][0-9]$ && "$console_status" =~ ^[23][0-9][0-9]$ ]]; then
+            ready=true; break
+          fi
+        fi
+      fi
+      [ "$attempt" = 24 ] || sleep 5
+    done
     echo "accounts_readyz=${readyz}"
     echo "accounts_ping=${ping}"
     echo "console_root=${console_status}"
-    for status in "$readyz" "$ping" "$console_status"; do
-      [[ "$status" =~ ^[23][0-9][0-9]$ ]] || { echo "selfhost HTTP readiness probe failed" >&2; exit 1; }
-    done
+    [ "$ready" = true ] || { echo "Requested release or account database readiness did not converge; explicit empty-host initialization may be required" >&2; exit 1; }
+    echo "postgres=ready"
+    echo "release_tag=${release_tag}"
     ;;
   verify)
     [ -s "$dir/summary" ] || { echo "No pre-upgrade baseline for this run" >&2; exit 1; }

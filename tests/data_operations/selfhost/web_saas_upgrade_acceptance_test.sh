@@ -55,7 +55,12 @@ assert "${{ inputs.environment }}" in j["env"]["VAULT_ROLE"]
 assert j["env"]["VAULT_ROLE"] != "github-actions-platform-ops-toolkit-env"
 assert "legacy_import" not in open(sys.argv[1]).read()
 init = next(s for s in j["steps"] if s.get("name") == "Initialize schema only when explicitly requested")
-assert "init_guard.sh" in init["run"] and init["run"].index("init_guard.sh") < init["run"].index("ansible-playbook")
+pause = next(s for s in j["steps"] if s.get("id") == "pause")
+assert "init_guard.sh" in pause["run"] and pause["run"].index("init_guard.sh") < pause["run"].index("application-state.sh stop")
+assert j["steps"].index(pause) < j["steps"].index(init)
+assert "account-database-config.json" in init["run"]
+resume = next(s for s in j["steps"] if s.get("name") == "Resume application services after explicit initialization")
+assert "always()" in resume["if"] and "steps.pause.outcome == 'success'" in resume["if"]
 assert next(s for s in j["steps"] if "immutable Accounts release tag for initialization" in s.get("name", ""))["if"] == "${{ inputs.operation == 'selfhost_init' }}"
 print("[PASS] reusable workflow checkout, environment role, and guarded explicit init contract")
 PY

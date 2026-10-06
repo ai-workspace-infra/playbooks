@@ -60,6 +60,10 @@ if operation == "selfhost_verify":
     if version is not None and (not isinstance(version, str) or not re.fullmatch(r"[1-9][0-9]*", version)):
         fail("expected_schema_version must be a positive integer string")
 if operation == "selfhost_init":
+    if environment != "uat":
+        fail("selfhost_init is UAT-only")
+    if os.environ.get("RELEASE_TAG", "") != os.environ.get("ACCOUNTS_REF", ""):
+        fail("selfhost_init requires accounts_ref to equal release_tag")
     accounts_ref = os.environ.get("ACCOUNTS_REF", "")
     if not re.fullmatch(r"(?:uat-)?daily-build-\d{4}\.\d{2}\.\d{2}(?:-r[1-9]\d*)?|v\d[0-9.r-]*", accounts_ref):
         fail("selfhost_init requires an immutable Accounts release ref")
