@@ -1,0 +1,77 @@
+---
+- name: Require explicit preview or independently approved apply
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.env', 'NATIVE_INIT_DRY_RUN') in ['true', 'false']
+      - lookup('ansible.builtin.env', 'NATIVE_INIT_DRY_RUN') == 'true' or lookup('ansible.builtin.env', 'NATIVE_DATA_GATE_VERIFIED') == 'true'
+      - lookup('ansible.builtin.env', 'NATIVE_INIT_SPEC_FILE') | length > 0
+      - lookup('ansible.builtin.env', 'NATIVE_RECEIPT_FILE') | length > 0
+    fail_msg: Native initialization requires a reviewed manifest and a separate production data approval
+
+- name: Verify target storage and empty schema without changing it
+  ansible.builtin.script: scripts/data_operations/selfhost/init_guard_host.sh prod
+  changed_when: false
+
+- name: Create private target-only initialization workspace
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: native-schema-
+  register: native_init_workspace
+
+- name: Execute compiled native schema through the reviewed prebuilt image
+  block:
+    - name: Copy only host owner helpers into the private workspace
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/scripts/data_operations/selfhost/{{ item }}"
+        dest: "{{ native_init_workspace.path }}/{{ item }}"
+        mode: '0600'
+      loop: [native_init_host.py, native_writer_guard_host.sh, init_guard_host.sh]
+
+    - name: Copy the caller reviewed non-secret initialization contract
+      ansible.builtin.copy:
+        src: "{{ lookup('ansible.builtin.env', 'NATIVE_INIT_SPEC_FILE') }}"
+        dest: "{{ native_init_workspace.path }}/spec.json"
+        mode: '0600'
+
+    - name: Authenticate registry runtime without command-line credentials
+      ansible.builtin.shell: |
+        set -euo pipefail
+        printf '%s' "$NATIVE_GHCR_TOKEN" | docker login ghcr.io --username "$NATIVE_GHCR_USERNAME" --password-stdin
+      args:
+        executable: /bin/bash
+      environment:
+        NATIVE_GHCR_TOKEN: "{{ lookup('ansible.builtin.env', 'GHCR_TOKEN') }}"
+        NATIVE_GHCR_USERNAME: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') }}"
+      no_log: true
+
+    - name: Preview or initialize only the genuinely empty account database
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ native_init_workspace.path }}/native_init_host.py"
+          - --spec
+          - "{{ native_init_workspace.path }}/spec.json"
+          - --guard-directory
+          - "{{ native_init_workspace.path }}"
+          - --dry-run
+          - "{{ lookup('ansible.builtin.env', 'NATIVE_INIT_DRY_RUN') }}"
+      environment:
+        NATIVE_POSTGRES_PASSWORD: "{{ lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') }}"
+        NATIVE_DATA_GATE_VERIFIED: "{{ lookup('ansible.builtin.env', 'NATIVE_DATA_GATE_VERIFIED') }}"
+      register: native_init_result
+      changed_when: lookup('ansible.builtin.env', 'NATIVE_INIT_DRY_RUN') == 'false'
+      no_log: true
+
+    - name: Save only sanitized native initialization evidence on the controller
+      ansible.builtin.copy:
+        content: "{{ native_init_result.stdout | from_json | to_nice_json }}"
+        dest: "{{ lookup('ansible.builtin.env', 'NATIVE_RECEIPT_FILE') }}"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+      no_log: true
+  always:
+    - name: Remove private target initialization workspace even after failure
+      ansible.builtin.file:
+        path: "{{ native_init_workspace.path }}"
+        state: absent

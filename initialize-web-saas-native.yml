@@ -1,0 +1,52 @@
+---
+# Target-only native SQL, without application startup or historical migration replay.
+- name: Inspect canonical PROD target for native schema initialization
+  hosts: web-saas-prod
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Validate trusted target before any host preparation
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == 'web-saas-prod'
+          - lookup('ansible.builtin.env', 'DEPLOY_ENV') == 'prod'
+          - lookup('ansible.builtin.env', 'GITOPS_COMMIT') is match('^[0-9a-f]{40}$')
+          - lookup('ansible.builtin.env', 'GITOPS_CHECKOUT') | length > 0
+          - lookup('ansible.builtin.env', 'GHCR_TOKEN') | length > 0
+          - lookup('ansible.builtin.env', 'GHCR_USERNAME') | length > 0
+        fail_msg: Native standby requires canonical PROD inventory, fixed GitOps and runtime database credentials
+      no_log: true
+    - name: Read existing authoritative CMDB before host changes
+      ansible.builtin.set_fact:
+        native_authoritative_cmdb: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'CMDB_FILE')) | from_json }}"
+      no_log: true
+    - name: Require the canonical resource identity and SSH endpoint
+      ansible.builtin.assert:
+        that:
+          - native_authoritative_cmdb.environment == 'prod'
+          - native_authoritative_cmdb.project_id == 'open-platform-prod'
+          - native_authoritative_cmdb['web-saas-prod'].ip == ansible_host
+          - native_authoritative_cmdb['web-saas-prod'].ansible_user == ansible_user
+          - native_authoritative_cmdb['web-saas-prod'].provider == 'gcp-cloud'
+          - native_authoritative_cmdb['web-saas-prod'].zone == 'asia-east1-a'
+          - "'web_saas' in native_authoritative_cmdb['web-saas-prod'].groups"
+          - native_authoritative_cmdb['web-saas-prod'].data_disk.device_name == 'web-saas-prod-data'
+          - native_authoritative_cmdb['web-saas-prod'].data_disk.mount_path == '/data'
+        fail_msg: Native standby target differs from the approved resource CMDB
+      no_log: true
+    - name: Bind the controller checkout before host changes
+      ansible.builtin.command:
+        argv: [git, -C, "{{ lookup('ansible.builtin.env', 'GITOPS_CHECKOUT') }}", rev-parse, HEAD]
+      delegate_to: localhost
+      become: false
+      register: native_gitops_preflight
+      changed_when: false
+    - name: Require the approved source commit
+      ansible.builtin.assert:
+        that:
+          - native_gitops_preflight.stdout | trim == lookup('ansible.builtin.env', 'GITOPS_COMMIT')
+    - name: Refuse active writers or reconcilers before native schema initialization
+      ansible.builtin.script: scripts/data_operations/selfhost/native_writer_guard_host.sh
+      changed_when: false
+  roles:
+    - roles/web_saas_native_init
