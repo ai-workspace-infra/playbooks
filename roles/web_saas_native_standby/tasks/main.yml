@@ -271,3 +271,12 @@
       writers_paused: true
       schema_initialized: false
       database_cutover_approved: false
+
+- name: Save only sanitized standby receipt on this runner
+  ansible.builtin.copy:
+    content: "{{ native_standby_receipt | to_nice_json }}"
+    dest: "{{ lookup('ansible.builtin.env', 'NATIVE_RECEIPT_FILE') }}"
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+  when: lookup('ansible.builtin.env', 'NATIVE_RECEIPT_FILE') | length > 0

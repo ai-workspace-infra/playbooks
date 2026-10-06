@@ -1,0 +1,40 @@
+name: PROD native PostgreSQL standby
+description: Playbooks-owned host execution; does not create cloud access or business schema/data.
+inputs:
+  cmdb_dir: {required: true, description: 'Verified authoritative CMDB artifact directory'}
+  cmdb_sha256: {required: true, description: 'Approved canonical CMDB file checksum'}
+  gitops_checkout: {required: true, description: 'Fixed GitOps checkout on this runner'}
+  gitops_commit: {required: true, description: 'Reviewed full GitOps commit'}
+  access_file: {required: true, description: 'Private same-run IaC ephemeral access file'}
+  postgres_password: {required: true, description: 'Vault runtime secret; never dispatch input'}
+  ghcr_token: {required: true, description: 'Vault runtime registry credential'}
+  ghcr_username: {required: true, description: 'Registry principal'}
+outputs:
+  receipt_file:
+    description: Sanitized target standby receipt; not a data equality gate.
+    value: ${{ runner.temp }}/prod-native-standby-receipt.json
+runs:
+  using: composite
+  steps:
+    - name: Install isolated host execution dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 -m venv "$RUNNER_TEMP/prod-native-ansible"
+        "$RUNNER_TEMP/prod-native-ansible/bin/python" -m pip install ansible-core==2.18.12
+        "$RUNNER_TEMP/prod-native-ansible/bin/ansible-galaxy" collection install community.general:12.5.0 ansible.posix:2.2.0 -p "$RUNNER_TEMP/prod-native-collections"
+    - name: Execute fixed host standby owner
+      shell: bash
+      env:
+        CMDB_DIR: ${{ inputs.cmdb_dir }}
+        EXPECTED_CMDB_SHA256: ${{ inputs.cmdb_sha256 }}
+        GITOPS_CHECKOUT: ${{ inputs.gitops_checkout }}
+        GITOPS_COMMIT: ${{ inputs.gitops_commit }}
+        NATIVE_ACCESS_FILE: ${{ inputs.access_file }}
+        POSTGRES_PASSWORD: ${{ inputs.postgres_password }}
+        GHCR_TOKEN: ${{ inputs.ghcr_token }}
+        GHCR_USERNAME: ${{ inputs.ghcr_username }}
+        DEPLOY_ENV: prod
+        ANSIBLE_COLLECTIONS_PATH: ${{ runner.temp }}/prod-native-collections
+        NATIVE_RECEIPT_FILE: ${{ runner.temp }}/prod-native-standby-receipt.json
+      run: bash "${GITHUB_ACTION_PATH}/../../../scripts/data_operations/selfhost/native_standby_runner.sh"
