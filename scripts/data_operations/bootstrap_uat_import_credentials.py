@@ -75,7 +75,7 @@ END $$;
 COMMIT;
 """
     run(["psql", "-Xq", "-v", "ON_ERROR_STOP=1"], env=env, input=sql)
-    source = urlunsplit((p.scheme, "readonly." + project + ":" + quote(password, safe="") + "@" + p.hostname + ":" + str(p.port or 5432), p.path, p.query, ""))
+    source = urlunsplit((p.scheme, "readonly." + project + ":" + quote(password, safe="") + "@" + p.hostname + ":" + str(p.port or 5432), p.path, "sslmode=require&connect_timeout=15", ""))
     count = run(["psql", "-XAtq", "-v", "ON_ERROR_STOP=1", "-c", "SELECT count(*) FROM public.users"], env=pg_env(source)).strip()
     if not count.isdigit() or int(count) == 0:
         raise SystemExit("Readonly source returned no users; Vault was not updated")
