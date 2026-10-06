@@ -21,7 +21,7 @@ class SnapshotValidator:
     def __init__(self,tables):
         self.tables=tuple(t for t in BUSINESS_TABLES if t in tables)
         validate_source_tables(self.tables)
-        self.counts={t:0 for t in self.tables};self.header=False;self.footer=False
+        self.counts={t:0 for t in self.tables};self.header=False;self.footer=False;self.columns={}
 
     def accept(self,line):
         value=json.loads(line)
@@ -31,11 +31,20 @@ class SnapshotValidator:
             if (value.get('schema')!='full-business-snapshot/v1' or value.get('tables')!=list(self.tables)
                     or set(value.get('columns',{}))!=set(self.tables)):
                 raise ValueError('Snapshot metadata differs from reviewed source contract')
+            for table,columns in value['columns'].items():
+                if not isinstance(columns,list) or not columns or any(not isinstance(c,dict) or not isinstance(c.get('name'),str) or not isinstance(c.get('type'),str) for c in columns):
+                    raise ValueError('Source column metadata is incomplete')
+                names=[c['name'] for c in columns]
+                if len(names)!=len(set(names)):
+                    raise ValueError('Source column metadata is duplicated')
+                self.columns[table]=set(names)
             self.header=True
         elif kind=='row' and self.header and not self.footer:
             table=value.get('table')
             if table not in self.counts or not isinstance(value.get('row'),dict):
                 raise ValueError('Snapshot row table or format is invalid')
+            if set(value['row'])!=self.columns[table]:
+                raise ValueError('Source row field coverage differs from its catalog')
             self.counts[table]+=1
         elif kind=='footer' and self.header and not self.footer:
             if value.get('counts')!=self.counts:
@@ -55,6 +64,9 @@ def visibility_guard_sql(tables):
 SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=current_user AND current_user='readonly_release'
  AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication
  AND NOT rolbypassrls AND NOT rolinherit)
+ AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relkind IN ('r','p')
+ AND (has_table_privilege(current_user,c.oid,'INSERT') OR has_table_privilege(current_user,c.oid,'UPDATE')
+ OR has_table_privilege(current_user,c.oid,'DELETE') OR has_table_privilege(current_user,c.oid,'TRUNCATE')))
  AND NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE member=(SELECT oid FROM pg_roles WHERE rolname=current_user))
  AND NOT EXISTS (
  SELECT 1 FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relname IN ("""+names+""")

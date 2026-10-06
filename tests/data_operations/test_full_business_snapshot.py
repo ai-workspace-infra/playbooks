@@ -5,7 +5,7 @@ from full_business_snapshot import SnapshotValidator,snapshot_sql
 
 TABLES=tuple(t for t in BUSINESS_TABLES if t in LEGACY_BUSINESS_TABLES)
 class SnapshotContract(unittest.TestCase):
-    def header(self):return json.dumps({'kind':'header','schema':'full-business-snapshot/v1','tables':list(TABLES),'columns':{t:[] for t in TABLES}})
+    def header(self):return json.dumps({'kind':'header','schema':'full-business-snapshot/v1','tables':list(TABLES),'columns':{t:[{'name':'uuid','type':'uuid'}] for t in TABLES}})
     def test_all_reviewed_tables_and_consistent_readonly_transaction(self):
         sql=snapshot_sql(TABLES)
         self.assertIn('REPEATABLE READ READ ONLY',sql)
