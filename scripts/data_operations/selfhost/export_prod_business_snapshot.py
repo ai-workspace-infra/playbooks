@@ -90,7 +90,13 @@ def stream(source_dsn,ssh_command,key,tables,progress=None):
             for line in source.stdout:
                 size+=len(line)
                 if size>4*1024**3:raise RuntimeError('Source snapshot exceeds reviewed stream size')
+                was_header=validator.header
                 validator.accept(line)
+                if progress and not was_header and validator.header:
+                    connection=json.loads(line).get('connection',{})
+                    keys=('backend_pid','role','transaction_read_only','statement_timeout',
+                          'transaction_timeout','idle_in_transaction_session_timeout')
+                    progress({'stage':'source_transaction','settings':{key:connection.get(key) for key in keys}})
                 digest.update(line)
                 packed=compressor.compress(line);compressed_size+=len(packed);send(packed)
                 now=time.monotonic()
@@ -99,8 +105,8 @@ def stream(source_dsn,ssh_command,key,tables,progress=None):
                     last_progress=now
             if source.wait(timeout=10)!=0:
                 errors.seek(0);private_error=errors.read().decode('utf-8','replace')
-                states=re.findall(r'ERROR:\s+([0-9A-Z]{5})\b',private_error)
-                allowed={'57014','25P03','08006','08003','08000','42501','42P01','42703','55P03','53300','53400'}
+                states=re.findall(r'(?:ERROR|FATAL|PANIC):\s+([0-9A-Z]{5})\b',private_error)
+                allowed={'57014','25P03','08006','08003','08000','42501','42P01','42703','55P03','53300','53400','34000','57P01','57P05'}
                 code=next((state for state in states if state in allowed),'unknown')
                 raise SnapshotFailure('source_sql_'+code)
             counts=validator.finish()
