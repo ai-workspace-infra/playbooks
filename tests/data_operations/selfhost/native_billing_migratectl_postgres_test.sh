@@ -6,7 +6,7 @@ set -euo pipefail
 : "${ACCOUNTS_CHECKOUT:?fixed Accounts checkout required}"
 : "${BILLING_CHECKOUT:?fixed Billing checkout required}"
 : "${MIGRATECTL_BIN:?CI-only compiled migration tool required}"
-[[ "$(git -C "$ACCOUNTS_CHECKOUT" rev-parse HEAD)" == ddee4b01778fd1d1d644a1bc936624c81ec76093 ]]
+[[ "$(git -C "$ACCOUNTS_CHECKOUT" rev-parse HEAD)" == ac3239a6ddb89fd49c2b15416bf5f6ea588c6797 ]]
 [[ "$(git -C "$BILLING_CHECKOUT" rev-parse HEAD)" == 5b7285bf49af12983027f7624d196ab3f2b1804f ]]
 [[ "$(psql -d postgres -XAtq -c 'SHOW server_version_num')" =~ ^17[0-9]{4}$ ]]
 [[ "$(psql -d postgres -XAtq -c "SELECT count(*) FROM pg_database WHERE datname='account'")" == 0 ]]

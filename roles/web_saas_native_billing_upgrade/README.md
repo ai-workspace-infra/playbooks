@@ -20,3 +20,11 @@ business rows. All application/CD writers must remain stopped. No historical
 migration replay, business seed, destructive down, reset, source copy or cutover
 occurs. Owned execution containers and private temporary files are removed on
 failure. Qualification tests are not production acceptance.
+
+Initial real PostgreSQL qualification with Accounts ddee4b0 failed because the
+file driver required historical SQL at the directly initialized version. Accounts
+#195 fixes the bounded source to expose only current-version metadata and the
+reviewed next SQL body. Qualification now uses fixed merged source
+ac3239a6ddb89fd49c2b15416bf5f6ea588c6797; production caller must consume its
+prebuilt full-SHA image and published digest. No fake historical/down files are
+added to the Billing migration directory.
