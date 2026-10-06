@@ -82,7 +82,7 @@ replaced with defaults just to satisfy a newer schema. New native fields require
 reviewed defaults that do not change existing subscription/quota/ledger meaning.
 Routine later schema changes remain checksum-bounded incremental migrations.
 
-Source preparation uses a 30-minute total transport budget, 120-second statement
+Source preparation uses a 30-minute total transport budget, 600-second statement
 and idle-transaction limits, and a 4 GiB stream cap. Public progress contains only
 byte/row counts and elapsed seconds; failure diagnostics expose a bounded error
 code, never PostgreSQL messages or rows. This transport allowance does not bypass

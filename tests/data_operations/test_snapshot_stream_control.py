@@ -52,4 +52,9 @@ class SnapshotStreamControl(unittest.TestCase):
         self.assertEqual(str(caught.exception),'source_sql_57014')
         self.assertNotIn('private-fixture',str(caught.exception))
 
+    def test_fatal_idle_timeout_keeps_only_sqlstate(self):
+        with self.assertRaises(exporter.SnapshotFailure) as caught:
+            self.exercise("import sys;sys.stderr.write('FATAL: 25P03 private-fixture-do-not-log\\n');sys.exit(1)")
+        self.assertEqual(str(caught.exception),'source_sql_25P03')
+
 if __name__=='__main__':unittest.main()

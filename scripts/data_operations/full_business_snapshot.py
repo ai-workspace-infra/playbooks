@@ -8,8 +8,8 @@ def snapshot_sql(tables):
     tables=tuple(t for t in BUSINESS_TABLES if t in tables)
     table_json=json.dumps(list(tables),separators=(',',':'))
     columns=' UNION ALL '.join("SELECT '"+t+"' tab, jsonb_agg(jsonb_build_object('name',attname,'type',format_type(atttypid,atttypmod),'required',attnotnull,'generated',attgenerated) ORDER BY attnum) columns FROM pg_attribute WHERE attrelid='public."+t+"'::regclass AND attnum>0 AND NOT attisdropped" for t in tables)
-    statements=["\\set FETCH_COUNT 1000", "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET LOCAL statement_timeout='120s'; SET LOCAL idle_in_transaction_session_timeout='120s'; SET LOCAL TIMEZONE='UTC'; SET LOCAL DATESTYLE='ISO,YMD'; SET LOCAL extra_float_digits=3;",
-                "SELECT jsonb_build_object('kind','header','schema','full-business-snapshot/v1','tables','"+table_json+"'::jsonb,'columns',(SELECT jsonb_object_agg(tab,columns) FROM ("+columns+") columns));"]
+    statements=["\\set FETCH_COUNT 1000", "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET LOCAL statement_timeout='600s'; SET LOCAL idle_in_transaction_session_timeout='600s'; SET LOCAL transaction_timeout='1800s'; SET LOCAL TIMEZONE='UTC'; SET LOCAL DATESTYLE='ISO,YMD'; SET LOCAL extra_float_digits=3;",
+                "SELECT jsonb_build_object('kind','header','schema','full-business-snapshot/v1','connection',jsonb_build_object('backend_pid',pg_backend_pid(),'role',current_user,'transaction_read_only',current_setting('transaction_read_only'),'statement_timeout',current_setting('statement_timeout'),'transaction_timeout',current_setting('transaction_timeout'),'idle_in_transaction_session_timeout',current_setting('idle_in_transaction_session_timeout')),'tables','"+table_json+"'::jsonb,'columns',(SELECT jsonb_object_agg(tab,columns) FROM ("+columns+") columns));"]
     for table in tables:
         statements.append("SELECT jsonb_build_object('kind','row','table','"+table+"','row',to_jsonb(t)) FROM public.\""+table+"\" t;")
     counts=' UNION ALL '.join("SELECT '"+t+"' tab,count(*) total FROM public.\""+t+'"' for t in tables)

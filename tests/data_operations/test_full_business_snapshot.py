@@ -9,6 +9,9 @@ class SnapshotContract(unittest.TestCase):
     def test_all_reviewed_tables_and_consistent_readonly_transaction(self):
         sql=snapshot_sql(TABLES)
         self.assertIn('REPEATABLE READ READ ONLY',sql)
+        self.assertIn("statement_timeout='600s'",sql)
+        self.assertIn("idle_in_transaction_session_timeout='600s'",sql)
+        self.assertIn("transaction_timeout='1800s'",sql)
         for t in TABLES:self.assertIn('FROM public."'+t+'"',sql)
         self.assertNotIn('schema_migrations',sql);self.assertNotIn('INSERT',sql)
         with self.assertRaises(ValueError):snapshot_sql(TABLES+('unknown_business',))
