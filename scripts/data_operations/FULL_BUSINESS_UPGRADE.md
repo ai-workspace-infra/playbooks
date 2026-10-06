@@ -69,3 +69,21 @@ It records absent migration ledger and empty subscriptions honestly. The receipt
 is a preparation backup, not release qualification or a business acceptance gate.
 CI uses a disposable PostgreSQL fixture and mocked mount facts; live mount proof
 comes from the independently verified UAT volume receipt.
+
+## Latest native schema target
+
+The confirmed target is the latest Accounts-owned schema and native fields,
+without transitional backward-compatibility columns or runtime schema fallbacks.
+Import adapters transform source rows into that exact schema while preserving
+PROD email, Proxy UUID, identity, subscription, quota and ledger business values.
+Only environment-local user UUIDs and their explicit references are remapped.
+An unsupported field conversion stops before business writes; values are never
+replaced with defaults just to satisfy a newer schema. New native fields require
+reviewed defaults that do not change existing subscription/quota/ledger meaning.
+Routine later schema changes remain checksum-bounded incremental migrations.
+
+Source preparation uses a 30-minute total transport budget, 120-second statement
+and idle-transaction limits, and a 4 GiB stream cap. Public progress contains only
+byte/row counts and elapsed seconds; failure diagnostics expose a bounded error
+code, never PostgreSQL messages or rows. This transport allowance does not bypass
+complete-footer, encryption, hash, backup/restore or business acceptance gates.
