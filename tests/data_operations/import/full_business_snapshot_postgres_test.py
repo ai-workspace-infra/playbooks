@@ -14,7 +14,7 @@ def query(sql,db='postgres'):
 query("CREATE DATABASE full_business_snapshot_ci; CREATE ROLE readonly_release LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;")
 try:
  tables=tuple(t for t in BUSINESS_TABLES if t in LEGACY_BUSINESS_TABLES)
- query('\n'.join('CREATE TABLE public."'+t+'" (id int PRIMARY KEY, payload text); INSERT INTO public."'+t+'" VALUES (1,\'private-fixture\');' for t in tables),'full_business_snapshot_ci')
+ query('\n'.join('CREATE TABLE public."'+t+'" (id int PRIMARY KEY, payload text); INSERT INTO public."'+t+'" VALUES (1,repeat(\'private-fixture\',4096));' for t in tables),'full_business_snapshot_ci')
  query('GRANT USAGE ON SCHEMA public TO readonly_release; GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly_release; ALTER TABLE users ENABLE ROW LEVEL SECURITY; CREATE POLICY release_initialization_readonly ON users FOR SELECT TO readonly_release USING(true);','full_business_snapshot_ci')
  guard=query('SET ROLE readonly_release; '+visibility_guard_sql(tables),'full_business_snapshot_ci').strip()
  if guard!='t':raise SystemExit('Complete readonly RLS visibility guard failed')
@@ -25,15 +25,15 @@ try:
  for line in output.splitlines():validator.accept(line)
  if validator.finish()!={t:1 for t in tables}:raise SystemExit('Full snapshot row coverage was not verified')
  # Exercise real source psql and a consuming destination with tiny pipes.
- # A concurrent SQL feeder is required when the metadata header fills stdout
- # before the entire multi-statement query fits into stdin.
+ # Seekable SQL input removes the bidirectional source pipe dependency.
+ # Large rows also exercise bounded, unbuffered destination writes.
  real_popen=subprocess.Popen
  def small_popen(argv,**kwargs):
   return real_popen(argv,**dict(kwargs,pipesize=4096))
  destination=[sys.executable,'-c',"import sys,json,hashlib; sys.stdin.buffer.readline(); data=sys.stdin.buffer.read(); print(json.dumps({'plaintext_sha256':hashlib.sha256(data).hexdigest(),'encrypted':True}))"]
  with patch.object(exporter,'connection_env',return_value=dict(os.environ,PGDATABASE='full_business_snapshot_ci')),patch.object(exporter.subprocess,'Popen',side_effect=small_popen):
   receipt,counts,size=exporter.stream('disposable-loopback',destination,'ci-only-stream-key',tables)
- if counts!={t:1 for t in tables} or size<4096:
+ if counts!={t:1 for t in tables} or size<1024*1024:
   raise SystemExit('Small-pipe full snapshot regression failed')
  print('Real source and destination stream completed with 4096-byte pipe buffers')
  print('All 44 source tables covered by a complete consistent readonly JSONL stream')

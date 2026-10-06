@@ -8,7 +8,7 @@ def snapshot_sql(tables):
     tables=tuple(t for t in BUSINESS_TABLES if t in tables)
     table_json=json.dumps(list(tables),separators=(',',':'))
     columns=' UNION ALL '.join("SELECT '"+t+"' tab, jsonb_agg(jsonb_build_object('name',attname,'type',format_type(atttypid,atttypmod),'required',attnotnull,'generated',attgenerated) ORDER BY attnum) columns FROM pg_attribute WHERE attrelid='public."+t+"'::regclass AND attnum>0 AND NOT attisdropped" for t in tables)
-    statements=["BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET LOCAL statement_timeout='120s'; SET LOCAL TIMEZONE='UTC'; SET LOCAL DATESTYLE='ISO,YMD'; SET LOCAL extra_float_digits=3;",
+    statements=["\\set FETCH_COUNT 1000", "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET LOCAL statement_timeout='120s'; SET LOCAL idle_in_transaction_session_timeout='120s'; SET LOCAL TIMEZONE='UTC'; SET LOCAL DATESTYLE='ISO,YMD'; SET LOCAL extra_float_digits=3;",
                 "SELECT jsonb_build_object('kind','header','schema','full-business-snapshot/v1','tables','"+table_json+"'::jsonb,'columns',(SELECT jsonb_object_agg(tab,columns) FROM ("+columns+") columns));"]
     for table in tables:
         statements.append("SELECT jsonb_build_object('kind','row','table','"+table+"','row',to_jsonb(t)) FROM public.\""+table+"\" t;")

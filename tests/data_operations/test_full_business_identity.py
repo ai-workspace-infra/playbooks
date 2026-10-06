@@ -33,6 +33,20 @@ class FullBusinessEmailIdentity(unittest.TestCase):
         with self.assertRaises(ValueError):remap_user_reference(str(uuid.UUID(int=123)),{})
         with self.assertRaises(ValueError):build_email_identity_map([u(1,'a@example.invalid',10)],[],lambda:uuid.UUID(int=1))
 
+    def test_target_only_email_rejected_without_deletion(self):
+        with self.assertRaises(ValueError):
+            build_email_identity_map([u(1,'a@example.invalid',10)],
+                                     [u(2,'a@example.invalid',20),u(3,'extra@example.invalid',30)])
+
+    def test_target_count_converges_to_source_through_missing_email_creation(self):
+        source=[u(1,'a@example.invalid',10),u(2,'b@example.invalid',20)]
+        target=[u(3,'a@example.invalid',30)]
+        mapping,proxies=build_email_identity_map(source,target,lambda:uuid.UUID(int=99))
+        self.assertEqual(len(mapping),len(source))
+        self.assertEqual(len(set(mapping.values())),len(source))
+        self.assertEqual(mapping[source[0]['uuid']],target[0]['uuid'])
+        self.assertEqual(set(proxies.values()),{row['proxy_uuid'] for row in source})
+
     def test_second_hop_keeps_proxy_even_when_user_uuid_changes_again(self):
         prod=u(1,'a@example.invalid',10);serverless=u(2,'a@example.invalid',20);selfhost=u(3,'a@example.invalid',30)
         first,proxy=build_email_identity_map([prod],[serverless])

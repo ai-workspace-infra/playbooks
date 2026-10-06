@@ -50,6 +50,10 @@ allocate target-local UUIDs for new emails, and rewrite every referencing busine
 row through the explicit source-to-target map. Preserve each PROD Proxy UUID
 unchanged across both hops. A Proxy UUID owned by another target email is a
 pre-write conflict; matching by Proxy UUID must never bind a different email.
+Target user count must equal the consistent PROD source count after import.
+Source-only emails create target users; target-only emails block initialization
+before writes instead of implicitly deleting users. The two known differing UAT
+Proxy UUIDs are corrected to PROD values under the confirmed contract.
 Duplicate/missing email keys and unresolved foreign user references fail closed.
 `full_business_identity.py` implements this prerequisite; it is not an import
 executor or proof that all business rows have been copied.
