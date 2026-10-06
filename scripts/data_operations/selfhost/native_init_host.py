@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Target-only native initialization. Never runs Accounts or reads a source DB."""
 import argparse
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -20,14 +21,75 @@ def require(value, message):
         raise Refused(message)
 
 
-def command(argv, **kwargs):
+def command(argv, timeout=360, **kwargs):
     try:
-        result = subprocess.run(argv, capture_output=True, text=True, timeout=360, **kwargs)
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, **kwargs)
     except (OSError, subprocess.TimeoutExpired):
         raise Refused('Native initialization command unavailable or timed out') from None
     # Commands and raw output can contain private database facts. Do not echo them.
     require(result.returncode == 0, 'Native initialization command failed; inspect privately')
     return result.stdout.strip()
+
+
+def validate_credentials(credentials):
+    require(isinstance(credentials, dict) and set(credentials) ==
+            {'postgres_password', 'ghcr_username', 'ghcr_token'} and
+            all(isinstance(v, str) and v and not any(c in v for c in '\r\n\x00')
+                for v in credentials.values()) and
+            re.fullmatch('[A-Za-z0-9][A-Za-z0-9_-]{0,63}', credentials['ghcr_username']),
+            'Private target credentials are incomplete')
+
+
+def read_credentials():
+    # SSH-pipelined command stdin, never an argv/env/host file credential.
+    raw = __import__('sys').stdin.readline(65537)
+    require(len(raw.encode()) <= 65536 and raw.endswith('\n'),
+            'Private target credential input is incomplete')
+    credentials = json.loads(raw)
+    validate_credentials(credentials)
+    return credentials
+
+
+@contextmanager
+def registry_session(credentials):
+    validate_credentials(credentials)
+    require(command(['findmnt', '-nro', 'FSTYPE', '--target', '/dev/shm']) == 'tmpfs',
+            'Registry authentication requires private volatile storage')
+    with tempfile.TemporaryDirectory(prefix='native-registry-', dir='/dev/shm') as directory:
+        Path(directory).chmod(0o700)
+        env = dict(os.environ, DOCKER_CONFIG=directory)
+        command(['docker', 'login', 'ghcr.io', '--username', credentials['ghcr_username'],
+                 '--password-stdin'], input=credentials['ghcr_token'], env=env, timeout=60)
+        yield env
+
+
+TARGET_BOOTSTRAP = '''set -eu
+IFS= read -r NATIVE_TARGET_DSN
+export NATIVE_TARGET_DSN
+exec /usr/local/bin/migratectl "$@"
+'''
+
+
+def tool_argv(image, name, args, migration_directory=None):
+    argv = ['docker', 'run', '--rm', '--name', name, '-i', '--network',
+            'container:web-saas-postgresql', '--read-only', '--cap-drop', 'ALL',
+            '--security-opt', 'no-new-privileges']
+    if migration_directory is not None:
+        argv += ['--mount', 'type=bind,source=' + str(migration_directory) +
+                 ',target=/reviewed-migrations,readonly']
+    return argv + ['--entrypoint', '/bin/sh', image, '-c', TARGET_BOOTSTRAP, '--', *args]
+
+
+def run_tool(image, name, args, credentials, env, migration_directory=None):
+    target = 'postgresql://postgres:' + quote(credentials['postgres_password'], safe='') + \
+             '@127.0.0.1:5432/account?sslmode=disable'
+    try:
+        return command(tool_argv(image, name, args, migration_directory),
+                       input=target + '\n', env=env)
+    finally:
+        # A timed-out client may leave its container running with an open DB
+        # connection. Explicitly end the owned execution before returning.
+        remove_execution_container(name)
 
 
 def validate_spec(spec):
@@ -85,8 +147,11 @@ def remove_execution_container(name):
             'Cannot verify native execution container cleanup')
 
 
-def execute(spec, dry_run, guard_directory):
+def execute(spec, dry_run, guard_directory, credentials):
     image = validate_spec(spec)
+    require(type(dry_run) is bool and (dry_run or os.environ.get('NATIVE_DATA_GATE_VERIFIED') == 'true'),
+            'Native initialization apply requires verified production data approval')
+    validate_credentials(credentials)
     # These existing guards inspect real independent storage, empty DB and all
     # managed application/reconciler containers. No service is stopped silently.
     command(['bash', str(guard_directory / 'native_writer_guard_host.sh')])
@@ -97,15 +162,16 @@ def execute(spec, dry_run, guard_directory):
     require(present in ('0', '1'), 'Cannot establish target database existence')
     # Pull only the prebuilt digest. Overriding ENTRYPOINT prevents RunServer,
     # application seeds, schedulers, proxy rotation, or schema auto-migration.
-    command(['docker', 'pull', image])
-    manifest = json.loads(command(['docker', 'run', '--rm', '--network', 'none',
-        '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-        '--entrypoint', '/usr/local/bin/migratectl', image, 'native-schema']))
-    validate_manifest(manifest, spec)
-    command(['bash', str(guard_directory / 'native_writer_guard_host.sh')])
-    command(['bash', str(guard_directory / 'init_guard_host.sh'), 'prod'])
-    if present == '0' and dry_run:
-        return {'stage': 'native_schema_preview', 'result': 'eligible_absent_database',
+    with registry_session(credentials) as env:
+        command(['docker', 'pull', image], env=env)
+        manifest = json.loads(command(['docker', 'run', '--rm', '--network', 'none',
+            '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+            '--entrypoint', '/usr/local/bin/migratectl', image, 'native-schema'], env=env))
+        validate_manifest(manifest, spec)
+        command(['bash', str(guard_directory / 'native_writer_guard_host.sh')])
+        command(['bash', str(guard_directory / 'init_guard_host.sh'), 'prod'])
+        if present == '0' and dry_run:
+            return {'stage': 'native_schema_preview', 'result': 'eligible_absent_database',
                 'environment': 'prod', 'host': 'web-saas-prod', 'database': 'account',
                 'schema_sha256': spec['schema_sha256'], 'migration_version': spec['migration_version'],
                 'business_tables': spec['business_tables'], 'business_rows': 0,
@@ -113,32 +179,16 @@ def execute(spec, dry_run, guard_directory):
                 'writers_paused': True, 'database_cutover_approved': False,
                 'accounts_commit': spec['accounts_commit'], 'image_digest': spec['image_digest'],
                 'independent_disk_verified': True}
-    password = os.environ.get('NATIVE_POSTGRES_PASSWORD', '')
-    require(password and '\n' not in password and '\r' not in password,
-            'Target PostgreSQL runtime credential is unavailable')
-    with tempfile.TemporaryDirectory(prefix='native-init-') as directory:
-        env_file = Path(directory) / 'target.env'
-        env_file.write_text('NATIVE_TARGET_DSN=postgresql://postgres:' + quote(password, safe='') +
-                            '@127.0.0.1:5432/account?sslmode=disable\n')
-        env_file.chmod(0o600)
         if present == '0':
             # Creating a new absent DB is the only DDL outside migratectl's
             # transaction. Failure leaves an empty DB; it is never dropped/reset.
             command(['docker', 'exec', 'web-saas-postgresql', 'createdb', '-U', 'postgres',
                      '--template=template0', '--encoding=UTF8', 'account'])
-        execution_name = 'native-schema-init-' + uuid.uuid4().hex
-        try:
-            receipt = json.loads(command(['docker', 'run', '--rm', '--name', execution_name, '--network',
-                'container:web-saas-postgresql', '--read-only', '--cap-drop', 'ALL',
-                '--security-opt', 'no-new-privileges', '--env-file', str(env_file),
-                '--entrypoint', '/usr/local/bin/migratectl', image, 'init',
+        receipt = json.loads(run_tool(image, 'native-schema-init-' + uuid.uuid4().hex, ['init',
                 '--dsn-env=NATIVE_TARGET_DSN', '--environment=prod',
                 '--schema-sha256=' + spec['schema_sha256'], '--writers-paused',
-                '--dry-run=' + str(dry_run).lower(), '--lock-timeout=15s', '--statement-timeout=5m']))
-        finally:
-            # Docker client timeout does not reliably stop its container. End
-            # the owned execution before removing its private credentials.
-            remove_execution_container(execution_name)
+                '--dry-run=' + str(dry_run).lower(), '--lock-timeout=15s', '--statement-timeout=5m'],
+                credentials, env))
     validate_receipt(receipt, spec, dry_run)
     command(['bash', str(guard_directory / 'native_writer_guard_host.sh')])
     receipt.update(stage='native_schema_preview' if dry_run else 'native_schema_initialized',
@@ -164,7 +214,7 @@ def main():
     if args.validate_only:
         print('Reviewed native schema contract is valid; no host/database action performed.')
         return
-    receipt = execute(spec, args.dry_run == 'true', args.guard_directory)
+    receipt = execute(spec, args.dry_run == 'true', args.guard_directory, read_credentials())
     print(json.dumps(receipt, sort_keys=True))
 
 

@@ -125,13 +125,25 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install --yes postgresql-client
       - name: Build CI-only fixed migration tool, never a deploy artifact
         working-directory: fixture-accounts
-        run: go build -o "$RUNNER_TEMP/fixture-migratectl" ./cmd/migratectl
+        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/fixture-migratectl" ./cmd/migratectl
       - name: Qualify reviewed Billing SQL with bounded migratectl on disposable PostgreSQL 17
         run: bash tests/data_operations/selfhost/native_billing_migratectl_postgres_test.sh
         env:
           ACCOUNTS_CHECKOUT: ${{ github.workspace }}/fixture-accounts
           BILLING_CHECKOUT: ${{ github.workspace }}/fixture-billing
           MIGRATECTL_BIN: ${{ runner.temp }}/fixture-migratectl
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+
+      - name: Qualify native schema container stdin and secret-free Docker config
+        run: python3 tests/data_operations/selfhost/native_schema_container_postgres_test.py
+        env:
+          ACCOUNTS_CHECKOUT: ${{ github.workspace }}/fixture-accounts
+          BILLING_CHECKOUT: ${{ github.workspace }}/fixture-billing
+          MIGRATECTL_BIN: ${{ runner.temp }}/fixture-migratectl
+          TEST_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
           PGHOST: 127.0.0.1
           PGPORT: '5432'
           PGUSER: postgres

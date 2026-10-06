@@ -13,13 +13,14 @@ network or production volumes. Server ENTRYPOINT is overridden.
 
 Preview makes no schema changes. Apply requires an independent data gate and
 uses only `migratectl migrate` with one mounted read-only reviewed migration,
-exact expected/target versions and SHA-256, lock/statement timeouts, and a private
-temporary target DSN. It accepts only the exact 52 native Accounts tables at clean
+exact expected/target versions and SHA-256, lock/statement timeouts, and target credentials delivered only through
+SSH-pipelined module stdin and container stdin. Registry authentication uses a
+private verified tmpfs directory, never the persistent host Docker config. It accepts only the exact 52 native Accounts tables at clean
 2026100601, or the already-applied 53-table state at clean 2026100701, with zero
 business rows. All application/CD writers must remain stopped. No historical
 migration replay, business seed, destructive down, reset, source copy or cutover
-occurs. Owned execution containers and private temporary files are removed on
-failure. Qualification tests are not production acceptance.
+occurs. Owned execution containers and private tmpfs registry authentication are removed
+on failure; the temporary migration directory contains only reviewed non-secret SQL. Qualification tests are not production acceptance.
 
 Initial real PostgreSQL qualification with Accounts ddee4b0 failed because the
 file driver required historical SQL at the directly initialized version. Accounts

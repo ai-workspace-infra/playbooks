@@ -14,7 +14,10 @@ Failure can leave a newly created empty DB; it is never dropped or reset.
 The exact digest image's `/usr/local/bin/migratectl` overrides its server
 entrypoint. Manifest qualification uses no network or production volume.
 Initialization uses only the existing PostgreSQL container's network and a
-private temporary target DSN file removed on success/failure. Raw command output
+connection delivered through SSH-pipelined module stdin and container stdin. No
+DSN/password enters a host file, argv or Docker create environment configuration.
+Registry authentication uses a private verified tmpfs directory removed even on
+login/pull/tool failure. Raw command output
 and credentials are never logged. No source connection, application container,
 seed, copy, Billing extension, or gateway/CNAME mutation occurs here. A success
 receipt reports zero business rows and `database_cutover_approved=false`.

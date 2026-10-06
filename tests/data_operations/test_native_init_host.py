@@ -1,5 +1,6 @@
 """Target-only native initialization fixtures; never production acceptance."""
 import importlib.util
+from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
@@ -19,7 +20,17 @@ def spec():
         business_table_count=2, business_tables=['billing_ledger', 'users'], migration_version=42)
 
 
+def credentials():
+    return dict(postgres_password='secret$@:', ghcr_username='fixture', ghcr_token='synthetic-token')
+
+
 class NativeInitHostTests(unittest.TestCase):
+    def setUp(self):
+        session = patch.object(HOST, 'registry_session', side_effect=lambda _c: nullcontext({'DOCKER_CONFIG': '/memory/fixture'}))
+        session.start(); self.addCleanup(session.stop)
+        gate = patch.dict(os.environ, NATIVE_DATA_GATE_VERIFIED='true')
+        gate.start(); self.addCleanup(gate.stop)
+
     def commands(self, config, present='0', rejected_guard=False, wrong_manifest=False, wrong_receipt=False):
         calls = []
         manifest = {k: config[k] for k in ('schema_sha256', 'migration_version', 'business_table_count', 'business_tables')}
@@ -40,9 +51,10 @@ class NativeInitHostTests(unittest.TestCase):
             if argv[-1] == 'native-schema':
                 return json.dumps(manifest)
             if '--dsn-env=NATIVE_TARGET_DSN' in argv:
-                file = Path(argv[argv.index('--env-file') + 1])
-                self.assertEqual(file.stat().st_mode & 0o777, 0o600)
-                self.assertIn('secret%24%40%3A', file.read_text())
+                self.assertNotIn('--env-file', argv)
+                self.assertEqual(kwargs['input'], 'postgresql://postgres:secret%24%40%3A@127.0.0.1:5432/account?sslmode=disable\n')
+                self.assertNotIn('NATIVE_TARGET_DSN', kwargs['env'])
+                self.assertIn(HOST.TARGET_BOOTSTRAP, argv)
                 result = {'result': 'eligible' if '--dry-run=true' in argv else 'initialized',
                     'environment': 'prod', 'database': 'account', 'business_rows': 0,
                     'database_cutover_approved': False,
@@ -55,8 +67,8 @@ class NativeInitHostTests(unittest.TestCase):
 
     def execute(self, config, dry_run, **flags):
         calls, handler = self.commands(config, **flags)
-        with patch.object(HOST, 'command', side_effect=handler), patch.object(HOST, 'remove_execution_container') as cleanup, patch.dict(os.environ, NATIVE_POSTGRES_PASSWORD='secret$@:'):
-            receipt = HOST.execute(config, dry_run, ROOT / 'scripts/data_operations/selfhost')
+        with patch.object(HOST, 'command', side_effect=handler), patch.object(HOST, 'remove_execution_container') as cleanup, patch.dict(os.environ, NATIVE_DATA_GATE_VERIFIED='true'):
+            receipt = HOST.execute(config, dry_run, ROOT / 'scripts/data_operations/selfhost', credentials())
         if any('--dsn-env=NATIVE_TARGET_DSN' in c for c in calls):
             cleanup.assert_called_once()
         return calls, receipt
@@ -84,11 +96,13 @@ class NativeInitHostTests(unittest.TestCase):
         self.assertEqual(sum('createdb' in c for c in calls), 1)
         init = next(c for c in calls if '--dsn-env=NATIVE_TARGET_DSN' in c)
         self.assertIn('--entrypoint', init)
-        self.assertIn('/usr/local/bin/migratectl', init)
+        self.assertEqual(init[init.index('--entrypoint')+1], '/bin/sh')
+        self.assertIn('/usr/local/bin/migratectl', HOST.TARGET_BOOTSTRAP)
         self.assertIn(HOST.validate_spec(config), init)
         self.assertIn('container:web-saas-postgresql', init)
         self.assertNotIn('secret', str(calls))
-        self.assertFalse(Path(init[init.index('--env-file') + 1]).exists())
+        self.assertNotIn('--env-file', init)
+        self.assertNotIn('--env', init)
         self.assertNotIn('dropdb', str(calls))
 
     def test_nonempty_target_refuses_before_pull_and_creation(self):
@@ -96,7 +110,7 @@ class NativeInitHostTests(unittest.TestCase):
         calls, handler = self.commands(config, rejected_guard=True)
         with patch.object(HOST, 'command', side_effect=handler):
             with self.assertRaises(HOST.Refused):
-                HOST.execute(config, False, ROOT / 'scripts/data_operations/selfhost')
+                HOST.execute(config, False, ROOT / 'scripts/data_operations/selfhost', credentials())
         self.assertNotIn('pull', str(calls))
         self.assertNotIn('createdb', str(calls))
 
@@ -105,7 +119,7 @@ class NativeInitHostTests(unittest.TestCase):
         calls, handler = self.commands(config, wrong_manifest=True)
         with patch.object(HOST, 'command', side_effect=handler):
             with self.assertRaises(HOST.Refused):
-                HOST.execute(config, False, ROOT / 'scripts/data_operations/selfhost')
+                HOST.execute(config, False, ROOT / 'scripts/data_operations/selfhost', credentials())
         self.assertNotIn('createdb', str(calls))
 
     def test_invalid_scope_or_image_refuses_before_command(self):
@@ -115,7 +129,7 @@ class NativeInitHostTests(unittest.TestCase):
             config[key] = value
             with patch.object(HOST, 'command') as command:
                 with self.assertRaises(HOST.Refused):
-                    HOST.execute(config, False, ROOT / 'scripts/data_operations/selfhost')
+                    HOST.execute(config, False, ROOT / 'scripts/data_operations/selfhost', credentials())
                 command.assert_not_called()
 
     def test_receipt_cannot_claim_business_rows_or_cutover(self):

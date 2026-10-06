@@ -35,17 +35,6 @@
         dest: "{{ native_billing_workspace.path }}/2026100701_cloud_vendor_costs.up.sql"
         mode: '0600'
 
-    - name: Authenticate registry runtime without command-line credentials
-      ansible.builtin.shell: |
-        set -euo pipefail
-        printf '%s' "$NATIVE_GHCR_TOKEN" | docker login ghcr.io --username "$NATIVE_GHCR_USERNAME" --password-stdin
-      args:
-        executable: /bin/bash
-      environment:
-        NATIVE_GHCR_TOKEN: "{{ lookup('ansible.builtin.env', 'GHCR_TOKEN') }}"
-        NATIVE_GHCR_USERNAME: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') }}"
-      no_log: true
-
     - name: Preview or apply only the reviewed Billing additive SQL
       ansible.builtin.command:
         argv:
@@ -59,8 +48,9 @@
           - "{{ native_billing_workspace.path }}"
           - --dry-run
           - "{{ lookup('ansible.builtin.env', 'NATIVE_BILLING_DRY_RUN') }}"
+        stdin: "{{ {'postgres_password': lookup('ansible.builtin.env', 'POSTGRES_PASSWORD'), 'ghcr_username': lookup('ansible.builtin.env', 'GHCR_USERNAME'), 'ghcr_token': lookup('ansible.builtin.env', 'GHCR_TOKEN')} | to_json }}"
+        stdin_add_newline: true
       environment:
-        NATIVE_POSTGRES_PASSWORD: "{{ lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') }}"
         NATIVE_DATA_GATE_VERIFIED: "{{ lookup('ansible.builtin.env', 'NATIVE_DATA_GATE_VERIFIED') }}"
       register: native_billing_result
       changed_when: (native_billing_result.stdout | from_json).schema_changed | bool
