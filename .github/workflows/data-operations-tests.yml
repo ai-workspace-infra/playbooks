@@ -12,19 +12,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: python3 -m pip install ansible-core==2.18.12
-      - run: ansible-galaxy collection install community.general:12.5.0 ansible.posix:2.2.0 -p "$ANSIBLE_COLLECTIONS_PATH"
+      - run: |
+          python3 -m venv "$RUNNER_TEMP/volume-test-runtime"
+          "$RUNNER_TEMP/volume-test-runtime/bin/python" -m pip install ansible-core==2.18.12
+      - run: |
+          "$RUNNER_TEMP/volume-test-runtime/bin/ansible-galaxy" collection install community.general:12.5.0 ansible.posix:2.2.0 -p "$ANSIBLE_COLLECTIONS_PATH"
         env:
           ANSIBLE_COLLECTIONS_PATH: ${{ runner.temp }}/volume-test-collections
       - name: Real independent disk preparation on disposable runner only
-        run: sudo --preserve-env=GITHUB_ACTIONS,GITHUB_RUN_ID,RUNNER_ENVIRONMENT,PATH,ANSIBLE_COLLECTIONS_PATH bash tests/data_operations/selfhost/data_volume_linux_test.sh
+        run: sudo --preserve-env=GITHUB_ACTIONS,GITHUB_RUN_ID,RUNNER_ENVIRONMENT,ANSIBLE_COLLECTIONS_PATH,ANSIBLE_PLAYBOOK_BIN bash tests/data_operations/selfhost/data_volume_linux_test.sh
         env:
           ANSIBLE_COLLECTIONS_PATH: ${{ runner.temp }}/volume-test-collections
+          ANSIBLE_PLAYBOOK_BIN: ${{ runner.temp }}/volume-test-runtime/bin/ansible-playbook
   guards:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - run: python3 -m pip install PyYAML==6.0.3
+      - run: sudo apt-get update && sudo apt-get install --yes ripgrep
       - name: Credential-free operation gates
         run: |
           set -euo pipefail

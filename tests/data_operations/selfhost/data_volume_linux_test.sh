@@ -37,7 +37,7 @@ role=os.environ['ROOT']+'/roles/web_saas_data_volume'
  web_saas_data_device_path=os.environ['DEVICE_LINK'],web_saas_data_allow_initialize=True,
  web_saas_data_filesystem_label='ws-prod-data')))
 PY
-execute() { ansible-playbook -i 'web-saas-prod,' --connection local "$fixture/play.yml" --extra-vars "@$fixture/vars.json"; }
+execute() { "${ANSIBLE_PLAYBOOK_BIN:?isolated CI runtime required}" -i 'web-saas-prod,' --connection local "$fixture/play.yml" --extra-vars "@$fixture/vars.json"; }
 execute
 [[ "$(findmnt -nro TARGET --mountpoint /data)" == /data ]]
 [[ "$(blkid -s LABEL -o value "$disk")" == ws-prod-data ]]
