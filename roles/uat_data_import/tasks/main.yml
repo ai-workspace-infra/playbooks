@@ -90,7 +90,7 @@
       no_log: true
     - name: Run direct PostgreSQL migration
       ansible.builtin.command:
-        argv: [bash, "{{ playbook_dir }}/../../scripts/data_operations/{{ 'accounts_data_migration_target_tunnel.sh' if uat_data_import_config.accounts_target_host | default('') else 'accounts_data_migration.sh' }}"]
+        argv: [python3, "{{ playbook_dir }}/../../scripts/data_operations/run_import_with_receipt.py", "{{ 'accounts_data_migration_target_tunnel.sh' if uat_data_import_config.accounts_target_host | default('') else 'accounts_data_migration.sh' }}"]
       environment: "{{ uat_data_import_environment_vars }}"
       no_log: true
   when:

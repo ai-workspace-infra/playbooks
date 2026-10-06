@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+umask 077
 
 # ==============================================================================
 # Accounts Data Migration Script (PROD -> UAT)
