@@ -9,6 +9,8 @@ import json
 import os
 import secrets
 import subprocess
+import re
+import threading
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from full_business_contract import BUSINESS_TABLES, readonly_policy_sql, validate_source_tables
 
@@ -61,6 +63,39 @@ def query(dsn, sql):
 
 def count_sql(tables):
     return " UNION ALL ".join(f'SELECT \'{tab}\',count(*) FROM public."{tab}"' for tab in tables)
+
+
+def verify_visibility(owner_dsn, source_dsn, tables):
+    """Compare separate owner/login connections using one exported snapshot.
+
+    Supabase's administrator cannot SET ROLE to a created login. The owner
+    transaction stays open until the restricted login imports its snapshot.
+    Credentials stay in the process environment; no raw rows are queried.
+    """
+    sql = "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET LOCAL statement_timeout='45s'; SELECT pg_export_snapshot(); SELECT json_object_agg(tab,total) FROM (" + count_sql(tables) + ") AS counts(tab,total);\n"
+    process = subprocess.Popen(["psql", "-XAtq", "-v", "ON_ERROR_STOP=1"],
+                               env=connection_env(owner_dsn), stdin=subprocess.PIPE,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    timer = threading.Timer(90, process.kill)
+    timer.start()
+    try:
+        process.stdin.write(sql)
+        process.stdin.flush()
+        snapshot = process.stdout.readline().strip()
+        expected = process.stdout.readline().strip()
+        if not re.fullmatch(r"[0-9A-F]+-[0-9A-F]+-[0-9]+", snapshot) or not expected:
+            raise RuntimeError("Consistent source snapshot export failed")
+        observed = query(source_dsn, "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET TRANSACTION SNAPSHOT '" + snapshot + "'; SET LOCAL statement_timeout='45s'; SELECT json_object_agg(tab,total) FROM (" + count_sql(tables) + ") AS counts(tab,total); COMMIT;")
+        if json.loads(expected) != json.loads(observed):
+            raise RuntimeError("Readonly release visibility differs from owner snapshot")
+        return json.loads(observed)
+    finally:
+        try:
+            process.communicate(input="ROLLBACK;\n", timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            process.kill()
+            process.communicate()
+        timer.cancel()
 
 
 def readonly_dsn(p, project, password):
@@ -154,14 +189,9 @@ END $$;
 COMMIT;
 """
         query(contract["DATABASE_SESSION_POOLER_URL"], sql)
-        # Owner and role counts share one consistent transaction snapshot.
-        observed = query(contract["DATABASE_SESSION_POOLER_URL"], "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;" + count_sql(tables) + "; SELECT 'scope_separator'; SET LOCAL ROLE readonly_release;" + count_sql(tables) + "; COMMIT;")
-        owner, restricted = observed.split("scope_separator\n")
-        if owner.strip() != restricted.strip():
-            raise RuntimeError("Readonly release visibility differs from owner visibility")
+        counts[environment] = verify_visibility(contract["DATABASE_SESSION_POOLER_URL"], payload[key], tables)
         if query(payload[key], "SHOW default_transaction_read_only; SELECT current_user;") != "on\nreadonly_release":
             raise RuntimeError("Readonly login safety verification failed")
-        counts[environment] = {name: int(count) for name, count in (line.split("|") for line in restricted.strip().splitlines())}
     payload["BOOTSTRAP_STATE"] = "ready"
     save(payload, version)
     print(json.dumps({"schema": "full-business-credential-contract/v1", "environment": "uat",

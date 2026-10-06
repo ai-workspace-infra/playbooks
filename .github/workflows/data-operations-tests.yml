@@ -18,6 +18,8 @@ jobs:
           set -euo pipefail
           bash scripts/tests/uat_data_import_guard_test.sh
           python3 -m unittest discover -s tests/data_operations -p 'test_*.py'
+          python3 -m unittest discover -s tests/data_operations/import -p 'full_business*bootstrap_test.py'
+          python3 -m unittest discover -s tests/data_operations/import -p 'full_business_contract_test.py'
           for test in tests/data_operations/import/*test.sh; do bash "$test"; done
           bash tests/data_operations/selfhost/web_saas_upgrade_acceptance_test.sh
           bash tests/data_operations/selfhost/acceptance_rules_test.sh
@@ -55,3 +57,10 @@ jobs:
         run: python3 tests/data_operations/selfhost/backup_restore_roles_postgres_test.py
         env:
           TEST_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+      - name: Full business readonly visibility on a shared snapshot (loopback only)
+        run: python3 tests/data_operations/import/full_business_visibility_postgres_test.py
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
