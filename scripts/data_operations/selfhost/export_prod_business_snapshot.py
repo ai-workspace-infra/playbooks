@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
 from bootstrap_full_business_credentials import connection_env,query
 from full_business_contract import BUSINESS_TABLES,validate_source_tables
-from full_business_snapshot import SnapshotValidator,snapshot_sql
+from full_business_snapshot import SnapshotValidator,snapshot_sql,visibility_guard_sql
 from mount_uat_retained_volume import disk_contract,run
 
 
@@ -110,6 +110,8 @@ def main():
         present=query(dsn,"BEGIN READ ONLY; SELECT relname FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind IN ('r','p') ORDER BY relname; COMMIT;").splitlines()
         validate_source_tables(present)
         tables=tuple(t for t in BUSINESS_TABLES if t in present)
+        if query(dsn,visibility_guard_sql(tables))!='t':
+            raise RuntimeError('Complete readonly RLS visibility contract is not verified')
         passphrase=contract['UPGRADE_BACKUP_PASSPHRASE']
         if len(passphrase)<32 or '\n' in passphrase:raise RuntimeError('Invalid encryption contract')
         ssh=json.loads(run(['vault','kv','get','-format=json','kv/CICD/uat']))['data']['data']

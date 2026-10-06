@@ -46,3 +46,25 @@ class SnapshotValidator:
     def finish(self):
         if not self.header or not self.footer:raise ValueError('Snapshot is incomplete')
         return dict(self.counts)
+
+
+def visibility_guard_sql(tables):
+    validate_source_tables(tables)
+    names=",".join("'"+t+"'" for t in BUSINESS_TABLES if t in tables)
+    return """BEGIN READ ONLY;
+SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=current_user AND current_user='readonly_release'
+ AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication
+ AND NOT rolbypassrls AND NOT rolinherit)
+ AND NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE member=(SELECT oid FROM pg_roles WHERE rolname=current_user))
+ AND NOT EXISTS (
+ SELECT 1 FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relname IN ("""+names+""")
+ AND c.relrowsecurity AND (
+ NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid=c.oid
+ AND p.polname='release_initialization_readonly' AND p.polcmd='r' AND p.polpermissive
+ AND p.polroles=ARRAY[(SELECT oid FROM pg_roles WHERE rolname=current_user)]
+ AND pg_get_expr(p.polqual,p.polrelid)='true' AND p.polwithcheck IS NULL)
+ OR EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid=c.oid AND NOT p.polpermissive AND p.polcmd IN ('r','*')
+ AND (0::oid=ANY(p.polroles) OR (SELECT oid FROM pg_roles WHERE rolname=current_user)=ANY(p.polroles)))
+ ));
+COMMIT;
+"""
