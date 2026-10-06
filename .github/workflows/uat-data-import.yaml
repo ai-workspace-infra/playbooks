@@ -50,7 +50,6 @@ jobs:
       REQUESTED_DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       CORRELATION_ID: ${{ inputs.correlation_id }}
       ACCOUNTS_REF: ${{ inputs.accounts_ref }}
-      IMPORT_OWNER_SHA: ${{ job.workflow_sha }}
     steps:
       - name: Check out playbooks execution owner
         uses: actions/checkout@v7
@@ -164,6 +163,7 @@ jobs:
       - name: Write sanitized execution receipt
         if: ${{ always() }}
         env:
+          IMPORT_OWNER_SHA: ${{ job.workflow_sha }}
           EXECUTION_SUCCESS: ${{ steps.execute.outcome == 'success' && 'true' || 'false' }}
         run: |
           ACCOUNTS_SOURCE_SHA="$(git -C accounts rev-parse HEAD 2>/dev/null || true)" \

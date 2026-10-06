@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('runtime', ROOT / 'scripts/data_operations/run_import_with_receipt.py')
@@ -13,6 +14,14 @@ spec.loader.exec_module(runtime)
 
 
 class ImportReceiptTests(unittest.TestCase):
+    def test_owner_job_context_is_only_used_at_allowed_step_scope(self):
+        workflow = yaml.safe_load((ROOT / '.github/workflows/uat-data-import.yaml').read_text())
+        job = workflow['jobs']['import']
+        for value in job.get('env', {}).values():
+            self.assertNotIn('job.', str(value), 'job context is unavailable in jobs.<job_id>.env')
+        receipt = next(step for step in job['steps'] if step['name'] == 'Write sanitized execution receipt')
+        self.assertEqual(receipt['env']['IMPORT_OWNER_SHA'], '${{ job.workflow_sha }}')
+
     def summary(self, stdout, stderr='', rc=0, dry_run=False, timed_out=False):
         return runtime.summarize(stdout, stderr, rc, 'accounts_data_migration_target_tunnel.sh', dry_run, timed_out)
 
