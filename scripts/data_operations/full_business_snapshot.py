@@ -1,0 +1,48 @@
+"""Consistent full-business JSONL stream; never output private rows to logs."""
+import json
+from full_business_contract import BUSINESS_TABLES,validate_source_tables
+
+
+def snapshot_sql(tables):
+    validate_source_tables(tables)
+    tables=tuple(t for t in BUSINESS_TABLES if t in tables)
+    table_json=json.dumps(list(tables),separators=(',',':'))
+    columns=' UNION ALL '.join("SELECT '"+t+"' tab, jsonb_agg(jsonb_build_object('name',attname,'type',format_type(atttypid,atttypmod),'required',attnotnull,'generated',attgenerated) ORDER BY attnum) columns FROM pg_attribute WHERE attrelid='public."+t+"'::regclass AND attnum>0 AND NOT attisdropped" for t in tables)
+    statements=["BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET LOCAL statement_timeout='120s'; SET LOCAL TIMEZONE='UTC'; SET LOCAL DATESTYLE='ISO,YMD'; SET LOCAL extra_float_digits=3;",
+                "SELECT jsonb_build_object('kind','header','schema','full-business-snapshot/v1','tables','"+table_json+"'::jsonb,'columns',(SELECT jsonb_object_agg(tab,columns) FROM ("+columns+") columns));"]
+    for table in tables:
+        statements.append("SELECT jsonb_build_object('kind','row','table','"+table+"','row',to_jsonb(t)) FROM public.\""+table+"\" t;")
+    counts=' UNION ALL '.join("SELECT '"+t+"' tab,count(*) total FROM public.\""+t+'"' for t in tables)
+    statements += ["SELECT jsonb_build_object('kind','footer','counts',(SELECT jsonb_object_agg(tab,total) FROM ("+counts+") counts));",'COMMIT;']
+    return '\n'.join(statements)+'\n'
+
+
+class SnapshotValidator:
+    def __init__(self,tables):
+        self.tables=tuple(t for t in BUSINESS_TABLES if t in tables)
+        validate_source_tables(self.tables)
+        self.counts={t:0 for t in self.tables};self.header=False;self.footer=False
+
+    def accept(self,line):
+        value=json.loads(line)
+        if not isinstance(value,dict):raise ValueError('Snapshot record is not an object')
+        kind=value.get('kind')
+        if kind=='header' and not self.header and not self.footer:
+            if (value.get('schema')!='full-business-snapshot/v1' or value.get('tables')!=list(self.tables)
+                    or set(value.get('columns',{}))!=set(self.tables)):
+                raise ValueError('Snapshot metadata differs from reviewed source contract')
+            self.header=True
+        elif kind=='row' and self.header and not self.footer:
+            table=value.get('table')
+            if table not in self.counts or not isinstance(value.get('row'),dict):
+                raise ValueError('Snapshot row table or format is invalid')
+            self.counts[table]+=1
+        elif kind=='footer' and self.header and not self.footer:
+            if value.get('counts')!=self.counts:
+                raise ValueError('Snapshot stream count differs from consistent source counts')
+            self.footer=True
+        else:raise ValueError('Snapshot record order is invalid')
+
+    def finish(self):
+        if not self.header or not self.footer:raise ValueError('Snapshot is incomplete')
+        return dict(self.counts)

@@ -68,3 +68,10 @@ jobs:
         run: sudo --preserve-env=GITHUB_ACTIONS,GITHUB_RUN_ID,TEST_POSTGRES_CONTAINER python3 tests/data_operations/selfhost/initialization_backup_postgres_test.py
         env:
           TEST_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+      - name: Consistent full-business source stream SQL (loopback only)
+        run: python3 tests/data_operations/import/full_business_snapshot_postgres_test.py
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
