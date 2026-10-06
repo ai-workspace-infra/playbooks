@@ -18,6 +18,8 @@ ROOT=Path(__file__).resolve().parents[3]
 sys.path.insert(0,str(ROOT/'scripts/data_operations/selfhost'))
 import native_init_host as HOST
 
+PHASE="preflight"
+
 
 def require(value):
     if not value:raise RuntimeError('Disposable native schema qualification guard failed')
@@ -34,6 +36,7 @@ def sql(query,database='postgres'):
 
 
 def main():
+    global PHASE
     require(os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted')
     require(os.environ.get('PGHOST')=='127.0.0.1' and os.environ.get('PGPORT')=='5432' and os.environ.get('PGUSER')=='postgres')
     accounts=Path(os.environ['ACCOUNTS_CHECKOUT']);billing=Path(os.environ['BILLING_CHECKOUT'])
@@ -53,10 +56,12 @@ def main():
     image='native-schema-stdin-fixture:'+uuid.uuid4().hex
     execution='native-schema-stdin-check-'+uuid.uuid4().hex
     try:
+        PHASE="create_fixture"
         run(['createdb','--template=template0','account'])
         with tempfile.TemporaryDirectory() as directory:
             work=Path(directory);(work/'migratectl').write_bytes(binary.read_bytes());(work/'migratectl').chmod(0o755)
             (work/'Dockerfile').write_text('FROM ubuntu:24.04\nCOPY migratectl /usr/local/bin/migratectl\n')
+            PHASE="build_fixture"
             run(['docker','build','-t',image,str(work)])
             migrations=work/'migrations';migrations.mkdir(mode=0o700)
             (migrations/migration.name).write_bytes(migration.read_bytes())
@@ -76,23 +81,28 @@ def main():
                     run(['docker','rm','--force',execution])
             init_args=['init','--dsn-env=NATIVE_TARGET_DSN','--environment=prod','--writers-paused',
                        '--schema-sha256='+manifest['schema_sha256'],'--lock-timeout=15s','--statement-timeout=5m']
+            PHASE="init_preview"
             preview=json.loads(invoke([*init_args,'--dry-run=true']))
             require(preview['result']=='eligible' and preview['database_cutover_approved'] is False)
             require(sql("SELECT count(*) FROM pg_tables WHERE schemaname='public'",'account')=='0')
+            PHASE="init_apply"
             applied=json.loads(invoke([*init_args,'--dry-run=false']))
             require(applied['result']=='initialized' and applied['business_rows']==0 and applied['database_cutover_approved'] is False)
             require(sql("SELECT version::text||':'||dirty::text FROM public.schema_migrations",'account')=='2026100601:false')
             upgrade=['--dir=/reviewed-migrations','migrate','--dsn-env=NATIVE_TARGET_DSN',
                      '--expected-version=2026100601','--target-version=2026100701',
                      '--migration-sha256='+billing_hash,'--lock-timeout=15s','--statement-timeout=5m']
+            PHASE="billing_upgrade"
             invoke(upgrade,migrations)
             invoke(upgrade,migrations)
             require(sql("SELECT version::text||':'||dirty::text FROM public.schema_migrations",'account')=='2026100701:false')
+            PHASE="scope_and_zero_rows"
             tables=sorted(manifest['business_tables']+['cloud_vendor_costs'])
             actual=json.loads(sql("SELECT json_agg(tablename ORDER BY tablename) FROM pg_tables WHERE schemaname='public' AND tablename<>'schema_migrations'",'account'))
             require(actual==tables)
             require(sql('SELECT '+'+'.join('(SELECT count(*) FROM public."'+t+'")' for t in tables),'account')=='0')
             bad=[arg if not arg.startswith('--migration-sha256=') else '--migration-sha256='+'0'*64 for arg in upgrade]
+            PHASE="wrong_hash_refusal"
             invoke(bad,migrations,expected=1)
             require(sql("SELECT version::text||':'||dirty::text FROM public.schema_migrations",'account')=='2026100701:false')
         print('Disposable PG17/container stdin: native init preview/apply, bounded Billing upgrade/replay refusal, exact 53-table zero-row scope and secret-free Docker config passed; not production acceptance.')
@@ -105,5 +115,5 @@ def main():
 if __name__=='__main__':
     try:main()
     except Exception:
-        print('Disposable native schema container fixture failed; private output withheld.',file=sys.stderr)
+        print('Disposable native schema container fixture failed in '+PHASE+'; private output withheld.',file=sys.stderr)
         raise SystemExit(1)
