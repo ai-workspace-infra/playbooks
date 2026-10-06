@@ -61,7 +61,7 @@ def visibility_guard_sql(tables):
     validate_source_tables(tables)
     names=",".join("'"+t+"'" for t in BUSINESS_TABLES if t in tables)
     return """BEGIN READ ONLY;
-SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=current_user AND current_user='readonly_release'
+SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=current_user AND current_user='readonly_release' AND rolcanlogin
  AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication
  AND NOT rolbypassrls AND NOT rolinherit)
  AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relkind IN ('r','p')

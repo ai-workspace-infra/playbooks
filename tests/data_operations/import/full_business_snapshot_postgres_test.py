@@ -8,7 +8,7 @@ def query(sql,db='postgres'):
  r=subprocess.run(['psql','-XAtq','-v','ON_ERROR_STOP=1'],input=sql,env=dict(os.environ,PGDATABASE=db),text=True,capture_output=True,timeout=30)
  if r.returncode:raise SystemExit('Snapshot SQL fixture failed; private output withheld')
  return r.stdout
-query("CREATE DATABASE full_business_snapshot_ci; CREATE ROLE readonly_release NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;")
+query("CREATE DATABASE full_business_snapshot_ci; CREATE ROLE readonly_release LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;")
 try:
  tables=tuple(t for t in BUSINESS_TABLES if t in LEGACY_BUSINESS_TABLES)
  query('\n'.join('CREATE TABLE public."'+t+'" (id int PRIMARY KEY, payload text); INSERT INTO public."'+t+'" VALUES (1,\'private-fixture\');' for t in tables),'full_business_snapshot_ci')
