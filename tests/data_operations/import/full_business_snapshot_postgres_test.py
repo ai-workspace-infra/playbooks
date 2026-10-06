@@ -30,10 +30,10 @@ try:
  real_popen=subprocess.Popen
  def small_popen(argv,**kwargs):
   return real_popen(argv,**dict(kwargs,pipesize=4096))
- destination=[sys.executable,'-c',"import sys,json,hashlib; sys.stdin.buffer.readline(); data=sys.stdin.buffer.read(); print(json.dumps({'plaintext_sha256':hashlib.sha256(data).hexdigest(),'encrypted':True}))"]
+ destination=[sys.executable,'-c',"import sys,json,hashlib,gzip; sys.stdin.buffer.readline(); data=gzip.decompress(sys.stdin.buffer.read()); print(json.dumps({'plaintext_sha256':hashlib.sha256(data).hexdigest(),'encrypted':True,'compression':'gzip'}))"]
  with patch.object(exporter,'connection_env',return_value=dict(os.environ,PGDATABASE='full_business_snapshot_ci')),patch.object(exporter.subprocess,'Popen',side_effect=small_popen):
   receipt,counts,size=exporter.stream('disposable-loopback',destination,'ci-only-stream-key',tables)
- if counts!={t:1 for t in tables} or size<1024*1024:
+ if counts!={t:1 for t in tables} or size<1024*1024 or not 0<receipt['compressed_stream_bytes']<size:
   raise SystemExit('Small-pipe full snapshot regression failed')
  print('Real source and destination stream completed with 4096-byte pipe buffers')
  print('All 44 source tables covered by a complete consistent readonly JSONL stream')

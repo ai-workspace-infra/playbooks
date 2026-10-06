@@ -7,18 +7,34 @@ import export_prod_business_snapshot as exporter
 from full_business_contract import BUSINESS_TABLES,LEGACY_BUSINESS_TABLES
 
 class SnapshotStreamControl(unittest.TestCase):
-    def exercise(self,source_program,timer=None):
+    def exercise(self,source_program,timer=None,destination_program='import sys;sys.stdin.buffer.read()'):
         real_popen=subprocess.Popen
         def popen(argv,**kwargs):
             if argv[0]=='psql':argv=[sys.executable,'-c',source_program]
             return real_popen(argv,**kwargs)
-        destination=[sys.executable,'-c','import sys;sys.stdin.buffer.read()']
+        destination=[sys.executable,'-c',destination_program]
         tables=tuple(t for t in BUSINESS_TABLES if t in LEGACY_BUSINESS_TABLES)
         with patch.object(exporter,'connection_env',return_value=dict(os.environ)),patch.object(exporter.subprocess,'Popen',side_effect=popen):
             if timer:
                 with patch.object(exporter.threading,'Timer',side_effect=timer):
                     return exporter.stream('no-database',destination,'nonprivate-fixture-key',tables)
             return exporter.stream('no-database',destination,'nonprivate-fixture-key',tables)
+
+    def test_gzip_roundtrip_preserves_source_rows_and_hash(self):
+        tables=[t for t in BUSINESS_TABLES if t in LEGACY_BUSINESS_TABLES]
+        source=("import json;tables="+repr(tables)+";"
+                "print(json.dumps({'kind':'header','schema':'full-business-snapshot/v1','tables':tables,"
+                "'columns':{t:[{'name':'id','type':'integer'},{'name':'payload','type':'text'}] for t in tables}}));"
+                "[print(json.dumps({'kind':'row','table':t,'row':{'id':1,'payload':'fixture-\\n-\\t-'*4096}})) for t in tables];"
+                "print(json.dumps({'kind':'footer','counts':{t:1 for t in tables}}))")
+        destination=("import sys,json,hashlib,gzip;sys.stdin.buffer.readline();"
+                     "data=gzip.decompress(sys.stdin.buffer.read());"
+                     "print(json.dumps({'plaintext_sha256':hashlib.sha256(data).hexdigest(),"
+                     "'encrypted':True,'compression':'gzip'}))")
+        receipt,counts,size=self.exercise(source,destination_program=destination)
+        self.assertEqual(counts,{t:1 for t in tables})
+        self.assertGreater(size,1024*1024)
+        self.assertLess(receipt['compressed_stream_bytes'],size/10)
 
     def test_timeout_is_distinct_and_kills_both_children(self):
         real_timer=threading.Timer;budgets=[]
