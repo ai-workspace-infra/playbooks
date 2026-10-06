@@ -31,7 +31,7 @@ if "[STEP 1/4]" in stdout:
     phase = "source_export"
 if "[STEP 2/4]" in stdout:
     phase = "target_preview"
-if "[STEP 3/4]" in stdout:
+if "[STEP 3/4]" in stdout and os.environ.get("DRY_RUN") != "true":
     phase = "target_apply"
 category = "success" if process.returncode == 0 else "execution_failed"
 for pattern, label in [("Permission denied", "ssh_authentication"),
@@ -44,6 +44,7 @@ for pattern, label in [("Permission denied", "ssh_authentication"),
                        ("failed to connect", "database_connection")]:
     if pattern in combined:
         category = label
+        break
 if timed_out:
     category = "execution_timeout"
 states = re.findall(r"SQLSTATE\s+([A-Z0-9]{5})", combined)
