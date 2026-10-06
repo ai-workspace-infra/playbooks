@@ -29,3 +29,7 @@ export ANSIBLE_SSH_COMMON_ARGS="-o BatchMode=yes -o IdentitiesOnly=yes -o Strict
 # one-run cloud access owner's cleanup.
 export ANSIBLE_HOST_KEY_CHECKING=true
 export ANSIBLE_SSH_ARGS='-o ControlMaster=no -o ControlPersist=no'
+
+# Module arguments and private credential stdin must not create remote temp files.
+export ANSIBLE_PIPELINING=true
+export ANSIBLE_KEEP_REMOTE_FILES=false

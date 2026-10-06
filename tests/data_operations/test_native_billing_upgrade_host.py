@@ -1,5 +1,6 @@
 """Credential-free target execution fixtures; never live production acceptance."""
 import copy
+from contextlib import nullcontext
 import hashlib
 import importlib.util
 import json
@@ -32,6 +33,9 @@ def spec(content):
 
 class BillingUpgradeTests(unittest.TestCase):
     def setUp(self):
+        session=patch.object(HOST.native,'registry_session',side_effect=lambda _c:nullcontext({'DOCKER_CONFIG':'/memory/fixture'}))
+        session.start();self.addCleanup(session.stop)
+        self.credentials=dict(postgres_password='fictional$@:',ghcr_username='fixture',ghcr_token='synthetic-token')
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.migration = Path(self.temp.name) / '2026100701_cloud_vendor_costs.up.sql'
@@ -44,7 +48,7 @@ class BillingUpgradeTests(unittest.TestCase):
         calls = []
         manifest = {'format':1, **{k:self.spec['initialization'][k] for k in
             ('schema_sha256','migration_version','business_table_count','business_tables')}}
-        env_paths = []
+        sql_paths = []
         def sql(query, database='postgres'):
             if 'json_agg' in query:
                 tables = self.spec['initialization']['business_tables'] + (['cloud_vendor_costs'] if state['version']==2026100701 else [])
@@ -61,9 +65,13 @@ class BillingUpgradeTests(unittest.TestCase):
             if argv[-1]=='native-schema':
                 return json.dumps(manifest)
             if '--dsn-env=NATIVE_TARGET_DSN' in argv:
-                env_file=Path(argv[argv.index('--env-file')+1]);env_paths.append(env_file)
-                self.assertEqual(env_file.stat().st_mode & 0o777,0o600)
-                self.assertIn('fictional%24%40%3A',env_file.read_text())
+                self.assertNotIn('--env-file',argv)
+                self.assertEqual(kwargs['input'],'postgresql://postgres:fictional%24%40%3A@127.0.0.1:5432/account?sslmode=disable\n')
+                self.assertNotIn('NATIVE_TARGET_DSN',kwargs['env'])
+                sql_dir=Path(argv[argv.index('--mount')+1].split('source=',1)[1].split(',target=',1)[0])
+                sql_paths.append(sql_dir)
+                self.assertEqual([p.name for p in sql_dir.iterdir()],[self.migration.name])
+                self.assertEqual((sql_dir/self.migration.name).read_bytes(),self.migration.read_bytes())
                 self.assertIn('--migration-sha256='+self.spec['billing']['migration_sha256'],argv)
                 self.assertIn('--expected-version=2026100601',argv)
                 self.assertIn('--target-version=2026100701',argv)
@@ -74,17 +82,17 @@ class BillingUpgradeTests(unittest.TestCase):
             return ''
         with patch.object(HOST.native,'sql',side_effect=sql), patch.object(HOST.native,'command',side_effect=command), \
              patch.object(HOST,'verify_storage'), patch.object(HOST.native,'remove_execution_container') as cleanup, \
-             patch.dict(os.environ,NATIVE_POSTGRES_PASSWORD='fictional$@:',NATIVE_DATA_GATE_VERIFIED='true'):
+             patch.dict(os.environ,NATIVE_DATA_GATE_VERIFIED='true'):
             if fail_apply:
                 with self.assertRaises(HOST.native.Refused):
-                    HOST.execute(self.spec,self.migration,OWNER,dry_run)
+                    HOST.execute(self.spec,self.migration,OWNER,dry_run,self.credentials)
                 cleanup.assert_called_once()
-                for path in env_paths:self.assertFalse(path.exists())
+                for path in sql_paths:self.assertFalse(path.exists())
                 return calls,None
-            receipt=HOST.execute(self.spec,self.migration,OWNER,dry_run)
-            if env_paths:cleanup.assert_called_once()
+            receipt=HOST.execute(self.spec,self.migration,OWNER,dry_run,self.credentials)
+            if sql_paths:cleanup.assert_called_once()
             else:cleanup.assert_not_called()
-        for path in env_paths:self.assertFalse(path.exists())
+        for path in sql_paths:self.assertFalse(path.exists())
         return calls,receipt
 
     def test_preview_never_runs_migration_or_dsn(self):

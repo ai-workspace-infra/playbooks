@@ -33,17 +33,6 @@
         dest: "{{ native_init_workspace.path }}/spec.json"
         mode: '0600'
 
-    - name: Authenticate registry runtime without command-line credentials
-      ansible.builtin.shell: |
-        set -euo pipefail
-        printf '%s' "$NATIVE_GHCR_TOKEN" | docker login ghcr.io --username "$NATIVE_GHCR_USERNAME" --password-stdin
-      args:
-        executable: /bin/bash
-      environment:
-        NATIVE_GHCR_TOKEN: "{{ lookup('ansible.builtin.env', 'GHCR_TOKEN') }}"
-        NATIVE_GHCR_USERNAME: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') }}"
-      no_log: true
-
     - name: Preview or initialize only the genuinely empty account database
       ansible.builtin.command:
         argv:
@@ -55,8 +44,9 @@
           - "{{ native_init_workspace.path }}"
           - --dry-run
           - "{{ lookup('ansible.builtin.env', 'NATIVE_INIT_DRY_RUN') }}"
+        stdin: "{{ {'postgres_password': lookup('ansible.builtin.env', 'POSTGRES_PASSWORD'), 'ghcr_username': lookup('ansible.builtin.env', 'GHCR_USERNAME'), 'ghcr_token': lookup('ansible.builtin.env', 'GHCR_TOKEN')} | to_json }}"
+        stdin_add_newline: true
       environment:
-        NATIVE_POSTGRES_PASSWORD: "{{ lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') }}"
         NATIVE_DATA_GATE_VERIFIED: "{{ lookup('ansible.builtin.env', 'NATIVE_DATA_GATE_VERIFIED') }}"
       register: native_init_result
       changed_when: lookup('ansible.builtin.env', 'NATIVE_INIT_DRY_RUN') == 'false'

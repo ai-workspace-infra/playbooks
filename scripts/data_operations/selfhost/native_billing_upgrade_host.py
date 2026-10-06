@@ -8,7 +8,6 @@ from pathlib import Path
 import re
 import tempfile
 import uuid
-from urllib.parse import quote
 import native_init_host as native
 
 
@@ -62,8 +61,11 @@ def verify_storage():
                    'Billing native schema requires qualified PostgreSQL 17')
 
 
-def execute(spec, migration, guard_directory, dry_run):
+def execute(spec, migration, guard_directory, dry_run, credentials):
     image = validate_spec(spec, migration)
+    native.require(type(dry_run) is bool and (dry_run or os.environ.get('NATIVE_DATA_GATE_VERIFIED') == 'true'),
+                   'Billing schema apply requires independent PROD approval')
+    native.validate_credentials(credentials)
     native.command(['bash', str(guard_directory / 'native_writer_guard_host.sh')])
     verify_storage()
     version = native.sql('SELECT version FROM public.schema_migrations WHERE dirty=false', 'account')
@@ -71,41 +73,29 @@ def execute(spec, migration, guard_directory, dry_run):
     version = int(version)
     initial_version = version
     verify_target(spec, version)
-    native.command(['docker', 'pull', image])
-    manifest = json.loads(native.command(['docker', 'run', '--rm', '--network', 'none', '--read-only',
-        '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--entrypoint', '/usr/local/bin/migratectl',
-        image, 'native-schema']))
-    native.validate_manifest(manifest, spec['initialization'])
-    if not dry_run and version == 2026100601:
-        native.require(os.environ.get('NATIVE_DATA_GATE_VERIFIED') == 'true', 'Independent PROD approval is required')
-        password = os.environ.get('NATIVE_POSTGRES_PASSWORD', '')
-        native.require(password and '\n' not in password and '\r' not in password, 'Target runtime credential unavailable')
-        native.command(['bash', str(guard_directory / 'native_writer_guard_host.sh')])
-        verify_storage()
-        verify_target(spec, 2026100601)
-        with tempfile.TemporaryDirectory(prefix='native-billing-') as directory:
-            private = Path(directory)
-            env_file = private / 'target.env'
-            env_file.write_text('NATIVE_TARGET_DSN=postgresql://postgres:' + quote(password, safe='') +
-                               '@127.0.0.1:5432/account?sslmode=disable\n')
-            env_file.chmod(0o600)
-            sql_dir = private / 'migrations'
-            sql_dir.mkdir(mode=0o700)
-            (sql_dir / migration.name).write_bytes(migration.read_bytes())
-            (sql_dir / migration.name).chmod(0o600)
-            execution_name = 'native-billing-upgrade-' + uuid.uuid4().hex
-            try:
-                native.command(['docker', 'run', '--rm', '--name', execution_name,
-                    '--network', 'container:web-saas-postgresql', '--read-only', '--cap-drop', 'ALL',
-                    '--security-opt', 'no-new-privileges', '--env-file', str(env_file),
-                    '--mount', 'type=bind,source=' + str(sql_dir) + ',target=/reviewed-migrations,readonly',
-                    '--entrypoint', '/usr/local/bin/migratectl', image, '--dir=/reviewed-migrations', 'migrate',
-                    '--dsn-env=NATIVE_TARGET_DSN', '--expected-version=2026100601', '--target-version=2026100701',
-                    '--migration-sha256=' + spec['billing']['migration_sha256'],
-                    '--lock-timeout=15s', '--statement-timeout=5m'])
-            finally:
-                native.remove_execution_container(execution_name)
-        version = 2026100701
+    with native.registry_session(credentials) as env:
+        native.command(['docker', 'pull', image], env=env)
+        manifest = json.loads(native.command(['docker', 'run', '--rm', '--network', 'none', '--read-only',
+            '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--entrypoint', '/usr/local/bin/migratectl',
+            image, 'native-schema'], env=env))
+        native.validate_manifest(manifest, spec['initialization'])
+        if not dry_run and version == 2026100601:
+            native.command(['bash', str(guard_directory / 'native_writer_guard_host.sh')])
+            verify_storage()
+            verify_target(spec, 2026100601)
+            # Only public, reviewed SQL enters this temporary mount. Connection
+            # credentials go directly from module stdin to container stdin.
+            with tempfile.TemporaryDirectory(prefix='native-billing-') as directory:
+                sql_dir = Path(directory) / 'migrations'
+                sql_dir.mkdir(mode=0o700)
+                (sql_dir / migration.name).write_bytes(migration.read_bytes())
+                (sql_dir / migration.name).chmod(0o600)
+                native.run_tool(image, 'native-billing-upgrade-' + uuid.uuid4().hex,
+                    ['--dir=/reviewed-migrations', 'migrate', '--dsn-env=NATIVE_TARGET_DSN',
+                     '--expected-version=2026100601', '--target-version=2026100701',
+                     '--migration-sha256=' + spec['billing']['migration_sha256'],
+                     '--lock-timeout=15s', '--statement-timeout=5m'], credentials, env, sql_dir)
+            version = 2026100701
     tables = verify_target(spec, version)
     native.command(['bash', str(guard_directory / 'native_writer_guard_host.sh')])
     return {'stage': 'native_billing_schema_preview' if dry_run else 'native_billing_schema_upgraded',
@@ -133,7 +123,7 @@ def main():
     if args.validate_only:
         print('Fixed Billing additive schema contract verified; no database action performed.')
         return
-    print(json.dumps(execute(spec, args.migration, args.guard_directory, args.dry_run == 'true'), sort_keys=True))
+    print(json.dumps(execute(spec, args.migration, args.guard_directory, args.dry_run == 'true', native.read_credentials()), sort_keys=True))
 
 
 if __name__ == '__main__':
