@@ -31,6 +31,10 @@ SELECT
     AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e'))
  + (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
   WHERE n.nspname NOT LIKE 'pg_%' AND n.nspname<>'information_schema'
-    AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_proc'::regclass AND d.objid=p.oid AND d.deptype='e'))")"
+    AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_proc'::regclass AND d.objid=p.oid AND d.deptype='e'))
+ + (SELECT count(*) FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+  WHERE n.nspname NOT LIKE 'pg_%' AND n.nspname<>'information_schema'
+    AND t.typtype IN ('e','d','r','m')
+    AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_type'::regclass AND d.objid=t.oid AND d.deptype='e'))")"
 [[ "$object_count" == 0 ]] || { echo 'Account database has application objects or its state is unverified; refusing initialization.' >&2; exit 1; }
 echo 'Account database is empty; schema initialization may proceed.'
