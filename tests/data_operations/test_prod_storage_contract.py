@@ -7,6 +7,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ProdStorageContractTests(unittest.TestCase):
+    def test_multi_column_options_are_single_arguments(self):
+        for file in ('main.yml', 'prepare_empty.yml'):
+            tasks=yaml.safe_load((ROOT/'roles/web_saas_data_volume/tasks'/file).read_text())
+            for task in tasks:
+                argv=task.get('ansible.builtin.command',{}).get('argv',[])
+                if argv and argv[0] in ('lsblk','findmnt') and '-dnro' in argv or argv and '-nro' in argv:
+                    self.assertEqual(len(argv), 4 if argv[0]=='lsblk' else 5)
+
     def test_storage_precedes_secrets_and_reconciler(self):
         play = yaml.safe_load((ROOT/'setup-web-saas-domain.yml').read_text())[0]
         self.assertEqual(play['roles'][0]['role'], 'roles/web_saas_prod_storage')

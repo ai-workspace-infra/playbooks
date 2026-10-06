@@ -26,13 +26,13 @@
 
 - name: Read data disk filesystem UUID and type
   ansible.builtin.command:
-    argv: [lsblk, -dnro, UUID,FSTYPE, "{{ web_saas_data_device_path }}"]
+    argv: [lsblk, -dnro, 'UUID,FSTYPE', "{{ web_saas_data_device_path }}"]
   register: web_saas_data_blkid
   changed_when: false
 
 - name: Read current /data mount source and UUID
   ansible.builtin.command:
-    argv: [findmnt, -nro, SOURCE,UUID, --mountpoint, "{{ web_saas_data_mount_path }}"]
+    argv: [findmnt, -nro, 'SOURCE,UUID', --mountpoint, "{{ web_saas_data_mount_path }}"]
   register: web_saas_data_mount
   changed_when: false
   failed_when: web_saas_data_mount.rc not in [0, 1]
