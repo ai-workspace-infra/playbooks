@@ -12,6 +12,14 @@ Runtime inputs are `DEPLOY_ENV=prod`, `CMDB_FILE`, `GITOPS_CHECKOUT`,
 pull through password-stdin with secret logging disabled. No connection
 string/password/token is a dispatch input.
 
+The fixed-SHA `.github/actions/prod-native-standby` entry point installs isolated,
+pinned Ansible dependencies and consumes the original resource inventory and
+same-run IaC access file. Before host execution it checks the approved CMDB
+checksum, exact target/key/runner attempt and a fresh runner receipt path. Its
+sanitized receipt binds the exact GitOps commit, independent disk and PostgreSQL
+major. The caller must always invoke IaC access cleanup, including on failure;
+neither private access files nor credentials may be uploaded as evidence.
+
 Before host changes, the playbook binds the CMDB host/IP/SSH identity and source
 commit and rejects running application/reconciler containers. Stopped writers
 must also have restart disabled. It installs the existing Docker role, reuses
