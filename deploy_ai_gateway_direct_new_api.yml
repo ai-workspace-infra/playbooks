@@ -15,12 +15,17 @@
         file: "{{ ai_gateway_manifest_file }}"
         name: direct_manifest
 
+    - name: Derive the target network and TLS settings
+      ansible.builtin.set_fact:
+        direct_network: "{{ direct_manifest.spec.network | default({}) }}"
+        direct_tls: "{{ direct_manifest.spec.tls | default({}) }}"
+
     - name: Confirm this operation targets the declared Home-Lab node
       ansible.builtin.assert:
         that:
           - direct_manifest.kind == 'UnifiedAIGateway'
-          - direct_manifest.spec.host == 'ai-internal.onwalk.net'
-          - ansible_host == direct_manifest.spec.dns_target
+          - direct_network.mode | default('public') in ['public', 'private-nat', 'xconnect']
+          - direct_network.ssh_address | default(ansible_host) == ansible_host
           - direct_manifest.spec.new_api.bind_address in ['127.0.0.1', '::1']
           - direct_manifest.spec.new_api.port | int == 3000
 
@@ -59,9 +64,17 @@
             group: root
             mode: '0644'
             content: |
+              {% set caddy_bind_address = direct_network.caddy_bind_address | default(direct_manifest.spec.dns_target) %}
+              {% set tls_mode = direct_tls.mode | default('runtime-files') %}
               {{ direct_manifest.spec.host }} {
-                  bind {{ direct_manifest.spec.dns_target }}
+              {% if caddy_bind_address %}
+                  bind {{ caddy_bind_address }}
+              {% endif %}
+              {% if tls_mode == 'runtime-files' %}
                   tls /run/ai-aggregator/tls/fullchain.pem /run/ai-aggregator/tls/privkey.pem
+              {% elif tls_mode != 'automatic' %}
+                  # Invalid TLS mode is rejected by the manifest contract.
+              {% endif %}
                   reverse_proxy {{ direct_manifest.spec.new_api.bind_address }}:{{ direct_manifest.spec.new_api.port }} {
                       flush_interval -1
                   }
@@ -88,7 +101,7 @@
               - --write-out
               - '%{http_code}'
               - --resolve
-              - "{{ direct_manifest.spec.host }}:443:{{ direct_manifest.spec.dns_target }}"
+              - "{{ direct_manifest.spec.host }}:443:{{ direct_network.verification_address | default(direct_manifest.spec.dns_target) }}"
               - "https://{{ direct_manifest.spec.host }}/api/status"
           register: new_api_https_status
           changed_when: false
@@ -105,7 +118,7 @@
               - --write-out
               - '%{http_code}'
               - --resolve
-              - "{{ direct_manifest.spec.host }}:443:{{ direct_manifest.spec.dns_target }}"
+              - "{{ direct_manifest.spec.host }}:443:{{ direct_network.verification_address | default(direct_manifest.spec.dns_target) }}"
               - "https://{{ direct_manifest.spec.host }}/v1/models"
           register: new_api_models_unauth_status
           changed_when: false
