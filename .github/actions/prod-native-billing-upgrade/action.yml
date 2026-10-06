@@ -1,0 +1,48 @@
+name: PROD native Billing additive schema
+description: Billing additive SQL through the fixed Accounts migratectl; pre-copy empty business target only.
+inputs:
+  cmdb_dir: {required: true, description: 'Original verified resource CMDB directory'}
+  cmdb_sha256: {required: true, description: 'Accepted CMDB checksum'}
+  gitops_checkout: {required: true, description: 'Fixed authoritative GitOps checkout'}
+  gitops_commit: {required: true, description: 'Reviewed full GitOps commit'}
+  access_file: {required: true, description: 'IaC same-run private access file'}
+  spec_file: {required: true, description: 'Fixed non-secret image/SQL manifest contract'}
+  billing_checkout: {required: true, description: 'Fixed Billing schema owner checkout'}
+  billing_commit: {required: true, description: 'Reviewed full Billing commit'}
+  dry_run: {default: 'true', description: 'Explicit false only after independent production data gate'}
+  data_gate_verified: {default: 'false', description: 'Toolkit assertion of verified independent production approval'}
+  postgres_password: {required: true, description: 'Target-only Vault runtime password'}
+  ghcr_token: {required: true, description: 'Vault runtime registry credential'}
+  ghcr_username: {required: true, description: 'Registry principal'}
+outputs:
+  receipt_file:
+    description: 'Sanitized native schema receipt; never a business equality gate'
+    value: ${{ runner.temp }}/prod-native-billing-receipt.json
+runs:
+  using: composite
+  steps:
+    - name: Install isolated target execution runtime
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 -m venv "$RUNNER_TEMP/prod-native-ansible"
+        "$RUNNER_TEMP/prod-native-ansible/bin/python" -m pip install ansible-core==2.18.12
+    - name: Execute the native schema host owner
+      shell: bash
+      env:
+        CMDB_DIR: ${{ inputs.cmdb_dir }}
+        EXPECTED_CMDB_SHA256: ${{ inputs.cmdb_sha256 }}
+        GITOPS_CHECKOUT: ${{ inputs.gitops_checkout }}
+        GITOPS_COMMIT: ${{ inputs.gitops_commit }}
+        NATIVE_ACCESS_FILE: ${{ inputs.access_file }}
+        BILLING_CHECKOUT: ${{ inputs.billing_checkout }}
+        BILLING_COMMIT: ${{ inputs.billing_commit }}
+        NATIVE_BILLING_SPEC_FILE: ${{ inputs.spec_file }}
+        NATIVE_BILLING_DRY_RUN: ${{ inputs.dry_run }}
+        NATIVE_DATA_GATE_VERIFIED: ${{ inputs.data_gate_verified }}
+        POSTGRES_PASSWORD: ${{ inputs.postgres_password }}
+        GHCR_TOKEN: ${{ inputs.ghcr_token }}
+        GHCR_USERNAME: ${{ inputs.ghcr_username }}
+        DEPLOY_ENV: prod
+        NATIVE_RECEIPT_FILE: ${{ runner.temp }}/prod-native-billing-receipt.json
+      run: bash "${GITHUB_ACTION_PATH}/../../../scripts/data_operations/selfhost/native_billing_upgrade_runner.sh"
