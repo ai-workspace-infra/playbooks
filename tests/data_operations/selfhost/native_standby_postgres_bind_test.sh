@@ -17,7 +17,7 @@ for _ in {1..30}; do
 done
 [[ "$(docker inspect -f '{{.State.Running}}' "$fixture_name")" == false ]]
 docker logs "$fixture_name" > "$fixture_dir/failure.private.log" 2>&1
-rg -qi 'permission denied' "$fixture_dir/failure.private.log"
+grep -qi 'permission denied' "$fixture_dir/failure.private.log"
 uid="$(docker run --rm --network none --entrypoint id "$image" -u postgres)"
 gid="$(docker run --rm --network none --entrypoint id "$image" -g postgres)"
 [[ "$uid" =~ ^[1-9][0-9]{0,5}$ && "$gid" =~ ^[1-9][0-9]{0,5}$ ]]
