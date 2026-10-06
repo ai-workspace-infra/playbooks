@@ -21,5 +21,11 @@
     cmd: "{{ role_path }}/files/diagnose_ingress.sh"
   environment:
     WEB_SAAS_CANONICAL_PROBE_HOST: "{{ web_saas_canonical_probe_host }}"
+  register: web_saas_ingress_diagnostics
   changed_when: false
   failed_when: false
+
+- name: Publish sanitized Caddy ingress diagnostics to the workflow log
+  ansible.builtin.debug:
+    msg: "{{ web_saas_ingress_diagnostics.stdout_lines | default([]) | join('\n') }}"
+  when: (web_saas_ingress_diagnostics.stdout | default('') | trim | length) > 0
