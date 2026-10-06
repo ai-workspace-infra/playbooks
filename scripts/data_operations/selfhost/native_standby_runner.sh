@@ -30,6 +30,10 @@ jq -e --arg ip "$ip" --arg user "$user" --arg dir "$expected_dir" '
 test -s "$expected_dir/id_ed25519"
 test -s "$CMDB_DIR/inventory.ini"
 export ANSIBLE_SSH_COMMON_ARGS="-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$expected_dir/known_hosts"
+# Override legacy global SSH defaults. No multiplexed session may outlive the
+# one-run cloud access owner's cleanup.
+export ANSIBLE_HOST_KEY_CHECKING=true
+export ANSIBLE_SSH_ARGS='-o ControlMaster=no -o ControlPersist=no'
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 owner_root="$(cd "$script_dir/../../.." && pwd)"
 cd "$owner_root"

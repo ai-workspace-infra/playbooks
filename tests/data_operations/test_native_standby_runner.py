@@ -32,6 +32,7 @@ class NativeRunnerTests(unittest.TestCase):
 import json,os,sys
 from pathlib import Path
 Path(os.environ['RUNNER_TEMP'],'host-invocation.json').write_text(json.dumps(sys.argv[1:]))
+Path(os.environ['RUNNER_TEMP'],'host-ssh-policy.json').write_text(json.dumps({k:os.environ[k] for k in ['ANSIBLE_HOST_KEY_CHECKING','ANSIBLE_SSH_ARGS','ANSIBLE_SSH_COMMON_ARGS']}))
 r={'stage':'database_standby','host':'web-saas-prod','environment':'prod',
    'gitops_commit':os.environ['GITOPS_COMMIT'],'postgres_major':17,
    'independent_disk_verified':True,'writers_paused':True,
@@ -58,6 +59,11 @@ Path(os.environ['NATIVE_RECEIPT_FILE']).write_text(json.dumps(r))
             self.assertEqual(args, ['-i', env['CMDB_DIR'] + '/inventory.ini', '--limit', 'web-saas-prod',
                 '--private-key', str(Path(d) / 'prod-native-access-123-1/id_ed25519'),
                 'setup-web-saas-native-standby.yml'])
+            policy = json.loads((Path(d) / 'host-ssh-policy.json').read_text())
+            self.assertEqual(policy['ANSIBLE_HOST_KEY_CHECKING'], 'true')
+            self.assertEqual(policy['ANSIBLE_SSH_ARGS'], '-o ControlMaster=no -o ControlPersist=no')
+            self.assertIn('StrictHostKeyChecking=accept-new', policy['ANSIBLE_SSH_COMMON_ARGS'])
+            self.assertNotIn('StrictHostKeyChecking=no', policy['ANSIBLE_SSH_COMMON_ARGS'])
 
     def test_bad_checksum_or_foreign_run_refuses_before_host(self):
         for key, value in [('EXPECTED_CMDB_SHA256', '0' * 64), ('GITHUB_RUN_ATTEMPT', '2'),
