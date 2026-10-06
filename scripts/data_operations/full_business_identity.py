@@ -31,6 +31,8 @@ def index_users(users):
 def build_email_identity_map(source_users,target_users,uuid_factory=uuid.uuid4):
     sources,source_ids,source_proxies=index_users(source_users)
     targets,target_ids,target_proxies=index_users(target_users)
+    if set(targets)-set(sources):
+        raise ValueError('Target-only emails prevent exact source user-count alignment')
     reserved=set(source_ids)|set(source_proxies)|set(target_ids)|set(target_proxies)
     mapping={}; proxy_by_target={}
     for key,source in sources.items():
