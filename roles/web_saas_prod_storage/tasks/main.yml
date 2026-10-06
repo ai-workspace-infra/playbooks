@@ -28,7 +28,13 @@
     argv: [docker, inspect, web-saas-postgresql]
   register: web_saas_prod_storage_postgres
   changed_when: false
-  failed_when: web_saas_prod_storage_postgres.rc != 0 and 'No such object' not in web_saas_prod_storage_postgres.stderr
+  no_log: true
+  failed_when: >-
+    web_saas_prod_storage_postgres.rc != 0 and not
+    (web_saas_prod_storage_postgres.rc == 1 and
+    (web_saas_prod_storage_postgres.stderr | trim | lower) in
+    ['error: no such object: web-saas-postgresql', 'error: no such container: web-saas-postgresql',
+    'error response from daemon: no such container: web-saas-postgresql'])
 
 - name: Refuse existing PostgreSQL backed by another disk or Docker volume
   ansible.builtin.assert:

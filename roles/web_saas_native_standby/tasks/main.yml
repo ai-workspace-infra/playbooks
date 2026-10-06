@@ -45,7 +45,12 @@
     argv: [docker, inspect, -f, "{{ '{{' }}.Config.Image{{ '}}' }}", web-saas-postgresql]
   register: native_existing_postgres_image
   changed_when: false
-  failed_when: native_existing_postgres_image.rc != 0 and 'No such object' not in native_existing_postgres_image.stderr
+  failed_when: >-
+    native_existing_postgres_image.rc != 0 and not
+    (native_existing_postgres_image.rc == 1 and
+    (native_existing_postgres_image.stderr | trim | lower) in
+    ['error: no such object: web-saas-postgresql', 'error: no such container: web-saas-postgresql',
+    'error response from daemon: no such container: web-saas-postgresql'])
 
 - name: Refuse changing an existing PostgreSQL image in standby bootstrap
   ansible.builtin.assert:
