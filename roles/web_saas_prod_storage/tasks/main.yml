@@ -1,0 +1,60 @@
+---
+- name: Require the canonical PROD host and authoritative caller CMDB
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname == 'web-saas-prod'
+      - web_saas_deployment_environment == 'prod'
+    fail_msg: PROD storage preparation is restricted to the canonical web-saas-prod host
+
+- name: Read the caller CMDB without creating a second inventory
+  ansible.builtin.set_fact:
+    web_saas_prod_storage_cmdb: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'CMDB_FILE') | default('../cmdb/cmdb.json', true)) | from_json }}"
+
+- name: Validate the declared project, disk, zone and host identity
+  ansible.builtin.assert:
+    that:
+      - web_saas_prod_storage_cmdb.environment == 'prod'
+      - web_saas_prod_storage_cmdb['web-saas-prod'].provider == 'gcp-cloud'
+      - web_saas_prod_storage_cmdb['web-saas-prod'].zone == 'asia-east1-a'
+      - web_saas_prod_storage_cmdb['web-saas-prod'].ip == ansible_host
+      - "'web_saas' in web_saas_prod_storage_cmdb['web-saas-prod'].groups"
+      - web_saas_prod_storage_cmdb['web-saas-prod'].data_disk.device_name == 'web-saas-prod-data'
+      - web_saas_prod_storage_cmdb['web-saas-prod'].data_disk.mount_path == '/data'
+      - web_saas_prod_storage_cmdb['web-saas-prod'].data_disk.id is match('^(https://www.googleapis.com/compute/v1/)?projects/open-platform-prod/zones/asia-east1-a/disks/web-saas-prod-data$')
+    fail_msg: Refusing storage preparation without the exact IaC-produced PROD disk contract
+
+- name: Inspect a pre-existing PostgreSQL container without moving its data
+  ansible.builtin.command:
+    argv: [docker, inspect, web-saas-postgresql]
+  register: web_saas_prod_storage_postgres
+  changed_when: false
+  failed_when: web_saas_prod_storage_postgres.rc != 0 and 'No such object' not in web_saas_prod_storage_postgres.stderr
+
+- name: Refuse existing PostgreSQL backed by another disk or Docker volume
+  ansible.builtin.assert:
+    that:
+      - >-
+        ((web_saas_prod_storage_postgres.stdout | from_json)[0].Mounts
+         | selectattr('Destination', 'equalto', '/var/lib/postgresql/data')
+         | selectattr('Type', 'equalto', 'bind')
+         | selectattr('Source', 'equalto', '/data/postgresql') | list | length) == 1
+    fail_msg: Existing PostgreSQL storage is not the declared independent disk; explicit migration is required
+  when: web_saas_prod_storage_postgres.rc == 0
+
+- name: Mount the declared independent disk before starting the application reconciler
+  ansible.builtin.include_role:
+    name: roles/web_saas_data_volume
+  vars:
+    web_saas_data_environment: prod
+    web_saas_data_target_host: "{{ inventory_hostname }}"
+    web_saas_data_action: prepare_empty
+    web_saas_data_device_path: "/dev/disk/by-id/google-{{ web_saas_prod_storage_cmdb['web-saas-prod'].data_disk.device_name }}"
+    web_saas_data_allow_initialize: true
+    web_saas_data_filesystem_label: ws-prod-data
+
+- name: Prepare PostgreSQL directory on the verified mount
+  ansible.builtin.file:
+    path: /data/postgresql
+    state: directory
+    mode: '0700'
+  # Preserve the image-owned UID on subsequent deploys.

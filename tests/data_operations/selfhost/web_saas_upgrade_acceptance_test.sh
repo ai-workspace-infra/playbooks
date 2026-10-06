@@ -56,8 +56,9 @@ assert j["env"]["VAULT_ROLE"] != "github-actions-platform-ops-toolkit-env"
 assert "legacy_import" not in open(sys.argv[1]).read()
 init = next(s for s in j["steps"] if s.get("name") == "Initialize schema only when explicitly requested")
 pause = next(s for s in j["steps"] if s.get("id") == "pause")
-assert "init_guard.sh" in pause["run"] and pause["run"].index("init_guard.sh") < pause["run"].index("application-state.sh stop")
-assert j["steps"].index(pause) < j["steps"].index(init)
+guard = next(s for s in j["steps"] if s.get("name") == "Require absent or empty database after pausing writers")
+assert "application-state.sh stop" in pause["run"] and "init_guard.sh" in guard["run"]
+assert j["steps"].index(pause) < j["steps"].index(guard) < j["steps"].index(init)
 assert "account-database-config.json" in init["run"]
 resume = next(s for s in j["steps"] if s.get("name") == "Resume application services after explicit initialization")
 assert "always()" in resume["if"] and "steps.pause.outcome == 'success'" in resume["if"]

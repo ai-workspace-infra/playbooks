@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+environment="${1:?explicit environment required}"
+[[ "$environment" =~ ^(uat|prod|sit)$ ]] || exit 2
+container=web-saas-postgresql
+state="$(docker inspect -f '{{.State.Status}}' "$container")"
+if [[ "$state" != running ]]; then
+  echo 'PostgreSQL is not running; initialization stopped.' >&2
+  exit 1
+fi
+if [[ "$environment" == prod ]]; then
+  [[ "$(findmnt -nro TARGET,FSTYPE --mountpoint /data)" == '/data ext4' ]]
+  [[ "$(readlink -f "$(findmnt -nro SOURCE --mountpoint /data)")" == "$(readlink -f /dev/disk/by-id/google-web-saas-prod-data)" ]]
+  mount="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Type}}:{{.Source}}{{end}}{{end}}' "$container")"
+  [[ "$mount" == bind:/data/postgresql ]] || { echo 'PROD PostgreSQL is not bound to its independent disk.' >&2; exit 1; }
+fi
+database_present="$(docker exec "$container" psql -U postgres -d postgres -XAtq -v ON_ERROR_STOP=1 \
+  -c "SELECT count(*) FROM pg_database WHERE datname='account'")"
+case "$database_present" in
+  0) echo 'Account database is absent; empty-host initialization may proceed.'; exit 0 ;;
+  1) ;;
+  *) echo 'Could not verify database existence; initialization stopped.' >&2; exit 1 ;;
+esac
+# Count user relations and functions in every application schema, including
+# sequences/views/foreign tables. Extension-owned objects do not count as data.
+object_count="$(docker exec "$container" psql -U postgres -d account -XAtq -v ON_ERROR_STOP=1 -c "
+SELECT
+ (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+  WHERE n.nspname NOT LIKE 'pg_%' AND n.nspname<>'information_schema'
+    AND c.relkind IN ('r','p','v','m','S','f')
+    AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e'))
+ + (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname NOT LIKE 'pg_%' AND n.nspname<>'information_schema'
+    AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_proc'::regclass AND d.objid=p.oid AND d.deptype='e'))")"
+[[ "$object_count" == 0 ]] || { echo 'Account database has application objects or its state is unverified; refusing initialization.' >&2; exit 1; }
+echo 'Account database is empty; schema initialization may proceed.'
