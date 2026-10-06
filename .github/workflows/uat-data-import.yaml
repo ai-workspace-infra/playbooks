@@ -63,6 +63,7 @@ jobs:
       - name: Validate CMDB caller workflow run
         if: ${{ steps.request_guard.outputs.caller_run_id != '' }}
         env:
+          GH_TOKEN: ${{ github.token }}
           CALLER_RUN_ID: ${{ steps.request_guard.outputs.caller_run_id }}
         run: |
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CALLER_RUN_ID}" \
@@ -113,11 +114,20 @@ jobs:
           secrets: |
             kv/data/uat/accounts-migration MIGRATION_SOURCE_DSN | MIGRATION_SOURCE_DSN ;
             kv/data/uat/accounts-migration MIGRATION_TARGET_DSN | MIGRATION_TARGET_DSN ;
+            kv/data/uat/accounts-migration MIGRATION_SOURCE_PROJECT_REF | MIGRATION_SOURCE_PROJECT_REF ;
             ${{ fromJSON(inputs.config_json).supabase_source_vault_path || 'kv/data/uat/accounts-migration' }} MIGRATION_SOURCE_DSN | SUPABASE_SOURCE_DSN ;
             ${{ fromJSON(inputs.config_json).supabase_source_vault_path || 'kv/data/uat/accounts-migration' }} MIGRATION_SOURCE_SSH_PRIVATE_KEY_B64 | MIGRATION_SOURCE_SSH_PRIVATE_KEY_B64 ;
             ${{ fromJSON(inputs.config_json).supabase_vault_path || 'kv/data/uat/serverless/supabase' }} ${{ fromJSON(inputs.config_json).supabase_target_dsn_key || 'DATABASE_SESSION_POOLER_URL' }} | SUPABASE_TARGET_DSN ;
             ${{ fromJSON(inputs.config_json).supabase_vault_path || 'kv/data/uat/serverless/supabase' }} PROJECT_REF | SUPABASE_VAULT_PROJECT_REF ;
             kv/data/CICD/uat SSH_PRIVATE_DEPLOY_KEY_B64 | VAULT_ANSIBLE_SSH_KEY_B64 ;
+
+      - name: Validate direct import credentials before execution
+        if: ${{ fromJSON(inputs.config_json).accounts_transport == 'direct' && (fromJSON(inputs.config_json).accounts_target_backend || 'vps') == 'vps' && (fromJSON(inputs.config_json).accounts_migration_mode || 'data') == 'data' }}
+        env:
+          MIGRATION_SOURCE_DSN: ${{ steps.vault.outputs.MIGRATION_SOURCE_DSN }}
+          MIGRATION_TARGET_DSN: ${{ steps.vault.outputs.MIGRATION_TARGET_DSN }}
+          MIGRATION_SOURCE_PROJECT_REF: ${{ steps.vault.outputs.MIGRATION_SOURCE_PROJECT_REF }}
+        run: bash scripts/data_operations/data-migration_accounts_assert-credentials.sh
 
       - name: Prepare SSH key material
         env:
@@ -138,6 +148,7 @@ jobs:
         env:
           MIGRATION_SOURCE_DSN: ${{ steps.vault.outputs.MIGRATION_SOURCE_DSN }}
           MIGRATION_TARGET_DSN: ${{ steps.vault.outputs.MIGRATION_TARGET_DSN }}
+          MIGRATION_SOURCE_PROJECT_REF: ${{ steps.vault.outputs.MIGRATION_SOURCE_PROJECT_REF }}
           SUPABASE_TARGET_DSN: ${{ steps.vault.outputs.SUPABASE_TARGET_DSN }}
           SUPABASE_SOURCE_DSN: ${{ steps.vault.outputs.SUPABASE_SOURCE_DSN }}
           SUPABASE_VAULT_PROJECT_REF: ${{ steps.vault.outputs.SUPABASE_VAULT_PROJECT_REF }}
