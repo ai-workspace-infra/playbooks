@@ -1,0 +1,63 @@
+---
+- name: Require reviewed source and production data gate
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.env', 'FULL_BUSINESS_MODE') in ['preview', 'copy', 'compare']
+      - lookup('ansible.builtin.env', 'NATIVE_DATA_GATE_VERIFIED') == 'true'
+      - lookup('ansible.builtin.env', 'FULL_BUSINESS_SPEC_FILE') | length > 0
+      - lookup('ansible.builtin.env', 'NATIVE_RECEIPT_FILE') | length > 0
+    fail_msg: Full-business execution requires the reviewed source/target and independent production gate
+
+- name: Create non-secret target owner workspace
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: full-business-owner-
+  register: full_business_workspace
+
+- name: Execute the reviewed full-business database owner
+  block:
+    - name: Copy owner helpers without runtime credentials
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/scripts/data_operations/selfhost/{{ item }}"
+        dest: "{{ full_business_workspace.path }}/{{ item }}"
+        mode: '0600'
+      loop: [full_business_host.py, native_init_host.py, native_billing_upgrade_host.py, native_writer_guard_host.sh]
+
+    - name: Copy reviewed non-secret release and source fingerprint
+      ansible.builtin.copy:
+        src: "{{ lookup('ansible.builtin.env', 'FULL_BUSINESS_SPEC_FILE') }}"
+        dest: "{{ full_business_workspace.path }}/spec.json"
+        mode: '0600'
+
+    - name: Run the fixed image through private pipelined stdin
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ full_business_workspace.path }}/full_business_host.py"
+          - --spec
+          - "{{ full_business_workspace.path }}/spec.json"
+          - --guard-directory
+          - "{{ full_business_workspace.path }}"
+          - --mode
+          - "{{ lookup('ansible.builtin.env', 'FULL_BUSINESS_MODE') }}"
+        stdin: "{{ {'postgres_password': lookup('ansible.builtin.env', 'POSTGRES_PASSWORD'), 'source_dsn': lookup('ansible.builtin.env', 'PROD_SUPABASE_READONLY_DSN'), 'ghcr_username': lookup('ansible.builtin.env', 'GHCR_USERNAME'), 'ghcr_token': lookup('ansible.builtin.env', 'GHCR_TOKEN')} | to_json }}"
+        stdin_add_newline: true
+      environment:
+        NATIVE_DATA_GATE_VERIFIED: "{{ lookup('ansible.builtin.env', 'NATIVE_DATA_GATE_VERIFIED') }}"
+      register: full_business_result
+      changed_when: (full_business_result.stdout | from_json).target_writes | bool
+      no_log: true
+
+    - name: Save only reconstructed sanitized business evidence
+      ansible.builtin.copy:
+        content: "{{ full_business_result.stdout | from_json | to_nice_json }}"
+        dest: "{{ lookup('ansible.builtin.env', 'NATIVE_RECEIPT_FILE') }}"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+      no_log: true
+  always:
+    - name: Remove owner workspace after success or failure
+      ansible.builtin.file:
+        path: "{{ full_business_workspace.path }}"
+        state: absent
