@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from urllib.parse import urlsplit
 sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
@@ -50,37 +51,37 @@ RECEIPT
 '''
 
 
-def stream(source_dsn,ssh_command,key,tables):
+def stream(source_dsn,ssh_command,key,tables,progress=None):
     validator=SnapshotValidator(tables);digest=hashlib.sha256();size=0
-    with tempfile.TemporaryFile() as errors:
+    with tempfile.TemporaryFile() as errors, tempfile.TemporaryFile() as sql_input:
+        # SQL contains catalog/table names only, never business rows or secrets.
+        # A seekable input prevents bidirectional stdin/stdout pipe dependency.
+        sql_input.write(snapshot_sql(tables).encode());sql_input.seek(0)
         source=subprocess.Popen(['psql','-XAtq','-v','ON_ERROR_STOP=1'],env=connection_env(source_dsn),
-                                stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=errors)
-        destination=subprocess.Popen(ssh_command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=errors)
+                                stdin=sql_input,stdout=subprocess.PIPE,stderr=errors)
+        destination=subprocess.Popen(ssh_command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=errors,bufsize=0)
         def terminate():
             for process in (source,destination):
                 if process.poll() is None:process.kill()
         timer=threading.Timer(600,terminate);timer.start()
-        writer_errors=[]
-        def write_sql():
-            try:
-                source.stdin.write(snapshot_sql(tables).encode())
-                source.stdin.close()
-            except (OSError,ValueError):
-                writer_errors.append(True)
-        writer=threading.Thread(target=write_sql,daemon=True)
+        def send(data):
+            view=memoryview(data)
+            while view:
+                sent=destination.stdin.write(view[:4096])
+                if not sent:raise RuntimeError('Encrypted destination input closed')
+                view=view[sent:]
+        last_progress=time.monotonic()
         try:
-            destination.stdin.write((key+'\n').encode());destination.stdin.flush()
-            # The query exceeds small platform pipe buffers. Read stdout while
-            # feeding stdin; sequential feed-then-read can deadlock on metadata.
-            writer.start()
+            send((key+'\n').encode())
             for line in source.stdout:
                 size+=len(line)
                 if size>4*1024**3:raise RuntimeError('Source snapshot exceeds reviewed stream size')
                 validator.accept(line)
-                digest.update(line);destination.stdin.write(line)
-            writer.join(timeout=10)
-            if writer.is_alive() or writer_errors:
-                raise RuntimeError('Readonly query stream input did not complete')
+                digest.update(line);send(line)
+                now=time.monotonic()
+                if progress and (now-last_progress>=15 or validator.footer):
+                    progress({'stage':'readonly_stream','bytes':size,'rows':sum(validator.counts.values()),'complete':validator.footer})
+                    last_progress=now
             if source.wait(timeout=10)!=0:raise RuntimeError('Readonly source snapshot failed')
             counts=validator.finish()
             destination.stdin.close();destination.stdin=None
@@ -92,7 +93,6 @@ def stream(source_dsn,ssh_command,key,tables):
             return receipt,counts,size
         finally:
             terminate()
-            if writer.ident is not None:writer.join(timeout=10)
             for process in (source,destination):process.wait(timeout=10)
             timer.cancel()
 
@@ -133,7 +133,7 @@ def main():
         identity=uuid.uuid4().hex
         command=(['sudo','-n'] if user!='root' else [])+['bash','-c',REMOTE,'snapshot',identity]
         argv=['ssh','-i',str(key),'-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','ConnectTimeout=15','-o','StrictHostKeyChecking=accept-new',user+'@'+host['ip'],shlex.join(command)]
-        archive,counts,size=stream(dsn,argv,passphrase,tables)
+        archive,counts,size=stream(dsn,argv,passphrase,tables,lambda item:print(json.dumps(item,sort_keys=True),flush=True))
         receipt=archive|{'schema':'prod-full-business-snapshot/v1','environment':'uat','source':'prod-supabase',
                          'source_role':'readonly_release','caller_run_id':caller,'snapshot_id':identity,
                          'table_count':len(tables),'counts':counts,'stream_bytes':size,
