@@ -222,6 +222,18 @@
   no_log: true
   when: native_existing_postgres_image.rc != 0
 
+- name: Qualify the pulled PostgreSQL binary without production data mounts or initialization
+  ansible.builtin.command:
+    argv: [docker, run, --rm, --network, none, --entrypoint, postgres, "{{ native_postgres_image }}", --version]
+  register: native_postgres_binary_version
+  changed_when: false
+
+- name: Refuse creating a cluster with an unqualified major
+  ansible.builtin.assert:
+    that:
+      - native_postgres_binary_version.stdout | trim is match('^postgres \(PostgreSQL\) 17\.')
+    fail_msg: Pulled binary is not PostgreSQL 17; no database cluster will be initialized
+
 - name: Start only PostgreSQL without dependencies or automatic reconciliation
   ansible.builtin.command:
     argv: [docker, compose, --project-name, web-saas, -f, postgres-only.json, up, -d, --no-deps, postgres]

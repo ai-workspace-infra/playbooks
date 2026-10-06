@@ -19,6 +19,9 @@ checksum, exact target/key/runner attempt and a fresh runner receipt path. Its
 sanitized receipt binds the exact GitOps commit, independent disk and PostgreSQL
 major. The caller must always invoke IaC access cleanup, including on failure;
 neither private access files nor credentials may be uploaded as evidence.
+The runner overrides legacy global SSH settings to enforce host-key checking
+with a private same-run known-hosts file and disables connection multiplexing.
+No persistent SSH session is retained for subsequent cloud-access cleanup.
 
 Before host changes, the playbook binds the CMDB host/IP/SSH identity and source
 commit and rejects running application/reconciler containers. Stopped writers
@@ -34,7 +37,9 @@ It starts only PostgreSQL, on loopback 5432 and `/data/postgresql`; it never
 starts Doco-CD, Accounts, Billing, Console, Bridge, schema bootstrap or seeds.
 Retries refuse a different image, unowned existing cluster or credentials, and
 changed standby ownership inputs. PostgreSQL must be the qualified major 17;
-an older existing database is not automatically upgraded. The database empty
+an older existing database is not automatically upgraded. Before mounting or
+initializing cluster data, the pulled image runs only `postgres --version`
+without network or production data mounts; an unqualified major is refused. The database empty
 guard covers relations/functions and user enum/domain/range types in every
 application schema, excluding extension-owned objects.
 

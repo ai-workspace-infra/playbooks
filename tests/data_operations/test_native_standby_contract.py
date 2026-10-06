@@ -26,6 +26,8 @@ class NativeStandbyTests(unittest.TestCase):
             self.assertIn(item, text)
         self.assertNotIn('roles/vhosts/Doco-CD', str(plays))
         self.assertNotIn('initialize-web-saas-schemas', text)
+        self.assertLess(text.index('Qualify the pulled PostgreSQL binary'), text.index('Start only PostgreSQL'))
+        self.assertIn('--network, none, --entrypoint, postgres', text)
 
     def test_target_is_checked_before_disk_or_host_mutation(self):
         text = (ROOT / 'setup-web-saas-native-standby.yml').read_text()
