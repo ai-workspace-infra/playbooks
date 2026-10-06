@@ -112,7 +112,10 @@ def stream(source_dsn,ssh_command,key,tables,progress=None):
             raise
         finally:
             terminate()
-            for process in (source,destination):process.wait(timeout=10)
+            for process in (source,destination):
+                process.wait(timeout=10)
+                for pipe in (process.stdin,process.stdout):
+                    if pipe is not None:pipe.close()
             timer.cancel()
 
 
