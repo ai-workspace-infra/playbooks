@@ -1,113 +1,68 @@
 ---
-- name: Check whether /data is already its own mountpoint
-  ansible.builtin.command:
-    argv: [findmnt, -nro, TARGET, --target, "{{ web_saas_data_mount_path }}"]
-  register: web_saas_data_mount_target
-  changed_when: false
-
-- name: Refuse to replace an existing /data mount automatically
-  ansible.builtin.assert:
-    that:
-      - web_saas_data_mount_target.stdout | trim != web_saas_data_mount_path
-    fail_msg: /data is already mounted; verify its device and migrate explicitly
-
-- name: Inspect /data before any mountpoint change
+- name: Reject a symlink or non-directory mountpoint before inspecting it
   ansible.builtin.stat:
     path: "{{ web_saas_data_mount_path }}"
     follow: false
-  register: web_saas_data_directory
+  register: web_saas_data_mount_directory
 
-- name: Refuse a symlink or non-directory /data
+- name: Require an absent or real directory mountpoint
   ansible.builtin.assert:
     that:
-      - not web_saas_data_directory.stat.exists or web_saas_data_directory.stat.isdir | default(false)
-    fail_msg: /data must be absent or a real directory
+      - not web_saas_data_mount_directory.stat.exists or web_saas_data_mount_directory.stat.isdir | default(false)
 
-- name: Check whether /data contains pre-existing files
+- name: Check whether /data is already its own mountpoint
   ansible.builtin.command:
-    argv: [find, "{{ web_saas_data_mount_path }}", -mindepth, '1', -maxdepth, '1', -print, -quit]
-  register: web_saas_data_existing_files
+    argv: [findmnt, -nro, TARGET, --mountpoint, "{{ web_saas_data_mount_path }}"]
+  register: web_saas_data_mount_target
   changed_when: false
-  when: web_saas_data_directory.stat.exists
+  failed_when: web_saas_data_mount_target.rc not in [0, 1]
 
-- name: Refuse to hide live data under a new mount
-  ansible.builtin.assert:
-    that:
-      - not web_saas_data_directory.stat.exists or web_saas_data_existing_files.stdout | trim == ''
-    fail_msg: /data is not empty; back up, quiesce and migrate existing data before mounting
-
-- name: Check for partitions or dependent block devices
+- name: Read the declared disk and mounted source as real device paths
   ansible.builtin.command:
-    argv: [lsblk, -nro, NAME, "{{ web_saas_data_device_path }}"]
-  register: web_saas_data_block_tree
+    argv: [readlink, -f, "{{ item }}"]
+  loop:
+    - "{{ web_saas_data_device_path }}"
+    - "{{ (web_saas_data_mount.stdout.split() | first) | default('/', true) }}"
+  register: web_saas_data_real_devices
   changed_when: false
+  when: web_saas_data_mount_target.stdout | trim == web_saas_data_mount_path
 
-- name: Refuse to format a disk with partitions or dependent devices
+- name: Verify an existing mount uses this exact filesystem
   ansible.builtin.assert:
     that:
-      - web_saas_data_block_tree.stdout_lines | length == 1
+      - web_saas_data_real_devices.results[0].stdout == web_saas_data_real_devices.results[1].stdout
+      - web_saas_data_blkid.stdout.split() | length == 2
+      - web_saas_data_mount.stdout.split() | length == 2
+      - web_saas_data_blkid.stdout.split()[0] == web_saas_data_mount.stdout.split()[1]
+    fail_msg: /data is mounted from a different device; refusing to replace it
+  when: web_saas_data_mount_target.stdout | trim == web_saas_data_mount_path
 
-- name: Inspect existing disk signatures before formatting
-  ansible.builtin.command:
-    argv: [wipefs, --no-act, --noheadings, "{{ web_saas_data_device_path }}"]
-  register: web_saas_data_signatures
-  changed_when: false
+- name: Prepare the unmounted disk without hiding existing files
+  ansible.builtin.include_tasks: prepare_unmounted.yml
+  when: web_saas_data_mount_target.stdout | trim != web_saas_data_mount_path
 
-- name: Refuse unknown signatures on an unformatted disk
-  ansible.builtin.assert:
-    that:
-      - web_saas_data_blkid.stdout | trim != '' or web_saas_data_signatures.stdout | trim == ''
-    fail_msg: Disk contains a signature; do not initialize automatically
-
-- name: Require explicit initialization authorization for an unformatted disk
-  ansible.builtin.assert:
-    that:
-      - web_saas_data_blkid.stdout | trim != '' or web_saas_data_allow_initialize | bool
-    fail_msg: Unformatted disk needs explicit allow_initialize=true after CMDB identity review
-
-- name: Create a previously absent empty mountpoint
-  ansible.builtin.file:
-    path: "{{ web_saas_data_mount_path }}"
-    state: directory
-    mode: '0755'
-  when: not web_saas_data_directory.stat.exists
-
-- name: Create ext4 only on an empty new disk
-  community.general.filesystem:
-    dev: "{{ web_saas_data_device_path }}"
-    fstype: "{{ web_saas_data_fstype }}"
-    force: false
-  when: web_saas_data_blkid.stdout | trim == ''
-
-- name: Read the resulting disk UUID
-  ansible.builtin.command:
-    argv: [blkid, -s, UUID, -o, value, "{{ web_saas_data_device_path }}"]
-  register: web_saas_data_uuid
-  changed_when: false
-
-- name: Require a usable UUID before persistence in fstab
-  ansible.builtin.assert:
-    that:
-      - web_saas_data_uuid.stdout | trim is match('^[0-9a-fA-F-]{8,}$')
-
-- name: Mount the independent disk by UUID without deleting old files
+- name: Confirm the retained mount is recorded for reboot
   ansible.posix.mount:
     path: "{{ web_saas_data_mount_path }}"
-    src: "UUID={{ web_saas_data_uuid.stdout | trim }}"
+    src: "UUID={{ web_saas_data_blkid.stdout.split()[0] }}"
     fstype: "{{ web_saas_data_fstype }}"
-    opts: defaults,nofail
+    opts: defaults,nosuid,nodev
     state: mounted
+  when: web_saas_data_mount_target.stdout | trim == web_saas_data_mount_path
 
-- name: Verify /data is actually the expected disk
+- name: Verify final mount target, UUID and filesystem
   ansible.builtin.command:
-    argv: [findmnt, -nro, UUID, --target, "{{ web_saas_data_mount_path }}"]
-  register: web_saas_data_verified_uuid
+    argv: [findmnt, -nro, TARGET,UUID,FSTYPE, --target, "{{ web_saas_data_mount_path }}"]
+  register: web_saas_data_final_mount
   changed_when: false
 
-- name: Reject a mount to the wrong filesystem
+- name: Require the exact independent filesystem after preparation
   ansible.builtin.assert:
     that:
-      - web_saas_data_verified_uuid.stdout | trim == web_saas_data_uuid.stdout | trim
+      - web_saas_data_final_mount.stdout.split() | length == 3
+      - web_saas_data_final_mount.stdout.split()[0] == web_saas_data_mount_path
+      - web_saas_data_final_mount.stdout.split()[1] == (web_saas_data_uuid.stdout | trim if web_saas_data_mount_target.stdout | trim != web_saas_data_mount_path else web_saas_data_blkid.stdout.split()[0])
+      - web_saas_data_final_mount.stdout.split()[2] == web_saas_data_fstype
 
 - name: Record mount component evidence
   ansible.builtin.set_fact:
@@ -116,4 +71,4 @@
       environment: "{{ web_saas_data_environment }}"
       mounted: true
       mount_path: "{{ web_saas_data_mount_path }}"
-      filesystem_uuid: "{{ web_saas_data_verified_uuid.stdout | trim }}"
+      filesystem_uuid: "{{ web_saas_data_final_mount.stdout.split()[1] }}"

@@ -8,6 +8,16 @@ on:
 permissions:
   contents: read
 jobs:
+  data-volume-linux:
+    runs-on: ubuntu-latest
+    env:
+      ANSIBLE_COLLECTIONS_PATH: ${{ runner.temp }}/volume-test-collections
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 -m pip install ansible-core==2.18.12
+      - run: ansible-galaxy collection install community.general:12.5.0 ansible.posix:2.2.0 -p "$ANSIBLE_COLLECTIONS_PATH"
+      - name: Real independent disk preparation on disposable runner only
+        run: sudo --preserve-env=GITHUB_ACTIONS,GITHUB_RUN_ID,RUNNER_ENVIRONMENT,PATH,ANSIBLE_COLLECTIONS_PATH bash tests/data_operations/selfhost/data_volume_linux_test.sh
   guards:
     runs-on: ubuntu-latest
     steps:

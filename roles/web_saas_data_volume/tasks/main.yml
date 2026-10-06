@@ -8,6 +8,7 @@
       - web_saas_data_action in ['inspect', 'prepare_empty']
       - web_saas_data_mount_path == '/data'
       - web_saas_data_device_path is match('^/dev/disk/by-id/[A-Za-z0-9._+-]+$')
+      - web_saas_data_filesystem_label == '' or web_saas_data_filesystem_label is match('^[A-Za-z0-9_-]{1,16}$')
     fail_msg: Persistent data volume target, action, or device is unsafe
 
 - name: Inspect declared persistent block device without writing
@@ -31,9 +32,10 @@
 
 - name: Read current /data mount source and UUID
   ansible.builtin.command:
-    argv: [findmnt, -nro, SOURCE,UUID, --target, "{{ web_saas_data_mount_path }}"]
+    argv: [findmnt, -nro, SOURCE,UUID, --mountpoint, "{{ web_saas_data_mount_path }}"]
   register: web_saas_data_mount
   changed_when: false
+  failed_when: web_saas_data_mount.rc not in [0, 1]
 
 - name: Refuse an unexpected filesystem on the declared disk
   ansible.builtin.assert:

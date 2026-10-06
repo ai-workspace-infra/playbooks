@@ -219,12 +219,15 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Guard empty database and pause its application writers
+      - name: Pause application writers before inspecting initialization state
         id: pause
         if: ${{ inputs.operation == 'selfhost_init' }}
         run: |
-          bash scripts/data_operations/selfhost/init_guard.sh "$(jq -r '.target_host' <<<"$CONFIG_JSON")"
           bash scripts/data_operations/selfhost/application-state.sh stop
+
+      - name: Require absent or empty database after pausing writers
+        if: ${{ inputs.operation == 'selfhost_init' }}
+        run: bash scripts/data_operations/selfhost/init_guard.sh "$(jq -r '.target_host' <<<"$CONFIG_JSON")"
 
       - name: Initialize schema only when explicitly requested
         if: ${{ inputs.operation == 'selfhost_init' }}

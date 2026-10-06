@@ -80,7 +80,13 @@
         "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'"
       register: public_table_count_check
       changed_when: false
-      failed_when: false
+
+    - name: Require a successful, numeric empty-database classification
+      ansible.builtin.assert:
+        that:
+          - public_table_count_check.rc == 0
+          - public_table_count_check.stdout | trim is match('^[0-9]+$')
+        fail_msg: Database table count is unavailable; refusing destructive baseline initialization
 
     - name: Classify the account schema state
       ansible.builtin.set_fact:
