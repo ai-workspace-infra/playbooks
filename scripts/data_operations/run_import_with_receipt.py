@@ -60,11 +60,15 @@ def main():
         except subprocess.TimeoutExpired:
             os.killpg(process.pid, signal.SIGKILL)
             stdout, stderr = process.communicate()
-    receipt = summarize(stdout, stderr, process.returncode, args.script,
-                        os.environ.get("DRY_RUN") == "true", timed_out)
+    dry_run = os.environ.get("DRY_RUN") == "true"
+    receipt = summarize(stdout, stderr, process.returncode, args.script, dry_run, timed_out)
+    complete = (receipt['phase'] == 'target_preview' and receipt['write_state'] == 'not_attempted'
+                if dry_run else receipt['convergence_verified'])
+    if process.returncode == 0 and not complete:
+        receipt['category'] = 'execution_failed'
     path = Path(os.environ.get("RUNNER_TEMP", "/tmp")) / "uat-import-runtime.json"
     path.write_text(json.dumps(receipt) + "\n")
-    return 0 if process.returncode == 0 and not timed_out else 1
+    return 0 if process.returncode == 0 and not timed_out and complete else 1
 
 
 if __name__ == "__main__":
