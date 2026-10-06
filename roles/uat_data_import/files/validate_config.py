@@ -99,6 +99,10 @@ for field in ("supabase_target_dsn_key",):
     ):
         fail(f"{field} must be a simple Vault field name")
 
+if config.get("accounts_transport") == "direct" and config.get("accounts_target_host"):
+    if config["accounts_target_host"] != "web-saas-uat" or not caller_run_id:
+        fail("target tunnel requires web-saas-uat and a successful selfhost caller_run_id")
+
 output_path = os.environ.get("GITHUB_OUTPUT")
 if output_path:
     with open(output_path, "a", encoding="utf-8") as output:
