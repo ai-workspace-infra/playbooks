@@ -37,11 +37,12 @@ def sql(query,database='postgres'):
 
 def main():
     global PHASE
+    require(os.geteuid()==0)  # Production Ansible executes this owner with become:true.
     require(os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted')
     require(os.environ.get('PGHOST')=='127.0.0.1' and os.environ.get('PGPORT')=='5432' and os.environ.get('PGUSER')=='postgres')
     accounts=Path(os.environ['ACCOUNTS_CHECKOUT']);billing=Path(os.environ['BILLING_CHECKOUT'])
-    require(run(['git','-C',str(accounts),'rev-parse','HEAD'])=='ac3239a6ddb89fd49c2b15416bf5f6ea588c6797')
-    require(run(['git','-C',str(billing),'rev-parse','HEAD'])=='5b7285bf49af12983027f7624d196ab3f2b1804f')
+    require(run(['git','-c','safe.directory='+str(accounts),'-C',str(accounts),'rev-parse','HEAD'])=='ac3239a6ddb89fd49c2b15416bf5f6ea588c6797')
+    require(run(['git','-c','safe.directory='+str(billing),'-C',str(billing),'rev-parse','HEAD'])=='5b7285bf49af12983027f7624d196ab3f2b1804f')
     binary=Path(os.environ['MIGRATECTL_BIN']);require(binary.is_file())
     container=os.environ['TEST_POSTGRES_CONTAINER']
     require(container and run(['docker','inspect','-f','{{.State.Running}}',container])=='true')
@@ -63,6 +64,8 @@ def main():
             (work/'Dockerfile').write_text('FROM ubuntu:24.04\nCOPY migratectl /usr/local/bin/migratectl\n')
             PHASE="build_fixture"
             run(['docker','build','-t',image,str(work)])
+            # Match the production become:true owner: cap-drop ALL cannot
+            # bypass runner UID permissions on a private 0700 bind mount.
             migrations=work/'migrations';migrations.mkdir(mode=0o700)
             (migrations/migration.name).write_bytes(migration.read_bytes())
             def invoke(args,mounted=None,expected=0):
