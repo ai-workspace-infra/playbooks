@@ -1,10 +1,10 @@
 name: Data Operations Owner Contracts
 on:
   pull_request:
-    paths: [.github/actions/prod-native-standby/**, .github/actions/prod-native-init/**, scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_native_standby/**, roles/web_saas_native_init/**, roles/web_saas_release_upgrade/**, setup-web-saas-native-standby.yml, initialize-web-saas-native.yml, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
+    paths: [.github/actions/prod-native-standby/**, .github/actions/prod-native-init/**, .github/actions/prod-native-billing-upgrade/**, scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_native_standby/**, roles/web_saas_native_init/**, roles/web_saas_native_billing_upgrade/**, roles/web_saas_release_upgrade/**, setup-web-saas-native-standby.yml, initialize-web-saas-native.yml, upgrade-web-saas-native-billing.yml, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
   push:
     branches: [main, feature/release-upgrade-role]
-    paths: [.github/actions/prod-native-standby/**, .github/actions/prod-native-init/**, scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_native_standby/**, roles/web_saas_native_init/**, roles/web_saas_release_upgrade/**, setup-web-saas-native-standby.yml, initialize-web-saas-native.yml, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
+    paths: [.github/actions/prod-native-standby/**, .github/actions/prod-native-init/**, .github/actions/prod-native-billing-upgrade/**, scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_native_standby/**, roles/web_saas_native_init/**, roles/web_saas_native_billing_upgrade/**, roles/web_saas_release_upgrade/**, setup-web-saas-native-standby.yml, initialize-web-saas-native.yml, upgrade-web-saas-native-billing.yml, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
 permissions:
   contents: read
 jobs:
@@ -52,6 +52,7 @@ jobs:
           ansible-playbook xconnect-lab-runtime.yml --syntax-check
           ansible-playbook setup-web-saas-native-standby.yml --syntax-check
           ansible-playbook initialize-web-saas-native.yml --syntax-check
+          ansible-playbook upgrade-web-saas-native-billing.yml --syntax-check
           ansible-playbook tests/data_operations/selfhost/native_standby_credentials.yml -i localhost,
   selfhost-postgres17:
     runs-on: ubuntu-latest
@@ -94,6 +95,42 @@ jobs:
       - name: Consistent full-business source stream SQL (loopback only)
         run: python3 tests/data_operations/import/full_business_snapshot_postgres_test.py
         env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+  native-billing-postgres17:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env: {POSTGRES_PASSWORD: postgres}
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-services/accounts
+          ref: ac3239a6ddb89fd49c2b15416bf5f6ea588c6797
+          path: fixture-accounts
+      - uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-services/billing-service
+          ref: 5b7285bf49af12983027f7624d196ab3f2b1804f
+          path: fixture-billing
+      - uses: actions/setup-go@v6
+        with: {go-version: '1.25.1', cache-dependency-path: fixture-accounts/go.sum}
+      - run: sudo apt-get update && sudo apt-get install --yes postgresql-client
+      - name: Build CI-only fixed migration tool, never a deploy artifact
+        working-directory: fixture-accounts
+        run: go build -o "$RUNNER_TEMP/fixture-migratectl" ./cmd/migratectl
+      - name: Qualify reviewed Billing SQL with bounded migratectl on disposable PostgreSQL 17
+        run: bash tests/data_operations/selfhost/native_billing_migratectl_postgres_test.sh
+        env:
+          ACCOUNTS_CHECKOUT: ${{ github.workspace }}/fixture-accounts
+          BILLING_CHECKOUT: ${{ github.workspace }}/fixture-billing
+          MIGRATECTL_BIN: ${{ runner.temp }}/fixture-migratectl
           PGHOST: 127.0.0.1
           PGPORT: '5432'
           PGUSER: postgres
