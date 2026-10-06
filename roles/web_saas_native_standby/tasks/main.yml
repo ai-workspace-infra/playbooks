@@ -19,6 +19,7 @@
 - name: Load existing PostgreSQL tuning defaults
   ansible.builtin.include_vars:
     file: "{{ playbook_dir }}/roles/vhosts/web_saas_host_config/defaults/main.yml"
+    name: native_host_defaults
 
 - name: Inspect the GitOps PostgreSQL image declaration
   ansible.builtin.set_fact:
@@ -65,6 +66,26 @@
   register: native_existing_cluster
   when: native_existing_postgres_image.rc != 0
 
+- name: Diagnose the existing managed PostgreSQL container without exposing logs or credentials
+  ansible.builtin.script: scripts/data_operations/selfhost/native_postgres_diagnostic_host.py
+  register: native_startup_diagnostic
+  changed_when: false
+  when: native_existing_postgres_image.rc == 0
+
+- name: Identify only missing-password recovery for a genuinely empty managed PGDATA
+  ansible.builtin.set_fact:
+    native_repair_missing_password: >-
+      {{ native_existing_postgres_image.rc == 0 and
+         not (native_startup_diagnostic.stdout | default('{}') | from_json).get('postgres_password_present', true) }}
+
+- name: Refuse credential changes if a database cluster or unknown files already exist
+  ansible.builtin.assert:
+    that:
+      - (native_startup_diagnostic.stdout | from_json).pgdata_empty
+      - not (native_startup_diagnostic.stdout | from_json).pg_version_present
+    fail_msg: Missing-password repair requires untouched empty PGDATA; never rotate or reset an existing cluster
+  when: native_repair_missing_password | bool
+
 - name: Require a new data directory for first container creation
   ansible.builtin.assert:
     that:
@@ -107,12 +128,19 @@
     fail_msg: Standby inputs changed; explicit new qualification is required
   when: native_existing_marker.stat.exists
 
+- name: Require a pre-existing matching ownership marker for missing-password recovery
+  ansible.builtin.assert:
+    that:
+      - native_existing_marker.stat.exists
+    fail_msg: Refusing credential changes on an unowned pre-existing PostgreSQL container
+  when: native_repair_missing_password | bool
+
 - name: Refuse replacing credentials belonging to another host setup
   ansible.builtin.assert:
     that:
       - not native_existing_secrets.stat.exists or native_existing_marker.stat.exists
     fail_msg: Existing runtime credentials have no matching standby ownership marker
-  when: native_existing_postgres_image.rc != 0
+  when: native_existing_postgres_image.rc != 0 or native_repair_missing_password | bool
 
 - name: Record private standby ownership before rendering new runtime files
   ansible.builtin.copy:
@@ -139,13 +167,15 @@
       POSTGRES_PASSWORD: "{{ lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') }}"
   no_log: true
   # Never replace a shared env file on an already assembled host.
-  when: native_existing_postgres_image.rc != 0
+  when: native_existing_postgres_image.rc != 0 or native_repair_missing_password | bool
 
 - name: Render existing PostgreSQL tuning without creating application config
   ansible.builtin.template:
     src: "{{ playbook_dir }}/roles/vhosts/web_saas_host_config/templates/postgresql.conf.j2"
     dest: /etc/xcontrol/web-saas/config/postgresql.conf
     mode: '0600'
+  vars:
+    web_saas_host_config_postgres_conf: "{{ native_host_defaults.web_saas_host_config_postgres_conf }}"
   when: native_existing_postgres_image.rc != 0
 
 - name: Copy only fixed GitOps PostgreSQL compose inputs
@@ -296,6 +326,13 @@
   when: native_existing_postgres_image.rc != 0
   no_log: true
 
+- name: Recreate only a managed never-initialized container after missing-password repair
+  ansible.builtin.command:
+    argv: [docker, compose, --project-name, web-saas, -f, postgres-only.json, up, -d, --no-deps, --force-recreate, postgres]
+    chdir: "{{ native_standby_dir }}"
+  when: native_repair_missing_password | bool
+  no_log: true
+
 - name: Wait for PostgreSQL without starting application services
   ansible.builtin.command:
     argv: [docker, exec, web-saas-postgresql, pg_isready, -U, postgres, -h, 127.0.0.1]
@@ -340,6 +377,7 @@
       database_cutover_approved: false
       prior_data_permission_failure: "{{ native_previous_permission_failure | bool }}"
       postgres_data_uid: "{{ native_postgres_identity.results[0].stdout | trim | int }}"
+      empty_cluster_password_repaired: "{{ native_repair_missing_password | bool }}"
 
 - name: Save only sanitized standby receipt on this runner
   ansible.builtin.copy:

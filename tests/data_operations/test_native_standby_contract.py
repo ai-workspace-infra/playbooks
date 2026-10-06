@@ -17,8 +17,11 @@ class NativeStandbyTests(unittest.TestCase):
         tasks = yaml.safe_load((ROOT / 'roles/web_saas_native_standby/tasks/main.yml').read_text())
         starts = [task['ansible.builtin.command']['argv'] for task in tasks
                   if 'ansible.builtin.command' in task and 'up' in task['ansible.builtin.command'].get('argv', [])]
-        self.assertEqual(len(starts), 1)
+        self.assertEqual(len(starts), 2)
         self.assertEqual(starts[0][-5:], ['postgres-only.json', 'up', '-d', '--no-deps', 'postgres'])
+        self.assertEqual(starts[1][-6:], ['postgres-only.json', 'up', '-d', '--no-deps', '--force-recreate', 'postgres'])
+        recreate = next(task for task in tasks if 'Recreate only a managed' in task['name'])
+        self.assertEqual(recreate['when'], 'native_repair_missing_password | bool')
         text = (ROOT / 'roles/web_saas_native_standby/tasks/main.yml').read_text()
         for item in ('--no-env-resolution', 'native_gitops_head.stdout', 'server_version_num',
                      '127.0.0.1', 'schema_initialized: false', 'database_cutover_approved: false',
@@ -32,6 +35,9 @@ class NativeStandbyTests(unittest.TestCase):
         self.assertIn("mode: '0700'", text)
         self.assertIn('follow: false', text)
         self.assertNotIn('recurse: true', text)
+        self.assertIn('name: native_host_defaults', text)
+        self.assertIn('Refusing credential changes on an unowned', text)
+        self.assertIn('not (native_startup_diagnostic.stdout | from_json).pg_version_present', text)
 
     def test_target_is_checked_before_disk_or_host_mutation(self):
         text = (ROOT / 'setup-web-saas-native-standby.yml').read_text()
