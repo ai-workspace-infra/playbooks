@@ -1,0 +1,273 @@
+---
+- name: Verify writers remain paused after Docker preparation
+  ansible.builtin.script: scripts/data_operations/selfhost/native_writer_guard_host.sh
+  changed_when: false
+
+- name: Verify the fixed GitOps checkout on the controller
+  ansible.builtin.command:
+    argv: [git, -C, "{{ lookup('ansible.builtin.env', 'GITOPS_CHECKOUT') }}", rev-parse, HEAD]
+  delegate_to: localhost
+  become: false
+  register: native_gitops_head
+  changed_when: false
+
+- name: Require the exact reviewed GitOps commit
+  ansible.builtin.assert:
+    that:
+      - native_gitops_head.stdout | trim == lookup('ansible.builtin.env', 'GITOPS_COMMIT')
+
+- name: Load existing PostgreSQL tuning defaults
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/roles/vhosts/web_saas_host_config/defaults/main.yml"
+
+- name: Inspect the GitOps PostgreSQL image declaration
+  ansible.builtin.set_fact:
+    native_env_lines: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'GITOPS_CHECKOUT') ~ '/compose/web-saas/.env.prod').splitlines() }}"
+
+- name: Resolve the single immutable PostgreSQL image
+  ansible.builtin.set_fact:
+    native_postgres_lines: "{{ native_env_lines | select('match', '^POSTGRESQL_IMAGE=') | list }}"
+
+- name: Require one explicit full SHA or digest image
+  ansible.builtin.assert:
+    that:
+      - native_postgres_lines | length == 1
+      - native_postgres_lines[0] is match('^POSTGRESQL_IMAGE=ghcr.io/ai-workspace-infra/postgresql:(sha-)?[0-9a-f]{40}(@sha256:[0-9a-f]{64})?$')
+    fail_msg: PostgreSQL must use the reviewed GitOps full-commit image
+
+- name: Record the canonical image
+  ansible.builtin.set_fact:
+    native_postgres_image: "{{ native_postgres_lines[0].split('=', 1)[1] }}"
+    native_standby_dir: /etc/xcontrol/web-saas/native-standby
+
+- name: Inspect an existing PostgreSQL image without upgrading it
+  ansible.builtin.command:
+    argv: [docker, inspect, -f, "{{ '{{' }}.Config.Image{{ '}}' }}", web-saas-postgresql]
+  register: native_existing_postgres_image
+  changed_when: false
+  failed_when: native_existing_postgres_image.rc != 0 and 'No such object' not in native_existing_postgres_image.stderr
+
+- name: Refuse changing an existing PostgreSQL image in standby bootstrap
+  ansible.builtin.assert:
+    that:
+      - native_existing_postgres_image.stdout | trim == native_postgres_image
+    fail_msg: Existing PostgreSQL image differs; an explicit database upgrade is required
+  when: native_existing_postgres_image.rc == 0
+
+- name: Refuse unmanaged database files before creating a new container
+  ansible.builtin.stat:
+    path: /data/postgresql/pgdata/PG_VERSION
+  register: native_existing_cluster
+  when: native_existing_postgres_image.rc != 0
+
+- name: Require a new data directory for first container creation
+  ansible.builtin.assert:
+    that:
+      - not native_existing_cluster.stat.exists
+    fail_msg: Database files exist without a managed container; explicit recovery is required
+  when: native_existing_postgres_image.rc != 0
+
+- name: Create private standby and configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0700'
+  loop:
+    - "{{ native_standby_dir }}"
+    - /etc/xcontrol/web-saas/config
+
+- name: Inspect existing shared runtime credentials
+  ansible.builtin.stat:
+    path: /etc/xcontrol/web-saas/secrets.env
+  register: native_existing_secrets
+
+- name: Inspect interrupted standby ownership marker
+  ansible.builtin.stat:
+    path: "{{ native_standby_dir }}/ownership.json"
+  register: native_existing_marker
+
+- name: Read a pre-existing standby marker
+  ansible.builtin.slurp:
+    src: "{{ native_standby_dir }}/ownership.json"
+  register: native_marker_content
+  when: native_existing_marker.stat.exists
+
+- name: Require the same private standby owner on retry
+  ansible.builtin.assert:
+    that:
+      - (native_marker_content.content | b64decode | from_json).environment == 'prod'
+      - (native_marker_content.content | b64decode | from_json).host == 'web-saas-prod'
+      - (native_marker_content.content | b64decode | from_json).gitops_commit == native_gitops_head.stdout | trim
+      - (native_marker_content.content | b64decode | from_json).postgres_image == native_postgres_image
+    fail_msg: Standby inputs changed; explicit new qualification is required
+  when: native_existing_marker.stat.exists
+
+- name: Refuse replacing credentials belonging to another host setup
+  ansible.builtin.assert:
+    that:
+      - not native_existing_secrets.stat.exists or native_existing_marker.stat.exists
+    fail_msg: Existing runtime credentials have no matching standby ownership marker
+  when: native_existing_postgres_image.rc != 0
+
+- name: Record private standby ownership before rendering new runtime files
+  ansible.builtin.copy:
+    content: "{{ {'environment': 'prod', 'host': 'web-saas-prod', 'gitops_commit': native_gitops_head.stdout | trim, 'postgres_image': native_postgres_image} | to_nice_json }}"
+    dest: "{{ native_standby_dir }}/ownership.json"
+    mode: '0600'
+    force: false
+
+- name: Validate password cannot inject Docker env entries
+  ansible.builtin.assert:
+    that:
+      - "'\n' not in lookup('ansible.builtin.env', 'POSTGRES_PASSWORD')"
+      - "'\r' not in lookup('ansible.builtin.env', 'POSTGRES_PASSWORD')"
+  no_log: true
+
+- name: Render PostgreSQL-only runtime credentials using the existing template
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/roles/vhosts/web_saas_host_config/templates/secrets.env.j2"
+    dest: /etc/xcontrol/web-saas/secrets.env
+    mode: '0600'
+  vars:
+    web_saas_host_config_secrets:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "{{ lookup('ansible.builtin.env', 'POSTGRES_PASSWORD') }}"
+  no_log: true
+  # Never replace a shared env file on an already assembled host.
+  when: native_existing_postgres_image.rc != 0
+
+- name: Render existing PostgreSQL tuning without creating application config
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/roles/vhosts/web_saas_host_config/templates/postgresql.conf.j2"
+    dest: /etc/xcontrol/web-saas/config/postgresql.conf
+    mode: '0600'
+  when: native_existing_postgres_image.rc != 0
+
+- name: Copy only fixed GitOps PostgreSQL compose inputs
+  ansible.builtin.copy:
+    src: "{{ lookup('ansible.builtin.env', 'GITOPS_CHECKOUT') }}/compose/web-saas/{{ item }}"
+    dest: "{{ native_standby_dir }}/{{ item }}"
+    mode: '0600'
+  loop: [docker-compose.yml, docker-compose.prod-storage.yml, .env.prod]
+
+- name: Inspect the existing declared compose networks
+  ansible.builtin.command:
+    argv: [docker, network, inspect, "{{ item }}"]
+  register: native_networks
+  changed_when: false
+  failed_when: native_networks.rc != 0 and 'not found' not in native_networks.stderr
+  loop: [docker_shared_network, docker_web_saas_postgres_network]
+
+- name: Create only absent declared compose networks
+  ansible.builtin.command:
+    argv: [docker, network, create, "{{ item.item }}"]
+  loop: "{{ native_networks.results }}"
+  when: item.rc != 0
+
+- name: Resolve fixed GitOps compose without opening unrelated service env files
+  ansible.builtin.command:
+    argv: [docker, compose, --project-name, web-saas, --env-file, .env.prod, -f, docker-compose.yml, -f, docker-compose.prod-storage.yml, config, --no-env-resolution, --format, json]
+    chdir: "{{ native_standby_dir }}"
+  register: native_compose_model
+  changed_when: false
+  no_log: true
+
+- name: Require the rendered PostgreSQL service and exact independent bind
+  ansible.builtin.assert:
+    that:
+      - (native_compose_model.stdout | from_json).services.postgres.image == native_postgres_image
+      - (native_compose_model.stdout | from_json).services.postgres.container_name == 'web-saas-postgresql'
+      - >-
+        ((native_compose_model.stdout | from_json).services.postgres.volumes
+         | selectattr('target', 'equalto', '/var/lib/postgresql/data')
+         | selectattr('type', 'equalto', 'bind')
+         | selectattr('source', 'equalto', '/data/postgresql') | list | length) == 1
+      - ((native_compose_model.stdout | from_json).services.postgres.depends_on | default({})) | length == 0
+      - (native_compose_model.stdout | from_json).services.postgres.ports | length == 1
+      - (native_compose_model.stdout | from_json).services.postgres.ports[0].host_ip == '127.0.0.1'
+      - (native_compose_model.stdout | from_json).services.postgres.ports[0].target == 5432
+      - (native_compose_model.stdout | from_json).services.postgres.ports[0].published | string == '5432'
+      - (native_compose_model.stdout | from_json).services.postgres.env_file | length == 1
+      - (native_compose_model.stdout | from_json).services.postgres.env_file[0].path == '/etc/xcontrol/web-saas/secrets.env'
+    fail_msg: Fixed GitOps PostgreSQL service does not match the native standby contract
+  no_log: true
+
+- name: Project only PostgreSQL from the authoritative rendered declaration
+  ansible.builtin.copy:
+    content: >-
+      {{ {'name': 'web-saas', 'services': {'postgres':
+          (native_compose_model.stdout | from_json).services.postgres | combine({'env_file':
+          [{'path': '/etc/xcontrol/web-saas/secrets.env', 'required': true, 'format': 'raw'}]})},
+          'networks': (native_compose_model.stdout | from_json).networks} | to_nice_json }}
+    dest: "{{ native_standby_dir }}/postgres-only.json"
+    mode: '0600'
+  no_log: true
+
+- name: Validate the PostgreSQL-only project and raw credential support
+  ansible.builtin.command:
+    argv: [docker, compose, --project-name, web-saas, -f, postgres-only.json, config, --quiet]
+    chdir: "{{ native_standby_dir }}"
+  changed_when: false
+  no_log: true
+
+- name: Authenticate private prebuilt PostgreSQL pull without command-line credentials
+  ansible.builtin.shell: |
+    set -euo pipefail
+    printf '%s' "$NATIVE_GHCR_TOKEN" | docker login ghcr.io --username "$NATIVE_GHCR_USERNAME" --password-stdin
+  args:
+    executable: /bin/bash
+  environment:
+    NATIVE_GHCR_TOKEN: "{{ lookup('ansible.builtin.env', 'GHCR_TOKEN') }}"
+    NATIVE_GHCR_USERNAME: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') }}"
+  no_log: true
+  when: native_existing_postgres_image.rc != 0
+
+- name: Start only PostgreSQL without dependencies or automatic reconciliation
+  ansible.builtin.command:
+    argv: [docker, compose, --project-name, web-saas, -f, postgres-only.json, up, -d, --no-deps, postgres]
+    chdir: "{{ native_standby_dir }}"
+  when: native_existing_postgres_image.rc != 0
+  no_log: true
+
+- name: Wait for PostgreSQL without starting application services
+  ansible.builtin.command:
+    argv: [docker, exec, web-saas-postgresql, pg_isready, -U, postgres, -h, 127.0.0.1]
+  register: native_postgres_ready
+  retries: 30
+  delay: 2
+  until: native_postgres_ready.rc == 0
+  changed_when: false
+
+- name: Require the PostgreSQL major used for native SQL qualification
+  ansible.builtin.command:
+    argv: [docker, exec, web-saas-postgresql, psql, -U, postgres, -d, postgres, -XAtq, -v, ON_ERROR_STOP=1, -c, 'SHOW server_version_num']
+  register: native_postgres_version
+  changed_when: false
+
+- name: Refuse an unqualified database major
+  ansible.builtin.assert:
+    that:
+      - native_postgres_version.stdout | trim is match('^17[0-9]{4}$')
+    fail_msg: Native SQL requires the qualified PostgreSQL 17 runtime; do not implicitly upgrade a database
+
+- name: Verify independent storage and absent or genuinely empty account database
+  ansible.builtin.script: scripts/data_operations/selfhost/init_guard_host.sh prod
+  changed_when: false
+
+- name: Verify no application or reconciler was started
+  ansible.builtin.script: scripts/data_operations/selfhost/native_writer_guard_host.sh
+  changed_when: false
+
+- name: Return standby evidence without claiming initialization or data equality
+  ansible.builtin.set_fact:
+    native_standby_receipt:
+      stage: database_standby
+      environment: prod
+      host: web-saas-prod
+      gitops_commit: "{{ native_gitops_head.stdout | trim }}"
+      postgres_image: "{{ native_postgres_image }}"
+      postgres_major: 17
+      independent_disk_verified: true
+      writers_paused: true
+      schema_initialized: false
+      database_cutover_approved: false

@@ -1,10 +1,10 @@
 name: Data Operations Owner Contracts
 on:
   pull_request:
-    paths: [scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_release_upgrade/**, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
+    paths: [scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_native_standby/**, roles/web_saas_release_upgrade/**, setup-web-saas-native-standby.yml, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
   push:
     branches: [main, feature/release-upgrade-role]
-    paths: [scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_release_upgrade/**, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
+    paths: [scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_native_standby/**, roles/web_saas_release_upgrade/**, setup-web-saas-native-standby.yml, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
 permissions:
   contents: read
 jobs:
@@ -46,9 +46,11 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_web_saas_*roles.py'
           for file in roles/web_saas_data_*/files/*.sh; do bash -n "$file"; done
           python3 -m pip install ansible-core==2.18.12
+          ansible-galaxy collection install community.general:12.5.0 ansible.posix:2.2.0
           ansible-playbook web-saas-release-upgrade.yml --syntax-check
           ansible-playbook web-saas-data-operations.yml --syntax-check
           ansible-playbook xconnect-lab-runtime.yml --syntax-check
+          ansible-playbook setup-web-saas-native-standby.yml --syntax-check
   selfhost-postgres17:
     runs-on: ubuntu-latest
     services:
