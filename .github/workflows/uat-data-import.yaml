@@ -49,6 +49,8 @@ jobs:
       REQUESTED_ENVIRONMENT: ${{ inputs.environment }}
       REQUESTED_DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       CORRELATION_ID: ${{ inputs.correlation_id }}
+      ACCOUNTS_REF: ${{ inputs.accounts_ref }}
+      IMPORT_OWNER_SHA: ${{ job.workflow_sha }}
     steps:
       - name: Check out playbooks execution owner
         uses: actions/checkout@v7
@@ -163,7 +165,9 @@ jobs:
         if: ${{ always() }}
         env:
           EXECUTION_SUCCESS: ${{ steps.execute.outcome == 'success' && 'true' || 'false' }}
-        run: python3 roles/uat_data_import/files/write_receipt.py
+        run: |
+          ACCOUNTS_SOURCE_SHA="$(git -C accounts rev-parse HEAD 2>/dev/null || true)" \
+            python3 roles/uat_data_import/files/write_receipt.py
 
       - name: Publish sanitized execution receipt
         if: ${{ always() }}
