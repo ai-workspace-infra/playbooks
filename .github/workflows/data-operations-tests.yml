@@ -84,6 +84,8 @@ jobs:
           PGPORT: '5432'
           PGUSER: postgres
           PGPASSWORD: postgres
+      - name: Nested PGDATA bind parent permissions on disposable PostgreSQL 17
+        run: bash tests/data_operations/selfhost/native_standby_postgres_bind_test.sh
       - name: Initialization backup round trip without inventing schema/sample state
         run: sudo --preserve-env=GITHUB_ACTIONS,GITHUB_RUN_ID,TEST_POSTGRES_CONTAINER python3 tests/data_operations/selfhost/initialization_backup_postgres_test.py
         env:

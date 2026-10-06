@@ -239,6 +239,56 @@
       - native_postgres_binary_version.stdout | trim is match('^postgres \(PostgreSQL\) 17\.')
     fail_msg: Pulled binary is not PostgreSQL 17; no database cluster will be initialized
 
+- name: Read previous managed PostgreSQL startup output privately
+  ansible.builtin.command:
+    argv: [docker, logs, --tail, '100', web-saas-postgresql]
+  register: native_previous_postgres_logs
+  changed_when: false
+  no_log: true
+  when: native_existing_postgres_image.rc == 0
+
+- name: Retain only a sanitized prior permission failure classification
+  ansible.builtin.set_fact:
+    native_previous_permission_failure: "{{ 'permission denied' in ((native_previous_postgres_logs.stdout | default('')) ~ (native_previous_postgres_logs.stderr | default('')) | lower) }}"
+  no_log: true
+
+- name: Resolve postgres UID and GID from the qualified immutable image
+  ansible.builtin.command:
+    argv: [docker, run, --rm, --network, none, --entrypoint, id, "{{ native_postgres_image }}", "{{ item }}", postgres]
+  loop: [-u, -g]
+  register: native_postgres_identity
+  changed_when: false
+
+- name: Require non-root image-owned PostgreSQL identity
+  ansible.builtin.assert:
+    that:
+      - native_postgres_identity.results[0].stdout | trim is match('^[1-9][0-9]{0,5}$')
+      - native_postgres_identity.results[1].stdout | trim is match('^[1-9][0-9]{0,5}$')
+    fail_msg: PostgreSQL data ownership must be resolved from the qualified image
+
+- name: Inspect the bound data parent without following a symlink
+  ansible.builtin.stat:
+    path: /data/postgresql
+    follow: false
+  register: native_bound_parent
+
+- name: Refuse a redirected or non-directory PostgreSQL data parent
+  ansible.builtin.assert:
+    that:
+      - native_bound_parent.stat.isdir | default(false)
+      - not native_bound_parent.stat.islnk | default(false)
+
+- name: Keep the private PGDATA parent traversable by its image-owned database user
+  ansible.builtin.file:
+    path: /data/postgresql
+    state: directory
+    owner: "{{ native_postgres_identity.results[0].stdout | trim }}"
+    group: "{{ native_postgres_identity.results[1].stdout | trim }}"
+    mode: '0700'
+    follow: false
+  # The official entrypoint chowns PGDATA=.../data/pgdata, not its bind parent.
+  # Only this parent is corrected; never recursively chown or replace a cluster.
+
 - name: Start only PostgreSQL without dependencies or automatic reconciliation
   ansible.builtin.command:
     argv: [docker, compose, --project-name, web-saas, -f, postgres-only.json, up, -d, --no-deps, postgres]
@@ -288,6 +338,8 @@
       writers_paused: true
       schema_initialized: false
       database_cutover_approved: false
+      prior_data_permission_failure: "{{ native_previous_permission_failure | bool }}"
+      postgres_data_uid: "{{ native_postgres_identity.results[0].stdout | trim | int }}"
 
 - name: Save only sanitized standby receipt on this runner
   ansible.builtin.copy:

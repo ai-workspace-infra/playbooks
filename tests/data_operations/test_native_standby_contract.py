@@ -28,6 +28,10 @@ class NativeStandbyTests(unittest.TestCase):
         self.assertNotIn('initialize-web-saas-schemas', text)
         self.assertLess(text.index('Qualify the pulled PostgreSQL binary'), text.index('Start only PostgreSQL'))
         self.assertIn('--network, none, --entrypoint, postgres', text)
+        self.assertLess(text.index('Resolve postgres UID and GID'), text.index('Start only PostgreSQL'))
+        self.assertIn("mode: '0700'", text)
+        self.assertIn('follow: false', text)
+        self.assertNotIn('recurse: true', text)
 
     def test_target_is_checked_before_disk_or_host_mutation(self):
         text = (ROOT / 'setup-web-saas-native-standby.yml').read_text()
