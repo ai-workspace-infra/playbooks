@@ -60,14 +60,27 @@ def stream(source_dsn,ssh_command,key,tables):
             for process in (source,destination):
                 if process.poll() is None:process.kill()
         timer=threading.Timer(600,terminate);timer.start()
+        writer_errors=[]
+        def write_sql():
+            try:
+                source.stdin.write(snapshot_sql(tables).encode())
+                source.stdin.close()
+            except (OSError,ValueError):
+                writer_errors.append(True)
+        writer=threading.Thread(target=write_sql,daemon=True)
         try:
             destination.stdin.write((key+'\n').encode());destination.stdin.flush()
-            source.stdin.write(snapshot_sql(tables).encode());source.stdin.close()
+            # The query exceeds small platform pipe buffers. Read stdout while
+            # feeding stdin; sequential feed-then-read can deadlock on metadata.
+            writer.start()
             for line in source.stdout:
                 size+=len(line)
                 if size>4*1024**3:raise RuntimeError('Source snapshot exceeds reviewed stream size')
                 validator.accept(line)
                 digest.update(line);destination.stdin.write(line)
+            writer.join(timeout=10)
+            if writer.is_alive() or writer_errors:
+                raise RuntimeError('Readonly query stream input did not complete')
             if source.wait(timeout=10)!=0:raise RuntimeError('Readonly source snapshot failed')
             counts=validator.finish()
             destination.stdin.close();destination.stdin=None
@@ -79,6 +92,7 @@ def stream(source_dsn,ssh_command,key,tables):
             return receipt,counts,size
         finally:
             terminate()
+            if writer.ident is not None:writer.join(timeout=10)
             for process in (source,destination):process.wait(timeout=10)
             timer.cancel()
 
