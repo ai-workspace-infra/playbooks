@@ -18,6 +18,7 @@ import tempfile
 import threading
 import time
 import uuid
+import zlib
 from urllib.parse import urlsplit
 sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
 from bootstrap_full_business_credentials import connection_env,query
@@ -38,32 +39,45 @@ parent=/data/backups/web-saas/uat/initialization
 install -d -m 700 -o root -g root "$parent"
 checkpoint="$parent/prod-business-$1"
 mkdir -m 700 "$checkpoint"
-archive="$checkpoint/snapshot.jsonl.enc"
+archive="$checkpoint/snapshot.jsonl.gz.enc"
+command -v gzip >/dev/null
 openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:UPGRADE_KEY > "$archive"
 test -s "$archive"
 sync
 cipher_sha=$(sha256sum "$archive" | awk '{print $1}')
-plain_sha=$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:UPGRADE_KEY -in "$archive" | sha256sum | awk '{print $1}')
+plain_sha=$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:UPGRADE_KEY -in "$archive" | gzip -dc | sha256sum | awk '{print $1}')
 python3 - "$archive" "$cipher_sha" "$plain_sha" <<'RECEIPT'
-import json,sys
-print(json.dumps({'archive_path':sys.argv[1],'archive_sha256':sys.argv[2],'plaintext_sha256':sys.argv[3],'encrypted':True,'durable_mount':'/data'}))
+import json,sys,os
+print(json.dumps({'compression':'gzip','archive_bytes':os.path.getsize(sys.argv[1]),'archive_path':sys.argv[1],'archive_sha256':sys.argv[2],'plaintext_sha256':sys.argv[3],'encrypted':True,'durable_mount':'/data'}))
 RECEIPT
 '''
 
 
+class SnapshotFailure(RuntimeError):
+    def __init__(self,code):
+        self.code=code
+        super().__init__(code)
+
+
 def stream(source_dsn,ssh_command,key,tables,progress=None):
     validator=SnapshotValidator(tables);digest=hashlib.sha256();size=0
+    compressor=zlib.compressobj(level=6,wbits=31);compressed_size=0
     with tempfile.TemporaryFile() as errors, tempfile.TemporaryFile() as sql_input:
         # SQL contains catalog/table names only, never business rows or secrets.
         # A seekable input prevents bidirectional stdin/stdout pipe dependency.
         sql_input.write(snapshot_sql(tables).encode());sql_input.seek(0)
-        source=subprocess.Popen(['psql','-XAtq','-v','ON_ERROR_STOP=1'],env=connection_env(source_dsn),
+        source=subprocess.Popen(['psql','-XAtq','-v','ON_ERROR_STOP=1','-v','VERBOSITY=sqlstate'],env=connection_env(source_dsn),
                                 stdin=sql_input,stdout=subprocess.PIPE,stderr=errors)
         destination=subprocess.Popen(ssh_command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=errors,bufsize=0)
         def terminate():
             for process in (source,destination):
                 if process.poll() is None:process.kill()
-        timer=threading.Timer(600,terminate);timer.start()
+        started=time.monotonic();expired=threading.Event()
+        def expire():
+            expired.set();terminate()
+        # Measured real-source transport exceeded ten minutes while progressing.
+        # Keep the archive size and per-statement/idle limits independent.
+        timer=threading.Timer(1800,expire);timer.start()
         def send(data):
             view=memoryview(data)
             while view:
@@ -77,23 +91,37 @@ def stream(source_dsn,ssh_command,key,tables,progress=None):
                 size+=len(line)
                 if size>4*1024**3:raise RuntimeError('Source snapshot exceeds reviewed stream size')
                 validator.accept(line)
-                digest.update(line);send(line)
+                digest.update(line)
+                packed=compressor.compress(line);compressed_size+=len(packed);send(packed)
                 now=time.monotonic()
                 if progress and (now-last_progress>=15 or validator.footer):
-                    progress({'stage':'readonly_stream','bytes':size,'rows':sum(validator.counts.values()),'complete':validator.footer})
+                    progress({'stage':'readonly_stream','bytes':size,'rows':sum(validator.counts.values()),'complete':validator.footer,'elapsed_seconds':round(now-started)})
                     last_progress=now
-            if source.wait(timeout=10)!=0:raise RuntimeError('Readonly source snapshot failed')
+            if source.wait(timeout=10)!=0:
+                errors.seek(0);private_error=errors.read().decode('utf-8','replace')
+                states=re.findall(r'ERROR:\s+([0-9A-Z]{5})\b',private_error)
+                allowed={'57014','25P03','08006','08003','08000','42501','42P01','42703','55P03','53300','53400'}
+                code=next((state for state in states if state in allowed),'unknown')
+                raise SnapshotFailure('source_sql_'+code)
             counts=validator.finish()
+            tail=compressor.flush();compressed_size+=len(tail);send(tail)
             destination.stdin.close();destination.stdin=None
             output=destination.communicate(timeout=60)[0]
             if destination.returncode:raise RuntimeError('Encrypted UAT archive persistence failed')
             receipt=json.loads(output.strip())
-            if receipt.get('plaintext_sha256')!=digest.hexdigest() or not receipt.get('encrypted'):
+            if receipt.get('plaintext_sha256')!=digest.hexdigest() or not receipt.get('encrypted') or receipt.get('compression')!='gzip':
                 raise RuntimeError('Persisted archive differs from source stream')
+            receipt['compressed_stream_bytes']=compressed_size
             return receipt,counts,size
+        except (RuntimeError,ValueError,OSError,subprocess.TimeoutExpired):
+            if expired.is_set():raise SnapshotFailure('overall_timeout_1800s') from None
+            raise
         finally:
             terminate()
-            for process in (source,destination):process.wait(timeout=10)
+            for process in (source,destination):
+                process.wait(timeout=10)
+                for pipe in (process.stdin,process.stdout):
+                    if pipe is not None:pipe.close()
             timer.cancel()
 
 
@@ -144,5 +172,7 @@ def main():
 
 if __name__=='__main__':
     try:main()
+    except SnapshotFailure as failure:
+        raise SystemExit('Full business source snapshot failed: '+failure.code+'; private runtime output withheld')
     except (RuntimeError,ValueError,KeyError,OSError,subprocess.TimeoutExpired):
         raise SystemExit('Full business source snapshot failed; private runtime output withheld')
