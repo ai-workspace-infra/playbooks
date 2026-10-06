@@ -54,7 +54,10 @@ def main():
         require(__import__('hashlib').sha256(billing_sql.encode()).hexdigest()==HOST.BILLING_SQL_SHA256)
         for db in ('account','full_business_source'):
             sql(native_sql,db);sql(billing_sql,db)
-            sql('UPDATE public.schema_migrations SET version=2026100701',db)
+            # InitializeNative establishes this control ledger separately from
+            # the 52-table artifact. Both synthetic databases model the clean
+            # post-init/post-Billing state; no managed database is touched.
+            sql('CREATE TABLE public.schema_migrations (version bigint PRIMARY KEY, dirty boolean NOT NULL); INSERT INTO public.schema_migrations VALUES (2026100701,false)',db)
         manifest=json.loads(run([str(binary),'native-schema']))
         business=sorted(manifest['business_tables']+['cloud_vendor_costs'])
         sql("CREATE ROLE readonly_release LOGIN PASSWORD 'isolated-ro' NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS")
