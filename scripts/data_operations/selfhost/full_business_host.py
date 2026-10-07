@@ -90,6 +90,16 @@ def validate_source_dsn(dsn, source):
         ('require', 'verify-ca', 'verify-full')), 'Source connection must require TLS')
     if not ssl_modes:
         query.append(('sslmode', 'require'))
+    # The existing Serverless login may be an admin; its migration connection
+    # must default to readonly before any transaction is opened. The tool also
+    # explicitly starts a readonly repeatable-read transaction.
+    readonly_modes = [value for key, value in query if key == 'default_transaction_read_only']
+    native.require(not readonly_modes or readonly_modes == ['on'],
+        'Source connection must default to readonly')
+    native.require(not any(key == 'options' for key, _ in query),
+        'Source startup options may not override readonly defaults')
+    if not readonly_modes:
+        query.append(('default_transaction_read_only', 'on'))
     secure_dsn = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
     # Must match migratectl's Go struct JSON, including pooler project login.
     identity = {'Host': parsed.hostname, 'Port': parsed.port, 'Database': 'postgres', 'Role': login}

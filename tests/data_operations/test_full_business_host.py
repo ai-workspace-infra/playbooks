@@ -98,6 +98,7 @@ class FullBusinessOwnerTests(unittest.TestCase):
                 self.assertEqual(kw['input'].count('\n'),2)
                 self.assertIn('fictional%24%40%3A',kw['input'])
                 self.assertIn('sslmode=require',kw['input'])
+                self.assertIn('default_transaction_read_only=on',kw['input'])
                 self.assertNotIn('--env-file',argv)
                 if fail:raise HOST.native.Refused('fictional timeout')
                 data=receipt(self.spec,mode);data['private_extra']='do-not-republish'
@@ -179,6 +180,7 @@ class FullBusinessOwnerTests(unittest.TestCase):
         value=self.credentials['source_dsn']
         identity,secure=HOST.validate_source_dsn(value,self.spec['source'])
         self.assertEqual(identity,source_identity());self.assertIn('sslmode=require',secure)
+        self.assertIn('default_transaction_read_only=on',secure)
         readonly_value=value.replace('postgres.abcdefghijklmnopqrst:fictional',
             'readonly_release.abcdefghijklmnopqrst:fictional')
         _,readonly_secure=HOST.validate_source_dsn(readonly_value,self.spec['source'])
@@ -188,6 +190,16 @@ class FullBusinessOwnerTests(unittest.TestCase):
             value.replace('/postgres','/account'),value.replace('aws-0-ap-southeast-1.pooler.supabase.com',
                 'db.abcdefghijklmnopqrst.supabase.co'),value+'\n']:
             with self.assertRaises(HOST.native.Refused):HOST.validate_source_dsn(dsn,self.spec['source'])
+
+    def test_source_connection_readonly_cannot_be_disabled_by_startup_options(self):
+        value=self.credentials['source_dsn']
+        for query in ('default_transaction_read_only=off',
+            'default_transaction_read_only=on&default_transaction_read_only=off',
+            'options=-c+default_transaction_read_only%3Doff'):
+            with self.assertRaises(HOST.native.Refused):
+                HOST.validate_source_dsn(value+'?'+query,self.spec['source'])
+        _,secure=HOST.validate_source_dsn(value+'?default_transaction_read_only=on',self.spec['source'])
+        self.assertEqual(secure.count('default_transaction_read_only'),1)
 
     def test_preview_partial_scope_wrong_source_or_extra_private_data(self):
         for key,value in [('source_identity_sha256','0'*64),('source_read_only',False),('full_business_equal',True),('target_writes',True)]:
