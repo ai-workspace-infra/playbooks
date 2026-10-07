@@ -44,6 +44,14 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Install isolated owner Ansible controller
+      shell: bash
+      run: |
+        set -euo pipefail
+        controller="$RUNNER_TEMP/xconnect-lab-runtime-ansible"
+        python3 -m venv "$controller"
+        "$controller/bin/python" -m pip install --disable-pip-version-check 'ansible-core==2.18.12'
+        echo "$controller/bin" >> "$GITHUB_PATH"
     - id: runtime
       shell: bash
       env:

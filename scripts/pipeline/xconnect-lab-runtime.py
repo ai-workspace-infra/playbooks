@@ -17,7 +17,7 @@ from typing import Callable
 
 OPERATIONS = {
     "gateway_identity", "gateway", "gateway_reconcile", "gateway_verify",
-    "one", "one_verify",
+    "one", "one_verify", "xhttp_verify", "private_probe_setup", "private_probe_cleanup",
 }
 
 
@@ -161,6 +161,7 @@ def execute(
         "xconnect_lab_runtime_target": exact_target,
         "xconnect_lab_runtime_environment": "uat",
         "xconnect_lab_runtime_operation": operation,
+        "xconnect_lab_runtime_run_id": bound_run,
     })
     merged.write_text(json.dumps(variables, separators=(",", ":")), encoding="utf-8")
     merged.chmod(0o600)

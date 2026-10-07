@@ -1,10 +1,10 @@
 name: Pipeline owner Shell contracts
 on:
   pull_request:
-    paths: ['.github/actions/**', 'scripts/pipeline/**', 'scripts/node_deploy/**', 'tests/node_deploy/**', 'xconnect-lab-*.yml', 'roles/vhosts/xconnect_lab_runtime/**', 'tests/test_xconnect_lab_*.py', '.github/workflows/pipeline-owner-contracts.yml']
+    paths: ['.github/actions/**', 'scripts/pipeline/**', 'scripts/node_deploy/**', 'tests/node_deploy/**', 'xconnect-lab-*.yml', 'roles/vhosts/xconnect_lab_runtime/**', 'tests/test_xconnect_*.py', 'tests/test_service_probes_owner_contract.py', '.github/workflows/pipeline-owner-contracts.yml']
   push:
     branches: [main]
-    paths: ['.github/actions/**', 'scripts/pipeline/**', 'scripts/node_deploy/**', 'tests/node_deploy/**', 'xconnect-lab-*.yml', 'roles/vhosts/xconnect_lab_runtime/**', 'tests/test_xconnect_lab_*.py', '.github/workflows/pipeline-owner-contracts.yml']
+    paths: ['.github/actions/**', 'scripts/pipeline/**', 'scripts/node_deploy/**', 'tests/node_deploy/**', 'xconnect-lab-*.yml', 'roles/vhosts/xconnect_lab_runtime/**', 'tests/test_xconnect_*.py', 'tests/test_service_probes_owner_contract.py', '.github/workflows/pipeline-owner-contracts.yml']
 permissions:
   contents: read
 jobs:
@@ -41,4 +41,7 @@ jobs:
           python3 scripts/pipeline/tests/test_xconnect_lab_runtime.py -v
           python3 scripts/pipeline/tests/test_xconnect_lab_evidence.py -v
           python3 -m unittest tests.test_xconnect_lab_runtime_role -v
+          python3 -m unittest tests.test_xconnect_xhttp_runtime_verifier -v
+          python3 -m unittest tests.test_xconnect_private_probe_helper -v
+          python3 -m unittest tests.test_service_probes_owner_contract -v
           python3 -m unittest tests.test_xconnect_lab_evidence_contract -v
