@@ -1,0 +1,44 @@
+name: Service acceptance probes owner
+description: Playbooks-owned service probes; Toolkit consumes the resulting status.
+inputs:
+  operation: {required: true, description: resize-health, frontend-assets, shared-readiness, xconnect-control-plane, public-chain, or brand-entry}
+  environment: {required: true, description: Selected sit, uat, prod or shared environment}
+  release_ref: {required: false, default: '', description: Selected immutable release if this is a release acceptance probe}
+runs:
+  using: composite
+  steps:
+    - id: execute
+      shell: bash
+      env:
+        SERVICE_PROBE_OPERATION: ${{ inputs.operation }}
+        SERVICE_PROBE_ENVIRONMENT: ${{ inputs.environment }}
+        SERVICE_PROBE_RELEASE: ${{ inputs.release_ref }}
+        SERVICE_PROBE_OWNER_SHA: ${{ github.action_ref }}
+      run: |
+        set -euo pipefail
+        case "$SERVICE_PROBE_ENVIRONMENT" in sit|uat|prod|shared) ;; *) exit 2 ;; esac
+        [[ "$SERVICE_PROBE_OWNER_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
+        case "$SERVICE_PROBE_OPERATION" in
+          resize-health) script=resize-instance-healthcheck.sh ;;
+          frontend-assets) script=verify-frontend-boundary-assets.sh ;;
+          shared-readiness) script=check-shared-readiness.sh ;;
+          xconnect-control-plane) script=probe-xconnect-control-plane.sh ;;
+          public-chain) script=verify-serverless-public-chain.sh ;;
+          brand-entry) script=verify-brand-site-review-readiness.sh ;;
+          *) echo '::error::Unregistered service probe'; exit 2 ;;
+        esac
+        bash "$GITHUB_ACTION_PATH/../../../scripts/pipeline/$script"
+        receipt_dir="$(mktemp -d "$RUNNER_TEMP/service-receipt.XXXXXX")"
+        jq -n --arg operation "$SERVICE_PROBE_OPERATION" --arg environment "$SERVICE_PROBE_ENVIRONMENT" \
+          --arg release "$SERVICE_PROBE_RELEASE" --arg owner "$SERVICE_PROBE_OWNER_SHA" \
+          --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" \
+          '{schema:1,accepted:true,scope:"service-probe",owner_repository:"ai-workspace-infra/playbooks",
+            owner_commit:$owner,run_id:$run,run_attempt:$attempt,environment:$environment,
+            release_ref:$release,operation:$operation,target:$operation}' > "$receipt_dir/receipt.json"
+        echo "receipt=$receipt_dir/receipt.json" >> "$GITHUB_OUTPUT"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: owner-receipt-service-${{ inputs.operation }}
+        path: ${{ steps.execute.outputs.receipt }}
+        if-no-files-found: error
+        retention-days: 7
