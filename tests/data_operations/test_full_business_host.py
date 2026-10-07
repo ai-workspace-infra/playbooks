@@ -128,7 +128,9 @@ class FullBusinessOwnerTests(unittest.TestCase):
             command.assert_not_called()
 
     def test_unready_source_and_wrong_image_scope_are_refused(self):
-        for field,value in [('ready',False),('role','postgres'),('tls_required',False),('identity_sha256',None),
+        pending=copy.deepcopy(self.spec);pending['source'].update(ready=False,identity_sha256=None)
+        HOST.validate_spec(pending)
+        for field,value in [('ready',None),('role','postgres'),('tls_required',False),('identity_sha256','invalid'),
                             ('direction','selfhost-to-prod-supabase')]:
             candidate=copy.deepcopy(self.spec);candidate['source'][field]=value
             with self.assertRaises((HOST.native.Refused,TypeError)):HOST.validate_spec(candidate)
@@ -146,11 +148,11 @@ class FullBusinessOwnerTests(unittest.TestCase):
     def test_preview_partial_scope_wrong_source_or_extra_private_data(self):
         for key,value in [('source_identity_sha256','0'*64),('source_read_only',False),('full_business_equal',True),('target_writes',True)]:
             r=receipt(self.spec,'preview');r[key]=value
-            with self.assertRaises(HOST.native.Refused):HOST.validate_receipt(r,self.spec,'preview')
+            with self.assertRaises(HOST.native.Refused):HOST.validate_receipt(r,self.spec,'preview',source_identity())
         r=receipt(self.spec,'copy');del r['tables']['cloud_vendor_costs']
-        with self.assertRaises(HOST.native.Refused):HOST.validate_receipt(r,self.spec,'copy')
+        with self.assertRaises(HOST.native.Refused):HOST.validate_receipt(r,self.spec,'copy',source_identity())
         r=receipt(self.spec,'copy');r['tables']['users']['rows']=0
-        with self.assertRaises(HOST.native.Refused):HOST.validate_receipt(r,self.spec,'copy')
+        with self.assertRaises(HOST.native.Refused):HOST.validate_receipt(r,self.spec,'copy',source_identity())
 
     def test_role_pipelining_stdin_and_single_owner(self):
         role=(ROOT/'roles/web_saas_full_business_transfer/tasks/main.yml').read_text()
