@@ -178,6 +178,20 @@ class EvidenceOwnerTests(unittest.TestCase):
             with self.assertRaisesRegex(MODULE.ContractError, "known_hosts"):
                 MODULE.execute(env, FakeRunner(known=False))
 
+    def test_local_addresses_cannot_prove_gateway_private_traffic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = self.environment(Path(directory))
+            path = Path(env["XCONNECT_EVIDENCE_CONTRACT_FILE"])
+            contract = json.loads(path.read_text())
+            for address in ("127.0.0.1", "169.254.10.2", "0.0.0.0", "::1"):
+                with self.subTest(address=address):
+                    contract["gateway"]["overlay_ip"] = address
+                    path.write_text(json.dumps(contract))
+                    runner = FakeRunner()
+                    with self.assertRaisesRegex(MODULE.ContractError, "routable private overlay"):
+                        MODULE.execute(env, runner)
+                    self.assertFalse(any(command[0] == "ansible-playbook" for command, _ in runner.calls))
+
 
 if __name__ == "__main__":
     unittest.main()

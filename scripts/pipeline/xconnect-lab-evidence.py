@@ -130,8 +130,9 @@ def execute(environment: dict[str, str], runner: Callable[..., object] = checked
         gateway_ip = str(ipaddress.ip_address(str(gateway.get("overlay_ip", ""))))
     except ValueError:
         raise ContractError("gateway.overlay_ip is invalid") from None
-    if not ipaddress.ip_address(gateway_ip).is_private:
-        raise ContractError("gateway.overlay_ip must be a private address")
+    overlay = ipaddress.ip_address(gateway_ip)
+    if not overlay.is_private or overlay.is_loopback or overlay.is_link_local or overlay.is_unspecified or overlay.is_multicast:
+        raise ContractError("gateway.overlay_ip must be a routable private overlay address")
     server_name = exact_host(contract.get("transport_server_name"), "transport_server_name")
     if not re.search(r"\.", server_name) or re.fullmatch(r"[0-9.]+", server_name):
         raise ContractError("transport_server_name must be a DNS name")
