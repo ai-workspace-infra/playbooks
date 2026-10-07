@@ -45,16 +45,18 @@ def credentials():
 
 
 def receipt(contract,mode):
-    return dict(format=1,environment='prod',result={'preview':'eligible','copy':'copied','compare':'equal'}[mode],
+    return dict(format=1,environment='prod',result={'preview':'eligible','copy':'copied','compare':'equal','core_users':'copied'}[mode],
         schema_sha256=HOST.ACCOUNTS_SQL_SHA256,billing_schema_sha256=HOST.BILLING_SQL_SHA256,
         migration_version=2026100701,batch_size=1000,source_identity_sha256=source_identity(),
-        source_snapshot_sha256='e'*64,source_catalog_sha256='f'*64,source_read_only=True,source_table_count=44,
-        user_count=1,full_business_equal=mode!='preview',target_writes=mode=='copy',database_cutover_approved=False,
+        source_snapshot_sha256='' if mode=='core_users' else 'e'*64,
+        source_catalog_sha256='' if mode=='core_users' else 'f'*64,source_read_only=True,source_table_count=1 if mode=='core_users' else 44,
+        user_count=1,full_business_equal=mode!='preview',target_writes=mode in ('copy','core_users'),database_cutover_approved=False,
         core_users=dict(source=dict(count=1,email_sha256='2'*64,password_hash_sha256='3'*64,email_proxy_sha256='4'*64),
             target=dict(count=0,email_sha256='',password_hash_sha256='',email_proxy_sha256='') if mode=='preview' else
             dict(count=1,email_sha256='2'*64,password_hash_sha256='3'*64,email_proxy_sha256='4'*64)),
         snapshot_started_at='2026-10-07T00:00:00Z',completed_at='2026-10-07T00:01:00Z',
-        tables={} if mode=='preview' else {t:dict(rows=1 if t=='users' else 0,sha256='1'*64)
+        scope='core_users' if mode=='core_users' else 'full_business',
+        tables={} if mode in ('preview','core_users') else {t:dict(rows=1 if t=='users' else 0,sha256='1'*64)
             for t in contract['transfer']['business_tables']})
 
 
@@ -109,7 +111,9 @@ class FullBusinessOwnerTests(unittest.TestCase):
             return ''
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,NATIVE_DATA_GATE_VERIFIED='true'), \
              patch.object(HOST.native,'command',side_effect=command),patch.object(HOST,'run_private',side_effect=private), \
-             patch.object(HOST,'verify_storage'),patch.object(HOST,'verify_target') as target, \
+             patch.object(HOST,'verify_storage'),patch.object(HOST,'verify_target', wraps=HOST.verify_target) as target, \
+             patch.object(HOST.native,'sql',side_effect=lambda query,db: '2026100701:false' if 'version::text' in query else \
+                 json.dumps(self.spec['transfer']['business_tables']) if 'json_agg' in query else '0') as sql, \
              patch.object(HOST.native,'remove_execution_container') as cleanup:
             original=HOST.tempfile.TemporaryDirectory
             # Real private directory lifecycle in a local temp fixture, not /dev/shm.
@@ -145,6 +149,29 @@ class FullBusinessOwnerTests(unittest.TestCase):
                 self.assertIn('--dry-run=false',str([c[0] for c in calls]))
                 self.assertNotIn('reset',str([c[0] for c in calls]))
 
+    def test_core_users_reaches_fixed_image_without_empty_target_requirement(self):
+        calls,data=self.execute('core_users')
+        self.assertEqual(data['scope'],'core_users')
+        self.assertEqual(data['core_users']['source'],data['core_users']['target'])
+        self.assertEqual(data['tables'],{})
+        self.assertTrue(data['target_writes'])
+        self.assertFalse(data['database_cutover_approved'])
+        self.assertIn('copy-core-users',str([c[0] for c in calls]))
+
+    def test_populated_target_is_allowed_only_for_reconciliation_or_comparison(self):
+        def sql(query,db):
+            if 'version::text' in query:return '2026100701:false'
+            if 'json_agg' in query:return json.dumps(self.spec['transfer']['business_tables'])
+            return '24'
+        with patch.object(HOST.native,'sql',side_effect=sql) as target:
+            HOST.verify_target(self.spec,require_empty=False)
+            self.assertEqual(target.call_count,2)
+            with self.assertRaises(HOST.native.Refused):
+                HOST.verify_target(self.spec,require_empty=True)
+        with patch.object(HOST.native,'sql',return_value='2026100701:true'):
+            with self.assertRaises(HOST.native.Refused):
+                HOST.verify_target(self.spec,require_empty=False)
+
     def test_core_users_accepts_only_identity_contract_and_uses_dedicated_command(self):
         r=receipt(self.spec,'copy')
         r.update(scope='core_users', source_table_count=1, source_snapshot_sha256='', source_catalog_sha256='', tables={})
@@ -152,6 +179,14 @@ class FullBusinessOwnerTests(unittest.TestCase):
         self.assertEqual(safe['scope'],'core_users')
         self.assertEqual(safe['tables'],{})
         self.assertEqual(HOST.migration_args(self.spec,'core_users')[0],'copy-core-users')
+
+    def test_core_user_four_field_mismatch_receipt_is_rejected(self):
+        for key in ('count','email_sha256','password_hash_sha256','email_proxy_sha256'):
+            with self.subTest(key=key):
+                r=receipt(self.spec,'core_users')
+                r['core_users']['target'][key]=2 if key=='count' else '9'*64
+                with self.assertRaises(HOST.native.Refused):
+                    HOST.validate_receipt(r,self.spec,'core_users',source_identity())
 
     def test_timeout_stops_owned_container_and_removes_registry_config(self):
         self.execute('copy',fail=True)
