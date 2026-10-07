@@ -73,8 +73,10 @@ runs:
           --limit "${INPUT_TARGET}" \
           -e "@${RESTORE_VARS_FILE}"
     - name: Remove private Role variables
-      if: ${{ always() && steps.plan.outputs.vars_file != '' }}
+      if: ${{ always() }}
       shell: bash
       env:
         RESTORE_VARS_FILE: ${{ steps.plan.outputs.vars_file }}
-      run: rm -f -- "${RESTORE_VARS_FILE}"
+      run: |
+        rm -f -- "${RESTORE_VARS_FILE}"
+        rm -f -- "${RUNNER_TEMP}/caddy-restore-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}.json"
