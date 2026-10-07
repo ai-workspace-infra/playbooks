@@ -179,6 +179,7 @@ class FullBusinessOwnerTests(unittest.TestCase):
         self.assertEqual(safe['scope'],'core_users')
         self.assertEqual(safe['tables'],{})
         self.assertEqual(HOST.migration_args(self.spec,'core_users')[0],'copy-core-users')
+        self.assertFalse(any(arg.startswith('--dry-run') for arg in HOST.migration_args(self.spec,'core_users')))
 
     def test_core_user_four_field_mismatch_receipt_is_rejected(self):
         for key in ('count','email_sha256','password_hash_sha256','email_proxy_sha256'):

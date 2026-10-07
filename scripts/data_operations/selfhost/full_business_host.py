@@ -242,10 +242,14 @@ exec /usr/local/bin/migratectl "$@"
 def migration_args(spec, mode):
     native.require(mode in ('preview','copy','compare','core_users'), 'Invalid full-business operation')
     operation = 'copy-core-users' if mode == 'core_users' else ('compare-full-business' if mode == 'compare' else 'copy-full-business')
-    return [operation, '--source-dsn-env=NATIVE_SOURCE_DSN', '--target-dsn-env=NATIVE_TARGET_DSN',
+    args = [operation, '--source-dsn-env=NATIVE_SOURCE_DSN', '--target-dsn-env=NATIVE_TARGET_DSN',
         '--environment=prod', '--schema-sha256=' + spec['transfer']['schema_sha256'],
-        '--billing-schema-sha256=' + spec['transfer']['billing_schema_sha256'], '--writers-paused',
-        '--dry-run=' + str(mode == 'preview').lower()]
+        '--billing-schema-sha256=' + spec['transfer']['billing_schema_sha256'], '--writers-paused']
+    # Core-user commands are explicit copy/compare operations, with no dry-run
+    # flag. Passing full-business flags causes Cobra to fail before connecting.
+    if mode != 'core_users':
+        args.append('--dry-run=' + str(mode == 'preview').lower())
+    return args
 
 
 def execute(spec, guard_directory, mode, credentials):
