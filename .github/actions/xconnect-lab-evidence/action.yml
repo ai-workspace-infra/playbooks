@@ -1,6 +1,9 @@
 name: Verify XConnect lab data-plane evidence
 description: Verify one exact Gateway and One pair and write a sanitized same-run UAT receipt.
 inputs:
+  owner-sha:
+    description: Exact reviewed Playbooks commit SHA containing this action.
+    required: true
   contract-file:
     description: Private exact-target evidence contract below RUNNER_TEMP.
     required: true
@@ -8,6 +11,9 @@ inputs:
     description: Sanitized verification receipt destination below RUNNER_TEMP.
     required: true
 outputs:
+  owner_sha:
+    description: Exact Playbooks owner commit bound to the receipt.
+    value: ${{ steps.evidence.outputs.owner_sha }}
   run_id:
     description: Exact lab run identity verified by the owner.
     value: ${{ steps.evidence.outputs.run_id }}
@@ -23,6 +29,8 @@ runs:
     - id: evidence
       shell: bash
       env:
+        XCONNECT_EVIDENCE_OWNER_SHA: ${{ inputs.owner-sha }}
+        XCONNECT_EVIDENCE_ACTION_REF: ${{ github.action_ref }}
         XCONNECT_EVIDENCE_CONTRACT_FILE: ${{ inputs.contract-file }}
         XCONNECT_EVIDENCE_RECEIPT_FILE: ${{ inputs.receipt-file }}
       run: python3 "$GITHUB_ACTION_PATH/../../../scripts/pipeline/xconnect-lab-evidence.py"

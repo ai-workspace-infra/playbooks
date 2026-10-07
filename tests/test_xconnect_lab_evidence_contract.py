@@ -16,6 +16,14 @@ class XConnectLabEvidenceContractTests(unittest.TestCase):
             self.assertIn(evidence, source)
         self.assertIn("xconnect_evidence_one_status.device_id == xconnect_evidence_one_device_id", source)
         self.assertIn("xconnect_evidence_one_status.network_id == xconnect_evidence_network_id", source)
+        self.assertIn(".gateway_id == $gateway and .network_id == $network", source)
+        self.assertIn(".device_credential.credential", source)
+        self.assertIn("current_device", source)
+        self.assertIn("peer_matches", source)
+        self.assertIn('[[ "$peer_matches" -eq 1 ]]', source)
+        self.assertIn("gateway_state_binding_verified", source)
+        self.assertNotIn("gateway_status_verified", source)
+        self.assertNotIn("signed XConnect Gateway status", source)
 
     def test_playbook_has_no_cloud_or_control_plane_execution(self):
         source = (ROOT / "xconnect-lab-evidence.yml").read_text().lower()

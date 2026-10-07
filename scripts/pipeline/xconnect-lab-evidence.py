@@ -69,15 +69,42 @@ def checked_run(command, **kwargs):
     return subprocess.run(command, check=False, text=True, capture_output=True, **kwargs)
 
 
+def current_run(environment: dict[str, str]) -> str:
+    run_id = required(environment, "GITHUB_RUN_ID")
+    attempt = required(environment, "GITHUB_RUN_ATTEMPT")
+    if not run_id.isdigit() or not attempt.isdigit() or int(run_id) < 1 or int(attempt) < 1:
+        raise ContractError("GitHub run identity is invalid")
+    return f"xcl-{run_id}-{attempt}"
+
+
+def owner_sha(environment: dict[str, str], root: Path, runner: Callable[..., object]) -> str:
+    expected = required(environment, "XCONNECT_EVIDENCE_OWNER_SHA")
+    if not re.fullmatch(r"[0-9a-f]{40}", expected):
+        raise ContractError("XCONNECT_EVIDENCE_OWNER_SHA must be a full commit SHA")
+    action_ref = environment.get("XCONNECT_EVIDENCE_ACTION_REF", "").strip()
+    if action_ref:
+        if action_ref != expected:
+            raise ContractError("pinned action ref does not match XCONNECT_EVIDENCE_OWNER_SHA")
+        return expected
+    resolved = runner(["git", "-C", str(root), "rev-parse", "HEAD"])
+    if getattr(resolved, "returncode", 1) != 0 or getattr(resolved, "stdout", "").strip() != expected:
+        raise ContractError("checked-out Playbooks SHA does not match XCONNECT_EVIDENCE_OWNER_SHA")
+    return expected
+
+
 def execute(environment: dict[str, str], runner: Callable[..., object] = checked_run) -> dict:
-    contract_path = runtime_path(
-        environment, required(environment, "XCONNECT_EVIDENCE_CONTRACT_FILE"),
-        "XCONNECT_EVIDENCE_CONTRACT_FILE", exists=True, private=True,
-    )
     receipt_path = runtime_path(
         environment, required(environment, "XCONNECT_EVIDENCE_RECEIPT_FILE"),
         "XCONNECT_EVIDENCE_RECEIPT_FILE", exists=False, private=False,
     )
+    receipt_path.unlink(missing_ok=True)
+    contract_path = runtime_path(
+        environment, required(environment, "XCONNECT_EVIDENCE_CONTRACT_FILE"),
+        "XCONNECT_EVIDENCE_CONTRACT_FILE", exists=True, private=True,
+    )
+    root = Path(__file__).resolve().parents[2]
+    bound_run = current_run(environment)
+    bound_owner = owner_sha(environment, root, runner)
     try:
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
         gateway = contract["gateway"]
@@ -87,7 +114,10 @@ def execute(environment: dict[str, str], runner: Callable[..., object] = checked
     if contract.get("environment") != "uat":
         raise ContractError("evidence contract is restricted to UAT")
     run_id = identifier(contract.get("run_id"), "run_id", r"xcl-[0-9]+-[0-9]+")
+    if run_id != bound_run:
+        raise ContractError("evidence contract run_id does not match the current GitHub run and attempt")
     network_id = identifier(contract.get("network_id"), "network_id", r"net_[A-Za-z0-9][A-Za-z0-9_-]{1,62}")
+    gateway_id = identifier(gateway.get("id"), "gateway.id", r"[a-z0-9][a-z0-9._-]{0,127}")
     device_id = identifier(one.get("device_id"), "one.device_id", r"[a-z0-9][a-z0-9._-]{0,127}")
     gateway_target = exact_host(gateway.get("target"), "gateway.target")
     one_target = exact_host(one.get("target"), "one.target")
@@ -132,7 +162,9 @@ def execute(environment: dict[str, str], runner: Callable[..., object] = checked
     variables = {
         "xconnect_evidence_environment": "uat",
         "xconnect_evidence_run_id": run_id,
+        "xconnect_evidence_owner_sha": bound_owner,
         "xconnect_evidence_network_id": network_id,
+        "xconnect_evidence_gateway_id": gateway_id,
         "xconnect_evidence_one_device_id": device_id,
         "xconnect_evidence_gateway_target": gateway_target,
         "xconnect_evidence_one_target": one_target,
@@ -153,7 +185,6 @@ def execute(environment: dict[str, str], runner: Callable[..., object] = checked
     for key in ("xconnect_evidence_gateway_interface", "xconnect_evidence_one_interface"):
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,15}", str(variables[key])):
             raise ContractError(f"{key} is invalid")
-    root = Path(__file__).resolve().parents[2]
     inventory_path = receipt_path.parent / f".{receipt_path.name}.inventory.json"
     variables_path = receipt_path.parent / f".{receipt_path.name}.variables.json"
     receipt_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -175,7 +206,6 @@ def execute(environment: dict[str, str], runner: Callable[..., object] = checked
         "ANSIBLE_HOST_KEY_CHECKING": "True",
         "ANSIBLE_SSH_ARGS": f"-o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile={known_hosts}",
     })
-    receipt_path.unlink(missing_ok=True)
     try:
         result = runner([
             "ansible-playbook", "-i", str(inventory_path), str(root / "xconnect-lab-evidence.yml"),
@@ -184,25 +214,34 @@ def execute(environment: dict[str, str], runner: Callable[..., object] = checked
         if getattr(result, "returncode", 1) != 0:
             receipt_path.unlink(missing_ok=True)
             raise ContractError(f"XConnect data-plane verification failed (exit {getattr(result, 'returncode', 'unknown')})")
+    except Exception:
+        receipt_path.unlink(missing_ok=True)
+        raise
     finally:
         inventory_path.unlink(missing_ok=True)
         variables_path.unlink(missing_ok=True)
     if not receipt_path.is_file() or receipt_path.stat().st_mode & 0o077:
+        receipt_path.unlink(missing_ok=True)
         raise ContractError("Playbooks did not produce a private evidence receipt")
     try:
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         receipt_path.unlink(missing_ok=True)
         raise ContractError("Playbooks produced an invalid evidence receipt") from None
+    if not isinstance(receipt, dict):
+        receipt_path.unlink(missing_ok=True)
+        raise ContractError("Playbooks produced an invalid evidence receipt")
     required_receipt = {
         "schema": "xconnect-lab-evidence/v1", "status": "verified", "environment": "uat",
-        "run_id": run_id, "network_id": network_id, "one_device_id": device_id,
+        "run_id": run_id, "owner_sha": bound_owner, "network_id": network_id,
+        "gateway_id": gateway_id, "one_device_id": device_id,
         "gateway_target": gateway_target, "one_target": one_target,
     }
     if any(receipt.get(key) != value for key, value in required_receipt.items()):
         receipt_path.unlink(missing_ok=True)
         raise ContractError("Playbooks evidence receipt does not match the reviewed contract")
-    for proof in ("one_status_verified", "gateway_status_verified", "tls_sni_verified",
+    for proof in ("one_status_verified", "gateway_cli_status_ok", "gateway_state_binding_verified",
+                  "gateway_credential_present", "gateway_peer_source_verified", "tls_sni_verified",
                   "private_ping_verified", "private_http_verified"):
         if receipt.get(proof) is not True:
             receipt_path.unlink(missing_ok=True)
@@ -213,7 +252,10 @@ def execute(environment: dict[str, str], runner: Callable[..., object] = checked
         raise ContractError("Playbooks evidence receipt has a stale or invalid handshake")
     if environment.get("GITHUB_OUTPUT"):
         with Path(environment["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
-            output.write(f"run_id={run_id}\nnetwork_id={network_id}\nhandshake_age_seconds={age}\n")
+            output.write(
+                f"run_id={run_id}\nowner_sha={bound_owner}\nnetwork_id={network_id}\n"
+                f"handshake_age_seconds={age}\n"
+            )
     return receipt
 
 

@@ -84,10 +84,35 @@ def checked_run(command, **kwargs):
     return subprocess.run(command, check=False, text=True, capture_output=True, **kwargs)
 
 
+def current_run(environment: dict[str, str]) -> str:
+    run_id = required(environment, "GITHUB_RUN_ID")
+    attempt = required(environment, "GITHUB_RUN_ATTEMPT")
+    if not run_id.isdigit() or not attempt.isdigit() or int(run_id) < 1 or int(attempt) < 1:
+        raise ContractError("GitHub run identity is invalid")
+    return f"xcl-{run_id}-{attempt}"
+
+
+def owner_sha(environment: dict[str, str], root: Path, runner: Callable[..., object]) -> str:
+    expected = required(environment, "XCONNECT_RUNTIME_OWNER_SHA")
+    if not re.fullmatch(r"[0-9a-f]{40}", expected):
+        raise ContractError("XCONNECT_RUNTIME_OWNER_SHA must be a full commit SHA")
+    action_ref = environment.get("XCONNECT_RUNTIME_ACTION_REF", "").strip()
+    if action_ref:
+        if action_ref != expected:
+            raise ContractError("pinned action ref does not match XCONNECT_RUNTIME_OWNER_SHA")
+        return expected
+    resolved = runner(["git", "-C", str(root), "rev-parse", "HEAD"])
+    if getattr(resolved, "returncode", 1) != 0 or getattr(resolved, "stdout", "").strip() != expected:
+        raise ContractError("checked-out Playbooks SHA does not match XCONNECT_RUNTIME_OWNER_SHA")
+    return expected
+
+
 def execute(
     environment: dict[str, str],
     runner: Callable[..., object] = checked_run,
 ) -> dict[str, str]:
+    receipt_path = runtime_path(environment, "XCONNECT_RUNTIME_RECEIPT_FILE", exists=False, private=False)
+    receipt_path.unlink(missing_ok=True)
     operation = required(environment, "XCONNECT_RUNTIME_OPERATION")
     if operation not in OPERATIONS:
         raise ContractError("XCONNECT_RUNTIME_OPERATION is not an approved host operation")
@@ -98,8 +123,11 @@ def execute(
     key = runtime_path(environment, "XCONNECT_RUNTIME_PRIVATE_KEY_FILE", exists=True, private=True)
     known_hosts = runtime_path(environment, "XCONNECT_RUNTIME_KNOWN_HOSTS_FILE", exists=True, private=False)
     variables_path = runtime_path(environment, "XCONNECT_RUNTIME_VARIABLES_FILE", exists=True, private=True)
-    receipt_path = runtime_path(environment, "XCONNECT_RUNTIME_RECEIPT_FILE", exists=False, private=False)
     variables = load_variables(variables_path)
+
+    root = Path(__file__).resolve().parents[2]
+    bound_run = current_run(environment)
+    bound_owner = owner_sha(environment, root, runner)
 
     lookup = runner(["ssh-keygen", "-F", exact_target, "-f", str(known_hosts)])
     if getattr(lookup, "returncode", 1) != 0 or not getattr(lookup, "stdout", "").strip():
@@ -115,7 +143,6 @@ def execute(
     encoded_fingerprint = base64.b64encode(hashlib.sha256(key_blob).digest()).decode("ascii").rstrip("=")
     fingerprint = f"SHA256:{encoded_fingerprint}"
 
-    root = Path(__file__).resolve().parents[2]
     playbook = root / "xconnect-lab-runtime.yml"
     inventory = receipt_path.parent / f".{receipt_path.name}.inventory.json"
     merged = receipt_path.parent / f".{receipt_path.name}.variables.json"
@@ -152,12 +179,17 @@ def execute(
         ], env=child_env)
         if getattr(result, "returncode", 1) != 0:
             raise ContractError(f"Playbooks host operation failed (exit {getattr(result, 'returncode', 'unknown')})")
+    except Exception:
+        receipt_path.unlink(missing_ok=True)
+        raise
     finally:
         inventory.unlink(missing_ok=True)
         merged.unlink(missing_ok=True)
     receipt = {
         "schema": "xconnect-lab-runtime-owner/v1",
         "environment": "uat",
+        "run_id": bound_run,
+        "owner_sha": bound_owner,
         "operation": operation,
         "target": exact_target,
         "host_key_fingerprint": fingerprint,
@@ -167,7 +199,10 @@ def execute(
     receipt_path.chmod(0o600)
     if environment.get("GITHUB_OUTPUT"):
         with Path(environment["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
-            output.write(f"operation={operation}\ntarget={exact_target}\nhost_key_fingerprint={fingerprint}\n")
+            output.write(
+                f"run_id={bound_run}\nowner_sha={bound_owner}\noperation={operation}\n"
+                f"target={exact_target}\nhost_key_fingerprint={fingerprint}\n"
+            )
     return receipt
 
 
