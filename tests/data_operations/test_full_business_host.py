@@ -123,6 +123,21 @@ class FullBusinessOwnerTests(unittest.TestCase):
 
     def test_timeout_stops_owned_container_and_removes_registry_config(self):
         self.execute('copy',fail=True)
+        diagnostic=HOST.failure_receipt()
+        self.assertEqual(diagnostic, dict(format=1,result='failed',failure_stage='migration',
+            database_cutover_approved=False))
+        self.assertNotIn('fictional',json.dumps(diagnostic))
+
+    def test_target_preflight_failure_identifies_stage_before_registry_or_source(self):
+        with patch.dict(os.environ,NATIVE_DATA_GATE_VERIFIED='true'), \
+             patch.object(HOST.native,'command'),patch.object(HOST,'verify_storage'), \
+             patch.object(HOST,'verify_target',side_effect=HOST.native.Refused('private-row-and-password')), \
+             patch.object(HOST,'run_private') as private:
+            with self.assertRaises(HOST.native.Refused):
+                HOST.execute(self.spec,OWNER,'preview',self.credentials)
+            private.assert_not_called()
+        self.assertEqual(HOST.failure_receipt()['failure_stage'],'target_schema')
+        self.assertNotIn('private-row',json.dumps(HOST.failure_receipt()))
 
     def test_independent_gate_before_host_or_source(self):
         with patch.dict(os.environ,NATIVE_DATA_GATE_VERIFIED='false'),patch.object(HOST.native,'command') as command:

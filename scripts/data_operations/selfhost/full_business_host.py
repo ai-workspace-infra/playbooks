@@ -21,6 +21,22 @@ from native_billing_upgrade_host import verify_storage
 
 ACCOUNTS_SQL_SHA256 = '842cef3beb98ef819dc854ecdf5f85683233641a0cd85a9156b30ad59f7e0206'
 BILLING_SQL_SHA256 = 'a7133f3ef2ea9013a055cfd1442a7488d2b837f289e0f5d9b61624d4fde9bc53'
+FAILURE_STAGES = ('input', 'writer_guard', 'storage', 'target_schema', 'registry_storage',
+    'registry_login', 'image_pull', 'image_manifest', 'target_recheck', 'migration',
+    'receipt', 'final_guard')
+CURRENT_STAGE = 'input'
+
+
+def stage(name):
+    global CURRENT_STAGE
+    native.require(name in FAILURE_STAGES, 'Invalid diagnostic stage')
+    CURRENT_STAGE = name
+
+
+def failure_receipt():
+    # Fixed vocabulary only: never exception text, command arguments or DB rows.
+    return {'format': 1, 'result': 'failed', 'failure_stage': CURRENT_STAGE,
+        'database_cutover_approved': False}
 
 
 def validate_spec(spec):
@@ -185,26 +201,35 @@ def migration_args(spec, mode):
 
 
 def execute(spec, guard_directory, mode, credentials):
+    stage('input')
     image = validate_spec(spec)
     native.require(mode in ('preview', 'copy', 'compare') and
         os.environ.get('NATIVE_DATA_GATE_VERIFIED') == 'true', 'Independent production data review is required')
     source_identity_sha256 = validate_credentials(credentials, spec)
     guard = ['bash', str(guard_directory / 'native_writer_guard_host.sh')]
+    stage('writer_guard')
     native.command(guard)
+    stage('storage')
     verify_storage()
+    stage('target_schema')
     verify_target(spec, require_empty=mode != 'compare')
+    stage('registry_storage')
     native.require(native.command(['findmnt', '-nro', 'FSTYPE', '--target', '/dev/shm']) == 'tmpfs',
         'Registry authentication requires private volatile storage')
     with tempfile.TemporaryDirectory(prefix='full-business-registry-', dir='/dev/shm') as directory:
         Path(directory).chmod(0o700)
         env = dict(os.environ, DOCKER_CONFIG=directory)
+        stage('registry_login')
         run_private(['docker', 'login', 'ghcr.io', '--username', credentials['ghcr_username'], '--password-stdin'],
             input=credentials['ghcr_token'], env=env, timeout=60)
+        stage('image_pull')
         run_private(['docker', 'pull', image], env=env, timeout=360)
+        stage('image_manifest')
         manifest = json.loads(run_private(['docker', 'run', '--rm', '--network', 'none', '--read-only',
             '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--entrypoint', '/usr/local/bin/migratectl',
             image, 'native-schema'], env=env, timeout=60))
         native.validate_manifest(manifest, spec['initialization'])
+        stage('target_recheck')
         native.command(guard)
         verify_storage()
         verify_target(spec, require_empty=mode != 'compare')
@@ -212,6 +237,7 @@ def execute(spec, guard_directory, mode, credentials):
             '@127.0.0.1:5432/account?sslmode=disable'
         execution_name = 'full-business-transfer-' + uuid.uuid4().hex
         args = migration_args(spec,mode)
+        stage('migration')
         try:
             raw = run_private(['docker', 'run', '--rm', '--name', execution_name, '-i', '--network',
                 'container:web-saas-postgresql', '--read-only', '--cap-drop', 'ALL',
@@ -219,7 +245,9 @@ def execute(spec, guard_directory, mode, credentials):
                 '-c', CONTAINER_BOOTSTRAP, '--', *args], input=credentials['source_dsn'] + '\n' + target + '\n', env=env)
         finally:
             native.remove_execution_container(execution_name)
+        stage('receipt')
         receipt = validate_receipt(json.loads(raw), spec, mode, source_identity_sha256)
+    stage('final_guard')
     native.command(guard)
     verify_storage()
     verify_target(spec, require_empty=mode == 'preview')
@@ -256,6 +284,5 @@ if __name__ == '__main__':
     try:
         main()
     except (native.Refused, ValueError, KeyError, TypeError, OSError):
-        print('Full-business stage stopped; private output withheld; no cutover authorization.',
-            file=__import__('sys').stderr)
+        print(json.dumps(failure_receipt(), sort_keys=True))
         raise SystemExit(1)
