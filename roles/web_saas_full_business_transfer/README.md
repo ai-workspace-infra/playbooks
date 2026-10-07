@@ -11,23 +11,27 @@ This role neither creates cloud resources nor changes DNS/authoritative inventor
 The fixed non-secret spec has `initialization` (Accounts native52 manifest),
 `transfer` (full-SHA/digest prebuilt Accounts tool, unchanged native SQL hash,
 Billing SQL hash, clean 2026100701, sorted53 tables, batch1000, cutoverfalse), and
-`source` (ready=true, readonly_release, TLSrequired, exact approved connection
-identity SHA-256 and one-way prod-supabase-to-prod-selfhost direction).
-A not-yet-approved source stays ready=false; do not derive/accept an arbitrary
-live connection fingerprint to fill a missing reviewed source identity.
+`source` (PROD Supabase project/endpoint, required TLS, optional pre-approved
+connection identity SHA-256, and one-way prod-supabase-to-prod-selfhost direction).
+`ready=false` is accepted when the caller resolves the authorized Serverless DSN
+from Vault; the actual connection identity is bound in the sanitized receipt.
 
-Runtime secrets arrive only from the caller's OIDC→Vault outputs: dedicated source
-readonly DSN, target root password and registry credentials. Source connection is
-bound to the reviewed Supabase session-pooler login/project/host/database and TLS;
-transaction-pooler port, admin role, plaintext TLS fallback or other project fail.
-Actual SQL role/privilege/RLS/full scope is independently checked by migratectl.
+Runtime secrets arrive only from the caller's OIDC→Vault outputs. The source DSN
+may use `postgres` or `readonly_release` for the configured project; the owner
+forces connection and transaction read-only mode. Session-pooler port 5432 and
+TLS are required; transaction pooling, weaker TLS or other projects fail.
 
-Actions take explicit `preview`, `copy` or `compare`. All require the caller's
-independent production data-gate assertion. Preview inspects catalogs/user keys;
-it neither writes nor streams large business tables. Copy requires all53 target
-business tables empty; populated data is never reset, truncated, deleted or
-upserted. Compare permits populated target and must prove every53 table's row
-count/full-field digest, source identity and email/PROD Proxy/user population.
+Actions take explicit `preview`, `copy`, `compare` or `core_users`. All require the
+caller's production data-gate assertion, with the configured release-tag review
+policy enforced by Toolkit. Preview reads catalogs/user keys. Full-business copy
+requires all 53 target tables empty; compare proves the full-business scope.
+
+`core_users` permits existing target users. The pinned Accounts tool matches by
+normalized email, preserves target user UUIDs and updates email/password hash/
+PROD Proxy UUID. Missing users are inserted, target-only emails are refused, and
+actual source/target count and three digests must match. No dynamic business
+rows are copied or compared in this mode. Schema version and target identity
+checks remain mandatory. Repeating core synchronization is supported.
 The role runs a reviewed prebuilt binary; it never builds an image on the target.
 
 The sanitized receipt is `prod-full-business-receipt.json` in RUNNER_TEMP. It
@@ -75,8 +79,9 @@ Owner implementation → fixed Toolkit caller → non-mutating/live route verifi
 remove: old three-table import and encrypted readonly snapshot archival have
 separate scopes/callers and remain in place. Do not delete a called legacy path.
 Before real copy retain release-specific target-empty/schema/disk proof and the
-accepted original source/rollback point. After copy, successful replay is refused;
-use approved compare/recovery evidence rather than resetting copied rows. Final
+accepted original source/rollback point. After full-business copy, successful replay is refused;
+use approved compare/recovery evidence rather than resetting copied rows. The
+core-user reconciliation mode supports populated targets and repeated synchronization. Final
 source writer freeze/catch-up, <=10-minute full equality, single-writer proof,
 Accounts+Billing coordinated Edge/CNAME cutover and production acceptance remain
 separate stages. Existing UAT dataset reconciliation and full-upgrade/rollback

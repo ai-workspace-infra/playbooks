@@ -131,9 +131,6 @@ def verify_target(spec, require_empty):
         count = native.sql('SELECT ' + ' + '.join('(SELECT count(*) FROM public."' + t + '")'
             for t in transfer['business_tables']), 'account')
         native.require(count == '0', 'Populated target refused; baseline copy never resets or upserts')
-    elif require_empty == 'core_users':
-        native.require(native.sql('SELECT count(*) FROM public.users', 'account') == '0',
-            'Populated target users refused; core-user copy never resets or upserts')
 
 
 def run_private(argv, input=None, env=None, timeout=1860):
@@ -263,7 +260,7 @@ def execute(spec, guard_directory, mode, credentials):
     stage('storage')
     verify_storage()
     stage('target_schema')
-    verify_target(spec, require_empty=('core_users' if mode == 'core_users' else mode != 'compare'))
+    verify_target(spec, require_empty=mode in ('preview', 'copy'))
     stage('registry_storage')
     native.require(native.command(['findmnt', '-nro', 'FSTYPE', '--target', '/dev/shm']) == 'tmpfs',
         'Registry authentication requires private volatile storage')
@@ -283,7 +280,7 @@ def execute(spec, guard_directory, mode, credentials):
         stage('target_recheck')
         native.command(guard)
         verify_storage()
-        verify_target(spec, require_empty=('core_users' if mode == 'core_users' else mode != 'compare'))
+        verify_target(spec, require_empty=mode in ('preview', 'copy'))
         target = 'postgresql://postgres:' + quote(credentials['postgres_password'], safe='') + \
             '@127.0.0.1:5432/account?sslmode=disable'
         execution_name = 'full-business-transfer-' + uuid.uuid4().hex
