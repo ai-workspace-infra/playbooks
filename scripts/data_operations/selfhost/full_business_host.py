@@ -161,6 +161,33 @@ def validate_receipt(receipt, spec, mode, source_identity_sha256):
     native.require(receipt.get('result') == {'preview': 'eligible', 'copy': 'copied', 'compare': 'equal'}[mode] and
         receipt.get('target_writes') is (mode == 'copy') and
         receipt.get('full_business_equal') is (mode != 'preview'), 'Preview/copy/equality receipt mode differs')
+    core = receipt.get('core_users')
+    native.require(isinstance(core, dict) and set(core) == {'source', 'target'},
+        'Core user identity evidence is missing')
+    for side in ('source', 'target'):
+        proof = core[side]
+        native.require(isinstance(proof, dict) and set(proof) ==
+            {'count', 'email_sha256', 'password_hash_sha256', 'email_proxy_sha256'},
+            'Core user identity digest is invalid')
+        if side == 'target' and mode == 'preview':
+            native.require(proof == {'count': 0, 'email_sha256': '',
+                'password_hash_sha256': '', 'email_proxy_sha256': ''},
+                'Preview target core user evidence must be empty')
+        else:
+            native.require(type(proof['count']) is int and proof['count'] > 0 and
+                all(re.fullmatch('[0-9a-f]{64}', proof[key]) for key in
+                    ('email_sha256', 'password_hash_sha256', 'email_proxy_sha256')),
+                'Core user identity digest is invalid')
+    native.require(core['source']['count'] == receipt['user_count'],
+        'Core user count differs from source user count')
+    if mode == 'preview':
+        native.require(core['target']['count'] == 0 and
+            all(core['target'][key] == '' for key in
+                ('email_sha256', 'password_hash_sha256', 'email_proxy_sha256')),
+            'Preview must not claim target core user equality')
+    else:
+        native.require(core['target'] == core['source'],
+            'Core user email, password hash or Proxy UUID differs')
     tables = receipt.get('tables')
     native.require(isinstance(tables, dict), 'Missing per-table business evidence')
     if mode == 'preview':
@@ -178,6 +205,7 @@ def validate_receipt(receipt, spec, mode, source_identity_sha256):
         'billing_schema_sha256', 'migration_version', 'batch_size', 'source_table_count', 'user_count',
         'source_identity_sha256', 'source_snapshot_sha256', 'source_catalog_sha256', 'source_read_only',
         'full_business_equal', 'target_writes', 'database_cutover_approved')}
+    safe['core_users'] = core
     times=[]
     for key in ('snapshot_started_at', 'completed_at'):
         value=receipt.get(key)
