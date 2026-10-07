@@ -151,6 +151,18 @@ class RuntimeOwnerTests(unittest.TestCase):
             self.assertFalse(any(path.name.endswith("inventory.json") for path in root.iterdir()))
             self.assertTrue(Path(env["XCONNECT_RUNTIME_PRIVATE_KEY_FILE"]).exists())
 
+    def test_private_probe_operation_is_bound_to_the_current_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = self.environment(Path(directory))
+            env["XCONNECT_RUNTIME_OPERATION"] = "private_probe_setup"
+            variables = Path(env["XCONNECT_RUNTIME_VARIABLES_FILE"])
+            variables.write_text(json.dumps({
+                "xconnect_lab_runtime_private_probe_address": "10.77.0.1",
+            }))
+            receipt = MODULE.execute(env, FakeRunner())
+            self.assertEqual(receipt["run_id"], "xcl-123-1")
+            self.assertEqual(receipt["operation"], "private_probe_setup")
+
 
 if __name__ == "__main__":
     unittest.main()

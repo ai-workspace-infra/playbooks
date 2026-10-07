@@ -3,7 +3,7 @@
   ansible.builtin.assert:
     that:
       - xconnect_lab_runtime_environment == 'uat'
-      - xconnect_lab_runtime_operation in ['gateway_identity', 'gateway', 'gateway_reconcile', 'one', 'gateway_verify', 'one_verify']
+      - xconnect_lab_runtime_operation in ['gateway_identity', 'gateway', 'gateway_reconcile', 'one', 'gateway_verify', 'one_verify', 'xhttp_verify', 'private_probe_setup', 'private_probe_cleanup']
       - xconnect_lab_runtime_target | trim | length > 0
       - xconnect_lab_runtime_status_timeout_seconds | int > 0
     fail_msg: >-
@@ -107,3 +107,77 @@
           - xconnect_lab_runtime_one_status.rc == 0
         fail_msg: XConnect One service or signed runtime verification failed
   when: xconnect_lab_runtime_operation == 'one_verify'
+
+- name: Validate the exact XHTTP runtime contract inputs
+  ansible.builtin.assert:
+    that:
+      - xconnect_lab_runtime_xhttp_role in ['gateway', 'one']
+      - xconnect_lab_runtime_xhttp_config_path is match('^/[A-Za-z0-9][A-Za-z0-9_./-]*$')
+      - "'..' not in xconnect_lab_runtime_xhttp_config_path"
+      - xconnect_lab_runtime_xhttp_server_name is match('^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$')
+      - xconnect_lab_runtime_xhttp_path is match('^/[A-Za-z0-9._~!$&()*+,;=:@%/-]{1,255}$')
+      - xconnect_lab_runtime_xhttp_mode in ['auto', 'packet-up', 'stream-up']
+      - xconnect_lab_runtime_xhttp_host is match('^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$')
+      - >-
+        xconnect_lab_runtime_xhttp_role == 'gateway' or
+        xconnect_lab_runtime_xhttp_remote_address is match('^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$')
+    fail_msg: XHTTP verification requires an exact reviewed runtime path and transport contract.
+  when: xconnect_lab_runtime_operation == 'xhttp_verify'
+
+- name: Verify the effective XHTTP runtime without changing the host
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/verify_xhttp_runtime.py
+      --role {{ xconnect_lab_runtime_xhttp_role | quote }}
+      --config-path {{ xconnect_lab_runtime_xhttp_config_path | quote }}
+      --remote-address {{ xconnect_lab_runtime_xhttp_remote_address | quote }}
+      --server-name {{ xconnect_lab_runtime_xhttp_server_name | quote }}
+      --xhttp-path {{ xconnect_lab_runtime_xhttp_path | quote }}
+      --xhttp-mode {{ xconnect_lab_runtime_xhttp_mode | quote }}
+      --xhttp-host {{ xconnect_lab_runtime_xhttp_host | quote }}
+    executable: python3
+  register: xconnect_lab_runtime_xhttp_verification
+  changed_when: false
+  no_log: true
+  when: xconnect_lab_runtime_operation == 'xhttp_verify'
+
+- name: Require the exact XHTTP runtime contract
+  ansible.builtin.assert:
+    that:
+      - xconnect_lab_runtime_xhttp_verification.rc == 0
+    fail_msg: Effective XHTTP runtime does not match the reviewed transport contract.
+  when: xconnect_lab_runtime_operation == 'xhttp_verify'
+
+- name: Validate the run-scoped private probe contract
+  ansible.builtin.assert:
+    that:
+      - xconnect_lab_runtime_run_id is match('^xcl-[0-9]+-[0-9]+$')
+      - xconnect_lab_runtime_private_probe_address is match('^[0-9]+(?:\\.[0-9]+){3}$')
+      - xconnect_lab_runtime_private_probe_interface is match('^[A-Za-z0-9_.-]{1,15}$')
+      - xconnect_lab_runtime_private_probe_port | int >= 1024
+      - xconnect_lab_runtime_private_probe_port | int <= 65535
+    fail_msg: Private probe setup and cleanup require one exact same-run private endpoint.
+  when: xconnect_lab_runtime_operation in ['private_probe_setup', 'private_probe_cleanup']
+
+- name: Start the bounded run-scoped private HTTP probe
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/manage_private_probe.sh setup
+      {{ xconnect_lab_runtime_run_id | quote }}
+      {{ xconnect_lab_runtime_private_probe_address | quote }}
+      {{ xconnect_lab_runtime_private_probe_interface | quote }}
+      {{ xconnect_lab_runtime_private_probe_port | int }}
+  register: xconnect_lab_runtime_private_probe_setup
+  changed_when: true
+  when: xconnect_lab_runtime_operation == 'private_probe_setup'
+
+- name: Remove the run-scoped private HTTP probe
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/manage_private_probe.sh cleanup
+      {{ xconnect_lab_runtime_run_id | quote }}
+      {{ xconnect_lab_runtime_private_probe_address | quote }}
+      {{ xconnect_lab_runtime_private_probe_interface | quote }}
+      {{ xconnect_lab_runtime_private_probe_port | int }}
+  changed_when: true
+  when: xconnect_lab_runtime_operation == 'private_probe_cleanup'
