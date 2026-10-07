@@ -45,8 +45,20 @@
       environment:
         NATIVE_DATA_GATE_VERIFIED: "{{ lookup('ansible.builtin.env', 'NATIVE_DATA_GATE_VERIFIED') }}"
       register: full_business_result
-      changed_when: (full_business_result.stdout | from_json).target_writes | bool
+      failed_when: false
+      changed_when: false
       no_log: true
+
+    - name: Expose only an allowlisted failure stage
+      ansible.builtin.set_fact:
+        full_business_failure_stage: "{{ (full_business_result.stdout | from_json).failure_stage if full_business_result.rc != 0 and (full_business_result.stdout | default('') | trim).startswith('{') else 'unclassified' }}"
+      no_log: true
+      when: full_business_result.rc != 0
+
+    - name: Stop on private owner failure with sanitized stage
+      ansible.builtin.fail:
+        msg: "Full-business owner failed at {{ full_business_failure_stage if full_business_failure_stage in ['input', 'writer_guard', 'storage', 'target_schema', 'registry_storage', 'registry_login', 'image_pull', 'image_manifest', 'target_recheck', 'migration', 'receipt', 'final_guard'] else 'unclassified' }}; private output withheld; no cutover authorized"
+      when: full_business_result.rc != 0
 
     - name: Save only reconstructed sanitized business evidence
       ansible.builtin.copy:

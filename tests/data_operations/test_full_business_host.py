@@ -13,6 +13,7 @@ ROOT=Path(__file__).resolve().parents[2]
 OWNER=ROOT/'scripts/data_operations/selfhost'
 sys.path.insert(0,str(OWNER))
 import full_business_host as HOST
+import full_business_target_diagnostic as DIAGNOSTIC
 sys.path.pop(0)
 
 
@@ -57,6 +58,25 @@ def receipt(contract,mode):
 class FullBusinessOwnerTests(unittest.TestCase):
     def setUp(self):
         self.spec=spec();self.credentials=credentials()
+
+    def test_target_diagnostic_reads_only_metadata_and_never_emits_container_names(self):
+        with patch.object(DIAGNOSTIC,'command',return_value='web-saas-postgresql\nweb-saas-app'), \
+             patch.object(DIAGNOSTIC,'sql',side_effect=['170006','1','2026100701:false','53']) as sql, \
+             patch('builtins.print') as output:
+            DIAGNOSTIC.main()
+        data=json.loads(output.call_args.args[0])
+        self.assertEqual(data['active_writer_container_count'],1)
+        self.assertEqual(data['business_table_count'],53)
+        self.assertFalse(data['source_accessed']);self.assertFalse(data['target_writes'])
+        self.assertNotIn('web-saas-app',output.call_args.args[0])
+        for call in sql.call_args_list:
+            self.assertNotIn('FROM public.users',call.args[0])
+
+    def test_target_diagnostic_forces_readonly_transaction(self):
+        with patch.object(DIAGNOSTIC,'command',return_value='17') as command:
+            DIAGNOSTIC.sql('SHOW server_version_num')
+        self.assertEqual(command.call_args.args[0][-1],
+            'BEGIN READ ONLY; SHOW server_version_num; COMMIT;')
 
     def execute(self,mode,fail=False):
         calls=[];configs=[]
@@ -123,6 +143,21 @@ class FullBusinessOwnerTests(unittest.TestCase):
 
     def test_timeout_stops_owned_container_and_removes_registry_config(self):
         self.execute('copy',fail=True)
+        diagnostic=HOST.failure_receipt()
+        self.assertEqual(diagnostic, dict(format=1,result='failed',failure_stage='migration',
+            database_cutover_approved=False))
+        self.assertNotIn('fictional',json.dumps(diagnostic))
+
+    def test_target_preflight_failure_identifies_stage_before_registry_or_source(self):
+        with patch.dict(os.environ,NATIVE_DATA_GATE_VERIFIED='true'), \
+             patch.object(HOST.native,'command'),patch.object(HOST,'verify_storage'), \
+             patch.object(HOST,'verify_target',side_effect=HOST.native.Refused('private-row-and-password')), \
+             patch.object(HOST,'run_private') as private:
+            with self.assertRaises(HOST.native.Refused):
+                HOST.execute(self.spec,OWNER,'preview',self.credentials)
+            private.assert_not_called()
+        self.assertEqual(HOST.failure_receipt()['failure_stage'],'target_schema')
+        self.assertNotIn('private-row',json.dumps(HOST.failure_receipt()))
 
     def test_independent_gate_before_host_or_source(self):
         with patch.dict(os.environ,NATIVE_DATA_GATE_VERIFIED='false'),patch.object(HOST.native,'command') as command:

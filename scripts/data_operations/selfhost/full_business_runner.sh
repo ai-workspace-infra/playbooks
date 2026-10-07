@@ -28,7 +28,7 @@ import full_business_host as host
 receipt=json.loads(pathlib.Path(sys.argv[1]).read_text())
 spec=json.loads(pathlib.Path(sys.argv[2]).read_text())
 host.validate_spec(spec)
-host.validate_receipt(receipt,spec,sys.argv[3])
+host.validate_receipt(receipt,spec,sys.argv[3],receipt['source_identity_sha256'])
 assert receipt['host']=='web-saas-prod' and receipt['database']=='account'
 assert receipt['accounts_commit']==spec['transfer']['accounts_commit']
 assert receipt['image_digest']==spec['transfer']['image_digest']
