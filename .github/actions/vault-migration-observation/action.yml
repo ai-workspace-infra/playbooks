@@ -1,0 +1,62 @@
+name: Observe Vault migration state
+description: Token-free SSH and DNS observation that recommends one reviewed migrate-* stage.
+inputs:
+  contract:
+    description: Validated NodeDeployment JSON path
+    required: true
+  ssh_private_key:
+    description: Path to the prepared one-run SSH credential
+    required: true
+  known_hosts:
+    description: Path to GitOps-pinned SSH host keys
+    required: true
+  vault_addr:
+    description: Public Vault service address used only for conservative DNS comparison
+    required: true
+  backup_config:
+    description: Reviewed spec.backup JSON
+    required: false
+    default: '{}'
+  observation:
+    description: Reviewed spec.migration.observation JSON
+    required: false
+    default: '{}'
+  gateway_state:
+    description: Optional XConnect Gateway state path passed to the shared token-free probe
+    required: false
+    default: ''
+  owner_root:
+    description: Fixed checkout root of the same reviewed Playbooks revision as this action
+    required: true
+outputs:
+  recommended_stage:
+    description: One recommended migrate-* stage, or empty at a manual or terminal gate
+    value: ${{ steps.observe.outputs.recommended_stage }}
+  blocked:
+    description: Manual or terminal gate text when no stage is recommended
+    value: ${{ steps.observe.outputs.blocked }}
+  facts:
+    description: Compact non-secret JSON facts supporting the recommendation
+    value: ${{ steps.observe.outputs.facts }}
+runs:
+  using: composite
+  steps:
+    - name: Observe pinned migration hosts
+      id: observe
+      shell: bash
+      env:
+        NODE_OWNER_ROOT: ${{ inputs.owner_root }}
+        NODE_CONTRACT: ${{ inputs.contract }}
+        SSH_PRIVATE_KEY: ${{ inputs.ssh_private_key }}
+        SSH_KNOWN_HOSTS: ${{ inputs.known_hosts }}
+        VAULT_ADDR: ${{ inputs.vault_addr }}
+        BACKUP_CONFIG: ${{ inputs.backup_config }}
+        OBSERVATION: ${{ inputs.observation }}
+        GATEWAY_STATE: ${{ inputs.gateway_state }}
+      run: |
+        set -euo pipefail
+        python3 "${NODE_OWNER_ROOT}/scripts/node_deploy/vault_migration_observation.py" \
+          --contract "${NODE_CONTRACT}" --key "${SSH_PRIVATE_KEY}" --known-hosts "${SSH_KNOWN_HOSTS}" \
+          --vault-addr "${VAULT_ADDR}" --backup-config "${BACKUP_CONFIG}" \
+          --observation "${OBSERVATION}" --gateway-state "${GATEWAY_STATE}" \
+          --github-output "${GITHUB_OUTPUT}"

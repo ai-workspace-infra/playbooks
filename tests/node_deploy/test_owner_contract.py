@@ -35,6 +35,13 @@ class OwnerContractTests(unittest.TestCase):
         step = next(step for step in action["runs"]["steps"] if step["name"] == "Run the stage action")
         self.assertIn("inputs.action != 'snapshot'", step["if"])
 
+    def test_migration_observation_resolves_only_the_owner_script(self):
+        action = yaml.safe_load((ROOT / ".github/actions/vault-migration-observation/action.yml").read_text())
+        source = "\n".join(step.get("run", "") for step in action["runs"]["steps"])
+        self.assertIn("${NODE_OWNER_ROOT}/scripts/node_deploy/vault_migration_observation.py", source)
+        self.assertNotIn("stage_plan.py", source)
+        self.assertEqual(set(action["outputs"]), {"recommended_stage", "blocked", "facts"})
+
 
 if __name__ == "__main__":
     unittest.main()
