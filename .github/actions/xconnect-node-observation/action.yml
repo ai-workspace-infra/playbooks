@@ -1,0 +1,27 @@
+name: Observe same-run dynamic XConnect nodes
+description: Owner-local Role observes Gateway/One from the IaC lab handoff; never installs or joins nodes.
+inputs:
+  lab_dir: {required: true, description: "Private same-run IaC outputs, handoff, SSH identity and known_hosts directory"}
+  window: {required: true, description: "Resolved 0, 10, 20 or until-expiry observation window"}
+runs:
+  using: composite
+  steps:
+    - name: Set up the owner-local Ansible controller
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! command -v ansible-playbook >/dev/null; then
+          pipx install ansible-core==2.17.7
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        fi
+    - shell: bash
+      env:
+        LAB_DIR: ${{ inputs.lab_dir }}
+        NODE_OBSERVATION_WINDOW_MINUTES: ${{ inputs.window }}
+      run: |
+        set -euo pipefail
+        [[ "$LAB_DIR" == "$RUNNER_TEMP/"* && "$LAB_DIR" != *'/../'* && "$LAB_DIR" != */.. ]] || exit 2
+        test -f "$LAB_DIR/verify.done" || exit 2
+        bash "$GITHUB_ACTION_PATH/../../../scripts/pipeline/validate-xconnect-targets.sh" \
+          "$LAB_DIR" "xcl-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+        timeout 60m bash "$GITHUB_ACTION_PATH/../../../scripts/pipeline/xconnect-node-observation.sh"
