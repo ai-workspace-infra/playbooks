@@ -1,0 +1,60 @@
+---
+- name: Require explicit reviewed image qualification mode
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.env', 'MANAGED_RUNTIME_DRY_RUN') in ['true', 'false']
+      - lookup('ansible.builtin.env', 'MANAGED_RUNTIME_DRY_RUN') == 'true' or lookup('ansible.builtin.env', 'MANAGED_RUNTIME_GATE_VERIFIED') == 'true'
+      - lookup('ansible.builtin.env', 'MANAGED_RUNTIME_SPEC_FILE') | length > 0
+      - lookup('ansible.builtin.env', 'NATIVE_RECEIPT_FILE') | length > 0
+
+- name: Create private qualification helper workspace
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: managed-runtime-
+  register: managed_runtime_workspace
+
+- name: Qualify only transient isolated application containers
+  block:
+    - name: Copy public host helpers
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/scripts/data_operations/selfhost/{{ item }}"
+        dest: "{{ managed_runtime_workspace.path }}/{{ item }}"
+        mode: '0600'
+      loop: [managed_runtime_host.py, native_init_host.py]
+
+    - name: Copy fixed non-secret image specification
+      ansible.builtin.copy:
+        src: "{{ lookup('ansible.builtin.env', 'MANAGED_RUNTIME_SPEC_FILE') }}"
+        dest: "{{ managed_runtime_workspace.path }}/spec.json"
+        mode: '0600'
+
+    - name: Pull or qualify managed standby through registry-only private stdin
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ managed_runtime_workspace.path }}/managed_runtime_host.py"
+          - --spec
+          - "{{ managed_runtime_workspace.path }}/spec.json"
+          - --dry-run
+          - "{{ lookup('ansible.builtin.env', 'MANAGED_RUNTIME_DRY_RUN') }}"
+        stdin: "{{ {'ghcr_username': lookup('ansible.builtin.env', 'GHCR_USERNAME'), 'ghcr_token': lookup('ansible.builtin.env', 'GHCR_TOKEN')} | to_json }}"
+        stdin_add_newline: true
+      environment:
+        MANAGED_RUNTIME_GATE_VERIFIED: "{{ lookup('ansible.builtin.env', 'MANAGED_RUNTIME_GATE_VERIFIED') }}"
+      register: managed_runtime_result
+      changed_when: false
+      no_log: true
+
+    - name: Save sanitized qualification evidence on controller
+      ansible.builtin.copy:
+        content: "{{ managed_runtime_result.stdout | from_json | to_nice_json }}"
+        dest: "{{ lookup('ansible.builtin.env', 'NATIVE_RECEIPT_FILE') }}"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+      no_log: true
+  always:
+    - name: Remove helper workspace after any outcome
+      ansible.builtin.file:
+        path: "{{ managed_runtime_workspace.path }}"
+        state: absent

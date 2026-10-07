@@ -6,7 +6,7 @@ Owner 为 Playbooks `scripts/data_operations/selfhost/managed_runtime_host.py`�
 ## 输入与执行边界
 
 - 非秘密 manifest 同时固定 Accounts 和 Billing 的完整源码 SHA、匹配的 GHCR `sha-<commit>` tag 和 manifest digest；拒绝其他环境、主机、服务、字段及调用方提供的数据库地址或 primary 角色。
-- 实际镜像资格执行需 `MANAGED_RUNTIME_GATE_VERIFIED=true`；默认 preview 只拉取固定镜像、不启动服务。此断言由 Toolkit 审核，后续调用方还须绑定成功资源回执、原始 CMDB、固定 GitOps、同轮 IaC 临时访问与独立审核。当前尚未接入生产调用方。
+- 实际镜像资格执行需 `MANAGED_RUNTIME_GATE_VERIFIED=true`；默认 preview 只拉取固定镜像、不启动服务。此断言由 Toolkit 审核，后续调用方还须绑定成功资源回执、原始 CMDB、固定 GitOps、同轮 IaC 临时访问与本轮生产环境审核。owner action `prod-managed-runtime`、独立 Ansible role 与 canonical CMDB/固定 GitOps/同轮访问守卫已提供，生产调用方尚未接入。这个只读业务边界的短暂镜像检查不读取/写入 DB；初始化/复制的独立数据审核仍单独保留，不能使用镜像资格回执代替。
 - 只接受 stdin 中的 Registry username/token，不接受数据库密码、来源 DSN 或任何 UAT 凭据。复用经过资格验证的私密 tmpfs registry session 并清理。
 - 强制 `standby`、后台关闭、network none、只读根文件系统、所有 capability 移除、no-new-privileges、无端口发布、无挂载、restart=no、CPU/内存/PID 限制。
 - 数据库地址仅为无密码的 `127.0.0.1:1/account` 配置指纹。端口不可用且没有外网，待机服务不得连接 DB；该指纹不能证明实际数据库身份。

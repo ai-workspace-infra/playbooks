@@ -140,5 +140,23 @@ class ManagedRuntimeTests(unittest.TestCase):
             self.assertEqual(HOST.execute(spec(),True,creds)['stage'],'managed_image_preview')
             qualify.assert_not_called()
 
+    def test_action_and_role_canonical_access_without_database_secret(self):
+        root=OWNER.parents[2]
+        action=(root/'.github/actions/prod-managed-runtime/action.yml').read_text()
+        role=(root/'roles/web_saas_managed_runtime_qualification/tasks/main.yml').read_text()
+        runner=(OWNER/'managed_runtime_runner.sh').read_text()
+        playbook=(root/'qualify-web-saas-managed-runtime.yml').read_text()
+        for content in (action,role,runner,playbook):
+            self.assertNotIn('POSTGRES_PASSWORD',content)
+            self.assertNotIn('SUPABASE_CONNECT',content)
+            self.assertNotIn('source_dsn',content)
+        self.assertIn('stdin_add_newline: true',role)
+        self.assertIn('native_access_guard.sh',runner)
+        self.assertIn('[[ "$MANAGED_RUNTIME_DRY_RUN" == true ||',runner)
+        self.assertIn('native_authoritative_cmdb.environment',playbook)
+        self.assertIn('native_writer_guard_host.sh',playbook)
+        self.assertIn('same-run',action)
+        self.assertIn('.database_cutover_approved == false',runner)
+
 
 if __name__=='__main__':unittest.main()
