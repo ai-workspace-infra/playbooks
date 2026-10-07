@@ -5,7 +5,7 @@ set -euo pipefail
 : "${FULL_BUSINESS_SPEC_FILE:?fixed non-secret source/image contract required}"
 : "${FULL_BUSINESS_MODE:?explicit preview/copy/compare/core_users required}"
 : "${NATIVE_RECEIPT_FILE:?same-run receipt required}"
-[[ "$FULL_BUSINESS_MODE" == preview || "$FULL_BUSINESS_MODE" == copy || "$FULL_BUSINESS_MODE" == compare ]]
+[[ "$FULL_BUSINESS_MODE" == preview || "$FULL_BUSINESS_MODE" == copy || "$FULL_BUSINESS_MODE" == compare || "$FULL_BUSINESS_MODE" == core_users ]]
 [[ "${NATIVE_DATA_GATE_VERIFIED:-}" == true ]]
 [[ "$NATIVE_RECEIPT_FILE" == "$RUNNER_TEMP/prod-full-business-receipt.json" && ! -e "$NATIVE_RECEIPT_FILE" ]] || exit 2
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
