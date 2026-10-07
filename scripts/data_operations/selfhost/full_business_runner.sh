@@ -3,7 +3,7 @@
 set -euo pipefail
 : "${RUNNER_TEMP:?private runner directory required}"
 : "${FULL_BUSINESS_SPEC_FILE:?fixed non-secret source/image contract required}"
-: "${FULL_BUSINESS_MODE:?explicit preview/copy/compare required}"
+: "${FULL_BUSINESS_MODE:?explicit preview/copy/compare/core_users required}"
 : "${NATIVE_RECEIPT_FILE:?same-run receipt required}"
 [[ "$FULL_BUSINESS_MODE" == preview || "$FULL_BUSINESS_MODE" == copy || "$FULL_BUSINESS_MODE" == compare ]]
 [[ "${NATIVE_DATA_GATE_VERIFIED:-}" == true ]]
