@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import base64
+import hashlib
 import ipaddress
 import json
 import os
@@ -37,12 +37,12 @@ def target(value: str) -> str:
         raise ContractError("XCONNECT_RUNTIME_TARGET must be one exact host")
     try:
         address = ipaddress.ip_address(value)
-        if address.is_unspecified or address.is_multicast:
+        if address.is_unspecified or address.is_multicast or address.is_loopback or address.is_link_local:
             raise ContractError("XCONNECT_RUNTIME_TARGET is not routable")
         return value
     except ValueError:
         pass
-    if (len(value) > 253 or not re.fullmatch(
+    if (value.lower().rstrip(".") == "localhost" or len(value) > 253 or not re.fullmatch(
             r"(?=.{1,253}\.?$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
             r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", value)):
         raise ContractError("XCONNECT_RUNTIME_TARGET must be one exact IPv4 or DNS host")
@@ -74,7 +74,7 @@ def load_variables(path: Path) -> dict:
     if not isinstance(variables, dict):
         raise ContractError("XCONNECT_RUNTIME_VARIABLES_FILE must contain a JSON object")
     forbidden = {name for name in variables if re.search(
-        r"terraform|cloudflare|aws_(?:access|secret|session)|vault_(?:token|addr)", name, re.I)}
+        r"^(?:ansible_|terraform)|cloudflare|aws_(?:access|secret|session)|vault_(?:token|addr)", name, re.I)}
     if forbidden:
         raise ContractError("host Role variables contain a forbidden cloud or control-plane key")
     return variables
@@ -161,7 +161,6 @@ def execute(
         "operation": operation,
         "target": exact_target,
         "host_key_fingerprint": fingerprint,
-        "variables_sha256": hashlib.sha256(variables_path.read_bytes()).hexdigest(),
         "status": "completed",
     }
     receipt_path.write_text(json.dumps(receipt, separators=(",", ":")), encoding="utf-8")

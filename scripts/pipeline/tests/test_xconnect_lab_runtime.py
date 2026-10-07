@@ -81,6 +81,10 @@ class RuntimeOwnerTests(unittest.TestCase):
             env["XCONNECT_RUNTIME_TARGET"] = "one-uat.svc.plus"
             with self.assertRaisesRegex(MODULE.ContractError, "does not contain"):
                 MODULE.execute(env, FakeRunner(known=False))
+            for unsafe in ("localhost", "127.0.0.1", "169.254.10.2"):
+                env["XCONNECT_RUNTIME_TARGET"] = unsafe
+                with self.subTest(target=unsafe), self.assertRaises(MODULE.ContractError):
+                    MODULE.execute(env, FakeRunner())
 
     def test_cloud_variables_and_public_secrets_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -88,6 +92,9 @@ class RuntimeOwnerTests(unittest.TestCase):
             env = self.environment(root)
             variables = Path(env["XCONNECT_RUNTIME_VARIABLES_FILE"])
             variables.write_text('{"terraform_state":"forbidden"}')
+            with self.assertRaisesRegex(MODULE.ContractError, "forbidden cloud"):
+                MODULE.execute(env, FakeRunner())
+            variables.write_text('{"ansible_host":"redirected.example"}')
             with self.assertRaisesRegex(MODULE.ContractError, "forbidden cloud"):
                 MODULE.execute(env, FakeRunner())
             variables.write_text('{}')

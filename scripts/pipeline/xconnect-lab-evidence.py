@@ -46,11 +46,13 @@ def exact_host(value: object, label: str) -> str:
     if not isinstance(value, str) or any(mark in value for mark in ("*", "?", "[", "]", ",", "/", " ")):
         raise ContractError(f"{label} must be one exact host")
     try:
-        ipaddress.ip_address(value)
+        address = ipaddress.ip_address(value)
+        if address.is_unspecified or address.is_multicast or address.is_loopback or address.is_link_local:
+            raise ContractError(f"{label} is not a routable exact target")
         return value
     except ValueError:
         pass
-    if not re.fullmatch(
+    if value.lower().rstrip(".") == "localhost" or not re.fullmatch(
             r"(?=.{1,253}\.?$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
             r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", value):
         raise ContractError(f"{label} must be one exact IPv4 or DNS host")
