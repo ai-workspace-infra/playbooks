@@ -64,10 +64,9 @@ def node_secret(vault_response: dict, domain: str, node_id: str) -> dict:
         secret,
     )
     for candidate in candidates:
-        if isinstance(candidate, dict) and any(
-            candidate.get(name)
-            for name in ("public_ipv4", "ip", "host", "SSH_PASSWORD", "password", "ansible_password")
-        ):
+        # The first explicit record wins. An incomplete domain record must
+        # fail rather than silently choosing another node/root connection.
+        if isinstance(candidate, dict):
             return candidate
     fail(f"Vault record has no connection data for non-IaC node {node_id}")
 

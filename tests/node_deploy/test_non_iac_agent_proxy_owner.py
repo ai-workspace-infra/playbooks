@@ -38,6 +38,18 @@ def topology(environment: str = "uat", source: str | None = "vault") -> dict:
 
 
 class InventoryOwnerTest(unittest.TestCase):
+    def test_incomplete_domain_record_cannot_fall_back_to_another_connection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            response = {"data": {"data": {
+                "ph-xconnect.onwalk.net": {"metadata": "selected-but-incomplete"},
+                "ph-node": {"ip": "192.0.2.77", "user": "root", "password": "runtime-only"},
+            }}}
+            process, inventory, output, _ = self.run_adapter(Path(temporary), response)
+            self.assertNotEqual(process.returncode, 0)
+            self.assertFalse(inventory.exists())
+            self.assertFalse(output.exists())
+            self.assertNotIn("runtime-only", process.stdout + process.stderr)
+
     def run_adapter(self, directory: Path, response: dict, *, environment: str = "uat", node="ph-node"):
         topology_file = directory / "topology.yml"
         response_file = directory / "vault.json"
