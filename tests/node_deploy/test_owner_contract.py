@@ -30,6 +30,11 @@ class OwnerContractTests(unittest.TestCase):
         self.assertNotIn("auth/jwt/login", source)
         self.assertNotIn("signed_key", source)
 
+    def test_snapshot_is_not_replayed_as_a_raft_operator_action(self):
+        action = yaml.safe_load((ROOT / ".github/actions/vault-node-stage/action.yml").read_text())
+        step = next(step for step in action["runs"]["steps"] if step["name"] == "Run the stage action")
+        self.assertIn("inputs.action != 'snapshot'", step["if"])
+
 
 if __name__ == "__main__":
     unittest.main()

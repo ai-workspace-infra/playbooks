@@ -131,7 +131,9 @@ runs:
           --title "Before ${DEPLOY_STAGE}"
 
     - name: Run the stage action
-      if: ${{ inputs.action != '' }}
+      # snapshot is executed by the preceding owner script after the scoped
+      # backup credentials are loaded; only Raft operator actions run here.
+      if: ${{ inputs.action != '' && inputs.action != 'snapshot' }}
       shell: bash
       env:
         STAGE_ACTION: ${{ inputs.action }}
