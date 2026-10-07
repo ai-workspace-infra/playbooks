@@ -32,8 +32,12 @@ The role runs a reviewed prebuilt binary; it never builds an image on the target
 
 The sanitized receipt is `prod-full-business-receipt.json` in RUNNER_TEMP. It
 contains source connection/snapshot/catalog hashes, exact image/schema identity,
-UTC snapshot times, all53 row/digest proofs and mode flags. Arbitrary extra stdout
-fields are removed. Preview cannot impersonate copy/compare. Every receipt keeps
+UTC snapshot times, and a `core_users` proof covering the latest email-keyed
+user count plus email, password-hash and authoritative Proxy UUID digests for
+both source and target. No user rows or password material are emitted. Dynamic
+business-table proofs remain available for the data-owner operation, but the
+Cloudflare cutover contract consumes the core-user proof only. Arbitrary extra
+stdout fields are removed. Preview cannot impersonate copy/compare. Every receipt keeps
 `source_writers_paused=false`, `final_catchup_complete=false` and
 `database_cutover_approved=false`: baseline/point-in-time equality cannot authorize
 a primary switch while source applications/background writers remain active.

@@ -50,6 +50,9 @@ def receipt(contract,mode):
         migration_version=2026100701,batch_size=1000,source_identity_sha256=source_identity(),
         source_snapshot_sha256='e'*64,source_catalog_sha256='f'*64,source_read_only=True,source_table_count=44,
         user_count=1,full_business_equal=mode!='preview',target_writes=mode=='copy',database_cutover_approved=False,
+        core_users=dict(source=dict(count=1,email_sha256='2'*64,password_hash_sha256='3'*64,email_proxy_sha256='4'*64),
+            target=dict(count=0,email_sha256='',password_hash_sha256='',email_proxy_sha256='') if mode=='preview' else
+            dict(count=1,email_sha256='2'*64,password_hash_sha256='3'*64,email_proxy_sha256='4'*64)),
         snapshot_started_at='2026-10-07T00:00:00Z',completed_at='2026-10-07T00:01:00Z',
         tables={} if mode=='preview' else {t:dict(rows=1 if t=='users' else 0,sha256='1'*64)
             for t in contract['transfer']['business_tables']})
