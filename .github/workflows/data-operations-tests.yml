@@ -1,10 +1,10 @@
 name: Data Operations Owner Contracts
 on:
   pull_request:
-    paths: [.github/actions/prod-native-standby/**, .github/actions/prod-native-init/**, .github/actions/prod-native-billing-upgrade/**, .github/actions/prod-full-business/**, scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_native_standby/**, roles/web_saas_native_init/**, roles/web_saas_native_billing_upgrade/**, roles/web_saas_full_business_transfer/**, roles/web_saas_release_upgrade/**, setup-web-saas-native-standby.yml, initialize-web-saas-native.yml, upgrade-web-saas-native-billing.yml, transfer-web-saas-full-business.yml, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
+    paths: [.github/actions/prod-native-standby/**, .github/actions/prod-native-init/**, .github/actions/prod-native-billing-upgrade/**, .github/actions/prod-full-business/**, .github/actions/prod-managed-runtime/**, scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_native_standby/**, roles/web_saas_native_init/**, roles/web_saas_managed_runtime_qualification/**, roles/web_saas_native_billing_upgrade/**, roles/web_saas_full_business_transfer/**, roles/web_saas_release_upgrade/**, setup-web-saas-native-standby.yml, initialize-web-saas-native.yml, qualify-web-saas-managed-runtime.yml, upgrade-web-saas-native-billing.yml, transfer-web-saas-full-business.yml, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
   push:
     branches: [main, feature/release-upgrade-role]
-    paths: [.github/actions/prod-native-standby/**, .github/actions/prod-native-init/**, .github/actions/prod-native-billing-upgrade/**, .github/actions/prod-full-business/**, scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_native_standby/**, roles/web_saas_native_init/**, roles/web_saas_native_billing_upgrade/**, roles/web_saas_full_business_transfer/**, roles/web_saas_release_upgrade/**, setup-web-saas-native-standby.yml, initialize-web-saas-native.yml, upgrade-web-saas-native-billing.yml, transfer-web-saas-full-business.yml, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
+    paths: [.github/actions/prod-native-standby/**, .github/actions/prod-native-init/**, .github/actions/prod-native-billing-upgrade/**, .github/actions/prod-full-business/**, .github/actions/prod-managed-runtime/**, scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_native_standby/**, roles/web_saas_native_init/**, roles/web_saas_managed_runtime_qualification/**, roles/web_saas_native_billing_upgrade/**, roles/web_saas_full_business_transfer/**, roles/web_saas_release_upgrade/**, setup-web-saas-native-standby.yml, initialize-web-saas-native.yml, qualify-web-saas-managed-runtime.yml, upgrade-web-saas-native-billing.yml, transfer-web-saas-full-business.yml, web-saas-release-upgrade.yml, web-saas-data-operations.yml, tests/test_web_saas_*roles.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
 permissions:
   contents: read
 jobs:
@@ -52,6 +52,7 @@ jobs:
           ansible-playbook xconnect-lab-runtime.yml --syntax-check
           ansible-playbook setup-web-saas-native-standby.yml --syntax-check
           ansible-playbook initialize-web-saas-native.yml --syntax-check
+          ansible-playbook qualify-web-saas-managed-runtime.yml --syntax-check
           ansible-playbook upgrade-web-saas-native-billing.yml --syntax-check
           ansible-playbook transfer-web-saas-full-business.yml --syntax-check
           ansible-playbook tests/data_operations/selfhost/native_standby_credentials.yml -i localhost,
@@ -180,3 +181,37 @@ jobs:
           PGPORT: '5432'
           PGUSER: postgres
           PGPASSWORD: postgres
+
+  managed-runtime-container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-services/accounts
+          ref: fabe68a85b4d90826dccdfe6a2116ef025f475d4
+          path: fixture-runtime-accounts
+      - uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-services/billing-service
+          ref: f11e875f74cbe0154e49f6310b6697eff65f731e
+          path: fixture-runtime-billing
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.1'
+          cache-dependency-path: |
+            fixture-runtime-accounts/go.sum
+            fixture-runtime-billing/go.sum
+      - name: Build fixed source service packages only for disposable qualification
+        working-directory: fixture-runtime-accounts
+        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/managed-fixture-accounts" ./cmd/accountsvc
+      - name: Build fixed source Billing package only for disposable qualification
+        working-directory: fixture-runtime-billing
+        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/managed-fixture-billing" ./cmd/billing-service
+      - name: Qualify actual standalone services with the owner standby launcher
+        run: python3 tests/data_operations/selfhost/managed_runtime_container_test.py
+        env:
+          ACCOUNTS_CHECKOUT: ${{ github.workspace }}/fixture-runtime-accounts
+          BILLING_CHECKOUT: ${{ github.workspace }}/fixture-runtime-billing
+          ACCOUNTS_BINARY: ${{ runner.temp }}/managed-fixture-accounts
+          BILLING_BINARY: ${{ runner.temp }}/managed-fixture-billing
