@@ -7,11 +7,17 @@ on:
   pull_request:
     paths:
       - "scripts/pipeline/**"
+      - "scripts/node_deploy/**"
+      - "tests/node_deploy/**"
+      - ".github/actions/setup-deployment-runner/**"
       - ".github/workflows/pipeline-scripts.yml"
   push:
     branches: [main]
     paths:
       - "scripts/pipeline/**"
+      - "scripts/node_deploy/**"
+      - "tests/node_deploy/**"
+      - ".github/actions/setup-deployment-runner/**"
 
 permissions:
   contents: read
@@ -29,6 +35,8 @@ jobs:
             bash -n "$f"
           done
           shellcheck -S error scripts/pipeline/*.sh scripts/pipeline/lib/*.sh scripts/pipeline/tests/*.sh
+          bash -n .github/actions/setup-deployment-runner/scripts/setup.sh scripts/node_deploy/*.sh
+          python3 -m py_compile scripts/node_deploy/*.py
 
       - name: Entry points are executable
         run: |
@@ -48,3 +56,5 @@ jobs:
             bash "$t"
             echo "::endgroup::"
           done
+          python3 -m pip install --disable-pip-version-check 'pyyaml==6.0.2'
+          python3 -m unittest discover -s tests/node_deploy -p 'test_*.py' -v
