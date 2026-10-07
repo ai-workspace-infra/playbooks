@@ -8,6 +8,24 @@ on:
 permissions:
   contents: read
 jobs:
+  core-users-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-services/accounts
+          ref: eec7905d6f92f0403187a9be538f4cc504fd3f01
+          path: fixture-core-accounts
+      - uses: actions/setup-go@v6
+        with: {go-version: '1.25.1', cache-dependency-path: fixture-core-accounts/go.sum}
+      - name: Build the fixed core-user CLI for qualification only
+        working-directory: fixture-core-accounts
+        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/core-migratectl" ./cmd/migratectl
+      - name: Exercise owner arguments against the real CLI without database credentials
+        run: python3 tests/data_operations/selfhost/core_users_cli_contract_test.py
+        env:
+          MIGRATECTL_BIN: ${{ runner.temp }}/core-migratectl
   data-volume-linux:
     runs-on: ubuntu-latest
     steps:
