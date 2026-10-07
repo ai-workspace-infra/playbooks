@@ -229,6 +229,7 @@ class FullBusinessOwnerTests(unittest.TestCase):
         self.assertIn('ANSIBLE_PIPELINING=true',runner);self.assertIn('native_access_guard.sh',runner)
         self.assertIn('test -s "$NATIVE_RECEIPT_FILE"',runner)
         self.assertIn('FULL_BUSINESS_MODE" == core_users',runner)
+        self.assertIn("FULL_BUSINESS_MODE') in ['preview', 'copy', 'compare', 'core_users']",role)
         for bad in ('gcloud','terraform','createdb','pg_dump','--env-file'):self.assertNotIn(bad,runner)
         action=(ROOT/'.github/actions/prod-full-business/action.yml').read_text()
         self.assertIn('source_dsn:',action);self.assertNotIn('workflow_dispatch',action)
