@@ -27,7 +27,7 @@ jobs:
           set -euo pipefail
           while IFS= read -r file; do bash -n "$file"; done < <(git ls-files -co --exclude-standard scripts/pipeline | grep -E '\.sh$')
           for action in .github/actions/*/action.yml; do yq -e '.name != null and .runs.using == "composite"' "$action" >/dev/null; done
-          bash -n .github/actions/setup-deployment-runner/scripts/setup.sh scripts/node_deploy/*.sh
+          bash -n .github/actions/setup-deployment-runner/scripts/setup.sh .github/actions/setup-node-stage-runner/scripts/setup.sh scripts/node_deploy/*.sh
           python3 -m py_compile scripts/node_deploy/*.py
       - name: Run node deployment owner behavior and contract tests
         run: |

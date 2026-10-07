@@ -42,6 +42,12 @@ class OwnerContractTests(unittest.TestCase):
         self.assertNotIn("stage_plan.py", source)
         self.assertEqual(set(action["outputs"]), {"recommended_stage", "blocked", "facts"})
 
+    def test_node_stage_runner_keeps_exact_runtime_defaults(self):
+        action = yaml.safe_load((ROOT / ".github/actions/setup-node-stage-runner/action.yml").read_text())
+        self.assertEqual(action["inputs"]["pyyaml_version"]["default"], "6.0.2")
+        self.assertEqual(action["inputs"]["ansible_core_version"]["default"], "2.17.14")
+        self.assertEqual(action["inputs"]["ansible_posix_version"]["default"], "2.1.0")
+
 
 if __name__ == "__main__":
     unittest.main()
