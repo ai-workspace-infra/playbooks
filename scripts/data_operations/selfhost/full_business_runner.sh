@@ -5,7 +5,7 @@ set -euo pipefail
 : "${FULL_BUSINESS_SPEC_FILE:?fixed non-secret source/image contract required}"
 : "${FULL_BUSINESS_MODE:?explicit preview/copy/compare/core_users required}"
 : "${NATIVE_RECEIPT_FILE:?same-run receipt required}"
-[[ "$FULL_BUSINESS_MODE" == preview || "$FULL_BUSINESS_MODE" == copy || "$FULL_BUSINESS_MODE" == compare || "$FULL_BUSINESS_MODE" == core_users ]]
+[[ "$FULL_BUSINESS_MODE" == preview || "$FULL_BUSINESS_MODE" == copy || "$FULL_BUSINESS_MODE" == compare || "$FULL_BUSINESS_MODE" == core_users || "$FULL_BUSINESS_MODE" == core_users_compare ]]
 [[ "${NATIVE_DATA_GATE_VERIFIED:-}" == true ]]
 [[ "$NATIVE_RECEIPT_FILE" == "$RUNNER_TEMP/prod-full-business-receipt.json" && ! -e "$NATIVE_RECEIPT_FILE" ]] || exit 2
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,6 +33,6 @@ assert receipt['host']=='web-saas-prod' and receipt['database']=='account'
 assert receipt['accounts_commit']==spec['transfer']['accounts_commit']
 assert receipt['image_digest']==spec['transfer']['image_digest']
 assert receipt['business_tables']==spec['transfer']['business_tables']
-assert receipt['writers_paused'] is True and receipt['independent_disk_verified'] is True
+assert receipt['writers_paused'] is (sys.argv[3] != 'core_users_compare') and receipt['independent_disk_verified'] is True
 assert receipt['source_writers_paused'] is False and receipt['final_catchup_complete'] is False
 PY

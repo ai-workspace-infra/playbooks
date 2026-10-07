@@ -1,0 +1,21 @@
+---
+- name: Read-only PROD Web SaaS availability
+  hosts: web-saas-prod
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Probe containers, reconciliation, HTTPS, API and database
+      ansible.builtin.script: scripts/data_operations/selfhost/availability_host.py
+      args:
+        executable: python3
+      register: availability
+      changed_when: false
+      no_log: true
+    - name: Retain sanitized availability receipt on caller
+      ansible.builtin.copy:
+        content: "{{ availability.stdout | from_json | to_nice_json }}"
+        dest: "{{ lookup('ansible.builtin.env', 'AVAILABILITY_RECEIPT_FILE') }}"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+      no_log: true

@@ -47,5 +47,6 @@
     - name: Refuse active writers or reconcilers before full-business transfer
       ansible.builtin.script: scripts/data_operations/selfhost/native_writer_guard_host.sh
       changed_when: false
+      when: lookup('ansible.builtin.env', 'FULL_BUSINESS_MODE') != 'core_users_compare'
   roles:
     - roles/web_saas_full_business_transfer
