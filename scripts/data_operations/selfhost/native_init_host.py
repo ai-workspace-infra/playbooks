@@ -50,9 +50,22 @@ def read_credentials():
     return credentials
 
 
+def validate_registry_credentials(credentials):
+    require(isinstance(credentials, dict) and set(credentials) == {'ghcr_username', 'ghcr_token'} and
+            all(isinstance(v, str) and v and not any(c in v for c in '\r\n\x00')
+                for v in credentials.values()) and
+            re.fullmatch('[A-Za-z0-9][A-Za-z0-9_-]{0,63}', credentials['ghcr_username']),
+            'Private registry credentials are incomplete')
+
+
 @contextmanager
 def registry_session(credentials):
-    validate_credentials(credentials)
+    # Target tools retain their strict three-field contract. Runtime image
+    # qualification never asks for or accepts a database password.
+    if isinstance(credentials, dict) and 'postgres_password' in credentials:
+        validate_credentials(credentials)
+    else:
+        validate_registry_credentials(credentials)
     require(command(['findmnt', '-nro', 'FSTYPE', '--target', '/dev/shm']) == 'tmpfs',
             'Registry authentication requires private volatile storage')
     with tempfile.TemporaryDirectory(prefix='native-registry-', dir='/dev/shm') as directory:
