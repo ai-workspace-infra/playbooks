@@ -1,0 +1,26 @@
+---
+# Fail closed before any service, credential, file or network task.
+- name: Validate explicit database operation
+  ansible.builtin.assert:
+    that:
+      - postgres_exporter_operation in ['inspect', 'roles', 'bootstrap', 'engine_reconfigure']
+      - not (postgres_exporter_allow_rotation | bool)
+      - postgres_exporter_operation != 'engine_reconfigure' or (postgres_exporter_allow_engine_change | bool)
+      - postgres_exporter_operation != 'bootstrap' or (postgres_exporter_target_absent_confirmed | bool)
+    fail_msg: "Explicit operation required; see contracts/database-provision-v1/COMPATIBILITY.md. Rotate/rebuild/delete/cutover remain paused."
+
+- name: Reject legacy persistent secret transport in strict mode
+  ansible.builtin.assert:
+    that:
+      - not (postgres_exporter_strict_secret_transport | bool)
+    fail_msg: "Legacy env/password/script transport is not strict-safe; controlled adapter required."
+  when: postgres_exporter_operation in ['bootstrap', 'engine_reconfigure']
+
+- name: Separate database role and grant management
+  ansible.builtin.include_tasks: roles.yml
+  when: postgres_exporter_operation == 'roles'
+
+- name: Keep legacy engine outside contract executor
+  ansible.builtin.fail:
+    msg: "Contract engine adapter pending; legacy main remains separate and is not strict-safe."
+  when: postgres_exporter_operation in ['bootstrap', 'engine_reconfigure']
