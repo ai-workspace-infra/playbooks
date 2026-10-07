@@ -35,6 +35,8 @@ jobs:
           python3 -m unittest discover -s tests/node_deploy -p 'test_*.py' -v
       - name: Falsify dynamic target and cleanup contracts
         run: |
-          bash scripts/pipeline/tests/action-metadata-test.sh .github/actions/k6-performance/action.yml .github/actions/service-probes/action.yml .github/actions/xconnect-node-observation/action.yml .github/actions/xconnect-network-bootstrap/action.yml
+          bash scripts/pipeline/tests/action-metadata-test.sh .github/actions/k6-performance/action.yml .github/actions/service-probes/action.yml .github/actions/xconnect-node-observation/action.yml .github/actions/xconnect-network-bootstrap/action.yml .github/actions/xconnect-lab-runtime/action.yml
           bash scripts/pipeline/tests/xconnect-dynamic-targets-test.sh
           python3 scripts/pipeline/tests/test_xconnect_network_bootstrap.py -v
+          python3 scripts/pipeline/tests/test_xconnect_lab_runtime.py -v
+          python3 -m unittest tests.test_xconnect_lab_runtime_role -v
