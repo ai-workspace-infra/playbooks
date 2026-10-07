@@ -1,0 +1,82 @@
+name: Restore Caddy certificate material
+description: Validate an authorized Vault response and restore PEM through the Playbooks owner Role.
+inputs:
+  inventory_file:
+    description: Private controller-provided Ansible inventory.
+    required: true
+  vault_response_file:
+    description: Private response file produced by the controller's Vault authorization.
+    required: true
+  vault_http_status:
+    description: HTTP status returned by the controller's exact Vault read.
+    required: true
+  target:
+    description: Exact host selected by the controller matrix.
+    required: true
+  domain_tls_directory:
+    description: Approved /etc/xcontrol/tls/<domain> destination.
+    required: true
+  deploy_key_file:
+    description: Private runtime deploy key used by Ansible.
+    required: true
+  renew_margin_days:
+    description: Skip restore inside this certificate renewal window.
+    required: false
+    default: '14'
+outputs:
+  restore_required:
+    description: Whether complete, sufficiently valid material was restored.
+    value: ${{ steps.plan.outputs.restore_required }}
+  reason:
+    description: Non-secret planning outcome.
+    value: ${{ steps.plan.outputs.reason }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare private Role variables
+      id: plan
+      shell: bash
+      env:
+        INPUT_VAULT_RESPONSE_FILE: ${{ inputs.vault_response_file }}
+        INPUT_VAULT_HTTP_STATUS: ${{ inputs.vault_http_status }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_DOMAIN_TLS_DIRECTORY: ${{ inputs.domain_tls_directory }}
+        INPUT_RENEW_MARGIN_DAYS: ${{ inputs.renew_margin_days }}
+      run: |
+        set -euo pipefail
+        owner_root="$(cd "${GITHUB_ACTION_PATH}/../../.." && pwd -P)"
+        vars_file="${RUNNER_TEMP}/caddy-restore-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}.json"
+        rm -f -- "${vars_file}"
+        python3 "${owner_root}/scripts/node_deploy/caddy_restore_plan.py" \
+          --vault-response "${INPUT_VAULT_RESPONSE_FILE}" \
+          --http-status "${INPUT_VAULT_HTTP_STATUS}" \
+          --target "${INPUT_TARGET}" \
+          --directory "${INPUT_DOMAIN_TLS_DIRECTORY}" \
+          --margin-days "${INPUT_RENEW_MARGIN_DAYS}" \
+          --vars-file "${vars_file}" \
+          --github-output "${GITHUB_OUTPUT}"
+    - name: Restore PEM with the owner Role
+      if: ${{ steps.plan.outputs.restore_required == 'true' }}
+      shell: bash
+      env:
+        INPUT_INVENTORY_FILE: ${{ inputs.inventory_file }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_DEPLOY_KEY_FILE: ${{ inputs.deploy_key_file }}
+        RESTORE_VARS_FILE: ${{ steps.plan.outputs.vars_file }}
+      run: |
+        set -euo pipefail
+        owner_root="$(cd "${GITHUB_ACTION_PATH}/../../.." && pwd -P)"
+        export ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPersist=60s -o IdentityFile=${INPUT_DEPLOY_KEY_FILE} -o PreferredAuthentications=publickey,password -o StrictHostKeyChecking=no"
+        ansible-playbook \
+          -i "${INPUT_INVENTORY_FILE}" \
+          "${owner_root}/caddy_certificate_restore.yml" \
+          --limit "${INPUT_TARGET}" \
+          -e "@${RESTORE_VARS_FILE}"
+    - name: Remove private Role variables
+      if: ${{ always() }}
+      shell: bash
+      env:
+        RESTORE_VARS_FILE: ${{ steps.plan.outputs.vars_file }}
+      run: |
+        rm -f -- "${RESTORE_VARS_FILE}"
+        rm -f -- "${RUNNER_TEMP}/caddy-restore-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}.json"

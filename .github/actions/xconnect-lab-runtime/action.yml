@@ -1,0 +1,59 @@
+name: Execute an XConnect lab host operation
+description: Run one reviewed XConnect Gateway or One Role operation against an exact trusted UAT target.
+inputs:
+  owner-sha:
+    description: Exact reviewed Playbooks commit SHA containing this action.
+    required: true
+  operation:
+    description: Explicit host operation owned by xconnect_lab_runtime.
+    required: true
+  target:
+    description: Exact reviewed IPv4 address or DNS host; patterns and discovery are rejected.
+    required: true
+  ssh-user:
+    description: Exact reviewed remote SSH user.
+    required: true
+  private-key-file:
+    description: Private SSH key file below RUNNER_TEMP supplied by Toolkit.
+    required: true
+  known-hosts-file:
+    description: Reviewed known_hosts file below RUNNER_TEMP containing the exact target.
+    required: true
+  variables-file:
+    description: Private JSON Role variables file below RUNNER_TEMP.
+    required: true
+  receipt-file:
+    description: Sanitized owner receipt destination below RUNNER_TEMP.
+    required: true
+outputs:
+  run_id:
+    description: Current GitHub run and attempt bound to the receipt.
+    value: ${{ steps.runtime.outputs.run_id }}
+  owner_sha:
+    description: Exact Playbooks owner commit bound to the receipt.
+    value: ${{ steps.runtime.outputs.owner_sha }}
+  operation:
+    description: Completed Playbooks operation.
+    value: ${{ steps.runtime.outputs.operation }}
+  target:
+    description: Exact target accepted by the owner.
+    value: ${{ steps.runtime.outputs.target }}
+  host_key_fingerprint:
+    description: Trusted SSH host key fingerprint used for the operation.
+    value: ${{ steps.runtime.outputs.host_key_fingerprint }}
+runs:
+  using: composite
+  steps:
+    - id: runtime
+      shell: bash
+      env:
+        XCONNECT_RUNTIME_OWNER_SHA: ${{ inputs.owner-sha }}
+        XCONNECT_RUNTIME_ACTION_REF: ${{ github.action_ref }}
+        XCONNECT_RUNTIME_OPERATION: ${{ inputs.operation }}
+        XCONNECT_RUNTIME_TARGET: ${{ inputs.target }}
+        XCONNECT_RUNTIME_SSH_USER: ${{ inputs.ssh-user }}
+        XCONNECT_RUNTIME_PRIVATE_KEY_FILE: ${{ inputs.private-key-file }}
+        XCONNECT_RUNTIME_KNOWN_HOSTS_FILE: ${{ inputs.known-hosts-file }}
+        XCONNECT_RUNTIME_VARIABLES_FILE: ${{ inputs.variables-file }}
+        XCONNECT_RUNTIME_RECEIPT_FILE: ${{ inputs.receipt-file }}
+      run: python3 "$GITHUB_ACTION_PATH/../../../scripts/pipeline/xconnect-lab-runtime.py"

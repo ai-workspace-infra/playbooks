@@ -10,7 +10,7 @@ class XConnectLabRuntimeRoleContractTests(unittest.TestCase):
     def test_role_is_host_service_only_and_uat_only(self):
         source = (ROLE / 'tasks/main.yml').read_text()
         self.assertIn("xconnect_lab_runtime_environment == 'uat'", source)
-        self.assertIn("'gateway_identity', 'gateway', 'one', 'gateway_verify', 'one_verify'", source)
+        self.assertIn("'gateway_identity', 'gateway', 'gateway_reconcile', 'one', 'gateway_verify', 'one_verify'", source)
         self.assertNotIn('terraform', source)
         self.assertNotIn('cloudflare', source)
         self.assertNotIn('aws ', source)
@@ -21,6 +21,7 @@ class XConnectLabRuntimeRoleContractTests(unittest.TestCase):
         self.assertIn('name: vhosts/xconnect_gateway', source)
         self.assertIn('name: vhosts/xconnect_one', source)
         self.assertIn('tasks_from: identity', source)
+        self.assertIn("xconnect_lab_runtime_operation == 'gateway_reconcile'", source)
 
     def test_verification_uses_fixed_status_commands_and_no_credentials(self):
         source = (ROLE / 'tasks/main.yml').read_text()
@@ -38,4 +39,3 @@ class XConnectLabRuntimeRoleContractTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

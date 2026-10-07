@@ -1,0 +1,224 @@
+---
+- name: Verify the exact XConnect One data-plane endpoint
+  hosts: xconnect_one
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Validate reviewed One evidence inputs
+      ansible.builtin.assert:
+        that:
+          - xconnect_evidence_environment == 'uat'
+          - inventory_hostname == 'xconnect-one'
+          - ansible_host == xconnect_evidence_one_target
+          - xconnect_evidence_run_id is match('^xcl-[0-9]+-[0-9]+$')
+          - xconnect_evidence_owner_sha is match('^[0-9a-f]{40}$')
+          - xconnect_evidence_network_id is match('^net_[A-Za-z0-9][A-Za-z0-9_-]{1,62}$')
+          - xconnect_evidence_one_device_id is match('^[a-z0-9][a-z0-9._-]{0,127}$')
+
+    - name: Read signed XConnect One status
+      ansible.builtin.command:
+        argv: [xconnect, status, --state-dir, '{{ xconnect_evidence_one_state_dir }}']
+      register: xconnect_evidence_one_status_raw
+      changed_when: false
+      no_log: true
+
+    - name: Decode XConnect One status privately
+      ansible.builtin.set_fact:
+        xconnect_evidence_one_status: '{{ xconnect_evidence_one_status_raw.stdout | from_json }}'
+      no_log: true
+
+    - name: Require the exact signed One runtime binding
+      ansible.builtin.assert:
+        that:
+          - xconnect_evidence_one_status.joined | bool
+          - xconnect_evidence_one_status.device_id == xconnect_evidence_one_device_id
+          - xconnect_evidence_one_status.network_id == xconnect_evidence_network_id
+          - xconnect_evidence_one_status.runtime.applied | bool
+          - xconnect_evidence_one_status.credential.present | bool
+          - not (xconnect_evidence_one_status.credential.expired | bool)
+      no_log: true
+
+    - name: Read the exact One WireGuard public key
+      ansible.builtin.command:
+        argv: [wg, show, '{{ xconnect_evidence_one_interface }}', public-key]
+      register: xconnect_evidence_one_public_key
+      changed_when: false
+      no_log: true
+
+    - name: Verify Gateway TLS certificate and SNI from One
+      ansible.builtin.shell: >-
+        timeout 15 openssl s_client
+        -connect {{ (xconnect_evidence_transport_server_name ~ ':443') | quote }}
+        -servername {{ xconnect_evidence_transport_server_name | quote }}
+        -verify_hostname {{ xconnect_evidence_transport_server_name | quote }}
+        -verify_return_error -brief </dev/null
+      args:
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
+    - name: Verify private overlay reachability from One
+      ansible.builtin.command:
+        argv: [ping, -c, '3', -W, '3', '{{ xconnect_evidence_gateway_overlay_ip }}']
+      changed_when: false
+
+    - name: Read the private HTTP evidence endpoint from One
+      ansible.builtin.uri:
+        url: '{{ xconnect_evidence_private_probe_url }}'
+        method: GET
+        return_content: true
+        status_code: 200
+        timeout: 10
+        use_proxy: false
+        follow_redirects: none
+      register: xconnect_evidence_private_http
+      no_log: true
+
+    - name: Require the exact private HTTP evidence marker
+      ansible.builtin.assert:
+        that:
+          - xconnect_evidence_private_http.content | trim == xconnect_evidence_private_probe_marker
+      no_log: true
+
+- name: Verify the exact XConnect Gateway peer and runtime
+  hosts: xconnect_gateway
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Validate reviewed Gateway evidence inputs
+      ansible.builtin.assert:
+        that:
+          - xconnect_evidence_environment == 'uat'
+          - inventory_hostname == 'xconnect-gateway'
+          - ansible_host == xconnect_evidence_gateway_target
+          - xconnect_evidence_gateway_id is match('^[a-z0-9][a-z0-9._-]{0,127}$')
+
+    - name: Require the Gateway Xray service to be active
+      ansible.builtin.command:
+        argv: [systemctl, is-active, --quiet, xconnect-gateway-xray.service]
+      changed_when: false
+
+    - name: Read XConnect Gateway CLI status without exposing output
+      ansible.builtin.command:
+        argv: [xconnect-gateway, status, --state-dir, '{{ xconnect_evidence_gateway_state_dir }}']
+      changed_when: false
+      no_log: true
+
+    - name: Verify the applied Gateway state binding and credential presence
+      ansible.builtin.shell: >-
+        jq -e
+        --arg gateway {{ xconnect_evidence_gateway_id | quote }}
+        --arg network {{ xconnect_evidence_network_id | quote }}
+        '.gateway_id == $gateway and .network_id == $network and
+         .applied_generation > 0 and
+         (.applied_config_id | type == "string" and length > 0) and
+         (.device_credential.credential | type == "string" and length > 0)'
+        {{ (xconnect_evidence_gateway_state_dir ~ '/state.json') | quote }}
+        >/dev/null
+      args:
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
+    - name: Bind the One public key to its exact Gateway runtime peer
+      ansible.builtin.command:
+        argv:
+          - /bin/bash
+          - -c
+          - |
+            set -euo pipefail
+            state_dir="$1"
+            device="$2"
+            expected_key="$3"
+            set -- "$state_dir"/runtime/*.conf
+            [[ "$#" -eq 1 && -f "$1" ]] || exit 1
+            section=''
+            current_device=''
+            peer_key=''
+            peer_matches=0
+            while IFS= read -r line; do
+              case "$line" in
+                '[Peer]') section='peer'; current_device='' ;;
+                '['*) section='other'; current_device='' ;;
+                '# DeviceID = '*)
+                  if [[ "$section" == 'peer' ]]; then current_device="${line#'# DeviceID = '}"; fi;;
+                'PublicKey = '*)
+                  if [[ "$section" == 'peer' && "$current_device" == "$device" ]]; then
+                    peer_key="${line#'PublicKey = '}"
+                    ((peer_matches += 1))
+                  fi
+                  current_device='';;
+              esac
+            done < "$1"
+            [[ "$peer_matches" -eq 1 ]]
+            [[ "$peer_key" =~ ^[A-Za-z0-9+/]{43}=$ ]]
+            [[ "$peer_key" == "$expected_key" ]]
+            printf '%s\n' "$peer_key"
+          - xconnect-evidence
+          - '{{ xconnect_evidence_gateway_state_dir }}'
+          - '{{ xconnect_evidence_one_device_id }}'
+          - "{{ hostvars['xconnect-one'].xconnect_evidence_one_public_key.stdout }}"
+      changed_when: false
+      no_log: true
+      register: xconnect_evidence_gateway_peer_key
+
+    - name: Measure the exact One peer handshake age
+      ansible.builtin.command:
+        argv:
+          - /bin/bash
+          - -c
+          - |
+            set -euo pipefail
+            peer="$1"
+            interface="$2"
+            max_age="$3"
+            now="$(date +%s)"
+            epoch="$(wg show "$interface" latest-handshakes | awk -v peer="$peer" '$1 == peer {print $2; exit}')"
+            [[ "$epoch" =~ ^[0-9]+$ && "$epoch" -gt 0 ]]
+            age=$((now - epoch))
+            (( age >= 0 && age <= max_age ))
+            printf '%s\n' "$age"
+          - xconnect-evidence
+          - '{{ xconnect_evidence_gateway_peer_key.stdout }}'
+          - '{{ xconnect_evidence_gateway_interface }}'
+          - '{{ xconnect_evidence_max_handshake_age_seconds | string }}'
+      changed_when: false
+      no_log: true
+      register: xconnect_evidence_handshake
+
+    - name: Save the verified handshake age
+      ansible.builtin.set_fact:
+        xconnect_evidence_handshake_age_seconds: '{{ xconnect_evidence_handshake.stdout | int }}'
+      no_log: true
+
+- name: Write the sanitized same-run evidence receipt
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Write verified XConnect lab receipt
+      ansible.builtin.copy:
+        dest: '{{ xconnect_evidence_receipt_file }}'
+        mode: '0600'
+        content: >-
+          {{ {
+            'schema': 'xconnect-lab-evidence/v1',
+            'status': 'verified',
+            'environment': xconnect_evidence_environment,
+            'run_id': xconnect_evidence_run_id,
+            'owner_sha': xconnect_evidence_owner_sha,
+            'network_id': xconnect_evidence_network_id,
+            'gateway_id': xconnect_evidence_gateway_id,
+            'one_device_id': xconnect_evidence_one_device_id,
+            'gateway_target': xconnect_evidence_gateway_target,
+            'one_target': xconnect_evidence_one_target,
+            'one_status_verified': true,
+            'gateway_cli_status_ok': true,
+            'gateway_state_binding_verified': true,
+            'gateway_credential_present': true,
+            'gateway_peer_source_verified': true,
+            'tls_sni_verified': true,
+            'private_ping_verified': true,
+            'private_http_verified': true,
+            'handshake_age_seconds': hostvars['xconnect-gateway'].xconnect_evidence_handshake_age_seconds | int
+          } | to_json }}

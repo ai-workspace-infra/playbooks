@@ -1,0 +1,61 @@
+name: Non-IaC Agent Proxy inventory adapter
+description: Render a private runtime inventory from a selected topology and authorized Vault response.
+inputs:
+  environment:
+    description: Reviewed deployment environment (uat or prod).
+    required: true
+  topology_file:
+    description: Checked-out GitOps topology selected by the controller.
+    required: true
+  vault_response_file:
+    description: Private response file produced by the controller's Vault authorization.
+    required: true
+  node_id:
+    description: Exact node selected by the controller matrix.
+    required: true
+  inventory_file:
+    description: Private runtime inventory destination.
+    required: true
+  deploy_key_file:
+    description: Reviewed fallback key path; a node-scoped key replaces it in place when supplied.
+    required: true
+outputs:
+  inventory:
+    description: Private runtime inventory path.
+    value: ${{ steps.render.outputs.inventory }}
+  deploy_key_file:
+    description: Private runtime deploy-key path.
+    value: ${{ steps.render.outputs.deploy_key_file }}
+  domain:
+    description: GitOps regional service domain.
+    value: ${{ steps.render.outputs.domain }}
+  region:
+    description: GitOps region label.
+    value: ${{ steps.render.outputs.region }}
+  pool:
+    description: GitOps pool label.
+    value: ${{ steps.render.outputs.pool }}
+runs:
+  using: composite
+  steps:
+    - name: Render owner-controlled runtime inventory
+      id: render
+      shell: bash
+      env:
+        INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        INPUT_TOPOLOGY_FILE: ${{ inputs.topology_file }}
+        INPUT_VAULT_RESPONSE_FILE: ${{ inputs.vault_response_file }}
+        INPUT_NODE_ID: ${{ inputs.node_id }}
+        INPUT_INVENTORY_FILE: ${{ inputs.inventory_file }}
+        INPUT_DEPLOY_KEY_FILE: ${{ inputs.deploy_key_file }}
+      run: |
+        set -euo pipefail
+        owner_root="$(cd "${GITHUB_ACTION_PATH}/../../.." && pwd -P)"
+        python3 "${owner_root}/scripts/node_deploy/non_iac_agent_proxy_inventory.py" \
+          --environment "${INPUT_ENVIRONMENT}" \
+          --topology "${INPUT_TOPOLOGY_FILE}" \
+          --vault-response "${INPUT_VAULT_RESPONSE_FILE}" \
+          --node-id "${INPUT_NODE_ID}" \
+          --inventory "${INPUT_INVENTORY_FILE}" \
+          --deploy-key "${INPUT_DEPLOY_KEY_FILE}" \
+          --github-output "${GITHUB_OUTPUT}"

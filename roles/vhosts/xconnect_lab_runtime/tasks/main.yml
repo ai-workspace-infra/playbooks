@@ -3,7 +3,7 @@
   ansible.builtin.assert:
     that:
       - xconnect_lab_runtime_environment == 'uat'
-      - xconnect_lab_runtime_operation in ['gateway_identity', 'gateway', 'one', 'gateway_verify', 'one_verify']
+      - xconnect_lab_runtime_operation in ['gateway_identity', 'gateway', 'gateway_reconcile', 'one', 'gateway_verify', 'one_verify']
       - xconnect_lab_runtime_target | trim | length > 0
       - xconnect_lab_runtime_status_timeout_seconds | int > 0
     fail_msg: >-
@@ -25,6 +25,40 @@
   ansible.builtin.include_role:
     name: vhosts/xconnect_one
   when: xconnect_lab_runtime_operation == 'one'
+
+- name: Reconcile the enrolled Gateway peer set
+  block:
+    - name: Apply the current signed Gateway peer configuration
+      environment:
+        PATH: "{{ xconnect_gateway_xray_binary_path | dirname }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        XCONNECT_GATEWAY_FRONTEND: "{{ xconnect_gateway_frontend }}"
+        XCONNECT_GATEWAY_LISTEN_SOCKET: "{{ xconnect_gateway_listen_socket }}"
+      ansible.builtin.command:
+        argv:
+          - "{{ xconnect_gateway_binary_path }}"
+          - up
+          - --state-dir
+          - "{{ xconnect_gateway_state_dir }}"
+          - --tls-cert
+          - "{{ xconnect_gateway_tls_cert_path }}"
+          - --tls-key
+          - "{{ xconnect_gateway_tls_key_path }}"
+          - --frontend
+          - "{{ xconnect_gateway_frontend }}"
+          - --listen-socket
+          - "{{ xconnect_gateway_listen_socket }}"
+      changed_when: false
+      no_log: true
+
+    - name: Keep the Gateway data-plane and sync timer active
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop:
+        - xconnect-gateway-xray.service
+        - xconnect-gateway-sync.timer
+  when: xconnect_lab_runtime_operation == 'gateway_reconcile'
 
 - name: Verify the Gateway service and signed runtime state
   block:

@@ -1,10 +1,10 @@
 name: Pipeline owner Shell contracts
 on:
   pull_request:
-    paths: ['.github/actions/**', 'scripts/pipeline/**', 'scripts/node_deploy/**', 'tests/node_deploy/**', '.github/workflows/pipeline-owner-contracts.yml']
+    paths: ['.github/actions/**', 'scripts/pipeline/**', 'scripts/node_deploy/**', 'tests/node_deploy/**', 'xconnect-lab-*.yml', 'roles/vhosts/xconnect_lab_runtime/**', 'tests/test_xconnect_lab_*.py', '.github/workflows/pipeline-owner-contracts.yml']
   push:
     branches: [main]
-    paths: ['.github/actions/**', 'scripts/pipeline/**', 'scripts/node_deploy/**', 'tests/node_deploy/**', '.github/workflows/pipeline-owner-contracts.yml']
+    paths: ['.github/actions/**', 'scripts/pipeline/**', 'scripts/node_deploy/**', 'tests/node_deploy/**', 'xconnect-lab-*.yml', 'roles/vhosts/xconnect_lab_runtime/**', 'tests/test_xconnect_lab_*.py', '.github/workflows/pipeline-owner-contracts.yml']
 permissions:
   contents: read
 jobs:
@@ -35,6 +35,10 @@ jobs:
           python3 -m unittest discover -s tests/node_deploy -p 'test_*.py' -v
       - name: Falsify dynamic target and cleanup contracts
         run: |
-          bash scripts/pipeline/tests/action-metadata-test.sh .github/actions/k6-performance/action.yml .github/actions/service-probes/action.yml .github/actions/xconnect-node-observation/action.yml .github/actions/xconnect-network-bootstrap/action.yml
+          bash scripts/pipeline/tests/action-metadata-test.sh .github/actions/k6-performance/action.yml .github/actions/service-probes/action.yml .github/actions/xconnect-node-observation/action.yml .github/actions/xconnect-network-bootstrap/action.yml .github/actions/xconnect-lab-runtime/action.yml .github/actions/xconnect-lab-evidence/action.yml
           bash scripts/pipeline/tests/xconnect-dynamic-targets-test.sh
           python3 scripts/pipeline/tests/test_xconnect_network_bootstrap.py -v
+          python3 scripts/pipeline/tests/test_xconnect_lab_runtime.py -v
+          python3 scripts/pipeline/tests/test_xconnect_lab_evidence.py -v
+          python3 -m unittest tests.test_xconnect_lab_runtime_role -v
+          python3 -m unittest tests.test_xconnect_lab_evidence_contract -v
