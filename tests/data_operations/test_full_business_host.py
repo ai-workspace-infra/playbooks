@@ -145,6 +145,14 @@ class FullBusinessOwnerTests(unittest.TestCase):
                 self.assertIn('--dry-run=false',str([c[0] for c in calls]))
                 self.assertNotIn('reset',str([c[0] for c in calls]))
 
+    def test_core_users_accepts_only_identity_contract_and_uses_dedicated_command(self):
+        r=receipt(self.spec,'copy')
+        r.update(scope='core_users', source_table_count=1, source_snapshot_sha256='', source_catalog_sha256='', tables={})
+        safe=HOST.validate_receipt(r,self.spec,'core_users',source_identity())
+        self.assertEqual(safe['scope'],'core_users')
+        self.assertEqual(safe['tables'],{})
+        self.assertEqual(HOST.migration_args(self.spec,'core_users')[0],'copy-core-users')
+
     def test_timeout_stops_owned_container_and_removes_registry_config(self):
         self.execute('copy',fail=True)
         diagnostic=HOST.failure_receipt()
