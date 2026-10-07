@@ -29,4 +29,5 @@ jobs:
           for action in .github/actions/*/action.yml; do yq -e '.name != null and .runs.using == "composite"' "$action" >/dev/null; done
       - name: Falsify dynamic target and cleanup contracts
         run: |
+          bash scripts/pipeline/tests/action-metadata-test.sh .github/actions/k6-performance/action.yml .github/actions/service-probes/action.yml .github/actions/xconnect-node-observation/action.yml
           bash scripts/pipeline/tests/xconnect-dynamic-targets-test.sh
