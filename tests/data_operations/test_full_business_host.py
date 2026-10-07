@@ -13,6 +13,7 @@ ROOT=Path(__file__).resolve().parents[2]
 OWNER=ROOT/'scripts/data_operations/selfhost'
 sys.path.insert(0,str(OWNER))
 import full_business_host as HOST
+import full_business_target_diagnostic as DIAGNOSTIC
 sys.path.pop(0)
 
 
@@ -57,6 +58,25 @@ def receipt(contract,mode):
 class FullBusinessOwnerTests(unittest.TestCase):
     def setUp(self):
         self.spec=spec();self.credentials=credentials()
+
+    def test_target_diagnostic_reads_only_metadata_and_never_emits_container_names(self):
+        with patch.object(DIAGNOSTIC,'command',return_value='web-saas-postgresql\nweb-saas-app'), \
+             patch.object(DIAGNOSTIC,'sql',side_effect=['170006','1','2026100701:false','53']) as sql, \
+             patch('builtins.print') as output:
+            DIAGNOSTIC.main()
+        data=json.loads(output.call_args.args[0])
+        self.assertEqual(data['active_writer_container_count'],1)
+        self.assertEqual(data['business_table_count'],53)
+        self.assertFalse(data['source_accessed']);self.assertFalse(data['target_writes'])
+        self.assertNotIn('web-saas-app',output.call_args.args[0])
+        for call in sql.call_args_list:
+            self.assertNotIn('FROM public.users',call.args[0])
+
+    def test_target_diagnostic_forces_readonly_transaction(self):
+        with patch.object(DIAGNOSTIC,'command',return_value='17') as command:
+            DIAGNOSTIC.sql('SHOW server_version_num')
+        self.assertEqual(command.call_args.args[0][-1],
+            'BEGIN READ ONLY; SHOW server_version_num; COMMIT;')
 
     def execute(self,mode,fail=False):
         calls=[];configs=[]
