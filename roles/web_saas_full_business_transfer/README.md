@@ -62,6 +62,8 @@ a primary switch while source applications/background writers remain active.
 - The role does not start applications, stop a writer silently, change restart
   policy, apply schema/history/seeds, write the source, mutate cloud resources or
   move DNS. Apps/reconcilers must already be stopped by their owning stage.
+  `web-saas-caddy` is excluded from the writer guard and active-writer diagnostic;
+  it remains running to serve HTTPS throughout migration and comparison.
 
 ## Qualification and rollout
 

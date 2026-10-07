@@ -65,7 +65,7 @@ class FullBusinessOwnerTests(unittest.TestCase):
         self.spec=spec();self.credentials=credentials()
 
     def test_target_diagnostic_reads_only_metadata_and_never_emits_container_names(self):
-        with patch.object(DIAGNOSTIC,'command',return_value='web-saas-postgresql\nweb-saas-app'), \
+        with patch.object(DIAGNOSTIC,'command',return_value='web-saas-postgresql\nweb-saas-caddy\nweb-saas-app'), \
              patch.object(DIAGNOSTIC,'sql',side_effect=['170006','1','2026100701:false','53']) as sql, \
              patch('builtins.print') as output:
             DIAGNOSTIC.main()
