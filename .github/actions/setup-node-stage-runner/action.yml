@@ -1,0 +1,34 @@
+name: Set up Vault node stage runner
+description: Prepare the isolated Python and Ansible runtime used by host execution actions.
+inputs:
+  venv_path:
+    description: Absolute runner-private virtual environment path
+    required: true
+  python:
+    description: Python interpreter used to create the isolated environment
+    required: false
+    default: python3
+  pyyaml_version:
+    description: Exact PyYAML version needed by NodeDeployment adapters
+    required: false
+    default: 6.0.2
+  ansible_core_version:
+    description: Exact ansible-core version used by host roles
+    required: false
+    default: 2.17.14
+  ansible_posix_version:
+    description: Exact ansible.posix collection version used by host roles
+    required: false
+    default: 2.1.0
+runs:
+  using: composite
+  steps:
+    - name: Create isolated host execution runtime
+      shell: bash
+      env:
+        NODE_STAGE_VENV: ${{ inputs.venv_path }}
+        NODE_STAGE_PYTHON: ${{ inputs.python }}
+        NODE_STAGE_PYYAML_VERSION: ${{ inputs.pyyaml_version }}
+        NODE_STAGE_ANSIBLE_CORE_VERSION: ${{ inputs.ansible_core_version }}
+        NODE_STAGE_ANSIBLE_POSIX_VERSION: ${{ inputs.ansible_posix_version }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/setup.sh"

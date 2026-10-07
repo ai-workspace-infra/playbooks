@@ -1,0 +1,38 @@
+name: Bootstrap an XConnect Zero network
+description: Issue a reviewed one-use Gateway invitation through the Accounts service and write a private handoff.
+inputs:
+  request-file:
+    description: Private validated request produced by the Toolkit control plane.
+    required: true
+  response-file:
+    description: Private handoff destination below RUNNER_TEMP.
+    required: true
+  network-id:
+    description: Exact reviewed XConnect network identity.
+    required: true
+  accounts-api-url:
+    description: Reviewed Accounts service HTTPS base URL.
+    required: true
+  invitation-ttl-minutes:
+    description: One-use invitation lifetime from 5 through 30 minutes.
+    required: true
+outputs:
+  network_id:
+    description: Network identity confirmed by the Accounts response.
+    value: ${{ steps.bootstrap.outputs.network_id }}
+  gateway_id:
+    description: Gateway identity confirmed by the Accounts response.
+    value: ${{ steps.bootstrap.outputs.gateway_id }}
+runs:
+  using: composite
+  steps:
+    - id: bootstrap
+      shell: bash
+      env:
+        NETWORK_REQUEST_FILE: ${{ inputs.request-file }}
+        NETWORK_RESPONSE_FILE: ${{ inputs.response-file }}
+        NETWORK_ID: ${{ inputs.network-id }}
+        ACCOUNTS_API_URL: ${{ inputs.accounts-api-url }}
+        INVITATION_TTL_MINUTES: ${{ inputs.invitation-ttl-minutes }}
+        ZERO_SERVICE_TOKEN: ${{ env.ZERO_SERVICE_TOKEN }}
+      run: python3 "$GITHUB_ACTION_PATH/../../../scripts/pipeline/xconnect-network-bootstrap.py"
