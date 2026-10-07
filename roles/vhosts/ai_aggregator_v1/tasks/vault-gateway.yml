@@ -51,13 +51,40 @@
 
 - name: Read LiteLLM provider keys from Vault
   ansible.builtin.uri:
-    url: "{{ ai_aggregator_vault_addr }}/v1/{{ item.value.split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
+    url: "{{ ai_aggregator_vault_addr }}/v1/{{ (item.value.api_key | default(item.value)).split('#')[0] | regex_replace('^vault://kv/', 'kv/data/') }}"
     headers:
       X-Vault-Token: "{{ ai_aggregator_vault_token }}"
     return_content: true
     status_code: 200
   loop: "{{ ai_aggregator_spec.litellm.provider_secret_refs | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
   register: ai_aggregator_litellm_provider_secrets
+  no_log: true
+
+- name: Normalize LiteLLM provider references
+  ansible.builtin.set_fact:
+    ai_aggregator_litellm_provider_refs: >-
+      {{ ai_aggregator_litellm_provider_refs | default({}) | combine({
+        item.key: {
+          'endpoint': (item.value.endpoint | default(item.value)),
+          'api_key': (item.value.api_key | default(item.value))
+        }
+      }) }}
+  loop: "{{ ai_aggregator_spec.litellm.provider_secret_refs | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  no_log: true
+
+- name: Index LiteLLM provider values without exposing them
+  ansible.builtin.set_fact:
+    ai_aggregator_litellm_provider_values: >-
+      {{ ai_aggregator_litellm_provider_values | default({}) | combine({
+        item.item.key: item.json.data.data
+      }) }}
+  loop: "{{ ai_aggregator_litellm_provider_secrets.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
   no_log: true
 
 - name: Render New API runtime environment on tmpfs
@@ -81,9 +108,10 @@
     content: |
       DATABASE_URL={{ ai_aggregator_litellm_db_secret.json.data.data[ai_aggregator_spec.litellm.persistence.secret_ref.split('#')[1]] }}
       LITELLM_MASTER_KEY={{ ai_aggregator_litellm_master_secret.json.data.data[ai_aggregator_spec.litellm.master_key_ref.split('#')[1]] }}
-      OPENAI_API_KEY={{ (ai_aggregator_litellm_provider_secrets.results | selectattr('item.key', 'equalto', 'openai') | first).json.data.data[ai_aggregator_spec.litellm.provider_secret_refs.openai.split('#')[1]] }}
-      ANTHROPIC_API_KEY={{ (ai_aggregator_litellm_provider_secrets.results | selectattr('item.key', 'equalto', 'anthropic') | first).json.data.data[ai_aggregator_spec.litellm.provider_secret_refs.anthropic.split('#')[1]] }}
-      XAI_API_KEY={{ (ai_aggregator_litellm_provider_secrets.results | selectattr('item.key', 'equalto', 'xai') | first).json.data.data[ai_aggregator_spec.litellm.provider_secret_refs.xai.split('#')[1]] }}
+      {% for provider, refs in ai_aggregator_litellm_provider_refs | dictsort %}
+      {{ provider | upper | regex_replace('[^A-Z0-9]', '_') }}_API_KEY={{ ai_aggregator_litellm_provider_values[provider][refs.api_key.split('#')[1]] }}
+      {{ provider | upper | regex_replace('[^A-Z0-9]', '_') }}_API_BASE={{ ai_aggregator_litellm_provider_values[provider][refs.endpoint.split('#')[1]] }}
+      {% endfor %}
   no_log: true
 
 - name: Stage New API to CPA channel tokens on tmpfs
@@ -91,3 +119,17 @@
   loop: "{{ ai_aggregator_spec.cpa_instances }}"
   loop_control:
     loop_var: ai_aggregator_channel
+
+- name: Stage declared LiteLLM channel tokens on tmpfs
+  ansible.builtin.copy:
+    dest: "{{ ai_aggregator_runtime_root }}/new-api/channels/{{ item.id }}.token"
+    owner: root
+    group: root
+    mode: '0600'
+    content: "{{ ai_aggregator_litellm_master_secret.json.data.data[ai_aggregator_spec.litellm.master_key_ref.split('#')[1]] }}\n"
+  loop: "{{ ai_aggregator_spec.new_api.channels | default([]) }}"
+  loop_control:
+    label: "{{ item.id }}"
+  when:
+    - item.credential_ref | default('') == ai_aggregator_spec.litellm.master_key_ref
+  no_log: true

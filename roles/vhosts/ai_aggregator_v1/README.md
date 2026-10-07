@@ -2,6 +2,13 @@
 
 The GitOps `spec.gateway` selects the entry mode and adapter. New API issues user API tokens and maintains the user, plan, quota and usage ledger. CPA and LiteLLM are its upstream channels.
 
+`spec.new_api.public_models` is the single public model allowlist. Optional
+`spec.litellm.models` entries describe non-sensitive LiteLLM modules and are
+rendered into the LiteLLM config; their provider credentials are resolved from
+the matching `spec.litellm.provider_secret_refs` Vault records. For example,
+the NVIDIA module uses `litellm/providers/nvidia` and `NVIDIA_API_KEY` at
+runtime. A provider discovery catalog is never promoted automatically.
+
 ## APISIX mode
 
 Select `entry_mode: gateway`, `adapter: apisix`, `mode: standalone`, `runtime_config_backend: gitops-file`, and `etcd: false`. APISIX listens on loopback port 9080. Set `auth_mode: new-api-token-pass-through` and `runtime_secret_refs: {}`.

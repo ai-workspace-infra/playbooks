@@ -9,3 +9,15 @@ channels:
     endpoint: {{ ai_aggregator_channel_endpoints[item.id] }}
     token_file: {{ ai_aggregator_runtime_root }}/new-api/channels/{{ item.id }}.token
 {% endfor %}
+{% for item in ai_aggregator_spec.new_api.channels | default([]) %}
+  - id: {{ item.id }}
+    name: {{ item.name }}
+    provider: {{ item.provider }}
+    protocol: {{ item.protocol }}
+    endpoint: {{ item.endpoint }}
+    token_file: {{ ai_aggregator_runtime_root }}/new-api/channels/{{ item.id }}.token
+    public_models:
+{% for model in item.public_models %}
+      - {{ model }}
+{% endfor %}
+{% endfor %}
