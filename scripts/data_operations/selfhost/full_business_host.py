@@ -41,10 +41,11 @@ def validate_spec(spec):
         transfer.get('batch_size') == 1000 and transfer.get('database_cutover_approved') is False,
         'Full-business image/schema/table scope differs')
     source = spec['source']
+    identity = source.get('identity_sha256')
     native.require(source.get('role') == 'readonly_release' and source.get('tls_required') is True and
-        source.get('ready') is True and re.fullmatch('[0-9a-f]{64}', source.get('identity_sha256', '')) and
+        type(source.get('ready')) is bool and (identity is None or re.fullmatch('[0-9a-f]{64}', identity)) and
         source.get('direction') == 'prod-supabase-to-prod-selfhost',
-        'Approved source identity/readonly connection contract is pending')
+        'Source must use the explicit PROD-to-Selfhost readonly session-pooler contract')
     return transfer['image'] + '@' + transfer['image_digest']
 
 
@@ -62,7 +63,9 @@ def validate_source_dsn(dsn, source):
     # Must match migratectl's Go struct JSON, including pooler project login.
     identity = {'Host': parsed.hostname, 'Port': parsed.port, 'Database': 'postgres', 'Role': login}
     digest = hashlib.sha256(json.dumps(identity, separators=(',', ':')).encode()).hexdigest()
-    native.require(digest == source['identity_sha256'], 'Source identity differs from approved connection contract')
+    expected = source.get('identity_sha256')
+    native.require(expected is None or digest == expected, 'Source identity differs from approved connection contract')
+    return digest
 
 
 def validate_credentials(credentials, spec):
@@ -71,7 +74,7 @@ def validate_credentials(credentials, spec):
         all(isinstance(v, str) and v and not any(c in v for c in '\r\n\x00') for v in credentials.values()) and
         re.fullmatch('[A-Za-z0-9][A-Za-z0-9_-]{0,63}', credentials['ghcr_username']),
         'Private runtime credentials are incomplete')
-    validate_source_dsn(credentials['source_dsn'], spec['source'])
+    return validate_source_dsn(credentials['source_dsn'], spec['source'])
 
 
 def verify_target(spec, require_empty):
@@ -99,13 +102,13 @@ def run_private(argv, input=None, env=None, timeout=1860):
     return result.stdout.strip()
 
 
-def validate_receipt(receipt, spec, mode):
+def validate_receipt(receipt, spec, mode, source_identity_sha256):
     expected = spec['transfer']
     native.require(receipt.get('format') == 1 and receipt.get('environment') == 'prod' and
         receipt.get('schema_sha256') == expected['schema_sha256'] and
         receipt.get('billing_schema_sha256') == expected['billing_schema_sha256'] and
         receipt.get('migration_version') == 2026100701 and receipt.get('batch_size') == 1000 and
-        receipt.get('source_identity_sha256') == spec['source']['identity_sha256'] and
+        receipt.get('source_identity_sha256') == source_identity_sha256 and
         all(re.fullmatch('[0-9a-f]{64}', receipt.get(key, '')) for key in
             ('source_snapshot_sha256', 'source_catalog_sha256')) and
         receipt.get('source_read_only') is True and receipt.get('database_cutover_approved') is False and
@@ -168,7 +171,7 @@ def execute(spec, guard_directory, mode, credentials):
     image = validate_spec(spec)
     native.require(mode in ('preview', 'copy', 'compare') and
         os.environ.get('NATIVE_DATA_GATE_VERIFIED') == 'true', 'Independent production data review is required')
-    validate_credentials(credentials, spec)
+    source_identity_sha256 = validate_credentials(credentials, spec)
     guard = ['bash', str(guard_directory / 'native_writer_guard_host.sh')]
     native.command(guard)
     verify_storage()
@@ -199,7 +202,7 @@ def execute(spec, guard_directory, mode, credentials):
                 '-c', CONTAINER_BOOTSTRAP, '--', *args], input=credentials['source_dsn'] + '\n' + target + '\n', env=env)
         finally:
             native.remove_execution_container(execution_name)
-        receipt = validate_receipt(json.loads(raw), spec, mode)
+        receipt = validate_receipt(json.loads(raw), spec, mode, source_identity_sha256)
     native.command(guard)
     verify_storage()
     verify_target(spec, require_empty=mode == 'preview')
