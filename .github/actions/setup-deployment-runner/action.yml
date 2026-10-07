@@ -1,0 +1,63 @@
+name: Setup Deployment Runner
+description: Playbooks-owned controller setup and parameterized host readiness adapter.
+
+inputs:
+  ssh_key_b64:
+    description: Base64-encoded deploy SSH private key.
+    required: false
+    default: ''
+  matrix_host:
+    description: CMDB host name used for SSH readiness and Ansible assertions.
+    required: false
+    default: ''
+  cmdb_file:
+    description: CMDB JSON file containing host-to-IP mappings.
+    required: false
+    default: cmdb/cmdb.json
+  wait_for_ssh:
+    description: Wait for SSH readiness on matrix_host.
+    required: false
+    default: 'false'
+  wait_for_package_init:
+    description: Apply package_init_policy, then wait for first-boot package activity to settle.
+    required: false
+    default: 'false'
+  package_init_policy:
+    description: preserve keeps unattended-upgrades enabled; disable-unattended-upgrades preserves the legacy deployment policy.
+    required: false
+    default: disable-unattended-upgrades
+  install_ansible:
+    description: Install Ansible and its controller-side Vault dependency.
+    required: false
+    default: 'false'
+  assert_ansible_target:
+    description: Fail if matrix_host is not reachable through ansible_inventory.
+    required: false
+    default: 'false'
+  ansible_inventory:
+    description: Inventory used when assert_ansible_target is true.
+    required: false
+    default: cmdb/inventory.ini
+
+outputs:
+  deploy_key_file:
+    description: Absolute path of the deploy private key configured on the runner.
+    value: ${{ steps.prepare.outputs.deploy_key_file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare deployment runner
+      id: prepare
+      shell: bash
+      env:
+        ACTION_SSH_KEY_B64: ${{ inputs.ssh_key_b64 }}
+        ACTION_MATRIX_HOST: ${{ inputs.matrix_host }}
+        ACTION_CMDB_FILE: ${{ inputs.cmdb_file }}
+        ACTION_WAIT_FOR_SSH: ${{ inputs.wait_for_ssh }}
+        ACTION_WAIT_FOR_PACKAGE_INIT: ${{ inputs.wait_for_package_init }}
+        ACTION_PACKAGE_INIT_POLICY: ${{ inputs.package_init_policy }}
+        ACTION_INSTALL_ANSIBLE: ${{ inputs.install_ansible }}
+        ACTION_ASSERT_ANSIBLE_TARGET: ${{ inputs.assert_ansible_target }}
+        ACTION_ANSIBLE_INVENTORY: ${{ inputs.ansible_inventory }}
+      run: ${{ github.action_path }}/scripts/setup.sh

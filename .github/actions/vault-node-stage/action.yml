@@ -1,0 +1,223 @@
+name: Vault node stage
+description: >-
+  Run one provider-neutral stage against a NodeDeployment contract: check the
+  live state the stage requires, apply its playbook tags, then confirm the
+  result. Provider adapters prepare the SSH credential; this action never
+  talks to a cloud API.
+inputs:
+  contract:
+    description: Validated NodeDeployment JSON path
+    required: true
+  stage:
+    description: Stage name from scripts/node_deploy/stage_plan.py
+    required: true
+  playbook:
+    description: Playbook file inside playbooks_root (empty when the stage has none)
+    required: false
+    default: ''
+  tags:
+    description: Comma-separated playbook tags; empty for check-only stages
+    required: false
+    default: ''
+  requires:
+    description: Comma-separated live-state checks that must pass before any change
+    required: true
+  confirms:
+    description: Comma-separated live-state checks that must pass after the playbook
+    required: false
+    default: ''
+  next_step:
+    description: Operator guidance printed after a successful stage
+    required: false
+    default: ''
+  playbooks_root:
+    description: Reviewed Ansible playbooks checkout
+    required: true
+  owner_root:
+    description: Fixed checkout root of the reviewed Playbooks owner revision
+    required: true
+  ssh_private_key:
+    description: Path to a short-lived SSH credential prepared by the provider adapter
+    required: true
+  known_hosts:
+    description: Path to GitOps-pinned SSH host keys
+    required: true
+  ready_adapters:
+    description: Comma-separated auth adapters prepared by the caller
+    required: true
+  gateway_state:
+    description: XConnect Gateway state file checked by the gateway-enrolled gate
+    required: false
+    default: ''
+  action:
+    description: Non-playbook stage action from stage_plan.py (empty for none)
+    required: false
+    default: ''
+  vault_addr:
+    description: Vault service address (runner-side Raft operations and the service-* checks)
+    required: false
+    default: ''
+  observation:
+    description: spec.migration.observation JSON for the observation-window check
+    required: false
+    default: '{}'
+  one_node:
+    description: "'true' when the stage changes exactly one peer: the next one that has not joined"
+    required: false
+    default: 'false'
+  extra_vars:
+    description: JSON extra-vars for the playbook tags (for example the confirm phrase a destructive role asserts)
+    required: false
+    default: '{}'
+  xconnect_role:
+    description: XConnect role the stage enrolls (gateway), or empty for none
+    required: false
+    default: ''
+  xconnect_topology:
+    description: GitOps XConnect topology file, when xconnect_role is set
+    required: false
+    default: ''
+  xconnect_dir:
+    description: Runner-private directory holding the verified runtime (bin/) and secrets (secrets/)
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Require prepared short-lived credentials for every node
+      shell: bash
+      env:
+        NODE_CONTRACT: ${{ inputs.contract }}
+        NODE_OWNER_ROOT: ${{ inputs.owner_root }}
+        NODE_AUTH_ADAPTERS_READY: ${{ inputs.ready_adapters }}
+        SSH_PRIVATE_KEY: ${{ inputs.ssh_private_key }}
+        SSH_KNOWN_HOSTS: ${{ inputs.known_hosts }}
+      run: |
+        set -euo pipefail
+        test -s "${SSH_PRIVATE_KEY}"
+        test -s "${SSH_KNOWN_HOSTS}"
+        ready=",${NODE_AUTH_ADAPTERS_READY},"
+        while IFS= read -r adapter; do
+          [[ "${ready}" == *",${adapter},"* ]] || {
+            echo "::error::No prepared short-lived credential adapter for ${adapter}" >&2
+            exit 1
+          }
+        done < <(jq -r '[.spec.nodes[].auth.adapter] | unique[]' "${NODE_CONTRACT}")
+
+    - name: Check live node state required by the stage
+      id: gate
+      shell: bash
+      env:
+        NODE_CONTRACT: ${{ inputs.contract }}
+        DEPLOY_STAGE: ${{ inputs.stage }}
+        REQUIRED_CHECKS: ${{ inputs.requires }}
+        SSH_PRIVATE_KEY: ${{ inputs.ssh_private_key }}
+        SSH_KNOWN_HOSTS: ${{ inputs.known_hosts }}
+        GATEWAY_STATE: ${{ inputs.gateway_state }}
+        VAULT_ADDR: ${{ inputs.vault_addr }}
+        OBSERVATION: ${{ inputs.observation }}
+        ONE_NODE: ${{ inputs.one_node }}
+        NODE_OWNER_ROOT: ${{ inputs.owner_root }}
+      run: |
+        set -euo pipefail
+        # One-node stages also pick the peer to change: the first declared
+        # peer that has not joined, and only once every joined peer is unsealed.
+        select=()
+        [[ "${ONE_NODE}" != true ]] || select=(--select-next-peer "${GITHUB_OUTPUT}")
+        python3 "${NODE_OWNER_ROOT}/scripts/node_deploy/verify_vault_stage.py" \
+          --contract "${NODE_CONTRACT}" --key "${SSH_PRIVATE_KEY}" --known-hosts "${SSH_KNOWN_HOSTS}" \
+          --checks "${REQUIRED_CHECKS}" --gateway-state "${GATEWAY_STATE}" \
+          --vault-addr "${VAULT_ADDR}" --observation "${OBSERVATION}" "${select[@]}" \
+          --title "Before ${DEPLOY_STAGE}"
+
+    - name: Run the stage action
+      if: ${{ inputs.action != '' }}
+      shell: bash
+      env:
+        STAGE_ACTION: ${{ inputs.action }}
+        NODE_CONTRACT: ${{ inputs.contract }}
+        VAULT_ADDR: ${{ inputs.vault_addr }}
+        NODE_OWNER_ROOT: ${{ inputs.owner_root }}
+      run: |
+        set -euo pipefail
+        bash "${NODE_OWNER_ROOT}/scripts/node_deploy/run_stage_action.sh" "${STAGE_ACTION}" "${NODE_CONTRACT}"
+
+    - name: Apply the stage playbook tags
+      if: ${{ inputs.tags != '' }}
+      shell: bash
+      env:
+        NODE_CONTRACT: ${{ inputs.contract }}
+        PLAYBOOK: ${{ inputs.playbook }}
+        STAGE_TAGS: ${{ inputs.tags }}
+        PLAYBOOKS_ROOT: ${{ inputs.playbooks_root }}
+        NODE_AUTH_ADAPTERS_READY: ${{ inputs.ready_adapters }}
+        ANSIBLE_PRIVATE_KEY_FILE: ${{ inputs.ssh_private_key }}
+        SSH_KNOWN_HOSTS: ${{ inputs.known_hosts }}
+        NODE_STAGE_EXTRA_VARS: ${{ inputs.extra_vars }}
+        XCONNECT_ROLE: ${{ inputs.xconnect_role }}
+        XCONNECT_TOPOLOGY: ${{ inputs.xconnect_topology }}
+        XCONNECT_DIR: ${{ inputs.xconnect_dir }}
+        GATEWAY_STATE: ${{ inputs.gateway_state }}
+        ONE_NODE: ${{ inputs.one_node }}
+        SELECTED_NODE: ${{ steps.gate.outputs.node }}
+        NODE_OWNER_ROOT: ${{ inputs.owner_root }}
+      run: |
+        set -euo pipefail
+        if [[ "${ONE_NODE}" == true ]]; then
+          [[ -n "${SELECTED_NODE}" ]] || { echo '::error::one-node stage without a selected node' >&2; exit 1; }
+          export NODE_STAGE_ONLY="${SELECTED_NODE}"
+        fi
+        export ANSIBLE_HOST_KEY_CHECKING=True
+        export ANSIBLE_SSH_COMMON_ARGS="-o IdentitiesOnly=yes -o UserKnownHostsFile=${SSH_KNOWN_HOSTS} -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519"
+        # One-use invitations live only in the runner-private secrets dir.
+        trap 'rm -f -- "${XCONNECT_DIR:-/nonexistent}"/secrets/*.invite' EXIT
+        base_vars="${NODE_STAGE_EXTRA_VARS:-}"
+        [[ -n "${base_vars}" ]] || base_vars='{}'
+        IFS=, read -r -a tags <<<"${STAGE_TAGS}"
+        for tag in "${tags[@]}"; do
+          stage_vars="${base_vars}"
+          if [[ -n "${XCONNECT_ROLE}" ]]; then
+            # *-identity tags only install and init; the enrollment tag gets an
+            # invitation, issued only if the node is not enrolled yet.
+            invite=()
+            if [[ "${tag}" != *-identity ]]; then
+              invite=(--invite --key "${ANSIBLE_PRIVATE_KEY_FILE}" --known-hosts "${SSH_KNOWN_HOSTS}" --gateway-state "${GATEWAY_STATE}")
+            fi
+            xconnect_vars="$(python3 "${NODE_OWNER_ROOT}/scripts/node_deploy/xconnect_stage.py" vars \
+              --role "${XCONNECT_ROLE}" --topology "${XCONNECT_TOPOLOGY}" --contract "${NODE_CONTRACT}" \
+              --artifacts "${XCONNECT_DIR}/bin" --secrets-dir "${XCONNECT_DIR}/secrets" "${invite[@]}")"
+            stage_vars="$(jq -cn --argjson base "${base_vars}" --argjson xconnect "${xconnect_vars}" '$base + $xconnect')"
+          fi
+          NODE_STAGE_EXTRA_VARS="${stage_vars}" bash "${NODE_OWNER_ROOT}/scripts/node_deploy/run_stage.sh" \
+            "${NODE_CONTRACT}" "${PLAYBOOK}" "${tag}" "${PLAYBOOKS_ROOT}"
+        done
+
+    - name: Confirm live node state after the stage
+      if: ${{ inputs.confirms != '' }}
+      shell: bash
+      env:
+        NODE_CONTRACT: ${{ inputs.contract }}
+        DEPLOY_STAGE: ${{ inputs.stage }}
+        CONFIRM_CHECKS: ${{ inputs.confirms }}
+        SSH_PRIVATE_KEY: ${{ inputs.ssh_private_key }}
+        SSH_KNOWN_HOSTS: ${{ inputs.known_hosts }}
+        GATEWAY_STATE: ${{ inputs.gateway_state }}
+        VAULT_ADDR: ${{ inputs.vault_addr }}
+        OBSERVATION: ${{ inputs.observation }}
+        SELECTED_NODE: ${{ steps.gate.outputs.node }}
+        NODE_OWNER_ROOT: ${{ inputs.owner_root }}
+      run: |
+        set -euo pipefail
+        python3 "${NODE_OWNER_ROOT}/scripts/node_deploy/verify_vault_stage.py" \
+          --contract "${NODE_CONTRACT}" --key "${SSH_PRIVATE_KEY}" --known-hosts "${SSH_KNOWN_HOSTS}" \
+          --checks "${CONFIRM_CHECKS}" --gateway-state "${GATEWAY_STATE}" \
+          --vault-addr "${VAULT_ADDR}" --observation "${OBSERVATION}" --selected "${SELECTED_NODE}" \
+          --attempts 8 --interval 15 --title "After ${DEPLOY_STAGE}"
+
+    - name: Record the next operator step
+      if: ${{ inputs.next_step != '' }}
+      shell: bash
+      env:
+        NEXT_STEP: ${{ inputs.next_step }}
+      run: |
+        printf '**Next:** %s\n' "${NEXT_STEP}" | tee -a "${GITHUB_STEP_SUMMARY}"
