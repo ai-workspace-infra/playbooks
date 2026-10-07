@@ -18,7 +18,7 @@ sys.path.pop(0)
 
 def source_identity():
     identity={'Host':'aws-0-ap-southeast-1.pooler.supabase.com','Port':5432,'Database':'postgres',
-        'Role':'readonly_release.abcdefghijklmnopqrst'}
+        'Role':'postgres.abcdefghijklmnopqrst'}
     return hashlib.sha256(json.dumps(identity,separators=(',',':')).encode()).hexdigest()
 
 
@@ -32,13 +32,14 @@ def spec():
         schema_sha256=HOST.ACCOUNTS_SQL_SHA256,billing_schema_sha256=HOST.BILLING_SQL_SHA256,
         migration_version=2026100701,business_tables=sorted(tables+['cloud_vendor_costs']),batch_size=1000,
         database_cutover_approved=False)
-    return dict(initialization=initial,transfer=transfer,source=dict(ready=True,role='readonly_release',
-        tls_required=True,identity_sha256=source_identity(),direction='prod-supabase-to-prod-selfhost'))
+    return dict(initialization=initial,transfer=transfer,source=dict(ready=False,role='serverless_supabase',endpoint='session_pooler',
+        project_ref='abcdefghijklmnopqrst',
+        tls_required=True,identity_sha256=None,direction='prod-supabase-to-prod-selfhost'))
 
 
 def credentials():
-    return dict(postgres_password='fictional$@:',source_dsn='postgresql://readonly_release.abcdefghijklmnopqrst:'
-        'fictional@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require',
+    return dict(postgres_password='fictional$@:',source_dsn='postgresql://postgres.abcdefghijklmnopqrst:'
+        'fictional@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres',
         ghcr_username='fixture-user',ghcr_token='fictional-registry-value')
 
 
@@ -76,6 +77,7 @@ class FullBusinessOwnerTests(unittest.TestCase):
             if '--source-dsn-env=NATIVE_SOURCE_DSN' in argv:
                 self.assertEqual(kw['input'].count('\n'),2)
                 self.assertIn('fictional%24%40%3A',kw['input'])
+                self.assertIn('sslmode=require',kw['input'])
                 self.assertNotIn('--env-file',argv)
                 if fail:raise HOST.native.Refused('fictional timeout')
                 data=receipt(self.spec,mode);data['private_extra']='do-not-republish'
@@ -140,9 +142,16 @@ class FullBusinessOwnerTests(unittest.TestCase):
 
     def test_source_admin_wrong_project_transaction_pooler_and_tls_refused(self):
         value=self.credentials['source_dsn']
-        for dsn in [value.replace('readonly_release.','postgres.'),value.replace(':5432/',':6543/'),
-            value.replace('sslmode=require','sslmode=prefer'),value.replace('abcdefghijklmnopqrst','aaaaaaaaaaaaaaaaaaaa'),
-            value.replace('/postgres?','/account?'),value+'\n']:
+        identity,secure=HOST.validate_source_dsn(value,self.spec['source'])
+        self.assertEqual(identity,source_identity());self.assertIn('sslmode=require',secure)
+        readonly_value=value.replace('postgres.abcdefghijklmnopqrst:fictional',
+            'readonly_release.abcdefghijklmnopqrst:fictional')
+        _,readonly_secure=HOST.validate_source_dsn(readonly_value,self.spec['source'])
+        self.assertIn('sslmode=require',readonly_secure)
+        for dsn in [value.replace('postgres.abcdefghijklmnopqrst:fictional','admin:fictional'),value.replace(':5432/',':6543/'),
+            value+'?sslmode=prefer',value.replace('abcdefghijklmnopqrst','aaaaaaaaaaaaaaaaaaaa'),
+            value.replace('/postgres','/account'),value.replace('aws-0-ap-southeast-1.pooler.supabase.com',
+                'db.abcdefghijklmnopqrst.supabase.co'),value+'\n']:
             with self.assertRaises(HOST.native.Refused):HOST.validate_source_dsn(dsn,self.spec['source'])
 
     def test_preview_partial_scope_wrong_source_or_extra_private_data(self):

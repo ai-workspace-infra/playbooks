@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
-from urllib.parse import parse_qs, quote, unquote, urlsplit
+from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 import uuid
 
 import native_init_host as native
@@ -42,7 +42,9 @@ def validate_spec(spec):
         'Full-business image/schema/table scope differs')
     source = spec['source']
     identity = source.get('identity_sha256')
-    native.require(source.get('role') == 'readonly_release' and source.get('tls_required') is True and
+    native.require(source.get('role') == 'serverless_supabase' and source.get('endpoint') in ('direct', 'session_pooler') and
+        source.get('tls_required') is True and
+        re.fullmatch('[a-z0-9]{20}', source.get('project_ref', '')) and
         type(source.get('ready')) is bool and (identity is None or re.fullmatch('[0-9a-f]{64}', identity)) and
         source.get('direction') == 'prod-supabase-to-prod-selfhost',
         'Source must use the explicit PROD-to-Selfhost readonly session-pooler contract')
@@ -54,18 +56,31 @@ def validate_source_dsn(dsn, source):
         'Source credential transport is invalid')
     parsed = urlsplit(dsn)
     login = unquote(parsed.username or '')
-    native.require(parsed.scheme in ('postgres', 'postgresql') and
-        re.fullmatch(r'readonly_release\.[a-z0-9]{20}', login) and parsed.port == 5432 and
-        re.fullmatch(r'aws-[0-9]+-[a-z0-9-]+\.pooler\.supabase\.com', parsed.hostname or '') and
-        parsed.path == '/postgres' and parse_qs(parsed.query).get('sslmode') in
-        (['require'], ['verify-ca'], ['verify-full']) and parsed.password,
-        'Source must be the reviewed session pooler readonly login with TLS')
+    endpoint = source['endpoint']
+    if endpoint == 'direct':
+        host_ok = parsed.hostname == 'db.' + source['project_ref'] + '.supabase.co'
+        login_ok = login in ('postgres', 'readonly_release')
+    else:
+        host_ok = re.fullmatch(r'aws-[0-9]+-[a-z0-9-]+\.pooler\.supabase\.com', parsed.hostname or '') is not None
+        login_ok = re.fullmatch(r'(?:postgres|readonly_release)\.' + re.escape(source['project_ref']), login) is not None
+    native.require(parsed.scheme in ('postgres', 'postgresql') and login_ok and parsed.port == 5432 and host_ok and
+        parsed.path == '/postgres' and parsed.password,
+        'Source must match the pinned PROD Supabase endpoint and project')
+    # Vault may store the direct URI without an sslmode query. Force TLS before
+    # passing the DSN to migratectl; explicit weaker/duplicate modes are refused.
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    ssl_modes = [value for key, value in query if key == 'sslmode']
+    native.require(not ssl_modes or (len(ssl_modes) == 1 and ssl_modes[0] in
+        ('require', 'verify-ca', 'verify-full')), 'Source connection must require TLS')
+    if not ssl_modes:
+        query.append(('sslmode', 'require'))
+    secure_dsn = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
     # Must match migratectl's Go struct JSON, including pooler project login.
     identity = {'Host': parsed.hostname, 'Port': parsed.port, 'Database': 'postgres', 'Role': login}
     digest = hashlib.sha256(json.dumps(identity, separators=(',', ':')).encode()).hexdigest()
     expected = source.get('identity_sha256')
     native.require(expected is None or digest == expected, 'Source identity differs from approved connection contract')
-    return digest
+    return digest, secure_dsn
 
 
 def validate_credentials(credentials, spec):
@@ -74,7 +89,9 @@ def validate_credentials(credentials, spec):
         all(isinstance(v, str) and v and not any(c in v for c in '\r\n\x00') for v in credentials.values()) and
         re.fullmatch('[A-Za-z0-9][A-Za-z0-9_-]{0,63}', credentials['ghcr_username']),
         'Private runtime credentials are incomplete')
-    return validate_source_dsn(credentials['source_dsn'], spec['source'])
+    identity, secure_dsn = validate_source_dsn(credentials['source_dsn'], spec['source'])
+    credentials['source_dsn'] = secure_dsn
+    return identity
 
 
 def verify_target(spec, require_empty):
