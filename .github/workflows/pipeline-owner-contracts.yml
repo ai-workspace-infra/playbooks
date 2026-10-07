@@ -1,10 +1,10 @@
 name: Pipeline owner Shell contracts
 on:
   pull_request:
-    paths: ['.github/actions/**', 'scripts/pipeline/**', '.github/workflows/pipeline-owner-contracts.yml']
+    paths: ['.github/actions/**', 'scripts/pipeline/**', 'scripts/node_deploy/**', 'tests/node_deploy/**', '.github/workflows/pipeline-owner-contracts.yml']
   push:
     branches: [main]
-    paths: ['.github/actions/**', 'scripts/pipeline/**', '.github/workflows/pipeline-owner-contracts.yml']
+    paths: ['.github/actions/**', 'scripts/pipeline/**', 'scripts/node_deploy/**', 'tests/node_deploy/**', '.github/workflows/pipeline-owner-contracts.yml']
 permissions:
   contents: read
 jobs:
@@ -27,6 +27,12 @@ jobs:
           set -euo pipefail
           while IFS= read -r file; do bash -n "$file"; done < <(git ls-files -co --exclude-standard scripts/pipeline | grep -E '\.sh$')
           for action in .github/actions/*/action.yml; do yq -e '.name != null and .runs.using == "composite"' "$action" >/dev/null; done
+          bash -n .github/actions/setup-deployment-runner/scripts/setup.sh scripts/node_deploy/*.sh
+          python3 -m py_compile scripts/node_deploy/*.py
+      - name: Run node deployment owner behavior and contract tests
+        run: |
+          python3 -m pip install --disable-pip-version-check 'pyyaml==6.0.2'
+          python3 -m unittest discover -s tests/node_deploy -p 'test_*.py' -v
       - name: Falsify dynamic target and cleanup contracts
         run: |
           bash scripts/pipeline/tests/action-metadata-test.sh .github/actions/k6-performance/action.yml .github/actions/service-probes/action.yml .github/actions/xconnect-node-observation/action.yml

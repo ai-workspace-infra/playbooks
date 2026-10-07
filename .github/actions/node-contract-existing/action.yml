@@ -1,0 +1,32 @@
+name: Existing node NodeDeployment adapter
+description: Build the Playbooks-owned NodeDeployment adapter for a reviewed existing-host declaration.
+inputs:
+  service_manifest:
+    description: Reviewed Vault service declaration path
+    required: true
+  output:
+    description: Destination for the NodeDeployment JSON
+    required: true
+  owner_root:
+    description: Fixed checkout root of the reviewed Playbooks owner revision
+    required: true
+outputs:
+  contract:
+    description: Validated NodeDeployment JSON path
+    value: ${{ steps.contract.outputs.contract }}
+runs:
+  using: composite
+  steps:
+    - name: Build existing-host NodeDeployment contract
+      id: contract
+      shell: bash
+      env:
+        SERVICE_MANIFEST: ${{ inputs.service_manifest }}
+        CONTRACT_OUTPUT: ${{ inputs.output }}
+        PLAYBOOKS_OWNER_ROOT: ${{ inputs.owner_root }}
+      run: |
+        set -euo pipefail
+        test -f "${SERVICE_MANIFEST}"
+        python3 "${PLAYBOOKS_OWNER_ROOT}/scripts/node_deploy/legacy_source.py" contract \
+          --service-manifest "${SERVICE_MANIFEST}" --output "${CONTRACT_OUTPUT}"
+        printf 'contract=%s\n' "${CONTRACT_OUTPUT}" >> "${GITHUB_OUTPUT}"
