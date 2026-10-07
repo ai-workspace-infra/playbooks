@@ -42,7 +42,7 @@ def main():
     require(sql('SHOW server_version_num').startswith('17'))
     require(sql("SELECT count(*) FROM pg_database WHERE datname IN ('account','full_business_source')")=='0')
     # Synthetic credentials exist only in private test input, never argv/config.
-    source='postgresql://readonly_release:isolated-ro@127.0.0.1:5432/full_business_source?sslmode=disable'
+    source='postgresql://readonly_release:isolated-ro@127.0.0.1:5432/full_business_source?sslmode=disable&default_transaction_read_only=on'
     target='postgresql://postgres:postgres@127.0.0.1:5432/account?sslmode=disable'
     image='full-business-stdin-fixture:'+uuid.uuid4().hex
     execution='full-business-stdin-check-'+uuid.uuid4().hex
