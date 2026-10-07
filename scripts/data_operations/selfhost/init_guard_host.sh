@@ -36,5 +36,12 @@ SELECT
   WHERE n.nspname NOT LIKE 'pg_%' AND n.nspname<>'information_schema'
     AND t.typtype IN ('e','d','r','m')
     AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_type'::regclass AND d.objid=t.oid AND d.deptype='e'))")"
-[[ "$object_count" == 0 ]] || { echo "Account database has ${object_count} non-extension application objects or its state is unverified; refusing initialization." >&2; exit 1; }
+if [[ "$object_count" != 0 ]]; then
+  shape="$(docker exec "$container" psql -U postgres -d account -XAtq -v ON_ERROR_STOP=1 -c "
+SELECT coalesce((SELECT version::text || ':' || dirty::text FROM public.schema_migrations ORDER BY version DESC LIMIT 1),'missing')
+ || ':tables=' || (SELECT count(*)::text FROM pg_tables WHERE schemaname='public' AND tablename NOT IN ('schema_migrations','system_release_checkpoints'))
+ || ':shape=' || md5(coalesce((SELECT string_agg(tablename,',' ORDER BY tablename) FROM pg_tables WHERE schemaname='public' AND tablename NOT IN ('schema_migrations','system_release_checkpoints')),''))")"
+  echo "Account database has ${object_count} non-extension application objects; checkpoint/table shape=${shape}; refusing initialization." >&2
+  exit 1
+fi
 echo 'Account database is empty; schema initialization may proceed.'
