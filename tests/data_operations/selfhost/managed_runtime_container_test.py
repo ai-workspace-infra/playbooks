@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT/'scripts/data_operations/selfhost'))
 import managed_runtime_host as HOST
 
 COMMITS = dict(accounts='fabe68a85b4d90826dccdfe6a2116ef025f475d4',
-               billing='742af83de9bd7512e1b3236ba8acfa872efcaa86')
+               billing='f11e875f74cbe0154e49f6310b6697eff65f731e')
 PHASE = 'preflight'
 
 

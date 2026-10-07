@@ -17,8 +17,10 @@ Owner 为 Playbooks `scripts/data_operations/selfhost/managed_runtime_host.py`�
 
 ## 隔离资格与真实接受
 
-`managed-runtime-container` CI 固定 Accounts `fabe68a85b4d90826dccdfe6a2116ef025f475d4` 与 Billing `742af83de9bd7512e1b3236ba8acfa872efcaa86`，构建完整服务 package，仅封装为一次性 Ubuntu/Alpine binary fixtures。只有 fixture 镜像引用替换为本地名称，其余参数、探针及容器约束使用 owner；检查函数的 fixture image override 不对 CLI 开放，实际 execute 始终拉取和验证 manifest digest。Fixtures 不含业务数据、环境模板、数据库凭据，不发布为部署 artifact。
+`managed-runtime-container` CI 固定 Accounts `fabe68a85b4d90826dccdfe6a2116ef025f475d4` 与 Billing `f11e875f74cbe0154e49f6310b6697eff65f731e`，构建完整服务 package，仅封装为一次性 Ubuntu/Alpine binary fixtures。只有 fixture 镜像引用替换为本地名称，其余参数、探针及容器约束使用 owner；检查函数的 fixture image override 不对 CLI 开放，实际 execute 始终拉取和验证 manifest digest。Fixtures 不含业务数据、环境模板、数据库凭据，不发布为部署 artifact。
 
 两份正式 GHCR 镜像不允许匿名拉取。此 CI 不取得生产 Vault 或 Registry 凭据，不能声称正式发布镜像已拉取、生产主机已部署或原生数据库已验收。正式 pull/角色资格需后续受控生产调用方执行并保存原始回执。
 
 之后仍须按顺序完成实际原生初始化、Billing 第 53 表增量、完整只读复制、全写者冻结/最终追平、10 分钟内完整一致性、单写者、主角色与正常业务配置部署、Accounts/Billing 联动入口切换和生产验收。待机使用的空配置不能作为 primary 业务配置；primary 的认证、内服务、运行凭据与私网 ingress 需另行绑定真实合同。
+
+Billing #46 修复了待机 config.Load 仍要求内部业务 Token 的启动缺口；主角色和原业务角色仍要求该 Token。容器资格使用这份已合并的修复源码，不注入任何占位业务 Token。
