@@ -297,8 +297,8 @@ Stripe 新环境套餐初始化：[`docs/tldr-stripe-billing-catalog.md`](docs/t
 ```bash
 export INTERNAL_SERVICE_TOKEN=...
 export DATABASE_URL=postgres://...
-export FRONTEND_IMAGE=ghcr.io/x-evor/dashboard:latest
-export STACK_TARGET_HOST=jp_xhttp_contabo_host
+export FRONTEND_IMAGE=ghcr.io/ai-workspace-services/console:daily-build-2026.10.06-r6
+export STACK_TARGET_HOST=34.81.174.112
 export console_service_sync_dns=true
 ansible-playbook -i inventory.ini deploy_svc_plus_core_services_stack.yml
 ```
@@ -323,7 +323,7 @@ ansible-playbook -i inventory.ini -l jp_xhttp_contabo_host deploy_svc_plus_core_
 
 - `billing-service` 需要 `DATABASE_URL`
 - `xray-exporter`、`agent` 需要 `INTERNAL_SERVICE_TOKEN`
-- `console` 需要 `FRONTEND_IMAGE`（目标机只做 pull-only compose 部署）；它写出的是形如 `<server-name>-<release_id>-<hostname>-<domain>.caddy` 的片段，不接管 Caddy 服务容器
+- `console` 默认使用 `ghcr.io/ai-workspace-services/console:daily-build-2026.10.06-r6`，也可用 `FRONTEND_IMAGE` 覆盖（目标机只做 pull-only compose 部署）；它写出的是形如 `<server-name>-<release_id>-<hostname>-<domain>.caddy` 的片段，不接管 Caddy 服务容器
 - `xworkmate-bridge` 接受 `XWORKMATE_BRIDGE_HOSTS`，也遵循 `STACK_TARGET_HOST`
 - 单服务限定主机用 Ansible 原生的 `-l <host>`，不要另造主机变量
 
@@ -332,7 +332,7 @@ Console 单独发布并对账 DNS：
 ```bash
 ansible-playbook -i inventory.ini deploy_console_svc_plus.yml \
   -e console_service_sync_dns=true \
-  -e FRONTEND_IMAGE=ghcr.io/x-evor/dashboard:latest
+  -e FRONTEND_IMAGE=ghcr.io/ai-workspace-services/console:daily-build-2026.10.06-r6
 ```
 
 扩展服务：`deploy_svc_plus_extended-services.yml`、`deploy_docs_svc_plus.yml`、`deploy_postgresql_svc_plus.yml`、`deploy_apisix_svc.plus.yaml`、`deploy_xray_proxy_server.yml`

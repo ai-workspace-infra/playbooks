@@ -1,5 +1,5 @@
 - name: Deploy managed console.svc.plus service
-  hosts: "{{ console_service_target_host | default(console_service_hosts | default('jp_xhttp_contabo_host')) }}"
+  hosts: "{{ console_service_target_host | default(console_service_hosts | default('34.81.174.112')) }}"
   gather_facts: true
   become: true
   roles:
@@ -13,9 +13,9 @@
   gather_facts: false
   tasks:
     - name: Reconcile Cloudflare DNS for console target host
-      when: console_service_sync_dns | default(false)
+      when: console_service_sync_dns | default(false) | bool
       ansible.builtin.include_role:
         name: cloudflare_svc_plus_dns
       vars:
         cloudflare_dns_source_hosts:
-          - "{{ console_service_target_host | default(console_service_hosts | default('jp_xhttp_contabo_host')) }}"
+          - "{{ console_service_target_host | default(console_service_hosts | default('34.81.174.112')) }}"
