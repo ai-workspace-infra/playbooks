@@ -449,6 +449,65 @@
     - Run OpenClaw doctor
     - Restart openclaw
 
+# The approvals file also holds the approval socket token and the allowlist
+# that operators grow with "allow always"; only its defaults are managed here.
+- name: Inspect OpenClaw host exec approvals
+  ansible.builtin.stat:
+    path: "{{ gateway_openclaw_exec_approvals_path }}"
+  register: gateway_openclaw_exec_approvals_stat
+  when: ansible_os_family != 'Windows'
+
+- name: Read OpenClaw host exec approvals
+  ansible.builtin.slurp:
+    path: "{{ gateway_openclaw_exec_approvals_path }}"
+  register: gateway_openclaw_exec_approvals_raw
+  no_log: true
+  when:
+    - ansible_os_family != 'Windows'
+    - gateway_openclaw_exec_approvals_stat.stat.exists | default(false)
+
+- name: Resolve OpenClaw host exec approval defaults
+  ansible.builtin.set_fact:
+    gateway_openclaw_exec_approvals_current: >-
+      {{
+        (gateway_openclaw_exec_approvals_raw.content | b64decode | from_json)
+        if (gateway_openclaw_exec_approvals_raw.content | default('') | length > 0)
+        else {}
+      }}
+    gateway_openclaw_exec_approvals_defaults:
+      security: "{{ gateway_openclaw_exec_security }}"
+      ask: "{{ gateway_openclaw_exec_ask }}"
+      askFallback: "{{ gateway_openclaw_exec_ask_fallback }}"
+  no_log: true
+  when: ansible_os_family != 'Windows'
+
+- name: Enforce OpenClaw host exec approval defaults
+  ansible.builtin.copy:
+    content: >-
+      {{
+        gateway_openclaw_exec_approvals_current
+        | combine({
+            'version': 1,
+            'defaults': (gateway_openclaw_exec_approvals_current.defaults | default({}))
+              | combine(gateway_openclaw_exec_approvals_defaults)
+          })
+        | to_nice_json(indent=2)
+      }}
+    dest: "{{ gateway_openclaw_exec_approvals_path }}"
+    owner: "{{ gateway_openclaw_service_user }}"
+    group: "{{ gateway_openclaw_service_group }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart openclaw
+  # Rewrite only when a managed default differs, so OpenClaw's own formatting
+  # of the file does not cause a restart on every run.
+  when:
+    - ansible_os_family != 'Windows'
+    - >-
+      (gateway_openclaw_exec_approvals_current.defaults | default({})
+       | dict2items | selectattr('key', 'in', ['security', 'ask', 'askFallback'])
+       | items2dict) != gateway_openclaw_exec_approvals_defaults
+
 - name: Inspect OpenClaw package manifest
   ansible.builtin.stat:
     path: "{{ gateway_openclaw_install_dir }}/package.json"
