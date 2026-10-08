@@ -77,6 +77,17 @@ gateway_openclaw_compile_cache_dir: /var/tmp/openclaw-compile-cache
 gateway_openclaw_service_path: "{{ gateway_openclaw_home }}/.nix-profile/bin:{{ gateway_openclaw_home }}/.local/bin:{{ gateway_openclaw_home }}/.npm-global/bin:{{ gateway_openclaw_home }}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 gateway_openclaw_extension_backup_dir: "{{ gateway_openclaw_home }}/.openclaw/backups/extensions"
 
+# Host exec approvals. OpenClaw's built-in host default is security=full,
+# ask=off, askFallback=full: every command runs without asking. The effective
+# policy is the stricter security and the stronger ask of openclaw.json
+# tools.exec and the host approvals file, while askFallback is read from the
+# host file only, so both are written. Commands outside the allowlist wait
+# for an operator approval; an unanswered approval is denied.
+gateway_openclaw_exec_security: allowlist
+gateway_openclaw_exec_ask: on-miss
+gateway_openclaw_exec_ask_fallback: deny
+gateway_openclaw_exec_approvals_path: "{{ gateway_openclaw_home }}/.openclaw/exec-approvals.json"
+
 gateway_openclaw_upstream_host: 127.0.0.1
 gateway_openclaw_upstream_port: 18789
 gateway_openclaw_bind: loopback
