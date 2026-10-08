@@ -107,6 +107,10 @@ services:
       - GF_SERVER_DOMAIN=observability.svc.plus
       - GF_SERVER_ROOT_URL=https://observability.svc.plus/grafana/
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
+{% if observability_cmdb_enabled | default(false) | bool %}
+    env_file:
+      - cmdb-grafana.env
+{% endif %}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards

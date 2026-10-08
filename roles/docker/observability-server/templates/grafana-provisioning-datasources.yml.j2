@@ -46,3 +46,24 @@ datasources:
         tags: [{ key: 'service.name', value: 'job' }, { key: 'instance', value: 'instance' }]
         spanStartTimeShift: '-1h'
         spanEndTimeShift: '1h'
+{% if observability_cmdb_enabled | default(false) | bool %}
+
+  - name: CMDB PostgreSQL
+    uid: cmdb_postgres
+    type: postgres
+    access: proxy
+    url: '$__env{CMDB_PG_HOST}:$__env{CMDB_PG_PORT}'
+    user: '$__env{CMDB_PG_USER}'
+    database: '$__env{CMDB_PG_DATABASE}'
+    isDefault: false
+    editable: false
+    jsonData:
+      sslmode: '$__env{CMDB_PG_SSLMODE}'
+      postgresVersion: 1500
+      timescaledb: false
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+    secureJsonData:
+      password: '$__env{CMDB_READER_PASSWORD}'
+{% endif %}

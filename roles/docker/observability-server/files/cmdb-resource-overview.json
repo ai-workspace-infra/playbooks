@@ -1,0 +1,80 @@
+{
+  "id": null,
+  "uid": "cmdb-resource-overview",
+  "title": "CMDB · 多云资源总览",
+  "tags": ["cmdb", "inventory", "multi-cloud"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "description": "CMDB PostgreSQL read-only views. Requires the explicitly enabled cmdb_postgres datasource and a completed CMDB schema migration.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Compute 资源",
+      "datasource": { "type": "postgres", "uid": "cmdb_postgres" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "format": "table", "rawSql": "SELECT count(*)::bigint AS value FROM cmdb.v_resource_current WHERE resource_kind = 'compute' AND lifecycle = 'present';", "refId": "A" }],
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Serverless 服务",
+      "datasource": { "type": "postgres", "uid": "cmdb_postgres" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [{ "format": "table", "rawSql": "SELECT count(*)::bigint AS value FROM cmdb.v_resource_current WHERE resource_kind = 'serverless_service' AND lifecycle = 'present';", "refId": "A" }],
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "过期观察 / 环境待确认",
+      "datasource": { "type": "postgres", "uid": "cmdb_postgres" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [{ "format": "table", "rawSql": "SELECT count(*)::bigint AS value FROM cmdb.v_resource_current WHERE lifecycle = 'present' AND (freshness = 'stale' OR scope = 'unknown');", "refId": "A" }],
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Compute 探针覆盖率",
+      "datasource": { "type": "postgres", "uid": "cmdb_postgres" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [{ "format": "table", "rawSql": "SELECT CASE WHEN coalesce(sum(running_count), 0) = 0 THEN 100.0 ELSE round(100.0 * sum(reporting_count) / sum(running_count), 1) END AS value FROM cmdb.v_monitoring_coverage WHERE resource_kind = 'compute';", "refId": "A" }],
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 70 }, { "color": "green", "value": 95 }] } }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Provider / Scope / 状态分布",
+      "datasource": { "type": "postgres", "uid": "cmdb_postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [{ "format": "table", "rawSql": "SELECT provider, scope, resource_kind, provider_state, freshness, resource_count FROM cmdb.v_provider_summary ORDER BY provider, scope, resource_kind, provider_state;", "refId": "A" }],
+      "options": { "cellHeight": "sm", "showHeader": true },
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "inspect": false } }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "最近采集回执",
+      "datasource": { "type": "postgres", "uid": "cmdb_postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [{ "format": "table", "rawSql": "SELECT collector, account_ref, project_ref, region_ref, resource_kind, scope, outcome, scope_complete, resources_seen, started_at, completed_at, error_class FROM cmdb.v_collection_health ORDER BY started_at DESC LIMIT 50;", "refId": "A" }],
+      "options": { "cellHeight": "sm", "showHeader": true },
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "inspect": false } }, "overrides": [] }
+    }
+  ],
+  "annotations": { "list": [{ "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "iconColor": "rgba(0, 211, 255, 1)", "name": "Annotations & Alerts", "type": "dashboard" }] },
+  "links": [],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "fiscalYearStartMonth": 0,
+  "liveNow": false
+}
