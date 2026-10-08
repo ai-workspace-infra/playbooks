@@ -96,6 +96,10 @@ web_saas_host_config_target_domain_base: >-
   {{ lookup('ansible.builtin.env', 'TARGET_DOMAIN_BASE') | default('', true) | trim }}
 web_saas_host_config_deploy_env: >-
   {{ lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('', true) | trim }}
+web_saas_host_config_smtp_required: >-
+  {{ lookup('ansible.builtin.env', 'SMTP_REQUIRED')
+     | default(('true' if web_saas_host_config_deploy_env == 'prod' else 'false'), true)
+     | bool }}
 web_saas_host_config_accounts_forwarded_host: >-
   {{ web_saas_host_config_target_domain_base }}
 web_saas_host_config_bridge_domain: >-
@@ -159,6 +163,16 @@ web_saas_host_config_secrets:
   POSTGRES_USER: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_POSTGRES_USER') | default('postgres', true) }}"
   POSTGRES_PASSWORD: "{{ web_saas_host_config_postgres_root_password }}"
   POSTGRES_DB: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_POSTGRES_DB') | default('postgres', true) }}"
+
+  # Accounts email verification uses the same Google Workspace SMTP profile as
+  # Cloud Run. The username/password are injected by Toolkit from the
+  # environment-scoped Vault path; this role never authenticates to Vault.
+  SMTP_HOST: "{{ lookup('ansible.builtin.env', 'SMTP_HOST') | default('smtp.gmail.com', true) }}"
+  SMTP_PORT: "{{ lookup('ansible.builtin.env', 'SMTP_PORT') | default('587', true) }}"
+  SMTP_FROM: "{{ lookup('ansible.builtin.env', 'SMTP_FROM') | default('XWorkmate <no-reply@xworktech.com>', true) }}"
+  SMTP_TLS_MODE: "{{ lookup('ansible.builtin.env', 'SMTP_TLS_MODE') | default('auto', true) }}"
+  SMTP_USERNAME: "{{ lookup('ansible.builtin.env', 'SMTP_USERNAME') | default('', true) }}"
+  SMTP_PASSWORD: "{{ lookup('ansible.builtin.env', 'SMTP_PASSWORD') | default('', true) }}"
 
   # accounts system admin bootstrap credential. The value is owned by
   # kv/data/CICD and injected by the platform-ops workflow.
