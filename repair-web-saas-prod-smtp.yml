@@ -1,0 +1,143 @@
+---
+# SMTP-only recovery: preserve existing application/DB credentials and ingress.
+# GITOPS_CHECKOUT must be the reviewed immutable GitOps v* release checkout.
+- name: Restore PROD SMTP and reconcile Accounts through Doco-CD
+  hosts: web-saas-prod
+  become: true
+  gather_facts: false
+  vars:
+    prod_services_gitops_checkout: "{{ lookup('ansible.builtin.env', 'GITOPS_CHECKOUT') }}"
+    prod_services_gitops_ref: "{{ lookup('ansible.builtin.env', 'GITOPS_REF') }}"
+    prod_services_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+  tasks:
+    - name: Require immutable production source and authenticated Vault access
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == 'web-saas-prod'
+          - prod_services_gitops_checkout | length > 0
+          - prod_services_gitops_ref is match('^refs/tags/v[0-9]')
+          - prod_services_vault_token | length > 0
+      no_log: true
+
+    - name: Verify the tracked GitOps model matches the release tag
+      ansible.builtin.command:
+        argv: [git, -C, "{{ prod_services_gitops_checkout }}", diff, --exit-code, "{{ prod_services_gitops_ref }}", --]
+      delegate_to: localhost
+      become: false
+      changed_when: false
+
+    - name: Read the reviewed PROD runtime declaration
+      ansible.builtin.set_fact:
+        prod_services_selection: "{{ (lookup('ansible.builtin.file', prod_services_gitops_checkout ~ '/topology/prod/runtime-selection.yaml') | from_yaml).spec }}"
+
+    - name: Require the application-only PROD target and unchanged database policy
+      ansible.builtin.assert:
+        that:
+          - prod_services_selection.runtimes.selfhost.target_host == inventory_hostname
+          - prod_services_selection.runtimes.selfhost.doco_target == 'prod-services'
+          - prod_services_selection.data.cutover == 'disabled'
+          - prod_services_selection.data.initialization == 'disabled'
+          - prod_services_selection.data.migration == 'disabled'
+
+    - name: Capture the existing PostgreSQL runtime
+      ansible.builtin.command:
+        argv: [docker, inspect, web-saas-postgresql]
+      register: smtp_repair_database_before
+      changed_when: false
+      no_log: true
+
+    - name: Require the existing PROD application environment file
+      ansible.builtin.stat:
+        path: /etc/xcontrol/web-saas/services.env
+      register: smtp_repair_env
+
+    - name: Refuse to replace missing application credentials
+      ansible.builtin.assert:
+        that:
+          - smtp_repair_env.stat.isreg | default(false)
+
+    - name: Load required SMTP values from the declared Vault profile
+      ansible.builtin.include_tasks: roles/web_saas_prod_services/tasks/smtp.yml
+
+    - name: Update only SMTP keys in the existing application env
+      ansible.builtin.lineinfile:
+        path: /etc/xcontrol/web-saas/services.env
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}='{{ item.value }}'"
+        owner: root
+        group: root
+        mode: '0600'
+      loop: "{{ prod_services_smtp_env | dict2items }}"
+      no_log: true
+      diff: false
+
+    - name: Render the Accounts template with SMTP environment references
+      ansible.builtin.template:
+        src: roles/vhosts/web_saas_host_config/templates/account.yaml.j2
+        dest: /etc/xcontrol/web-saas/config/account.yaml
+        owner: root
+        group: root
+        mode: '0644'
+      vars:
+        web_saas_host_config_console_domain: console-selfhost-prod.svc.plus
+        web_saas_host_config_accounts_domain: accounts-selfhost-prod.svc.plus
+
+    - name: Read existing Doco-CD registry credentials
+      community.hashi_vault.vault_kv2_get:
+        url: https://vault.svc.plus
+        auth_method: token
+        token: "{{ prod_services_vault_token }}"
+        engine_mount_point: kv
+        path: CICD
+      register: smtp_repair_cicd
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    - name: Align Doco-CD with the immutable application-only GitOps release
+      ansible.builtin.include_role:
+        name: roles/vhosts/Doco-CD
+      vars:
+        doco_cd_bootstrap_host: false
+        doco_cd_pull_image: false
+        doco_cd_registry_username: "{{ smtp_repair_cicd.secret.GHCR_USERNAME }}"
+        doco_cd_registry_password: "{{ smtp_repair_cicd.secret.GHCR_TOKEN }}"
+        doco_cd_vault_token: "{{ prod_services_vault_token }}"
+        doco_cd_webhook_port: '127.0.0.1:9080'
+        doco_cd_metrics_port: '127.0.0.1:9120'
+        doco_cd_poll_config:
+          - url: https://github.com/ai-workspace-infra/gitops.git
+            reference: "{{ prod_services_gitops_ref }}"
+            target: prod-services
+            interval: 60
+
+    - name: Require verification before registration after SMTP recovery
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/api/auth/register
+        method: POST
+        body_format: json
+        body:
+          name: smtp-runtime-check
+          email: admin@svc.plus
+          password: NoCreationTest123!
+        status_code: [400, 409, 429, 503]
+      register: smtp_repair_verification
+      until: smtp_repair_verification.status == 400 and smtp_repair_verification.json.error | default('') == 'verification_required'
+      retries: 24
+      delay: 5
+      no_log: true
+
+    - name: Capture PostgreSQL after application reconciliation
+      ansible.builtin.command:
+        argv: [docker, inspect, web-saas-postgresql]
+      register: smtp_repair_database_after
+      changed_when: false
+      no_log: true
+
+    - name: Require unchanged PostgreSQL identity and start time
+      ansible.builtin.assert:
+        that:
+          - (smtp_repair_database_before.stdout | from_json)[0].Id == (smtp_repair_database_after.stdout | from_json)[0].Id
+          - (smtp_repair_database_before.stdout | from_json)[0].State.StartedAt == (smtp_repair_database_after.stdout | from_json)[0].State.StartedAt
+          - (smtp_repair_database_before.stdout | from_json)[0].Mounts == (smtp_repair_database_after.stdout | from_json)[0].Mounts
+      no_log: true
