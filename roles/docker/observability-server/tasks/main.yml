@@ -51,6 +51,82 @@
   ignore_errors: true
   when: vault_token | trim | length > 0
 
+- name: Read CMDB Grafana reader credential from Vault
+  delegate_to: localhost
+  become: false
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/{{ observability_cmdb_reader_vault_path }}"
+    headers:
+      X-Vault-Token: "{{ vault_token }}"
+    method: GET
+  register: observability_cmdb_vault_secret
+  run_once: true
+  check_mode: false
+  no_log: true
+  failed_when: false
+  when:
+    - observability_cmdb_enabled | bool
+    - vault_token | trim | length > 0
+
+- name: Resolve CMDB Grafana reader credential
+  ansible.builtin.set_fact:
+    observability_cmdb_reader_password: >-
+      {{ (observability_cmdb_vault_secret.json | default({})).get('data', {}).get('data', {}).get(
+         'CMDB_READER_PASSWORD', observability_cmdb_reader_password) }}
+  no_log: true
+  when: observability_cmdb_enabled | bool
+
+- name: Require CMDB Grafana reader connection before enabling datasource
+  ansible.builtin.assert:
+    that:
+      - observability_cmdb_postgres_host | trim | length > 0
+      - "'\n' not in observability_cmdb_postgres_host"
+      - "'\r' not in observability_cmdb_postgres_host"
+      - observability_cmdb_reader_password | trim | length > 0
+      - "'\n' not in observability_cmdb_reader_password"
+      - "'\r' not in observability_cmdb_reader_password"
+      - observability_cmdb_postgres_user == 'cmdb_reader'
+      - observability_cmdb_postgres_database == 'cmdb'
+      - observability_cmdb_postgres_sslmode == 'verify-full'
+    fail_msg: >-
+      CMDB datasource requires an explicit PostgreSQL host and the
+      CMDB_READER_PASSWORD secret at {{ observability_cmdb_reader_vault_path }};
+      the CMDB reader must remain read-only and use TLS certificate validation.
+  no_log: true
+  when:
+    - observability_cmdb_enabled | bool
+    - not (ansible_check_mode | bool)
+
+- name: Warn when CMDB reader connection is incomplete in check mode
+  ansible.builtin.debug:
+    msg: >-
+      CMDB Grafana datasource check mode is incomplete: configure the database
+      host and CMDB_READER_PASSWORD at {{ observability_cmdb_reader_vault_path }}.
+  changed_when: false
+  when:
+    - observability_cmdb_enabled | bool
+    - ansible_check_mode | bool
+    - (observability_cmdb_postgres_host | trim | length == 0) or
+      (observability_cmdb_reader_password | trim | length == 0)
+
+- name: Write CMDB Grafana runtime environment file
+  ansible.builtin.template:
+    src: cmdb-grafana.env.j2
+    dest: "{{ observability_dir }}/cmdb-grafana.env"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: Restart observability stack
+  when: observability_cmdb_enabled | bool
+
+- name: Remove CMDB Grafana runtime environment when datasource is disabled
+  ansible.builtin.file:
+    path: "{{ observability_dir }}/cmdb-grafana.env"
+    state: absent
+  notify: Restart observability stack
+  when: not (observability_cmdb_enabled | bool)
+
 - name: Read MCP ingress credentials from Vault
   delegate_to: localhost
   become: false

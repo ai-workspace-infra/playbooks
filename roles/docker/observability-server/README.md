@@ -75,6 +75,20 @@ Compose、Caddy ingress 和 Prometheus scrape 配置中移除该项。每个 MCP
 
 ## 3. 变量列表 (`defaults/main.yml`)
 
+CMDB datasource provisioning is opt-in (`observability_cmdb_enabled: false`).
+Before enabling it, configure `observability_cmdb_postgres_host`, verify the
+database TLS certificate chain from the observability host, and provision
+`CMDB_READER_PASSWORD` at `kv/data/observability/cmdb-grafana`. The role refuses
+to enable a real datasource without that secret, the dedicated `cmdb` database,
+the `cmdb_reader` identity, and `sslmode=verify-full`. The secret is written to
+`cmdb-grafana.env` as a root-owned mode-0600 file and passed only to Grafana at
+runtime. The datasource is read-only by database grants; the dashboard panels
+query CMDB views. No database is created or migrated by this observability role.
+
+The `CMDB · 多云资源总览` dashboard is installed from the role's dashboard
+bundle. The existing homepage dashboard-list panel links to it once provisioned;
+the home dashboard is not overwritten.
+
 ```yaml
 # 全局控制变量
 observability_mcp_enabled: false
