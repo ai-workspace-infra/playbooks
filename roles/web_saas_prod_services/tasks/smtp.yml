@@ -1,0 +1,46 @@
+---
+- name: Validate the GitOps PROD SMTP secret references
+  ansible.builtin.assert:
+    that:
+      - prod_services_selection.runtime_secrets.accounts.smtp.provider == 'vault-kv-v2'
+      - prod_services_selection.runtime_secrets.accounts.smtp.path == 'vault://kv/prod/platform/smtp/google'
+      - prod_services_selection.runtime_secrets.accounts.smtp.username_ref == 'vault://kv/prod/platform/smtp/google#username'
+      - prod_services_selection.runtime_secrets.accounts.smtp.password_ref == 'vault://kv/prod/platform/smtp/google#password'
+
+- name: Read the declared PROD SMTP credentials
+  community.hashi_vault.vault_kv2_get:
+    url: https://vault.svc.plus
+    auth_method: token
+    token: "{{ prod_services_vault_token }}"
+    engine_mount_point: kv
+    path: "{{ prod_services_selection.runtime_secrets.accounts.smtp.path | regex_replace('^vault://kv/', '') }}"
+  register: prod_services_smtp_vault
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Resolve SMTP transport and credentials
+  ansible.builtin.set_fact:
+    prod_services_smtp_env:
+      SMTP_HOST: "{{ prod_services_selection.runtime_secrets.accounts.smtp.transport.host }}"
+      SMTP_PORT: "{{ prod_services_selection.runtime_secrets.accounts.smtp.transport.port | string }}"
+      SMTP_FROM: "{{ prod_services_selection.runtime_secrets.accounts.smtp.transport.from }}"
+      SMTP_TLS_MODE: "{{ prod_services_selection.runtime_secrets.accounts.smtp.transport.tls_mode }}"
+      SMTP_USERNAME: "{{ prod_services_smtp_vault.secret.username }}"
+      SMTP_PASSWORD: "{{ prod_services_smtp_vault.secret.password }}"
+  no_log: true
+
+- name: Require complete SMTP values safe for dotenv and YAML substitution
+  ansible.builtin.assert:
+    that:
+      - item.value | string | trim | length > 0
+      - item.value | string is not search("[\\r\\n'\"\\\\]")
+  loop: "{{ prod_services_smtp_env | dict2items }}"
+  no_log: true
+
+- name: Require the declared authenticated TLS submission endpoint
+  ansible.builtin.assert:
+    that:
+      - prod_services_smtp_env.SMTP_HOST == 'smtp.gmail.com'
+      - prod_services_smtp_env.SMTP_PORT | int == 587
+      - prod_services_smtp_env.SMTP_TLS_MODE in ['auto', 'starttls']
