@@ -48,6 +48,22 @@
   loop: "{{ web_saas_host_config_required_secrets }}"
   no_log: true
 
+- name: Assert PROD SMTP runtime inputs are present
+  ansible.builtin.assert:
+    that:
+      - web_saas_host_config_secrets[item] | default('') | trim | length > 0
+    fail_msg: >-
+      {{ item }} is empty. PROD Accounts email verification requires the
+      environment-scoped Vault SMTP record before the host is reconciled.
+  loop:
+    - SMTP_HOST
+    - SMTP_PORT
+    - SMTP_FROM
+    - SMTP_USERNAME
+    - SMTP_PASSWORD
+  when: web_saas_host_config_smtp_required | bool
+  no_log: true
+
 - name: Assert stunnel TLS material is present
   ansible.builtin.assert:
     that:
@@ -151,6 +167,8 @@
     owner: root
     group: root
     mode: "0600"
+  no_log: true
+  notify: web-saas accounts runtime config changed
 
 - name: Validate configured managed Bridge endpoint
   ansible.builtin.assert:
@@ -202,6 +220,7 @@
     - {src: otel-collector.yaml.j2, dest: otel-collector.yaml}
   loop_control:
     label: "{{ item.dest }}"
+  notify: web-saas accounts runtime config changed
 
 # 平台侧的证书恢复步骤排在本 role 之前, 所以这里能看到它落下来的文件。
 # 两个都在才算数: 只有证书没有私钥(或反过来)时 Caddy 起不来, 而那种半截状态

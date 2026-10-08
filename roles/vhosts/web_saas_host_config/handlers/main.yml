@@ -28,3 +28,21 @@
   register: web_saas_host_config_caddy_restart
   changed_when: "'restarted' in web_saas_host_config_caddy_restart.stdout"
   listen: web-saas caddy config changed
+
+- name: Restart web-saas Accounts
+  # account.yaml and secrets.env are bind-mounted into Accounts. Restart only
+  # that service so SMTP changes become effective without touching PostgreSQL
+  # or the rest of the web-saas stack.
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if [ -n "$(docker ps -q --filter name='^web-saas-accounts$')" ]; then
+      docker restart web-saas-accounts >/dev/null
+      echo restarted
+    else
+      echo "web-saas-accounts is not running yet; Doco-CD will pick up the new config"
+    fi
+  args:
+    executable: /bin/bash
+  register: web_saas_host_config_accounts_restart
+  changed_when: "'restarted' in web_saas_host_config_accounts_restart.stdout"
+  listen: web-saas accounts runtime config changed
