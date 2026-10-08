@@ -1,0 +1,218 @@
+---
+- name: Read runtime credentials without exposing their values
+  community.hashi_vault.vault_kv2_get:
+    url: https://vault.svc.plus
+    auth_method: token
+    token: "{{ prod_services_vault_token }}"
+    engine_mount_point: kv
+    path: "{{ item }}"
+  loop:
+    - WEB_SAAS
+    - prod/databases
+    - CICD
+    - "{{ prod_services_selection.ingress.tls_vault_ref | regex_replace('^kv/', '') }}"
+  register: prod_services_vault
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Resolve the existing Vault records
+  ansible.builtin.set_fact:
+    prod_services_runtime: "{{ prod_services_vault.results[0].secret }}"
+    prod_services_database: "{{ prod_services_vault.results[1].secret }}"
+    prod_services_cicd: "{{ prod_services_vault.results[2].secret }}"
+    prod_services_tls: "{{ prod_services_vault.results[3].secret }}"
+  no_log: true
+
+- name: Require complete application and TLS credentials
+  ansible.builtin.assert:
+    that:
+      - prod_services_database.account_pg_password | length > 0
+      - prod_services_runtime.AUTH_TOKEN_ACCESS_SECRET | length > 0
+      - prod_services_runtime.AUTH_TOKEN_REFRESH_SECRET | length > 0
+      - prod_services_runtime.AUTH_TOKEN_PUBLIC_TOKEN | length > 0
+      - prod_services_runtime.INTERNAL_SERVICE_TOKEN | length > 0
+      - prod_services_runtime.STUNNEL_SERVER_KEY_B64 | length > 0
+      - prod_services_tls.tls_fullchain_pem_b64 | length > 0
+      - prod_services_tls.tls_key_pem_b64 | length > 0
+  no_log: true
+
+- name: Ensure private application configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop: [/etc/xcontrol/web-saas/config, /etc/xcontrol/web-saas/certs]
+
+- name: Create the missing application role and grant existing business tables only
+  ansible.builtin.command:
+    argv: [docker, exec, -i, web-saas-postgresql, psql, -X, -v, ON_ERROR_STOP=1, -U, postgres, -d, account]
+    stdin: |
+      BEGIN;
+      SELECT format('CREATE ROLE account_user LOGIN PASSWORD %L', '{{ prod_services_database.account_pg_password | replace("'", "''") }}')
+      WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'account_user')
+      \gexec
+      GRANT CONNECT ON DATABASE account TO account_user;
+      GRANT USAGE ON SCHEMA public TO account_user;
+      GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO account_user;
+      GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO account_user;
+      COMMIT;
+  no_log: true
+
+- name: Render only application credentials, preserving the database container env file
+  ansible.builtin.template:
+    src: services.env.j2
+    dest: /etc/xcontrol/web-saas/services.env
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+
+- name: Render the existing Accounts and stunnel configuration contracts
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/roles/vhosts/web_saas_host_config/templates/{{ item.src }}"
+    dest: "/etc/xcontrol/web-saas/config/{{ item.dest }}"
+    mode: '0644'
+  vars:
+    web_saas_host_config_console_domain: console-selfhost-prod.svc.plus
+    web_saas_host_config_accounts_domain: accounts-selfhost-prod.svc.plus
+    web_saas_host_config_stunnel_service_name: postgres-tls-server
+    web_saas_host_config_stunnel_accept_port: 15433
+    web_saas_host_config_postgres_conf: {port: 5432}
+    web_saas_host_config_stunnel_client_accept_port: 15432
+    web_saas_host_config_stunnel_client_connect_host: stunnel-server
+    web_saas_host_config_stunnel_check_host: ''
+  loop:
+    - {src: account.yaml.j2, dest: account.yaml}
+    - {src: stunnel-server.conf.j2, dest: stunnel-server.conf}
+    - {src: stunnel-client.conf.j2, dest: stunnel-client.conf}
+
+- name: Restore the existing stunnel identity from Vault
+  ansible.builtin.copy:
+    content: "{{ prod_services_runtime[item.key] | b64decode }}"
+    dest: "/etc/xcontrol/web-saas/certs/{{ item.file }}"
+    mode: "{{ '0600' if item.file == 'server-key.pem' else '0644' }}"
+  loop:
+    - {key: STUNNEL_CA_CERT_B64, file: ca-cert.pem}
+    - {key: STUNNEL_SERVER_CERT_B64, file: server-cert.pem}
+    - {key: STUNNEL_SERVER_KEY_B64, file: server-key.pem}
+  no_log: true
+  diff: false
+
+- name: Restore the public certificate through the validated PEM owner
+  ansible.builtin.include_role:
+    name: roles/docker/caddy_certificate_restore
+  vars:
+    caddy_certificate_restore_directory: /etc/xcontrol/tls/svc.plus
+    caddy_certificate_restore_material:
+      fullchain: "{{ prod_services_tls.tls_fullchain_pem_b64 | b64decode }}"
+      cert: "{{ prod_services_tls.tls_cert_pem_b64 | b64decode }}"
+      key: "{{ prod_services_tls.tls_key_pem_b64 | b64decode }}"
+      ca: "{{ prod_services_tls.tls_ca_pem_b64 | b64decode }}"
+      trust_bundle: "{{ prod_services_tls.tls_trust_bundle_pem_b64 | b64decode }}"
+
+- name: Check certificate host coverage before configuring ingress
+  ansible.builtin.command:
+    argv: [openssl, x509, -in, /etc/xcontrol/tls/svc.plus/current/cert.pem, -noout, -checkhost, "{{ item }}"]
+  loop: "{{ prod_services_selection.ingress.domains.accounts + prod_services_selection.ingress.domains.billing }}"
+  register: prod_services_certificate_host
+  failed_when: prod_services_certificate_host.rc != 0 or 'does match certificate' not in prod_services_certificate_host.stdout
+  changed_when: false
+
+- name: Prepare a private certificate directory for the system Caddy user
+  ansible.builtin.file:
+    path: /etc/caddy/tls-web-saas
+    state: directory
+    owner: caddy
+    group: caddy
+    mode: '0700'
+
+- name: Publish the validated public ingress certificate
+  ansible.builtin.copy:
+    src: "/etc/xcontrol/tls/svc.plus/current/{{ item }}"
+    dest: "/etc/caddy/tls-web-saas/{{ item }}"
+    remote_src: true
+    owner: caddy
+    group: caddy
+    mode: "{{ '0600' if item == 'key.pem' else '0644' }}"
+  loop: [fullchain.pem, key.pem]
+  no_log: true
+  diff: false
+
+- name: Install the existing Doco-CD role with the application-only GitOps target
+  ansible.builtin.include_role:
+    name: roles/vhosts/Doco-CD
+  vars:
+    doco_cd_registry_username: "{{ prod_services_cicd.GHCR_USERNAME }}"
+    doco_cd_registry_password: "{{ prod_services_cicd.GHCR_TOKEN }}"
+    doco_cd_vault_token: "{{ prod_services_vault_token }}"
+    doco_cd_webhook_port: '127.0.0.1:9080'
+    doco_cd_metrics_port: '127.0.0.1:9120'
+    doco_cd_poll_config:
+      - url: https://github.com/ai-workspace-infra/gitops.git
+        reference: "{{ prod_services_gitops_ref }}"
+        target: "{{ prod_services_selection.runtimes.selfhost.doco_target }}"
+        interval: 60
+
+- name: Wait for database-backed Accounts and Billing readiness
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ item }}/readyz"
+    status_code: 200
+  loop: [8080, 8081]
+  register: prod_services_readiness
+  until: prod_services_readiness.status | default(0) == 200
+  retries: 40
+  delay: 5
+
+- name: Activate only the Accounts and restricted Billing ingress
+  block:
+    - name: Render the service ingress without changing Console fragments
+      ansible.builtin.template:
+        src: services.caddy.j2
+        dest: /etc/caddy/conf.d/web-saas-services.caddy
+        owner: root
+        group: root
+        mode: '0644'
+        backup: true
+      register: prod_services_ingress_update
+    - name: Validate all existing Caddy sites together
+      ansible.builtin.command:
+        argv: [caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+      changed_when: false
+    - name: Reload the existing ingress service
+      ansible.builtin.systemd_service:
+        name: caddy
+        state: reloaded
+  rescue:
+    - name: Restore the previous service fragment when one existed
+      ansible.builtin.copy:
+        src: "{{ prod_services_ingress_update.backup_file }}"
+        dest: /etc/caddy/conf.d/web-saas-services.caddy
+        remote_src: true
+      when: prod_services_ingress_update.backup_file is defined
+    - name: Remove only a newly created failed fragment
+      ansible.builtin.file:
+        path: /etc/caddy/conf.d/web-saas-services.caddy
+        state: absent
+      when: prod_services_ingress_update.backup_file is not defined
+    - name: Report an ingress activation failure
+      ansible.builtin.fail:
+        msg: Caddy activation failed; the previous fragment was restored.
+
+- name: Verify the database container was not recreated or restarted
+  ansible.builtin.command:
+    argv: [docker, inspect, web-saas-postgresql]
+  register: prod_services_database_after
+  changed_when: false
+  no_log: true
+
+- name: Require unchanged database runtime identity and data mount
+  ansible.builtin.assert:
+    that:
+      - (prod_services_database_before.stdout | from_json)[0].Id == (prod_services_database_after.stdout | from_json)[0].Id
+      - (prod_services_database_before.stdout | from_json)[0].State.StartedAt == (prod_services_database_after.stdout | from_json)[0].State.StartedAt
+      - (prod_services_database_before.stdout | from_json)[0].Mounts == (prod_services_database_after.stdout | from_json)[0].Mounts
+  no_log: true
