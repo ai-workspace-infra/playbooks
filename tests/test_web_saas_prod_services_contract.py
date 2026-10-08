@@ -43,6 +43,8 @@ class ProdServicesContract(unittest.TestCase):
         self.assertIn('.State.StartedAt', text)
         self.assertIn('.Mounts', text)
         self.assertIn('status_code: 200', text)
+        self.assertIn('Require healthy application containers before accepting reconciliation', text)
+        self.assertIn('.State.Health.Status', text)
 
     def test_secret_templates_and_ingress_fail_closed(self):
         tasks = yaml.safe_load((ROOT / 'roles/web_saas_prod_services/tasks/main.yml').read_text())

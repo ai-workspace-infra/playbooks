@@ -187,6 +187,16 @@
   retries: 40
   delay: 5
 
+- name: Require healthy application containers before accepting reconciliation
+  ansible.builtin.command:
+    argv: [docker, inspect, --format, "{{ '{{' }}.State.Health.Status{{ '}}' }}", "{{ item }}"]
+  loop: [web-saas-accounts, web-saas-billing]
+  register: prod_services_container_health
+  until: prod_services_container_health.rc == 0 and prod_services_container_health.stdout | trim == 'healthy'
+  retries: 30
+  delay: 5
+  changed_when: false
+
 - name: Activate only the Accounts and restricted Billing ingress
   block:
     - name: Render the service ingress without changing Console fragments
