@@ -1,0 +1,26 @@
+---
+# PROD web-saas host-side contract. Application images and Compose lifecycle
+# remain owned by GitOps + Doco-CD (.doco-cd.prod.yml).
+service_domains: >-
+  console-selfhost-prod.svc.plus,
+  accounts-selfhost-prod.svc.plus,
+  billing-selfhost-prod.svc.plus,
+  postgresql-selfhost-prod.svc.plus
+
+web_saas_host_config_deploy_env: prod
+web_saas_host_config_target_domain_base: svc.plus
+web_saas_host_config_console_domain: console-selfhost-prod.svc.plus
+web_saas_host_config_accounts_domain: accounts-selfhost-prod.svc.plus
+web_saas_host_config_billing_domain: billing-selfhost-prod.svc.plus
+
+# The Billing ingress is only rendered when the deployment supplies the
+# agent-proxy source CIDRs. Keep the DNS/domain identity declared without
+# widening the write-capable job endpoint to the public Internet.
+web_saas_host_config_billing_allowed_cidrs: ""
+
+# Select the production Doco-CD target; the repository default remains UAT.
+doco_cd_poll_config:
+  - url: https://github.com/ai-workspace-infra/gitops.git
+    reference: main
+    target: prod
+    interval: 60
