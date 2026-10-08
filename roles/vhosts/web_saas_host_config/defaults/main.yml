@@ -84,6 +84,8 @@ web_saas_host_config_accounts_public_domain: >-
 # normally remains owned by the serverless edge until DNS is cut over.
 web_saas_host_config_brand_domain: >-
   {{ lookup('ansible.builtin.env', 'WEB_SAAS_BRAND_DOMAIN') | default('', true) | trim }}
+web_saas_host_config_brand_selfhost_domain: >-
+  {{ lookup('ansible.builtin.env', 'WEB_SAAS_BRAND_SELFHOST_DOMAIN') | default('', true) | trim }}
 # The VPS Accounts hostname is mode-qualified (for example,
 # accounts-selfhost-uat.onwalk.net), while Accounts resolves the shared tenant
 # from the target domain base (onwalk.net). Keep those identities separate and
@@ -194,7 +196,8 @@ web_saas_host_config_secrets:
   ACP_ALLOWED_ORIGINS: >-
     {{ [web_saas_host_config_console_domain,
         web_saas_host_config_console_public_domain,
-        web_saas_host_config_brand_domain]
+        web_saas_host_config_brand_domain,
+        web_saas_host_config_brand_selfhost_domain]
        | map('trim') | reject('equalto', '') | unique
        | map('regex_replace', '^(.*)$', 'https://\\1') | join(',') }}
 

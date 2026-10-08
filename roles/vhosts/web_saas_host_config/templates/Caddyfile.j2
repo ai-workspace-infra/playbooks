@@ -13,6 +13,7 @@
 
    DNS-01 需要 caddy-dns/cloudflare 模块 —— 官方 caddy 镜像不含它, 用的是
    ghcr.io/ai-workspace-infra/caddy-cloudflare(artifacts 仓构建)。 #}
+{% set brand_domains = [web_saas_host_config_brand_domain, web_saas_host_config_brand_selfhost_domain | default('')] | map('trim') | reject('equalto', '') | unique | list %}
 {
 	admin off
 }
@@ -100,8 +101,8 @@
    separate site block because the restored *.svc.plus certificate does not
    cover xworktech.com. With DNS-01 enabled this block obtains its own SAN;
    otherwise Caddy uses the normal HTTP-01 flow after DNS is cut over. #}
-{% if web_saas_host_config_brand_domain | trim | length > 0 %}
-{{ web_saas_host_config_brand_domain }} {
+{% if brand_domains | length > 0 %}
+{{ brand_domains | join(', ') }} {
 {% if web_saas_host_config_acme_dns_enabled | bool %}
 	tls {
 		dns cloudflare {env.CLOUDFLARE_DNS_API_TOKEN}
@@ -117,7 +118,7 @@
 }
 {% endif %}
 {% else %}
-https://{{ web_saas_host_config_console_domain }}, https://{{ web_saas_host_config_console_public_domain }}{% if web_saas_host_config_brand_domain | trim | length > 0 %}, https://{{ web_saas_host_config_brand_domain }}{% endif %} {
+https://{{ web_saas_host_config_console_domain }}, https://{{ web_saas_host_config_console_public_domain }}{% if brand_domains | length > 0 %}, https://{{ brand_domains | join(', https://') }}{% endif %} {
 	encode zstd gzip
 
 	# /api/auth/* 不做分流: 那是 console 自己的 Next BFF 路由, 不是 accounts 的
