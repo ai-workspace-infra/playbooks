@@ -1,0 +1,54 @@
+---
+# Application-only bridge for the retained Console owner. No root Vault token
+# or database credentials are rendered into Console's runtime environment.
+- name: Read the existing Console compose model privately
+  ansible.builtin.slurp:
+    src: /opt/console-svc-plus/docker-compose.yml
+  register: console_local_existing
+  no_log: true
+
+- name: Require the exact retained Console project before changing connections
+  ansible.builtin.assert:
+    that:
+      - (console_local_existing.content | b64decode | from_yaml).services.keys() | list | sort == ['dashboard', 'frontend-assets']
+      - (console_local_existing.content | b64decode | from_yaml).services.dashboard.container_name == 'portal-dashboard'
+      - >-
+        (lookup('ansible.builtin.file', prod_services_gitops_checkout ~ '/' ~ prod_services_selection.runtimes.selfhost.console_connection_ref)
+         | from_yaml).services.dashboard.environment.ACCOUNT_SERVICE_URL == 'http://accounts:8080'
+  no_log: true
+
+- name: Preserve unrelated Console settings while syncing the internal service token
+  ansible.builtin.lineinfile:
+    path: /opt/console-svc-plus/.env.runtime
+    regexp: '^INTERNAL_SERVICE_TOKEN='
+    line: "INTERNAL_SERVICE_TOKEN='{{ prod_services_runtime.INTERNAL_SERVICE_TOKEN }}'"
+    mode: '0600'
+    backup: true
+  no_log: true
+  diff: false
+
+- name: Install the GitOps declared local Accounts connection override
+  ansible.builtin.copy:
+    src: "{{ prod_services_gitops_checkout }}/{{ prod_services_selection.runtimes.selfhost.console_connection_ref }}"
+    dest: /opt/console-svc-plus/docker-compose.accounts.yml
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Validate the retained Console and additive connection model without printing credentials
+  ansible.builtin.command:
+    argv: [docker, compose, --project-name, console-svc-plus, --env-file, /opt/console-svc-plus/.env.runtime, -f, /opt/console-svc-plus/docker-compose.yml, -f, /opt/console-svc-plus/docker-compose.accounts.yml, config, --quiet]
+  changed_when: false
+
+- name: Recreate only Console with its existing image and static volume
+  ansible.builtin.command:
+    argv: [docker, compose, --project-name, console-svc-plus, --env-file, /opt/console-svc-plus/.env.runtime, -f, /opt/console-svc-plus/docker-compose.yml, -f, /opt/console-svc-plus/docker-compose.accounts.yml, up, -d, --no-deps, --no-build, --pull, never, dashboard]
+
+- name: Require the Console to Accounts database-backed read chain
+  ansible.builtin.uri:
+    url: http://127.0.0.1:3000/api/billing/plans
+    status_code: 200
+  register: console_local_readiness
+  until: console_local_readiness.status | default(0) == 200
+  retries: 20
+  delay: 3

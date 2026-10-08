@@ -12,6 +12,9 @@ doco_cd_webhook_secret: "{{ lookup('ansible.builtin.env', 'DOCO_CD_WEBHOOK_SECRE
 doco_cd_enable_webhook: false
 doco_cd_poll_config: []
 doco_cd_pull_image: true
+# Existing PROD hosts already have Docker. Application-only convergence must
+# not run the Docker dependency's common OS/SSH/firewall baseline.
+doco_cd_bootstrap_host: true
 
 # Registry 凭据。设置后先 docker login 造出 /root/.docker/config.json, 再把
 # 它挂进 Doco-CD 容器; 不设置且宿主机上没有该文件时不挂载 (只拉公开镜像)。
