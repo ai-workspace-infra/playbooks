@@ -1,0 +1,17 @@
+{{ prod_services_selection.ingress.domains.accounts | join(', ') }} {
+  tls /etc/caddy/tls-web-saas/fullchain.pem /etc/caddy/tls-web-saas/key.pem
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:8080 {
+    header_up X-Forwarded-Host svc.plus
+  }
+}
+{{ prod_services_selection.ingress.domains.billing | join(', ') }} {
+  tls /etc/caddy/tls-web-saas/fullchain.pem /etc/caddy/tls-web-saas/key.pem
+  @allowed remote_ip {{ prod_services_selection.ingress.billing_allowed_cidrs | join(' ') }}
+  handle @allowed {
+    reverse_proxy 127.0.0.1:8081
+  }
+  handle {
+    respond "billing ingress is restricted" 403
+  }
+}

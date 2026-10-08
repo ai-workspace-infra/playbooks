@@ -1,0 +1,57 @@
+---
+- name: Converge PROD Accounts and Billing from GitOps without a data cutover
+  hosts: web-saas-prod
+  become: true
+  gather_facts: true
+  vars:
+    prod_services_gitops_checkout: "{{ lookup('ansible.builtin.env', 'GITOPS_CHECKOUT') }}"
+    prod_services_gitops_ref: "{{ lookup('ansible.builtin.env', 'GITOPS_REF') }}"
+    prod_services_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+  pre_tasks:
+    - name: Require explicit source and authenticated operator inputs
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == 'web-saas-prod'
+          - prod_services_gitops_checkout | length > 0
+          - prod_services_gitops_ref | length > 0
+          - prod_services_vault_token | length > 0
+          - lookup('ansible.builtin.env', 'CMDB_FILE') | length > 0
+      no_log: true
+    - name: Read the IaC CMDB and the GitOps runtime selection
+      ansible.builtin.set_fact:
+        prod_services_cmdb: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'CMDB_FILE')) | from_json }}"
+        prod_services_selection: "{{ (lookup('ansible.builtin.file', prod_services_gitops_checkout ~ '/topology/prod/runtime-selection.yaml') | from_yaml).spec }}"
+    - name: Bind the deployment to the declared host and existing database
+      ansible.builtin.assert:
+        that:
+          - prod_services_cmdb.environment == 'prod'
+          - prod_services_cmdb.project_id == 'open-platform-prod'
+          - prod_services_cmdb['web-saas-prod'].ip == ansible_host
+          - prod_services_cmdb['web-saas-prod'].data_disk.mount_path == '/data'
+          - prod_services_selection.runtimes.selfhost.enabled | bool
+          - prod_services_selection.runtimes.selfhost.target_host == inventory_hostname
+          - prod_services_selection.traffic.desired_active == 'serverless'
+          - prod_services_selection.data.cutover == 'disabled'
+          - prod_services_selection.data.initialization == 'disabled'
+          - prod_services_selection.data.migration == 'disabled'
+          - prod_services_selection.data.selfhost.schema_management == 'external'
+          - not prod_services_selection.data.selfhost.background_writers | bool
+          - prod_services_selection.ingress.owner == 'system-caddy'
+    - name: Capture the existing PostgreSQL identity and counts
+      ansible.builtin.command:
+        argv: [docker, inspect, web-saas-postgresql]
+      register: prod_services_database_before
+      changed_when: false
+      no_log: true
+    - name: Require the declared existing data bind
+      ansible.builtin.assert:
+        that:
+          - (prod_services_database_before.stdout | from_json)[0].State.Running
+          - >-
+            ((prod_services_database_before.stdout | from_json)[0].Mounts
+             | selectattr('Destination', 'equalto', '/var/lib/postgresql/data')
+             | selectattr('Source', 'equalto', prod_services_selection.data.selfhost.mount_path)
+             | list | length) == 1
+      no_log: true
+  roles:
+    - roles/web_saas_prod_services
