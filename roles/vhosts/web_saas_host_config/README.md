@@ -53,6 +53,20 @@ DNS-only，Caddy 必须同时接受这两个 Host。Caddy 转发给 Accounts 的
 `X-Forwarded-Host` 则是 `onwalk.net`。不要传入
 `source_domain_base`，也不要在 role 或 Caddyfile 中硬编码域名。
 
+生产 `web-saas-prod` 的 Caddy 同时接受 selfhost 与 canonical Host：
+
+| 服务 | selfhost | canonical | Caddy 行为 |
+|---|---|---|---|
+| Console | `console-selfhost-prod.svc.plus` | `console.svc.plus` | 反代 `console:3000` |
+| Accounts | `accounts-selfhost-prod.svc.plus` | `accounts.svc.plus` | 反代 `accounts:8080` |
+| Billing ingest | `billing-selfhost-prod.svc.plus` | `billing.svc.plus` | 仅在 agent CIDR 已配置时反代 `billing:8081` |
+| PostgreSQL | `postgresql-selfhost-prod.svc.plus` | `postgresql.svc.plus` | 仅作为服务/DNS 身份，不经过 HTTP Caddy、不开放公网 5432 |
+
+生产还将 `xworktech.com` 作为 Console 镜像的可选品牌入口。它使用独立 Caddy
+site block，因为 `*.svc.plus` 证书不覆盖 `xworktech.com`；启用 Cloudflare DNS-01
+时单独签发，否则使用 DNS 已切到该主机后的 HTTP-01。品牌域名仍由 DNS/IaC 决定，
+本 role 不修改 DNS。
+
 **可选的跨节点 Billing 入口**:
 
 - `WEB_SAAS_BILLING_DOMAIN`：例如 `billing-uat.onwalk.net`。

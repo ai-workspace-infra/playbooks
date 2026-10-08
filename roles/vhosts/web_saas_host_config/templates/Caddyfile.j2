@@ -74,7 +74,7 @@
 	   都由部署流水线提供时才生成, Caddy 先做源 IP 限制, Billing ingest
 	   再用与 Accounts 相同的 INTERNAL_SERVICE_TOKEN 做 Bearer 认证。 #}
 {% if web_saas_host_config_billing_domain | trim | length > 0 and web_saas_host_config_billing_allowed_cidrs | trim | length > 0 %}
-	@billing host {{ web_saas_host_config_billing_domain }}
+	@billing host {{ web_saas_host_config_billing_domain }}{% if web_saas_host_config_billing_public_domain | trim | length > 0 %} {{ web_saas_host_config_billing_public_domain }}{% endif %}{{ '\n' }}
 	handle @billing {
 		@billing_agent remote_ip {{ web_saas_host_config_billing_allowed_cidrs }}
 		handle @billing_agent {
@@ -96,8 +96,28 @@
 		abort
 	}
 }
+{# xworktech.com is an optional brand alias for the Console image. It is a
+   separate site block because the restored *.svc.plus certificate does not
+   cover xworktech.com. With DNS-01 enabled this block obtains its own SAN;
+   otherwise Caddy uses the normal HTTP-01 flow after DNS is cut over. #}
+{% if web_saas_host_config_brand_domain | trim | length > 0 %}
+{{ web_saas_host_config_brand_domain }} {
+{% if web_saas_host_config_acme_dns_enabled | bool %}
+	tls {
+		dns cloudflare {env.CLOUDFLARE_DNS_API_TOKEN}
+	}
+{% endif %}
+	encode zstd gzip
+	handle {
+		tracing {
+			span http.server.request
+		}
+		reverse_proxy console:3000
+	}
+}
+{% endif %}
 {% else %}
-https://{{ web_saas_host_config_console_domain }}, https://{{ web_saas_host_config_console_public_domain }} {
+https://{{ web_saas_host_config_console_domain }}, https://{{ web_saas_host_config_console_public_domain }}{% if web_saas_host_config_brand_domain | trim | length > 0 %}, https://{{ web_saas_host_config_brand_domain }}{% endif %} {
 	encode zstd gzip
 
 	# /api/auth/* 不做分流: 那是 console 自己的 Next BFF 路由, 不是 accounts 的
@@ -130,7 +150,7 @@ https://{{ web_saas_host_config_bridge_domain }} {
 }
 
 {% if web_saas_host_config_billing_domain | trim | length > 0 and web_saas_host_config_billing_allowed_cidrs | trim | length > 0 %}
-https://{{ web_saas_host_config_billing_domain }} {
+https://{{ web_saas_host_config_billing_domain }}{% if web_saas_host_config_billing_public_domain | trim | length > 0 %}, https://{{ web_saas_host_config_billing_public_domain }}{% endif %} {
 	encode zstd gzip
 	@billing_agent remote_ip {{ web_saas_host_config_billing_allowed_cidrs }}
 	handle @billing_agent {

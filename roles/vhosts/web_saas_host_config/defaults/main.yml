@@ -79,6 +79,11 @@ web_saas_host_config_console_public_domain: >-
   console-{{ web_saas_host_config_deploy_env }}.{{ web_saas_host_config_target_domain_base }}
 web_saas_host_config_accounts_public_domain: >-
   accounts-{{ web_saas_host_config_deploy_env }}.{{ web_saas_host_config_target_domain_base }}
+# Optional brand/homepage alias served by the Console image on a self-hosted
+# web-saas node. It is deliberately opt-in because the canonical brand domain
+# normally remains owned by the serverless edge until DNS is cut over.
+web_saas_host_config_brand_domain: >-
+  {{ lookup('ansible.builtin.env', 'WEB_SAAS_BRAND_DOMAIN') | default('', true) | trim }}
 # The VPS Accounts hostname is mode-qualified (for example,
 # accounts-selfhost-uat.onwalk.net), while Accounts resolves the shared tenant
 # from the target domain base (onwalk.net). Keep those identities separate and
@@ -106,6 +111,8 @@ web_saas_host_config_bridge_server_url: >-
 # 没有同时提供域名和允许访问的 agent CIDR 时不渲染站点，避免误把
 # /v1/jobs/* 暴露到公网。
 web_saas_host_config_billing_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_BILLING_DOMAIN') | default('', true) }}"
+web_saas_host_config_billing_public_domain: >-
+  {{ lookup('ansible.builtin.env', 'WEB_SAAS_BILLING_PUBLIC_DOMAIN') | default('', true) | trim }}
 web_saas_host_config_billing_allowed_cidrs: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_BILLING_ALLOWED_CIDRS') | default('', true) }}"
 
 # Cloudflare DNS API token, 用于 ACME DNS-01。给了它就走 DNS-01 + 泛域名证书,
@@ -184,7 +191,12 @@ web_saas_host_config_secrets:
   BRIDGE_ACCOUNTS_SERVICE_TOKEN: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}"
   # Browser-origin validation is also deployment-owned: never inherit the
   # source-zone default compiled into the Bridge image.
-  ACP_ALLOWED_ORIGINS: "https://{{ web_saas_host_config_console_domain }}"
+  ACP_ALLOWED_ORIGINS: >-
+    {{ [web_saas_host_config_console_domain,
+        web_saas_host_config_console_public_domain,
+        web_saas_host_config_brand_domain]
+       | map('trim') | reject('equalto', '') | unique
+       | map('regex_replace', '^(.*)$', 'https://\\1') | join(',') }}
 
   # Stripe 密钥归 Vault kv/billing-service, 与本角色其余密钥不同源 ——
   # 那个 KV 是计费域专用, 按 SANDBOX_/PROD_ 前缀存两套。留空时 accounts
