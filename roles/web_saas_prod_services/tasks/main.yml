@@ -61,6 +61,18 @@
       SELECT format('CREATE ROLE account_user LOGIN PASSWORD %L', '{{ prod_services_database.account_pg_password | replace("'", "''") }}')
       WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'account_user')
       \gexec
+      DO $guard$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'account_user'
+                   AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication)) THEN
+          RAISE EXCEPTION 'application role must remain a non-administrative backend role';
+        END IF;
+      END;
+      $guard$;
+      -- The compiled native runtime requires complete visibility of imported
+      -- RLS tables. Preserve policies/owners/data and authorize this backend
+      -- role explicitly instead of running applications as postgres.
+      ALTER ROLE account_user BYPASSRLS;
       GRANT CONNECT ON DATABASE account TO account_user;
       GRANT USAGE ON SCHEMA public TO account_user;
       GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO account_user;
@@ -91,7 +103,7 @@
     web_saas_host_config_postgres_conf: {port: 5432}
     web_saas_host_config_stunnel_client_accept_port: 15432
     web_saas_host_config_stunnel_client_connect_host: stunnel-server
-    web_saas_host_config_stunnel_check_host: ''
+    web_saas_host_config_stunnel_check_host: web-saas-stunnel-server
   loop:
     - {src: account.yaml.j2, dest: account.yaml}
     - {src: stunnel-server.conf.j2, dest: stunnel-server.conf}

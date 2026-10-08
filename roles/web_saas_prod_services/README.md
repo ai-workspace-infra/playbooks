@@ -22,6 +22,14 @@ snapshot import, user reset, public database port, or formal traffic cutover is
 performed. `runtime_role: primary` means serving the existing LOCAL account
 database, not promotion of that database to global authority.
 
+The existing imported database retains RLS on ten business tables. The native
+Accounts runtime verifies complete table visibility; a bare table grant is not
+sufficient for a non-owner role. GitOps explicitly authorizes `account_user` as
+a trusted backend with `BYPASSRLS`. The role rejects administrative capabilities
+(superuser/create database/create role/replication), preserves RLS policies and
+table ownership, and grants access only to existing account database tables.
+This is a backend-only identity; never distribute its credential to clients.
+
 The formal traffic declaration remains serverless. Selfhost background writers
 remain disabled until the data-authority gate is independently verified;
 `jobs.active_runtime: selfhost` is desired ownership, not proof of activation.
