@@ -33,11 +33,13 @@ class ProdServicesContract(unittest.TestCase):
 
     def test_no_data_initialization_or_database_recreation(self):
         text = (ROOT / 'roles/web_saas_prod_services/tasks/main.yml').read_text()
-        for forbidden in ('DROP DATABASE', 'DROP TABLE', 'TRUNCATE ', 'ALTER ROLE',
+        for forbidden in ('DROP DATABASE', 'DROP TABLE', 'TRUNCATE ', 'ALTER TABLE',
                           'CREATE DATABASE', 'CREATE TABLE', 'docker compose down', 'pg_restore'):
             self.assertNotIn(forbidden, text)
         self.assertIn('CREATE ROLE account_user', text)
         self.assertIn('WHERE NOT EXISTS', text)
+        self.assertIn('ALTER ROLE account_user BYPASSRLS', text)
+        self.assertIn('rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication', text)
         self.assertIn('.State.StartedAt', text)
         self.assertIn('.Mounts', text)
         self.assertIn('status_code: 200', text)
