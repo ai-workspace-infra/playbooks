@@ -19,9 +19,11 @@ console_service_caddy_fragment_name: "{{ console_service_server_name }}-{{ conso
 console_service_caddy_fragment_path: "{{ console_service_caddy_conf_dir }}/{{ console_service_canonical_domain }}.caddy"
 console_service_alias_caddy_fragment_path: "{{ console_service_caddy_conf_dir }}/{{ console_service_alias_domain if (console_service_alias_domain | trim | length > 0) else 'console-alias' }}.caddy"
 
-console_service_image_repo: "{{ lookup('ansible.builtin.env', 'CONSOLE_IMAGE_REPO') | default('ghcr.io/x-evor/dashboard', true) }}"
-console_service_image_tag: "{{ lookup('ansible.builtin.env', 'CONSOLE_IMAGE_TAG') | default('latest', true) }}"
-console_service_frontend_image: "{{ lookup('ansible.builtin.vars', 'FRONTEND_IMAGE', default=lookup('ansible.builtin.env', 'FRONTEND_IMAGE') | default('', true)) }}"
+console_service_image_repo: "{{ lookup('ansible.builtin.env', 'CONSOLE_IMAGE_REPO') | default('ghcr.io/ai-workspace-services/console', true) }}"
+console_service_image_tag: "{{ lookup('ansible.builtin.env', 'CONSOLE_IMAGE_TAG') | default('daily-build-2026.10.06-r6', true) }}"
+console_service_frontend_image: >-
+  {{ lookup('ansible.builtin.vars', 'FRONTEND_IMAGE', default=lookup('ansible.builtin.env', 'FRONTEND_IMAGE')
+     | default(console_service_image_repo ~ ':' ~ console_service_image_tag, true)) }}
 
 console_service_registry: "{{ lookup('ansible.builtin.env', 'CONSOLE_REGISTRY') | default('ghcr.io', true) }}"
 console_service_registry_username: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') | default('', true) }}"
