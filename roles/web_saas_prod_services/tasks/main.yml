@@ -35,6 +35,13 @@
       - prod_services_runtime.STUNNEL_SERVER_KEY_B64 | length > 0
       - prod_services_tls.tls_fullchain_pem_b64 | length > 0
       - prod_services_tls.tls_key_pem_b64 | length > 0
+      - >-
+        [prod_services_database.account_pg_password,
+         prod_services_runtime.AUTH_TOKEN_ACCESS_SECRET,
+         prod_services_runtime.AUTH_TOKEN_REFRESH_SECRET,
+         prod_services_runtime.AUTH_TOKEN_PUBLIC_TOKEN,
+         prod_services_runtime.INTERNAL_SERVICE_TOKEN]
+        | select('search', "[\\r\\n'\"\\\\]") | list | length == 0
   no_log: true
 
 - name: Ensure private application configuration directories
@@ -146,6 +153,7 @@
   ansible.builtin.include_role:
     name: roles/vhosts/Doco-CD
   vars:
+    doco_cd_bootstrap_host: false
     doco_cd_registry_username: "{{ prod_services_cicd.GHCR_USERNAME }}"
     doco_cd_registry_password: "{{ prod_services_cicd.GHCR_TOKEN }}"
     doco_cd_vault_token: "{{ prod_services_vault_token }}"
@@ -201,6 +209,11 @@
     - name: Report an ingress activation failure
       ansible.builtin.fail:
         msg: Caddy activation failed; the previous fragment was restored.
+
+- name: Connect the retained selfhost Console to local Accounts
+  ansible.builtin.include_role:
+    name: roles/vhosts/console_service
+    tasks_from: link-local-accounts
 
 - name: Verify the database container was not recreated or restarted
   ansible.builtin.command:

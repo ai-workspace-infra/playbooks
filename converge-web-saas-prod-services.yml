@@ -14,8 +14,16 @@
           - inventory_hostname == 'web-saas-prod'
           - prod_services_gitops_checkout | length > 0
           - prod_services_gitops_ref | length > 0
+          - prod_services_gitops_ref is match('^refs/tags/')
           - prod_services_vault_token | length > 0
           - lookup('ansible.builtin.env', 'CMDB_FILE') | length > 0
+      no_log: true
+    - name: Require a clean tracked GitOps model matching the immutable deployment ref
+      ansible.builtin.command:
+        argv: [git, -C, "{{ prod_services_gitops_checkout }}", diff, --exit-code, "{{ prod_services_gitops_ref }}", --]
+      delegate_to: localhost
+      become: false
+      changed_when: false
       no_log: true
     - name: Read the IaC CMDB and the GitOps runtime selection
       ansible.builtin.set_fact:

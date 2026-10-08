@@ -11,7 +11,12 @@ The role restores service/TLS material, grants a missing application role access
 to existing business tables, installs Doco-CD's `prod-services` target, and
 activates Accounts and restricted Billing through the existing system Caddy.
 
-The target excludes PostgreSQL and Console. Existing database container ID,
+The Doco-CD target excludes PostgreSQL and Console. An additive GitOps Console
+connection override is applied by the retained Console owner with `--no-deps`
+and `--pull never`, preserving its image/static volume/ports and Caddy sites.
+The Console API connects to `http://accounts:8080` on the existing shared
+network; its browser-facing Accounts endpoint uses the selfhost domain.
+Existing database container ID,
 start time and mounts must stay unchanged. No initialization, schema migration,
 snapshot import, user reset, public database port, or formal traffic cutover is
 performed. `runtime_role: primary` means serving the existing LOCAL account
