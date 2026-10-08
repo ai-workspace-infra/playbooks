@@ -45,18 +45,18 @@ def credentials():
 
 
 def receipt(contract,mode):
-    return dict(format=1,environment='prod',result={'preview':'eligible','copy':'copied','compare':'equal','core_users':'copied'}[mode],
+    return dict(format=1,environment='prod',result={'preview':'eligible','copy':'copied','compare':'equal','core_users':'copied','core_users_compare':'equal'}[mode],
         schema_sha256=HOST.ACCOUNTS_SQL_SHA256,billing_schema_sha256=HOST.BILLING_SQL_SHA256,
         migration_version=2026100701,batch_size=1000,source_identity_sha256=source_identity(),
-        source_snapshot_sha256='' if mode=='core_users' else 'e'*64,
-        source_catalog_sha256='' if mode=='core_users' else 'f'*64,source_read_only=True,source_table_count=1 if mode=='core_users' else 44,
+        source_snapshot_sha256='' if mode in ('core_users','core_users_compare') else 'e'*64,
+        source_catalog_sha256='' if mode in ('core_users','core_users_compare') else 'f'*64,source_read_only=True,source_table_count=1 if mode in ('core_users','core_users_compare') else 44,
         user_count=1,full_business_equal=mode!='preview',target_writes=mode in ('copy','core_users'),database_cutover_approved=False,
         core_users=dict(source=dict(count=1,email_sha256='2'*64,password_hash_sha256='3'*64,email_proxy_sha256='4'*64),
             target=dict(count=0,email_sha256='',password_hash_sha256='',email_proxy_sha256='') if mode=='preview' else
             dict(count=1,email_sha256='2'*64,password_hash_sha256='3'*64,email_proxy_sha256='4'*64)),
         snapshot_started_at='2026-10-07T00:00:00Z',completed_at='2026-10-07T00:01:00Z',
-        scope='core_users' if mode=='core_users' else 'full_business',
-        tables={} if mode in ('preview','core_users') else {t:dict(rows=1 if t=='users' else 0,sha256='1'*64)
+        scope='core_users' if mode in ('core_users','core_users_compare') else 'full_business',
+        tables={} if mode in ('preview','core_users','core_users_compare') else {t:dict(rows=1 if t=='users' else 0,sha256='1'*64)
             for t in contract['transfer']['business_tables']})
 
 
@@ -65,7 +65,7 @@ class FullBusinessOwnerTests(unittest.TestCase):
         self.spec=spec();self.credentials=credentials()
 
     def test_target_diagnostic_reads_only_metadata_and_never_emits_container_names(self):
-        with patch.object(DIAGNOSTIC,'command',return_value='web-saas-postgresql\nweb-saas-app'), \
+        with patch.object(DIAGNOSTIC,'command',return_value='web-saas-postgresql\nweb-saas-caddy\nweb-saas-app'), \
              patch.object(DIAGNOSTIC,'sql',side_effect=['170006','1','2026100701:false','53']) as sql, \
              patch('builtins.print') as output:
             DIAGNOSTIC.main()
@@ -107,13 +107,15 @@ class FullBusinessOwnerTests(unittest.TestCase):
                 self.assertNotIn('--env-file',argv)
                 if fail:raise HOST.native.Refused('fictional timeout')
                 data=receipt(self.spec,mode);data['private_extra']='do-not-republish'
+                if mode in ('core_users','core_users_compare'):
+                    data['source_identity_sha256']=''
                 return json.dumps(data)
             return ''
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,NATIVE_DATA_GATE_VERIFIED='true'), \
              patch.object(HOST.native,'command',side_effect=command),patch.object(HOST,'run_private',side_effect=private), \
              patch.object(HOST,'verify_storage'),patch.object(HOST,'verify_target', wraps=HOST.verify_target) as target, \
              patch.object(HOST.native,'sql',side_effect=lambda query,db: '2026100701:false' if 'version::text' in query else \
-                 json.dumps(self.spec['transfer']['business_tables']) if 'json_agg' in query else '0') as sql, \
+                 json.dumps(self.spec['transfer']['business_tables']) if 'json_agg' in query else '1' if 'SELECT 1;' in query else '0') as sql, \
              patch.object(HOST.native,'remove_execution_container') as cleanup:
             original=HOST.tempfile.TemporaryDirectory
             # Real private directory lifecycle in a local temp fixture, not /dev/shm.
@@ -157,6 +159,17 @@ class FullBusinessOwnerTests(unittest.TestCase):
         self.assertTrue(data['target_writes'])
         self.assertFalse(data['database_cutover_approved'])
         self.assertIn('copy-core-users',str([c[0] for c in calls]))
+
+    def test_core_compare_is_readonly_and_keeps_services_running(self):
+        calls, data = self.execute('core_users_compare')
+        self.assertEqual(data['stage'], 'core_users_compared')
+        self.assertFalse(data['target_writes'])
+        self.assertFalse(data['writers_paused'])
+        self.assertEqual(data['tables'], {})
+        self.assertIn('compare-core-users', str([c[0] for c in calls]))
+        self.assertNotIn('native_writer_guard_host.sh', str([c[0] for c in calls]))
+        self.assertNotIn('copy-core-users', str([c[0] for c in calls]))
+        self.assertEqual(data['core_users']['source'], data['core_users']['target'])
 
     def test_populated_target_is_allowed_only_for_reconciliation_or_comparison(self):
         def sql(query,db):
@@ -265,7 +278,7 @@ class FullBusinessOwnerTests(unittest.TestCase):
         self.assertIn('ANSIBLE_PIPELINING=true',runner);self.assertIn('native_access_guard.sh',runner)
         self.assertIn('test -s "$NATIVE_RECEIPT_FILE"',runner)
         self.assertIn('FULL_BUSINESS_MODE" == core_users',runner)
-        self.assertIn("FULL_BUSINESS_MODE') in ['preview', 'copy', 'compare', 'core_users']",role)
+        self.assertIn("FULL_BUSINESS_MODE') in ['preview', 'copy', 'compare', 'core_users', 'core_users_compare']",role)
         for bad in ('gcloud','terraform','createdb','pg_dump','--env-file'):self.assertNotIn(bad,runner)
         action=(ROOT/'.github/actions/prod-full-business/action.yml').read_text()
         self.assertIn('source_dsn:',action);self.assertNotIn('workflow_dispatch',action)

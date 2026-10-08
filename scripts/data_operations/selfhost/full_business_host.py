@@ -147,7 +147,7 @@ def run_private(argv, input=None, env=None, timeout=1860):
 
 def validate_receipt(receipt, spec, mode, source_identity_sha256):
     expected = spec['transfer']
-    core_only = mode == 'core_users'
+    core_only = mode in ('core_users', 'core_users_compare')
     native.require(receipt.get('format') == 1 and receipt.get('environment') == 'prod' and
         (receipt.get('scope') == 'core_users' if core_only else receipt.get('scope') in (None, 'full_business')) and
         receipt.get('schema_sha256') == expected['schema_sha256'] and
@@ -162,7 +162,7 @@ def validate_receipt(receipt, spec, mode, source_identity_sha256):
         (receipt['source_table_count'] == 1 if core_only else 44 <= receipt['source_table_count'] <= 53) and
         type(receipt.get('user_count')) is int and receipt['user_count'] > 0,
         'Full-business receipt identity/scope differs')
-    native.require(receipt.get('result') == {'preview': 'eligible', 'copy': 'copied', 'compare': 'equal', 'core_users': 'copied'}[mode] and
+    native.require(receipt.get('result') == {'preview': 'eligible', 'copy': 'copied', 'compare': 'equal', 'core_users': 'copied', 'core_users_compare': 'equal'}[mode] and
         receipt.get('target_writes') is (mode in ('copy', 'core_users')) and
         receipt.get('full_business_equal') is (mode != 'preview'), 'Preview/copy/equality receipt mode differs')
     core = receipt.get('core_users')
@@ -240,14 +240,14 @@ exec /usr/local/bin/migratectl "$@"
 
 
 def migration_args(spec, mode):
-    native.require(mode in ('preview','copy','compare','core_users'), 'Invalid full-business operation')
-    operation = 'copy-core-users' if mode == 'core_users' else ('compare-full-business' if mode == 'compare' else 'copy-full-business')
+    native.require(mode in ('preview','copy','compare','core_users','core_users_compare'), 'Invalid full-business operation')
+    operation = 'compare-core-users' if mode == 'core_users_compare' else 'copy-core-users' if mode == 'core_users' else ('compare-full-business' if mode == 'compare' else 'copy-full-business')
     args = [operation, '--source-dsn-env=NATIVE_SOURCE_DSN', '--target-dsn-env=NATIVE_TARGET_DSN',
         '--environment=prod', '--schema-sha256=' + spec['transfer']['schema_sha256'],
         '--billing-schema-sha256=' + spec['transfer']['billing_schema_sha256'], '--writers-paused']
     # Core-user commands are explicit copy/compare operations, with no dry-run
     # flag. Passing full-business flags causes Cobra to fail before connecting.
-    if mode != 'core_users':
+    if mode not in ('core_users', 'core_users_compare'):
         args.append('--dry-run=' + str(mode == 'preview').lower())
     return args
 
@@ -255,15 +255,18 @@ def migration_args(spec, mode):
 def execute(spec, guard_directory, mode, credentials):
     stage('input')
     image = validate_spec(spec)
-    native.require(mode in ('preview', 'copy', 'compare', 'core_users') and
+    native.require(mode in ('preview', 'copy', 'compare', 'core_users', 'core_users_compare') and
         os.environ.get('NATIVE_DATA_GATE_VERIFIED') == 'true', 'Independent production data review is required')
     source_identity_sha256 = validate_credentials(credentials, spec)
     guard = ['bash', str(guard_directory / 'native_writer_guard_host.sh')]
     stage('writer_guard')
-    native.command(guard)
+
+    if mode != 'core_users_compare':
+        native.command(guard)
     stage('storage')
     verify_storage()
     stage('target_schema')
+    native.require(native.sql('BEGIN READ ONLY; SELECT 1; COMMIT;', 'account') == '1', 'Target database is unavailable')
     verify_target(spec, require_empty=mode in ('preview', 'copy'))
     stage('registry_storage')
     native.require(native.command(['findmnt', '-nro', 'FSTYPE', '--target', '/dev/shm']) == 'tmpfs',
@@ -282,7 +285,8 @@ def execute(spec, guard_directory, mode, credentials):
             image, 'native-schema'], env=env, timeout=60))
         native.validate_manifest(manifest, spec['initialization'])
         stage('target_recheck')
-        native.command(guard)
+        if mode != 'core_users_compare':
+            native.command(guard)
         verify_storage()
         verify_target(spec, require_empty=mode in ('preview', 'copy'))
         target = 'postgresql://postgres:' + quote(credentials['postgres_password'], safe='') + \
@@ -298,16 +302,22 @@ def execute(spec, guard_directory, mode, credentials):
         finally:
             native.remove_execution_container(execution_name)
         stage('receipt')
-        receipt = validate_receipt(json.loads(raw), spec, mode, source_identity_sha256)
+        proof = json.loads(raw)
+        # Core CLI omits connection metadata. Bind it from the exact validated
+        # Vault DSN passed to that command, without publishing credentials.
+        if mode in ('core_users', 'core_users_compare') and proof.get('source_identity_sha256') == '':
+            proof['source_identity_sha256'] = source_identity_sha256
+        receipt = validate_receipt(proof, spec, mode, source_identity_sha256)
     stage('final_guard')
-    native.command(guard)
+    if mode != 'core_users_compare':
+        native.command(guard)
     verify_storage()
     verify_target(spec, require_empty=mode == 'preview')
     # Still no source application freeze, catch-up or switch authorization.
     receipt.update(stage={'preview': 'full_business_preview', 'copy': 'full_business_baseline_copied',
-        'compare': 'full_business_compared', 'core_users': 'core_users_copied'}[mode], host='web-saas-prod', database='account',
+        'compare': 'full_business_compared', 'core_users': 'core_users_copied', 'core_users_compare': 'core_users_compared'}[mode], host='web-saas-prod', database='account',
         accounts_commit=spec['transfer']['accounts_commit'], image_digest=spec['transfer']['image_digest'],
-        business_tables=spec['transfer']['business_tables'], writers_paused=True, independent_disk_verified=True,
+        business_tables=spec['transfer']['business_tables'], writers_paused=mode != 'core_users_compare', independent_disk_verified=True,
         source_writers_paused=False, final_catchup_complete=False, database_cutover_approved=False)
     return receipt
 
@@ -316,7 +326,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--spec', type=Path, required=True)
     parser.add_argument('--guard-directory', type=Path, required=True)
-    parser.add_argument('--mode', choices=('preview', 'copy', 'compare', 'core_users'), required=True)
+    parser.add_argument('--mode', choices=('preview', 'copy', 'compare', 'core_users', 'core_users_compare'), required=True)
     parser.add_argument('--validate-only', action='store_true')
     args = parser.parse_args()
     spec = json.loads(args.spec.read_text())

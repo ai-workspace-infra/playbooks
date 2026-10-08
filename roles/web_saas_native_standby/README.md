@@ -25,8 +25,9 @@ No persistent SSH session is retained for subsequent cloud-access cleanup.
 
 Before host changes, the playbook binds the CMDB host/IP/SSH identity and source
 commit and rejects running application/reconciler containers. Stopped writers
-must also have restart disabled. It installs the existing Docker role, reuses
-the exact independent-disk role, and projects only `postgres` from the fixed
+must also have restart disabled. `web-saas-caddy` is excluded from the writer
+guard and remains running to serve HTTPS. It installs the existing Docker role,
+reuses the exact independent-disk role, and projects only `postgres` from the fixed
 GitOps compose plus PROD storage override. The derived private JSON is an
 execution output. It is not a second manually maintained compose declaration.
 Its sole credential file uses Compose `format: raw` so password punctuation,

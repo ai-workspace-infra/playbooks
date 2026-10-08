@@ -62,6 +62,8 @@ a primary switch while source applications/background writers remain active.
 - The role does not start applications, stop a writer silently, change restart
   policy, apply schema/history/seeds, write the source, mutate cloud resources or
   move DNS. Apps/reconcilers must already be stopped by their owning stage.
+  `web-saas-caddy` is excluded from the writer guard and active-writer diagnostic;
+  it remains running to serve HTTPS throughout migration and comparison.
 
 ## Qualification and rollout
 
@@ -86,3 +88,19 @@ source writer freeze/catch-up, <=10-minute full equality, single-writer proof,
 Accounts+Billing coordinated Edge/CNAME cutover and production acceptance remain
 separate stages. Existing UAT dataset reconciliation and full-upgrade/rollback
 qualification also remain separate; a new empty baseline is not that acceptance.
+
+## Narrow acceptance modes
+
+`core_users_compare` invokes only `compare-core-users` and performs a read-only
+`SELECT 1` on the target. It can run while services remain active, never stops
+Caddy, and publishes only count/email/password-hash/Proxy-UUID equality. It does
+not claim 53-table equality or require a prior copy receipt. Core connection
+metadata omitted by the CLI is reconstructed from the exact validated runtime
+DSN passed to that command; a supplied differing identity remains refused.
+
+`.github/actions/prod-availability` separately observes a fresh successful
+Doco-CD poll with no new polling/deployment error, idle reconciliation, target
+container health, certificate-verified HTTPS on the host and directly from the
+runner to the CMDB IP, Accounts/Billing health endpoints, and read-only `SELECT 1`.
+It never starts/stops services or changes DNS. Missing evidence fails the check.
+Manual business testing and DNS/cutover authorization remain independent.

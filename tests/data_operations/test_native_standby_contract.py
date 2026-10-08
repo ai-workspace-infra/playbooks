@@ -73,6 +73,11 @@ if [[ "$1" == ps ]]; then printf '%s\\n' "$TEST_DOCKER_NAMES"; else printf '%s\\
             for state in ('true:no', 'false:always', 'false:unless-stopped'):
                 self.assertNotEqual(self.writer_guard(name, state).returncode, 0)
 
+    def test_caddy_remains_running_without_weakening_writer_guard(self):
+        self.assertEqual(self.writer_guard('web-saas-caddy', 'true:unless-stopped').returncode, 0)
+        for name in ('web-saas-accounts', 'web-saas-billing', 'doco-cd', 'web-saas-caddy-writer'):
+            self.assertNotEqual(self.writer_guard('web-saas-caddy\n' + name, 'true:unless-stopped').returncode, 0)
+
     def test_docker_query_failure_is_not_an_empty_host(self):
         self.assertNotEqual(self.writer_guard(fail=True).returncode, 0)
 

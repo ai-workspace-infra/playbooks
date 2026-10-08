@@ -1,0 +1,25 @@
+name: PROD Web SaaS read-only availability
+description: Observe Doco-CD, containers, HTTPS, API and SELECT 1; never change services or DNS.
+inputs:
+  cmdb_dir: {required: true, description: Original caller CMDB}
+  cmdb_sha256: {required: true, description: Original CMDB checksum}
+  gitops_checkout: {required: true, description: GitOps source checkout}
+  gitops_commit: {required: true, description: GitOps source commit}
+  access_file: {required: true, description: Same-run IaC access}
+runs:
+  using: composite
+  steps:
+    - name: Install isolated execution runtime
+      shell: bash
+      run: |
+        python3 -m venv "$RUNNER_TEMP/prod-native-ansible"
+        "$RUNNER_TEMP/prod-native-ansible/bin/python" -m pip install ansible-core==2.18.12
+    - name: Observe canonical PROD target
+      shell: bash
+      env:
+        CMDB_DIR: ${{ inputs.cmdb_dir }}
+        EXPECTED_CMDB_SHA256: ${{ inputs.cmdb_sha256 }}
+        GITOPS_CHECKOUT: ${{ inputs.gitops_checkout }}
+        GITOPS_COMMIT: ${{ inputs.gitops_commit }}
+        NATIVE_ACCESS_FILE: ${{ inputs.access_file }}
+      run: bash "${GITHUB_ACTION_PATH}/../../../scripts/data_operations/selfhost/availability_runner.sh"

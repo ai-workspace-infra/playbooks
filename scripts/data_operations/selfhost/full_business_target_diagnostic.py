@@ -22,9 +22,9 @@ def main():
     try:
         # No docker inspect/config output: environment values may contain secrets.
         containers = command(['docker', 'ps', '--format', '{{.Names}}']).splitlines()
-        writers = [name for name in containers if
+        writers = [name for name in containers if name != 'web-saas-caddy' and (
             (name.startswith('web-saas-') and name != 'web-saas-postgresql') or
-            any(part in name.lower() for part in ('account', 'billing', 'doco', 'watchtower'))]
+            any(part in name.lower() for part in ('account', 'billing', 'doco', 'watchtower')))]
         stage = 'postgres'
         version = sql('SHOW server_version_num')
         present = sql("SELECT count(*) FROM pg_database WHERE datname='account'") == '1'
