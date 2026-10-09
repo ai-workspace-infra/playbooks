@@ -56,17 +56,24 @@ gateway_openclaw_home: >-
   }}
 gateway_openclaw_binary_path: "{{ gateway_openclaw_home }}/.local/bin/openclaw"
 gateway_openclaw_install_dir: "{{ gateway_openclaw_home }}/.local/lib/node_modules/openclaw"
-gateway_openclaw_required_version: "2026.6.1"
+gateway_openclaw_required_version: "2026.9.9"
 gateway_openclaw_npm_package_spec: "openclaw@{{ gateway_openclaw_required_version }}"
 gateway_openclaw_global_npm_dir: "{{ gateway_openclaw_home }}/.openclaw/npm"
 # Keep the prebuilt extension aligned with gateway_openclaw_required_version.
 # runtime-latest currently advances independently of the pinned npm package.
-gateway_openclaw_multi_session_plugin_archive_tag: "runtime-d396760a4ed6"
+gateway_openclaw_multi_session_plugin_archive_tag: "runtime-65a32743d699"
 gateway_openclaw_multi_session_plugin_archive_url: "https://github.com/ai-workspace-lab/openclaw-multi-session-plugins/releases/download/{{ gateway_openclaw_multi_session_plugin_archive_tag }}/openclaw-multi-session-plugins-runtime-all.tar.gz"
-gateway_openclaw_required_global_plugins:
-  - name: "@openclaw/codex"
-    version: "{{ gateway_openclaw_required_version }}"
-gateway_openclaw_removed_global_plugins: []
+# Official plugins that OpenClaw installs and tracks itself; each is pinned to
+# gateway_openclaw_required_version.
+gateway_openclaw_managed_plugins:
+  - id: acpx
+    package: "@openclaw/acpx"
+  - id: codex
+    package: "@openclaw/codex"
+  - id: deepseek
+    package: "@openclaw/deepseek-provider"
+gateway_openclaw_removed_global_plugins:
+  - "@openclaw/codex"
 gateway_openclaw_extension_dependency_dirs: []
 gateway_openclaw_config_path: "{{ gateway_openclaw_home }}/.openclaw/openclaw.json"
 gateway_openclaw_auth_profiles_path: "{{ gateway_openclaw_home }}/.openclaw/agents/main/agent/auth-profiles.json"
@@ -79,14 +86,14 @@ gateway_openclaw_extension_backup_dir: "{{ gateway_openclaw_home }}/.openclaw/ba
 
 # Host exec approvals. OpenClaw's built-in host default is security=full,
 # ask=off, askFallback=full: every command runs without asking. The effective
-# policy is the stricter security and the stronger ask of openclaw.json
-# tools.exec and the host approvals file, while askFallback is read from the
-# host file only, so both are written. Commands outside the allowlist wait
-# for an operator approval; an unanswered approval is denied.
+# policy is the stricter of openclaw.json tools.exec (mode "ask" = allowlist
+# plus ask on a miss) and the host approval defaults, while askFallback comes
+# from the host defaults only, so both are set. Commands outside the
+# allowlist wait for an operator approval; an unanswered approval is denied.
+gateway_openclaw_exec_mode: ask
 gateway_openclaw_exec_security: allowlist
 gateway_openclaw_exec_ask: on-miss
 gateway_openclaw_exec_ask_fallback: deny
-gateway_openclaw_exec_approvals_path: "{{ gateway_openclaw_home }}/.openclaw/exec-approvals.json"
 
 gateway_openclaw_upstream_host: 127.0.0.1
 gateway_openclaw_upstream_port: 18789
@@ -104,7 +111,6 @@ gateway_openclaw_allowed_origins:
 gateway_openclaw_minimal_gateway_enabled: false
 
 gateway_openclaw_acp_enabled: false
-gateway_openclaw_acp_max_concurrent_sessions: 2
 gateway_openclaw_acp_backend: acpx
 gateway_openclaw_acp_default_agent: codex
 gateway_openclaw_codex_app_server_url: ws://127.0.0.1:9001
@@ -140,11 +146,18 @@ gateway_openclaw_default_model:
       | unique | list
     }}
 
-gateway_openclaw_default_models_deepseek:
-  "{{ gateway_openclaw_default_model_primary }}": {}
-  "{{ gateway_openclaw_default_model_fallback }}": {}
-  "deepseek/deepseek-chat": {}
-  "deepseek/deepseek-reasoner": {}
+# Ansible does not template mapping keys, so a literal "{{ ... }}" key would
+# leave the primary model out of the allowlist; OpenClaw 2026.9 then rejects
+# sessions.patch to it with "model not allowed".
+gateway_openclaw_default_models_deepseek: >-
+  {{
+    dict([
+      (gateway_openclaw_default_model_primary, {}),
+      (gateway_openclaw_default_model_fallback, {}),
+      ('deepseek/deepseek-chat', {}),
+      ('deepseek/deepseek-reasoner', {}),
+    ])
+  }}
 gateway_openclaw_default_models_nvidia:
   "nvidia/deepseek-v4-flash": {}
   "nvidia/deepseek-v4-pro": {}

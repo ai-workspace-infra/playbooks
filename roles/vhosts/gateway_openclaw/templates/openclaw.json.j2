@@ -11,8 +11,7 @@
       "allowedOrigins": {{ gateway_openclaw_allowed_origins | to_json }}
     },
     "tailscale": {
-      "mode": "off",
-      "resetOnExit": false
+      "mode": "off"
     },
     "trustedProxies": {{ gateway_openclaw_trusted_proxies | to_json }}
   },
@@ -27,23 +26,24 @@
       "bootstrapTotalMaxChars": 300000,
       "model": {{ gateway_openclaw_default_model | to_json }},
       "models": {{ gateway_openclaw_default_models | to_json }},
+      "modelPolicy": {
+        "allow": {{ gateway_openclaw_default_models | dict2items | map(attribute='key') | list | to_json }}
+      },
       "thinkingDefault": "low"
     },
-    "list": [
-      {
-        "id": "main",
+    "entries": {
+      "main": {
         "model": {{ gateway_openclaw_main_agent_model | to_json }},
         "skills": {{ gateway_openclaw_main_agent_skills | unique | list | to_json }}
       }
-    ]
+    }
   },
   "auth": {
     "profiles": {}
   },
   "tools": {
     "exec": {
-      "security": {{ gateway_openclaw_exec_security | to_json }},
-      "ask": {{ gateway_openclaw_exec_ask | to_json }}
+      "mode": {{ gateway_openclaw_exec_mode | to_json }}
     }
   },
   "skills": {
@@ -102,8 +102,11 @@
     "lastRunMode": "local"
   },
   "meta": {
-    "lastTouchedVersion": "2026.5.28",
-    "lastTouchedAt": "2026-06-01T00:00:00.000Z"
+    "lastTouchedVersion": {{ gateway_openclaw_required_version | to_json }},
+    "migrations": {
+      "modelPolicyAllowlist": true,
+      "utilityModelSeparation": true
+    }
   },
   "acp": {
     "enabled": {{ gateway_openclaw_acp_enabled | bool | to_json }},
@@ -111,14 +114,14 @@
       "enabled": {{ gateway_openclaw_acp_enabled | bool | to_json }}
     },
     "backend": {{ gateway_openclaw_acp_backend | to_json }},
-    "defaultAgent": {{ gateway_openclaw_acp_default_agent | to_json }},
-    "maxConcurrentSessions": {{ gateway_openclaw_acp_max_concurrent_sessions | int }}
+    "defaultAgent": {{ gateway_openclaw_acp_default_agent | to_json }}
   },
   "mcp": {
     "servers": {{ gateway_openclaw_mcp_servers | to_json }}
   },
   "plugins": {
     "entries": {
+      "acpx": {"enabled": true},
       "nvidia": {"enabled": true},
       "deepseek": {"enabled": true},
       "browser": {"enabled": false},
@@ -136,6 +139,9 @@
         }
       },
       "memory-wiki": {"enabled": true},
+{% if 'ollama' in gateway_openclaw_model_providers %}
+      "ollama": {"enabled": true},
+{% endif %}
       "openai": {"enabled": true},
       "openclaw-multi-session-plugins": {
         "enabled": true,
