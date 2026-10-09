@@ -50,3 +50,23 @@ runtime environment file is root-owned mode `0600`, and the Grafana SQL queries
 use only the read-only views except the monitoring coverage aggregate. The
 existing homepage's dashboard-list panel discovers the CMDB dashboard after
 Grafana provisions it; the existing default dashboard itself is not replaced.
+
+## Explicit observation ingestion
+
+`render_ingest_sql.py` validates an immutable IaC `cmdb.observations.v1`
+artifact using the supplied fixed-version contract directory. It produces a
+transaction for `cmdb_writer`; it does not discover or change provider facts.
+Each transaction takes a scope advisory lock, rejects changed replay payloads,
+preserves newer current observations, and stores idempotent history and scrubbed
+snapshots. Failed/partial receipts never imply absence or deletion.
+
+`ingest_observations.sh` consumes already collected artifacts on the selected
+database host. It validates all input before mutation, takes a custom-format
+backup and checks the archive manifest, then executes the writer transactions.
+A checked archive manifest is not a successful restore rehearsal. The script
+does not initialize roles/database/schema or enable a scheduler/bootstrap.
+Set `CMDB_DATABASE=cmdb` and a pinned `CMDB_POSTGRES_CLIENT_IMAGE`, then supply
+runtime directory, IaC contract directory, envelope directory and Docker network.
+The current direct UAT credential file adapter expects a root-owned mode-0600
+`bootstrap.env`; its existing filename does not make this an initialization
+script. Vault Agent delivery and rotation remain a separate rollout step.
