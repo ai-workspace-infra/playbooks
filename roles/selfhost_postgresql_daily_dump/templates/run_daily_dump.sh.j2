@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+backup_dir={{ selfhost_pg_daily_dump_root | quote }}
+prefix={{ selfhost_pg_daily_dump_prefix | quote }}
+container={{ selfhost_pg_daily_dump_container | quote }}
+timezone={{ selfhost_pg_daily_dump_timezone | quote }}
+retention_days={{ selfhost_pg_daily_dump_retention_days | int }}
+expected_mountpoint={{ selfhost_pg_daily_dump_expected_mountpoint | quote }}
+fail() { printf 'web-saas-pg-dumpall-backup: %s\n' "$1" >&2; exit 2; }
+
+[[ -d "$backup_dir" && ! -L "$backup_dir" ]] || fail 'backup directory is missing or symlinked'
+[[ "$(findmnt --noheadings --output TARGET --target "$backup_dir")" == "$expected_mountpoint" ]] || fail 'persistent data mount is unavailable'
+[[ "$(docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$container" 2>/dev/null)" == 'running healthy' ]] || fail 'PostgreSQL container is not healthy'
+
+exec 9>/run/lock/web-saas-pg-dumpall-backup.lock
+flock -n 9 || fail 'another backup run is active'
+today=$(TZ="$timezone" date +%F)
+archive="$backup_dir/${prefix}${today}.sql.gz"
+checksum="$archive.sha256"
+
+prune_old_backups() {
+  local cutoff candidate stamp
+  cutoff=$(TZ="$timezone" date -d "$((retention_days - 1)) days ago" +%F)
+  for candidate in "$backup_dir"/web-saas-prod-pg_dumpall-????-??-??.sql.gz; do
+    [[ -f "$candidate" && ! -L "$candidate" ]] || continue
+    stamp=${candidate#"$backup_dir/$prefix"}
+    stamp=${stamp%.sql.gz}
+    [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || continue
+    [[ "$(TZ="$timezone" date -d "$stamp" +%F 2>/dev/null || true)" == "$stamp" ]] || continue
+    if [[ "$stamp" < "$cutoff" ]]; then
+      [[ ! -L "$candidate.sha256" ]] || fail 'refusing to remove a symlinked checksum'
+      rm -f -- "$candidate" "$candidate.sha256"
+      printf 'expired backup removed: %s\n' "${candidate##*/}"
+    fi
+  done
+}
+
+if [[ -e "$archive" || -e "$checksum" ]]; then
+  [[ -f "$archive" && ! -L "$archive" && -f "$checksum" && ! -L "$checksum" ]] || fail 'today backup path is occupied by an incomplete or unexpected file'
+  gzip -t "$archive" || fail 'today backup failed gzip validation'
+  (cd "$backup_dir" && sha256sum --check --status "${archive##*/}.sha256") || fail 'today backup checksum validation failed'
+  printf 'today backup already exists and validates: %s\n' "${archive##*/}"
+  prune_old_backups
+  exit 0
+fi
+
+tmp=$(mktemp "$backup_dir/.${prefix}${today}.partial.XXXXXX")
+sum_tmp=$(mktemp "$backup_dir/.${prefix}${today}.sha256.partial.XXXXXX")
+cleanup() {
+  local rc=$?
+  [[ -z "${tmp:-}" ]] || rm -f -- "$tmp"
+  [[ -z "${sum_tmp:-}" ]] || rm -f -- "$sum_tmp"
+  exit "$rc"
+}
+trap cleanup EXIT
+docker exec --user postgres "$container" pg_dumpall | gzip -1 > "$tmp"
+gzip -t "$tmp"
+chmod 0600 "$tmp"
+chown root:root "$tmp"
+ln -- "$tmp" "$archive"
+rm -f -- "$tmp"
+tmp=''
+(cd "$backup_dir" && sha256sum -- "${archive##*/}") > "$sum_tmp"
+chmod 0600 "$sum_tmp"
+chown root:root "$sum_tmp"
+ln -- "$sum_tmp" "$checksum"
+rm -f -- "$sum_tmp"
+sum_tmp=''
+sync -f "$archive"
+(cd "$backup_dir" && sha256sum --check --status "${archive##*/}.sha256") || fail 'new backup checksum validation failed'
+printf 'backup complete: %s bytes=%s\n' "${archive##*/}" "$(stat -c %s "$archive")"
+prune_old_backups
