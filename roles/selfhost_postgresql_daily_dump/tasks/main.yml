@@ -1,0 +1,96 @@
+---
+- name: Validate the date-based PostgreSQL dump schedule configuration
+  ansible.builtin.assert:
+    that:
+      - selfhost_pg_daily_dump_container is match('^[A-Za-z0-9_.-]+$')
+      - selfhost_pg_daily_dump_root == '/data/backups/web-saas/manual'
+      - selfhost_pg_daily_dump_expected_mountpoint == '/data'
+      - selfhost_pg_daily_dump_prefix == 'web-saas-prod-pg_dumpall-'
+      - selfhost_pg_daily_dump_schedule is match('^[0-9*/,-]+ [0-9*/,-]+ [0-9*/,-]+ [0-9*/,-]+ [0-9*/,-]+$')
+      - selfhost_pg_daily_dump_timezone == 'Asia/Shanghai'
+      - selfhost_pg_daily_dump_retention_days | int == 7
+    fail_msg: This role is scoped to the approved Web SaaS PROD daily dump and seven-day retention contract.
+  when: selfhost_pg_daily_dump_enabled | bool
+
+- name: Verify the persistent backup mount is present at the expected mountpoint
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --noheadings
+      - --output
+      - TARGET
+      - --target
+      - '{{ selfhost_pg_daily_dump_expected_mountpoint }}'
+  register: selfhost_pg_daily_dump_mount
+  changed_when: false
+  when: selfhost_pg_daily_dump_enabled | bool
+
+- name: Require the backup directory to reside on the persistent data disk
+  ansible.builtin.assert:
+    that:
+      - selfhost_pg_daily_dump_mount.stdout | trim == selfhost_pg_daily_dump_expected_mountpoint
+    fail_msg: Refusing to install the dump schedule unless /data is mounted beneath the backup directory.
+  when: selfhost_pg_daily_dump_enabled | bool
+
+- name: Verify the PostgreSQL container is healthy before managing its backup schedule
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - '{% raw %}{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}{% endraw %}'
+      - '{{ selfhost_pg_daily_dump_container }}'
+  register: selfhost_pg_daily_dump_container_state
+  changed_when: false
+  when: selfhost_pg_daily_dump_enabled | bool
+
+- name: Require the PostgreSQL container to be running and healthy
+  ansible.builtin.assert:
+    that:
+      - selfhost_pg_daily_dump_container_state.stdout | trim == 'running healthy'
+    fail_msg: Refusing to install the schedule unless PostgreSQL is running and healthy.
+  when: selfhost_pg_daily_dump_enabled | bool
+
+- name: Require the cron service to be active
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - cron
+  register: selfhost_pg_daily_dump_cron_service
+  changed_when: false
+  when: selfhost_pg_daily_dump_enabled | bool
+
+- name: Require an active cron service
+  ansible.builtin.assert:
+    that:
+      - selfhost_pg_daily_dump_cron_service.stdout | trim == 'active'
+    fail_msg: Enable the host cron service before managing the PostgreSQL backup schedule.
+  when: selfhost_pg_daily_dump_enabled | bool
+
+- name: Ensure the date-based dump directory is protected
+  ansible.builtin.file:
+    path: '{{ selfhost_pg_daily_dump_root }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  when: selfhost_pg_daily_dump_enabled | bool
+
+- name: Install the PostgreSQL full-dump runner
+  ansible.builtin.template:
+    src: run_daily_dump.sh.j2
+    dest: '{{ selfhost_pg_daily_dump_script_path }}'
+    owner: root
+    group: root
+    mode: '0700'
+  when: selfhost_pg_daily_dump_enabled | bool
+
+- name: Install the daily date-based dump schedule
+  ansible.builtin.template:
+    src: cron.j2
+    dest: '{{ selfhost_pg_daily_dump_cron_path }}'
+    owner: root
+    group: root
+    mode: '0644'
+  when: selfhost_pg_daily_dump_enabled | bool
