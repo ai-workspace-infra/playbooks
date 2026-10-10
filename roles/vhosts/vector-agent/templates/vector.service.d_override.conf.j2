@@ -8,9 +8,10 @@ After=xray-exporter-xhttp.service xray-exporter-tcp.service
 {% endif %}
 
 [Service]
+Environment=VECTOR_THREADS={{ ((xconnect_node_maintenance | default({})).get('vector', {})).get('threads', 1) }}
 User=root
 Group=root
 MemoryAccounting=yes
-MemoryHigh={{ vector_memory_high | default('150M') }}
-MemoryMax={{ vector_memory_max | default('200M') }}
+MemoryHigh={{ ((xconnect_node_maintenance | default({})).get('vector', {})).get('memory_high', vector_memory_high | default('150M')) }}
+MemoryMax={{ ((xconnect_node_maintenance | default({})).get('vector', {})).get('memory_max', vector_memory_max | default('250M')) }}
 CPUQuota={{ vector_cpu_quota | default('30%') }}

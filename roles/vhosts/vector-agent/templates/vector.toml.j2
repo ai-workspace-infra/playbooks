@@ -1,4 +1,10 @@
 # Vector Configuration optimized for low resource footprint
+{% set xconnect_vector_policy = ((xconnect_node_maintenance | default({})).get('vector', {})) %}
+{% if vector_billing_ingest_enabled | default(false) | bool %}
+[secret.local_secret]
+type = "exec"
+command = ["/usr/local/libexec/vector-secret-provider"]
+{% endif %}
 [api]
 enabled = false # Disable API to save memory
 
@@ -7,6 +13,7 @@ enabled = false # Disable API to save memory
 # ==========================================
 [sources.internal_metrics]
 type = "internal_metrics"
+scrape_interval_secs = {{ xconnect_vector_policy.get('internal_metrics_scrape_interval_secs', 30) | int }}
 
 [sources.node_metrics]
 type = "prometheus_scrape"
@@ -210,14 +217,14 @@ uri = "{{ vector_billing_ingest_url }}"
 method = "post"
 encoding.codec = "json"
 [sinks.billing_snapshot_ingest.request]
-headers.Authorization = "Bearer {{ vector_billing_ingest_token }}"
+headers.Authorization = "Bearer SECRET[local_secret.billing_token]"
 retry_initial_backoff_secs = 5
 retry_max_duration_secs = 3600
 rate_limit_duration_secs = 1
 rate_limit_num = {{ vector_sink_rate_limit_num | default(5) }}
 [sinks.billing_snapshot_ingest.tls]
-verify_certificate = {{ 'true' if vector_tls_verify | default(false) | bool else 'false' }}
-verify_hostname = {{ 'true' if vector_tls_verify | default(false) | bool else 'false' }}
+verify_certificate = {{ 'true' if xconnect_vector_policy.get('tls_verify', vector_tls_verify | default(true)) | bool else 'false' }}
+verify_hostname = {{ 'true' if xconnect_vector_policy.get('tls_verify', vector_tls_verify | default(true)) | bool else 'false' }}
 [sinks.billing_snapshot_ingest.healthcheck]
 enabled = false
 [sinks.billing_snapshot_ingest.batch]
@@ -258,8 +265,8 @@ password = "{{ vector_auth_password }}"
 {% endif %}
 {% endif %}
 [sinks.prometheus_remote.tls]
-verify_certificate = {{ 'true' if vector_tls_verify | default(false) | bool else 'false' }}
-verify_hostname = {{ 'true' if vector_tls_verify | default(false) | bool else 'false' }}
+verify_certificate = {{ 'true' if xconnect_vector_policy.get('tls_verify', vector_tls_verify | default(true)) | bool else 'false' }}
+verify_hostname = {{ 'true' if xconnect_vector_policy.get('tls_verify', vector_tls_verify | default(true)) | bool else 'false' }}
 [sinks.prometheus_remote.healthcheck]
 enabled = false
 [sinks.prometheus_remote.batch]
@@ -298,12 +305,17 @@ include_units = {{ vector_system_journald_units | to_json }}
 
 [transforms.process_logs]
 type = "remap"
+drop_on_abort = true
 {% if vector_system_journald_enabled | default(false) | bool %}
 inputs = ["system_logs", "system_journal"]
 {% else %}
 inputs = ["system_logs"]
 {% endif %}
 source = '''
+if is_string(.message) {
+  if contains(string!(.message), "{{ xconnect_vector_policy.get('reverse_proxy_drop_substring', 'http.handlers.reverse_proxy') }}") { abort }
+  .message = truncate(string!(.message), {{ xconnect_vector_policy.get('log_message_max_bytes', 4096) | int }})
+}
 .instance = "{{ inventory_hostname }}"
 .host = "{{ inventory_hostname }}"
 .environment = "{{ vector_observability_environment }}"
@@ -316,6 +328,7 @@ source = '''
 # Docker containers are the primary runtime for the platform services. Keep
 # their stdout/stderr as structured events so Victoria Logs can filter the
 # core applications by container, host and stream.
+{% if vector_docker_logs_enabled_effective | default(true) | bool %}
 [sources.docker_logs]
 type = "docker_logs"
 auto_partial_merge = true
@@ -351,10 +364,11 @@ if !exists(.environment) {
   .environment = "unknown"
 }
 '''
+{% endif %}
 
 [sinks.victorialogs]
 type = "http"
-inputs = ["process_logs", "process_docker_logs"]
+inputs = ["process_logs"{% if vector_docker_logs_enabled_effective | default(true) | bool %}, "process_docker_logs"{% endif %}]
 {% if vector_local_observability_enabled | default(false) | bool or inventory_hostname == 'install.svc.plus' %}
 uri = "http://127.0.0.1:9428/insert/jsonline?_msg_field=message&_stream_fields=instance,file"
 {% else %}
@@ -362,6 +376,12 @@ uri = "{{ vector_observability_endpoint | default('https://observability.svc.plu
 {% endif %}
 encoding.codec = "json"
 framing.method = "newline_delimited"
+[sinks.victorialogs.batch]
+max_bytes = {{ xconnect_vector_policy.get('sink_batch_max_bytes', 1048576) | int }}
+timeout_secs = {{ xconnect_vector_policy.get('sink_batch_timeout_secs', 5) | int }}
+[sinks.victorialogs.buffer]
+type = "memory"
+max_events = {{ xconnect_vector_policy.get('sink_buffer_max_events', 500) | int }}
 {% if not (vector_local_observability_enabled | default(false) | bool or inventory_hostname == 'install.svc.plus') %}
 {% if vector_auth_user | default('') | trim | length > 0 and vector_auth_password | default('') | trim | length > 0 %}
 [sinks.victorialogs.auth]
@@ -371,8 +391,9 @@ password = "{{ vector_auth_password }}"
 {% endif %}
 {% endif %}
 [sinks.victorialogs.tls]
-verify_certificate = false
-verify_hostname = false
+verify_certificate = {{ 'true' if xconnect_vector_policy.get('tls_verify', vector_tls_verify | default(true)) | bool else 'false' }}
+verify_hostname = {{ 'true' if xconnect_vector_policy.get('tls_verify', vector_tls_verify | default(true)) | bool else 'false' }}
+
 [sinks.victorialogs.healthcheck]
 enabled = false
 
