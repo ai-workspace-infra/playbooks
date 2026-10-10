@@ -1,4 +1,13 @@
 ---
+- name: Gather service state for optional Vector sources
+  ansible.builtin.service_facts:
+
+- name: Resolve Docker log source state
+  ansible.builtin.set_fact:
+    vector_docker_logs_enabled_effective: >-
+      {{ vector_docker_logs_enabled | default(
+           (ansible_facts.services | default({})).get('docker.service', {}).get('state', 'stopped') == 'running') | bool }}
+
 - name: Determine Vector architecture
   ansible.builtin.set_fact:
     vector_arch: >-
@@ -80,6 +89,48 @@
     state: directory
     mode: '0755'
 
+- name: Store Vector sink credentials outside vector.toml
+  ansible.builtin.template:
+    src: secrets.json.j2
+    dest: /etc/vector/secrets.json
+    owner: root
+    group: root
+    mode: '0600'
+    backup: true
+  register: vector_secrets_template
+  no_log: true
+  when: vector_billing_ingest_enabled | default(false) | bool
+
+- name: Create Vector helper directory
+  ansible.builtin.file:
+    path: /usr/local/libexec
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: vector_billing_ingest_enabled | default(false) | bool
+
+- name: Install Vector exec-backed secret provider
+  ansible.builtin.copy:
+    src: vector-secret-provider
+    dest: /usr/local/libexec/vector-secret-provider
+    owner: root
+    group: root
+    mode: '0750'
+  when: vector_billing_ingest_enabled | default(false) | bool
+
+- name: Remove unused Vector sink credentials
+  ansible.builtin.file:
+    path: /etc/vector/secrets.json
+    state: absent
+  when: not (vector_billing_ingest_enabled | default(false) | bool)
+
+- name: Remove unused Vector secret provider
+  ansible.builtin.file:
+    path: /usr/local/libexec/vector-secret-provider
+    state: absent
+  when: not (vector_billing_ingest_enabled | default(false) | bool)
+
 - name: Detect local PostgreSQL exporter metrics endpoint
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ postgres_exporter_port | default(9187) }}/metrics"
@@ -108,6 +159,8 @@
     src: vector.default.j2
     dest: /etc/default/vector
     mode: '0644'
+    backup: true
+  register: vector_default_template
   notify: Restart vector
 
 - name: Template Vector configuration
@@ -117,6 +170,8 @@
     owner: "{{ vector_user }}"
     group: "{{ vector_group }}"
     mode: '0600'
+    backup: true
+  register: vector_config_template
   no_log: "{{ vector_billing_ingest_enabled | bool or (vector_auth_password | default('') | length > 0) }}"
   notify: Restart vector
 
@@ -135,6 +190,67 @@
   changed_when: false
   failed_when: false
   when: not ansible_check_mode
+
+- name: Restore previous Vector configuration after validation failure
+  ansible.builtin.copy:
+    src: "{{ vector_config_template.backup_file }}"
+    dest: "{{ vector_config_dir }}/vector.toml"
+    remote_src: true
+    owner: "{{ vector_user }}"
+    group: "{{ vector_group }}"
+    mode: '0600'
+  when:
+    - not ansible_check_mode
+    - vector_config_validation.rc | int != 0
+    - vector_config_template.backup_file is defined
+
+- name: Restore previous Vector default environment after validation failure
+  ansible.builtin.copy:
+    src: "{{ vector_default_template.backup_file }}"
+    dest: /etc/default/vector
+    remote_src: true
+    mode: '0644'
+  when:
+    - not ansible_check_mode
+    - vector_config_validation.rc | int != 0
+    - vector_default_template.backup_file is defined
+
+- name: Remove newly created Vector configuration after validation failure
+  ansible.builtin.file:
+    path: "{{ vector_config_dir }}/vector.toml"
+    state: absent
+  when:
+    - not ansible_check_mode
+    - vector_config_validation.rc | int != 0
+    - vector_config_template.changed | default(false)
+    - vector_config_template.backup_file is not defined
+
+- name: Restore previous Vector secrets after validation failure
+  ansible.builtin.copy:
+    src: "{{ vector_secrets_template.backup_file }}"
+    dest: /etc/vector/secrets.json
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - vector_config_validation.rc | int != 0
+    - vector_secrets_template is defined
+    - vector_secrets_template.backup_file is defined
+
+- name: Remove newly created Vector secrets after validation failure
+  ansible.builtin.file:
+    path: /etc/vector/secrets.json
+    state: absent
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - vector_config_validation.rc | int != 0
+    - vector_secrets_template is defined
+    - vector_secrets_template.changed | default(false)
+    - vector_secrets_template.backup_file is not defined
 
 - name: Reject invalid rendered Vector configuration
   ansible.builtin.fail:
@@ -155,12 +271,17 @@
     src: vector.service.d_override.conf.j2
     dest: /etc/systemd/system/vector.service.d/override.conf
     mode: '0644'
+    backup: true
+  register: vector_override_template
   notify:
     - Reload systemd
     - Restart vector
 
 - name: Enable and start Vector service with safe failure diagnostics
   block:
+    - name: Apply validated Vector configuration changes now
+      ansible.builtin.meta: flush_handlers
+
     - name: Enable and start Vector service
       ansible.builtin.systemd:
         name: vector
@@ -168,6 +289,80 @@
         state: started
       when: not ansible_check_mode
   rescue:
+    - name: Restore previous Vector configuration after startup failure
+      ansible.builtin.copy:
+        src: "{{ vector_config_template.backup_file }}"
+        dest: "{{ vector_config_dir }}/vector.toml"
+        remote_src: true
+        owner: "{{ vector_user }}"
+        group: "{{ vector_group }}"
+        mode: '0600'
+      when: vector_config_template.backup_file is defined
+
+    - name: Restore previous Vector default environment after startup failure
+      ansible.builtin.copy:
+        src: "{{ vector_default_template.backup_file }}"
+        dest: /etc/default/vector
+        remote_src: true
+        mode: '0644'
+      when: vector_default_template.backup_file is defined
+
+    - name: Remove newly created Vector configuration after startup failure
+      ansible.builtin.file:
+        path: "{{ vector_config_dir }}/vector.toml"
+        state: absent
+      when:
+        - vector_config_template.changed | default(false)
+        - vector_config_template.backup_file is not defined
+
+    - name: Restore previous Vector secrets after startup failure
+      ansible.builtin.copy:
+        src: "{{ vector_secrets_template.backup_file }}"
+        dest: /etc/vector/secrets.json
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+      when:
+        - vector_secrets_template is defined
+        - vector_secrets_template.backup_file is defined
+
+    - name: Restore previous Vector service override after startup failure
+      ansible.builtin.copy:
+        src: "{{ vector_override_template.backup_file }}"
+        dest: /etc/systemd/system/vector.service.d/override.conf
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0644'
+      when: vector_override_template.backup_file is defined
+
+    - name: Remove newly created Vector service override after startup failure
+      ansible.builtin.file:
+        path: /etc/systemd/system/vector.service.d/override.conf
+        state: absent
+      when:
+        - vector_override_template.changed | default(false)
+        - vector_override_template.backup_file is not defined
+
+    - name: Remove newly created Vector secrets after startup failure
+      ansible.builtin.file:
+        path: /etc/vector/secrets.json
+        state: absent
+      no_log: true
+      when:
+        - vector_secrets_template is defined
+        - vector_secrets_template.changed | default(false)
+        - vector_secrets_template.backup_file is not defined
+
+    - name: Reload systemd and restart Vector with restored configuration
+      ansible.builtin.systemd_service:
+        name: vector
+        daemon_reload: true
+        state: restarted
+      failed_when: false
+
     - name: Read Vector service state after failed start
       ansible.builtin.command:
         argv:

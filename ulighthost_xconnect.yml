@@ -8,19 +8,19 @@
     xconnect_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
     xconnect_cmdb_file: "{{ lookup('ansible.builtin.env', 'XCONNECT_CMDB_FILE') | default('', true) }}"
     xconnect_deploy_key_file: "{{ lookup('ansible.builtin.env', 'XCONNECT_DEPLOY_KEY_FILE') | default('', true) }}"
-    xconnect_gitops_config: "{{ lookup('ansible.builtin.env', 'XCONNECT_GITOPS_CONFIG') | default(playbook_dir ~ '/../gitops/topology/prod/selfhost/ulighthost-xconnect.yaml', true) }}"
+    xconnect_gitops_config: "{{ lookup('ansible.builtin.env', 'XCONNECT_GITOPS_CONFIG') | default(playbook_dir ~ '/../gitops/topology/prod/selfhost/xconnect-regional-pools.yaml', true) }}"
   pre_tasks:
     - name: Load non-sensitive XConnect topology from GitOps
       ansible.builtin.include_vars:
         file: "{{ xconnect_gitops_config }}"
         name: xconnect_policy
 
-    - name: Require the declared four-region topology
+    - name: Require a declared XConnect topology
       ansible.builtin.assert:
         that:
-          - xconnect_policy.spec.pools | length == 4
+          - xconnect_policy.spec.pools | length > 0
           - xconnect_policy.spec.connection_sources is defined
-        fail_msg: "GitOps must declare JP, PH, HK, and US XConnect pools with connection sources."
+        fail_msg: "GitOps must declare XConnect pools and their connection sources."
 
     - name: Require a CMDB artifact for Terraform-managed nodes
       ansible.builtin.assert:
@@ -45,7 +45,7 @@
           {{ xconnect_cmdb_nodes | default({}) | combine({
              item.1.id: (
                xconnect_cmdb | dict2items
-               | selectattr('value.node_id', 'equalto', item.1.cmdb_selector.node_id)
+             | selectattr('value.node_id', 'equalto', (item.1.cmdb_selector.node_id | default(item.1.node_id)))
                | map(attribute='value') | list | first | default({}, true)
              )
           }) }}
@@ -59,8 +59,8 @@
           - xconnect_cmdb_nodes[item.1.id].ip | default('') | ansible.utils.ipv4
           - xconnect_cmdb_nodes[item.1.id].ansible_user | default('') | length > 0
           - xconnect_cmdb_nodes[item.1.id].instance_id | default('') | length > 0
-          - xconnect_cmdb_nodes[item.1.id].node_id == item.1.cmdb_selector.node_id
-        fail_msg: "CMDB is missing current runtime facts for {{ item.1.cmdb_selector.node_id }}."
+          - xconnect_cmdb_nodes[item.1.id].node_id == (item.1.cmdb_selector.node_id | default(item.1.node_id))
+        fail_msg: "CMDB is missing current runtime facts for the GitOps node ID."
       loop: "{{ query('ansible.builtin.subelements', xconnect_policy.spec.pools, 'nodes', {'skip_missing': True}) }}"
       when: item.1.connection_source == 'terraform_cmdb' and (item.1.enabled | default(true) | bool)
       no_log: true
@@ -96,10 +96,10 @@
     - name: Validate manually provisioned node facts
       ansible.builtin.assert:
         that:
-          - item.1.ansible_host | default('') | ansible.utils.ipv4
-          - item.1.ansible_user | default('') | length > 0
+          - (item.1.ansible_host | default(xconnect_vault_nodes[item.1.id].public_ipv4 | default(xconnect_vault_nodes[item.1.id].ansible_host | default(''))) | ansible.utils.ipv4 | length) > 0
+          - item.1.ansible_user | default(xconnect_vault_nodes[item.1.id].ansible_user | default('')) | length > 0
           - xconnect_vault_nodes[item.1.id].SSH_PASSWORD | default('') | length > 0
-        fail_msg: "GitOps host metadata or Vault SSH_PASSWORD is missing for {{ item.1.id }}."
+        fail_msg: "Vault is missing required connection fields for the selected XConnect node."
       loop: "{{ query('ansible.builtin.subelements', xconnect_policy.spec.pools, 'nodes', {'skip_missing': True}) }}"
       when: item.1.connection_source == 'vault' and (item.1.enabled | default(true) | bool)
       no_log: true
@@ -109,6 +109,7 @@
         name: "{{ item.1.id }}"
         groups:
           - xconnect
+          - xconnect_regional_nodes
           - "xconnect_pool_{{ item.0.name }}"
           - "xconnect_{{ item.1.role | default('pool_worker') }}"
         ansible_host: "{{ xconnect_cmdb_nodes[item.1.id].ip }}"
@@ -119,7 +120,8 @@
         xconnect_pool: "{{ item.0.name }}"
         xconnect_fqdn: "{{ item.0.entrypoint.fqdn }}"
         xconnect_connection_source: terraform_cmdb
-        xconnect_cmdb_node_id: "{{ item.1.cmdb_selector.node_id }}"
+        xconnect_cmdb_node_id: "{{ item.1.cmdb_selector.node_id | default(item.1.node_id) }}"
+        xconnect_node_maintenance: "{{ xconnect_policy.spec.node_maintenance | default({}, true) }}"
       loop: "{{ query('ansible.builtin.subelements', xconnect_policy.spec.pools, 'nodes', {'skip_missing': True}) }}"
       when: item.1.connection_source == 'terraform_cmdb' and (item.1.enabled | default(true) | bool)
       no_log: true
@@ -129,16 +131,18 @@
         name: "{{ item.1.id }}"
         groups:
           - xconnect
+          - xconnect_regional_nodes
           - "xconnect_pool_{{ item.0.name }}"
           - "xconnect_{{ item.1.role | default('pool_worker') }}"
-        ansible_host: "{{ item.1.ansible_host }}"
-        ansible_user: "{{ item.1.ansible_user }}"
+        ansible_host: "{{ item.1.ansible_host | default(xconnect_vault_nodes[item.1.id].public_ipv4 | default(xconnect_vault_nodes[item.1.id].ansible_host | default(''))) }}"
+        ansible_user: "{{ item.1.ansible_user | default(xconnect_vault_nodes[item.1.id].ansible_user | default('')) }}"
         ansible_password: "{{ xconnect_vault_nodes[item.1.id].SSH_PASSWORD }}"
         ansible_ssh_common_args: "-o StrictHostKeyChecking=accept-new"
         xconnect_region: "{{ item.0.region }}"
         xconnect_pool: "{{ item.0.name }}"
         xconnect_fqdn: "{{ item.0.entrypoint.fqdn }}"
         xconnect_connection_source: vault
+        xconnect_node_maintenance: "{{ xconnect_policy.spec.node_maintenance | default({}, true) }}"
       loop: "{{ query('ansible.builtin.subelements', xconnect_policy.spec.pools, 'nodes', {'skip_missing': True}) }}"
       when: item.1.connection_source == 'vault' and (item.1.enabled | default(true) | bool)
       no_log: true

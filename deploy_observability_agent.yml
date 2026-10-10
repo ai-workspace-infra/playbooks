@@ -83,6 +83,24 @@
     xray_exporter_internal_service_token: >-
       {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
          | default('', true) }}
+    xconnect_gitops_config: >-
+      {{ lookup('ansible.builtin.env', 'XCONNECT_GITOPS_CONFIG')
+         | default(playbook_dir ~ '/../gitops/topology/prod/selfhost/xconnect-regional-pools.yaml', true) }}
+  pre_tasks:
+    - name: Load GitOps policy for XConnect regional nodes
+      ansible.builtin.include_vars:
+        file: "{{ xconnect_gitops_config }}"
+        name: xconnect_policy
+      when:
+        - "'xconnect_regional_nodes' in group_names"
+        - xconnect_node_maintenance is not defined
+
+    - name: Set GitOps node maintenance policy
+      ansible.builtin.set_fact:
+        xconnect_node_maintenance: "{{ xconnect_policy.spec.node_maintenance | default({}, true) }}"
+      when:
+        - "'xconnect_regional_nodes' in group_names"
+        - xconnect_node_maintenance is not defined
   tasks:
     - name: Include node_exporter role
       ansible.builtin.import_role:

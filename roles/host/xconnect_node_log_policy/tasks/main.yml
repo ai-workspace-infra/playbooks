@@ -1,0 +1,108 @@
+---
+- name: Resolve journal and rotated-file policy from GitOps
+  ansible.builtin.set_fact:
+    xconnect_node_journal_policy: >-
+      {{ xconnect_node_journal_defaults |
+         combine(xconnect_node_maintenance.journald | default({}), recursive=true) }}
+    xconnect_node_rotated_log_policy: >-
+      {{ xconnect_node_rotated_log_defaults |
+         combine(xconnect_node_maintenance.rotated_logs | default({}), recursive=true) }}
+
+- name: Validate XConnect log retention policy
+  ansible.builtin.assert:
+    that:
+      - xconnect_node_journal_policy.system_max_use is match('^[1-9][0-9]*[KMG]$')
+      - xconnect_node_journal_policy.system_keep_free is match('^[1-9][0-9]*[KMG]$')
+      - xconnect_node_journal_policy.system_max_file_size is match('^[1-9][0-9]*[KMG]$')
+      - xconnect_node_journal_policy.max_retention is match('^[1-9][0-9]*(day|days|week|weeks|month|months|year|years)$')
+      - xconnect_node_journal_policy.runtime_max_use is match('^[1-9][0-9]*[KMG]$')
+      - xconnect_node_journal_policy.rate_limit_interval is match('^[1-9][0-9]*(s|sec|min|h)$')
+      - xconnect_node_journal_policy.rate_limit_burst | int > 0
+      - xconnect_node_rotated_log_policy.keep_days | int > 0
+      - xconnect_node_rotated_log_policy.patterns | length > 0
+
+- name: Apply Caddy reverse_proxy ERROR-only logging policy
+  ansible.builtin.script:
+    cmd: "{{ role_path }}/files/apply_caddy_log_policy.py /etc/caddy/Caddyfile"
+    executable: /usr/bin/python3
+  register: xconnect_caddy_log_policy
+  changed_when: "'changed:' in xconnect_caddy_log_policy.stdout"
+
+- name: Report usage before log maintenance
+  ansible.builtin.command:
+    argv: [bash, -lc, "df -h / | tail -n1; journalctl --disk-usage; du -sh /var/log 2>/dev/null || true"]
+  register: xconnect_log_usage_before
+  changed_when: false
+
+- name: Show usage before log maintenance
+  ansible.builtin.debug:
+    var: xconnect_log_usage_before.stdout_lines
+
+- name: Ensure journald drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install XConnect journald limits
+  ansible.builtin.template:
+    src: journald-limits.conf.j2
+    dest: /etc/systemd/journald.conf.d/90-xconnect-log-limits.conf
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  notify: Restart systemd-journald
+
+- name: Apply journald limits before vacuuming
+  ansible.builtin.meta: flush_handlers
+
+- name: Rotate active journal
+  ansible.builtin.command:
+    argv: [journalctl, --rotate]
+  changed_when: false
+
+- name: Vacuum archived journals by size and age
+  ansible.builtin.command:
+    argv:
+      - journalctl
+      - "--vacuum-size={{ xconnect_node_journal_policy.system_max_use }}"
+      - "--vacuum-time={{ xconnect_node_rotated_log_policy.keep_days }}d"
+  register: xconnect_journal_vacuum
+  changed_when: "'freed 0B' not in xconnect_journal_vacuum.stdout"
+
+- name: Find expired rotated logs only
+  ansible.builtin.find:
+    paths: /var/log
+    patterns: "{{ xconnect_node_rotated_log_policy.patterns }}"
+    age: "{{ xconnect_node_rotated_log_policy.keep_days }}d"
+    age_stamp: mtime
+    file_type: file
+    recurse: true
+  register: xconnect_expired_rotated_logs
+
+- name: Delete expired rotated logs
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ xconnect_expired_rotated_logs.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Clean apt package cache
+  ansible.builtin.command:
+    argv: [apt-get, clean]
+  when: ansible_facts.os_family == "Debian"
+  changed_when: false
+
+- name: Report usage after log maintenance
+  ansible.builtin.command:
+    argv: [bash, -lc, "df -h / | tail -n1; journalctl --disk-usage; du -sh /var/log 2>/dev/null || true"]
+  register: xconnect_log_usage_after
+  changed_when: false
+
+- name: Show usage after log maintenance
+  ansible.builtin.debug:
+    var: xconnect_log_usage_after.stdout_lines
