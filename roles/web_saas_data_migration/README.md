@@ -1,12 +1,16 @@
 # Web SaaS Selfhost incremental data migration
 
-## Current status: blocked
+## Current status: bounded migration component, not release acceptance
 
-This role validates the request and then blocks before any database command.
+This role validates the request and paired encrypted isolated-restore evidence,
+then invokes the reviewed Accounts bounded migrator twice inside the exact
+`canonicalAccount` container. It emits only a sanitized component receipt;
+release acceptance remains blocked until independent data, login, subscription,
+and application compatibility probes pass.
 The migration is in-place on the same UAT Selfhost target database; source
 provenance is carried only by the separate baseline manifest. It does not
-connect to a database, run SQL, invoke Vault, initialize or reset a schema, or
-claim a migration passed. It never clears a dirty migration marker. A validated
+receive a DSN, invoke Vault, initialize or reset a schema, or clear a dirty
+migration marker. A validated
 request requires a validated baseline manifest, the exact
 `canonicalAccount` container, expected
 and target schema versions including an observed clean expected version,
@@ -26,39 +30,23 @@ bind the actual producer run, source revision and receipt artifacts to trusted
 workflow provenance before treating them as evidence; this role cannot
 authenticate caller-supplied claims.
 
-The current official Accounts `cmd/migratectl migrate` implementation applies
-all pending migrations. It has no target-version ceiling, expected-version
-precondition, migration-checksum argument, or configurable advisory-lock and
-timeout contract. The existing
+The official Accounts `cmd/migratectl migrate` supports a bounded release
+interface: `--expected-version`, `--target-version`, `--migration-sha256`,
+`--lock-timeout`, and `--statement-timeout`. It refuses dirty state, unexpected
+pending migrations, and checksum/version mismatches while holding a database
+advisory lock. The existing
 `scripts/data_operations/serverless/apply_accounts_incremental_schema.sh` is
-explicitly UAT Supabase pooler specific; it validates a single migration
-checksum and post-state but does not provide the required Selfhost execution
-contract. Neither is called by this role.
+still Supabase-pooler specific and is not called by this role.
 
-Before enabling execution, the Accounts owner must provide reviewable evidence
-in the form of an official Selfhost migrator interface and its source/tests:
-
-1. A documented invocation that runs in the `canonicalAccount` container and
-   takes its DSN only from an environment variable, with secret output
-   suppressed.
-2. An exact expected version, exact target version, and refusal to apply any
-   version outside that single reviewed boundary.
-3. In-tool verification that the selected migration file matches the approved
-   SHA-256 digest.
-4. An advisory lock held across preflight, migration, and postflight, with
-   bounded lock and statement timeouts.
-5. Dirty-state refusal with no force-clear/reset path, plus clean exact-version
-   checks before and after execution and safe re-entry after interruption.
-6. A real backup and isolated-restore receipt carrying the environment,
-   target database identity, baseline identity, expected schema version,
-   checkpoint/archive digest, and successful restore result.
-
-The `selfhost-data-lifecycle` workflow-call path should stop after preflight
-and backup. It must not expose this migration phase until the official
-execution contract exists. The baseline manifest validator does not
+The `selfhost-data-lifecycle` workflow-call path builds the immutable Accounts
+source at `accounts_source_revision`, stages only the binary and migration
+files, and invokes `migratectl` with `--dsn-env DATABASE_URL`; command output is
+suppressed. The role requires a real backup and isolated-restore receipt before
+execution and binds its sanitized component receipt to the same candidate,
+database, baseline, checkpoint, source revision, version and checksum. The
+baseline manifest validator does not
 authenticate its approval metadata;
 the baseline status is `manifest_validated`, not a claim that database rows
-were frozen. Until the official execution contract exists
-with source-level tests, this role must remain blocked. The current
+were frozen. This component receipt is not full release acceptance. The current
 `web_saas_release_upgrade` backup receipt does not use the paired agentA
 backup/restore evidence contract and is not accepted here.

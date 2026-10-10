@@ -59,10 +59,24 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: ai-workspace-services/accounts
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ fromJSON(inputs.config_json).accounts_source_revision || inputs.release_tag }}
           fetch-depth: 0
           path: accounts
           persist-credentials: false
+      - name: Set up Go for the reviewed Accounts migrator
+        if: ${{ inputs.operation == 'migration' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: accounts/go.mod
+          cache-dependency-path: accounts/go.sum
+      - name: Build and bind the reviewed Accounts migrator
+        if: ${{ inputs.operation == 'migration' }}
+        working-directory: accounts
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/accounts-migratectl" ./cmd/migratectl
+          cp -a sql/migrations "$RUNNER_TEMP/account-migrations"
+          chmod 0755 "$RUNNER_TEMP/accounts-migratectl"
       - name: Bind immutable source and exact CMDB-derived inventory
         run: python3 scripts/data_operations/selfhost/role_runner.py prepare
       - name: Install Ansible execution tools
@@ -77,7 +91,7 @@ jobs:
           secrets: |
             kv/data/CICD/uat SSH_PRIVATE_DEPLOY_KEY_B64 | SSH_PRIVATE_DEPLOY_KEY_B64 ;
       - id: backup_key
-        if: ${{ inputs.operation == 'backup' }}
+        if: ${{ inputs.operation == 'backup' || inputs.operation == 'migration' }}
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ env.VAULT_ADDR }}

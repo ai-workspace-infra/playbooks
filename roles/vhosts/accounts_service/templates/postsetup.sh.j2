@@ -17,17 +17,79 @@ printf 'ROOT_BOOTSTRAP_PASSWORD=%s\n' "{{ lookup('ansible.builtin.env', 'ROOT_BO
 chown root:root "${tmp_file}"
 mv -f "${tmp_file}" "${env_file}"
 
-curl -fsSL https://raw.githubusercontent.com/ai-workspace-services/accounts/main/sql/schema.sql -o "${schema_file}"
-
 if ! docker exec -i postgresql psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'account'" | grep -q 1; then
   docker exec -i postgresql psql -U postgres -c 'CREATE DATABASE account;'
 fi
 
-if ! docker exec -i postgresql psql -U postgres -d account -tAc "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'" | grep -q 1; then
+users_table_exists="$(docker exec -i postgresql psql -U postgres -d account -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='users'")"
+subscriptions_table_exists="$(docker exec -i postgresql psql -U postgres -d account -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='subscriptions'")"
+public_table_count="$(docker exec -i postgresql psql -U postgres -d account -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")"
+
+# Never run the full Accounts baseline against a non-empty database. The
+# baseline is only authorized for an empty account database; a partial host
+# must use the explicit additive repair below so existing users, identities,
+# passwords, and subscriptions remain untouched.
+if [[ "${public_table_count}" == 0 ]]; then
+  curl -fsSL https://raw.githubusercontent.com/ai-workspace-services/accounts/main/sql/schema.sql -o "${schema_file}"
   docker exec -i postgresql psql -U postgres -d account -v ON_ERROR_STOP=1 -f "${schema_file}"
   echo "account baseline schema applied"
-else
+elif [[ "${users_table_exists}" == 1 && "${subscriptions_table_exists}" != 1 ]]; then
+  # This is intentionally narrower than sql/schema.sql. It is the reviewed
+  # repair for the known users-only partial baseline.
+  docker exec -i postgresql psql -U postgres -d account -v ON_ERROR_STOP=1 <<'SQL'
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+CREATE OR REPLACE FUNCTION public.set_updated_at() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+CREATE TABLE IF NOT EXISTS public.subscriptions (
+  uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_uuid UUID NOT NULL REFERENCES public.users(uuid) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  payment_method TEXT NOT NULL DEFAULT 'paypal',
+  kind TEXT NOT NULL DEFAULT 'subscription',
+  plan_id TEXT,
+  external_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  payment_qr TEXT,
+  meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  cancelled_at TIMESTAMPTZ,
+  CONSTRAINT subscriptions_user_external_uk UNIQUE (user_uuid, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user_uuid ON public.subscriptions (user_uuid);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON public.subscriptions (status);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgrelid = 'public.subscriptions'::regclass
+      AND tgname = 'trg_subscriptions_set_updated_at'
+      AND NOT tgisinternal
+  ) THEN
+    CREATE TRIGGER trg_subscriptions_set_updated_at
+      BEFORE UPDATE ON public.subscriptions
+      FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+  END IF;
+END
+$$;
+SQL
+  echo "account subscriptions table repaired additively"
+elif [[ "${users_table_exists}" == 1 && "${subscriptions_table_exists}" == 1 ]]; then
   echo "account schema already present; skipping baseline init"
+else
+  echo "account database has non-empty public tables but no supported users-only partial baseline; refusing destructive initialization" >&2
+  exit 1
+fi
+
+required_tables="$(docker exec -i postgresql psql -U postgres -d account -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('users','subscriptions')")"
+if [[ "${required_tables}" != 2 ]]; then
+  echo "account baseline schema is incomplete: expected users and subscriptions" >&2
+  exit 1
 fi
 
 container_id="$(docker ps --filter "label=com.docker.compose.service=accounts" --format '{{.ID}}' | head -n1)"

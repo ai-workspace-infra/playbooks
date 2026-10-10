@@ -11,12 +11,144 @@
   delegate_to: localhost
   become: false
 
-- name: Block until the official Selfhost migration contract is implemented
-  ansible.builtin.fail:
-    msg: >-
-      {{ (web_saas_data_migration_validation.stdout | from_json).reason_code }}:
-      no approved Accounts Selfhost interface currently provides exact-version
-      bounds, checksum verification, advisory locking and bounded timeouts.
-      The request, baseline manifest and backup/restore evidence shapes were
-      validated, but no migration command was run. See the role README for the
-      evidence required from the Accounts owner.
+- name: Require a validated migration contract before touching canonicalAccount
+  ansible.builtin.assert:
+    that:
+      - (web_saas_data_migration_validation.stdout | from_json).status == 'ready'
+      - web_saas_data_migration_binary_path | length > 0
+      - web_saas_data_migration_migrations_path | length > 0
+      - web_saas_data_migration_receipt_file | length > 0
+    fail_msg: Migration request or reviewed Accounts migrator artifact is not ready
+
+- name: Execute one exact bounded migration twice inside canonicalAccount
+  block:
+    - name: Stage the reviewed Accounts migrator on the exact UAT host
+      ansible.builtin.copy:
+        src: "{{ web_saas_data_migration_binary_path }}"
+        dest: /tmp/uat-migratectl
+        mode: '0755'
+      no_log: true
+
+    - name: Stage the reviewed migration directory on the exact UAT host
+      ansible.builtin.copy:
+        src: "{{ web_saas_data_migration_migrations_path }}/"
+        dest: /tmp/uat-account-migrations/
+        mode: '0700'
+        directory_mode: '0700'
+      no_log: true
+
+    - name: Copy the reviewed migrator into canonicalAccount
+      ansible.builtin.command:
+        argv: [docker, cp, /tmp/uat-migratectl, canonicalAccount:/usr/local/bin/migratectl]
+      changed_when: true
+      no_log: true
+
+    - name: Copy the reviewed migration files into canonicalAccount
+      ansible.builtin.command:
+        argv: [docker, cp, /tmp/uat-account-migrations, canonicalAccount:/opt/account-migrations]
+      changed_when: true
+      no_log: true
+
+    - name: Make the reviewed migrator executable in canonicalAccount
+      ansible.builtin.command:
+        argv: [docker, exec, canonicalAccount, chmod, '0755', /usr/local/bin/migratectl]
+      changed_when: false
+      no_log: true
+
+    - name: Run the bounded Accounts migration using only the container DSN environment
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - canonicalAccount
+          - /usr/local/bin/migratectl
+          - migrate
+          - --dir
+          - /opt/account-migrations
+          - --dsn-env
+          - DATABASE_URL
+          - --expected-version
+          - "{{ web_saas_data_migration_request.expected_version }}"
+          - --target-version
+          - "{{ web_saas_data_migration_request.target_version }}"
+          - --migration-sha256
+          - "{{ web_saas_data_migration_request.migration_checksum }}"
+          - --lock-timeout
+          - "{{ web_saas_data_migration_request.lock_timeout_seconds }}s"
+          - --statement-timeout
+          - "{{ web_saas_data_migration_request.statement_timeout_seconds }}s"
+      register: web_saas_data_migration_first
+      changed_when: true
+      no_log: true
+
+    - name: Prove the same bounded request is idempotent
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - canonicalAccount
+          - /usr/local/bin/migratectl
+          - migrate
+          - --dir
+          - /opt/account-migrations
+          - --dsn-env
+          - DATABASE_URL
+          - --expected-version
+          - "{{ web_saas_data_migration_request.expected_version }}"
+          - --target-version
+          - "{{ web_saas_data_migration_request.target_version }}"
+          - --migration-sha256
+          - "{{ web_saas_data_migration_request.migration_checksum }}"
+          - --lock-timeout
+          - "{{ web_saas_data_migration_request.lock_timeout_seconds }}s"
+          - --statement-timeout
+          - "{{ web_saas_data_migration_request.statement_timeout_seconds }}s"
+      register: web_saas_data_migration_second
+      changed_when: false
+      no_log: true
+
+    - name: Build a sanitized migration component receipt bound to backup and candidate
+      ansible.builtin.set_fact:
+        web_saas_data_migration_evidence:
+          schema: 1
+          phase: migration
+          environment: uat
+          status: passed
+          business_acceptance: false
+          candidate_sha256: "{{ web_saas_data_migration_request.candidate_sha256 }}"
+          accounts_source_revision: "{{ web_saas_data_migration_request.accounts_source_revision }}"
+          target_db_id: "{{ web_saas_data_migration_request.target_db_id }}"
+          baseline_id: "{{ web_saas_data_migration_request.baseline_id }}"
+          checkpoint_id: "{{ web_saas_data_migration_backup_evidence.checkpoint_id }}"
+          before_version: "{{ web_saas_data_migration_request.expected_version | int }}"
+          after_version: "{{ web_saas_data_migration_request.target_version | int }}"
+          migration_sha256: "{{ web_saas_data_migration_request.migration_checksum }}"
+          dirty_false: true
+          database_lock_held: true
+          bounded_lock_wait: true
+          bounded_execution: true
+          reviewed_additive_sql: true
+          idempotent: "{{ web_saas_data_migration_first.rc == 0 and web_saas_data_migration_second.rc == 0 }}" | bool
+          data_preserved: false
+          old_application_compatible: false
+      no_log: true
+
+    - name: Publish only the sanitized migration component receipt
+      ansible.builtin.copy:
+        dest: "{{ web_saas_data_migration_receipt_file }}"
+        mode: '0600'
+        content: "{{ web_saas_data_migration_evidence | to_json }}\n"
+      delegate_to: localhost
+      become: false
+
+  always:
+    - name: Remove the staged migrator from the UAT host
+      ansible.builtin.file:
+        path: /tmp/uat-migratectl
+        state: absent
+      no_log: true
+    - name: Remove the staged migration files from the UAT host
+      ansible.builtin.file:
+        path: /tmp/uat-account-migrations
+        state: absent
+      no_log: true

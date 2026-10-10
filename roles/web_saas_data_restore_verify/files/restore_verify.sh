@@ -12,7 +12,7 @@ for name in WEB_SAAS_ARCHIVE_PATH WEB_SAAS_DATABASE WEB_SAAS_POSTGRES_CONTAINER 
 [[ "$WEB_SAAS_RUN_ID" =~ ^[1-9][0-9]*$ ]] || fail 'invalid run id'
 [[ "$WEB_SAAS_EXPECTED_VERSION" =~ ^[1-9][0-9]*$ ]] || fail 'invalid exact schema version'
 [[ "$WEB_SAAS_EXPECTED_USERS" =~ ^[1-9][0-9]*$ ]] || fail 'empty or invalid user sample'
-[[ "$WEB_SAAS_EXPECTED_SUBSCRIPTIONS" =~ ^[1-9][0-9]*$ ]] || fail 'empty or invalid authorized subscription sample'
+[[ "$WEB_SAAS_EXPECTED_SUBSCRIPTIONS" =~ ^[0-9]+$ ]] || fail 'invalid subscription count'
 [[ "$WEB_SAAS_EXPECTED_SCHEMA_SHA256" =~ ^[0-9a-f]{64}$ && "$WEB_SAAS_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail 'invalid schema or archive fingerprint'
 [[ "$WEB_SAAS_EXPECTED_DATA_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail 'invalid data fingerprint'
 [[ "$WEB_SAAS_DATABASE_SYSTEM_IDENTIFIER" =~ ^[0-9]+$ ]] || fail 'invalid PostgreSQL system identity'
@@ -121,6 +121,9 @@ print(json.dumps({
     "isolated_restore_verified": True,
     "source_restore_schema_matches": True,
     "restored_data_matches": True,
+    "restore_gate_status": "passed",
+    "g3_status": "passed" if int(subscriptions) > 0 else "blocked",
+    "g3_reason_code": None if int(subscriptions) > 0 else "NONEMPTY_SUBSCRIPTION_SAMPLE_REQUIRED",
     "business_acceptance": False,
 }, sort_keys=True))
 PY

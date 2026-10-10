@@ -19,7 +19,9 @@ TAG = re.compile(r"(?:uat-)?daily-build-\d{4}\.\d{2}\.\d{2}(?:-r[1-9]\d*)?|v\d[0
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}")
 CONFIG_KEYS = {"execution_path", "target_host", "caller_run_id", "source_database_id",
                "baseline_id", "authorized_subscription_sample_id", "confirm_backup",
-               "expected_schema_version", "target_schema_version", "migration_sha256"}
+               "expected_schema_version", "target_schema_version", "migration_sha256",
+               "accounts_source_revision", "migration_request", "baseline_manifest",
+               "backup_evidence", "restore_evidence"}
 
 
 def require(condition, reason):
@@ -32,7 +34,7 @@ def validate(env):
     require(isinstance(config, dict) and set(config) <= CONFIG_KEYS, "Unsupported role request fields")
     require(env.get("REQUESTED_ENVIRONMENT") == "uat", "Component role runner is UAT-only")
     phase = env.get("REQUESTED_OPERATION", "")
-    require(phase in {"preflight", "backup"}, "Only preflight and backup components are enabled")
+    require(phase in {"preflight", "backup", "migration"}, "Unsupported Selfhost component phase")
     require(config.get("execution_path") == "selfhost_roles", "Explicit selfhost_roles execution path required")
     require(config.get("target_host") == "web-saas-uat", "Canonical UAT host required")
     require(re.fullmatch(r"[1-9][0-9]*", str(config.get("caller_run_id", ""))), "Trusted CMDB caller run required")
@@ -45,6 +47,13 @@ def validate(env):
         require(config.get("confirm_backup") is True, "Explicit encrypted backup and isolated-restore opt-in required")
         require(all(config.get(key) for key in ("source_database_id", "baseline_id", "authorized_subscription_sample_id")),
                 "Approved baseline and sample references required before backup credentials")
+    if phase == "migration":
+        require(re.fullmatch(r"[0-9a-f]{40,64}", str(config.get("accounts_source_revision", ""))),
+                "Immutable Accounts source revision required for migration")
+        require(all(config.get(key) for key in ("source_database_id", "baseline_id", "authorized_subscription_sample_id")),
+                "Approved baseline and nonempty subscription sample references required before migration")
+        for key in ("migration_request", "baseline_manifest"):
+            require(isinstance(config.get(key), dict), f"{key} is required for migration")
     return config
 
 
@@ -72,9 +81,13 @@ def prepare(env):
     accounts = ROOT / "accounts"
     result = subprocess.run(["git", "-C", str(accounts), "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
     source_sha = result.stdout.strip()
-    result = subprocess.run(["git", "-C", str(accounts), "rev-parse", f"refs/tags/{env['RELEASE_TAG']}^{{commit}}"],
-                            capture_output=True, text=True, check=True)
-    require(result.stdout.strip() == source_sha and re.fullmatch(r"[0-9a-f]{40}", source_sha), "Accounts source differs from its tag")
+    if env["REQUESTED_OPERATION"] == "migration":
+        require(source_sha == config["accounts_source_revision"] and re.fullmatch(r"[0-9a-f]{40}", source_sha),
+                "Accounts source differs from the reviewed migration commit")
+    else:
+        result = subprocess.run(["git", "-C", str(accounts), "rev-parse", f"refs/tags/{env['RELEASE_TAG']}^{{commit}}"],
+                                capture_output=True, text=True, check=True)
+        require(result.stdout.strip() == source_sha and re.fullmatch(r"[0-9a-f]{40}", source_sha), "Accounts source differs from its tag")
     binding = dict(environment="uat", release_tag=env["RELEASE_TAG"], accounts_source_sha=source_sha,
                    expected_schema_version=int(env["EXPECTED_SCHEMA_VERSION"]), config=config)
     request_sha256 = hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -87,7 +100,15 @@ def prepare(env):
                      web_saas_release_receipt_file=str(directory / "private-receipt.json"),
                      web_saas_release_source_database_id=config.get("source_database_id", ""),
                      web_saas_release_baseline_id=config.get("baseline_id", ""),
-                     web_saas_release_authorized_subscription_sample_id=config.get("authorized_subscription_sample_id", ""))
+                     web_saas_release_authorized_subscription_sample_id=config.get("authorized_subscription_sample_id", ""),
+                     web_saas_data_migration_environment="uat",
+                     web_saas_data_migration_request=config.get("migration_request", {}),
+                     web_saas_data_migration_baseline_manifest=config.get("baseline_manifest", {}),
+                     web_saas_data_migration_backup_evidence=config.get("backup_evidence", {}),
+                     web_saas_data_migration_restore_evidence=config.get("restore_evidence", {}),
+                     web_saas_data_migration_binary_path=str(Path(env["RUNNER_TEMP"]) / "accounts-migratectl"),
+                     web_saas_data_migration_migrations_path=str(Path(env["RUNNER_TEMP"]) / "account-migrations"),
+                     web_saas_data_migration_receipt_file=str(directory / "private-receipt.json"))
     write_json(directory / "vars.json", variables)
     # A request hash is component provenance, NOT an accepted image candidate.
     write_json(directory / "binding.json", binding | {"request_sha256": request_sha256, "business_acceptance": False})
@@ -113,7 +134,10 @@ def execute(env):
         require(receipt.get("status") == "passed", "Role receipt did not pass")
         # Only an allowlisted, nonpersonal component receipt is publishable.
         for key in ("schema_version", "existing_users", "subscriptions", "clean", "encrypted", "durable",
-                    "archive_sha256", "isolated_restore_verified", "restored_data_matches"):
+                    "archive_sha256", "isolated_restore_verified", "restored_data_matches",
+                    "before_version", "after_version", "migration_sha256", "checkpoint_id",
+                    "dirty_false", "database_lock_held", "bounded_lock_wait", "bounded_execution",
+                    "reviewed_additive_sql", "idempotent", "data_preserved", "old_application_compatible"):
             if key in receipt:
                 evidence[key] = receipt[key]
         evidence.update(status="passed", reason_code="COMPONENT_ONLY_NOT_RELEASE_ACCEPTANCE")

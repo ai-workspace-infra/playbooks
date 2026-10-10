@@ -33,19 +33,25 @@ class WebSaaSBackupRoleContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("missing required input", result.stderr)
 
-    def test_backup_rejects_zero_subscription_sample_before_dump(self) -> None:
-        # This checks the implemented fail-closed predicate without connecting
-        # to UAT or invoking Docker; the observed UAT value is 0.
+    def test_backup_keeps_zero_subscriptions_out_of_restore_gate(self) -> None:
         source = BACKUP.read_text()
-        self.assertIn('[[ "$subscription_count" =~ ^[1-9][0-9]*$ ]] || fail', source)
-        self.assertIn("authorized nonempty subscription sample is not present", source)
+        self.assertIn('[[ "$subscription_count" =~ ^[0-9]+$ ]] || fail', source)
+        self.assertIn('"restore_gate_status": "passed"', source)
+        self.assertIn('"g3_reason_code": None if int(subscriptions) > 0 else "NONEMPTY_SUBSCRIPTION_SAMPLE_REQUIRED"', source)
 
     def test_restore_rejects_missing_inputs_before_database_access(self) -> None:
         result = self.run_rejected(RESTORE, {})
         self.assertEqual(result.returncode, 2)
         self.assertIn("missing required input", result.stderr)
 
-    def test_restore_rejects_zero_expected_subscription_sample(self) -> None:
+    def test_restore_accepts_zero_expected_subscriptions_but_marks_g3_blocked(self) -> None:
+        source = RESTORE.read_text()
+        self.assertIn('[[ "$WEB_SAAS_EXPECTED_SUBSCRIPTIONS" =~ ^[0-9]+$ ]] || fail', source)
+        self.assertIn('"restore_gate_status": "passed"', source)
+        self.assertIn('"g3_status": "passed" if int(subscriptions) > 0 else "blocked"', source)
+        self.assertIn("web_saas_data_restore_verify_expected_subscriptions | string is match('^[0-9]+$')", RESTORE_TASKS.read_text())
+
+    def test_restore_rejects_invalid_expected_subscription_count(self) -> None:
         env = {
             "WEB_SAAS_ARCHIVE_PATH": "/data/backups/web-saas/uat/v1/7/account.dump.enc",
             "WEB_SAAS_DATABASE": "account",
@@ -57,7 +63,7 @@ class WebSaaSBackupRoleContractTests(unittest.TestCase):
             "WEB_SAAS_BASELINE_ID": "uat-baseline-7",
             "WEB_SAAS_AUTHORIZED_SUBSCRIPTION_SAMPLE_ID": "approved-sample-1",
             "WEB_SAAS_EXPECTED_USERS": "2",
-            "WEB_SAAS_EXPECTED_SUBSCRIPTIONS": "0",
+            "WEB_SAAS_EXPECTED_SUBSCRIPTIONS": "not-a-count",
             "WEB_SAAS_EXPECTED_SCHEMA_SHA256": "a" * 64,
             "WEB_SAAS_EXPECTED_DATA_SHA256": "c" * 64,
             "WEB_SAAS_DATABASE_SYSTEM_IDENTIFIER": "1234567890123456789",
@@ -66,17 +72,19 @@ class WebSaaSBackupRoleContractTests(unittest.TestCase):
         }
         result = self.run_rejected(RESTORE, env)
         self.assertEqual(result.returncode, 2)
-        self.assertIn("empty or invalid authorized subscription sample", result.stderr)
+        self.assertIn("invalid subscription count", result.stderr)
 
-    def test_preflight_requires_exact_clean_migration_and_nonempty_counts(self) -> None:
+    def test_preflight_separates_restore_readiness_from_g3(self) -> None:
         source = PREFLIGHT.read_text()
         self.assertIn("web_saas_data_preflight_source_database_id", source)
         self.assertIn("web_saas_data_preflight_baseline_id", source)
         self.assertIn("web_saas_data_preflight_authorized_subscription_sample_id", source)
         self.assertIn("web_saas_data_preflight_db_parts[1] is match('^[1-9][0-9]*$')", source)
-        self.assertIn("web_saas_data_preflight_db_parts[2] is match('^[1-9][0-9]*$')", source)
+        self.assertIn("web_saas_data_preflight_db_parts[2] is match('^[0-9]+$')", source)
+        self.assertIn("g3_reason_code", source)
         self.assertIn("web_saas_data_preflight_db_parts[0] == '1:'", source)
-        self.assertIn("reason_code=NONEMPTY_SUBSCRIPTION_SAMPLE_REQUIRED", source)
+        self.assertIn("g3_reason_code", source)
+        self.assertIn("NONEMPTY_SUBSCRIPTION_SAMPLE_REQUIRED", source)
 
     def test_archive_and_restore_scripts_never_write_plaintext_or_cli_passwords(self) -> None:
         for script in (BACKUP, RESTORE):

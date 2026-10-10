@@ -1,6 +1,7 @@
 ---
-# Owner playbook. Workflow exposes only UAT preflight / backup components.
-# Baseline is a manifest freeze only; migration remains explicitly blocked.
+# Owner playbook. Migration is still a component operation only: it requires
+# validated encrypted backup/restore evidence and never claims application
+# login, subscription, or release acceptance.
 - name: Run exact-scope data operation roles without implicit data sync
   hosts: "{{ web_saas_release_target_host | default('never-matches') }}"
   gather_facts: false
@@ -22,7 +23,17 @@
       ansible.builtin.include_role:
         name: web_saas_release_upgrade
       when: web_saas_data_operation in ['preflight', 'backup']
-    - name: Validate migration request then stop at unimplemented official interface
+    - name: Validate evidence then invoke the bounded Accounts migrator
+      ansible.builtin.include_role:
+        name: web_saas_release_upgrade
+      vars:
+        web_saas_release_phase: backup
+        web_saas_release_mode: upgrade
+      when: web_saas_data_operation == 'migration'
+    - name: Invoke bounded Accounts migrator only after this run's restore proof
       ansible.builtin.include_role:
         name: web_saas_data_migration
+      vars:
+        web_saas_data_migration_backup_evidence: '{{ web_saas_data_backup_evidence }}'
+        web_saas_data_migration_restore_evidence: '{{ web_saas_data_restore_verify_evidence }}'
       when: web_saas_data_operation == 'migration'
