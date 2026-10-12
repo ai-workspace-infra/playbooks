@@ -20,11 +20,12 @@
     macos_doco_cd_webhook_port: "127.0.0.1:19080"
     macos_doco_cd_metrics_port: "127.0.0.1:19120"
     macos_dev_gitops_url: "{{ lookup('ansible.builtin.env', 'MACOS_DEV_GITOPS_URL') }}"
+    macos_dev_gitops_ref: "{{ lookup('ansible.builtin.env', 'MACOS_DEV_GITOPS_REF') }}"
     macos_dev_gitops_revision: "{{ lookup('ansible.builtin.env', 'MACOS_DEV_GITOPS_REVISION') }}"
     macos_dev_gitops_bare_repo: "{{ lookup('ansible.builtin.env', 'MACOS_DEV_GITOPS_BARE_REPO') }}"
     macos_doco_cd_poll_config:
       - url: "{{ macos_dev_gitops_url }}"
-        reference: "{{ macos_dev_gitops_revision }}"
+        reference: "{{ macos_dev_gitops_ref }}"
         target: macos-dev-smoke
         interval: 60
 
@@ -58,9 +59,11 @@
           - >-
             (macos_dev_gitops_url is match('^https://github\\.com/[^/]+/[^/]+(?:\\.git)?$')) or
             (macos_dev_gitops_url == 'file:///gitops.git' and macos_dev_gitops_bare_repo | trim | length > 0)
+          - macos_dev_gitops_ref is match('^[A-Za-z0-9._-]+$')
           - macos_dev_gitops_revision is match('^[0-9a-fA-F]{40}$')
         fail_msg: >-
-          Set MACOS_DEV_GITOPS_URL and a 40-character
+          Set MACOS_DEV_GITOPS_URL, an immutable Git ref in
+          MACOS_DEV_GITOPS_REF, and its 40-character expected commit in
           MACOS_DEV_GITOPS_REVISION. Use a public HTTPS repository or the
           explicitly mounted file:///gitops.git local bare repository.
 
@@ -68,6 +71,27 @@
       ansible.builtin.stat:
         path: "{{ macos_dev_gitops_bare_repo }}"
       register: macos_dev_gitops_bare_repo_stat
+      when: macos_dev_gitops_url == 'file:///gitops.git'
+
+    - name: Resolve the selected local Git ref
+      ansible.builtin.command:
+        argv:
+          - git
+          - --git-dir
+          - "{{ macos_dev_gitops_bare_repo }}"
+          - rev-parse
+          - "refs/tags/{{ macos_dev_gitops_ref }}"
+      register: macos_dev_gitops_resolved_revision
+      changed_when: false
+      when: macos_dev_gitops_url == 'file:///gitops.git'
+
+    - name: Require the local ref to resolve to the expected immutable commit
+      ansible.builtin.assert:
+        that:
+          - macos_dev_gitops_resolved_revision.stdout | trim == macos_dev_gitops_revision
+        fail_msg: >-
+          The selected local Git tag does not resolve to the expected commit;
+          refusing to start Doco-CD.
       when: macos_dev_gitops_url == 'file:///gitops.git'
 
     - name: Require a local bare Git remote when selected
