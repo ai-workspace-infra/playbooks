@@ -1,0 +1,173 @@
+---
+- name: Require explicit UAT candidate identity
+  ansible.builtin.assert:
+    that:
+      - session_upgrade_environment == 'uat'
+      - session_upgrade_target | length > 0
+      - session_upgrade_release_tag is match('^[A-Za-z0-9][A-Za-z0-9._-]+$')
+      - session_upgrade_run_id is match('^[0-9]+$')
+      - session_upgrade_source_sha is match('^[a-f0-9]{40}$')
+      - session_upgrade_controller_origin is match('^https://[^/]*uat[^/]*/?$')
+      - session_upgrade_core_sha256 is match('^[a-f0-9]{64}$')
+      - session_upgrade_agent_sha256 is match('^[a-f0-9]{64}$')
+      - session_upgrade_core_url is match('^https://github.com/ai-workspace-xstream/Xray-core/releases/download/')
+      - session_upgrade_agent_url is match('^https://github.com/ai-workspace-xstream/xconnect-edge-agent/releases/download/')
+
+- name: Require existing binaries, configuration and independent data path
+  ansible.builtin.stat:
+    path: '{{ item }}'
+  loop: '{{ [session_upgrade_core_path, session_upgrade_agent_path, session_upgrade_agent_config, "/data"] + session_upgrade_xray_configs }}'
+  register: session_upgrade_existing
+
+- name: Refuse implicit bootstrap of missing runtime
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - not item.stat.islnk | default(false)
+  loop: '{{ session_upgrade_existing.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Select private checkpoint directory
+  ansible.builtin.set_fact:
+    session_upgrade_checkpoint: '/data/backups/web-saas/uat/{{ session_upgrade_release_tag }}/{{ session_upgrade_run_id }}/xray-session-extension'
+
+- name: Create private checkpoint and staging directory
+  ansible.builtin.file:
+    path: '{{ session_upgrade_checkpoint }}'
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+
+- name: Download and checksum reviewed core and Agent
+  ansible.builtin.get_url:
+    url: '{{ item.url }}'
+    dest: '{{ session_upgrade_checkpoint }}/{{ item.name }}.candidate'
+    checksum: 'sha256:{{ item.sha256 }}'
+    mode: '0700'
+    owner: root
+    group: root
+  loop:
+    - {name: xray, url: '{{ session_upgrade_core_url }}', sha256: '{{ session_upgrade_core_sha256 }}'}
+    - {name: agent, url: '{{ session_upgrade_agent_url }}', sha256: '{{ session_upgrade_agent_sha256 }}'}
+  loop_control:
+    label: '{{ item.name }}'
+
+- name: Verify extension command exists before replacing running binary
+  ansible.builtin.command:
+    argv: ['{{ session_upgrade_checkpoint }}/xray.candidate', help, api, rmus]
+  changed_when: false
+
+- name: Validate existing Xray configurations with the candidate
+  ansible.builtin.command:
+    argv: ['{{ session_upgrade_checkpoint }}/xray.candidate', run, -test, -config, '{{ item }}']
+  loop: '{{ session_upgrade_xray_configs }}'
+  changed_when: false
+  no_log: true
+
+- name: Read private Agent configuration
+  ansible.builtin.slurp:
+    src: '{{ session_upgrade_agent_config }}'
+  register: session_upgrade_config_blob
+  no_log: true
+
+- name: Parse private Agent configuration
+  ansible.builtin.set_fact:
+    session_upgrade_config: '{{ session_upgrade_config_blob.content | b64decode | from_yaml }}'
+  no_log: true
+
+- name: Require existing Agent Proxy targets with dynamic API enabled
+  ansible.builtin.assert:
+    that:
+      - session_upgrade_config.agent.role | default('agent-proxy') == 'agent-proxy'
+      - session_upgrade_config.agent.controllerUrl | regex_replace('/$', '') == session_upgrade_controller_origin | regex_replace('/$', '')
+      - session_upgrade_config.xray.sync.targets | length > 0
+      - item.dynamicUsers.enabled | default(false) | bool
+      - item.dynamicUsers.server | default('') | length > 0
+      - item.dynamicUsers.executable | default('/usr/local/bin/xray') == session_upgrade_core_path
+  loop: '{{ session_upgrade_config.xray.sync.targets }}'
+  no_log: true
+
+- name: Build opted-in targets while preserving all other private values
+  ansible.builtin.set_fact:
+    session_upgrade_targets: '{{ session_upgrade_targets | default([]) + [item | combine({"dynamicUsers": item.dynamicUsers | combine({"terminateSessions": true})})] }}'
+  loop: '{{ session_upgrade_config.xray.sync.targets }}'
+  no_log: true
+
+- name: Save original runtime checkpoint without overwriting an existing backup
+  ansible.builtin.copy:
+    remote_src: true
+    src: '{{ item.path }}'
+    dest: '{{ session_upgrade_checkpoint }}/{{ item.name }}.original'
+    force: false
+    mode: '0600'
+  loop:
+    - {name: xray, path: '{{ session_upgrade_core_path }}'}
+    - {name: agent, path: '{{ session_upgrade_agent_path }}'}
+    - {name: config, path: '{{ session_upgrade_agent_config }}'}
+  no_log: true
+
+- name: Install candidate and opt in with rollback on failure
+  block:
+    - name: Stop Agent during the coordinated binary update
+      ansible.builtin.systemd_service:
+        name: '{{ session_upgrade_agent_service }}'
+        state: stopped
+    - name: Install verified runtime binaries
+      ansible.builtin.copy:
+        remote_src: true
+        src: '{{ session_upgrade_checkpoint }}/{{ item.name }}.candidate'
+        dest: '{{ item.path }}'
+        mode: '0755'
+        owner: root
+        group: root
+      loop:
+        - {name: xray, path: '{{ session_upgrade_core_path }}'}
+        - {name: agent, path: '{{ session_upgrade_agent_path }}'}
+    - name: Enable explicit session revocation on existing targets
+      ansible.builtin.copy:
+        content: '{{ session_upgrade_config | combine({"xray": session_upgrade_config.xray | combine({"sync": session_upgrade_config.xray.sync | combine({"targets": session_upgrade_targets})})}) | to_nice_yaml }}'
+        dest: '{{ session_upgrade_agent_config }}'
+        mode: '0600'
+        owner: root
+        group: root
+      no_log: true
+    - name: Activate core once for binary replacement
+      ansible.builtin.systemd_service:
+        name: '{{ item }}'
+        state: restarted
+      loop: '{{ session_upgrade_xray_services }}'
+    - name: Resume Agent
+      ansible.builtin.systemd_service:
+        name: '{{ session_upgrade_agent_service }}'
+        state: started
+    - name: Verify runtime service health
+      ansible.builtin.command:
+        argv: '{{ ["systemctl", "is-active"] + session_upgrade_xray_services + [session_upgrade_agent_service, "caddy.service"] }}'
+      changed_when: false
+  rescue:
+    - name: Restore original binaries
+      ansible.builtin.copy:
+        remote_src: true
+        src: '{{ session_upgrade_checkpoint }}/{{ item.name }}.original'
+        dest: '{{ item.path }}'
+        mode: '0755'
+      loop:
+        - {name: xray, path: '{{ session_upgrade_core_path }}'}
+        - {name: agent, path: '{{ session_upgrade_agent_path }}'}
+    - name: Restore original Agent configuration
+      ansible.builtin.copy:
+        remote_src: true
+        src: '{{ session_upgrade_checkpoint }}/config.original'
+        dest: '{{ session_upgrade_agent_config }}'
+        mode: '0600'
+      no_log: true
+    - name: Restart restored runtime
+      ansible.builtin.systemd_service:
+        name: '{{ item }}'
+        state: restarted
+      loop: '{{ session_upgrade_xray_services + [session_upgrade_agent_service] }}'
+    - name: Fail release after restoring originals
+      ansible.builtin.fail:
+        msg: 'Session extension activation failed; original binaries/config restored. UAT acceptance remains pending.'
