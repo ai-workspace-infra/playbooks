@@ -1,0 +1,244 @@
+---
+# Local-only macOS bootstrap for the explicit macos-dev-smoke GitOps target.
+#
+# This playbook is intentionally fail-closed. It never installs software,
+# touches a remote host, writes credentials, or selects the repository default
+# target. The Docker socket assertion is false by default because a mounted
+# socket gives the reconciler control over the local Docker daemon.
+- name: Bootstrap local macOS Doco-CD smoke target
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    macos_doco_cd_allow_docker_socket: false
+    macos_doco_cd_project_name: macos-dev-doco-cd
+    macos_doco_cd_container_name: macos-dev-doco-cd
+    macos_doco_cd_image: ghcr.io/kimdre/doco-cd@sha256:11b474122ed530614cbe4cb8390f94b646d3fc8ba40d74c0f0b7f55a8ca719f8
+    macos_doco_cd_runtime_dir: "{{ playbook_dir }}/.runtime/macos-dev-doco-cd"
+    macos_docker_context: "{{ lookup('ansible.builtin.env', 'DOCKER_CONTEXT') | default('orbstack', true) }}"
+    macos_docker_socket: "{{ ansible_env.HOME }}/.orbstack/run/docker.sock"
+    macos_doco_cd_webhook_port: "127.0.0.1:19080"
+    macos_doco_cd_metrics_port: "127.0.0.1:19120"
+    macos_dev_gitops_url: "{{ lookup('ansible.builtin.env', 'MACOS_DEV_GITOPS_URL') }}"
+    macos_dev_gitops_ref: "{{ lookup('ansible.builtin.env', 'MACOS_DEV_GITOPS_REF') }}"
+    macos_dev_gitops_revision: "{{ lookup('ansible.builtin.env', 'MACOS_DEV_GITOPS_REVISION') }}"
+    macos_dev_gitops_bare_repo: "{{ lookup('ansible.builtin.env', 'MACOS_DEV_GITOPS_BARE_REPO') }}"
+    macos_doco_cd_poll_config:
+      - url: "{{ macos_dev_gitops_url }}"
+        reference: "{{ macos_dev_gitops_ref }}"
+        target: macos-dev-smoke
+        interval: 60
+
+  tasks:
+    - name: Require macOS
+      ansible.builtin.assert:
+        that:
+          - ansible_system == 'Darwin'
+        fail_msg: This playbook is local-only and supports macOS only.
+
+    - name: Require the local OrbStack context
+      ansible.builtin.assert:
+        that:
+          - macos_docker_context == 'orbstack'
+        fail_msg: >-
+          Refusing a non-local Docker context. Set DOCKER_CONTEXT=orbstack;
+          remote contexts are outside this bootstrap's scope.
+
+    - name: Require explicit Docker socket approval
+      ansible.builtin.assert:
+        that:
+          - macos_doco_cd_allow_docker_socket | bool
+        fail_msg: >-
+          Refusing to mount the Docker socket. Re-run only after explicit
+          approval with -e macos_doco_cd_allow_docker_socket=true.
+
+    - name: Require a public GitOps URL and immutable commit
+      ansible.builtin.assert:
+        that:
+          - macos_dev_gitops_url | trim | length > 0
+          - >-
+            (macos_dev_gitops_url is match('^https://github\\.com/[^/]+/[^/]+(?:\\.git)?$')) or
+            (macos_dev_gitops_url == 'file:///gitops.git' and macos_dev_gitops_bare_repo | trim | length > 0)
+          - macos_dev_gitops_ref is match('^[A-Za-z0-9._-]+$')
+          - macos_dev_gitops_revision is match('^[0-9a-fA-F]{40}$')
+        fail_msg: >-
+          Set MACOS_DEV_GITOPS_URL, an immutable Git ref in
+          MACOS_DEV_GITOPS_REF, and its 40-character expected commit in
+          MACOS_DEV_GITOPS_REVISION. Use a public HTTPS repository or the
+          explicitly mounted file:///gitops.git local bare repository.
+
+    - name: Check the explicitly mounted local bare Git remote
+      ansible.builtin.stat:
+        path: "{{ macos_dev_gitops_bare_repo }}"
+      register: macos_dev_gitops_bare_repo_stat
+      when: macos_dev_gitops_url == 'file:///gitops.git'
+
+    - name: Resolve the selected local Git ref
+      ansible.builtin.command:
+        argv:
+          - git
+          - --git-dir
+          - "{{ macos_dev_gitops_bare_repo }}"
+          - rev-parse
+          - "refs/heads/{{ macos_dev_gitops_ref }}"
+      register: macos_dev_gitops_resolved_revision
+      changed_when: false
+      when: macos_dev_gitops_url == 'file:///gitops.git'
+
+    - name: Require the local ref to resolve to the expected immutable commit
+      ansible.builtin.assert:
+        that:
+          - macos_dev_gitops_resolved_revision.stdout | trim == macos_dev_gitops_revision
+        fail_msg: >-
+          The selected local Git tag does not resolve to the expected commit;
+          refusing to start Doco-CD.
+      when: macos_dev_gitops_url == 'file:///gitops.git'
+
+    - name: Require a local bare Git remote when selected
+      ansible.builtin.assert:
+        that:
+          - macos_dev_gitops_bare_repo_stat.stat.isdir | bool
+          - macos_dev_gitops_bare_repo_stat.stat.exists | bool
+        fail_msg: >-
+          MACOS_DEV_GITOPS_BARE_REPO must point to an existing local bare Git
+          repository when MACOS_DEV_GITOPS_URL=file:///gitops.git.
+      when: macos_dev_gitops_url == 'file:///gitops.git'
+
+    - name: Check the selected OrbStack socket
+      ansible.builtin.stat:
+        path: "{{ macos_docker_socket }}"
+      register: macos_docker_socket_stat
+
+    - name: Require an existing Docker socket
+      ansible.builtin.assert:
+        that:
+          - macos_docker_socket_stat.stat.exists | bool
+          - macos_docker_socket_stat.stat.issock | bool
+        fail_msg: >-
+          Docker is not running at {{ macos_docker_socket }}. Start the
+          already-installed OrbStack application, then rerun this playbook.
+
+    - name: Verify the requested Docker context
+      ansible.builtin.command:
+        argv:
+          - docker
+          - context
+          - inspect
+          - "{{ macos_docker_context }}"
+          - --format
+          - "{{ '{{' }}.Name{{ '}}' }} {{ '{{' }}(index .Endpoints \"docker\").Host{{ '}}' }}"
+      register: macos_docker_context_result
+      changed_when: false
+
+    - name: Require the context endpoint to be the local OrbStack socket
+      ansible.builtin.assert:
+        that:
+          - macos_docker_context_result.stdout is search('/.orbstack/run/docker.sock$')
+        fail_msg: The selected Docker context is not backed by the local OrbStack socket.
+
+    - name: Verify Docker daemon access without exposing environment data
+      ansible.builtin.command:
+        argv:
+          - docker
+          - --context
+          - "{{ macos_docker_context }}"
+          - info
+          - --format
+          - "{{ '{{' }}.ServerVersion{{ '}}' }}"
+      register: macos_docker_info
+      changed_when: false
+
+    - name: Create local runtime directory
+      ansible.builtin.file:
+        path: "{{ macos_doco_cd_runtime_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Render the macOS Doco-CD controller Compose file
+      ansible.builtin.template:
+        src: templates/macos-dev-doco-cd-compose.yml.j2
+        dest: "{{ macos_doco_cd_runtime_dir }}/docker-compose.yml"
+        mode: "0600"
+
+    - name: Validate the controller Compose file
+      ansible.builtin.command:
+        argv:
+          - docker
+          - --context
+          - "{{ macos_docker_context }}"
+          - compose
+          - --project-name
+          - "{{ macos_doco_cd_project_name }}"
+          - -f
+          - "{{ macos_doco_cd_runtime_dir }}/docker-compose.yml"
+          - config
+          - --quiet
+      changed_when: false
+
+    - name: Start the explicitly approved local Doco-CD controller
+      ansible.builtin.command:
+        argv:
+          - docker
+          - --context
+          - "{{ macos_docker_context }}"
+          - compose
+          - --project-name
+          - "{{ macos_doco_cd_project_name }}"
+          - -f
+          - "{{ macos_doco_cd_runtime_dir }}/docker-compose.yml"
+          - up
+          - -d
+          - --remove-orphans
+
+    - name: Wait for Doco-CD controller health
+      ansible.builtin.command:
+        argv:
+          - docker
+          - --context
+          - "{{ macos_docker_context }}"
+          - inspect
+          - --format
+          - "{{ '{{' }}.State.Health.Status{{ '}}' }}"
+          - "{{ macos_doco_cd_container_name }}"
+      register: macos_doco_cd_health
+      until: macos_doco_cd_health.rc == 0 and (macos_doco_cd_health.stdout | trim) == 'healthy'
+      retries: 12
+      delay: 5
+      changed_when: false
+
+    - name: Wait for the GitOps owner workload health
+      ansible.builtin.command:
+        argv:
+          - docker
+          - --context
+          - "{{ macos_docker_context }}"
+          - inspect
+          - --format
+          - "{{ '{{' }}.Config.Image{{ '}}' }} {{ '{{' }}.State.Health.Status{{ '}}' }}"
+          - macos-dev-smoke-owner
+      register: macos_owner_health
+      until:
+        - macos_owner_health.rc == 0
+        - macos_owner_health.stdout is search(' healthy$')
+      retries: 24
+      delay: 5
+      changed_when: false
+
+    - name: Collect the owner health receipt
+      ansible.builtin.command:
+        argv:
+          - docker
+          - --context
+          - "{{ macos_docker_context }}"
+          - exec
+          - macos-dev-smoke-owner
+          - redis-cli
+          - ping
+      register: macos_owner_receipt
+      changed_when: false
+
+    - name: Require the owner health receipt
+      ansible.builtin.assert:
+        that:
+          - macos_owner_receipt.stdout | trim == 'PONG'
+        fail_msg: The GitOps owner workload did not return PONG.

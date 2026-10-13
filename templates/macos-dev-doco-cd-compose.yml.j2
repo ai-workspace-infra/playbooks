@@ -1,0 +1,29 @@
+---
+services:
+  app:
+    container_name: {{ macos_doco_cd_container_name }}
+    image: {{ macos_doco_cd_image }}
+    restart: unless-stopped
+    ports:
+      - "{{ macos_doco_cd_webhook_port }}:80"
+      - "{{ macos_doco_cd_metrics_port }}:9120"
+    environment:
+      TZ: "Etc/UTC"
+      POLL_CONFIG: {{ macos_doco_cd_poll_config | to_json | quote }}
+    volumes:
+      - "{{ macos_docker_socket }}:/var/run/docker.sock"
+      - data:/data
+{% if macos_dev_gitops_bare_repo | trim | length > 0 %}
+      - "{{ macos_dev_gitops_bare_repo }}:/gitops.git:ro"
+{% endif %}
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/doco-cd", "healthcheck"]
+      start_period: 15s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  data:
