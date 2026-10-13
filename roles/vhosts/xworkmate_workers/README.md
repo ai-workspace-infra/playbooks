@@ -9,8 +9,11 @@ there is no ACP/SDK daemon. OpenCode v2 is an authenticated loopback service.
 
 ## Release contract
 
-Pinned sources are DSH `639ed015397290b3745d163aafe02ffee4aa3f84` and OpenCode
-`35a41b5d53c71ae0337e614ec192fd5d1a5c7eb8` (v2 source, package version 2.0.22).
+Pinned sources are DSH `5badb15009ae1756c3afe0ae0cef1faafc290ccc` (`dsh-v0.2.1-alpha.1`, the
+version DS Bot and the AI Workspace orchestrator require) and OpenCode
+`35a41b5d53c71ae0337e614ec192fd5d1a5c7eb8` (v2 source, package version 2.0.22). A changed pin
+needs a rebuilt candidate, new SHA256 values in the inventory and a fresh Linux runtime
+acceptance; archives built from the previous pin are rejected by their manifest revision.
 Deployment requires generated SHA256 values and either immutable HTTPS tar.gz
 URLs (default) or explicit `artifact_transport: staged`. Staged archives must be
 root-owned 0600 regular files, without hardlinks, at

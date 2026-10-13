@@ -26,7 +26,7 @@ import urllib.error
 import urllib.request
 
 PINS = {
-    'dsh': '639ed015397290b3745d163aafe02ffee4aa3f84',
+    'dsh': '5badb15009ae1756c3afe0ae0cef1faafc290ccc',
     'opencode': '35a41b5d53c71ae0337e614ec192fd5d1a5c7eb8',
 }
 

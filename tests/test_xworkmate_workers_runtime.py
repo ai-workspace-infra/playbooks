@@ -90,7 +90,7 @@ class WorkerRuntimeContractTest(unittest.TestCase):
         self.assertFalse(defaults['xworkmate_workers_enabled'])
         self.assertEqual(defaults['xworkmate_workers_dsh_artifact_url'], '')
         self.assertEqual(defaults['xworkmate_workers_opencode_artifact_sha256'], '')
-        self.assertEqual(defaults['xworkmate_workers_dsh_source_revision'], '639ed015397290b3745d163aafe02ffee4aa3f84')
+        self.assertEqual(defaults['xworkmate_workers_dsh_source_revision'], '5badb15009ae1756c3afe0ae0cef1faafc290ccc')
         self.assertEqual(defaults['xworkmate_workers_opencode_source_revision'], '35a41b5d53c71ae0337e614ec192fd5d1a5c7eb8')
 
     def test_url_credentials_ambient_models_and_unbounded_egress_rejected(self):
