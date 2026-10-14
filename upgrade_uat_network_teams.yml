@@ -1,0 +1,75 @@
+---
+- name: Apply reviewed additive team schema on the existing UAT host
+  hosts: web-saas-uat
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Require an immutable Accounts checkout and UAT target
+      ansible.builtin.assert:
+        that:
+          - accounts_source_sha is match('^[0-9a-f]{40}$')
+          - team_migration_sha256 is match('^[0-9a-f]{64}$')
+          - accounts_checkout | length > 0
+          - inventory_hostname == 'web-saas-uat'
+
+    - name: Read checked-out Accounts source identity
+      ansible.builtin.command:
+        argv: [git, -C, '{{ accounts_checkout }}', rev-parse, HEAD]
+      delegate_to: localhost
+      become: false
+      register: accounts_source
+      changed_when: false
+
+    - name: Verify exact source identity
+      ansible.builtin.assert:
+        that: accounts_source.stdout == accounts_source_sha
+
+    - name: Stage only the Accounts-owned team migration
+      ansible.builtin.copy:
+        src: '{{ accounts_checkout }}/sql/migrations/2026101201_network_teams.up.sql'
+        dest: /tmp/uat-network-teams.sql
+        mode: '0600'
+
+    - name: Verify the staged migration checksum
+      ansible.builtin.stat:
+        path: /tmp/uat-network-teams.sql
+        checksum_algorithm: sha256
+      register: staged_migration
+
+    - name: Require the reviewed migration checksum
+      ansible.builtin.assert:
+        that: staged_migration.stat.checksum == team_migration_sha256
+
+    - name: Inspect team schema presence
+      ansible.builtin.command:
+        argv: [docker, exec, web-saas-postgresql, psql, -U, postgres, -d, account, -Atc, "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN ('network_teams','network_team_members');"]
+      changed_when: false
+      register: team_tables
+
+    - name: Keep a private database checkpoint before adding tables
+      ansible.builtin.shell: >-
+        umask 077;
+        mkdir -p /var/backups/xcontrol;
+        docker exec web-saas-postgresql pg_dump -U postgres -d account -Fc
+        > /var/backups/xcontrol/account-team-{{ accounts_source_sha }}.dump
+      when: team_tables.stdout | trim != '2'
+      no_log: true
+
+    - name: Apply additive schema as the existing Accounts table owner
+      ansible.builtin.shell: >-
+        { printf '%s\n' "SET ROLE account_user;" "SET lock_timeout='15s';" "SET statement_timeout='60s';";
+        cat /tmp/uat-network-teams.sql; }
+        | docker exec -i web-saas-postgresql psql -U postgres -d account -v ON_ERROR_STOP=1
+      when: team_tables.stdout | trim != '2'
+
+    - name: Verify both tables and their owner
+      ansible.builtin.command:
+        argv: [docker, exec, web-saas-postgresql, psql, -U, postgres, -d, account, -Atc, "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN ('network_teams','network_team_members') AND tableowner='account_user';"]
+      changed_when: false
+      register: applied_tables
+      failed_when: applied_tables.stdout | trim != '2'
+
+    - name: Remove staged SQL
+      ansible.builtin.file:
+        path: /tmp/uat-network-teams.sql
+        state: absent
