@@ -33,6 +33,11 @@
         uri query -x_padding
 
         reverse_proxy unix//dev/shm/xray.sock {
+            # XHTTP carries long-lived streams; flush response chunks as soon
+            # as they arrive so upload acknowledgements and stream updates do
+            # not wait for the default response flush interval.
+            flush_interval -1
+
             transport http {
                 versions h2c 2
             }
@@ -49,6 +54,10 @@
         uri query -x_padding
 
         reverse_proxy unix//{{ xconnect_gateway_caddy_socket | regex_replace('^/', '') }} {
+            # Keep the shared XConnect frontend responsive for upload progress
+            # and completion responses without imposing a stream timeout.
+            flush_interval -1
+
             transport http {
                 versions h2c 2
             }
