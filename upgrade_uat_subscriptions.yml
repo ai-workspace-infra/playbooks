@@ -1,0 +1,153 @@
+---
+- name: Upgrade Accounts subscription schema on the verified existing Selfhost UAT VM
+  hosts: web-saas-uat
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Require the exact immutable source and cloud target
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == 'web-saas-uat'
+          - accounts_source_sha is match('^[0-9a-f]{40}$')
+          - migratectl_sha256 is match('^[0-9a-f]{64}$')
+          - expected_gcp_instance_id | string is match('^[0-9]+$')
+          - subscription_migrations | length > 0
+
+    - name: Verify the actual Google instance identity
+      ansible.builtin.uri:
+        url: http://metadata.google.internal/computeMetadata/v1/instance/id
+        headers: { Metadata-Flavor: Google }
+        return_content: true
+      register: cloud_identity
+      failed_when: cloud_identity.content | trim != expected_gcp_instance_id | string
+
+    - name: Read the Accounts source checkout
+      ansible.builtin.command:
+        argv: [git, -C, '{{ accounts_checkout }}', rev-parse, HEAD]
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: source_identity
+      failed_when: source_identity.stdout | trim != accounts_source_sha
+
+    - name: Read the clean live schema checkpoint
+      ansible.builtin.command:
+        argv: [docker, exec, web-saas-postgresql, psql, -U, postgres, -d, account, -Atc, 'SELECT version,dirty FROM public.schema_migrations;']
+      register: before_schema
+      changed_when: false
+      failed_when: before_schema.stdout | trim not in ['2026100701|f', '2026101201|f', '2026101301|f', '2026101501|f', '2026101502|f']
+
+    - name: Record the actual user count before migration
+      ansible.builtin.command:
+        argv: [docker, exec, web-saas-postgresql, psql, -U, postgres, -d, account, -Atc, 'SELECT count(*) FROM public.users;']
+      register: before_users
+      changed_when: false
+
+    - name: Create a private checkpoint directory
+      ansible.builtin.file:
+        path: /var/backups/xcontrol/uat-subscriptions-{{ accounts_source_sha }}
+        state: directory
+        mode: '0700'
+
+    - name: Keep one consistent private database checkpoint
+      ansible.builtin.shell: >-
+        umask 077;
+        docker exec web-saas-postgresql pg_dump -U postgres -d account -Fc
+        > /var/backups/xcontrol/uat-subscriptions-{{ accounts_source_sha }}/account.dump
+      args:
+        creates: /var/backups/xcontrol/uat-subscriptions-{{ accounts_source_sha }}/account.dump
+      no_log: true
+
+    - name: Create the private migration staging directory
+      ansible.builtin.file:
+        path: /tmp/uat-subscriptions-{{ accounts_source_sha }}
+        state: directory
+        mode: '0700'
+
+    - name: Stage the prebuilt Linux migrator
+      ansible.builtin.copy:
+        src: '{{ migratectl_binary }}'
+        dest: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migratectl
+        mode: '0755'
+
+    - name: Verify the exact migrator binary checksum
+      ansible.builtin.stat:
+        path: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migratectl
+        checksum_algorithm: sha256
+      register: staged_binary
+      failed_when: staged_binary.stat.checksum != migratectl_sha256
+
+    - name: Stage only Accounts-owned migration files
+      ansible.builtin.copy:
+        src: '{{ accounts_checkout }}/sql/migrations/'
+        dest: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migrations/
+        mode: '0600'
+        directory_mode: '0700'
+
+    - name: Verify every selected SQL checksum before execution
+      ansible.builtin.stat:
+        path: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migrations/{{ item.file }}
+        checksum_algorithm: sha256
+      loop: '{{ subscription_migrations }}'
+      register: staged_sql
+      failed_when: staged_sql.stat.checksum != item.sha256
+
+    - name: Copy the exact migrator into the current UAT account container
+      ansible.builtin.command:
+        argv: [docker, cp, '/tmp/uat-subscriptions-{{ accounts_source_sha }}/migratectl', 'web-saas-accounts:/tmp/uat-subscriptions-migratectl']
+      changed_when: true
+
+    - name: Copy migration files into the same account container
+      ansible.builtin.command:
+        argv: [docker, cp, '/tmp/uat-subscriptions-{{ accounts_source_sha }}/migrations', 'web-saas-accounts:/tmp/uat-subscription-migrations']
+      changed_when: true
+
+    - name: Apply each bounded migration using the existing runtime DSN without printing credentials
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - web-saas-accounts
+          - /tmp/uat-subscriptions-migratectl
+          - migrate
+          - --dir
+          - /tmp/uat-subscription-migrations
+          - --dsn-env
+          - DATABASE_URL
+          - --expected-version
+          - '{{ item.expected | string }}'
+          - --target-version
+          - '{{ item.target | string }}'
+          - --migration-sha256
+          - '{{ item.sha256 }}'
+          - --lock-timeout
+          - 15s
+          - --statement-timeout
+          - 120s
+      loop: '{{ subscription_migrations }}'
+      when: before_schema.stdout.split('|')[0] | int < item.target | int
+      changed_when: true
+      no_log: true
+
+    - name: Verify the final clean schema, table owner and Free catalog allowance
+      ansible.builtin.command:
+        argv: [docker, exec, web-saas-postgresql, psql, -U, postgres, -d, account, -Atc, "SELECT version,dirty FROM public.schema_migrations; SELECT tableowner FROM pg_tables WHERE schemaname='public' AND tablename='subscription_records'; SELECT included_quota_bytes FROM public.billing_plans WHERE plan_id='FREE';"]
+      changed_when: false
+      register: final_schema
+      failed_when: final_schema.stdout_lines != ['2026101502|f', 'account_user', '3221225472']
+
+    - name: Verify the original user population is preserved
+      ansible.builtin.command:
+        argv: [docker, exec, web-saas-postgresql, psql, -U, postgres, -d, account, -Atc, 'SELECT count(*) FROM public.users;']
+      register: after_users
+      changed_when: false
+      failed_when: after_users.stdout | trim != before_users.stdout | trim
+
+    - name: Report only non-sensitive migration evidence
+      ansible.builtin.debug:
+        msg:
+          source: '{{ accounts_source_sha }}'
+          before_schema: '{{ before_schema.stdout | trim }}'
+          final_schema: '{{ final_schema.stdout_lines }}'
+          original_users_preserved: '{{ after_users.stdout | trim }}'
+          backup: /var/backups/xcontrol/uat-subscriptions-{{ accounts_source_sha }}/account.dump
