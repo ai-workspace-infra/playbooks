@@ -1,0 +1,36 @@
+mode: agent
+log:
+  level: info
+agent:
+  id: {{ edge.id | to_json }}
+  role: agent-proxy
+  region: jp
+  pool: jp-{{ resource_class }}
+  entryPoint: {{ edge.domain | to_json }}
+  domain: {{ edge.domain | to_json }}
+  openToUsers: true
+  controllerUrl: https://accounts-selfhost-prod-v2.svc.plus
+  apiToken: {{ edge.token | to_json }}
+  httpTimeout: 15s
+  statusInterval: 30s
+  syncInterval: 1m
+  tls:
+    insecureSkipVerify: false
+billing:
+  enabled: false
+xray:
+  sync:
+    enabled: true
+    interval: 1m
+    targets:
+{% for target in [{'name':'xhttp','config':'config.json','service':'xray'}, {'name':'tcp','config':'tcp-config.json','service':'xray-tcp'}] %}
+      - name: {{ target.name }}
+        outputPath: /usr/local/etc/xray/{{ target.config }}
+        templatePath: /usr/local/etc/xray/templates/xray.{{ target.name }}.template.json
+        validateCommand: [/usr/local/bin/xray, run, -test, -config, /usr/local/etc/xray/{{ target.config }}]
+        restartCommand: [systemctl, restart, {{ target.service }}.service]
+        dynamicUsers:
+          enabled: true
+          executable: /usr/local/bin/xray
+          server: 127.0.0.1:{{ '10086' if target.name == 'xhttp' else '10087' }}
+{% endfor %}

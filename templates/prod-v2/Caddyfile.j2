@@ -1,0 +1,18 @@
+{
+    admin off
+}
+{{ edge.domain }} {
+    tls /etc/caddy/tls/agent-proxy.crt /etc/caddy/tls/agent-proxy.key
+    @xhttp path /split /split/*
+    @xhttp_root path /split
+    rewrite @xhttp_root /split/
+    handle @xhttp {
+        uri query -x_padding
+        reverse_proxy unix//dev/shm/xray.sock {
+            transport http {
+                versions h2c 2
+            }
+        }
+    }
+    respond "XConnect PROD V2 {{ resource_class }}"
+}

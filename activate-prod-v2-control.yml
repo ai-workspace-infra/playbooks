@@ -1,0 +1,26 @@
+---
+- name: Activate the isolated native primary through the immutable GitOps release
+  hosts: v2_control
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Refuse another production host
+      ansible.builtin.assert:
+        that: inventory_hostname == 'web-saas-prod-v2'
+    - name: Render managed native primary environment
+      ansible.builtin.template:
+        src: roles/vhosts/web_saas_host_config/templates/secrets.env.j2
+        dest: /etc/xcontrol/web-saas/secrets.env
+        mode: '0600'
+      no_log: true
+    - name: Stage the release-owned billing catalog
+      ansible.builtin.copy:
+        src: "{{ prod_v2_accounts_dir }}/scripts/seed-billing-plans.sql"
+        dest: /root/prod-v2-migration/seed-billing-plans.sql
+        mode: '0600'
+    - name: Seed the new native database catalog idempotently
+      ansible.builtin.shell: |
+        docker exec -i web-saas-postgresql sh -c 'export PGPASSWORD="$POSTGRES_PASSWORD"; exec psql -h 127.0.0.1 -U "$POSTGRES_USER" -d account -v ON_ERROR_STOP=1' < /root/prod-v2-migration/seed-billing-plans.sql
+      changed_when: true
+  roles:
+    - roles/vhosts/Doco-CD

@@ -1,0 +1,21 @@
+---
+- name: Permit only the isolated edge public addresses to authenticated Billing
+  hosts: v2_control
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Refuse an existing production host
+      ansible.builtin.assert:
+        that: inventory_hostname == 'web-saas-prod-v2'
+    - name: Restrict Billing ingress to the IaC-derived edge addresses
+      ansible.builtin.replace:
+        path: /etc/xcontrol/web-saas/Caddyfile
+        regexp: '@billing_agent remote_ip [^\n]+'
+        replace: '@billing_agent remote_ip {{ web_saas_host_config_billing_allowed_cidrs }}'
+    - name: Validate restricted ingress before restart
+      ansible.builtin.command:
+        argv: [docker, exec, web-saas-caddy, caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+      changed_when: false
+    - name: Restart only the new ingress
+      ansible.builtin.command:
+        argv: [docker, restart, web-saas-caddy]

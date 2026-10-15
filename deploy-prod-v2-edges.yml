@@ -1,0 +1,120 @@
+---
+- name: Deploy three independent direct Caddy and Xray proxy nodes
+  hosts: v2_edges
+  become: true
+  gather_facts: false
+  vars:
+    edge: "{{ prod_v2_agents | selectattr('role', 'equalto', resource_class) | first }}"
+  tasks:
+    - name: Refuse any non-V2 edge
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname in prod_v2_agents | map(attribute='id') | list
+          - resource_class in ['free', 'plus', 'team']
+    - name: Create independent runtime directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop: [/etc/agent, /etc/caddy/tls, /usr/local/etc/xray/templates, /usr/local/share/xray, /var/log/xray, /opt/xconnect-edge-agent, /etc/xray-exporter]
+    - name: Install fixed release binaries without building on the target
+      ansible.builtin.copy:
+        src: "{{ prod_v2_artifacts_dir }}/edge-artifacts/{{ item.src }}"
+        dest: "/usr/local/bin/{{ item.dest }}"
+        mode: '0755'
+      loop:
+        - {src: xconnect-edge-agent-linux-amd64, dest: xconnect-edge-agent}
+        - {src: caddy-linux-amd64, dest: caddy}
+        - {src: xray/xray, dest: xray}
+        - {src: xray-exporter-linux-amd64, dest: xray-exporter}
+    - name: Install fixed Xray geodata
+      ansible.builtin.copy:
+        src: "{{ prod_v2_artifacts_dir }}/edge-artifacts/xray/{{ item }}"
+        dest: "/usr/local/share/xray/{{ item }}"
+        mode: '0644'
+      loop: [geoip.dat, geosite.dat]
+    - name: Install reviewed Xray templates
+      ansible.builtin.copy:
+        src: "{{ prod_v2_artifacts_dir }}/edge-artifacts/agent/config/xray.{{ item }}.template.json"
+        dest: "/usr/local/etc/xray/templates/xray.{{ item }}.template.json"
+        mode: '0644'
+      loop: [xhttp, tcp]
+    - name: Preserve TLS credentials locally without giving nodes the Vault root token
+      ansible.builtin.copy:
+        content: "{{ item.value | b64decode }}"
+        dest: "/etc/caddy/tls/{{ item.name }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - {name: agent-proxy.crt, value: "{{ prod_v2_public_tls_fullchain_b64 }}", mode: '0644'}
+        - {name: agent-proxy.key, value: "{{ prod_v2_public_tls_key_b64 }}", mode: '0600'}
+      no_log: true
+    - name: Configure the actual node domain and independent agent credential
+      ansible.builtin.template:
+        src: prod-v2/agent.yaml.j2
+        dest: /etc/agent/account-agent.yaml
+        mode: '0600'
+      no_log: true
+    - name: Configure direct Caddy to Xray Unix socket ingress
+      ansible.builtin.template:
+        src: prod-v2/Caddyfile.j2
+        dest: /etc/caddy/Caddyfile
+        mode: '0644'
+    - name: Validate Caddy before restarting
+      ansible.builtin.command:
+        argv: [/usr/local/bin/caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+      changed_when: false
+    - name: Install independent XHTTP and TCP services
+      ansible.builtin.template:
+        src: prod-v2/xray.service.j2
+        dest: "/etc/systemd/system/{{ item.service }}.service"
+        mode: '0644'
+      loop:
+        - {service: xray, config: config.json}
+        - {service: xray-tcp, config: tcp-config.json}
+    - name: Install Caddy and agent units
+      ansible.builtin.template:
+        src: "prod-v2/{{ item }}.service.j2"
+        dest: "/etc/systemd/system/{{ item }}.service"
+        mode: '0644'
+      loop: [caddy, xconnect-edge-agent]
+    - name: Install protected exporter runtime environment
+      ansible.builtin.template:
+        src: prod-v2/exporter.env.j2
+        dest: /etc/xray-exporter/runtime.env
+        mode: '0600'
+      no_log: true
+    - name: Install separate XHTTP and TCP exporter units
+      ansible.builtin.template:
+        src: prod-v2/exporter.service.j2
+        dest: "/etc/systemd/system/xray-exporter-{{ item.name }}.service"
+        mode: '0644'
+      loop:
+        - {name: xhttp, listen: 8080, api: 10086, log: access-xhttp.log}
+        - {name: tcp, listen: 8081, api: 10087, log: access-tcp.log}
+    - name: Keep a protected plaintext repeat-validation helper in both node homes
+      ansible.builtin.template:
+        src: prod-v2/init.sh.j2
+        dest: "{{ item }}/init.sh"
+        owner: "{{ 'root' if item == '/root' else ansible_user }}"
+        mode: '0700'
+      loop: [/root, "/home/{{ ansible_user }}"]
+      no_log: true
+    - name: Enable direct ingress and scoped configuration synchronization
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: restarted
+        enabled: true
+        daemon_reload: true
+      loop: [caddy, xconnect-edge-agent]
+    - name: Wait for controller-generated Xray files
+      ansible.builtin.wait_for:
+        path: "{{ item }}"
+        timeout: 180
+      loop: [/usr/local/etc/xray/config.json, /usr/local/etc/xray/tcp-config.json]
+    - name: Enable the independent Xray and exporter services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+        daemon_reload: true
+      loop: [xray, xray-tcp, xray-exporter-xhttp, xray-exporter-tcp]

@@ -1,0 +1,12 @@
+[Unit]
+Description=Caddy direct Xray ingress
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=1048576
+[Install]
+WantedBy=multi-user.target

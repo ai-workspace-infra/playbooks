@@ -1,0 +1,45 @@
+---
+- name: Complete Billing-owned additive native schema on isolated V2
+  hosts: v2_control
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Require the isolated target
+      ansible.builtin.assert:
+        that: inventory_hostname == 'web-saas-prod-v2'
+    - name: Stage the exact reviewed Billing native addition
+      ansible.builtin.copy:
+        src: "{{ prod_v2_accounts_dir }}/internal/migrate/testdata/cloud_vendor_costs_native.sql"
+        dest: /root/prod-v2-migration/cloud-vendor-costs-native.sql
+        mode: '0600'
+    - name: Verify the reviewed Billing SQL hash
+      ansible.builtin.stat:
+        path: /root/prod-v2-migration/cloud-vendor-costs-native.sql
+        checksum_algorithm: sha256
+      register: v2_billing_sql
+    - name: Refuse an unreviewed addition
+      ansible.builtin.assert:
+        that: v2_billing_sql.stat.checksum == 'a7133f3ef2ea9013a055cfd1442a7488d2b837f289e0f5d9b61624d4fde9bc53'
+    - name: Discover running V2 writers and reconciler
+      ansible.builtin.command:
+        argv: [docker, ps, --format, "{{ '{{' }}.Names{{ '}}' }}"]
+      register: v2_running_services
+      changed_when: false
+    - name: Pause only running V2 writers and reconciler during schema completion
+      ansible.builtin.command:
+        argv: [docker, stop, "{{ item }}"]
+      loop: "{{ v2_running_services.stdout_lines | intersect(['doco-cd', 'web-saas-accounts', 'web-saas-billing']) }}"
+    - name: Apply the additive SQL transactionally as the application schema owner
+      ansible.builtin.shell: |
+        set -euo pipefail
+        exists=$(docker exec web-saas-postgresql sh -c 'export PGPASSWORD="$POSTGRES_PASSWORD"; psql -h 127.0.0.1 -U "$POSTGRES_USER" -d account -At -c "SELECT to_regclass('\''public.cloud_vendor_costs'\'')"')
+        if [ -z "$exists" ]; then
+          { echo 'BEGIN; SET ROLE account_user;'; cat /root/prod-v2-migration/cloud-vendor-costs-native.sql; echo 'COMMIT;'; } |
+            docker exec -i web-saas-postgresql sh -c 'export PGPASSWORD="$POSTGRES_PASSWORD"; exec psql -h 127.0.0.1 -U "$POSTGRES_USER" -d account -v ON_ERROR_STOP=1'
+        fi
+      args:
+        executable: /bin/bash
+    - name: Resume only V2 services
+      ansible.builtin.command:
+        argv: [docker, start, "{{ item }}"]
+      loop: "{{ v2_running_services.stdout_lines | intersect(['doco-cd', 'web-saas-accounts', 'web-saas-billing']) }}"
