@@ -8,10 +8,10 @@
   ansible.builtin.set_fact:
     gateway_manifest: '{{ lookup("file", gateway_manifest_path) | from_yaml }}'
 
-- name: Require UAT edge systemd and remote PG mode
+- name: Require edge systemd and remote PG mode
   ansible.builtin.assert:
     that:
-      - gateway_manifest.metadata.environment == 'uat'
+      - gateway_manifest.metadata.environment == gateway_environment
       - gateway_manifest.spec.deployment_controller == 'ansible-systemd'
       - gateway_manifest.spec.service_manager == 'systemd'
       - gateway_manifest.spec.edge_runtime | bool
@@ -22,6 +22,21 @@
       - gateway_manifest.spec.bootstrap.deployment.role == 'data_plane'
       - gateway_manifest.spec.bootstrap.deployment.role_data_plane.config_provider == 'yaml'
       - not gateway_manifest.spec.bootstrap.apisix.enable_admin
+
+- name: Render non-secret environment selectors for generic systemd services
+  ansible.builtin.copy:
+    content: |
+      GATEWAY_ENVIRONMENT={{ gateway_environment }}
+      GATEWAY_REGION={{ gateway_region }}
+      GATEWAY_GATEWAY_ID={{ gateway_id }}
+      GATEWAY_NODE_ID={{ gateway_node_id }}
+      GATEWAY_CONFIG_ROOT={{ gateway_config_root }}
+      GATEWAY_RUNTIME_ROOT={{ gateway_runtime_root }}
+      GATEWAY_STATE_ROOT={{ gateway_state_root }}
+    dest: '{{ gateway_environment_file }}'
+    owner: root
+    group: root
+    mode: '0644'
 
 - name: Require preinstalled APISIX and Vault environment file
   ansible.builtin.stat:
@@ -111,8 +126,8 @@
     group: root
     mode: '0644'
   loop:
-    - etc-xcontrol-apisix-uat-runtime.mount
-    - xconnect-apisix-uat-runtime.service
+    - '{{ gateway_runtime_mount_unit }}'
+    - xconnect-apisix-runtime.service
 
 - name: Install direct systemd service units
   ansible.builtin.template:
@@ -122,20 +137,20 @@
     group: root
     mode: '0644'
   loop:
-    - xconnect-apisix-uat.service
-    - xconnect-apisix-uat-config-api.service
-    - xconnect-apisix-uat-config-sync.service
+    - xconnect-apisix.service
+    - xconnect-apisix-config-api.service
+    - xconnect-apisix-config-sync.service
 
 - name: Start volatile runtime mount and derive remote PG credentials
   ansible.builtin.systemd:
-    name: etc-xcontrol-apisix-uat-runtime.mount
+    name: '{{ gateway_runtime_mount_unit }}'
     enabled: true
     daemon_reload: true
     state: started
 
 - name: Prepare remote web-saas PostgreSQL schema and runtime files
   ansible.builtin.systemd:
-    name: xconnect-apisix-uat-runtime.service
+    name: xconnect-apisix-runtime.service
     enabled: true
     daemon_reload: true
     state: restarted
@@ -149,21 +164,21 @@
 
 - name: Start APISIX directly under systemd
   ansible.builtin.systemd:
-    name: xconnect-apisix-uat.service
+    name: xconnect-apisix.service
     enabled: true
     daemon_reload: true
     state: '{{ "restarted" if gateway_bootstrap.changed else "started" }}'
 
 - name: Start configuration API directly under systemd
   ansible.builtin.systemd:
-    name: xconnect-apisix-uat-config-api.service
+    name: xconnect-apisix-config-api.service
     enabled: true
     daemon_reload: true
     state: '{{ "restarted" if gateway_code.changed else "started" }}'
 
 - name: Start configuration synchronizer directly under systemd
   ansible.builtin.systemd:
-    name: xconnect-apisix-uat-config-sync.service
+    name: xconnect-apisix-config-sync.service
     enabled: true
     daemon_reload: true
     state: '{{ "restarted" if (gateway_code.changed or gateway_bootstrap.changed) else "started" }}'
