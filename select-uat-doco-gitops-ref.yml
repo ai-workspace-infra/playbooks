@@ -1,0 +1,64 @@
+---
+# Manual UAT candidate release. Applications remain owned by GitOps/Doco-CD.
+# Runtime inventory must come from the verified provider/CMDB target.
+- name: Select a reviewed GitOps candidate for the existing UAT Doco-CD poller
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Require one explicit UAT target and a safe candidate reference
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length == 1
+          - uat_gitops_ref is defined
+          - uat_gitops_ref == 'main' or uat_gitops_ref is match('^uat/[A-Za-z0-9._/-]+$')
+    - name: Verify the actual GCP project is UAT
+      ansible.builtin.uri:
+        url: http://metadata.google.internal/computeMetadata/v1/project/project-id
+        headers:
+          Metadata-Flavor: Google
+        return_content: true
+      register: project_metadata
+    - name: Refuse other projects
+      ansible.builtin.assert:
+        that:
+          - project_metadata.content == 'open-platform-uat'
+    - name: Read the existing agent configuration in memory
+      ansible.builtin.command:
+        argv: [docker, inspect, --format, "{{ '{{json .Config.Env}}' }}", doco-cd]
+      register: agent_environment
+      changed_when: false
+      no_log: true
+    - name: Extract only the existing non-secret poll configuration
+      ansible.builtin.set_fact:
+        original_poll: "{{ (agent_environment.stdout | from_json | select('match', '^POLL_CONFIG=') | first | regex_replace('^POLL_CONFIG=', '')) | from_json }}"
+      no_log: true
+    - name: Require the existing UAT target
+      ansible.builtin.assert:
+        that:
+          - original_poll | length == 1
+          - original_poll[0].target == 'uat'
+          - original_poll[0].url == 'https://github.com/ai-workspace-infra/gitops.git'
+    - name: Preserve the poll target and interval while choosing the reviewed ref
+      ansible.builtin.set_fact:
+        candidate_poll: "{{ [original_poll[0] | combine({'reference': uat_gitops_ref})] }}"
+    - name: Update only the existing poll configuration line
+      ansible.builtin.lineinfile:
+        path: /opt/doco-cd/docker-compose.yml
+        regexp: '^\s+POLL_CONFIG:'
+        line: "      POLL_CONFIG: {{ candidate_poll | to_json | to_json }}"
+        backup: true
+        mode: '0600'
+      register: poll_configuration
+      no_log: true
+    - name: Validate the existing agent compose configuration without exposing environment
+      ansible.builtin.command:
+        argv: [docker, compose, --project-name, doco-cd, --file, /opt/doco-cd/docker-compose.yml, config, --quiet]
+      changed_when: false
+    - name: Recreate only the Doco-CD agent when its reference changes
+      ansible.builtin.command:
+        argv: [docker, compose, --project-name, doco-cd, --file, /opt/doco-cd/docker-compose.yml, up, --detach]
+      when: poll_configuration.changed
+    - name: Report the selected candidate
+      ansible.builtin.debug:
+        msg: "UAT Doco-CD now polls GitOps {{ uat_gitops_ref }}; application convergence is verified separately."
