@@ -64,6 +64,12 @@
     mode: '0644'
   when: inventory_hostname in groups[group]
 
+- name: Check whether node-exporter is available for combined metrics service
+  ansible.builtin.stat:
+    path: /opt/metrics-agent/node_exporter
+  register: process_exporter_node_binary
+  when: inventory_hostname in groups[group]
+
 - name: Create process-exporter service
   ansible.builtin.template:
     src: process-exporter.service
@@ -71,7 +77,68 @@
     owner: root
     group: root
     mode: '0644'
-  when: inventory_hostname in groups[group]
+  when:
+    - inventory_hostname in groups[group]
+    - not (process_exporter_node_binary.stat.exists | default(false))
+
+- name: Install combined metrics supervisor
+  ansible.builtin.copy:
+    src: metrics-supervisor.py
+    dest: /usr/local/bin/metrics-supervisor.py
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - inventory_hostname in groups[group]
+    - process_exporter_node_binary.stat.exists | default(false)
+    - not ansible_check_mode
+
+- name: Install combined metrics service
+  ansible.builtin.template:
+    src: metrics.service
+    dest: /etc/systemd/system/xconnect-host-metrics.service
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - inventory_hostname in groups[group]
+    - process_exporter_node_binary.stat.exists | default(false)
+
+- name: Stop split metrics services after consolidation
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  loop:
+    - node-exporter.service
+    - process-exporter.service
+  when:
+    - inventory_hostname in groups[group]
+    - process_exporter_node_binary.stat.exists | default(false)
+  failed_when: false
+
+- name: Remove split metrics service files
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}"
+    state: absent
+  loop:
+    - node-exporter.service
+    - process-exporter.service
+  when:
+    - inventory_hostname in groups[group]
+    - process_exporter_node_binary.stat.exists | default(false)
+
+- name: Enable and start combined metrics service
+  ansible.builtin.systemd:
+    name: xconnect-host-metrics
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  when:
+    - inventory_hostname in groups[group]
+    - process_exporter_node_binary.stat.exists | default(false)
+    - not ansible_check_mode
 
 - name: Enable and start process-exporter
   ansible.builtin.systemd:
@@ -82,3 +149,4 @@
   when:
     - inventory_hostname in groups[group]
     - not ansible_check_mode
+    - not (process_exporter_node_binary.stat.exists | default(false))

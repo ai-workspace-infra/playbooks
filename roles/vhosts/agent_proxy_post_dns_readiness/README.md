@@ -3,8 +3,8 @@
 This role runs against one selected Agent Proxy host after DNS reconciliation.
 It requires non-empty Xray runtime configuration, starts `xray.service` and
 `xray-tcp.service` through Ansible's systemd module, then checks the complete
-service set with a bounded wait. On failure it prints sanitized service
-diagnostics.
+service set (`caddy`, `agent-proxy`, both Xray services, and both exporters)
+with a bounded wait. On failure it prints sanitized service diagnostics.
 
 Optional variables:
 

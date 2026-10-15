@@ -1,0 +1,26 @@
+[Unit]
+Description=XConnect host metrics (node and process exporters)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/metrics-supervisor.py \
+  --node-binary /opt/metrics-agent/node_exporter \
+  --node-user nobody \
+  --node-listen 127.0.0.1:9100 \
+  --textfile-dir /var/lib/node_exporter \
+  --process-binary /usr/local/bin/process-exporter \
+  --process-user process_exporter \
+  --process-config /etc/process-exporter.yml \
+  --process-listen 127.0.0.1:9256
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target
