@@ -482,13 +482,14 @@
 
 - name: Stop legacy agent systemd service after rename
   ansible.builtin.systemd:
-    name: "{{ agent_proxy_legacy_service_name }}"
+    name: "{{ item }}"
     enabled: false
     state: stopped
     daemon_reload: true
+  loop: "{{ agent_proxy_legacy_service_names | default([agent_proxy_legacy_service_name]) }}"
   when:
-    - agent_proxy_legacy_service_name | length > 0
-    - agent_proxy_legacy_service_name != agent_proxy_service_name
+    - item | length > 0
+    - item != agent_proxy_service_name
   failed_when: false
 
 - name: Enable and start agent-proxy

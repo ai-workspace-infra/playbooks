@@ -10,7 +10,7 @@ poll_seconds="${AGENT_PROXY_READY_POLL_SECONDS:-${2:-5}}"
 
 read -r -a files <<< "${AGENT_PROXY_RUNTIME_CONFIG_FILES:-/usr/local/etc/xray/config.json /usr/local/etc/xray/tcp-config.json}"
 [[ "${#files[@]}" -gt 0 ]] || { echo 'No Agent Proxy runtime config paths were supplied.' >&2; exit 2; }
-services=(caddy agent-proxy xray xray-tcp xray-exporter-xhttp xray-exporter-tcp)
+services=(caddy xconnect-edge-agent xray xray-tcp xray-exporter-xhttp xray-exporter-tcp)
 for file in "${files[@]}"; do
   [[ -s "${file}" ]] || { echo "runtime_config=${file} state=missing-or-empty" >&2; exit 1; }
 done
@@ -32,8 +32,8 @@ while :; do
   last_failure="${failed[*]}"
   if ((SECONDS >= deadline)); then
     printf 'Agent Proxy readiness timed out: %s\n' "${last_failure}" >&2
-    systemctl status agent-proxy --no-pager -l 2>&1 || true
-    journalctl -u agent-proxy -n 120 --no-pager 2>&1 | sed -E \
+    systemctl status xconnect-edge-agent --no-pager -l 2>&1 || true
+    journalctl -u xconnect-edge-agent -n 120 --no-pager 2>&1 | sed -E \
       -e 's/Bearer[[:space:]]+[^[:space:]]+/Bearer ***REDACTED***/g' \
       -e 's/gh[pousr]_[A-Za-z0-9_]+/***REDACTED_GITHUB_TOKEN***/g' \
       -e 's/hvs\.[A-Za-z0-9]+/***REDACTED_VAULT_TOKEN***/g' || true
