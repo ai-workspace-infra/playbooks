@@ -1,0 +1,27 @@
+[Unit]
+Description=XConnect regional APISIX Standalone edge gateway
+After=network-online.target xconnect-apisix-uat-runtime.service
+Wants=network-online.target
+Requires=xconnect-apisix-uat-runtime.service
+ConditionPathExists={{ gateway_config_root }}/config.yaml
+ConditionPathExists={{ gateway_config_root }}/apisix.yaml
+
+[Service]
+Type=forking
+User=root
+WorkingDirectory={{ gateway_apisix_home }}
+Environment=APISIX_HOME={{ gateway_apisix_home }}
+PIDFile={{ gateway_apisix_home }}/logs/nginx.pid
+ExecStartPre={{ gateway_apisix_binary }} test -c {{ gateway_config_root }}/config.yaml
+ExecStart={{ gateway_apisix_binary }} start -c {{ gateway_config_root }}/config.yaml
+ExecStop={{ gateway_apisix_binary }} stop -c {{ gateway_config_root }}/config.yaml
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths={{ gateway_apisix_home }} {{ gateway_config_root }}
+
+[Install]
+WantedBy=multi-user.target

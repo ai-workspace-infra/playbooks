@@ -1,0 +1,17 @@
+[Unit]
+Description=Prepare remote web-saas PostgreSQL and APISIX runtime credentials
+After=network-online.target etc-xcontrol-apisix-uat-runtime.mount
+Wants=network-online.target
+Requires=etc-xcontrol-apisix-uat-runtime.mount
+
+[Service]
+Type=oneshot
+Environment=GATEWAY_SECRET_ENV_FILE={{ gateway_secret_env_file }}
+Environment=GATEWAY_RUNTIME_PREFIX={{ gateway_config_root | quote }}
+ExecStart={{ gateway_install_root }}/venv/bin/python {{ gateway_install_root }}/prepare_runtime.py
+RemainAfterExit=true
+TimeoutStartSec=180
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
