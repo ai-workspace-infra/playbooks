@@ -102,7 +102,7 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=false
       - GF_AUTH_BASIC_ENABLED=true
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/homepage-navigation.json
-      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=victoriametrics-logs-datasource,victoriametrics-datasource{% if observability_xconnect_diagnostics_enabled | default(false) | bool %},aiworkspace-xconnectuserdiagnostics-app{% endif %}
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=victoriametrics-logs-datasource,victoriametrics-datasource{{ ',aiworkspace-xconnectuserdiagnostics-app' if observability_xconnect_diagnostics_enabled | default(false) | bool else '' }}
       - GF_INSTALL_PLUGINS=marcusolsson-treemap-panel,victoriametrics-logs-datasource
       - GF_SERVER_DOMAIN=observability.svc.plus
       - GF_SERVER_ROOT_URL=https://observability.svc.plus/grafana/
