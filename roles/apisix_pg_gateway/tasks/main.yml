@@ -17,26 +17,11 @@
       - gateway_manifest.spec.edge_runtime | bool
       - gateway_manifest.spec.doco_cd == 'forbidden'
       - gateway_manifest.spec.database.provider == 'postgresql'
-      - gateway_manifest.spec.database.owner == 'web-saas-uat'
+      - gateway_manifest.spec.database.owner is match('^web-saas')
       - gateway_manifest.spec.config_sync.etcd == 'forbidden'
       - gateway_manifest.spec.bootstrap.deployment.role == 'data_plane'
       - gateway_manifest.spec.bootstrap.deployment.role_data_plane.config_provider == 'yaml'
       - not gateway_manifest.spec.bootstrap.apisix.enable_admin
-
-- name: Render non-secret environment selectors for generic systemd services
-  ansible.builtin.copy:
-    content: |
-      GATEWAY_ENVIRONMENT={{ gateway_environment }}
-      GATEWAY_REGION={{ gateway_region }}
-      GATEWAY_GATEWAY_ID={{ gateway_id }}
-      GATEWAY_NODE_ID={{ gateway_node_id }}
-      GATEWAY_CONFIG_ROOT={{ gateway_config_root }}
-      GATEWAY_RUNTIME_ROOT={{ gateway_runtime_root }}
-      GATEWAY_STATE_ROOT={{ gateway_state_root }}
-    dest: '{{ gateway_environment_file }}'
-    owner: root
-    group: root
-    mode: '0644'
 
 - name: Require preinstalled APISIX and Vault environment file
   ansible.builtin.stat:
@@ -63,10 +48,29 @@
     group: root
     mode: '0750'
   loop:
+    - '{{ gateway_environment_file | dirname }}'
     - '{{ gateway_config_root }}'
     - '{{ gateway_runtime_root }}'
     - '{{ gateway_state_root }}'
     - '{{ gateway_install_root }}'
+
+- name: Render non-secret environment selectors for generic systemd services
+  ansible.builtin.copy:
+    content: |
+      GATEWAY_ENVIRONMENT={{ gateway_environment }}
+      GATEWAY_REGION={{ gateway_region }}
+      GATEWAY_GATEWAY_ID={{ gateway_id }}
+      GATEWAY_NODE_ID={{ gateway_node_id }}
+      GATEWAY_CONFIG_ROOT={{ gateway_config_root }}
+      GATEWAY_RUNTIME_ROOT={{ gateway_runtime_root }}
+      GATEWAY_STATE_ROOT={{ gateway_state_root }}
+      GATEWAY_ROOT={{ gateway_environment_file | dirname }}
+      GATEWAY_INSTALL_ROOT={{ gateway_install_root }}
+      GATEWAY_CONFIG_API_PORT={{ gateway_config_api_port }}
+    dest: '{{ gateway_environment_file }}'
+    owner: root
+    group: root
+    mode: '0644'
 
 - name: Install synchronizer and native validator from the pinned fork checkout
   ansible.builtin.copy:
@@ -83,6 +87,15 @@
     - {name: schema.sql, mode: '0640'}
     - {name: probe-local.py, mode: '0750'}
   register: gateway_code
+
+- name: Install the two-process configuration supervisor
+  ansible.builtin.copy:
+    src: config-supervisor.py
+    dest: '{{ gateway_install_root }}/config-supervisor.py'
+    owner: root
+    group: root
+    mode: '0750'
+  register: gateway_supervisor
 
 - name: Install Python runtime dependencies
   ansible.builtin.pip:
@@ -118,18 +131,17 @@
     mode: '0640'
     remote_src: true
 
-- name: Install volatile runtime mount and remote PG preparation service
+- name: Install volatile runtime mount
   ansible.builtin.template:
-    src: '{{ item }}.j2'
-    dest: '/etc/systemd/system/{{ item }}'
+    src: '{{ item.src }}'
+    dest: '/etc/systemd/system/{{ item.dest }}'
     owner: root
     group: root
     mode: '0644'
   loop:
-    - '{{ gateway_runtime_mount_unit }}'
-    - xconnect-apisix-runtime.service
+    - {src: 'etc-xcontrol-apisix-runtime.mount.j2', dest: '{{ gateway_runtime_mount_unit }}'}
 
-- name: Install direct systemd service units
+- name: Install the two generic systemd service units
   ansible.builtin.template:
     src: '{{ item }}.j2'
     dest: '/etc/systemd/system/{{ item }}'
@@ -138,23 +150,14 @@
     mode: '0644'
   loop:
     - xconnect-apisix.service
-    - xconnect-apisix-config-api.service
-    - xconnect-apisix-config-sync.service
+    - xconnect-apisix-config.service
 
-- name: Start volatile runtime mount and derive remote PG credentials
+- name: Start volatile runtime mount
   ansible.builtin.systemd:
     name: '{{ gateway_runtime_mount_unit }}'
     enabled: true
     daemon_reload: true
     state: started
-
-- name: Prepare remote web-saas PostgreSQL schema and runtime files
-  ansible.builtin.systemd:
-    name: xconnect-apisix-runtime.service
-    enabled: true
-    daemon_reload: true
-    state: restarted
-  no_log: true
 
 - name: Validate APISIX static bootstrap before activation
   ansible.builtin.command:
@@ -169,19 +172,12 @@
     daemon_reload: true
     state: '{{ "restarted" if gateway_bootstrap.changed else "started" }}'
 
-- name: Start configuration API directly under systemd
+- name: Start configuration plane under systemd
   ansible.builtin.systemd:
-    name: xconnect-apisix-config-api.service
+    name: xconnect-apisix-config.service
     enabled: true
     daemon_reload: true
-    state: '{{ "restarted" if gateway_code.changed else "started" }}'
-
-- name: Start configuration synchronizer directly under systemd
-  ansible.builtin.systemd:
-    name: xconnect-apisix-config-sync.service
-    enabled: true
-    daemon_reload: true
-    state: '{{ "restarted" if (gateway_code.changed or gateway_bootstrap.changed) else "started" }}'
+    state: '{{ "restarted" if (gateway_bootstrap.changed or gateway_code.changed or gateway_supervisor.changed) else "started" }}'
 
 - name: Wait for the local configuration API
   ansible.builtin.wait_for:

@@ -1,19 +1,22 @@
 [Unit]
-Description=XConnect APISIX PostgreSQL configuration API
-After=network-online.target xconnect-apisix-uat-runtime.service
-Wants=network-online.target
-Requires=xconnect-apisix-uat-runtime.service
+Description=XConnect APISIX PostgreSQL configuration API and synchronizer
+After=xconnect-apisix.service
+Requires=xconnect-apisix.service
 ConditionPathExists={{ gateway_runtime_root }}/api.env
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory={{ gateway_install_root }}
+EnvironmentFile={{ gateway_environment_file }}
 EnvironmentFile={{ gateway_runtime_root }}/api.env
+EnvironmentFile={{ gateway_runtime_root }}/sync.env
 Environment=APISIX_HOME={{ gateway_apisix_home }}
-ExecStart={{ gateway_install_root }}/venv/bin/python {{ gateway_install_root }}/gateway_config.py serve --gateway {{ gateway_id }} --bootstrap {{ gateway_config_root }}/config.yaml --validator {{ gateway_install_root }}/validate-native.sh --port {{ gateway_config_api_port }}
+ExecStart={{ gateway_install_root }}/venv/bin/python {{ gateway_install_root }}/config-supervisor.py
 Restart=on-failure
 RestartSec=5
+KillMode=mixed
+TimeoutStopSec=20
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true

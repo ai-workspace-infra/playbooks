@@ -1,8 +1,8 @@
 [Unit]
 Description=XConnect regional APISIX Standalone edge gateway
-After=network-online.target xconnect-apisix-uat-runtime.service
+After=network-online.target {{ gateway_runtime_mount_unit }}
 Wants=network-online.target
-Requires=xconnect-apisix-uat-runtime.service
+Requires={{ gateway_runtime_mount_unit }}
 ConditionPathExists={{ gateway_config_root }}/config.yaml
 ConditionPathExists={{ gateway_config_root }}/apisix.yaml
 
@@ -10,8 +10,11 @@ ConditionPathExists={{ gateway_config_root }}/apisix.yaml
 Type=forking
 User=root
 WorkingDirectory={{ gateway_apisix_home }}
+EnvironmentFile={{ gateway_environment_file }}
+EnvironmentFile={{ gateway_secret_env_file }}
 Environment=APISIX_HOME={{ gateway_apisix_home }}
 PIDFile={{ gateway_apisix_home }}/logs/nginx.pid
+ExecStartPre={{ gateway_install_root }}/venv/bin/python {{ gateway_install_root }}/prepare_runtime.py
 ExecStartPre={{ gateway_apisix_binary }} test -c {{ gateway_config_root }}/config.yaml
 ExecStart={{ gateway_apisix_binary }} start -c {{ gateway_config_root }}/config.yaml
 ExecStop={{ gateway_apisix_binary }} stop -c {{ gateway_config_root }}/config.yaml
@@ -21,7 +24,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths={{ gateway_apisix_home }} {{ gateway_config_root }}
+ReadWritePaths={{ gateway_apisix_home }} {{ gateway_config_root }} {{ gateway_runtime_root }}
 
 [Install]
 WantedBy=multi-user.target
