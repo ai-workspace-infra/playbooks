@@ -47,6 +47,12 @@
     agent_id: >-
       {{ lookup('ansible.builtin.env', 'AGENT_ID')
          | default(hostvars[inventory_hostname].get('agent_id', inventory_hostname), true) }}
+    agent_resource_class: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_RESOURCE_CLASS')
+         | default(hostvars[inventory_hostname].get('xconnect_resource_class', ''), true) }}
+    agent_team_id: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_TEAM_ID')
+         | default(hostvars[inventory_hostname].get('xconnect_team_id', ''), true) }}
     agent_tls_cert_name: >-
       {{ lookup('ansible.builtin.env', 'AGENT_TLS_CERT_NAME')
          | default(agent_id, true) }}
@@ -195,6 +201,16 @@
           - agent_api_token | length > 0
         fail_msg: "INTERNAL_SERVICE_TOKEN must be exported before running this playbook."
         success_msg: "INTERNAL_SERVICE_TOKEN found"
+
+    - name: Validate agent entitlement scope
+      ansible.builtin.assert:
+        that:
+          - agent_resource_class in ['', 'shared', 'free', 'plus', 'team']
+          - (agent_resource_class == 'team' and agent_team_id | length > 0) or (agent_resource_class != 'team' and agent_team_id == '')
+          - agent_team_id is match('^[a-zA-Z0-9._-]{0,128}$')
+        fail_msg: >-
+          agent_resource_class must be shared/free/plus/team; team requires a
+          team ID and public scopes must not carry one.
 
     - name: Gather service facts
       ansible.builtin.service_facts:
