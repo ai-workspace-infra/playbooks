@@ -58,88 +58,91 @@
         creates: /var/backups/xcontrol/uat-subscriptions-{{ accounts_source_sha }}/account.dump
       no_log: true
 
-    - name: Create the private migration staging directory
-      ansible.builtin.file:
-        path: /tmp/uat-subscriptions-{{ accounts_source_sha }}
-        state: directory
-        mode: '0700'
+    - name: Stage and apply only when the reviewed upgrade is still needed
+      when: before_schema.stdout | trim != '2026101502|f'
+      block:
+        - name: Create the private migration staging directory
+          ansible.builtin.file:
+            path: /tmp/uat-subscriptions-{{ accounts_source_sha }}
+            state: directory
+            mode: '0700'
 
-    - name: Stage the prebuilt Linux migrator
-      ansible.builtin.copy:
-        src: '{{ migratectl_binary }}'
-        dest: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migratectl
-        mode: '0755'
+        - name: Stage the prebuilt Linux migrator
+          ansible.builtin.copy:
+            src: '{{ migratectl_binary }}'
+            dest: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migratectl
+            mode: '0755'
 
-    - name: Verify the exact migrator binary checksum
-      ansible.builtin.stat:
-        path: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migratectl
-        checksum_algorithm: sha256
-      register: staged_binary
-      failed_when: staged_binary.stat.checksum != migratectl_sha256
+        - name: Verify the exact migrator binary checksum
+          ansible.builtin.stat:
+            path: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migratectl
+            checksum_algorithm: sha256
+          register: staged_binary
+          failed_when: staged_binary.stat.checksum != migratectl_sha256
 
-    - name: Create the bounded migration directory
-      ansible.builtin.file:
-        path: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migrations/{{ item.target }}
-        state: directory
-        mode: '0700'
-      loop: '{{ subscription_migrations }}'
+        - name: Create the bounded migration directory
+          ansible.builtin.file:
+            path: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migrations/{{ item.target }}
+            state: directory
+            mode: '0700'
+          loop: '{{ subscription_migrations }}'
 
-    - name: Stage only Accounts-owned migration files
-      ansible.builtin.copy:
-        src: '{{ accounts_checkout }}/sql/migrations/{{ item.file }}'
-        dest: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migrations/{{ item.target }}/{{ item.file }}
-        mode: '0600'
-      loop: '{{ subscription_migrations }}'
+        - name: Stage only Accounts-owned migration files
+          ansible.builtin.copy:
+            src: '{{ accounts_checkout }}/sql/migrations/{{ item.file }}'
+            dest: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migrations/{{ item.target }}/{{ item.file }}
+            mode: '0600'
+          loop: '{{ subscription_migrations }}'
 
-    - name: Verify every selected SQL checksum before execution
-      ansible.builtin.stat:
-        path: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migrations/{{ item.target }}/{{ item.file }}
-        checksum_algorithm: sha256
-      loop: '{{ subscription_migrations }}'
-      register: staged_sql
-      failed_when: staged_sql.stat.checksum != item.sha256
+        - name: Verify every selected SQL checksum before execution
+          ansible.builtin.stat:
+            path: /tmp/uat-subscriptions-{{ accounts_source_sha }}/migrations/{{ item.target }}/{{ item.file }}
+            checksum_algorithm: sha256
+          loop: '{{ subscription_migrations }}'
+          register: staged_sql
+          failed_when: staged_sql.stat.checksum != item.sha256
 
-    - name: Copy the exact migrator into the current UAT account container
-      ansible.builtin.command:
-        argv: [docker, cp, '/tmp/uat-subscriptions-{{ accounts_source_sha }}/migratectl', 'web-saas-accounts:/tmp/uat-subscriptions-migratectl']
-      changed_when: true
+        - name: Copy the exact migrator into the current UAT account container
+          ansible.builtin.command:
+            argv: [docker, cp, '/tmp/uat-subscriptions-{{ accounts_source_sha }}/migratectl', 'web-saas-accounts:/tmp/uat-subscriptions-migratectl']
+          changed_when: true
 
-    - name: Ensure the container migration directory exists
-      ansible.builtin.command:
-        argv: [docker, exec, web-saas-accounts, mkdir, -p, /tmp/uat-subscription-migrations]
-      changed_when: false
+        - name: Ensure the container migration directory exists
+          ansible.builtin.command:
+            argv: [docker, exec, web-saas-accounts, mkdir, -p, /tmp/uat-subscription-migrations]
+          changed_when: false
 
-    - name: Copy migration files into the same account container
-      ansible.builtin.command:
-        argv: [docker, cp, '/tmp/uat-subscriptions-{{ accounts_source_sha }}/migrations/.', 'web-saas-accounts:/tmp/uat-subscription-migrations']
-      changed_when: true
+        - name: Copy migration files into the same account container
+          ansible.builtin.command:
+            argv: [docker, cp, '/tmp/uat-subscriptions-{{ accounts_source_sha }}/migrations/.', 'web-saas-accounts:/tmp/uat-subscription-migrations']
+          changed_when: true
 
-    - name: Apply each bounded migration using the existing runtime DSN without printing credentials
-      ansible.builtin.command:
-        argv:
-          - docker
-          - exec
-          - web-saas-accounts
-          - /tmp/uat-subscriptions-migratectl
-          - migrate
-          - --dir
-          - '/tmp/uat-subscription-migrations/{{ item.target }}'
-          - --dsn-env
-          - DATABASE_URL
-          - --expected-version
-          - '{{ item.expected | string }}'
-          - --target-version
-          - '{{ item.target | string }}'
-          - --migration-sha256
-          - '{{ item.sha256 }}'
-          - --lock-timeout
-          - 15s
-          - --statement-timeout
-          - 120s
-      loop: '{{ subscription_migrations }}'
-      when: before_schema.stdout.split('|')[0] | int < item.target | int
-      changed_when: true
-      no_log: true
+        - name: Apply each bounded migration using the existing runtime DSN without printing credentials
+          ansible.builtin.command:
+            argv:
+              - docker
+              - exec
+              - web-saas-accounts
+              - /tmp/uat-subscriptions-migratectl
+              - migrate
+              - --dir
+              - '/tmp/uat-subscription-migrations/{{ item.target }}'
+              - --dsn-env
+              - DATABASE_URL
+              - --expected-version
+              - '{{ item.expected | string }}'
+              - --target-version
+              - '{{ item.target | string }}'
+              - --migration-sha256
+              - '{{ item.sha256 }}'
+              - --lock-timeout
+              - 15s
+              - --statement-timeout
+              - 120s
+          loop: '{{ subscription_migrations }}'
+          when: before_schema.stdout.split('|')[0] | int < item.target | int
+          changed_when: true
+          no_log: true
 
     - name: Verify the final clean schema, table owner and Free catalog allowance
       ansible.builtin.command:
