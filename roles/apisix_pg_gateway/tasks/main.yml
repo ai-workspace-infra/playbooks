@@ -23,6 +23,44 @@
       - gateway_manifest.spec.bootstrap.deployment.role_data_plane.config_provider == 'yaml'
       - not gateway_manifest.spec.bootstrap.apisix.enable_admin
 
+- name: Require a pinned native APISIX artifact from GitOps
+  ansible.builtin.assert:
+    that:
+      - gateway_manifest.spec.artifact.kind == 'deb'
+      - gateway_manifest.spec.artifact.architecture == 'amd64'
+      - gateway_manifest.spec.artifact.url is match('^https://')
+      - gateway_manifest.spec.artifact.sha256 is match('^[0-9a-f]{64}$')
+
+- name: Select the GitOps-declared native APISIX artifact
+  ansible.builtin.set_fact:
+    gateway_apisix_package_url: '{{ gateway_manifest.spec.artifact.url }}'
+    gateway_apisix_package_checksum: 'sha256:{{ gateway_manifest.spec.artifact.sha256 }}'
+    gateway_apisix_package_name: '{{ gateway_manifest.spec.artifact.url | basename }}'
+
+- name: Restrict pinned package to supported Debian amd64 hosts
+  ansible.builtin.command: dpkg --print-architecture
+  register: gateway_architecture
+  changed_when: false
+  failed_when: gateway_architecture.stdout != 'amd64'
+
+- name: Install native gateway dependencies
+  ansible.builtin.apt:
+    name: [libldap2-dev, libpcre3, debianutils, libyaml-dev, libxml2, libxslt1.1, python3-venv, python3-pip]
+    state: present
+    update_cache: true
+
+- name: Download pinned native APISIX package
+  ansible.builtin.get_url:
+    url: '{{ gateway_apisix_package_url }}'
+    dest: '/var/cache/{{ gateway_apisix_package_name }}'
+    checksum: '{{ gateway_apisix_package_checksum }}'
+    mode: '0644'
+
+- name: Install pinned APISIX without starting its default service
+  ansible.builtin.apt:
+    deb: '/var/cache/{{ gateway_apisix_package_name }}'
+    policy_rc_d: 101
+
 - name: Require preinstalled APISIX and Vault environment file
   ansible.builtin.stat:
     path: '{{ item }}'
@@ -45,7 +83,7 @@
     path: '{{ item }}'
     state: directory
     owner: root
-    group: root
+    group: '{{ gateway_apisix_worker_group if item == gateway_config_root else "root" }}'
     mode: '0750'
   loop:
     - '{{ gateway_environment_file | dirname }}'
@@ -53,6 +91,13 @@
     - '{{ gateway_runtime_root }}'
     - '{{ gateway_state_root }}'
     - '{{ gateway_install_root }}'
+
+- name: Allow the APISIX worker to traverse the managed configuration directory
+  ansible.builtin.file:
+    path: '{{ gateway_config_root }}'
+    owner: root
+    group: '{{ gateway_apisix_worker_group }}'
+    mode: '2750'
 
 - name: Render non-secret environment selectors for generic systemd services
   ansible.builtin.copy:
@@ -90,11 +135,12 @@
 
 - name: Install the two-process configuration supervisor
   ansible.builtin.copy:
-    src: config-supervisor.py
-    dest: '{{ gateway_install_root }}/config-supervisor.py'
+    src: "{{ item }}"
+    dest: '{{ gateway_install_root }}/{{ item }}'
     owner: root
     group: root
     mode: '0750'
+  loop: [config-supervisor.py, prepare_runtime.py]
   register: gateway_supervisor
 
 - name: Install Python runtime dependencies
@@ -103,31 +149,60 @@
     virtualenv: '{{ gateway_install_root }}/venv'
     virtualenv_command: '{{ gateway_python }} -m venv'
 
+- name: Prepare gateway runtime credentials and optional database migration
+  ansible.builtin.command:
+    argv:
+      - '{{ gateway_install_root }}/venv/bin/python'
+      - '{{ gateway_install_root }}/prepare_runtime.py'
+  environment:
+    GATEWAY_ROOT: '{{ gateway_environment_file | dirname }}'
+    GATEWAY_CONFIG_ROOT: '{{ gateway_config_root }}'
+    GATEWAY_RUNTIME_ROOT: '{{ gateway_runtime_root }}'
+    GATEWAY_SECRET_ENV_FILE: '{{ gateway_secret_env_file }}'
+    GATEWAY_ENVIRONMENT: '{{ gateway_environment }}'
+    GATEWAY_NODE_ID: '{{ gateway_node_id }}'
+  no_log: true
+  changed_when: true
+
 - name: Render static APISIX bootstrap from GitOps
   ansible.builtin.copy:
     content: '{{ gateway_manifest.spec.bootstrap | to_nice_yaml }}'
     dest: '{{ gateway_config_root }}/config.yaml'
     owner: root
-    group: root
-    mode: '0644'
+    group: '{{ gateway_apisix_worker_group }}'
+    mode: '0640'
     backup: true
   register: gateway_bootstrap
+
+- name: Stage bootstrap at native CLI default path for init and test
+  ansible.builtin.copy:
+    src: '{{ gateway_config_root }}/config.yaml'
+    dest: '{{ gateway_apisix_home }}/conf/config.yaml'
+    remote_src: true
+    mode: '0644'
 
 - name: Seed initial deny-all configuration only once
   ansible.builtin.copy:
     content: "routes: []\nupstreams: []\nservices: []\nplugin_configs: []\n#END\n"
     dest: '{{ gateway_config_root }}/apisix.yaml'
     owner: root
-    group: root
+    group: '{{ gateway_apisix_worker_group }}'
     mode: '0640'
     force: false
+
+- name: Link native Standalone watcher to managed dynamic configuration
+  ansible.builtin.file:
+    src: '{{ gateway_config_root }}/apisix.yaml'
+    dest: '{{ gateway_apisix_home }}/conf/apisix.yaml'
+    state: link
+    force: true
 
 - name: Stage gateway schema from the pinned fork checkout
   ansible.builtin.copy:
     src: '{{ gateway_install_root }}/schema.sql'
     dest: '{{ gateway_config_root }}/schema.sql'
     owner: root
-    group: root
+    group: '{{ gateway_apisix_worker_group }}'
     mode: '0640'
     remote_src: true
 
@@ -161,9 +236,16 @@
 
 - name: Validate APISIX static bootstrap before activation
   ansible.builtin.command:
-    argv: ['{{ gateway_apisix_binary }}', test, '-c', '{{ gateway_config_root }}/config.yaml']
+    argv: ['{{ gateway_apisix_binary }}', init, '-c', '{{ gateway_config_root }}/config.yaml']
     chdir: '{{ gateway_apisix_home }}'
   changed_when: false
+
+- name: Ensure the native config directory remains readable after package upgrades
+  ansible.builtin.file:
+    path: '{{ gateway_apisix_home }}/conf'
+    owner: root
+    group: '{{ gateway_apisix_worker_group }}'
+    mode: '2750'
 
 - name: Start APISIX directly under systemd
   ansible.builtin.systemd:
