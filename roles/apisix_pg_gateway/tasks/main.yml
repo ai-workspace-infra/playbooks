@@ -1,0 +1,186 @@
+- name: Require an explicit edge-systemd deployment declaration
+  ansible.builtin.assert:
+    that:
+      - gateway_manifest_path | length > 0
+      - gateway_source_path | length > 0
+
+- name: Load GitOps deployment declaration
+  ansible.builtin.set_fact:
+    gateway_manifest: '{{ lookup("file", gateway_manifest_path) | from_yaml }}'
+
+- name: Require edge systemd and remote PG mode
+  ansible.builtin.assert:
+    that:
+      - gateway_manifest.metadata.environment == gateway_environment
+      - gateway_manifest.spec.deployment_controller == 'ansible-systemd'
+      - gateway_manifest.spec.service_manager == 'systemd'
+      - gateway_manifest.spec.edge_runtime | bool
+      - gateway_manifest.spec.doco_cd == 'forbidden'
+      - gateway_manifest.spec.database.provider == 'postgresql'
+      - gateway_manifest.spec.database.owner is match('^web-saas')
+      - gateway_manifest.spec.config_sync.etcd == 'forbidden'
+      - gateway_manifest.spec.bootstrap.deployment.role == 'data_plane'
+      - gateway_manifest.spec.bootstrap.deployment.role_data_plane.config_provider == 'yaml'
+      - not gateway_manifest.spec.bootstrap.apisix.enable_admin
+
+- name: Require preinstalled APISIX and Vault environment file
+  ansible.builtin.stat:
+    path: '{{ item }}'
+  loop:
+    - '{{ gateway_apisix_binary }}'
+    - '{{ gateway_apisix_home }}/conf'
+    - '{{ gateway_secret_env_file }}'
+  register: gateway_prerequisites
+
+- name: Reject missing edge prerequisites
+  ansible.builtin.assert:
+    that: item.stat.exists
+    fail_msg: 'Missing edge prerequisite: {{ item.item }}'
+  loop: '{{ gateway_prerequisites.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Create managed gateway directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+  loop:
+    - '{{ gateway_environment_file | dirname }}'
+    - '{{ gateway_config_root }}'
+    - '{{ gateway_runtime_root }}'
+    - '{{ gateway_state_root }}'
+    - '{{ gateway_install_root }}'
+
+- name: Render non-secret environment selectors for generic systemd services
+  ansible.builtin.copy:
+    content: |
+      GATEWAY_ENVIRONMENT={{ gateway_environment }}
+      GATEWAY_REGION={{ gateway_region }}
+      GATEWAY_GATEWAY_ID={{ gateway_id }}
+      GATEWAY_NODE_ID={{ gateway_node_id }}
+      GATEWAY_CONFIG_ROOT={{ gateway_config_root }}
+      GATEWAY_RUNTIME_ROOT={{ gateway_runtime_root }}
+      GATEWAY_STATE_ROOT={{ gateway_state_root }}
+      GATEWAY_ROOT={{ gateway_environment_file | dirname }}
+      GATEWAY_INSTALL_ROOT={{ gateway_install_root }}
+      GATEWAY_CONFIG_API_PORT={{ gateway_config_api_port }}
+    dest: '{{ gateway_environment_file }}'
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install synchronizer and native validator from the pinned fork checkout
+  ansible.builtin.copy:
+    src: '{{ gateway_source_path }}/{{ item.name }}'
+    dest: '{{ gateway_install_root }}/{{ item.name }}'
+    owner: root
+    group: root
+    mode: '{{ item.mode }}'
+  loop:
+    - {name: gateway_config.py, mode: '0750'}
+    - {name: validate.lua, mode: '0640'}
+    - {name: validate-native.sh, mode: '0750'}
+    - {name: requirements.txt, mode: '0640'}
+    - {name: schema.sql, mode: '0640'}
+    - {name: probe-local.py, mode: '0750'}
+  register: gateway_code
+
+- name: Install the two-process configuration supervisor
+  ansible.builtin.copy:
+    src: config-supervisor.py
+    dest: '{{ gateway_install_root }}/config-supervisor.py'
+    owner: root
+    group: root
+    mode: '0750'
+  register: gateway_supervisor
+
+- name: Install Python runtime dependencies
+  ansible.builtin.pip:
+    requirements: '{{ gateway_install_root }}/requirements.txt'
+    virtualenv: '{{ gateway_install_root }}/venv'
+    virtualenv_command: '{{ gateway_python }} -m venv'
+
+- name: Render static APISIX bootstrap from GitOps
+  ansible.builtin.copy:
+    content: '{{ gateway_manifest.spec.bootstrap | to_nice_yaml }}'
+    dest: '{{ gateway_config_root }}/config.yaml'
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+  register: gateway_bootstrap
+
+- name: Seed initial deny-all configuration only once
+  ansible.builtin.copy:
+    content: "routes: []\nupstreams: []\nservices: []\nplugin_configs: []\n#END\n"
+    dest: '{{ gateway_config_root }}/apisix.yaml'
+    owner: root
+    group: root
+    mode: '0640'
+    force: false
+
+- name: Stage gateway schema from the pinned fork checkout
+  ansible.builtin.copy:
+    src: '{{ gateway_install_root }}/schema.sql'
+    dest: '{{ gateway_config_root }}/schema.sql'
+    owner: root
+    group: root
+    mode: '0640'
+    remote_src: true
+
+- name: Install volatile runtime mount
+  ansible.builtin.template:
+    src: '{{ item.src }}'
+    dest: '/etc/systemd/system/{{ item.dest }}'
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - {src: 'etc-xcontrol-apisix-runtime.mount.j2', dest: '{{ gateway_runtime_mount_unit }}'}
+
+- name: Install the two generic systemd service units
+  ansible.builtin.template:
+    src: '{{ item }}.j2'
+    dest: '/etc/systemd/system/{{ item }}'
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - xconnect-apisix.service
+    - xconnect-apisix-config.service
+
+- name: Start volatile runtime mount
+  ansible.builtin.systemd:
+    name: '{{ gateway_runtime_mount_unit }}'
+    enabled: true
+    daemon_reload: true
+    state: started
+
+- name: Validate APISIX static bootstrap before activation
+  ansible.builtin.command:
+    argv: ['{{ gateway_apisix_binary }}', test, '-c', '{{ gateway_config_root }}/config.yaml']
+    chdir: '{{ gateway_apisix_home }}'
+  changed_when: false
+
+- name: Start APISIX directly under systemd
+  ansible.builtin.systemd:
+    name: xconnect-apisix.service
+    enabled: true
+    daemon_reload: true
+    state: '{{ "restarted" if gateway_bootstrap.changed else "started" }}'
+
+- name: Start configuration plane under systemd
+  ansible.builtin.systemd:
+    name: xconnect-apisix-config.service
+    enabled: true
+    daemon_reload: true
+    state: '{{ "restarted" if (gateway_bootstrap.changed or gateway_code.changed or gateway_supervisor.changed) else "started" }}'
+
+- name: Wait for the local configuration API
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: '{{ gateway_config_api_port }}'
+    timeout: 60
