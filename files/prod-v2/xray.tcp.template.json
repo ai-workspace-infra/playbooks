@@ -1,0 +1,101 @@
+{
+  "log": {
+    "loglevel": "warning",
+    "access": "/var/log/xray/access-tcp.log"
+  },
+  "api": {
+    "tag": "api",
+    "listen": "127.0.0.1:10087",
+    "services": [
+      "HandlerService",
+      "StatsService"
+    ]
+  },
+  "stats": {},
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {
+        "type": "field",
+        "ip": [
+          "geoip:cn"
+        ],
+        "outboundTag": "block"
+      }
+    ]
+  },
+  "inbounds": [
+    {
+      "tag": "tcp-vless",
+      "listen": "0.0.0.0",
+      "port": 1443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "{{ UUID }}",
+            "flow": "xtls-rprx-vision"
+          }
+        ],
+        "decryption": "none",
+        "fallbacks": [
+          {
+            "dest": "8001",
+            "xver": 1
+          },
+          {
+            "alpn": "h2",
+            "dest": "8002",
+            "xver": 1
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "rejectUnknownSni": true,
+          "minVersion": "1.2",
+          "certificates": [
+            {
+              "ocspStapling": 3600,
+              "certificateFile": "/etc/caddy/tls/agent-proxy.crt",
+              "keyFile": "/etc/caddy/tls/agent-proxy.key"
+            }
+          ]
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ]
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "tag": "direct"
+    },
+    {
+      "protocol": "blackhole",
+      "tag": "block"
+    }
+  ],
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true,
+        "handshake": 30,
+        "connIdle": 1800
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true
+    }
+  }
+}
