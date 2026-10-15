@@ -1,0 +1,28 @@
+{
+  "id": null,
+  "uid": "xconnect-user-connection-diagnostics",
+  "title": "XConnect 用户慢连接诊断",
+  "tags": ["xconnect", "diagnostics", "traces"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "按用户查找连接",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "## 输入 Email 或 Proxy UUID，查看关联 Trace\n\n[打开 XConnect 用户诊断查询页](/grafana/a/aiworkspace-xconnectuserdiagnostics-app)\n\n查询页仅向服务端发送一次 POST；身份查询由 Accounts 解析成匿名引用，原始身份不会放入 URL、Dashboard 变量、查询结果或浏览器持久存储。当前入口仅开放给 Grafana 管理员。\n\n### 第一阶段可见信息\n\n- 以认证后的 VLESS 会话身份引用匹配同一条分布式 Trace。\n- 查看 Trace 中实际采集到的阶段 Span 名称、起始时间和持续时间。\n- 未进入同一 Trace 的客户端 DNS/TCP/TLS、Caddy `/split`、Agent 重启、Xray 出口建立及首响应证据会明确缺失；页面不会补零，也不会把同时间的其他连接拼进来。\n\n### 瓶颈判读\n\n| 观测证据 | 可支持的判断 |\n| --- | --- |\n| 客户端建连阶段耗时长、服务端出口正常 | 当前样本入口阶段偏慢 |\n| Xray outbound DNS/dial 延长或重试 | 服务端出口建立阶段偏慢 |\n| 出口已建立、目标首响应等待长 | 目标方向首响应阶段占时 |\n| Caddy 错误与同实例 Xray 重启重叠 | 连接期间发生中断风险，需核对精确关联 |\n| 节点 CPU、队列或重传异常 | 节点存在资源/网络线索，不能单独证明单连接因果 |\n\n以上判断只在相应阶段和事件已有采集时成立。"
+      },
+      "transparent": true
+    }
+  ],
+  "annotations": { "list": [] },
+  "templating": { "list": [] },
+  "links": [],
+  "editable": false
+}
