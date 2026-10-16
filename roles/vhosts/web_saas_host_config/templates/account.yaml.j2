@@ -17,24 +17,28 @@ auth:
     accessExpiry: "1h"
     refreshExpiry: "168h"
   oauth:
-    frontendUrl: "https://{{ web_saas_host_config_console_domain }}"
+    # Browser redirects use the original public Selfhost alias. The private
+    # prod-v2 hostname remains available for direct operator verification.
+    frontendUrl: "https://{{ web_saas_host_config_console_public_domain }}"
     github:
       clientId: "${GITHUB_CLIENT_ID}"
       clientSecret: "${GITHUB_CLIENT_SECRET}"
-      redirectUrl: "https://{{ web_saas_host_config_accounts_domain }}/api/auth/oauth/callback/github"
+      redirectUrl: "https://{{ web_saas_host_config_accounts_public_domain }}/api/auth/oauth/callback/github"
     google:
       clientId: "${GOOGLE_CLIENT_ID}"
       clientSecret: "${GOOGLE_CLIENT_SECRET}"
-      redirectUrl: "https://{{ web_saas_host_config_accounts_domain }}/api/auth/oauth/callback/google"
+      redirectUrl: "https://{{ web_saas_host_config_accounts_public_domain }}/api/auth/oauth/callback/google"
 
 server:
   addr: ":8080"
   readTimeout: 15s
   writeTimeout: 15s
-  publicUrl: "https://{{ web_saas_host_config_accounts_domain }}"
+  publicUrl: "https://{{ web_saas_host_config_accounts_public_domain }}"
   allowedOrigins:
     - "https://{{ web_saas_host_config_console_domain }}"
+    - "https://{{ web_saas_host_config_console_public_domain }}"
     - "https://{{ web_saas_host_config_accounts_domain }}"
+    - "https://{{ web_saas_host_config_accounts_public_domain }}"
   tls:
     enabled: false
     certFile: ""
