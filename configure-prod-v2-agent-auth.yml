@@ -1,0 +1,24 @@
+---
+- name: Enforce independent agent credentials and scope on PROD V2 only
+  hosts: v2_control
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Refuse another control plane
+      ansible.builtin.assert:
+        that: inventory_hostname == 'web-saas-prod-v2'
+    - name: Configure explicit credentials instead of the shared wildcard fallback
+      ansible.builtin.blockinfile:
+        path: /etc/xcontrol/web-saas/config/account.yaml
+        marker: '# {mark} PROD V2 enrolled agent credentials'
+        mode: '0600'
+        block: |
+          agents:
+            credentials:
+          {% for agent in prod_v2_agents %}
+              - id: {{ agent.id | to_json }}
+                name: {{ agent.id | to_json }}
+                token: {{ agent.token | to_json }}
+                groups: {{ agent.groups | to_json }}
+          {% endfor %}
+      no_log: true

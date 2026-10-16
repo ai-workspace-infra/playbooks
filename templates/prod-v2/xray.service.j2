@@ -1,0 +1,13 @@
+[Unit]
+Description=Xray {{ item.service }} (PROD V2 fixed release)
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+Environment=XRAY_LOCATION_ASSET=/usr/local/share/xray
+ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/{{ item.config }}
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=1048576
+[Install]
+WantedBy=multi-user.target

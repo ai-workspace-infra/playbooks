@@ -1,0 +1,43 @@
+---
+- name: Reconcile independent edge sync and telemetry configuration
+  hosts: v2_edges
+  become: true
+  gather_facts: false
+  vars:
+    edge: "{{ prod_v2_agents | selectattr('id', 'equalto', prod_v2_node_id | default('')) | first }}"
+  tasks:
+    - name: Require a registered V2 edge
+      ansible.builtin.assert:
+        that: inventory_hostname == (prod_v2_node_id | default(edge.id))
+    - name: Enable Xray HandlerService user additions
+      ansible.builtin.template:
+        src: prod-v2/agent.yaml.j2
+        dest: /etc/agent/account-agent.yaml
+        mode: '0600'
+      no_log: true
+    - name: Ensure separate snapshot state directory
+      ansible.builtin.file:
+        path: /var/lib/xray-exporter
+        state: directory
+        mode: '0700'
+    - name: Keep separate XHTTP and TCP snapshot state
+      ansible.builtin.template:
+        src: prod-v2/exporter.service.j2
+        dest: "/etc/systemd/system/xray-exporter-{{ item.name }}.service"
+        mode: '0644'
+      loop:
+        - {name: xhttp, listen: 8080, api: 10086, log: access-xhttp.log}
+        - {name: tcp, listen: 8081, api: 10087, log: access-tcp.log}
+    - name: Route authenticated snapshots directly to the dedicated Billing ingress
+      ansible.builtin.template:
+        src: prod-v2/exporter.env.j2
+        dest: /etc/xray-exporter/runtime.env
+        mode: '0600'
+      no_log: true
+    - name: Reload only the scoped agent and exporters
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: restarted
+        enabled: true
+        daemon_reload: true
+      loop: [xconnect-edge-agent, xray-exporter-xhttp, xray-exporter-tcp]

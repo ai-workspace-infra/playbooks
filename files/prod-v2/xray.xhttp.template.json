@@ -1,0 +1,75 @@
+{
+  "log": {
+    "loglevel": "warning",
+    "access": "/var/log/xray/access-xhttp.log"
+  },
+  "api": {
+    "tag": "api",
+    "listen": "127.0.0.1:10086",
+    "services": [
+      "HandlerService",
+      "StatsService"
+    ]
+  },
+  "inbounds": [
+    {
+      "tag": "xhttp-vless",
+      "listen": "/dev/shm/xray.sock,0666",
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "{{ UUID }}"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "xhttpSettings": {
+          "mode": "auto",
+          "path": "/split"
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {}
+    },
+    {
+      "tag": "blocked",
+      "protocol": "blackhole",
+      "settings": {}
+    }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "ip": [
+          "geoip:private"
+        ],
+        "outboundTag": "blocked"
+      }
+    ]
+  },
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true,
+        "handshake": 30,
+        "connIdle": 1800
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true
+    }
+  },
+  "stats": {}
+}

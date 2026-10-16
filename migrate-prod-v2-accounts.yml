@@ -1,0 +1,37 @@
+---
+- name: Initialize only the isolated V2 database and import Selfhost PROD accounts
+  hosts: v2_control
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Refuse an existing production host
+      ansible.builtin.assert:
+        that: inventory_hostname == 'web-saas-prod-v2'
+    - name: Create protected migration workspace
+      ansible.builtin.file:
+        path: /root/prod-v2-migration
+        state: directory
+        mode: '0700'
+    - name: Stage reviewed schema CLI and compatible transfer CLI
+      ansible.builtin.copy:
+        src: "{{ prod_v2_artifacts_dir }}/{{ item.src }}"
+        dest: "/root/prod-v2-migration/{{ item.dest }}"
+        mode: '0700'
+      loop:
+        - {src: migratectl-native-linux, dest: migratectl-native}
+        - {src: migratectl-linux, dest: migratectl-transfer}
+    - name: Stage protected source snapshot and account state
+      ansible.builtin.copy:
+        src: "{{ prod_v2_artifacts_dir }}/{{ item }}"
+        dest: "/root/prod-v2-migration/{{ item }}"
+        mode: '0600'
+      loop: [selfhost-prod-users-import.yaml, selfhost-prod-account-state.json]
+      no_log: true
+    - name: Initialize empty database and perform preview then one-way import
+      ansible.builtin.script: files/prod_v2_initialize_accounts.py
+      args:
+        executable: python3
+      register: v2_import
+    - name: Report safe initialization receipt
+      ansible.builtin.debug:
+        var: v2_import.stdout_lines

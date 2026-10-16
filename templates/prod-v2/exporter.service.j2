@@ -1,0 +1,13 @@
+[Unit]
+Description=Xray Exporter {{ item.name }}
+After={{ 'xray' if item.name == 'xhttp' else 'xray-tcp' }}.service
+[Service]
+Type=simple
+EnvironmentFile=/etc/xray-exporter/runtime.env
+Environment=SNAPSHOT_STORE_PATH=/var/lib/xray-exporter/{{ item.name }}.json
+Environment=EXPORTER_NODE_ID={{ edge.id }}-{{ item.name }}
+ExecStart=/usr/local/bin/xray-exporter --listen 127.0.0.1:{{ item.listen }} --xray-endpoint 127.0.0.1:{{ item.api }} --user-traffic-metrics --log-path /var/log/xray/{{ item.log }}
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
