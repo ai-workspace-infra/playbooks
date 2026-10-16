@@ -103,7 +103,9 @@
    otherwise Caddy uses the normal HTTP-01 flow after DNS is cut over. #}
 {% if brand_domains | length > 0 %}
 {{ brand_domains | join(', ') }} {
-{% if web_saas_host_config_acme_dns_enabled | bool %}
+{% if web_saas_host_config_brand_tls_domain | default('') | length > 0 %}
+	tls /etc/xcontrol/tls/{{ web_saas_host_config_brand_tls_domain }}/current/fullchain.pem /etc/xcontrol/tls/{{ web_saas_host_config_brand_tls_domain }}/current/key.pem
+{% elif web_saas_host_config_acme_dns_enabled | bool %}
 	tls {
 		dns cloudflare {env.CLOUDFLARE_DNS_API_TOKEN}
 	}
