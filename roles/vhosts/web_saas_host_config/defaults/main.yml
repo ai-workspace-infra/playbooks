@@ -76,12 +76,16 @@ web_saas_host_config_accounts_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAA
 # DNS-only routing preserves the public Host header. Caddy must therefore serve
 # both names on the same host instead of relying on the CNAME target name.
 web_saas_host_config_console_public_domain: >-
-  console-{{ web_saas_host_config_deploy_env }}.{{ web_saas_host_config_target_domain_base }}
+  {{ lookup('ansible.builtin.env', 'WEB_SAAS_CONSOLE_PUBLIC_DOMAIN')
+     | default('console-' ~ web_saas_host_config_deploy_env ~ '.' ~ web_saas_host_config_target_domain_base, true)
+     | trim }}
 web_saas_host_config_accounts_public_domain: >-
-  accounts-{{ web_saas_host_config_deploy_env }}.{{ web_saas_host_config_target_domain_base }}
+  {{ lookup('ansible.builtin.env', 'WEB_SAAS_ACCOUNTS_PUBLIC_DOMAIN')
+     | default('accounts-' ~ web_saas_host_config_deploy_env ~ '.' ~ web_saas_host_config_target_domain_base, true)
+     | trim }}
 # Optional brand/homepage alias served by the Console image on a self-hosted
 # web-saas node. It is deliberately opt-in because the canonical brand domain
-# normally remains owned by the serverless edge until DNS is cut over.
+# normally remains owned by the existing edge until DNS is cut over.
 web_saas_host_config_brand_domain: >-
   {{ lookup('ansible.builtin.env', 'WEB_SAAS_BRAND_DOMAIN') | default('', true) | trim }}
 web_saas_host_config_brand_selfhost_domain: >-
@@ -210,6 +214,8 @@ web_saas_host_config_secrets:
   ACP_ALLOWED_ORIGINS: >-
     {{ [web_saas_host_config_console_domain,
         web_saas_host_config_console_public_domain,
+        web_saas_host_config_accounts_domain,
+        web_saas_host_config_accounts_public_domain,
         web_saas_host_config_brand_domain,
         web_saas_host_config_brand_selfhost_domain]
        | map('trim') | reject('equalto', '') | unique
