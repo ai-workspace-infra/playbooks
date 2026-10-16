@@ -1,29 +1,32 @@
 ---
 # Isolated PROD V2 control plane. The new host is prepared under its private
-# prod-v2 names, then the original Selfhost public aliases are switched to it
-# after the private registration acceptance. Existing web-saas-prod vars are
+# prod-v2 names, then the canonical svc.plus/xworktech.com aliases are switched
+# to it after private registration acceptance. Existing web-saas-prod vars are
 # intentionally unchanged.
 service_domains: >-
   console-selfhost-prod-v2.svc.plus,
-  console-selfhost-prod.svc.plus,
+  console.svc.plus,
+  xworktech.com,
   accounts-selfhost-prod-v2.svc.plus,
-  accounts-selfhost-prod.svc.plus,
+  accounts.svc.plus,
   billing-selfhost-prod-v2.svc.plus,
-  billing-selfhost-prod.svc.plus,
-  postgresql-selfhost-prod-v2.svc.plus
+  billing.svc.plus,
+  postgresql-selfhost-prod-v2.svc.plus,
+  postgresql.svc.plus
 
 web_saas_host_config_deploy_env: prod
 web_saas_host_config_target_domain_base: svc.plus
 web_saas_host_config_console_domain: console-selfhost-prod-v2.svc.plus
-web_saas_host_config_console_public_domain: console-selfhost-prod.svc.plus
+web_saas_host_config_console_public_domain: console.svc.plus
 web_saas_host_config_accounts_domain: accounts-selfhost-prod-v2.svc.plus
-web_saas_host_config_accounts_public_domain: accounts-selfhost-prod.svc.plus
+web_saas_host_config_accounts_public_domain: accounts.svc.plus
 web_saas_host_config_billing_domain: billing-selfhost-prod-v2.svc.plus
-web_saas_host_config_billing_public_domain: billing-selfhost-prod.svc.plus
+web_saas_host_config_billing_public_domain: billing.svc.plus
+web_saas_host_config_brand_domain: xworktech.com
 
 # Doco-CD consumes the V2-specific config file and immutable release tag.
 doco_cd_poll_config:
   - url: https://github.com/ai-workspace-infra/gitops.git
-    reference: prod-v2-2026.10.16-r5
+    reference: prod-v2-2026.10.16-r8
     target: prod-v2
     interval: 60
