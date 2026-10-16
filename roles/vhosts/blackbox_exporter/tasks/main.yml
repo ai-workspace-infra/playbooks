@@ -25,26 +25,38 @@
     group: "{{ blackbox_user }}"
     mode: "0750"
 
-- name: Download blackbox_exporter tarball
-  block:
-    - name: Download blackbox_exporter from the configured mirror
-      ansible.builtin.get_url:
-        url: "{{ blackbox_archive_url }}"
-        dest: "{{ blackbox_archive_file }}"
-        mode: "0644"
-  rescue:
-    - name: Download blackbox_exporter from the upstream release
-      ansible.builtin.get_url:
-        url: "{{ blackbox_archive_fallback_url }}"
-        dest: "{{ blackbox_archive_file }}"
-        mode: "0644"
+- name: Download blackbox_exporter from the configured mirror
+  ansible.builtin.get_url:
+    url: "{{ blackbox_archive_url }}"
+    dest: "{{ blackbox_archive_file }}"
+    mode: "0644"
+    timeout: "{{ blackbox_download_timeout }}"
+  when: blackbox_download_use_mirror | bool
+  register: blackbox_mirror_download
+  failed_when: false
+
+- name: Report mirror fallback
+  ansible.builtin.debug:
+    msg: "Blackbox mirror unavailable; downloading the upstream release."
+  when:
+    - blackbox_download_use_mirror | bool
+    - (blackbox_mirror_download.status_code | default(0) | int) not in [200, 304]
+
+- name: Download blackbox_exporter from the upstream release
+  ansible.builtin.get_url:
+    url: "{{ blackbox_archive_fallback_url }}"
+    dest: "{{ blackbox_archive_file }}"
+    mode: "0644"
+    timeout: "{{ blackbox_download_timeout }}"
+  when: >-
+    not (blackbox_download_use_mirror | bool) or
+    (blackbox_mirror_download.status_code | default(0) | int) not in [200, 304]
 
 - name: Unpack archive
   ansible.builtin.unarchive:
     src: "{{ blackbox_archive_file }}"
     dest: "{{ blackbox_tmp_dir }}"
     remote_src: true
-  register: unpack
 
 - name: Install binary
   ansible.builtin.copy:
@@ -54,7 +66,7 @@
     owner: "root"
     group: "root"
     remote_src: true
-  when: unpack is changed
+  notify: Restart blackbox
 
 - name: Render blackbox configuration
   ansible.builtin.template:
