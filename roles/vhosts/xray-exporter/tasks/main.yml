@@ -76,6 +76,17 @@
     - xray_exporter_log_path | length > 0
   failed_when: false
 
+- name: Require credentials for billing snapshot collection
+  ansible.builtin.assert:
+    that:
+      - xray_exporter_internal_service_token | trim | length > 0
+      - xray_exporter_accounts_base_url | trim | length > 0
+    fail_msg: "Billing snapshots require an Accounts URL and runtime service credential."
+  no_log: true
+  when: >-
+    (xray_exporter_snapshot_features_enabled | bool) or
+    (xray_exporter_vector_snapshot_url | trim | length > 0)
+
 - name: Render xray-exporter runtime environment
   ansible.builtin.template:
     src: xray-exporter.env.j2
