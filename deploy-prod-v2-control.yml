@@ -7,11 +7,11 @@
     - name: Refuse any existing production host
       ansible.builtin.assert:
         that:
-          - inventory_hostname == 'web-saas-prod-v2'
+          - inventory_hostname == (prod_v2_control_host | default('web-saas-prod-v2'))
           - ansible_host == prod_v2_control_ip
     - name: Inspect only the new dedicated disk
       ansible.builtin.command:
-        argv: [lsblk, -dnro, FSTYPE, /dev/disk/by-id/google-web-saas-prod-v2-data]
+        argv: [lsblk, -dnro, FSTYPE, "{{ prod_v2_data_disk_device | default('/dev/disk/by-id/google-web-saas-prod-v2-data') }}"]
       register: v2_disk_type
       changed_when: false
     - name: Refuse an unexpected filesystem
@@ -19,12 +19,12 @@
         that: v2_disk_type.stdout | trim in ['', 'ext4']
     - name: Initialize the explicitly authorized blank V2 disk
       ansible.builtin.command:
-        argv: [mkfs.ext4, -L, ws-prod-v2-data, /dev/disk/by-id/google-web-saas-prod-v2-data]
+        argv: [mkfs.ext4, -L, ws-prod-v2-data, "{{ prod_v2_data_disk_device | default('/dev/disk/by-id/google-web-saas-prod-v2-data') }}"]
       when: v2_disk_type.stdout | trim == ''
     - name: Mount the isolated persistent data disk
       ansible.posix.mount:
         path: /data
-        src: /dev/disk/by-id/google-web-saas-prod-v2-data
+        src: "{{ prod_v2_data_disk_device | default('/dev/disk/by-id/google-web-saas-prod-v2-data') }}"
         fstype: ext4
         state: mounted
     - name: Prepare the new PostgreSQL directory
@@ -69,5 +69,5 @@
       no_log: true
     - name: Start only PostgreSQL before native initialization and user migration
       ansible.builtin.command:
-        argv: [docker, compose, -p, web-saas-prod-v2, --env-file, .env.prod-v2, -f, docker-compose.yml, -f, docker-compose.selfhost-content.yml, -f, docker-compose.prod-v2.yml, up, -d, postgres]
+        argv: [docker, compose, "{{ prod_v2_compose_project | default('web-saas-prod-v2') }}", --env-file, .env.prod-v2, -f, docker-compose.yml, -f, docker-compose.selfhost-content.yml, -f, docker-compose.prod-v2.yml, up, -d, postgres]
         chdir: /opt/prod-v2-bootstrap

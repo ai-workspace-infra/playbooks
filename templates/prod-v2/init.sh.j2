@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Protected PROD V2 repeat-validation helper; credentials intentionally local.
-export AGENT_PROXY_DOMAIN={{ edge.domain | quote }}
-export AUTH_URL=https://accounts-selfhost-prod-v2.svc.plus
-export AGENT_REGION=jp
-export AGENT_POOL=jp-{{ resource_class }}
+export AGENT_PROXY_DOMAIN={{ (prod_v2_node_domain | default(edge.domain)) | quote }}
+export AUTH_URL={{ (prod_v2_accounts_url | default('https://' ~ (prod_v2_accounts_domain | default('accounts-selfhost-prod-v2.svc.plus'))) ) | quote }}
+export AGENT_REGION={{ (prod_v2_region | default(edge.region | default('jp'))) | quote }}
+export AGENT_POOL={{ (prod_v2_pool | default((prod_v2_region | default(edge.region | default('jp'))) ~ '-' ~ resource_class)) | quote }}
 export INTERNAL_SERVICE_TOKEN={{ edge.token | quote }}
 sudo systemctl daemon-reload
 sudo systemctl restart xconnect-edge-agent.service

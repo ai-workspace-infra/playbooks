@@ -4,12 +4,12 @@
   become: true
   gather_facts: false
   vars:
-    edge: "{{ prod_v2_agents | selectattr('role', 'equalto', resource_class) | first }}"
+    edge: "{{ prod_v2_agents | selectattr('id', 'equalto', prod_v2_node_id | default('')) | first }}"
   tasks:
     - name: Refuse any non-V2 edge
       ansible.builtin.assert:
         that:
-          - inventory_hostname in prod_v2_agents | map(attribute='id') | list
+          - inventory_hostname == (prod_v2_node_id | default(inventory_hostname))
           - resource_class in ['free', 'plus', 'team']
     - name: Create independent runtime directories
       ansible.builtin.file:

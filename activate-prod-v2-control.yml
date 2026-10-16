@@ -6,7 +6,7 @@
   pre_tasks:
     - name: Refuse another production host
       ansible.builtin.assert:
-        that: inventory_hostname == 'web-saas-prod-v2'
+        that: inventory_hostname == (prod_v2_control_host | default('web-saas-prod-v2'))
     - name: Render managed native primary environment
       ansible.builtin.template:
         src: roles/vhosts/web_saas_host_config/templates/secrets.env.j2

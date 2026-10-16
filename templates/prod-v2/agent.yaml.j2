@@ -2,14 +2,14 @@ mode: agent
 log:
   level: info
 agent:
-  id: {{ edge.id | to_json }}
+  id: {{ (prod_v2_node_id | default(edge.id)) | to_json }}
   role: agent-proxy
-  region: jp
-  pool: jp-{{ resource_class }}
-  entryPoint: {{ edge.domain | to_json }}
-  domain: {{ edge.domain | to_json }}
+  region: {{ (prod_v2_region | default(edge.region | default('jp'))) | to_json }}
+  pool: {{ (prod_v2_pool | default((prod_v2_region | default(edge.region | default('jp'))) ~ '-' ~ resource_class)) | to_json }}
+  entryPoint: {{ (prod_v2_node_domain | default(edge.domain)) | to_json }}
+  domain: {{ (prod_v2_node_domain | default(edge.domain)) | to_json }}
   openToUsers: true
-  controllerUrl: https://accounts-selfhost-prod-v2.svc.plus
+  controllerUrl: {{ (prod_v2_accounts_url | default('https://' ~ (prod_v2_accounts_domain | default('accounts-selfhost-prod-v2.svc.plus')))) | to_json }}
   apiToken: {{ edge.token | to_json }}
   httpTimeout: 15s
   statusInterval: 30s
