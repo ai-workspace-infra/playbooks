@@ -1,0 +1,33 @@
+---
+- name: Select an immutable PROD V2 GitOps release
+  hosts: v2_control
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Validate the target and immutable release
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == 'web-saas-prod-v2'
+          - prod_v2_gitops_release is match('^prod-v2-[0-9.]+-r[0-9]+$')
+          - prod_v2_previous_release is match('^prod-v2-[0-9.]+-r[0-9]+$')
+    - name: Read the existing deployment controller declaration
+      ansible.builtin.slurp:
+        src: /opt/doco-cd/docker-compose.yml
+      register: prod_v2_doco_compose
+      no_log: true
+    - name: Require the expected previous release
+      ansible.builtin.assert:
+        that: prod_v2_previous_release in (prod_v2_doco_compose.content | b64decode) or prod_v2_gitops_release in (prod_v2_doco_compose.content | b64decode)
+      no_log: true
+    - name: Pin the controller to the new release while preserving credentials
+      ansible.builtin.replace:
+        path: /opt/doco-cd/docker-compose.yml
+        regexp: "{{ prod_v2_previous_release | regex_escape }}"
+        replace: "{{ prod_v2_gitops_release }}"
+        backup: true
+      no_log: true
+      register: prod_v2_pin
+    - name: Reconcile only the deployment controller
+      ansible.builtin.command:
+        argv: [docker, compose, -p, doco-cd, -f, /opt/doco-cd/docker-compose.yml, up, -d, --no-build, app]
+      when: prod_v2_pin.changed
