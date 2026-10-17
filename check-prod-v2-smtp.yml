@@ -1,0 +1,15 @@
+---
+# Independent release gate: no mail is sent and no containers are restarted.
+- name: Verify persisted and running PROD V2 SMTP after reconciliation
+  hosts: v2_control
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Require the intended control host
+      ansible.builtin.assert:
+        that: inventory_hostname == 'web-saas-prod-v2'
+    - name: Check persisted credentials, TLS and SMTP authentication
+      ansible.builtin.script:
+        cmd: scripts/check-accounts-smtp.py --env-file /etc/xcontrol/web-saas/accounts-smtp.env
+        executable: python3
+      changed_when: false
