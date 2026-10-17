@@ -4,12 +4,11 @@
   become: true
   gather_facts: false
   vars:
-    edge: "{{ prod_v2_agents | selectattr('id', 'equalto', prod_v2_node_id | default('')) | first }}"
+    edge: "{{ prod_v2_agents | selectattr('role', 'equalto', resource_class) | first }}"
   tasks:
     - name: Refuse any non-V2 edge
       ansible.builtin.assert:
         that:
-          - inventory_hostname == (prod_v2_node_id | default(inventory_hostname))
           - resource_class in ['free', 'plus', 'team']
     - name: Create independent runtime directories
       ansible.builtin.file:
@@ -23,10 +22,10 @@
         dest: "/usr/local/bin/{{ item.dest }}"
         mode: '0755'
       loop:
-        - {src: xconnect-edge-agent-linux-amd64, dest: xconnect-edge-agent}
-        - {src: caddy-linux-amd64, dest: caddy}
-        - {src: xray/xray, dest: xray}
-        - {src: xray-exporter-linux-amd64, dest: xray-exporter}
+        - {src: "xconnect-edge-agent-linux-{{ arch | default('amd64') }}", dest: xconnect-edge-agent}
+        - {src: "caddy-linux-{{ arch | default('amd64') }}", dest: caddy}
+        - {src: "{{ 'xray-arm64/xray' if (arch | default('amd64')) == 'arm64' else 'xray/xray' }}", dest: xray}
+        - {src: "xray-exporter-linux-{{ arch | default('amd64') }}", dest: xray-exporter}
     - name: Install fixed Xray geodata
       ansible.builtin.copy:
         src: "{{ prod_v2_artifacts_dir }}/edge-artifacts/xray/{{ item }}"
@@ -97,7 +96,7 @@
         dest: "{{ item }}/init.sh"
         owner: "{{ 'root' if item == '/root' else ansible_user }}"
         mode: '0700'
-      loop: [/root, "/home/{{ ansible_user }}"]
+      loop: "{{ ['/root'] if ansible_user == 'root' else ['/root', '/home/' ~ ansible_user] }}"
       no_log: true
     - name: Enable direct ingress and scoped configuration synchronization
       ansible.builtin.systemd_service:
