@@ -24,9 +24,9 @@ class SMTPReleaseContractTest(unittest.TestCase):
         self.assertEqual(read["ansible.builtin.command"]["argv"][4], "{{ item.version | string }}")
         required = next(task for task in tasks if task["name"].startswith("Require fixed secret"))
         self.assertIn("^[1-9][0-9]*$", str(required))
-        writer = next(task for task in tasks if task["name"].startswith("Persist only"))
+        writer = next(task for task in tasks if task["name"].startswith("Persist Accounts SMTP"))
         self.assertTrue(writer["no_log"])
-        self.assertEqual(writer["ansible.builtin.lineinfile"]["path"], "/etc/xcontrol/web-saas/secrets.env")
+        self.assertEqual(writer["ansible.builtin.template"]["dest"], "/etc/xcontrol/web-saas/accounts-smtp.env")
 
 
 if __name__ == "__main__":

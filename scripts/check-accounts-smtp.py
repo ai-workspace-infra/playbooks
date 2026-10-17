@@ -55,7 +55,7 @@ def check(container, env_file):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--container", default="web-saas-accounts")
-    parser.add_argument("--env-file", default="/etc/xcontrol/web-saas/secrets.env")
+    parser.add_argument("--env-file", default="/etc/xcontrol/web-saas/accounts-smtp.env")
     args = parser.parse_args()
     try:
         result = check(args.container, args.env_file)

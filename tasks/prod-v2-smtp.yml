@@ -103,14 +103,12 @@
 - name: Refuse an incomplete replacement environment
   ansible.builtin.assert:
     that: smtp_v2_env.stat.isreg | default(false)
-- name: Persist only declared SMTP keys for this release
-  ansible.builtin.lineinfile:
-    path: /etc/xcontrol/web-saas/secrets.env
-    regexp: "^{{ item.key }}="
-    line: "{{ item.key }}='{{ item.value }}'"
+- name: Persist Accounts SMTP in an isolated environment file
+  ansible.builtin.template:
+    src: templates/prod-v2/accounts-smtp.env.j2
+    dest: /etc/xcontrol/web-saas/accounts-smtp.env
     owner: root
     group: root
     mode: '0600'
-  loop: "{{ prod_services_smtp_env | dict2items }}"
   no_log: true
   diff: false

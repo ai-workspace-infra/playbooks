@@ -1,6 +1,10 @@
 # PROD V2 SMTP release acceptance
 
-The V2 Compose stack reads `/etc/xcontrol/web-saas/secrets.env`. The older
+The V2 Compose stack reads `/etc/xcontrol/web-saas/secrets.env`. Accounts now
+additionally reads `/etc/xcontrol/web-saas/accounts-smtp.env` last, so SMTP
+updates affect Accounts only. Never rewrite the shared environment file for
+SMTP: Compose includes its digest in other services and can recreate PostgreSQL.
+The older
 `prod-services` target reads `services.env`; repairing that file does not repair
 V2. A container restart also retains the old environment. Recreate Accounts
 through the reviewed immutable GitOps/Doco-CD release after rendering secrets.
@@ -29,7 +33,7 @@ set `smtp_secret_provider=gcp_secret_manager`. It reads
 `compose/web-saas/smtp.prod-v2.yaml` and requires numeric versions for the username
 and password secret references; `latest` is rejected. Existing local `gcloud`
 authorization reads them on the deployment controller, under `no_log`, and only
-SMTP keys in the existing V2 environment file change. Cloud Run is untouched.
+SMTP keys in the isolated Accounts SMTP environment file change. Cloud Run is untouched.
 
 `repair-prod-v2-smtp.yml` exposes the same persistence step independently. An
 image tag alone cannot refresh environment credentials: reconcile the immutable
@@ -63,3 +67,7 @@ one authorized existing-account recovery request returned HTTP 202 with no
 SMTP failure logged. The synchronous mailer path completed successfully;
 recipient inbox confirmation remains a separate acceptance step. No reset was
 confirmed and no password was changed.
+
+The first reconciliation also recreated PostgreSQL because SMTP was written
+into the shared environment file. The follow-up isolates SMTP in the Accounts
+file above; PostgreSQL identity/start time must be checked after reconciliation.
