@@ -39,6 +39,15 @@
       ansible.builtin.command:
         argv: [docker, compose, -p, doco-cd, -f, /opt/doco-cd/docker-compose.yml, up, -d, --no-build, app]
       when: prod_v2_pin.changed
+    - name: Wait for Doco-CD to finish the exact selected GitOps revision
+      ansible.builtin.script:
+        cmd: "scripts/check-doco-release.py --revision {{ smtp_tag.stdout }} --target prod-v2"
+        executable: python3
+      changed_when: false
+      register: smtp_doco_release_gate
+      until: smtp_doco_release_gate.rc == 0
+      retries: 60
+      delay: 5
     - name: Wait until Accounts loads the declared SMTP environment
       ansible.builtin.command:
         argv: [docker, inspect, web-saas-accounts]
