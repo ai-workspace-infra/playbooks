@@ -54,3 +54,12 @@ On 2026-10-17, Selfhost transport matched Cloud Run (`smtp.gmail.com:587`,
 authenticated TLS), but both credentials differed from its Secret Manager
 source. The authorized recovery request returned HTTP 500 with SMTP 535.
 This is a credential-source failure, not a successful delivery or a DNS issue.
+
+Recovery in release `prod-v2-2026.10.17-r1` selected the fixed Secret Manager
+versions (`smtp-username/1`, `smtp-password/1`) through the GitOps profile. The
+normal pin playbook persisted the six SMTP fields, Doco-CD recreated Accounts,
+and the authenticated TLS gate passed. At approximately 15:08 Asia/Shanghai,
+one authorized existing-account recovery request returned HTTP 202 with no
+SMTP failure logged. The synchronous mailer path completed successfully;
+recipient inbox confirmation remains a separate acceptance step. No reset was
+confirmed and no password was changed.
