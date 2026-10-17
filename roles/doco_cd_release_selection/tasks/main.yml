@@ -1,0 +1,46 @@
+---
+- name: Require explicit immutable GitOps release selection
+  ansible.builtin.assert:
+    that:
+      - doco_release_repository is match('^https://github.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?$')
+      - doco_release_reference is match('^refs/tags/[A-Za-z0-9][A-Za-z0-9._-]+$')
+      - doco_release_target is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+      - doco_release_interval | int >= 30
+
+- name: Inspect existing reconciler configuration without displaying credentials
+  ansible.builtin.slurp:
+    src: '{{ doco_release_compose }}'
+  register: doco_release_existing
+  no_log: true
+
+- name: Require one existing polling declaration
+  ansible.builtin.assert:
+    that:
+      - (doco_release_existing.content | b64decode | regex_findall('(?m)^      POLL_CONFIG:.*$') | length) == 1
+    fail_msg: Existing Doco-CD must have exactly one polling declaration
+  no_log: true
+
+- name: Select the reviewed tag and target while preserving the installed controller
+  ansible.builtin.replace:
+    path: '{{ doco_release_compose }}'
+    regexp: '(?m)^      POLL_CONFIG:.*$'
+    replace: '      POLL_CONFIG: {{ [{"url": doco_release_repository, "reference": doco_release_reference, "target": doco_release_target, "interval": doco_release_interval | int}] | to_json | quote }}'
+    backup: true
+  no_log: true
+
+- name: Protect controller configuration
+  ansible.builtin.file:
+    path: '{{ doco_release_compose }}'
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Validate controller configuration without printing resolved secrets
+  ansible.builtin.command:
+    argv: [docker, compose, --project-name, '{{ doco_release_project }}', -f, '{{ doco_release_compose }}', config, --quiet]
+  changed_when: false
+
+- name: Recreate only the existing release reconciler
+  ansible.builtin.command:
+    argv: [docker, compose, --project-name, '{{ doco_release_project }}', -f, '{{ doco_release_compose }}', up, -d, --force-recreate, app]
+  changed_when: true
