@@ -7,15 +7,40 @@
     - name: Refuse an existing production host
       ansible.builtin.assert:
         that: inventory_hostname == 'web-saas-prod-v2'
-    - name: Restrict Billing ingress to the IaC-derived edge addresses
+    - name: Load the release-owned GitOps ingress policy
+      ansible.builtin.include_vars:
+        file: "{{ prod_v2_gitops_checkout }}/compose/web-saas/billing-ingress.prod-v2.yaml"
+        name: prod_v2_billing_policy
+    - name: Validate policy identity
+      ansible.builtin.assert:
+        that:
+          - prod_v2_billing_policy.kind == 'BillingIngressPolicy'
+          - prod_v2_billing_policy.metadata.name == inventory_hostname
+          - prod_v2_billing_policy.metadata.environment == 'prod'
+          - prod_v2_billing_policy.spec.allowed_cidrs | length > 0
+    - name: Reject invalid or unrestricted source networks
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - "import ipaddress,json,sys; nets=[ipaddress.ip_network(x, strict=True) for x in json.load(sys.stdin)]; assert all(n.prefixlen > 0 for n in nets)"
+        stdin: "{{ prod_v2_billing_policy.spec.allowed_cidrs | to_json }}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+    - name: Restrict Billing ingress to the GitOps source networks
       ansible.builtin.replace:
         path: /etc/xcontrol/web-saas/Caddyfile
         regexp: '@billing_agent remote_ip [^\n]+'
         replace: '@billing_agent remote_ip {{ web_saas_host_config_billing_allowed_cidrs }}'
+        backup: true
+      register: prod_v2_billing_ingress
     - name: Validate restricted ingress before restart
       ansible.builtin.command:
         argv: [docker, exec, web-saas-caddy, caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
       changed_when: false
-    - name: Restart only the new ingress
+    # This deployment disables the Caddy admin API. Restart only this
+    # container after validation, including retries after an interrupted apply.
+    - name: Activate the validated ingress
       ansible.builtin.command:
         argv: [docker, restart, web-saas-caddy]
