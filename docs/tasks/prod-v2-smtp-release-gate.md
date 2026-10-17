@@ -65,9 +65,16 @@ normal pin playbook persisted the six SMTP fields, Doco-CD recreated Accounts,
 and the authenticated TLS gate passed. At approximately 15:08 Asia/Shanghai,
 one authorized existing-account recovery request returned HTTP 202 with no
 SMTP failure logged. The synchronous mailer path completed successfully;
-recipient inbox confirmation remains a separate acceptance step. No reset was
-confirmed and no password was changed.
+the authorized recipient subsequently confirmed receipt. No reset was
+confirmed and no password was changed. No verification/reset token was captured.
 
 The first reconciliation also recreated PostgreSQL because SMTP was written
 into the shared environment file. The follow-up isolates SMTP in the Accounts
 file above; PostgreSQL identity/start time must be checked after reconciliation.
+
+Follow-up release `prod-v2-2026.10.17-r3`, GitOps commit
+`4ef54be98323010d4d0da19de89d78245b12be43`, appended the dedicated environment
+file to Accounts only. A repeat run at 15:12–15:13 Asia/Shanghai completed with
+`ok=26 changed=0 failed=0`: the exact-revision Doco-CD success gate, SMTP TLS
+authentication, and unchanged PostgreSQL identity/start time/mounts all passed.
+This proves idempotent source persistence and isolation across reconciliation.
