@@ -1,0 +1,19 @@
+[Unit]
+Description=CMDB isolated host metrics exporter
+After=network.target
+
+[Service]
+DynamicUser=yes
+ExecStart=/opt/cmdb-monitoring/node_exporter --web.listen-address=127.0.0.1:19100 --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run)($|/)
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+CPUQuota=10%
+MemoryMax=96M
+TasksMax=32
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

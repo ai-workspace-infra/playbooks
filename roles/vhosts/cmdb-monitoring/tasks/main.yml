@@ -1,0 +1,163 @@
+---
+- name: Validate lifecycle operation
+  ansible.builtin.assert:
+    that:
+      - cmdb_monitoring_state in ['present', 'stopped']
+
+- name: Stop only the isolated agents for rollback (retain configuration)
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop:
+    - cmdb-metrics-agent
+    - cmdb-node-exporter
+  when: cmdb_monitoring_state == 'stopped'
+
+- name: Install isolated monitoring
+  when: cmdb_monitoring_state == 'present'
+  block:
+    - name: Validate target and reviewed artifact tuple
+      ansible.builtin.assert:
+        that:
+          - ansible_service_mgr == 'systemd'
+          - ansible_architecture == 'x86_64'
+          - cmdb_monitoring_environment | length > 0
+          - cmdb_monitoring_provider | length > 0
+          - cmdb_monitoring_instance | length > 0
+          - cmdb_monitoring_endpoint is match('^https://[^/]+/ingest/metrics/api/v1/write$')
+          - >-
+            (cmdb_monitoring_vector_version ~ '/' ~ cmdb_monitoring_node_version ~ '/' ~ ansible_architecture)
+            in cmdb_monitoring_archive_pins
+
+    - name: Discover existing collection services
+      ansible.builtin.service_facts:
+
+    - name: Reject duplicate collection alongside the existing Vector service
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services.get('vector.service', {}).get('state', 'stopped') != 'running'
+        fail_msg: Existing Vector is running; use its current profile rather than installing a second collector.
+
+    - name: Require runtime ingest credentials (no default password)
+      ansible.builtin.assert:
+        that:
+          - cmdb_monitoring_auth_user | length > 0
+          - cmdb_monitoring_auth_password | length > 0
+      no_log: true
+
+    - name: Select reviewed archive hashes
+      ansible.builtin.set_fact:
+        cmdb_monitoring_pins: >-
+          {{ cmdb_monitoring_archive_pins[
+            cmdb_monitoring_vector_version ~ '/' ~ cmdb_monitoring_node_version ~ '/' ~ ansible_architecture] }}
+
+    - name: Create binary and cache directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - /opt/cmdb-monitoring
+        - /var/cache/cmdb-monitoring
+
+    - name: Create restricted credential directory
+      ansible.builtin.file:
+        path: /etc/cmdb-monitoring
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Download checksum-pinned official release archives
+      ansible.builtin.get_url:
+        url: "{{ item.url }}"
+        dest: "/var/cache/cmdb-monitoring/{{ item.name }}.tar.gz"
+        checksum: "sha256:{{ item.checksum }}"
+        mode: '0644'
+      loop:
+        - name: vector
+          url: "https://github.com/vectordotdev/vector/releases/download/v{{ cmdb_monitoring_vector_version }}/vector-{{ cmdb_monitoring_vector_version }}-x86_64-unknown-linux-gnu.tar.gz"
+          checksum: "{{ cmdb_monitoring_pins.vector }}"
+        - name: node
+          url: "https://github.com/prometheus/node_exporter/releases/download/v{{ cmdb_monitoring_node_version }}/node_exporter-{{ cmdb_monitoring_node_version }}.linux-amd64.tar.gz"
+          checksum: "{{ cmdb_monitoring_pins.node }}"
+      when: not ansible_check_mode
+
+    - name: Extract verified archives into the private cache
+      ansible.builtin.unarchive:
+        src: "/var/cache/cmdb-monitoring/{{ item }}.tar.gz"
+        dest: /var/cache/cmdb-monitoring
+        remote_src: true
+      loop: [vector, node]
+      when: not ansible_check_mode
+
+    - name: Locate exactly one release binary per archive
+      ansible.builtin.find:
+        paths: /var/cache/cmdb-monitoring
+        patterns: "{{ item }}"
+        file_type: file
+        recurse: true
+      loop: [vector, node_exporter]
+      register: cmdb_monitoring_binaries
+      when: not ansible_check_mode
+
+    - name: Reject ambiguous extracted binaries
+      ansible.builtin.assert:
+        that: item.matched == 1
+      loop: "{{ cmdb_monitoring_binaries.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: not ansible_check_mode
+
+    - name: Install isolated binaries
+      ansible.builtin.copy:
+        src: "{{ item.files[0].path }}"
+        dest: "/opt/cmdb-monitoring/{{ item.item }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0755'
+      loop: "{{ cmdb_monitoring_binaries.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      notify:
+        - Restart isolated exporter
+        - Restart isolated forwarding agent
+      when: not ansible_check_mode
+
+    - name: Validate configuration before replacing the credential file
+      ansible.builtin.template:
+        src: vector.toml.j2
+        dest: /etc/cmdb-monitoring/vector.toml
+        owner: root
+        group: root
+        mode: '0600'
+        validate: /opt/cmdb-monitoring/vector validate --no-environment --config-toml %s
+      no_log: true
+      diff: false
+      notify: Restart isolated forwarding agent
+      when: not ansible_check_mode
+
+    - name: Install only the isolated monitoring units
+      ansible.builtin.template:
+        src: "{{ item }}.service.j2"
+        dest: "/etc/systemd/system/{{ item }}.service"
+        owner: root
+        group: root
+        mode: '0644'
+      loop: [cmdb-node-exporter, cmdb-metrics-agent]
+      notify:
+        - Restart isolated exporter
+        - Restart isolated forwarding agent
+
+    - name: Enable the isolated monitoring services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        daemon_reload: true
+        enabled: true
+        state: started
+      loop: [cmdb-node-exporter, cmdb-metrics-agent]
+      when: not ansible_check_mode
