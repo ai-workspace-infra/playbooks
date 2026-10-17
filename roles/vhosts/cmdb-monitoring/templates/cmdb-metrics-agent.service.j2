@@ -1,0 +1,23 @@
+[Unit]
+Description=CMDB isolated metrics forwarding agent
+After=network-online.target cmdb-node-exporter.service
+Wants=network-online.target cmdb-node-exporter.service
+
+[Service]
+DynamicUser=yes
+StateDirectory=cmdb-monitoring
+LoadCredential=vector.toml:/etc/cmdb-monitoring/vector.toml
+ExecStart=/opt/cmdb-monitoring/vector --config-toml %d/vector.toml --threads 1
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+CPUQuota=10%
+MemoryMax=160M
+TasksMax=48
+LimitNOFILE=8192
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

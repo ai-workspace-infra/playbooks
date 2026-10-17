@@ -1,0 +1,14 @@
+---
+- name: Restart isolated exporter
+  ansible.builtin.systemd_service:
+    name: cmdb-node-exporter
+    state: restarted
+    daemon_reload: true
+  when: not ansible_check_mode
+
+- name: Restart isolated forwarding agent
+  ansible.builtin.systemd_service:
+    name: cmdb-metrics-agent
+    state: restarted
+    daemon_reload: true
+  when: not ansible_check_mode

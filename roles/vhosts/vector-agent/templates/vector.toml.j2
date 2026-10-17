@@ -161,6 +161,12 @@ source = '''
 .tags.environment = "{{ vector_observability_environment }}"
 .tags.env = "{{ vector_observability_environment }}"
 .tags.provider = "{{ vector_observability_provider }}"
+{% if vector_observability_project_id | default('') | length > 0 %}
+.tags.project_id = {{ vector_observability_project_id | to_json }}
+{% endif %}
+{% if vector_observability_logical_project | default('') | length > 0 %}
+.tags.logical_project = {{ vector_observability_logical_project | to_json }}
+{% endif %}
 .tags.service_domain = "{{ vector_observability_service_domain }}"
 .tags.job = "vector"
 if exists(.name) && starts_with(string!(.name), "node_") {

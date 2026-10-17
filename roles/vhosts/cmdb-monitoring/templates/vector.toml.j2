@@ -1,0 +1,36 @@
+data_dir = "/var/lib/cmdb-monitoring"
+
+[sources.node]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:19100/metrics"]
+scrape_interval_secs = 30
+
+[transforms.labels]
+type = "remap"
+inputs = ["node"]
+source = '''
+.tags.instance = {{ cmdb_monitoring_instance | to_json }}
+.tags.job = "node-exporter"
+.tags.provider = {{ cmdb_monitoring_provider | to_json }}
+.tags.project_id = {{ cmdb_monitoring_project_id | to_json }}
+{% if cmdb_monitoring_logical_project | length > 0 %}
+.tags.logical_project = {{ cmdb_monitoring_logical_project | to_json }}
+{% endif %}
+.tags.environment = {{ cmdb_monitoring_environment | to_json }}
+.tags.env = {{ cmdb_monitoring_environment | to_json }}
+.tags.service_domain = {{ cmdb_monitoring_instance | to_json }}
+'''
+
+[sinks.metrics]
+type = "prometheus_remote_write"
+inputs = ["labels"]
+endpoint = {{ cmdb_monitoring_endpoint | to_json }}
+batch.timeout_secs = 5
+buffer.type = "memory"
+buffer.max_events = 500
+buffer.when_full = "drop_newest"
+
+[sinks.metrics.auth]
+strategy = "basic"
+user = {{ cmdb_monitoring_auth_user | to_json }}
+password = {{ cmdb_monitoring_auth_password | to_json }}
