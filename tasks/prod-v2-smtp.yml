@@ -37,6 +37,12 @@
     that:
       - smtp_head.stdout == smtp_tag.stdout
       - smtp_profile_status.stdout | trim | length == 0
+- name: Require the selected profile to be tracked in the release
+  ansible.builtin.command:
+    argv: [git, -C, "{{ smtp_checkout }}", ls-files, --error-unmatch, "{{ 'compose/web-saas/smtp.prod-v2.yaml' if smtp_provider == 'gcp_secret_manager' else 'topology/prod/runtime-selection.yaml' }}"]
+  delegate_to: localhost
+  become: false
+  changed_when: false
 - name: Read the fixed Secret Manager profile
   ansible.builtin.set_fact:
     smtp_profile: "{{ (lookup('ansible.builtin.file', smtp_checkout ~ '/compose/web-saas/smtp.prod-v2.yaml') | from_yaml).spec }}"
