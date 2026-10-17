@@ -1,0 +1,49 @@
+---
+# Render only the declared SMTP keys. Recreate Accounts through Doco-CD after
+# this play, then run check-prod-v2-smtp.yml; docker restart is insufficient.
+- name: Restore PROD V2 SMTP from its declared Vault source
+  hosts: v2_control
+  become: true
+  gather_facts: false
+  vars:
+    prod_services_gitops_checkout: "{{ lookup('ansible.builtin.env', 'GITOPS_CHECKOUT') }}"
+    prod_services_gitops_ref: "{{ lookup('ansible.builtin.env', 'GITOPS_REF') }}"
+    prod_services_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+  tasks:
+    - name: Require the intended host, immutable release and runtime Vault access
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == 'web-saas-prod-v2'
+          - prod_services_gitops_checkout | length > 0
+          - prod_services_gitops_ref is match('^refs/tags/prod-v2-[0-9.]+-r[0-9]+$')
+          - prod_services_vault_token | length > 0
+      no_log: true
+    - name: Require the reviewed checkout to match the selected release
+      ansible.builtin.command:
+        argv: [git, -C, "{{ prod_services_gitops_checkout }}", diff, --exit-code, "{{ prod_services_gitops_ref }}", --]
+      delegate_to: localhost
+      become: false
+      changed_when: false
+    - name: Read the release-owned SMTP references
+      ansible.builtin.set_fact:
+        prod_services_selection: "{{ (lookup('ansible.builtin.file', prod_services_gitops_checkout ~ '/topology/prod/runtime-selection.yaml') | from_yaml).spec }}"
+    - name: Resolve declared transport and credentials through the shared owner
+      ansible.builtin.include_tasks: roles/web_saas_prod_services/tasks/smtp.yml
+    - name: Require the existing V2 environment file
+      ansible.builtin.stat:
+        path: /etc/xcontrol/web-saas/secrets.env
+      register: smtp_v2_env
+    - name: Refuse to create an incomplete replacement environment
+      ansible.builtin.assert:
+        that: smtp_v2_env.stat.isreg | default(false)
+    - name: Persist only SMTP values consumed by the V2 stack
+      ansible.builtin.lineinfile:
+        path: /etc/xcontrol/web-saas/secrets.env
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}='{{ item.value }}'"
+        owner: root
+        group: root
+        mode: '0600'
+      loop: "{{ prod_services_smtp_env | dict2items }}"
+      no_log: true
+      diff: false
