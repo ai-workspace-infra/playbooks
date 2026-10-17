@@ -19,6 +19,14 @@
       ansible.builtin.assert:
         that: prod_v2_previous_release in (prod_v2_doco_compose.content | b64decode) or prod_v2_gitops_release in (prod_v2_doco_compose.content | b64decode)
       no_log: true
+    - name: Resolve and persist SMTP from the same immutable release
+      ansible.builtin.include_tasks: tasks/prod-v2-smtp.yml
+    - name: Capture the retained database runtime before release reconciliation
+      ansible.builtin.command:
+        argv: [docker, inspect, web-saas-postgresql]
+      register: smtp_database_before
+      changed_when: false
+      no_log: true
     - name: Pin the controller to the new release while preserving credentials
       ansible.builtin.replace:
         path: /opt/doco-cd/docker-compose.yml
@@ -31,3 +39,49 @@
       ansible.builtin.command:
         argv: [docker, compose, -p, doco-cd, -f, /opt/doco-cd/docker-compose.yml, up, -d, --no-build, app]
       when: prod_v2_pin.changed
+    - name: Wait for Doco-CD to finish the exact selected GitOps revision
+      ansible.builtin.script:
+        cmd: "scripts/check-doco-release.py --revision {{ smtp_tag.stdout }} --target prod-v2"
+        executable: python3
+      changed_when: false
+      register: smtp_doco_release_gate
+      until: smtp_doco_release_gate.rc == 0
+      retries: 60
+      delay: 5
+    - name: Wait until Accounts loads the declared SMTP environment
+      ansible.builtin.command:
+        argv: [docker, inspect, web-saas-accounts]
+      register: smtp_accounts_after
+      changed_when: false
+      no_log: true
+      until: >-
+        ('SMTP_PASSWORD=' ~ prod_services_smtp_env.SMTP_PASSWORD) in
+        (smtp_accounts_after.stdout | from_json)[0].Config.Env
+        and ('SMTP_USERNAME=' ~ prod_services_smtp_env.SMTP_USERNAME) in
+        (smtp_accounts_after.stdout | from_json)[0].Config.Env
+        and ('SMTP_TLS_MODE=' ~ prod_services_smtp_env.SMTP_TLS_MODE) in
+        (smtp_accounts_after.stdout | from_json)[0].Config.Env
+      retries: 60
+      delay: 5
+    - name: Require authenticated SMTP after Doco-CD reconciliation
+      ansible.builtin.script:
+        cmd: scripts/check-accounts-smtp.py --env-file /etc/xcontrol/web-saas/accounts-smtp.env
+        executable: python3
+      changed_when: false
+      register: smtp_release_gate
+      until: smtp_release_gate.rc == 0
+      retries: 3
+      delay: 5
+    - name: Capture the retained database runtime after release reconciliation
+      ansible.builtin.command:
+        argv: [docker, inspect, web-saas-postgresql]
+      register: smtp_database_after
+      changed_when: false
+      no_log: true
+    - name: Require unchanged database container, start time and data mounts
+      ansible.builtin.assert:
+        that:
+          - (smtp_database_before.stdout | from_json)[0].Id == (smtp_database_after.stdout | from_json)[0].Id
+          - (smtp_database_before.stdout | from_json)[0].State.StartedAt == (smtp_database_after.stdout | from_json)[0].State.StartedAt
+          - (smtp_database_before.stdout | from_json)[0].Mounts == (smtp_database_after.stdout | from_json)[0].Mounts
+      no_log: true

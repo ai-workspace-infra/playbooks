@@ -1,0 +1,80 @@
+# PROD V2 SMTP release acceptance
+
+The V2 Compose stack reads `/etc/xcontrol/web-saas/secrets.env`. Accounts now
+additionally reads `/etc/xcontrol/web-saas/accounts-smtp.env` last, so SMTP
+updates affect Accounts only. Never rewrite the shared environment file for
+SMTP: Compose includes its digest in other services and can recreate PostgreSQL.
+The older
+`prod-services` target reads `services.env`; repairing that file does not repair
+V2. A container restart also retains the old environment. Recreate Accounts
+through the reviewed immutable GitOps/Doco-CD release after rendering secrets.
+
+Use the environment's declared Vault SMTP source, never copied credentials in
+Git or a manually maintained second dotenv file. PROD currently declares
+`vault://kv/prod/platform/smtp/google` with `username` and `password` keys in
+`topology/prod/runtime-selection.yaml`. Cloud Run uses Secret Manager references
+`smtp-username` and `smtp-password`; matching transport settings alone do not
+prove matching or valid credentials.
+
+Before and after a release, run the independent, non-delivery gate:
+
+```sh
+ansible-playbook -i /path/to/reviewed-inventory.ini check-prod-v2-smtp.yml
+```
+
+The normal `pin-prod-v2-doco-release.yml` release path now resolves and persists
+SMTP before switching Doco-CD, waits for Accounts to load it, and requires SMTP
+authentication before completing. Pass `prod_v2_gitops_checkout` and the exact
+`prod_v2_gitops_release`; tracked profile files must match that release commit.
+
+The default `smtp_secret_provider=vault` reuses the existing Vault resolver with
+runtime-only `VAULT_TOKEN`. For V2's explicitly declared Secret Manager source,
+set `smtp_secret_provider=gcp_secret_manager`. It reads
+`compose/web-saas/smtp.prod-v2.yaml` and requires numeric versions for the username
+and password secret references; `latest` is rejected. Existing local `gcloud`
+authorization reads them on the deployment controller, under `no_log`, and only
+SMTP keys in the isolated Accounts SMTP environment file change. Cloud Run is untouched.
+
+`repair-prod-v2-smtp.yml` exposes the same persistence step independently. An
+image tag alone cannot refresh environment credentials: reconcile the immutable
+Accounts release with Doco-CD afterwards and run the authentication gate.
+
+This compares the persisted SMTP values against the running Accounts container,
+requires encrypted submission, validates the server certificate, and performs
+SMTP authentication. It sends zero messages and prints no credentials. A 535
+result identifies rejected credentials; it must not be reported as successful
+mail acceptance even if Accounts `/readyz` returns 200.
+
+After that gate passes, test one explicitly authorized recipient through the
+Accounts business API. `/api/auth/register/send` returns 409 for an already
+verified account; use the authorized account's password recovery request when
+testing that flow, without confirming or changing its password. An enumeration
+safe HTTP 202 is insufficient proof on its own: verify the account exists and
+the handler reached the synchronous SMTP send, inspect sanitized failure logs,
+and obtain recipient receipt confirmation. Never capture OTPs/reset tokens in
+release evidence.
+
+On 2026-10-17, Selfhost transport matched Cloud Run (`smtp.gmail.com:587`,
+authenticated TLS), but both credentials differed from its Secret Manager
+source. The authorized recovery request returned HTTP 500 with SMTP 535.
+This is a credential-source failure, not a successful delivery or a DNS issue.
+
+Recovery in release `prod-v2-2026.10.17-r1` selected the fixed Secret Manager
+versions (`smtp-username/1`, `smtp-password/1`) through the GitOps profile. The
+normal pin playbook persisted the six SMTP fields, Doco-CD recreated Accounts,
+and the authenticated TLS gate passed. At approximately 15:08 Asia/Shanghai,
+one authorized existing-account recovery request returned HTTP 202 with no
+SMTP failure logged. The synchronous mailer path completed successfully;
+the authorized recipient subsequently confirmed receipt. No reset was
+confirmed and no password was changed. No verification/reset token was captured.
+
+The first reconciliation also recreated PostgreSQL because SMTP was written
+into the shared environment file. The follow-up isolates SMTP in the Accounts
+file above; PostgreSQL identity/start time must be checked after reconciliation.
+
+Follow-up release `prod-v2-2026.10.17-r3`, GitOps commit
+`4ef54be98323010d4d0da19de89d78245b12be43`, appended the dedicated environment
+file to Accounts only. A repeat run at 15:12–15:13 Asia/Shanghai completed with
+`ok=26 changed=0 failed=0`: the exact-revision Doco-CD success gate, SMTP TLS
+authentication, and unchanged PostgreSQL identity/start time/mounts all passed.
+This proves idempotent source persistence and isolation across reconciliation.
