@@ -1,0 +1,36 @@
+---
+- name: Validate explicit application role, schema version and table allowlist
+  ansible.builtin.assert:
+    that:
+      - migration_grants_container == 'web-saas-postgresql'
+      - migration_grants_database == 'account'
+      - migration_grants_role is match('^[a-z_][a-z0-9_]*$')
+      - migration_grants_version | string is match('^[1-9][0-9]*$')
+      - migration_grants_tables | length > 0
+      - migration_grants_tables | select('match', '^[a-z_][a-z0-9_]*$') | list | length == migration_grants_tables | length
+      - '"users" not in migration_grants_tables'
+      - '"schema_migrations" not in migration_grants_tables'
+      - '"accounts_controlled_migration_history" not in migration_grants_tables'
+
+- name: Grant application DML only on reviewed new tables at an exact clean checkpoint
+  ansible.builtin.command:
+    argv: [docker, exec, -i, '{{ migration_grants_container }}', psql, -X, -U, postgres, -d, '{{ migration_grants_database }}', -v, ON_ERROR_STOP=1]
+    stdin: |
+      BEGIN;
+      SET LOCAL lock_timeout='15s';
+      SET LOCAL statement_timeout='59s';
+      DO $guard$
+      BEGIN
+        IF (SELECT count(*) FROM public.schema_migrations) <> 1 OR
+           NOT EXISTS (SELECT 1 FROM public.schema_migrations WHERE version={{ migration_grants_version | int }} AND dirty=false) THEN
+          RAISE EXCEPTION 'Expected clean migration checkpoint required';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='{{ migration_grants_role }}' AND NOT rolsuper) THEN
+          RAISE EXCEPTION 'Existing non-superuser application role required';
+        END IF;
+      END $guard$;
+      {% for table in migration_grants_tables %}
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public."{{ table }}" TO "{{ migration_grants_role }}";
+      {% endfor %}
+      COMMIT;
+  changed_when: true
