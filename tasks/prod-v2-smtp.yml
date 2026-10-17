@@ -1,0 +1,110 @@
+---
+- name: Resolve explicit SMTP deployment inputs
+  ansible.builtin.set_fact:
+    smtp_checkout: "{{ prod_v2_gitops_checkout | default(lookup('ansible.builtin.env', 'GITOPS_CHECKOUT'), true) }}"
+    smtp_release_ref: "refs/tags/{{ prod_v2_gitops_release }}"
+    smtp_provider: "{{ smtp_secret_provider | default('vault') }}"
+- name: Require the intended host and immutable source
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname == 'web-saas-prod-v2'
+      - smtp_checkout | length > 0
+      - prod_v2_gitops_release is match('^prod-v2-[0-9.]+-r[0-9]+$')
+      - smtp_provider in ['vault', 'gcp_secret_manager']
+- name: Resolve the exact checked-out commit
+  ansible.builtin.command:
+    argv: [git, -C, "{{ smtp_checkout }}", rev-parse, HEAD]
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: smtp_head
+- name: Resolve the exact release commit
+  ansible.builtin.command:
+    argv: [git, -C, "{{ smtp_checkout }}", rev-parse, "{{ smtp_release_ref }}^{commit}"]
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: smtp_tag
+- name: Require an unmodified tracked release profile
+  ansible.builtin.command:
+    argv: [git, -C, "{{ smtp_checkout }}", status, --porcelain, --untracked-files=all, --, compose/web-saas/smtp.prod-v2.yaml, topology/prod/runtime-selection.yaml]
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: smtp_profile_status
+- name: Reject source drift
+  ansible.builtin.assert:
+    that:
+      - smtp_head.stdout == smtp_tag.stdout
+      - smtp_profile_status.stdout | trim | length == 0
+- name: Read the fixed Secret Manager profile
+  ansible.builtin.set_fact:
+    smtp_profile: "{{ (lookup('ansible.builtin.file', smtp_checkout ~ '/compose/web-saas/smtp.prod-v2.yaml') | from_yaml).spec }}"
+  when: smtp_provider == 'gcp_secret_manager'
+- name: Require fixed secret references and encrypted submission
+  ansible.builtin.assert:
+    that:
+      - smtp_profile.provider == 'gcp_secret_manager'
+      - smtp_profile.project is match('^[a-z][a-z0-9-]+$')
+      - smtp_profile.username.secret is match('^[A-Za-z0-9_-]+$')
+      - smtp_profile.password.secret is match('^[A-Za-z0-9_-]+$')
+      - smtp_profile.username.version | string is match('^[1-9][0-9]*$')
+      - smtp_profile.password.version | string is match('^[1-9][0-9]*$')
+      - smtp_profile.transport.tls_mode in ['starttls', 'implicit']
+  when: smtp_provider == 'gcp_secret_manager'
+- name: Read the release-pinned SMTP secrets through existing GCP authorization
+  ansible.builtin.command:
+    argv: [gcloud, secrets, versions, access, "{{ item.version | string }}", "--secret={{ item.secret }}", "--project={{ smtp_profile.project }}"]
+  loop: "{{ [smtp_profile.username, smtp_profile.password] }}"
+  register: smtp_secret_values
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  no_log: true
+  when: smtp_provider == 'gcp_secret_manager'
+- name: Resolve the Secret Manager SMTP environment
+  ansible.builtin.set_fact:
+    prod_services_smtp_env:
+      SMTP_HOST: "{{ smtp_profile.transport.host }}"
+      SMTP_PORT: "{{ smtp_profile.transport.port | string }}"
+      SMTP_FROM: "{{ smtp_profile.transport.from }}"
+      SMTP_TLS_MODE: "{{ smtp_profile.transport.tls_mode }}"
+      SMTP_USERNAME: "{{ smtp_secret_values.results[0].stdout }}"
+      SMTP_PASSWORD: "{{ smtp_secret_values.results[1].stdout }}"
+  no_log: true
+  when: smtp_provider == 'gcp_secret_manager'
+- name: Resolve the default Vault-backed profile
+  when: smtp_provider == 'vault'
+  block:
+    - name: Load the declared Vault references
+      ansible.builtin.set_fact:
+        prod_services_selection: "{{ (lookup('ansible.builtin.file', smtp_checkout ~ '/topology/prod/runtime-selection.yaml') | from_yaml).spec }}"
+        prod_services_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+      no_log: true
+    - name: Resolve credentials through the existing Vault owner
+      ansible.builtin.include_tasks: ../roles/web_saas_prod_services/tasks/smtp.yml
+- name: Reject blank values and unsupported dotenv or YAML characters
+  ansible.builtin.assert:
+    that:
+      - item.value | string | trim | length > 0
+      - item.value | string is not search("[\\r\\n'\"\\\\$]")
+  loop: "{{ prod_services_smtp_env | dict2items }}"
+  no_log: true
+- name: Require the existing V2 environment file
+  ansible.builtin.stat:
+    path: /etc/xcontrol/web-saas/secrets.env
+  register: smtp_v2_env
+- name: Refuse an incomplete replacement environment
+  ansible.builtin.assert:
+    that: smtp_v2_env.stat.isreg | default(false)
+- name: Persist only declared SMTP keys for this release
+  ansible.builtin.lineinfile:
+    path: /etc/xcontrol/web-saas/secrets.env
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}='{{ item.value }}'"
+    owner: root
+    group: root
+    mode: '0600'
+  loop: "{{ prod_services_smtp_env | dict2items }}"
+  no_log: true
+  diff: false

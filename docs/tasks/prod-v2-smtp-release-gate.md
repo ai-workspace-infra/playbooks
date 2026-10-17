@@ -18,14 +18,22 @@ Before and after a release, run the independent, non-delivery gate:
 ansible-playbook -i /path/to/reviewed-inventory.ini check-prod-v2-smtp.yml
 ```
 
-For credential recovery, set `GITOPS_CHECKOUT`,
-`GITOPS_REF=refs/tags/prod-v2-YYYY.MM.DD-rN` and runtime-only `VAULT_TOKEN`,
-then run `repair-prod-v2-smtp.yml` against the reviewed inventory. It reuses the
-existing Vault SMTP resolver and updates only SMTP keys in the existing V2
-environment file, preserving database/auth credentials. Reconcile the immutable
-Accounts release with Doco-CD afterwards and rerun the gate. This step is also
-required when the Vault credential version changes; an image tag alone cannot
-refresh environment credentials.
+The normal `pin-prod-v2-doco-release.yml` release path now resolves and persists
+SMTP before switching Doco-CD, waits for Accounts to load it, and requires SMTP
+authentication before completing. Pass `prod_v2_gitops_checkout` and the exact
+`prod_v2_gitops_release`; tracked profile files must match that release commit.
+
+The default `smtp_secret_provider=vault` reuses the existing Vault resolver with
+runtime-only `VAULT_TOKEN`. For V2's explicitly declared Secret Manager source,
+set `smtp_secret_provider=gcp_secret_manager`. It reads
+`compose/web-saas/smtp.prod-v2.yaml` and requires numeric versions for the username
+and password secret references; `latest` is rejected. Existing local `gcloud`
+authorization reads them on the deployment controller, under `no_log`, and only
+SMTP keys in the existing V2 environment file change. Cloud Run is untouched.
+
+`repair-prod-v2-smtp.yml` exposes the same persistence step independently. An
+image tag alone cannot refresh environment credentials: reconcile the immutable
+Accounts release with Doco-CD afterwards and run the authentication gate.
 
 This compares the persisted SMTP values against the running Accounts container,
 requires encrypted submission, validates the server certificate, and performs
