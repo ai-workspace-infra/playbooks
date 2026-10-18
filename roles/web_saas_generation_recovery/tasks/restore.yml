@@ -27,6 +27,14 @@
   no_log: true
 
 - name: Restore with checksum, new-database and exact identity guards
+  ansible.builtin.copy:
+    src: restore_new_generation.py
+    dest: /usr/local/libexec/web-saas-generation-recovery/restore.py
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Run the reviewed restore executor with exact identity guards
   ansible.builtin.command:
     argv:
       - python3

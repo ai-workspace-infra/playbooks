@@ -13,7 +13,7 @@
 - name: Require an exact isolated generation from the IaC inventory
   ansible.builtin.assert:
     that:
-      - web_saas_recovery_phase in ['preflight', 'prepare', 'restore', 'deploy', 'verify']
+      - web_saas_recovery_phase in ['preflight', 'prepare', 'restore', 'deploy', 'verify', 'quarantine_empty_failure']
       - recovery.kind == 'WebSaaSGenerationRecovery'
       - recovery.target.generation is match('^prod-v[1-9][0-9]*$')
       - recovery.source.generation is match('^prod-v[1-9][0-9]*$')
@@ -156,3 +156,7 @@
 - name: Verify the generation data without modifying it
   ansible.builtin.include_tasks: verify.yml
   when: web_saas_recovery_phase == 'verify'
+
+- name: Preserve an explicitly inspected empty failed database under its OID
+  ansible.builtin.include_tasks: quarantine.yml
+  when: web_saas_recovery_phase == 'quarantine_empty_failure'

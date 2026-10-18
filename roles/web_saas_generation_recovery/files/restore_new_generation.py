@@ -43,6 +43,10 @@ def database_identity():
     return {"database_oid": oid, "system_identifier": system}
 
 
+def archive_creates_public(toc):
+    return re.search(r"^\d+; \d+ \d+ SCHEMA - public(?: |$)", toc, re.MULTILINE) is not None
+
+
 def state(counts):
     row = pg("SELECT version::text || ':' || dirty::text FROM public.schema_migrations",
              "account")
@@ -166,7 +170,11 @@ def main():
         # object is template0's empty public schema in the DB created just here.
         run(["docker", "exec", "web-saas-postgresql", "createdb", "-U", "postgres",
              "--template=template0", "account"])
-        pg("DROP SCHEMA public", "account")
+        with archive.open("rb") as fh:
+            toc = run(["docker", "exec", "-i", "web-saas-postgresql",
+                       "pg_restore", "--list"], source=fh)
+        if archive_creates_public(toc):
+            pg("DROP SCHEMA public", "account")
         with archive.open("rb") as fh:
             run(["docker", "exec", "-i", "web-saas-postgresql", "pg_restore", "-U", "postgres",
                  "--dbname=account", "--no-owner", "--no-privileges",
@@ -198,5 +206,6 @@ if __name__ == "__main__":
     except Exception as exc:
         # Never emit SQL, connection values, subprocess stderr or row contents.
         print(json.dumps({"result": "stopped", "reason": type(exc).__name__,
+                          "detail": str(exc) if isinstance(exc, ValueError) else "execution failed",
                           "target_preserved": True}), file=sys.stderr)
         sys.exit(2)

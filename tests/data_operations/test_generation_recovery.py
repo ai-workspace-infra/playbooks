@@ -35,6 +35,10 @@ class GenerationRecoveryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.contract(digest="../account.dump")
 
+    def test_historical_archive_reuses_default_public(self):
+        self.assertFalse(restore.archive_creates_public("2; 3079 16390 EXTENSION - pgcrypto\n"))
+        self.assertTrue(restore.archive_creates_public("5; 2615 2200 SCHEMA - public postgres\n"))
+
     def test_no_implicit_cleanup_or_production_secret_copy(self):
         text = (ROOT / "roles/web_saas_generation_recovery/files/restore_new_generation.py").read_text()
         self.assertNotIn("DROP DATABASE", text)
