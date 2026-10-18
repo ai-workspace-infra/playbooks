@@ -1,0 +1,31 @@
+mode: server-agent
+log: {level: info}
+auth:
+  enable: true
+  token:
+    publicToken: "${AUTH_TOKEN_PUBLIC_TOKEN}"
+    refreshSecret: "${AUTH_TOKEN_REFRESH_SECRET}"
+    accessSecret: "${AUTH_TOKEN_ACCESS_SECRET}"
+    accessExpiry: 1h
+    refreshExpiry: 168h
+  oauth:
+    frontendUrl: "https://{{ recovery.target.inventory_host }}:8443"
+server:
+  addr: ":8080"
+  readTimeout: 15s
+  writeTimeout: 15s
+  publicUrl: "https://accounts-selfhost-{{ recovery.target.generation }}.{{ recovery.target.domain_base }}:8443"
+  allowedOrigins:
+    - "https://{{ recovery.target.inventory_host }}:8443"
+  tls: {enabled: false}
+store:
+  driver: postgres
+  dsn: "${DATABASE_URL}"
+  maxOpenConns: 10
+  maxIdleConns: 3
+session: {ttl: 24h}
+smtp:
+  host: "127.0.0.1"
+  port: 1025
+  from: "recovery@invalid.example"
+  tls: {mode: none}

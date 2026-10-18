@@ -1,0 +1,18 @@
+---
+- name: Revalidate the completed restore before starting any application
+  ansible.builtin.include_tasks: verify.yml
+
+- name: Select the same immutable tag application target
+  ansible.builtin.include_role:
+    name: vhosts/Doco-CD
+  vars:
+    doco_cd_bootstrap_host: false
+    doco_cd_image: "{{ recovery.release.controller_image }}"
+    doco_cd_enable_webhook: false
+    doco_cd_webhook_port: "127.0.0.1:9080"
+    doco_cd_metrics_port: "127.0.0.1:9120"
+    doco_cd_poll_config:
+      - url: "{{ recovery.release.repository }}"
+        reference: "{{ recovery.release.tag }}"
+        target: "{{ recovery.release.application_target }}"
+        interval: 60

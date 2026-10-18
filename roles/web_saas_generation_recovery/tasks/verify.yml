@@ -1,0 +1,19 @@
+---
+- name: Verify the restored database and immutable checkpoint
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /usr/local/libexec/web-saas-generation-recovery/restore.py
+      - verify
+      - "{{ recovery.target.generation }}"
+      - "{{ recovery.source.generation }}"
+      - "{{ recovery.source.archive_sha256 }}"
+      - "{{ recovery.source.schema_version | string }}"
+      - "{{ recovery.source.counts | to_json }}"
+  register: recovery_verified
+  changed_when: false
+  no_log: true
+
+- name: Return only nonsecret database evidence
+  ansible.builtin.debug:
+    msg: "{{ recovery_verified.stdout | from_json }}"

@@ -1,0 +1,149 @@
+---
+- name: Gather only OS and platform facts for Docker installation
+  ansible.builtin.setup:
+    gather_subset: [min]
+
+- name: Install the existing Docker role without changing the OS or SSH baseline
+  ansible.builtin.include_role:
+    name: vhosts/docker
+  vars:
+    docker_bootstrap_host: false
+
+- name: Create generation and private configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop:
+    - "{{ recovery_root }}"
+    - "{{ recovery_archive | dirname }}"
+    - "{{ web_saas_recovery_config_root }}"
+    - /usr/local/libexec/web-saas-generation-recovery
+
+- name: Persist this new-host attempt without overwriting previous identity
+  ansible.builtin.copy:
+    content: "{{ {'generation': recovery.target.generation, 'archive_sha256': recovery.source.archive_sha256, 'disk_uuid': recovery_host_identity.results[1].stdout.split()[1]} | to_nice_yaml }}"
+    dest: "{{ recovery_root }}/prepared.yaml"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+
+- name: Create the previously absent PostgreSQL data directory
+  ansible.builtin.file:
+    path: /data/postgresql
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  when: not recovery_existing.results[1].stat.exists
+
+- name: Inspect local recovery credentials
+  ansible.builtin.stat:
+    path: "{{ web_saas_recovery_config_root }}/secrets.env"
+  register: recovery_credentials
+
+- name: Obtain recovery-only entropy from Vault without altering production KV
+  ansible.builtin.command:
+    argv: [vault, write, -format=json, sys/tools/random/64, format=hex]
+  environment:
+    VAULT_ADDR: "{{ web_saas_recovery_vault_addr }}"
+  register: recovery_entropy
+  delegate_to: localhost
+  become: false
+  no_log: true
+  when: not recovery_credentials.stat.exists
+
+- name: Render independent recovery credentials only once
+  ansible.builtin.template:
+    src: secrets.env.j2
+    dest: "{{ web_saas_recovery_config_root }}/secrets.env"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  vars:
+    recovery_seed: "{{ (recovery_entropy.stdout | from_json).data.random_bytes }}"
+  no_log: true
+  when: not recovery_credentials.stat.exists
+
+- name: Render the isolated application and ingress configuration
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ web_saas_recovery_config_root }}/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: '0600'
+  loop:
+    - {src: account.yaml.j2, dest: account.yaml}
+    - {src: Caddyfile.j2, dest: Caddyfile}
+
+- name: Install the guarded generation restore executor
+  ansible.builtin.copy:
+    src: restore_new_generation.py
+    dest: /usr/local/libexec/web-saas-generation-recovery/restore.py
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Install the Git client for pinned declaration validation
+  ansible.builtin.apt:
+    name: git
+    state: present
+    lock_timeout: 180
+
+- name: Fetch only the immutable recovery declaration
+  ansible.builtin.git:
+    repo: "{{ recovery.release.repository }}"
+    dest: /opt/web-saas-recovery-declarations
+    version: "{{ recovery.release.tag }}"
+    depth: 1
+    force: false
+  register: recovery_remote_checkout
+
+- name: Require the same reviewed revision on the destination
+  ansible.builtin.assert:
+    that: recovery_remote_checkout.after == web_saas_recovery_gitops_sha
+
+- name: Validate the complete application Compose before starting storage
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --env-file
+      - ".env.{{ recovery.target.generation }}"
+      - -f
+      - docker-compose.recovery-storage.yml
+      - -f
+      - docker-compose.recovery-app.yml
+      - config
+      - --quiet
+  args:
+    chdir: /opt/web-saas-recovery-declarations/compose/web-saas
+  changed_when: false
+
+- name: Install Doco-CD selecting only storage from the immutable GitOps tag
+  ansible.builtin.include_role:
+    name: vhosts/Doco-CD
+  vars:
+    doco_cd_bootstrap_host: false
+    doco_cd_image: "{{ recovery.release.controller_image }}"
+    doco_cd_enable_webhook: false
+    doco_cd_webhook_port: "127.0.0.1:9080"
+    doco_cd_metrics_port: "127.0.0.1:9120"
+    doco_cd_poll_config:
+      - url: "{{ recovery.release.repository }}"
+        reference: "{{ recovery.release.tag }}"
+        target: "{{ recovery.release.storage_target }}"
+        interval: 60
+
+- name: Wait for the new generation PostgreSQL storage
+  ansible.builtin.command:
+    argv: [docker, exec, web-saas-postgresql, pg_isready, -U, postgres, -d, postgres]
+  register: recovery_postgres
+  changed_when: false
+  until: recovery_postgres.rc == 0
+  retries: 40
+  delay: 10

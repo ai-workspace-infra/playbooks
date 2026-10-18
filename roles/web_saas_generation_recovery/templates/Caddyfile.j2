@@ -1,0 +1,36 @@
+{
+    admin off
+    auto_https disable_redirects
+}
+https://console-selfhost-{{ recovery.target.generation }}.{{ recovery.target.domain_base }} {
+    tls internal
+    @mutating not method GET HEAD
+    respond @mutating 403
+    reverse_proxy console:3000
+}
+https://accounts-selfhost-{{ recovery.target.generation }}.{{ recovery.target.domain_base }} {
+    tls internal
+    @probe {
+        method GET HEAD
+        path /readyz /healthz /api/ping
+    }
+    handle @probe {
+        reverse_proxy accounts:8080
+    }
+    handle {
+        respond 403
+    }
+}
+https://billing-selfhost-{{ recovery.target.generation }}.{{ recovery.target.domain_base }} {
+    tls internal
+    @probe {
+        method GET HEAD
+        path /readyz /healthz /api/ping
+    }
+    handle @probe {
+        reverse_proxy billing:8081
+    }
+    handle {
+        respond 403
+    }
+}

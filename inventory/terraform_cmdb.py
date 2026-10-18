@@ -109,6 +109,7 @@ def build_inventory(cmdb):
         if not str(address or "").strip():
             raise ValueError(f"CMDB host {name} has no runtime ip/ansible_host")
         hostvars = {
+            "cmdb_name": host.get("name") or name,
             "ansible_host": address,
             "ansible_user": host.get("ansible_user", "root"),
             "ansible_port": host.get("ansible_port", 22),
