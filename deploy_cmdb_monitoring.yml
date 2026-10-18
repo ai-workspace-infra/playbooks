@@ -1,0 +1,46 @@
+---
+- name: Deploy isolated host metrics without changing application services
+  hosts: "{{ cmdb_monitoring_hosts | default('cmdb_monitoring') }}"
+  serial: 1
+  any_errors_fatal: true
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Record running services
+      ansible.builtin.command: systemctl list-units --type=service --state=running --no-legend --plain
+      register: cmdb_services_before
+      changed_when: false
+      when: not ansible_check_mode
+  roles:
+    - vhosts/cmdb-monitoring
+  post_tasks:
+    - name: Apply only monitoring handlers before verification
+      ansible.builtin.meta: flush_handlers
+
+    - name: Verify loopback node metrics
+      ansible.builtin.uri:
+        url: http://127.0.0.1:19100/metrics
+        return_content: false
+      register: cmdb_exporter_health
+      retries: 10
+      delay: 2
+      until: cmdb_exporter_health.status | default(0) == 200
+      when:
+        - not ansible_check_mode
+        - cmdb_monitoring_state | default('present') == 'present'
+
+    - name: Record running services after deployment
+      ansible.builtin.command: systemctl list-units --type=service --state=running --no-legend --plain
+      register: cmdb_services_after
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Require preexisting services to remain running
+      ansible.builtin.assert:
+        that:
+          - >-
+            (cmdb_services_before.stdout_lines | map('split') | map('first') | list
+            | difference(cmdb_services_after.stdout_lines | map('split') | map('first') | list))
+            | difference(['cmdb-node-exporter.service', 'cmdb-metrics-agent.service']) | length == 0
+        fail_msg: A preexisting service stopped; inspect application health before continuing.
+      when: not ansible_check_mode
