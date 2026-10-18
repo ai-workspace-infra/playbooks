@@ -1,0 +1,83 @@
+---
+- name: Wait for Caddy to issue its isolated local CA
+  ansible.builtin.command:
+    argv: [docker, exec, web-saas-caddy, test, -f, /data/caddy/pki/authorities/local/root.crt]
+  register: recovery_ca_ready
+  changed_when: false
+  until: recovery_ca_ready.rc == 0
+  retries: 40
+  delay: 10
+
+- name: Export only the recovery public CA certificate
+  ansible.builtin.command:
+    argv:
+      - docker
+      - cp
+      - web-saas-caddy:/data/caddy/pki/authorities/local/root.crt
+      - "{{ web_saas_recovery_config_root }}/recovery-root-ca.crt"
+  changed_when: false
+
+- name: Resolve recovery aliases only on the destination host
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} WEB SAAS RECOVERY {{ recovery.target.generation }}"
+    block: "127.0.0.1 {{ service_domains | join(' ') }}"
+
+- name: Verify Accounts and Billing over the recovery HTTPS ingress
+  ansible.builtin.uri:
+    url: "https://{{ item }}-selfhost-{{ recovery.target.generation }}.{{ recovery.target.domain_base }}:8443/readyz"
+    ca_path: "{{ web_saas_recovery_config_root }}/recovery-root-ca.crt"
+    validate_certs: true
+    use_proxy: false
+    return_content: true
+    status_code: 200
+  loop: [accounts, billing]
+  register: recovery_https_probes
+  until: recovery_https_probes.status | default(0) == 200
+  retries: 30
+  delay: 10
+  no_log: true
+
+- name: Require both applications to report real database readiness
+  ansible.builtin.assert:
+    that: recovery_https_probes.results | map(attribute='json.status') | unique | list == ['ready']
+
+- name: Verify the restored console panel redirects unauthenticated requests
+  ansible.builtin.uri:
+    url: "https://{{ recovery.target.inventory_host }}:8443/panel"
+    ca_path: "{{ web_saas_recovery_config_root }}/recovery-root-ca.crt"
+    validate_certs: true
+    use_proxy: false
+    follow_redirects: none
+    status_code: [302, 303, 307, 308]
+  register: recovery_panel
+
+- name: Verify the ingress rejects a mutation before it reaches Accounts
+  ansible.builtin.uri:
+    url: "https://accounts-selfhost-{{ recovery.target.generation }}.{{ recovery.target.domain_base }}:8443/api/auth/login"
+    method: POST
+    ca_path: "{{ web_saas_recovery_config_root }}/recovery-root-ca.crt"
+    validate_certs: true
+    use_proxy: false
+    status_code: 403
+
+- name: Verify the application network is internal
+  ansible.builtin.command:
+    argv: [docker, network, inspect, web_saas_recovery, --format, "{{ '{{' }}.Internal{{ '}}' }}"]
+  register: recovery_network
+  changed_when: false
+
+- name: Require outbound isolation
+  ansible.builtin.assert:
+    that: recovery_network.stdout == 'true'
+
+- name: Recheck all restored rows and sequences after the application probes
+  ansible.builtin.include_tasks: verify.yml
+
+- name: Record the nonsecret application gate
+  ansible.builtin.copy:
+    content: "{{ {'result': 'passed', 'generation': recovery.target.generation, 'gitops_sha': web_saas_recovery_gitops_sha, 'release_tag': recovery.release.tag, 'accounts_readyz': 200, 'billing_readyz': 200, 'console_panel': recovery_panel.status, 'mutations_blocked': true, 'network_internal': true, 'public_dns_cutover': false} | to_nice_json }}"
+    dest: "{{ recovery_root }}/application-acceptance.json"
+    owner: root
+    group: root
+    mode: '0600'
