@@ -271,7 +271,7 @@ class IncrementalMigrationContractTests(unittest.TestCase):
                                         "baseline_manifest": self.baseline, "backup_evidence": self.backup,
                                         "restore_evidence": self.restore})
         request = {**self.request, "environment": "prod-v3", "target_host": "web-saas-prod-v2",
-                   "container": "web-saas-accounts", "run_id": "41"}
+                   "container": "web-saas-postgresql", "run_id": "41"}
         with self.assertRaisesRegex(ValueError, "exact web-saas-prod-vN host"):
             self.contract.validate({"environment": "prod-v3", "request": request,
                                     "baseline_manifest": self.baseline, "backup_evidence": self.backup,
