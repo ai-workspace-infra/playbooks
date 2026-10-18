@@ -47,7 +47,8 @@ class GenerationRecoveryTests(unittest.TestCase):
 
     def test_role_defends_cmdb_disk_and_mutation_contract(self):
         tasks = yaml.safe_load((ROOT / "roles/web_saas_generation_recovery/tasks/main.yml").read_text())
-        assertions = " ".join(tasks[1]["ansible.builtin.assert"]["that"])
+        guard = next(t for t in tasks if t.get("name") == "Require an exact isolated generation from the IaC inventory")
+        assertions = " ".join(guard["ansible.builtin.assert"]["that"])
         for check in ("cmdb_name", "web_saas_recovery", "source.generation", "public_dns_cutover",
                       "application_database_read_only", "vault_raft_restore"):
             self.assertIn(check, assertions)
