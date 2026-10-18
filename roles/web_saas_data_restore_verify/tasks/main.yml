@@ -19,6 +19,14 @@
       - web_saas_data_restore_verify_archive_path is match('^/data/backups/web-saas/(uat|prod)/[A-Za-z0-9._-]+/[1-9][0-9]*/account\.dump\.enc$')
       - web_saas_data_restore_verify_archive_sha256 is match('^[0-9a-f]{64}$')
       - web_saas_data_restore_verify_passphrase | length >= 32
+      - web_saas_data_restore_verify_migration_table is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_data_restore_verify_migration_version_column is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_data_restore_verify_migration_dirty_column == '' or web_saas_data_restore_verify_migration_dirty_column is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_data_restore_verify_migration_order_column is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_data_restore_verify_expected_migration_rows | string is match('^[1-9][0-9]*$')
+      - web_saas_data_restore_verify_expected_migration_dirty in ['false', 'not-applicable']
+      - web_saas_data_restore_verify_users_table is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_data_restore_verify_subscription_table is match('^[a-z_][a-z0-9_]*$')
     fail_msg: Restore verification provenance, source schema, archive, or isolated target is missing or unsafe
   no_log: true
 
@@ -59,6 +67,15 @@
     WEB_SAAS_DATABASE_SYSTEM_IDENTIFIER: '{{ web_saas_data_restore_verify_database_system_identifier }}'
     WEB_SAAS_ARCHIVE_SHA256: '{{ web_saas_data_restore_verify_archive_sha256 }}'
     WEB_SAAS_BACKUP_PASSPHRASE: '{{ web_saas_data_restore_verify_passphrase }}'
+    WEB_SAAS_MIGRATION_TABLE: '{{ web_saas_data_restore_verify_migration_table }}'
+    WEB_SAAS_MIGRATION_VERSION_COLUMN: '{{ web_saas_data_restore_verify_migration_version_column }}'
+    WEB_SAAS_MIGRATION_DIRTY_COLUMN: '{{ web_saas_data_restore_verify_migration_dirty_column }}'
+    WEB_SAAS_MIGRATION_ORDER_COLUMN: '{{ web_saas_data_restore_verify_migration_order_column }}'
+    WEB_SAAS_EXPECTED_MIGRATION_ROWS: '{{ web_saas_data_restore_verify_expected_migration_rows }}'
+    WEB_SAAS_EXPECTED_MIGRATION_DIRTY: '{{ web_saas_data_restore_verify_expected_migration_dirty }}'
+    WEB_SAAS_USERS_TABLE: '{{ web_saas_data_restore_verify_users_table }}'
+    WEB_SAAS_SUBSCRIPTION_TABLE: '{{ web_saas_data_restore_verify_subscription_table }}'
+    WEB_SAAS_CROSS_MACHINE: '{{ web_saas_data_restore_verify_cross_machine | bool | ternary("true", "false") }}'
   register: web_saas_data_restore_verify_command
   changed_when: web_saas_data_restore_verify_command.rc == 0
   no_log: true

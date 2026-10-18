@@ -12,6 +12,13 @@
       - web_saas_data_backup_baseline_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
       - web_saas_data_backup_authorized_subscription_sample_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
       - web_saas_data_backup_passphrase | length >= 32
+      - web_saas_data_backup_migration_table is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_data_backup_migration_version_column is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_data_backup_migration_dirty_column == '' or web_saas_data_backup_migration_dirty_column is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_data_backup_migration_order_column is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_data_backup_expected_migration_rows | string is match('^[1-9][0-9]*$')
+      - web_saas_data_backup_users_table is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_data_backup_subscription_table is match('^[a-z_][a-z0-9_]*$')
     fail_msg: Backup identity, source, sample, exact schema target, or encryption input is missing or unsafe
   no_log: true
 
@@ -108,6 +115,13 @@
     WEB_SAAS_BASELINE_ID: '{{ web_saas_data_backup_baseline_id }}'
     WEB_SAAS_AUTHORIZED_SUBSCRIPTION_SAMPLE_ID: '{{ web_saas_data_backup_authorized_subscription_sample_id }}'
     WEB_SAAS_BACKUP_PASSPHRASE: '{{ web_saas_data_backup_passphrase }}'
+    WEB_SAAS_MIGRATION_TABLE: '{{ web_saas_data_backup_migration_table }}'
+    WEB_SAAS_MIGRATION_VERSION_COLUMN: '{{ web_saas_data_backup_migration_version_column }}'
+    WEB_SAAS_MIGRATION_DIRTY_COLUMN: '{{ web_saas_data_backup_migration_dirty_column }}'
+    WEB_SAAS_MIGRATION_ORDER_COLUMN: '{{ web_saas_data_backup_migration_order_column }}'
+    WEB_SAAS_EXPECTED_MIGRATION_ROWS: '{{ web_saas_data_backup_expected_migration_rows }}'
+    WEB_SAAS_USERS_TABLE: '{{ web_saas_data_backup_users_table }}'
+    WEB_SAAS_SUBSCRIPTION_TABLE: '{{ web_saas_data_backup_subscription_table }}'
   register: web_saas_data_backup_command
   changed_when: web_saas_data_backup_command.rc == 0
   no_log: true

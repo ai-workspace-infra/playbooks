@@ -1,0 +1,91 @@
+---
+- name: Require a controller transport directory and receipt path
+  ansible.builtin.assert:
+    that:
+      - web_saas_cold_recovery_controller_archive_dir is match('^/[^\n]+$')
+      - web_saas_cold_recovery_receipt_file is match('^/[^\n]+$')
+    fail_msg: Encrypted cross-host transport requires explicit controller paths
+
+- name: Create the protected source backup with the existing database role
+  ansible.builtin.include_role:
+    name: web_saas_data_backup
+  vars:
+    web_saas_data_backup_root: '{{ web_saas_cold_recovery_root }}'
+    web_saas_data_backup_database: '{{ web_saas_cold_recovery_database }}'
+    web_saas_data_backup_postgres_container: '{{ web_saas_cold_recovery_postgres_container }}'
+    web_saas_data_backup_environment: '{{ web_saas_cold_recovery_environment }}'
+    web_saas_data_backup_release_tag: '{{ web_saas_cold_recovery_release_tag }}'
+    web_saas_data_backup_run_id: '{{ web_saas_cold_recovery_run_id }}'
+    web_saas_data_backup_expected_version: '{{ web_saas_cold_recovery_expected_version }}'
+    web_saas_data_backup_source_database_id: '{{ web_saas_cold_recovery_source_database_id }}'
+    web_saas_data_backup_baseline_id: '{{ web_saas_cold_recovery_baseline_id }}'
+    web_saas_data_backup_authorized_subscription_sample_id: '{{ web_saas_cold_recovery_authorized_subscription_sample_id }}'
+    web_saas_data_backup_passphrase: '{{ web_saas_cold_recovery_passphrase }}'
+    web_saas_data_backup_migration_table: '{{ web_saas_cold_recovery_migration_table }}'
+    web_saas_data_backup_migration_version_column: '{{ web_saas_cold_recovery_migration_version_column }}'
+    web_saas_data_backup_migration_dirty_column: '{{ web_saas_cold_recovery_migration_dirty_column }}'
+    web_saas_data_backup_migration_order_column: '{{ web_saas_cold_recovery_migration_order_column }}'
+    web_saas_data_backup_expected_migration_rows: '{{ web_saas_cold_recovery_expected_migration_rows }}'
+    web_saas_data_backup_users_table: '{{ web_saas_cold_recovery_users_table }}'
+    web_saas_data_backup_subscription_table: '{{ web_saas_cold_recovery_subscription_table }}'
+
+- name: Bind the checkpoint receipt to the explicit service variant
+  ansible.builtin.set_fact:
+    web_saas_cold_recovery_source_evidence: "{{ web_saas_data_backup_evidence | combine({'service_variant': web_saas_cold_recovery_service_variant}) }}"
+
+- name: Persist a nonsecret checksum manifest beside the source archive
+  ansible.builtin.copy:
+    content: '{{ web_saas_cold_recovery_source_evidence.archive_sha256 }}  account.dump.enc\n'
+    dest: '{{ web_saas_cold_recovery_root }}/{{ web_saas_cold_recovery_environment }}/{{ web_saas_cold_recovery_release_tag }}/{{ web_saas_cold_recovery_run_id }}/SHA256SUMS'
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  no_log: true
+
+- name: Persist the nonsecret receipt on the source host
+  ansible.builtin.copy:
+    content: '{{ web_saas_cold_recovery_source_evidence | to_nice_json }}\n'
+    dest: '{{ web_saas_cold_recovery_root }}/{{ web_saas_cold_recovery_environment }}/{{ web_saas_cold_recovery_release_tag }}/{{ web_saas_cold_recovery_run_id }}/receipt.json'
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  no_log: true
+
+- name: Ensure encrypted transport directory exists only on the controller
+  ansible.builtin.file:
+    path: '{{ web_saas_cold_recovery_controller_archive_dir }}'
+    state: directory
+    mode: '0700'
+  delegate_to: localhost
+  become: false
+
+- name: Fetch only the encrypted archive to the controller
+  ansible.builtin.fetch:
+    src: '{{ web_saas_data_backup_evidence.archive_path }}'
+    dest: '{{ web_saas_cold_recovery_controller_archive_dir }}/{{ web_saas_cold_recovery_environment }}-{{ web_saas_cold_recovery_release_tag }}-{{ web_saas_cold_recovery_run_id }}.account.dump.enc'
+    flat: true
+    fail_on_missing: true
+  no_log: true
+
+- name: Keep the controller copy private
+  ansible.builtin.file:
+    path: '{{ web_saas_cold_recovery_controller_archive_dir }}/{{ web_saas_cold_recovery_environment }}-{{ web_saas_cold_recovery_release_tag }}-{{ web_saas_cold_recovery_run_id }}.account.dump.enc'
+    state: file
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+
+- name: Write the nonsecret restore receipt on the controller
+  ansible.builtin.copy:
+    content: '{{ web_saas_data_backup_evidence | to_nice_json }}\n'
+    dest: '{{ web_saas_cold_recovery_receipt_file }}'
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Return the nonsecret checkpoint evidence
+  ansible.builtin.set_fact:
+    web_saas_cold_recovery_evidence: '{{ web_saas_cold_recovery_source_evidence }}'
