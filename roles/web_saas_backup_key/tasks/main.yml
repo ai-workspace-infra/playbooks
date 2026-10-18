@@ -1,0 +1,57 @@
+---
+- name: Restrict backup key initialization to the selected generation
+  ansible.builtin.assert:
+    that:
+      - web_saas_generation_environment is match('^prod-v[1-9][0-9]*$')
+      - inventory_hostname == 'web-saas-' ~ web_saas_generation_environment
+
+- name: Read the generation backup key from Vault on the controller
+  ansible.builtin.command:
+    argv: [vault, kv, get, -field=web_saas_release_passphrase, 'kv/{{ web_saas_generation_environment }}/backups']
+  register: generation_backup_key
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  failed_when: generation_backup_key.rc != 0 and 'No value found at' not in generation_backup_key.stderr
+  no_log: true
+
+- name: Initialize a durable generation key only when the KV path is absent
+  when: generation_backup_key.rc != 0
+  block:
+    - name: Generate the backup key in memory
+      ansible.builtin.command:
+        argv: [openssl, rand, -hex, '32']
+      register: generation_new_backup_key
+      delegate_to: localhost
+      become: false
+      no_log: true
+    - name: Save the key to Vault without overwriting another writer
+      ansible.builtin.command:
+        argv: [vault, kv, put, -cas=0, 'kv/{{ web_saas_generation_environment }}/backups', web_saas_release_passphrase=-]
+        stdin: '{{ generation_new_backup_key.stdout }}'
+        stdin_add_newline: false
+      delegate_to: localhost
+      become: false
+      no_log: true
+    - name: Read back the stored key before using it
+      ansible.builtin.command:
+        argv: [vault, kv, get, -field=web_saas_release_passphrase, 'kv/{{ web_saas_generation_environment }}/backups']
+      register: generation_saved_backup_key
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      no_log: true
+    - name: Verify durable key round trip
+      ansible.builtin.assert:
+        that: generation_saved_backup_key.stdout == generation_new_backup_key.stdout
+      no_log: true
+
+- name: Bind the persisted backup key without writing it to inventory or evidence
+  ansible.builtin.set_fact:
+    web_saas_generation_backup_passphrase: '{{ generation_backup_key.stdout if generation_backup_key.rc == 0 else generation_saved_backup_key.stdout }}'
+  no_log: true
+
+- name: Require a sufficiently long durable key
+  ansible.builtin.assert:
+    that: web_saas_generation_backup_passphrase | length >= 32
+  no_log: true
