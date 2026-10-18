@@ -1,0 +1,49 @@
+---
+- name: Require the operator-observed exact failed database OID
+  ansible.builtin.assert:
+    that: web_saas_recovery_failed_database_oid | string is match('^[1-9][0-9]*$')
+
+- name: Inspect a completed checkpoint
+  ansible.builtin.stat:
+    path: "{{ recovery_root }}/restored.json"
+  register: recovery_completed
+
+- name: Refuse quarantine after a completed restore
+  ansible.builtin.assert:
+    that: not recovery_completed.stat.exists
+
+- name: Read the failed DB identity, user relations and active connections
+  ansible.builtin.command:
+    argv: [docker, exec, web-saas-postgresql, psql, -U, postgres, -d, "{{ item.database }}", -XAtq, -v, ON_ERROR_STOP=1, -c, "{{ item.sql }}"]
+  loop:
+    - database: postgres
+      sql: "SELECT oid::text FROM pg_database WHERE datname='account'"
+    - database: account
+      sql: "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND c.relkind IN ('r','p','m','S','v','f')"
+    - database: postgres
+      sql: "SELECT count(*) FROM pg_stat_activity WHERE datname='account'"
+    - database: postgres
+      sql: "SELECT count(*) FROM pg_database WHERE datname='account_failed_{{ web_saas_recovery_failed_database_oid }}'"
+  register: recovery_failed_state
+  changed_when: false
+
+- name: Require the exact empty disconnected failed target and absent quarantine name
+  ansible.builtin.assert:
+    that:
+      - recovery_failed_state.results[0].stdout == web_saas_recovery_failed_database_oid | string
+      - recovery_failed_state.results[1].stdout == '0'
+      - recovery_failed_state.results[2].stdout == '0'
+      - recovery_failed_state.results[3].stdout == '0'
+
+- name: Rename the empty failed target without dropping or overwriting it
+  ansible.builtin.command:
+    argv: [docker, exec, web-saas-postgresql, psql, -U, postgres, -d, postgres, -Xq, -v, ON_ERROR_STOP=1, -c, "ALTER DATABASE account RENAME TO account_failed_{{ web_saas_recovery_failed_database_oid }}"]
+
+- name: Record the preserved failed database
+  ansible.builtin.copy:
+    content: "{{ {'generation': recovery.target.generation, 'database_oid': web_saas_recovery_failed_database_oid | string, 'archive_sha256': recovery.source.archive_sha256, 'quarantined_database': 'account_failed_' ~ (web_saas_recovery_failed_database_oid | string), 'empty_relations_verified': true, 'deleted': false} | to_nice_json }}"
+    dest: "{{ recovery_root }}/quarantined-{{ web_saas_recovery_failed_database_oid }}.json"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false

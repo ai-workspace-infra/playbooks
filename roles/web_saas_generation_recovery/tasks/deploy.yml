@@ -1,0 +1,14 @@
+---
+- name: Revalidate the completed restore before starting any application
+  ansible.builtin.include_tasks: verify.yml
+
+- name: Select the same immutable tag application target
+  ansible.builtin.include_role:
+    name: doco_cd_release_selection
+  vars:
+    doco_release_repository: "{{ recovery.release.repository }}"
+    doco_release_reference: "refs/tags/{{ recovery.release.tag }}"
+    doco_release_target: "{{ recovery.release.application_target }}"
+
+- name: Validate the restored application and the unchanged data checkpoint
+  ansible.builtin.include_tasks: smoke.yml

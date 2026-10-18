@@ -289,8 +289,14 @@ operator approval / previous compatible digest
 - Vault 快照 inspect 通过；没有把明文快照或 secret value 写入日志。
 - 缺少备份恢复证据、版本不匹配、迁移脏状态或业务验收失败，均停止晋级。
 
-## 9. 当前结论
+## 9. 快照创建时的结论
 
-本次 PROD V2 已具备可恢复快照、DB 隔离恢复证据和 Vault 快照完整性证据；生产业务没有因本次快照而重启、改动或丢失数据。当前仍不能宣称完成“独立 Vault 实例恢复”或“跨机后切换生产”，因为 `web-saas-prod-v3` 尚不存在且尚未取得独立 Vault unseal/restore 授权。
+快照创建时，PROD V2 已具备可恢复快照、DB 隔离恢复证据和 Vault 快照完整性证据；生产业务没有因快照而重启、改动或丢失数据。当时 `web-saas-prod-v3` 尚不存在，且尚未取得独立 Vault unseal/restore 授权，不能宣称已完成独立 Vault 恢复或跨机生产切换。
 
 后续演练应在 UAT 或新建的独立恢复主机完成完整 `backup → stage → restore_verify`，并以同一 release receipt 绑定证据；确认通过后再单独设计生产切换，不把恢复覆盖动作塞入普通发布流水线。
+
+## 10. 2026-10-18 新代际恢复演练
+
+已在新建持久主机 web-saas-prod-v3 完成 DB 恢复和核心应用只读验收，20GB 系统盘、50GB 独立数据盘均实际使用。公共域名继续指向 V2；V2 五个核心容器身份、启动时间与重启计数保持一致。恢复后为 2026101703 / dirty=false，30 用户、12 条订阅、12218 条账本；应用启动后全表/序列指纹未改变，重复执行恢复 changed=0。
+
+完整执行约束、不可变 tag/SHA、修复过程、保留的失败空库、凭据临时副本清理和验收边界见[新代际恢复 Runbook](new-generation-recovery-runbook.zh.md)。本次未恢复共享 Vault，也未切换公共域名或进行真实付款。

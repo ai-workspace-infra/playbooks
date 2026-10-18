@@ -4,7 +4,15 @@
     that:
       - web_saas_data_target_host | default('') == inventory_hostname
       - web_saas_data_environment | default('') in ['uat', 'prod']
-      - inventory_hostname == 'web-saas-' ~ web_saas_data_environment
+      - >-
+        inventory_hostname == 'web-saas-' ~ web_saas_data_environment
+        or (
+          web_saas_data_environment == 'prod'
+          and web_saas_data_allow_recovery_host | bool
+          and inventory_hostname is match('^console-selfhost-prod-v[1-9][0-9]*\\.svc\\.plus$')
+          and inventory_hostname in (service_domains | default([]))
+          and 'web_saas_recovery' in group_names
+        )
       - web_saas_data_action in ['inspect', 'prepare_empty']
       - web_saas_data_mount_path == '/data'
       - web_saas_data_device_path is match('^/dev/disk/by-id/[A-Za-z0-9._+-]+$')

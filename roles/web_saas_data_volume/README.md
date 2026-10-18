@@ -14,6 +14,12 @@ Required caller inputs: `web_saas_data_target_host`,
 must authenticate the GitOps/CMDB artifact and disk identity; a caller-provided
 boolean does not prove that a disk belongs to the expected environment.
 
+Versioned PROD recovery hosts are accepted only when the authenticated CMDB
+places the exact `console-selfhost-prod-vN.svc.plus` alias in
+`service_domains`, puts that host in `web_saas_recovery`, and the caller
+explicitly sets `web_saas_data_allow_recovery_host=true`. Normal PROD hosts
+and UAT hosts retain the original exact-name checks.
+
 Run `ansible-playbook --syntax-check -i 'web-saas-uat,'
 web-saas-data-volume.yml -e 'web_saas_data_target_host=web-saas-uat'` after
 editing the role. Syntax success is not proof that a remote disk is mounted.

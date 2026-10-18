@@ -1,0 +1,54 @@
+---
+- name: Inspect the controller archive without logging database contents
+  ansible.builtin.stat:
+    path: "{{ web_saas_recovery_controller_archive }}"
+    follow: false
+    checksum_algorithm: sha256
+  register: recovery_controller_archive
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Require the immutable snapshot and private staging permissions
+  ansible.builtin.assert:
+    that:
+      - recovery_controller_archive.stat.isreg | default(false)
+      - recovery_controller_archive.stat.mode == '0600'
+      - recovery_controller_archive.stat.checksum == recovery.source.archive_sha256
+
+- name: Stage the original archive on the V3 data disk without overwriting
+  ansible.builtin.copy:
+    src: "{{ web_saas_recovery_controller_archive }}"
+    dest: "{{ recovery_archive }}"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  no_log: true
+
+- name: Install the reviewed restore executor
+  ansible.builtin.copy:
+    src: restore_new_generation.py
+    dest: /usr/local/libexec/web-saas-generation-recovery/restore.py
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Run the reviewed restore executor with exact identity guards
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /usr/local/libexec/web-saas-generation-recovery/restore.py
+      - restore
+      - "{{ recovery.target.generation }}"
+      - "{{ recovery.source.generation }}"
+      - "{{ recovery.source.archive_sha256 }}"
+      - "{{ recovery.source.schema_version | string }}"
+      - "{{ recovery.source.counts | to_json }}"
+  register: recovery_restored
+  no_log: true
+  changed_when: "'restored' in recovery_restored.stdout"
+
+- name: Return only nonsecret restore evidence
+  ansible.builtin.debug:
+    msg: "{{ recovery_restored.stdout | from_json }}"

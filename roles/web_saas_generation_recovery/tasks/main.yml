@@ -1,0 +1,166 @@
+---
+- name: Load the reviewed declarative recovery manifest
+  ansible.builtin.set_fact:
+    recovery: "{{ lookup('ansible.builtin.file', web_saas_recovery_manifest_file) | from_yaml }}"
+
+- name: Read optional protected Vault registry material on the controller
+  ansible.builtin.include_vars:
+    file: "{{ web_saas_recovery_registry_vars_file }}"
+    name: recovery_registry_credentials
+  no_log: true
+  when: web_saas_recovery_registry_vars_file | length > 0
+
+- name: Require an exact isolated generation from the IaC inventory
+  ansible.builtin.assert:
+    that:
+      - web_saas_recovery_phase in ['preflight', 'prepare', 'restore', 'deploy', 'verify', 'quarantine_empty_failure', 'align_rls_ownership']
+      - recovery.kind == 'WebSaaSGenerationRecovery'
+      - recovery.target.generation is match('^prod-v[1-9][0-9]*$')
+      - recovery.source.generation is match('^prod-v[1-9][0-9]*$')
+      - recovery.target.generation != recovery.source.generation
+      - inventory_hostname == web_saas_recovery_target
+      - inventory_hostname == recovery.target.inventory_host
+      - inventory_hostname == 'console-selfhost-' ~ recovery.target.generation ~ '.' ~ recovery.target.domain_base
+      - inventory_hostname in service_domains
+      - "'web_saas_recovery' in group_names"
+      - cmdb_name == recovery.target.resource_name
+      - recovery.target.resource_name == 'web-saas-' ~ recovery.target.generation
+      - recovery.target.application_role == 'recovery_app'
+      - recovery.target.publish_address == '127.0.0.1'
+      - recovery.target.https_port == 8443
+      - recovery.target.http_port == 8088
+      - recovery.release.tag is match('^' ~ recovery.target.generation ~ '-recovery-[A-Za-z0-9._-]+$')
+      - recovery.release.storage_target == recovery.target.generation ~ '-storage'
+      - recovery.release.application_target == recovery.target.generation
+      - recovery.release.repository == 'https://github.com/ai-workspace-infra/gitops.git'
+      - recovery.release.controller_image is match('^ghcr.io/kimdre/doco-cd@sha256:[0-9a-f]{64}$')
+      - recovery.source.archive_sha256 is match('^[0-9a-f]{64}$')
+      - recovery.isolation.database_background_writers == false
+      - recovery.isolation.application_database_read_only == true
+      - recovery.isolation.public_dns_cutover == false
+      - recovery.isolation.external_mail_payment_agent_access == false
+      - recovery.isolation.vault_raft_restore == false
+      - web_saas_recovery_config_root == '/etc/xcontrol/web-saas-recovery'
+
+- name: Verify the pinned GitOps checkout and tag on the controller
+  ansible.builtin.command:
+    argv: [git, -C, "{{ web_saas_recovery_gitops_checkout }}", rev-parse, "{{ item }}"]
+  loop: [HEAD, "{{ recovery.release.tag }}^{commit}"]
+  register: recovery_git_revisions
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Require the exact reviewed revision
+  ansible.builtin.assert:
+    that:
+      - web_saas_recovery_gitops_sha is match('^[0-9a-f]{40}$')
+      - recovery_git_revisions.results | map(attribute='stdout') | unique | list == [web_saas_recovery_gitops_sha]
+      - web_saas_recovery_manifest_file == web_saas_recovery_gitops_checkout ~ '/compose/web-saas/recovery/' ~ recovery.target.generation ~ '.yaml'
+
+- name: Reject uncommitted declarations
+  ansible.builtin.command:
+    argv: [git, -C, "{{ web_saas_recovery_gitops_checkout }}", status, --porcelain, --untracked-files=no]
+  register: recovery_git_status
+  changed_when: false
+  delegate_to: localhost
+  become: false
+
+- name: Require a clean GitOps checkout
+  ansible.builtin.assert:
+    that: recovery_git_status.stdout == ''
+
+- name: Read the declared resource and select only this generation
+  ansible.builtin.set_fact:
+    recovery_resource: "{{ (lookup('ansible.builtin.file', web_saas_recovery_gitops_checkout ~ '/' ~ recovery.target.resource_ref) | from_yaml).spec.resources.service_vms | selectattr('name', 'equalto', recovery.target.resource_name) | list | first }}"
+    recovery_root: "/data/recovery/{{ recovery.target.generation }}"
+    recovery_archive: "/data/backups/web-saas/{{ recovery.target.generation }}/{{ recovery.source.archive_sha256 }}/account.dump"
+
+- name: Read the actual host identity and /data mount
+  ansible.builtin.command:
+    argv: "{{ item }}"
+  loop:
+    - [hostname, -s]
+    - [findmnt, -nro, 'TARGET,UUID,FSTYPE,SOURCE', --mountpoint, /data]
+    - [readlink, -f, "/dev/disk/by-id/google-{{ recovery_resource.data_disk.device_name }}"]
+  register: recovery_host_identity
+  changed_when: false
+
+- name: Require a persistent declared disk on the exact recovery host
+  ansible.builtin.assert:
+    that:
+      - recovery_host_identity.results[0].stdout == recovery.target.resource_name
+      - recovery_host_identity.results[1].stdout.split() | length == 4
+      - recovery_host_identity.results[1].stdout.split()[0] == '/data'
+      - recovery_host_identity.results[1].stdout.split()[2] == 'ext4'
+      - recovery_host_identity.results[1].stdout.split()[3] == recovery_host_identity.results[2].stdout
+      - recovery_resource.deletion_protection == true
+      - recovery_resource.provisioning_model == 'STANDARD'
+      - recovery_resource.data_disk.mount_path == '/data'
+
+- name: Inspect the generation preparation marker and PostgreSQL destination
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ recovery_root }}/prepared.yaml"
+    - /data/postgresql
+  register: recovery_existing
+
+- name: Require a new DB directory or a previously recorded recovery attempt
+  ansible.builtin.assert:
+    that:
+      - not recovery_existing.results[1].stat.exists or recovery_existing.results[0].stat.isreg | default(false)
+      - not recovery_existing.results[1].stat.islnk | default(false)
+
+- name: Inspect existing managed services before first preparation
+  ansible.builtin.command:
+    argv: [docker, ps, -a, --format, "{{ '{{' }}.Names{{ '}}' }}"]
+  register: recovery_existing_services
+  changed_when: false
+  failed_when: false
+  when: not recovery_existing.results[0].stat.exists
+
+- name: Refuse adoption of an already deployed business host
+  ansible.builtin.assert:
+    that:
+      - recovery_existing_services.stdout_lines | default([]) | select('match', '^(web-saas-|doco-cd$)') | list | length == 0
+  when: not recovery_existing.results[0].stat.exists
+
+- name: Read a previous preparation contract
+  ansible.builtin.slurp:
+    src: "{{ recovery_root }}/prepared.yaml"
+  register: recovery_prepared
+  when: recovery_existing.results[0].stat.exists
+
+- name: Refuse a different generation, snapshot or disk on rerun
+  ansible.builtin.assert:
+    that:
+      - (recovery_prepared.content | b64decode | from_yaml).generation == recovery.target.generation
+      - (recovery_prepared.content | b64decode | from_yaml).archive_sha256 == recovery.source.archive_sha256
+      - (recovery_prepared.content | b64decode | from_yaml).disk_uuid == recovery_host_identity.results[1].stdout.split()[1]
+  when: recovery_existing.results[0].stat.exists
+
+- name: Prepare only the new isolated host
+  ansible.builtin.include_tasks: prepare.yml
+  when: web_saas_recovery_phase == 'prepare'
+
+- name: Restore only into the new generation database
+  ansible.builtin.include_tasks: restore.yml
+  when: web_saas_recovery_phase == 'restore'
+
+- name: Reconcile only the recorded generation application
+  ansible.builtin.include_tasks: deploy.yml
+  when: web_saas_recovery_phase == 'deploy'
+
+- name: Verify the generation data without modifying it
+  ansible.builtin.include_tasks: verify.yml
+  when: web_saas_recovery_phase == 'verify'
+
+- name: Preserve an explicitly inspected empty failed database under its OID
+  ansible.builtin.include_tasks: quarantine.yml
+  when: web_saas_recovery_phase == 'quarantine_empty_failure'
+
+- name: Align only restored non-forced RLS table owners on the verified generation
+  ansible.builtin.include_tasks: ownership.yml
+  when: web_saas_recovery_phase == 'align_rls_ownership'
