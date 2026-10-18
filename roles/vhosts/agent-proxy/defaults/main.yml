@@ -106,9 +106,10 @@ xray_xhttp_service_user: xray
 xray_xhttp_service_group: xray
 xray_tcp_service_user: caddy
 xray_handshake_timeout_seconds: 30
-# Keep active long-running uploads alive across regional Proxy-Server nodes.
-# These values only apply after an authenticated VLESS session is established.
-xray_connection_idle_timeout_seconds: 1800
+# Allow up to one hour without payload activity on an authenticated proxy
+# session. This accommodates very slow/paused large uploads; it is an idle
+# timeout, not a maximum request duration or file-size limit.
+xray_connection_idle_timeout_seconds: 3600
 xray_uplink_only_timeout_seconds: 600
 xray_downlink_only_timeout_seconds: 600
 
