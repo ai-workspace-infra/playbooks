@@ -8,17 +8,17 @@ playbooks_sha="$1" gitops_tag="$2" gitops_sha="$3" phase="$4" inputs="$5"
 [[ "$gitops_tag" =~ ^prod-v[1-9][0-9]*-recovery-[A-Za-z0-9._-]+$ ]] || exit 2
 [[ "$phase" =~ ^(prepare|restore|deploy|verify|preflight)$ ]] || exit 2
 [[ "$(hostname -s)" =~ ^web-saas-prod-v[1-9][0-9]*$ ]] || exit 2
-[[ "$inputs" =~ ^/home/[a-zA-Z0-9_]+/v3-recovery-inputs$ ]] || exit 2
+[[ "$inputs" =~ ^/home/[a-zA-Z0-9_]+/[A-Za-z0-9_-]*recovery-inputs$ ]] || exit 2
 test -f "$inputs/inventory.json"
-test -f "$inputs/web-saas-v3-local-runtime-20261018.yaml"
+test -f "$inputs/runtime.yaml"
 if ! command -v ansible-playbook >/dev/null; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y -qq ansible
 fi
 if [[ ! -d /opt/recovery-playbooks/.git ]]; then
-  git clone --no-checkout --depth 1 --branch codex/prod-v3-data-volume-20261018 \
-    https://github.com/ai-workspace-infra/playbooks.git /opt/recovery-playbooks
+  git init /opt/recovery-playbooks
+  git -C /opt/recovery-playbooks remote add origin https://github.com/ai-workspace-infra/playbooks.git
 fi
 git -C /opt/recovery-playbooks fetch --depth 1 origin "$playbooks_sha"
 git -C /opt/recovery-playbooks checkout --detach "$playbooks_sha"
@@ -28,5 +28,5 @@ git -C /opt/web-saas-recovery-declarations checkout --detach "$gitops_tag"
 AI_WORKSPACE_CMDB_JSON="$inputs/inventory.json" \
   ansible-playbook -i /opt/recovery-playbooks/inventory/terraform_cmdb.py \
     /opt/recovery-playbooks/web-saas-generation-recovery.yml \
-    -e "@$inputs/web-saas-v3-local-runtime-20261018.yaml" \
+    -e "@$inputs/runtime.yaml" \
     -e "web_saas_recovery_phase=$phase"
