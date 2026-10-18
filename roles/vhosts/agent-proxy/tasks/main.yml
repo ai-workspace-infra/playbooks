@@ -434,6 +434,8 @@
     modification_time: preserve
   when: xray_enabled | bool
 
+# The agent snapshots templates at startup. Reload it when either template
+# changes so the next controller sync cannot restore an older in-memory policy.
 - name: Deploy XHTTP template
   ansible.builtin.template:
     src: xray.xhttp.template.json.j2
@@ -441,6 +443,7 @@
     owner: "{{ agent_proxy_user }}"
     group: "{{ agent_proxy_group }}"
     mode: "0644"
+  notify: Restart agent-proxy
   when: xray_enabled | bool
   tags:
     - xray-runtime-config
@@ -452,6 +455,7 @@
     owner: "{{ agent_proxy_user }}"
     group: "{{ agent_proxy_group }}"
     mode: "0644"
+  notify: Restart agent-proxy
   when: xray_enabled | bool
   tags:
     - xray-runtime-config

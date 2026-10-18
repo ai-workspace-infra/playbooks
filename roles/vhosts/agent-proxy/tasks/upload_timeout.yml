@@ -1,0 +1,43 @@
+---
+# Caller supplies an explicit, scoped inventory. No install, controller or Caddy changes.
+- name: Require the deployed Agent service identity
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_service_name == 'xconnect-edge-agent'
+
+- name: Align existing Xray templates and detect runtime drift
+  ansible.builtin.script:
+    cmd: "configure_upload_timeout.py --seconds {{ xray_connection_idle_timeout_seconds | int }}"
+    executable: python3
+  register: upload_timeout_apply
+  changed_when: (upload_timeout_apply.stdout | from_json).reload_required | bool
+  notify: Restart agent-proxy
+
+- name: Reload cached Agent templates before verification
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Agent to render both runtime configurations
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - "import json; from pathlib import Path; paths=['config.json','tcp-config.json']; values=[json.loads((Path('/usr/local/etc/xray')/p).read_text()).get('policy',{}).get('levels',{}).get('0',{}).get('connIdle') for p in paths]; print(values); assert values == [{{ xray_connection_idle_timeout_seconds | int }},{{ xray_connection_idle_timeout_seconds | int }}]"
+  register: upload_timeout_verify
+  changed_when: false
+  retries: 12
+  delay: 5
+  until: upload_timeout_verify.rc == 0
+
+- name: Validate both Xray configurations
+  ansible.builtin.command:
+    argv: [/usr/local/bin/xray, run, -test, -config, "{{ item }}"]
+  loop:
+    - /usr/local/etc/xray/config.json
+    - /usr/local/etc/xray/tcp-config.json
+  changed_when: false
+  no_log: true
+
+- name: Verify existing services are active
+  ansible.builtin.command:
+    argv: [systemctl, is-active, xconnect-edge-agent, xray, xray-tcp, caddy]
+  changed_when: false

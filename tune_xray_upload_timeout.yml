@@ -1,0 +1,12 @@
+---
+- name: Tune existing XConnect upload idle policy
+  hosts: xconnect_upload_targets
+  gather_facts: false
+  serial: 1
+  vars:
+    agent_proxy_service_name: xconnect-edge-agent
+  tasks:
+    - name: Apply the agent-proxy owned upload timeout tasks
+      ansible.builtin.include_role:
+        name: vhosts/agent-proxy
+        tasks_from: upload_timeout
