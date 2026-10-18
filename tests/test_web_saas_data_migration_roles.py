@@ -72,6 +72,15 @@ class BaselineManifestContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "subscriptions_sample_count"):
             self.validate(users_sample_count=2, subscriptions_sample_count=0)
 
+    def test_versioned_prod_baseline_must_reference_an_earlier_generation(self):
+        manifest = {**self.manifest, "source_environment": "prod-v2"}
+        result = self.contract.validate_baseline({"environment": "prod-v3", "manifest": manifest})
+        self.assertEqual(result["environment"], "prod-v3")
+        self.assertEqual(result["source_environment"], "prod-v2")
+        for source in ("prod-v3", "prod-v4", "prod", "uat"):
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                self.contract.validate_baseline({"environment": "prod-v3", "manifest": {**manifest, "source_environment": source}})
+
 class IncrementalMigrationContractTests(unittest.TestCase):
     def setUp(self):
         self.contract = load_contract("web_saas_data_migration")
@@ -237,6 +246,33 @@ class IncrementalMigrationContractTests(unittest.TestCase):
     def test_allows_in_place_same_target_identity(self):
         self.assertEqual(self.validate()["status"], "ready")
 
+    def test_accepts_exact_prod_generation_with_earlier_generation_provenance(self):
+        request = {**self.request, "environment": "prod-v3", "target_host": "web-saas-prod-v3",
+                   "container": "web-saas-accounts", "run_id": "41"}
+        request["approval"] = {**request["approval"], "environment": "prod-v3"}
+        baseline = {**self.baseline, "environment": "prod-v3", "source_environment": "prod-v2"}
+        backup = {**self.backup, "environment": "prod-v3", "checkpoint_id": "prod-v3_41",
+                  "archive_path": "/data/backups/web-saas/prod-v3/candidate/41/account.dump.enc"}
+        restore = {**self.restore, "environment": "prod-v3", "restore_database": "release_verify_41"}
+        result = self.contract.validate({"environment": "prod-v3", "request": request,
+                                         "baseline_manifest": baseline, "backup_evidence": backup,
+                                         "restore_evidence": restore})
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["execution_binding"]["container"], "web-saas-accounts")
+
+    def test_rejects_stable_prod_and_wrong_generation_or_container(self):
+        for environment in ("prod", "prod-v0", "prod-v03", "prod-v3;other"):
+            with self.subTest(environment=environment), self.assertRaises(ValueError):
+                self.contract.validate({"environment": environment, "request": self.request,
+                                        "baseline_manifest": self.baseline, "backup_evidence": self.backup,
+                                        "restore_evidence": self.restore})
+        request = {**self.request, "environment": "prod-v3", "target_host": "web-saas-prod-v2",
+                   "container": "web-saas-accounts", "run_id": "41"}
+        with self.assertRaisesRegex(ValueError, "exact web-saas-prod-vN host"):
+            self.contract.validate({"environment": "prod-v3", "request": request,
+                                    "baseline_manifest": self.baseline, "backup_evidence": self.backup,
+                                    "restore_evidence": self.restore})
+
     def test_rejects_missing_checksum_lock_and_timeouts(self):
         for field, value in (("migration_checksum", ""), ("advisory_lock", False), ("single_migration_only", False), ("lock_timeout_seconds", 0), ("statement_timeout_seconds", 3601)):
             with self.subTest(field=field), self.assertRaises(ValueError):
@@ -246,7 +282,7 @@ class IncrementalMigrationContractTests(unittest.TestCase):
         tasks = (ROOT / "roles/web_saas_data_migration/tasks/main.yml").read_text()
         validator = (ROOT / "roles/web_saas_data_migration/files/validate_contract.py").read_text()
         self.assertIn("BOUNDED_SELFHOST_EXECUTION_READY", validator)
-        self.assertIn("canonicalAccount", tasks)
+        self.assertIn('"canonicalAccount" if environment == "uat"', validator)
         self.assertIn("--dsn-env", tasks)
         self.assertIn("DATABASE_URL", tasks)
         self.assertNotIn("\n          - --dsn\n", tasks)
@@ -255,6 +291,15 @@ class IncrementalMigrationContractTests(unittest.TestCase):
         self.assertNotIn("TARGET_DSN", tasks)
         self.assertNotIn("init-schema", tasks)
         self.assertNotIn("force", tasks)
+
+    def test_generation_entrypoint_is_exact_host_and_orders_restore_before_migration(self):
+        playbook = (ROOT / "web-saas-generation-data-operations.yml").read_text()
+        self.assertIn("^prod-v[1-9][0-9]*$", playbook)
+        self.assertIn("'web-saas-' ~ web_saas_generation_environment", playbook)
+        self.assertIn("web_saas_generation_migration_request.container == 'web-saas-accounts'", playbook)
+        self.assertLess(playbook.index("name: web_saas_data_backup"), playbook.index("name: web_saas_data_restore_verify"))
+        self.assertLess(playbook.index("name: web_saas_data_restore_verify"), playbook.index("name: web_saas_data_migration"))
+        self.assertIn("/data/backups/web-saas", playbook)
 
     def test_lifecycle_binds_immutable_accounts_source_and_builds_migrator_only_for_migration(self):
         workflow = (ROOT / ".github/workflows/selfhost-data-lifecycle.yml").read_text()

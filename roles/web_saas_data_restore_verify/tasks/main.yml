@@ -5,7 +5,7 @@
       - web_saas_data_restore_verify_database == 'account'
       - web_saas_data_restore_verify_postgres_container == 'web-saas-postgresql'
       - web_saas_data_restore_verify_restore_database_prefix == 'release_verify_'
-      - web_saas_data_restore_verify_environment in ['uat', 'prod']
+      - web_saas_data_restore_verify_environment in ['uat', 'prod'] or web_saas_data_restore_verify_environment is match('^prod-v[1-9][0-9]*$')
       - web_saas_data_restore_verify_run_id is match('^[1-9][0-9]*$')
       - web_saas_data_restore_verify_expected_version | string is match('^[1-9][0-9]*$')
       - web_saas_data_restore_verify_source_database_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
@@ -16,7 +16,7 @@
       - web_saas_data_restore_verify_database_system_identifier is match('^[0-9]+$')
       - web_saas_data_restore_verify_expected_users | string is match('^[1-9][0-9]*$')
       - web_saas_data_restore_verify_expected_subscriptions | string is match('^[0-9]+$')
-      - web_saas_data_restore_verify_archive_path is match('^/data/backups/web-saas/(uat|prod)/[A-Za-z0-9._-]+/[1-9][0-9]*/account\.dump\.enc$')
+      - web_saas_data_restore_verify_archive_path is match('^/data/backups/web-saas/(uat|prod|prod-v[1-9][0-9]*)/[A-Za-z0-9._-]+/[1-9][0-9]*/account\.dump\.enc$')
       - web_saas_data_restore_verify_archive_sha256 is match('^[0-9a-f]{64}$')
       - web_saas_data_restore_verify_passphrase | length >= 32
       - web_saas_data_restore_verify_migration_table is match('^[a-z_][a-z0-9_]*$')
