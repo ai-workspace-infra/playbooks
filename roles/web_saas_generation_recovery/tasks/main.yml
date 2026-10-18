@@ -13,7 +13,7 @@
 - name: Require an exact isolated generation from the IaC inventory
   ansible.builtin.assert:
     that:
-      - web_saas_recovery_phase in ['preflight', 'prepare', 'restore', 'deploy', 'verify', 'quarantine_empty_failure']
+      - web_saas_recovery_phase in ['preflight', 'prepare', 'restore', 'deploy', 'verify', 'quarantine_empty_failure', 'align_rls_ownership']
       - recovery.kind == 'WebSaaSGenerationRecovery'
       - recovery.target.generation is match('^prod-v[1-9][0-9]*$')
       - recovery.source.generation is match('^prod-v[1-9][0-9]*$')
@@ -160,3 +160,7 @@
 - name: Preserve an explicitly inspected empty failed database under its OID
   ansible.builtin.include_tasks: quarantine.yml
   when: web_saas_recovery_phase == 'quarantine_empty_failure'
+
+- name: Align only restored non-forced RLS table owners on the verified generation
+  ansible.builtin.include_tasks: ownership.yml
+  when: web_saas_recovery_phase == 'align_rls_ownership'

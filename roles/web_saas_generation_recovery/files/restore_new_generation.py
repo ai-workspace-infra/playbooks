@@ -109,6 +109,21 @@ def inspect_target(root, generation, digest):
     return False
 
 
+def align_rls_ownership():
+    ordinary = pg("SELECT NOT rolsuper AND NOT rolbypassrls FROM pg_roles WHERE rolname='recovery_app'")
+    forced = pg("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
+                "WHERE n.nspname='public' AND c.relforcerowsecurity", "account")
+    if ordinary != "t" or forced != "0":
+        raise ValueError("RLS ownership mapping requires an ordinary role and no forced RLS")
+    pg("""DO $mapping$ DECLARE relation record; BEGIN
+FOR relation IN
+ SELECT n.nspname,c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+ WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relrowsecurity
+ AND NOT c.relforcerowsecurity AND c.relowner<>(SELECT oid FROM pg_roles WHERE rolname='recovery_app')
+LOOP EXECUTE format('ALTER TABLE %I.%I OWNER TO recovery_app',relation.nspname,relation.relname);
+END LOOP; END $mapping$;""", "account")
+
+
 def verify(marker, generation, source, digest, version, counts):
     if not marker.is_file() or marker.is_symlink():
         raise ValueError("completed restore marker is absent")
@@ -130,7 +145,7 @@ def verify(marker, generation, source, digest, version, counts):
 
 
 def main():
-    if len(sys.argv) != 7 or sys.argv[1] not in ("restore", "verify"):
+    if len(sys.argv) != 7 or sys.argv[1] not in ("restore", "verify", "align_rls_ownership"):
         raise ValueError("usage: restore.py restore|verify generation source sha256 version counts")
     mode, generation, source, digest, version, raw_counts = sys.argv[1:]
     counts = json.loads(raw_counts)
@@ -143,6 +158,12 @@ def main():
         os.chmod(lock.name, 0o600)
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         apps_running = inspect_target(root, generation, digest)
+        if mode == "align_rls_ownership":
+            verify(marker, generation, source, digest, version, counts)
+            align_rls_ownership()
+            print(json.dumps({**verify(marker, generation, source, digest, version, counts),
+                              "rls_owners_aligned": True}))
+            return
         if mode == "verify" or marker.exists():
             print(json.dumps(verify(marker, generation, source, digest, version, counts)))
             return
@@ -188,6 +209,7 @@ def main():
            "GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO recovery_app; "
            "GRANT USAGE,SELECT,UPDATE ON ALL SEQUENCES IN SCHEMA public TO recovery_app",
            "account")
+        align_rls_ownership()
         pg("ALTER ROLE recovery_app SET default_transaction_read_only=on")
         evidence = {"generation": generation, "source_generation": source,
                     "archive_sha256": digest, **database_identity(), **current,

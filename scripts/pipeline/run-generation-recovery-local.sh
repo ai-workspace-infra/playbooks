@@ -6,8 +6,11 @@ umask 077
 playbooks_sha="$1" gitops_tag="$2" gitops_sha="$3" phase="$4" inputs="$5"
 [[ "$playbooks_sha" =~ ^[0-9a-f]{40}$ && "$gitops_sha" =~ ^[0-9a-f]{40}$ ]] || exit 2
 [[ "$gitops_tag" =~ ^prod-v[1-9][0-9]*-recovery-[A-Za-z0-9._-]+$ ]] || exit 2
-[[ "$phase" =~ ^(prepare|restore|deploy|verify|preflight|quarantine_empty_failure)$ ]] || exit 2
-[[ "$(hostname -s)" =~ ^web-saas-prod-v[1-9][0-9]*$ ]] || exit 2
+[[ "$phase" =~ ^(prepare|restore|deploy|verify|preflight|quarantine_empty_failure|align_rls_ownership)$ ]] || exit 2
+generation="${gitops_tag%%-recovery-*}"
+[[ "$(hostname -s)" == "web-saas-$generation" ]] || exit 2
+test -f "/data/recovery/$generation/prepared.yaml"
+test -f /etc/xcontrol/web-saas-recovery/secrets.env
 [[ "$inputs" =~ ^/home/[a-zA-Z0-9_]+/[A-Za-z0-9_-]*recovery-inputs$ ]] || exit 2
 test -f "$inputs/inventory.json"
 test -f "$inputs/runtime.yaml"

@@ -27,6 +27,8 @@
 
 恢复凭据从 Vault sys/tools/random 取得独立熵并只写入目标主机私有文件，不复制源 SMTP、Stripe、OAuth 或会话签名值，也不修改生产 KV。重新初始化另一台新恢复主机可生成新的凭据；已有目标重跑保留本机凭据。
 
+私有镜像认证引用 kv/CICD 的 GHCR_USERNAME 与 GHCR_TOKEN。密码仅通过 docker login --password-stdin 传递；目标 /root/.docker/config.json 为运行时凭据，由控制器只读挂载。临时凭据文件在验收后删除，公开记录只保留路径和键名。
+
 应用固定使用已发布镜像。DATABASE_BACKGROUND_WRITERS=false，应用数据库角色 default_transaction_read_only=on。内部 Docker 网络阻止应用外联；Caddy 入口只发布在目标 loopback，使用本次恢复的独立本地 CA，拒绝非探针 Accounts/Billing 路由和写请求。V3 别名只写入 V3 的 hosts，不代表公共 DNS 已切换。
 
 这组验收证明归档恢复与核心服务可启动，不替代原密码登录、真实支付、终端代理或全量生产切换验收。Stunnel、外部邮件/支付/计量及共享 Observability 没有在此隔离拓扑中重新 bootstrap。
