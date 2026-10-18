@@ -408,7 +408,7 @@ def prepare(c, root, image, identity):
     evidence = checkpoint(DockerPG(), lambda: isolated_pg(image), root, c)
     # Parse/provision with the already installed Caddy binary without reloading
     # or requesting a certificate. Invalid ingress never replaces host files.
-    run(['docker', 'exec', '-i', 'web-saas-caddy', 'caddy', 'adapt', '--config', '-',
+    run(['docker', 'exec', '-i', 'web-saas-caddy', 'caddy', 'adapt', '--config', '/dev/stdin',
          '--adapter', 'caddyfile', '--validate'], data=candidates['Caddyfile'])
     for name in ('secrets.env', 'account.yaml', 'Caddyfile'):
         write_new(root / (name + '.before'), (CONFIG / name).read_bytes())
