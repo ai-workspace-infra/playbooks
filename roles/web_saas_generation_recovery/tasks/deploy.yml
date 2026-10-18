@@ -4,20 +4,11 @@
 
 - name: Select the same immutable tag application target
   ansible.builtin.include_role:
-    name: vhosts/Doco-CD
+    name: doco_cd_release_selection
   vars:
-    doco_cd_bootstrap_host: false
-    doco_cd_image: "{{ recovery.release.controller_image }}"
-    doco_cd_registry_username: "{{ (recovery_registry_credentials | default({})).get('registry_username', '') }}"
-    doco_cd_registry_password: "{{ (recovery_registry_credentials | default({})).get('registry_password', '') }}"
-    doco_cd_enable_webhook: false
-    doco_cd_webhook_port: "127.0.0.1:9080"
-    doco_cd_metrics_port: "127.0.0.1:9120"
-    doco_cd_poll_config:
-      - url: "{{ recovery.release.repository }}"
-        reference: "{{ recovery.release.tag }}"
-        target: "{{ recovery.release.application_target }}"
-        interval: 60
+    doco_release_repository: "{{ recovery.release.repository }}"
+    doco_release_reference: "refs/tags/{{ recovery.release.tag }}"
+    doco_release_target: "{{ recovery.release.application_target }}"
 
 - name: Validate the restored application and the unchanged data checkpoint
   ansible.builtin.include_tasks: smoke.yml

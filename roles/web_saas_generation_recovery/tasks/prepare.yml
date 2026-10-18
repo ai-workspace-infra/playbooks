@@ -129,6 +129,7 @@
     name: vhosts/Doco-CD
   vars:
     doco_cd_bootstrap_host: false
+    doco_cd_start_controller: false
     doco_cd_image: "{{ recovery.release.controller_image }}"
     doco_cd_registry_username: "{{ (recovery_registry_credentials | default({})).get('registry_username', '') }}"
     doco_cd_registry_password: "{{ (recovery_registry_credentials | default({})).get('registry_password', '') }}"
@@ -140,6 +141,42 @@
         reference: "{{ recovery.release.tag }}"
         target: "{{ recovery.release.storage_target }}"
         interval: 60
+
+- name: Read the declared PostgreSQL image reference
+  ansible.builtin.set_fact:
+    recovery_postgres_image: "{{ lookup('ansible.builtin.file', web_saas_recovery_gitops_checkout ~ '/compose/web-saas/.env.' ~ recovery.target.generation) | regex_search('(?m)^POSTGRESQL_IMAGE=(.+)$', '\\1') | first }}"
+
+- name: Require a fixed PostgreSQL digest
+  ansible.builtin.assert:
+    that: recovery_postgres_image is match('^ghcr.io/[A-Za-z0-9_./:-]+@sha256:[0-9a-f]{64}$')
+
+- name: Discover the runtime filesystem identity from the pinned image
+  ansible.builtin.command:
+    argv: [docker, run, --rm, --network, none, --entrypoint=id, "{{ recovery_postgres_image }}", "{{ item }}"]
+  loop: [-u, -g]
+  register: recovery_postgres_identity
+  changed_when: false
+
+- name: Require an unprivileged PostgreSQL image identity
+  ansible.builtin.assert:
+    that:
+      - recovery_postgres_identity.results[0].stdout is match('^[1-9][0-9]*$')
+      - recovery_postgres_identity.results[1].stdout is match('^[1-9][0-9]*$')
+
+- name: Set the mount root owner before the storage controller starts
+  ansible.builtin.file:
+    path: /data/postgresql
+    owner: "{{ recovery_postgres_identity.results[0].stdout }}"
+    group: "{{ recovery_postgres_identity.results[1].stdout }}"
+    mode: '0700'
+
+- name: Start the installed reconciler only after the data directory is prepared
+  ansible.builtin.include_role:
+    name: doco_cd_release_selection
+  vars:
+    doco_release_repository: "{{ recovery.release.repository }}"
+    doco_release_reference: "refs/tags/{{ recovery.release.tag }}"
+    doco_release_target: "{{ recovery.release.storage_target }}"
 
 - name: Wait for the new generation PostgreSQL storage
   ansible.builtin.command:

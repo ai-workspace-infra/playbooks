@@ -206,6 +206,7 @@
   when: doco_cd_pull_image | bool
 
 - name: Start Doco-CD
+  when: doco_cd_start_controller | bool
   ansible.builtin.command:
     argv:
       - docker
@@ -224,6 +225,7 @@
 # startup restarts forever while every later task waits on stacks it will
 # never reconcile, so require the reconciler itself to be healthy first.
 - name: Wait for Doco-CD to become healthy
+  when: doco_cd_start_controller | bool
   block:
     - name: Wait for Doco-CD healthcheck
       ansible.builtin.command:
@@ -253,6 +255,7 @@
           {{ (doco_cd_startup_log.stdout_lines | default([])) + (doco_cd_startup_log.stderr_lines | default([])) }}
 
 - name: Show Doco-CD status
+  when: doco_cd_start_controller | bool
   ansible.builtin.command:
     argv:
       - docker
