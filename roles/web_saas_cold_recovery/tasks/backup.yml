@@ -35,7 +35,8 @@
 
 - name: Persist a nonsecret checksum manifest beside the source archive
   ansible.builtin.copy:
-    content: '{{ web_saas_cold_recovery_source_evidence.archive_sha256 }}  account.dump.enc\n'
+    content: |
+      {{ web_saas_cold_recovery_source_evidence.archive_sha256 }}  account.dump.enc
     dest: '{{ web_saas_cold_recovery_root }}/{{ web_saas_cold_recovery_environment }}/{{ web_saas_cold_recovery_release_tag }}/{{ web_saas_cold_recovery_run_id }}/SHA256SUMS'
     owner: root
     group: root
@@ -45,7 +46,7 @@
 
 - name: Persist the nonsecret receipt on the source host
   ansible.builtin.copy:
-    content: '{{ web_saas_cold_recovery_source_evidence | to_nice_json }}\n'
+    content: '{{ web_saas_cold_recovery_source_evidence | to_nice_json }}'
     dest: '{{ web_saas_cold_recovery_root }}/{{ web_saas_cold_recovery_environment }}/{{ web_saas_cold_recovery_release_tag }}/{{ web_saas_cold_recovery_run_id }}/receipt.json'
     owner: root
     group: root
@@ -79,7 +80,7 @@
 
 - name: Write the nonsecret restore receipt on the controller
   ansible.builtin.copy:
-    content: '{{ web_saas_data_backup_evidence | to_nice_json }}\n'
+    content: '{{ web_saas_cold_recovery_source_evidence | to_nice_json }}'
     dest: '{{ web_saas_cold_recovery_receipt_file }}'
     mode: '0600'
   delegate_to: localhost

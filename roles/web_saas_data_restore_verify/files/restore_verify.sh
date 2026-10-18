@@ -14,6 +14,7 @@ WEB_SAAS_EXPECTED_MIGRATION_ROWS="${WEB_SAAS_EXPECTED_MIGRATION_ROWS:-1}"
 WEB_SAAS_EXPECTED_MIGRATION_DIRTY="${WEB_SAAS_EXPECTED_MIGRATION_DIRTY:-false}"
 WEB_SAAS_USERS_TABLE="${WEB_SAAS_USERS_TABLE-users}"
 WEB_SAAS_SUBSCRIPTION_TABLE="${WEB_SAAS_SUBSCRIPTION_TABLE-subscriptions}"
+WEB_SAAS_CROSS_MACHINE="${WEB_SAAS_CROSS_MACHINE-false}"
 
 [[ "$WEB_SAAS_DATABASE" == account ]] || fail 'only account is an allowed source database'
 [[ "$WEB_SAAS_POSTGRES_CONTAINER" == web-saas-postgresql ]] || fail 'unexpected PostgreSQL container'
@@ -98,7 +99,7 @@ else
   # schema, and rows.
   source_state="$(state_value "$WEB_SAAS_DATABASE")" || fail 'could not re-read source database state'
   IFS=',' read -r migration_state user_count subscription_count <<<"$source_state"
-  [[ "$migration_state" == "1:${WEB_SAAS_EXPECTED_VERSION}:false" || "$migration_state" == "${WEB_SAAS_EXPECTED_MIGRATION_ROWS}:${WEB_SAAS_EXPECTED_VERSION}:${WEB_SAAS_EXPECTED_MIGRATION_DIRTY}" ]] || fail 'source database is no longer the exact clean schema baseline'
+  [[ "$migration_state" == "${WEB_SAAS_EXPECTED_MIGRATION_ROWS}:${WEB_SAAS_EXPECTED_VERSION}:${WEB_SAAS_EXPECTED_MIGRATION_DIRTY}" ]] || fail 'source database is no longer the exact clean schema baseline'
   [[ "$user_count" == "$WEB_SAAS_EXPECTED_USERS" && "$subscription_count" == "$WEB_SAAS_EXPECTED_SUBSCRIPTIONS" ]] || fail 'source database sample counts changed after backup'
   source_schema="$(schema_fingerprint "$WEB_SAAS_DATABASE")" || fail 'could not re-fingerprint source schema'
   [[ "$source_schema" == "$WEB_SAAS_EXPECTED_SCHEMA_SHA256" ]] || fail 'source database identity/schema changed after backup'

@@ -4,6 +4,7 @@
     that:
       - web_saas_cold_recovery_mode in ['backup', 'stage', 'restore_verify', 'restore_primary']
       - web_saas_cold_recovery_environment in ['uat', 'prod']
+      - web_saas_cold_recovery_root == '/data/backups/web-saas'
       - web_saas_cold_recovery_service_variant == '' or web_saas_cold_recovery_service_variant is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
       - web_saas_cold_recovery_release_tag is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
       - web_saas_cold_recovery_run_id is match('^[1-9][0-9]*$')
@@ -19,6 +20,20 @@
       - web_saas_cold_recovery_subscription_table is match('^[a-z_][a-z0-9_]*$')
     fail_msg: Cold recovery identity, mode, encryption input, or database contract is missing or unsafe
   no_log: true
+
+- name: Require persistent data storage on recovery targets
+  ansible.builtin.command:
+    argv: [findmnt, --noheadings, --output, TARGET, --target, /data]
+  register: web_saas_cold_recovery_data_mount
+  changed_when: false
+  when: web_saas_cold_recovery_mode in ['stage', 'restore_verify']
+
+- name: Refuse recovery on the root filesystem
+  ansible.builtin.assert:
+    that:
+      - web_saas_cold_recovery_data_mount.stdout | trim == '/data'
+    fail_msg: Recovery requires an independent /data mount
+  when: web_saas_cold_recovery_mode in ['stage', 'restore_verify']
 
 - name: Create encrypted source checkpoint and controller receipt
   ansible.builtin.include_tasks: backup.yml
