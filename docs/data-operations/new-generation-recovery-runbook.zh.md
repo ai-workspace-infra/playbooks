@@ -21,6 +21,10 @@
 
 中断时保留目标。没有完整 checkpoint 的已有 account 库不能自动重试覆盖；完整恢复后再次执行 restore 只核验原 checkpoint，不重复 SQL。
 
+若第一次事务恢复失败，只能在核实没有 checkpoint、没有用户关系、没有活动连接后，显式提供观测到的 OID 调用 quarantine_empty_failure；它将空库重命名为 account_failed_<OID> 并保留证据，不删除或覆盖原库。正常 restore 不会自动调用它。
+
+归档目录若没有 CREATE SCHEMA public，保留新库默认 public；只有归档明确声明该 schema 时才移除新建库的空 public。非强制 RLS 表的属主映射到隔离应用角色；强制 RLS 或已有超级用户/BYPASSRLS 角色会被拒绝，绝不通过关闭 RLS 或增加全局权限绕过验证。
+
 ## 隔离与凭据
 
 恢复归档沿用既有 PostgreSQL custom-format 文件，本记录不声称该 DB 文件已加密。源文件经经过主机密钥校验的 SSH 读取；控制机临时目录 0700、文件 0600，验收后删除临时副本。目标归档与证据保留在独立 /data，目录 0700、文件 0600。
@@ -40,3 +44,23 @@
 跨境逐任务 SSH 延迟较大时，可在目标已经完成 Vault 凭据准备后，使用 scripts/pipeline/run-generation-recovery-local.sh，通过一次 SSH 在目标本机执行同一固定 Playbooks commit。输入仍为原 IaC inventory、固定 GitOps tag/SHA 与 runtime.yaml；ansible_connection=local 只改变执行位置，主机和磁盘检查保持有效。该助手不得用于生产源主机。
 
 每次保存：Playbooks commit、GitOps tag/SHA、实际 image digest、原始归档 checksum、迁移状态、样本和指纹结果、V2 容器身份/启动时间/重启数对比、公共域名对比。公开文档只记录非敏感结果，不保存凭据、DSN、用户行或备份内容。
+
+## 2026-10-18：V2 → V3 实测
+
+- 主机 web-saas-prod-v3：持久 GCP VM、20GB 系统盘、50GB 独立 /data；V2 为只读源。
+- GitOps tag：prod-v3-recovery-2026.10.18-r2，commit 2c1f580599f4815dbdfa824a836fb748427380a1。
+- 恢复/应用验收执行版本：Playbooks cbde19aae5681e6fcfbdb869de3eec0a0c97cc82。后续提交仅补充测试与记录时，不倒述为已执行版本。
+- 原归档 SHA-256：84db2c11bf3d7de163ba5b43f332ce86e9d4e8ad56e9534a91546f1a53070e2d。
+- schema 2026101703，dirty=false；用户 30、subscription_records 12、billing_ledger 12218。
+- 启动前后全表/序列 SHA-256 均为 014adffaea602cc03363325b59f0ea97b48ba8f7704602bc903d34d42e508072。
+- Accounts/Billing HTTPS readyz 均为 200；Console panel 为 307；写请求 403；应用网络 internal=true。
+- 应用角色 rolsuper=false、rolbypassrls=false、默认事务只读；12 张 RLS 表保持启用，没有强制 RLS 被关闭。
+- 重复 restore 返回 verified，Ansible changed=0、failed=0，未重复 SQL。
+- V2 五个核心容器 ID、StartedAt、RestartCount 前后一致，重启数均为 0；三个公共域名仍指向原 V2 地址。
+- V3 Accounts 曾因 RLS 属主问题重启 8 次，修复后连续观测保持 8；不将这段历史描述为零重启。首次空库失败保留为 account_failed_16384。
+
+演练修复了基础 Compose 继承变量缺失、私有 registry 认证、PostgreSQL 目录 UID/GID、历史归档 public schema 与 RLS 属主映射问题。所有修复只作用于新 V3；没有修改 SaaS 镜像或业务特性。
+
+源备份保持不变。V3 保留 /data/backups/web-saas/prod-v3/<archive-sha>/account.dump，以及 /data/recovery/prod-v3 下的 prepared、quarantined、restored、rls-ownership、application-acceptance 证据。控制机与 V3 用户目录中的归档/registry 临时副本在完成验收后清理。
+
+这次没有执行 Vault Raft 独立实例恢复、公共 DNS 切换、旧密码登录或真实支付；V3 仅提供 SSH 隧道可达的 loopback 8443 只读验证入口。主机本机已配置四个 V3 别名，客户端可通过 SSH 隧道、显式解析与恢复公开 CA 验证 HTTPS，勿将恢复 CA 安装到生产信任链。

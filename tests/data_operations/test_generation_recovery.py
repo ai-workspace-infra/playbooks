@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest import mock
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +39,18 @@ class GenerationRecoveryTests(unittest.TestCase):
     def test_historical_archive_reuses_default_public(self):
         self.assertFalse(restore.archive_creates_public("2; 3079 16390 EXTENSION - pgcrypto\n"))
         self.assertTrue(restore.archive_creates_public("5; 2615 2200 SCHEMA - public postgres\n"))
+
+    def test_forced_rls_cannot_be_weakened_by_owner_mapping(self):
+        with mock.patch.object(restore, "pg", side_effect=["t", "1"]) as query:
+            with self.assertRaises(ValueError):
+                restore.align_rls_ownership()
+            self.assertEqual(query.call_count, 2)
+
+    def test_owner_mapping_rejects_privileged_application_role(self):
+        with mock.patch.object(restore, "pg", side_effect=["f", "0"]) as query:
+            with self.assertRaises(ValueError):
+                restore.align_rls_ownership()
+            self.assertEqual(query.call_count, 2)
 
     def test_no_implicit_cleanup_or_production_secret_copy(self):
         text = (ROOT / "roles/web_saas_generation_recovery/files/restore_new_generation.py").read_text()
