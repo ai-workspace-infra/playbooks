@@ -4,7 +4,8 @@
 
 This role validates the request and paired encrypted isolated-restore evidence,
 then invokes the reviewed Accounts bounded migrator twice inside the exact
-`canonicalAccount` container. It emits only a sanitized component receipt;
+environment-bound Accounts container (`canonicalAccount` for UAT;
+`web-saas-accounts` for a versioned PROD generation). It emits only a sanitized component receipt;
 release acceptance remains blocked until independent data, login, subscription,
 and application compatibility probes pass.
 The migration is in-place on the same UAT Selfhost target database; source
@@ -12,7 +13,7 @@ provenance is carried only by the separate baseline manifest. It does not
 receive a DSN, invoke Vault, initialize or reset a schema, or clear a dirty
 migration marker. A validated
 request requires a validated baseline manifest, the exact
-`canonicalAccount` container, expected
+environment-bound container, expected
 and target schema versions including an observed clean expected version,
 an immutable candidate SHA-256 and Accounts source commit, explicit migration
 approval bound to the target/baseline/candidate/source commit, one lowercase
@@ -48,5 +49,15 @@ baseline manifest validator does not
 authenticate its approval metadata;
 the baseline status is `manifest_validated`, not a claim that database rows
 were frozen. This component receipt is not full release acceptance. The current
-`web_saas_release_upgrade` backup receipt does not use the paired agentA
+`web_saas_release_upgrade` backup receipt does not use the paired
 backup/restore evidence contract and is not accepted here.
+
+For versioned production generations, the request must bind the exact
+`web-saas-prod-vN` host and the run ID shared by the encrypted backup and
+isolated restore. Stable `prod` is intentionally rejected by this migration
+role. The separate `web-saas-generation-data-operations.yml` entry point
+requires that exact inventory host and performs a target-host encrypted backup
+plus isolated restore before an optional single migration. It never imports
+data from another generation, stops or restarts services, changes GitOps, or
+changes public DNS. Application-release and business-acceptance gates remain
+separate.

@@ -1,5 +1,10 @@
 ---
-- name: Validate UAT request and paired backup/restore evidence shapes
+- name: Bind a private per-operation temporary path token
+  ansible.builtin.set_fact:
+    web_saas_data_migration_run_token: "{{ web_saas_data_migration_request.run_id | default('compat') }}"
+  no_log: true
+
+- name: Validate exact target request and paired backup/restore evidence shapes
   ansible.builtin.command:
     argv:
       - python3
@@ -11,7 +16,7 @@
   delegate_to: localhost
   become: false
 
-- name: Require a validated migration contract before touching canonicalAccount
+- name: Require a validated migration contract before touching the Accounts container
   ansible.builtin.assert:
     that:
       - (web_saas_data_migration_validation.stdout | from_json).status == 'ready'
@@ -20,38 +25,38 @@
       - web_saas_data_migration_receipt_file | length > 0
     fail_msg: Migration request or reviewed Accounts migrator artifact is not ready
 
-- name: Execute one exact bounded migration twice inside canonicalAccount
+- name: Execute one exact bounded migration twice inside the validated Accounts container
   block:
-    - name: Stage the reviewed Accounts migrator on the exact UAT host
+    - name: Stage the reviewed Accounts migrator on the exact selected host
       ansible.builtin.copy:
         src: "{{ web_saas_data_migration_binary_path }}"
-        dest: /tmp/uat-migratectl
+        dest: "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-migratectl"
         mode: '0755'
       no_log: true
 
-    - name: Stage the reviewed migration directory on the exact UAT host
+    - name: Stage the reviewed migration directory on the exact selected host
       ansible.builtin.copy:
         src: "{{ web_saas_data_migration_migrations_path }}/"
-        dest: /tmp/uat-account-migrations/
+        dest: "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-account-migrations/"
         mode: '0700'
         directory_mode: '0700'
       no_log: true
 
-    - name: Copy the reviewed migrator into canonicalAccount
+    - name: Copy the reviewed migrator into the validated Accounts container
       ansible.builtin.command:
-        argv: [docker, cp, /tmp/uat-migratectl, canonicalAccount:/usr/local/bin/migratectl]
+        argv: [docker, cp, "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-migratectl", "{{ web_saas_data_migration_request.container }}:/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-migratectl"]
       changed_when: true
       no_log: true
 
-    - name: Copy the reviewed migration files into canonicalAccount
+    - name: Copy the reviewed migration files into the validated Accounts container
       ansible.builtin.command:
-        argv: [docker, cp, /tmp/uat-account-migrations, canonicalAccount:/opt/account-migrations]
+        argv: [docker, cp, "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-account-migrations", "{{ web_saas_data_migration_request.container }}:/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-account-migrations"]
       changed_when: true
       no_log: true
 
-    - name: Make the reviewed migrator executable in canonicalAccount
+    - name: Make the reviewed migrator executable in the validated Accounts container
       ansible.builtin.command:
-        argv: [docker, exec, canonicalAccount, chmod, '0755', /usr/local/bin/migratectl]
+        argv: [docker, exec, "{{ web_saas_data_migration_request.container }}", chmod, '0755', "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-migratectl"]
       changed_when: false
       no_log: true
 
@@ -60,11 +65,11 @@
         argv:
           - docker
           - exec
-          - canonicalAccount
-          - /usr/local/bin/migratectl
+          - "{{ web_saas_data_migration_request.container }}"
+          - "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-migratectl"
           - migrate
           - --dir
-          - /opt/account-migrations
+          - "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-account-migrations"
           - --dsn-env
           - DATABASE_URL
           - --expected-version
@@ -86,11 +91,11 @@
         argv:
           - docker
           - exec
-          - canonicalAccount
-          - /usr/local/bin/migratectl
+          - "{{ web_saas_data_migration_request.container }}"
+          - "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-migratectl"
           - migrate
           - --dir
-          - /opt/account-migrations
+          - "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-account-migrations"
           - --dsn-env
           - DATABASE_URL
           - --expected-version
@@ -112,7 +117,7 @@
         web_saas_data_migration_evidence:
           schema: 1
           phase: migration
-          environment: uat
+          environment: "{{ web_saas_data_migration_environment }}"
           status: passed
           business_acceptance: false
           candidate_sha256: "{{ web_saas_data_migration_request.candidate_sha256 }}"
@@ -142,13 +147,25 @@
       become: false
 
   always:
-    - name: Remove the staged migrator from the UAT host
+    - name: Remove the staged migrator from the selected host
       ansible.builtin.file:
-        path: /tmp/uat-migratectl
+        path: "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-migratectl"
         state: absent
       no_log: true
-    - name: Remove the staged migration files from the UAT host
+    - name: Remove the staged migration files from the selected host
       ansible.builtin.file:
-        path: /tmp/uat-account-migrations
+        path: "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-account-migrations"
         state: absent
+      no_log: true
+    - name: Remove this run's migrator from the validated Accounts container
+      ansible.builtin.command:
+        argv: [docker, exec, "{{ web_saas_data_migration_request.container }}", rm, -f, "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-migratectl"]
+      changed_when: false
+      failed_when: false
+      no_log: true
+    - name: Remove this run's migration files from the validated Accounts container
+      ansible.builtin.command:
+        argv: [docker, exec, "{{ web_saas_data_migration_request.container }}", rm, -r, -f, --, "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-account-migrations"]
+      changed_when: false
+      failed_when: false
       no_log: true

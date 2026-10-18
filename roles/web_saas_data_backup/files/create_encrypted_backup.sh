@@ -16,7 +16,7 @@ WEB_SAAS_SUBSCRIPTION_TABLE="${WEB_SAAS_SUBSCRIPTION_TABLE-subscriptions}"
 
 [[ "$WEB_SAAS_DATABASE" == account ]] || fail 'only the account database is permitted'
 [[ "$WEB_SAAS_POSTGRES_CONTAINER" == web-saas-postgresql ]] || fail 'unexpected PostgreSQL container'
-[[ "$WEB_SAAS_ENVIRONMENT" =~ ^(uat|prod)$ ]] || fail 'invalid environment'
+[[ "$WEB_SAAS_ENVIRONMENT" =~ ^(uat|prod|prod-v[1-9][0-9]*)$ ]] || fail 'invalid environment'
 [[ "$WEB_SAAS_RUN_ID" =~ ^[1-9][0-9]*$ ]] || fail 'invalid run id'
 [[ "$WEB_SAAS_EXPECTED_VERSION" =~ ^[1-9][0-9]*$ ]] || fail 'invalid exact schema version'
 for value in "$WEB_SAAS_SOURCE_DATABASE_ID" "$WEB_SAAS_BASELINE_ID" "$WEB_SAAS_AUTHORIZED_SUBSCRIPTION_SAMPLE_ID"; do

@@ -1,0 +1,146 @@
+---
+# Manual SSH/Ansible entry point for immutable Selfhost PROD generations only.
+# It never selects the shared stable PROD host or changes public DNS.
+- name: Run bounded backup, isolated restore, and optional single migration on one PROD generation
+  hosts: "{{ web_saas_generation_target_host | default('never-matches') }}"
+  gather_facts: false
+  become: true
+  pre_tasks:
+    - name: Require a versioned PROD generation and exact matching host
+      ansible.builtin.assert:
+        that:
+          - web_saas_generation_environment is match('^prod-v[1-9][0-9]*$')
+          - web_saas_generation_target_host == 'web-saas-' ~ web_saas_generation_environment
+          - inventory_hostname == web_saas_generation_target_host
+          - web_saas_generation_data_operation in ['backup-restore', 'migration']
+          - web_saas_generation_release_tag is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+          - web_saas_generation_run_id is match('^[1-9][0-9]*$')
+          - web_saas_generation_migration_request.target_host == inventory_hostname
+          - web_saas_generation_migration_request.environment == web_saas_generation_environment
+          - web_saas_generation_migration_request.run_id == web_saas_generation_run_id
+          - web_saas_generation_migration_request.container == 'web-saas-accounts'
+          - web_saas_generation_backup_passphrase | length >= 32
+          - web_saas_generation_authorized_subscription_sample_id | length > 0
+          - web_saas_generation_baseline_receipt_file is match('^/[A-Za-z0-9._/-]+$')
+          - web_saas_generation_evidence_file is match('^/[A-Za-z0-9._/-]+$')
+          - web_saas_generation_data_operation != 'migration' or web_saas_generation_migration_receipt_file is match('^/[A-Za-z0-9._/-]+$')
+          - web_saas_generation_migration_table is match('^[a-z_][a-z0-9_]*$')
+          - web_saas_generation_migration_version_column is match('^[a-z_][a-z0-9_]*$')
+          - web_saas_generation_migration_dirty_column is match('^[a-z_][a-z0-9_]*$')
+          - web_saas_generation_migration_order_column is match('^[a-z_][a-z0-9_]*$')
+          - web_saas_generation_users_table is match('^[a-z_][a-z0-9_]*$')
+          - web_saas_generation_subscription_table is match('^[a-z_][a-z0-9_]*$')
+          - web_saas_generation_data_operation != 'migration' or web_saas_generation_migration_binary_path | length > 0
+          - web_saas_generation_data_operation != 'migration' or web_saas_generation_migrations_path | length > 0
+        fail_msg: Refusing implicit, stable-PROD, cross-generation, or mismatched-host data operations
+    - name: Inspect generation evidence destination for accidental overwrite
+      ansible.builtin.stat:
+        path: '{{ item }}'
+      loop: >-
+        {{ [web_saas_generation_evidence_file] +
+           ([web_saas_generation_migration_receipt_file] if web_saas_generation_data_operation == 'migration' else []) }}
+      delegate_to: localhost
+      become: false
+      register: web_saas_generation_receipts
+    - name: Require new immutable evidence paths
+      ansible.builtin.assert:
+        that:
+          - not item.stat.exists
+        fail_msg: Evidence files are immutable; choose a new run-specific output path
+      loop: '{{ web_saas_generation_receipts.results }}'
+      delegate_to: localhost
+      become: false
+  tasks:
+    - name: Validate the source-generation baseline metadata without copying data
+      ansible.builtin.include_role:
+        name: web_saas_data_baseline
+      vars:
+        web_saas_data_baseline_environment: '{{ web_saas_generation_environment }}'
+        web_saas_data_baseline_manifest: '{{ web_saas_generation_baseline_manifest }}'
+        web_saas_data_baseline_receipt_file: '{{ web_saas_generation_baseline_receipt_file }}'
+
+    - name: Keep normalized baseline evidence for the migration contract
+      ansible.builtin.set_fact:
+        web_saas_generation_baseline_evidence: '{{ web_saas_data_baseline_validation.stdout | from_json }}'
+
+    - name: Create an encrypted checkpoint on this generation host
+      ansible.builtin.include_role:
+        name: web_saas_data_backup
+      vars:
+        web_saas_data_backup_root: /data/backups/web-saas
+        web_saas_data_backup_database: account
+        web_saas_data_backup_postgres_container: web-saas-postgresql
+        web_saas_data_backup_environment: '{{ web_saas_generation_environment }}'
+        web_saas_data_backup_release_tag: '{{ web_saas_generation_release_tag }}'
+        web_saas_data_backup_run_id: '{{ web_saas_generation_run_id }}'
+        web_saas_data_backup_expected_version: '{{ web_saas_generation_migration_request.expected_version }}'
+        web_saas_data_backup_source_database_id: '{{ web_saas_generation_migration_request.target_db_id }}'
+        web_saas_data_backup_baseline_id: '{{ web_saas_generation_migration_request.baseline_id }}'
+        web_saas_data_backup_authorized_subscription_sample_id: '{{ web_saas_generation_authorized_subscription_sample_id }}'
+        web_saas_data_backup_passphrase: '{{ web_saas_generation_backup_passphrase }}'
+        web_saas_data_backup_migration_table: '{{ web_saas_generation_migration_table }}'
+        web_saas_data_backup_migration_version_column: '{{ web_saas_generation_migration_version_column }}'
+        web_saas_data_backup_migration_dirty_column: '{{ web_saas_generation_migration_dirty_column }}'
+        web_saas_data_backup_migration_order_column: '{{ web_saas_generation_migration_order_column }}'
+        web_saas_data_backup_expected_migration_rows: '{{ web_saas_generation_expected_migration_rows }}'
+        web_saas_data_backup_users_table: '{{ web_saas_generation_users_table }}'
+        web_saas_data_backup_subscription_table: '{{ web_saas_generation_subscription_table }}'
+      when: web_saas_generation_data_operation == 'migration' or web_saas_generation_data_operation == 'backup-restore'
+
+    - name: Restore the encrypted checkpoint into an isolated database and compare it
+      ansible.builtin.include_role:
+        name: web_saas_data_restore_verify
+      vars:
+        web_saas_data_restore_verify_database: account
+        web_saas_data_restore_verify_restore_database_prefix: release_verify_
+        web_saas_data_restore_verify_source_database_id: '{{ web_saas_generation_migration_request.target_db_id }}'
+        web_saas_data_restore_verify_baseline_id: '{{ web_saas_generation_migration_request.baseline_id }}'
+        web_saas_data_restore_verify_authorized_subscription_sample_id: '{{ web_saas_generation_authorized_subscription_sample_id }}'
+        web_saas_data_restore_verify_expected_version: '{{ web_saas_generation_migration_request.expected_version }}'
+        web_saas_data_restore_verify_source_schema_sha256: '{{ web_saas_data_backup_evidence.schema_sha256 }}'
+        web_saas_data_restore_verify_source_data_sha256: '{{ web_saas_data_backup_evidence.data_sha256 }}'
+        web_saas_data_restore_verify_database_system_identifier: '{{ web_saas_data_backup_evidence.database_system_identifier }}'
+        web_saas_data_restore_verify_expected_users: '{{ web_saas_data_backup_evidence.existing_users }}'
+        web_saas_data_restore_verify_expected_subscriptions: '{{ web_saas_data_backup_evidence.subscriptions }}'
+        web_saas_data_restore_verify_archive_path: '{{ web_saas_data_backup_evidence.archive_path }}'
+        web_saas_data_restore_verify_archive_sha256: '{{ web_saas_data_backup_evidence.archive_sha256 }}'
+        web_saas_data_restore_verify_environment: '{{ web_saas_generation_environment }}'
+        web_saas_data_restore_verify_run_id: '{{ web_saas_generation_run_id }}'
+        web_saas_data_restore_verify_postgres_container: web-saas-postgresql
+        web_saas_data_restore_verify_passphrase: '{{ web_saas_generation_backup_passphrase }}'
+        web_saas_data_restore_verify_migration_table: '{{ web_saas_generation_migration_table }}'
+        web_saas_data_restore_verify_migration_version_column: '{{ web_saas_generation_migration_version_column }}'
+        web_saas_data_restore_verify_migration_dirty_column: '{{ web_saas_generation_migration_dirty_column }}'
+        web_saas_data_restore_verify_migration_order_column: '{{ web_saas_generation_migration_order_column }}'
+        web_saas_data_restore_verify_expected_migration_rows: '{{ web_saas_generation_expected_migration_rows }}'
+        web_saas_data_restore_verify_expected_migration_dirty: 'false'
+        web_saas_data_restore_verify_users_table: '{{ web_saas_generation_users_table }}'
+        web_saas_data_restore_verify_subscription_table: '{{ web_saas_generation_subscription_table }}'
+        web_saas_data_restore_verify_cross_machine: false
+      when: web_saas_generation_data_operation == 'migration' or web_saas_generation_data_operation == 'backup-restore'
+      no_log: true
+
+    - name: Run only the approved single migration after this run's restore proof
+      ansible.builtin.include_role:
+        name: web_saas_data_migration
+      vars:
+        web_saas_data_migration_environment: '{{ web_saas_generation_environment }}'
+        web_saas_data_migration_request: '{{ web_saas_generation_migration_request }}'
+        web_saas_data_migration_baseline_manifest: '{{ web_saas_generation_baseline_evidence }}'
+        web_saas_data_migration_backup_evidence: '{{ web_saas_data_backup_evidence }}'
+        web_saas_data_migration_restore_evidence: '{{ web_saas_data_restore_verify_evidence }}'
+        web_saas_data_migration_binary_path: '{{ web_saas_generation_migration_binary_path }}'
+        web_saas_data_migration_migrations_path: '{{ web_saas_generation_migrations_path }}'
+        web_saas_data_migration_receipt_file: '{{ web_saas_generation_migration_receipt_file }}'
+      when: web_saas_generation_data_operation == 'migration'
+      no_log: true
+
+    - name: Save only nonsecret backup and restore evidence to a private controller directory
+      ansible.builtin.copy:
+        content: '{{ {"backup": web_saas_data_backup_evidence, "restore": web_saas_data_restore_verify_evidence} | to_nice_json }}\n'
+        dest: '{{ web_saas_generation_evidence_file }}'
+        mode: '0600'
+        force: false
+      delegate_to: localhost
+      become: false
+      no_log: true

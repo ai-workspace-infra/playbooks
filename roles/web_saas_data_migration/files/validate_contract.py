@@ -15,17 +15,34 @@ def nonempty(value):
     return isinstance(value, str) and bool(value.strip())
 
 
+def valid_environment(value):
+    return value == "uat" or bool(re.fullmatch(r"prod-v[1-9][0-9]*", str(value)))
+
+
+def valid_baseline_source(environment, source_environment):
+    if environment == "uat":
+        return source_environment == "uat"
+    if re.fullmatch(r"prod-v[1-9][0-9]*", str(environment)) and re.fullmatch(r"prod-v[1-9][0-9]*", str(source_environment)):
+        return int(source_environment.removeprefix("prod-v")) < int(environment.removeprefix("prod-v"))
+    return False
+
+
 def validate(payload):
     request = payload.get("request")
     baseline = payload.get("baseline_manifest")
     backup = payload.get("backup_evidence")
     restore = payload.get("restore_evidence")
-    require(payload.get("environment") == "uat", "role environment must be uat")
+    environment = payload.get("environment")
+    require(valid_environment(environment), "role environment must be UAT or an exact prod-vN generation; stable PROD is not supported")
     require(isinstance(request, dict), "migration request must be an object")
-    require(request.get("environment") == "uat", "migration is UAT-only")
+    require(request.get("environment") == environment, "request environment must match the selected target environment")
     require(nonempty(request.get("target_db_id")), "target_db_id is required")
     require(nonempty(request.get("baseline_id")), "baseline_id is required")
-    require(request.get("container") == "canonicalAccount", "target container must be canonicalAccount")
+    expected_container = "canonicalAccount" if environment == "uat" else "web-saas-accounts"
+    require(request.get("container") == expected_container, f"target container must be {expected_container}")
+    if environment.startswith("prod-v"):
+        require(request.get("target_host") == f"web-saas-{environment}", "generation migration must bind the exact web-saas-prod-vN host")
+        require(isinstance(request.get("run_id"), str) and re.fullmatch(r"[1-9][0-9]*", request["run_id"]), "generation migration run_id must be a positive integer")
     candidate = request.get("candidate_sha256")
     accounts_revision = request.get("accounts_source_revision")
     require(isinstance(candidate, str) and re.fullmatch(r"[0-9a-f]{64}", candidate), "candidate_sha256 must be lowercase SHA-256")
@@ -33,11 +50,11 @@ def validate(payload):
 
     require(isinstance(baseline, dict), "validated baseline manifest metadata is required")
     require(baseline.get("status") == "manifest_validated", "baseline status must be manifest_validated")
-    require(baseline.get("environment") == "uat", "baseline manifest must be UAT")
+    require(baseline.get("environment") == environment, "baseline manifest must match the selected target environment")
     require(baseline.get("baseline_id") == request["baseline_id"], "baseline_id does not match the migration request")
     require(baseline.get("target_db_id") == request["target_db_id"], "migration target must match the frozen baseline target")
     require(nonempty(baseline.get("source_db_id")), "baseline source provenance is required")
-    require(baseline.get("source_environment") == "uat", "baseline source provenance must be UAT")
+    require(valid_baseline_source(environment, baseline.get("source_environment")), "baseline source provenance must be UAT or an earlier prod-vN generation as appropriate")
     require(nonempty(baseline.get("snapshot_id")), "baseline snapshot provenance is required")
     require(nonempty(baseline.get("config_revision")), "baseline config revision is required")
     require(isinstance(baseline.get("approved_allowlist"), list) and baseline["approved_allowlist"], "baseline allowlist metadata is missing")
@@ -69,7 +86,7 @@ def validate(payload):
     for key in ("approval_id", "approver", "approved_at", "scope"):
         require(isinstance(approval.get(key), str) and approval[key].strip(), f"approval.{key} is required")
     for key, expected_value in (
-        ("environment", "uat"),
+        ("environment", environment),
         ("target_db_id", request["target_db_id"]),
         ("baseline_id", request["baseline_id"]),
         ("candidate_sha256", candidate),
@@ -82,7 +99,7 @@ def validate(payload):
         "phase": "database_backup_component",
         "status": "passed",
         "database": "account",
-        "environment": "uat",
+        "environment": environment,
         "source_database_id": request["target_db_id"],
         "baseline_id": request["baseline_id"],
         "encrypted": True,
@@ -112,7 +129,7 @@ def validate(payload):
         "phase": "database_restore_verify_component",
         "status": "passed",
         "database": "account",
-        "environment": "uat",
+        "environment": environment,
         "source_database_id": request["target_db_id"],
         "baseline_id": request["baseline_id"],
         "schema_version": expected,
@@ -129,8 +146,11 @@ def validate(payload):
     }
     for key, expected_value in restore_requirements.items():
         require(restore.get(key) == expected_value, f"restore evidence {key} does not match backup evidence")
-    checkpoint_match = re.fullmatch(r"uat_([1-9][0-9]*)", backup["checkpoint_id"])
-    require(checkpoint_match is not None, "backup checkpoint_id is not a UAT run identity")
+    checkpoint_prefix = re.escape(environment)
+    checkpoint_match = re.fullmatch(rf"{checkpoint_prefix}_([1-9][0-9]*)", backup["checkpoint_id"])
+    require(checkpoint_match is not None, "backup checkpoint_id does not match this environment and run")
+    if environment.startswith("prod-v"):
+        require(request["run_id"] == checkpoint_match.group(1), "migration run_id must match this backup and restore checkpoint")
     require(restore.get("restore_database") == f"release_verify_{checkpoint_match.group(1)}", "restore database is not the isolated database for this backup run")
     require(restore.get("authorized_subscription_sample_id") == backup["authorized_subscription_sample_id"], "restore subscription sample reference differs from backup")
     return {
@@ -145,8 +165,8 @@ def validate(payload):
             "target_db_id": request["target_db_id"],
             "baseline_id": request["baseline_id"],
             "checkpoint_id": backup["checkpoint_id"],
-            "container": "canonicalAccount",
-            "dsn_source": "DATABASE_URL environment variable inside canonicalAccount",
+            "container": request["container"],
+            "dsn_source": "DATABASE_URL environment variable inside the approved Accounts container",
         },
     }
 

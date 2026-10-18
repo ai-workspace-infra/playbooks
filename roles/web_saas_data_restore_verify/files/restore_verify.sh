@@ -18,7 +18,7 @@ WEB_SAAS_CROSS_MACHINE="${WEB_SAAS_CROSS_MACHINE-false}"
 
 [[ "$WEB_SAAS_DATABASE" == account ]] || fail 'only account is an allowed source database'
 [[ "$WEB_SAAS_POSTGRES_CONTAINER" == web-saas-postgresql ]] || fail 'unexpected PostgreSQL container'
-[[ "$WEB_SAAS_ENVIRONMENT" =~ ^(uat|prod)$ ]] || fail 'invalid environment'
+[[ "$WEB_SAAS_ENVIRONMENT" =~ ^(uat|prod|prod-v[1-9][0-9]*)$ ]] || fail 'invalid environment'
 [[ "$WEB_SAAS_RUN_ID" =~ ^[1-9][0-9]*$ ]] || fail 'invalid run id'
 [[ "$WEB_SAAS_EXPECTED_VERSION" =~ ^[1-9][0-9]*$ ]] || fail 'invalid exact schema version'
 [[ "$WEB_SAAS_EXPECTED_USERS" =~ ^[1-9][0-9]*$ ]] || fail 'empty or invalid user sample'
