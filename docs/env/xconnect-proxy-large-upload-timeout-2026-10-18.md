@@ -31,7 +31,7 @@ JP 最近 48 小时的 Caddy 记录中，`/split` POST 请求声明体约 0.5–
 - 三节点：Xray 配置测试通过；`xray`、`xray-tcp`、Caddy 为 active。
 - 三节点：HTTPS 根路径返回 HTTP 200。
 - JP：已从 Caddy 日志定位历史长 POST 502；不能把首页 200 当作上传链路验收。
-- 真实文件 1–512 MB、两种模式、三节点共 60 项的结果与原始证据见 [验收 case](../cases/xconnect-free-proxy-upload-acceptance-2026-10-18.md)。受控接收端结果不代表 ChatGPT 页面上传验收。
+- 真实文件 1–512 MB、两种模式、三节点共 60 项的结果与原始证据见 [知识库测试报告与数据（PR #160）](https://github.com/ai-workspace-services/knowledge/pull/160)。受控接收端结果不代表 ChatGPT 页面上传验收。
 
 ## Agent 缓存回写与持久修复
 
