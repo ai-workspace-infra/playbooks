@@ -27,6 +27,54 @@
 
 - name: Execute one exact bounded migration twice inside the validated Accounts container
   block:
+    - name: Select the embedded receipt-writing migrator for versioned generations
+      ansible.builtin.set_fact:
+        web_saas_data_migration_command:
+          - docker
+          - exec
+          - '{{ web_saas_data_migration_request.container }}'
+          - sh
+          - -c
+          - 'ACCOUNTS_MIGRATION_DSN="$DATABASE_URL" exec "$@"'
+          - sh
+          - '/tmp/{{ web_saas_data_migration_environment | replace("-", "_") }}-{{ web_saas_data_migration_run_token }}-migratectl'
+          - controlled-migrate
+          - --expected-version
+          - '{{ web_saas_data_migration_request.expected_version | string }}'
+          - --target-version
+          - '{{ web_saas_data_migration_request.target_version | string }}'
+          - --sha256
+          - '{{ web_saas_data_migration_request.migration_checksum }}'
+          - --lock-timeout
+          - '{{ web_saas_data_migration_request.lock_timeout_seconds }}s'
+          - --statement-timeout
+          - '{{ web_saas_data_migration_request.statement_timeout_seconds }}s'
+      when: web_saas_data_migration_environment is match('^prod-v[1-9][0-9]*$')
+
+    - name: Preserve the UAT filesystem-migrator contract
+      ansible.builtin.set_fact:
+        web_saas_data_migration_command:
+          - docker
+          - exec
+          - '{{ web_saas_data_migration_request.container }}'
+          - '/tmp/{{ web_saas_data_migration_environment | replace("-", "_") }}-{{ web_saas_data_migration_run_token }}-migratectl'
+          - migrate
+          - --dir
+          - '/tmp/{{ web_saas_data_migration_environment | replace("-", "_") }}-{{ web_saas_data_migration_run_token }}-account-migrations'
+          - --dsn-env
+          - DATABASE_URL
+          - --expected-version
+          - '{{ web_saas_data_migration_request.expected_version | string }}'
+          - --target-version
+          - '{{ web_saas_data_migration_request.target_version | string }}'
+          - --migration-sha256
+          - '{{ web_saas_data_migration_request.migration_checksum }}'
+          - --lock-timeout
+          - '{{ web_saas_data_migration_request.lock_timeout_seconds }}s'
+          - --statement-timeout
+          - '{{ web_saas_data_migration_request.statement_timeout_seconds }}s'
+      when: web_saas_data_migration_environment == 'uat'
+
     - name: Stage the reviewed Accounts migrator on the exact selected host
       ansible.builtin.copy:
         src: "{{ web_saas_data_migration_binary_path }}"
@@ -62,52 +110,14 @@
 
     - name: Run the bounded Accounts migration using only the container DSN environment
       ansible.builtin.command:
-        argv:
-          - docker
-          - exec
-          - "{{ web_saas_data_migration_request.container }}"
-          - "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-migratectl"
-          - migrate
-          - --dir
-          - "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-account-migrations"
-          - --dsn-env
-          - DATABASE_URL
-          - --expected-version
-          - "{{ web_saas_data_migration_request.expected_version }}"
-          - --target-version
-          - "{{ web_saas_data_migration_request.target_version }}"
-          - --migration-sha256
-          - "{{ web_saas_data_migration_request.migration_checksum }}"
-          - --lock-timeout
-          - "{{ web_saas_data_migration_request.lock_timeout_seconds }}s"
-          - --statement-timeout
-          - "{{ web_saas_data_migration_request.statement_timeout_seconds }}s"
+        argv: '{{ web_saas_data_migration_command }}'
       register: web_saas_data_migration_first
       changed_when: true
       no_log: true
 
     - name: Prove the same bounded request is idempotent
       ansible.builtin.command:
-        argv:
-          - docker
-          - exec
-          - "{{ web_saas_data_migration_request.container }}"
-          - "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-migratectl"
-          - migrate
-          - --dir
-          - "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-account-migrations"
-          - --dsn-env
-          - DATABASE_URL
-          - --expected-version
-          - "{{ web_saas_data_migration_request.expected_version }}"
-          - --target-version
-          - "{{ web_saas_data_migration_request.target_version }}"
-          - --migration-sha256
-          - "{{ web_saas_data_migration_request.migration_checksum }}"
-          - --lock-timeout
-          - "{{ web_saas_data_migration_request.lock_timeout_seconds }}s"
-          - --statement-timeout
-          - "{{ web_saas_data_migration_request.statement_timeout_seconds }}s"
+        argv: '{{ web_saas_data_migration_command }}'
       register: web_saas_data_migration_second
       changed_when: false
       no_log: true
@@ -133,7 +143,7 @@
           bounded_lock_wait: true
           bounded_execution: true
           reviewed_additive_sql: true
-          idempotent: "{{ web_saas_data_migration_first.rc == 0 and web_saas_data_migration_second.rc == 0 }}" | bool
+          idempotent: "{{ (web_saas_data_migration_first.rc == 0 and web_saas_data_migration_second.rc == 0) | bool }}"
           data_preserved: false
           old_application_compatible: false
       no_log: true
