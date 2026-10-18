@@ -1,0 +1,47 @@
+---
+- name: Bind the exact host, Test account, map and clean checkpoint
+  ansible.builtin.assert:
+    that:
+      - web_saas_price_environment is match('^prod-v[1-9][0-9]*$')
+      - web_saas_price_target_host == 'web-saas-' ~ web_saas_price_environment
+      - inventory_hostname == web_saas_price_target_host
+      - web_saas_price_release is match('^prod-v[1-9][0-9]*-[A-Za-z0-9._-]+$')
+      - web_saas_price_expected_version | int > 0
+      - web_saas_price_map.environment == web_saas_price_environment
+      - web_saas_price_map.stripe_account is match('^acct_[A-Za-z0-9]+$')
+      - web_saas_price_map.stripe_mode == 'test'
+      - web_saas_price_map.prices | length > 0
+
+- name: Verify the machine and data mount
+  ansible.builtin.command:
+    argv: '{{ item }}'
+  loop:
+    - [hostname, -s]
+    - [findmnt, -nro, TARGET, --mountpoint, /data]
+  changed_when: false
+  register: billing_price_host
+
+- name: Require the generation host on persistent storage
+  ansible.builtin.assert:
+    that:
+      - billing_price_host.results[0].stdout == web_saas_price_target_host
+      - billing_price_host.results[1].stdout == '/data'
+
+- name: Install the bounded provider-reference executor
+  ansible.builtin.copy:
+    src: apply.py
+    dest: /usr/local/libexec/web-saas-billing-price-mapping.py
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Map only matching active catalog entries in one audited transaction
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/web-saas-billing-price-mapping.py]
+    stdin: '{{ {"environment": web_saas_price_environment, "release": web_saas_price_release, "version": web_saas_price_expected_version | int, "mapping": web_saas_price_map} | to_json }}'
+  register: billing_price_applied
+  changed_when: (billing_price_applied.stdout | from_json).changed > 0
+
+- name: Return sanitized catalog mapping evidence
+  ansible.builtin.debug:
+    msg: '{{ billing_price_applied.stdout | from_json }}'
