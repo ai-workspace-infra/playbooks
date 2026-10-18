@@ -1,0 +1,43 @@
+---
+- name: Verify the private configuration and original secrets checksum
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/web-saas-stripe-sandbox/prepare.py, verify]
+    stdin: "{{ {'generation': web_saas_stripe_generation, 'domain': web_saas_stripe_domain_base, 'release_tag': web_saas_stripe_release_tag, 'run_id': web_saas_stripe_run_id, 'schema_version': stripe_manifest.database.expected_schema_version | string, 'users': web_saas_stripe_users, 'declaration': stripe_manifest, 'iac_inventory_sha256': stripe_iac_artifacts.results[0].stat.checksum, 'iac_receipt_sha256': stripe_iac_artifacts.results[1].stat.checksum} | to_json }}"
+  register: stripe_verified
+  changed_when: false
+  no_log: true
+
+- name: Return nonsecret declared Webhook URL and checkpoint verification
+  ansible.builtin.debug:
+    msg: '{{ stripe_verified.stdout | from_json }}'
+
+- name: Verify Accounts and Billing readiness through trusted public HTTPS
+  ansible.builtin.uri:
+    url: 'https://{{ item }}/readyz'
+    validate_certs: true
+    use_proxy: false
+    return_content: true
+    status_code: 200
+  loop: ['{{ stripe_manifest.target.accounts_domain }}', '{{ stripe_manifest.target.billing_domain }}']
+  register: stripe_readiness
+  until: stripe_readiness.status | default(0) == 200
+  retries: 6
+  delay: 5
+  no_log: true
+
+- name: Require application database readiness
+  ansible.builtin.assert:
+    that: stripe_readiness.results | map(attribute='json.status') | unique | list == ['ready']
+  no_log: true
+
+- name: Verify Console can be read over trusted public HTTPS
+  ansible.builtin.uri:
+    url: 'https://{{ stripe_manifest.target.console_domain }}/'
+    validate_certs: true
+    use_proxy: false
+    follow_redirects: none
+    status_code: [200, 302, 303, 307, 308]
+
+- name: Report the limited public readiness gate
+  ansible.builtin.debug:
+    msg: V3 HTTPS readiness passed; authenticated login, signed webhook and Sandbox checkout still require dedicated test-user acceptance.

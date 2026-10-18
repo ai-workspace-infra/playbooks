@@ -1,0 +1,39 @@
+---
+- name: Resolve the controller's original IaC inventory artifact path
+  ansible.builtin.set_fact:
+    stripe_iac_inventory_file: "{{ lookup('ansible.builtin.env', 'AI_WORKSPACE_CMDB_JSON') }}"
+
+- name: Require an absolute original IaC artifact path
+  ansible.builtin.assert:
+    that: stripe_iac_inventory_file is match('^/.+\.json$')
+
+- name: Hash the original inventory and receipt without copying or modifying them
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+    checksum_algorithm: sha256
+  loop: ['{{ stripe_iac_inventory_file }}', '{{ web_saas_stripe_iac_receipt_file }}']
+  delegate_to: localhost
+  become: false
+  register: stripe_iac_artifacts
+
+- name: Require regular original IaC files
+  ansible.builtin.assert:
+    that:
+      - stripe_iac_artifacts.results[0].stat.isreg | default(false)
+      - stripe_iac_artifacts.results[1].stat.isreg | default(false)
+
+- name: Load the paired nonsecret IaC receipt on the controller
+  ansible.builtin.set_fact:
+    stripe_iac_receipt: "{{ lookup('ansible.builtin.file', web_saas_stripe_iac_receipt_file) | from_json }}"
+
+- name: Require verified PROD provenance and the exact raw inventory checksum
+  ansible.builtin.assert:
+    that:
+      - stripe_iac_receipt.environment == 'prod'
+      - stripe_iac_receipt.result == 'applied_verified'
+      - stripe_iac_receipt.project == 'svc.plus'
+      - stripe_iac_receipt.provider == 'gcp-cloud'
+      - stripe_iac_receipt.inventory_sha256 is match('^[0-9a-f]{64}$')
+      - stripe_iac_artifacts.results[0].stat.checksum == stripe_iac_receipt.inventory_sha256
+      - cmdb_environment | default(none) in [none, stripe_iac_receipt.environment]

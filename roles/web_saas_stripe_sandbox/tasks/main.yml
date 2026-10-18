@@ -1,0 +1,98 @@
+---
+# This assertion is deliberately before every remote operation and Vault read.
+- name: Restrict the entire play to the exact IaC V3 inventory record
+  ansible.builtin.assert:
+    that:
+      - web_saas_stripe_phase in ['preflight', 'prepare', 'verify']
+      - web_saas_stripe_generation == 'prod-v3'
+      - web_saas_stripe_manifest_file is match('^/.+\.ya?ml$')
+      - web_saas_stripe_webhook_registry_file is match('^/.+\.ya?ml$')
+      - web_saas_stripe_iac_receipt_file is match('^/.+\.json$')
+      - web_saas_stripe_domain_base is match('^[a-z0-9]+([.-][a-z0-9]+)*\.[a-z]{2,}$')
+      - web_saas_stripe_target == 'console-selfhost-prod-v3.' ~ web_saas_stripe_domain_base
+      - inventory_hostname == web_saas_stripe_target
+      - ansible_play_hosts_all == [web_saas_stripe_target]
+      - cmdb_name == 'web-saas-prod-v3'
+      - "'web_saas_recovery' in group_names"
+      - service_domains | sort == ['accounts-selfhost-prod-v3.' ~ web_saas_stripe_domain_base, 'billing-selfhost-prod-v3.' ~ web_saas_stripe_domain_base, 'console-selfhost-prod-v3.' ~ web_saas_stripe_domain_base, 'postgresql-selfhost-prod-v3.' ~ web_saas_stripe_domain_base] | sort
+      - web_saas_stripe_release_tag is match('^prod-v3-[A-Za-z0-9][A-Za-z0-9._-]*$')
+      - web_saas_stripe_run_id is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')
+      - web_saas_stripe_users is none or (web_saas_stripe_users is integer and web_saas_stripe_users > 0)
+      - web_saas_stripe_vault_addr is match('^https://[a-zA-Z0-9.-]+(:[0-9]+)?$')
+
+- name: Authenticate the unchanged IaC artifact against its required receipt
+  ansible.builtin.include_tasks: provenance.yml
+
+- name: Load the required nonsecret GitOps Sandbox declaration on the controller
+  ansible.builtin.set_fact:
+    stripe_manifest_declared: "{{ lookup('ansible.builtin.file', web_saas_stripe_manifest_file) | from_yaml }}"
+    stripe_webhook_registry: "{{ lookup('ansible.builtin.file', web_saas_stripe_webhook_registry_file) | from_yaml }}"
+
+- name: Require the V3 entry in the single GitOps Webhook registry
+  ansible.builtin.assert:
+    that:
+      - stripe_webhook_registry.apiVersion == 'web-saas/v1'
+      - stripe_webhook_registry.kind == 'StripeWebhookRegistry'
+      - stripe_webhook_registry.domain_base == web_saas_stripe_domain_base
+      - stripe_webhook_registry.webhook_path == stripe_manifest_declared.stripe.webhook_path
+      - stripe_manifest_declared.stripe.webhook_environment == stripe_manifest_declared.target.generation
+      - stripe_manifest_declared.stripe.webhook_environment == 'prod-v3'
+      - stripe_manifest_declared.stripe.webhook_registry_ref == 'compose/web-saas/billing/stripe-webhooks.yaml'
+      - stripe_manifest_declared.stripe.webhook_url is not defined
+      - stripe_webhook_registry.environments['prod-v3'].webhook_url == 'https://' ~ stripe_manifest_declared.target.accounts_domain ~ stripe_webhook_registry.webhook_path
+
+- name: Resolve only the selected V3 URL into the in-memory runtime declaration
+  ansible.builtin.set_fact:
+    stripe_manifest: "{{ stripe_manifest_declared | combine({'stripe': stripe_manifest_declared.stripe | combine({'webhook_url': stripe_webhook_registry.environments[stripe_manifest_declared.stripe.webhook_environment].webhook_url})}) }}"
+
+- name: Validate declared V3 domains and the Sandbox-only Vault allowlist
+  ansible.builtin.assert:
+    that:
+      - stripe_manifest.apiVersion == 'web-saas/v1'
+      - stripe_manifest.kind == 'StripeSandboxQualification'
+      - stripe_manifest.target.generation == 'prod-v3'
+      - stripe_manifest.target.resource_name == cmdb_name
+      - stripe_manifest.target.console_domain == web_saas_stripe_target
+      - stripe_manifest.target.accounts_domain == 'accounts-selfhost-prod-v3.' ~ web_saas_stripe_domain_base
+      - stripe_manifest.target.billing_domain == 'billing-selfhost-prod-v3.' ~ web_saas_stripe_domain_base
+      - stripe_manifest.target.postgresql_domain == 'postgresql-selfhost-prod-v3.' ~ web_saas_stripe_domain_base
+      - service_domains | sort == [stripe_manifest.target.console_domain, stripe_manifest.target.accounts_domain, stripe_manifest.target.billing_domain, stripe_manifest.target.postgresql_domain] | sort
+      - stripe_manifest.target.doco_target == 'prod-v3-stripe-sandbox'
+      - stripe_manifest.database.name == 'account'
+      - stripe_manifest.database.expected_schema_version | string is match('^[1-9][0-9]*$')
+      - stripe_manifest.database.background_writers == false
+      - stripe_manifest.database.preserve_existing_accounts == true
+      - stripe_manifest.stripe.mode == 'test'
+      - stripe_manifest.stripe.api_version is match('^[0-9]{4}-[0-9]{2}-[0-9]{2}\.[a-z]+$')
+      - stripe_manifest.stripe.vault_path == 'kv/prod/billing-service'
+      - stripe_manifest.stripe.secret_key == 'SANDBOX_STRIPE_SECRET_KEY'
+      - stripe_manifest.stripe.webhook_secret_key == 'SANDBOX_STRIPE_WEBHOOK_SECRET'
+      - stripe_manifest.stripe.webhook_path == '/api/billing/stripe/webhook'
+      - stripe_manifest.stripe.webhook_url == 'https://' ~ stripe_manifest.target.accounts_domain ~ stripe_manifest.stripe.webhook_path
+      - stripe_manifest.isolation.source_access == 'none'
+      - stripe_manifest.isolation.public_dns_cutover == false
+      - stripe_manifest.isolation.postgres_public_port == false
+      - stripe_manifest.isolation.smtp_enabled == false
+
+- name: Read the actual host identity and persistent data mount
+  ansible.builtin.command:
+    argv: "{{ item }}"
+  loop:
+    - [hostname, -s]
+    - [findmnt, -nro, TARGET, --mountpoint, /data]
+  register: stripe_host_identity
+  changed_when: false
+
+- name: Reject the source host or a missing independent data mount
+  ansible.builtin.assert:
+    that:
+      - stripe_host_identity.results[0].stdout == 'web-saas-prod-v3'
+      - stripe_host_identity.results[1].stdout == '/data'
+
+- name: Prepare the checkpoint and Accounts-only configuration
+  ansible.builtin.include_tasks: prepare.yml
+  when: web_saas_stripe_phase == 'prepare'
+
+- name: Verify the prepared host and published HTTPS readiness
+  ansible.builtin.include_tasks: verify.yml
+  when: web_saas_stripe_phase == 'verify'
