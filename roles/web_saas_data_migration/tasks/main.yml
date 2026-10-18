@@ -32,10 +32,12 @@
         web_saas_data_migration_command:
           - docker
           - exec
+          - -u
+          - postgres
           - '{{ web_saas_data_migration_request.container }}'
           - sh
           - -c
-          - 'ACCOUNTS_MIGRATION_DSN="$DATABASE_URL" exec "$@"'
+          - 'ACCOUNTS_MIGRATION_DSN="host=/var/run/postgresql user=postgres dbname=account sslmode=disable" exec "$@"'
           - sh
           - '/tmp/{{ web_saas_data_migration_environment | replace("-", "_") }}-{{ web_saas_data_migration_run_token }}-migratectl'
           - controlled-migrate
