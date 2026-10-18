@@ -32,10 +32,12 @@
         web_saas_data_migration_command:
           - docker
           - exec
+          - -u
+          - postgres
           - '{{ web_saas_data_migration_request.container }}'
           - sh
           - -c
-          - 'ACCOUNTS_MIGRATION_DSN="$DATABASE_URL" exec "$@"'
+          - 'ACCOUNTS_MIGRATION_DSN="host=/var/run/postgresql user=postgres dbname=account sslmode=disable" exec "$@"'
           - sh
           - '/tmp/{{ web_saas_data_migration_environment | replace("-", "_") }}-{{ web_saas_data_migration_run_token }}-migratectl'
           - controlled-migrate
@@ -89,6 +91,7 @@
         mode: '0700'
         directory_mode: '0700'
       no_log: true
+      when: web_saas_data_migration_environment == 'uat'
 
     - name: Copy the reviewed migrator into the validated Accounts container
       ansible.builtin.command:
@@ -101,6 +104,7 @@
         argv: [docker, cp, "/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-account-migrations", "{{ web_saas_data_migration_request.container }}:/tmp/{{ web_saas_data_migration_environment | replace('-', '_') }}-{{ web_saas_data_migration_run_token }}-account-migrations"]
       changed_when: true
       no_log: true
+      when: web_saas_data_migration_environment == 'uat'
 
     - name: Make the reviewed migrator executable in the validated Accounts container
       ansible.builtin.command:
@@ -111,6 +115,7 @@
     - name: Run the bounded Accounts migration using only the container DSN environment
       ansible.builtin.command:
         argv: '{{ web_saas_data_migration_command }}'
+        expand_argument_vars: false
       register: web_saas_data_migration_first
       changed_when: true
       no_log: true
@@ -118,6 +123,7 @@
     - name: Prove the same bounded request is idempotent
       ansible.builtin.command:
         argv: '{{ web_saas_data_migration_command }}'
+        expand_argument_vars: false
       register: web_saas_data_migration_second
       changed_when: false
       no_log: true

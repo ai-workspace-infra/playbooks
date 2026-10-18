@@ -38,7 +38,7 @@ def validate(payload):
     require(request.get("environment") == environment, "request environment must match the selected target environment")
     require(nonempty(request.get("target_db_id")), "target_db_id is required")
     require(nonempty(request.get("baseline_id")), "baseline_id is required")
-    expected_container = "canonicalAccount" if environment == "uat" else "web-saas-accounts"
+    expected_container = "canonicalAccount" if environment == "uat" else "web-saas-postgresql"
     require(request.get("container") == expected_container, f"target container must be {expected_container}")
     if environment.startswith("prod-v"):
         require(request.get("target_host") == f"web-saas-{environment}", "generation migration must bind the exact web-saas-prod-vN host")
@@ -166,7 +166,8 @@ def validate(payload):
             "baseline_id": request["baseline_id"],
             "checkpoint_id": backup["checkpoint_id"],
             "container": request["container"],
-            "dsn_source": "DATABASE_URL environment variable inside the approved Accounts container",
+            "dsn_source": ("DATABASE_URL environment variable inside the approved Accounts container" if environment == "uat"
+                           else "local PostgreSQL socket inside the approved database container; no password transport"),
         },
     }
 

@@ -18,7 +18,7 @@
           - web_saas_generation_migration_request.target_host == inventory_hostname
           - web_saas_generation_migration_request.environment == web_saas_generation_environment
           - web_saas_generation_migration_request.run_id == web_saas_generation_run_id
-          - web_saas_generation_migration_request.container == 'web-saas-accounts'
+          - web_saas_generation_migration_request.container == ('web-saas-postgresql' if web_saas_generation_data_operation == 'migration' else 'web-saas-accounts')
           - web_saas_generation_authorized_subscription_sample_id | length > 0
           - web_saas_generation_baseline_receipt_file is match('^/[A-Za-z0-9._/-]+$')
           - web_saas_generation_evidence_file is match('^/[A-Za-z0-9._/-]+$')

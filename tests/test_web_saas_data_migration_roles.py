@@ -248,7 +248,7 @@ class IncrementalMigrationContractTests(unittest.TestCase):
 
     def test_accepts_exact_prod_generation_with_earlier_generation_provenance(self):
         request = {**self.request, "environment": "prod-v3", "target_host": "web-saas-prod-v3",
-                   "container": "web-saas-accounts", "run_id": "41"}
+                   "container": "web-saas-postgresql", "run_id": "41"}
         request["approval"] = {**request["approval"], "environment": "prod-v3"}
         baseline = {**self.baseline, "environment": "prod-v3", "source_environment": "prod-v2"}
         backup = {**self.backup, "environment": "prod-v3", "checkpoint_id": "prod-v3_41",
@@ -258,7 +258,11 @@ class IncrementalMigrationContractTests(unittest.TestCase):
                                          "baseline_manifest": baseline, "backup_evidence": backup,
                                          "restore_evidence": restore})
         self.assertEqual(result["status"], "ready")
-        self.assertEqual(result["execution_binding"]["container"], "web-saas-accounts")
+        self.assertEqual(result["execution_binding"]["container"], "web-saas-postgresql")
+        self.assertIn("no password transport", result["execution_binding"]["dsn_source"])
+        with self.assertRaises(ValueError):
+            self.contract.validate({"environment": "prod-v3", "request": {**request, "container": "web-saas-accounts"},
+                                    "baseline_manifest": baseline, "backup_evidence": backup, "restore_evidence": restore})
 
     def test_rejects_stable_prod_and_wrong_generation_or_container(self):
         for environment in ("prod", "prod-v0", "prod-v03", "prod-v3;other"):
@@ -267,7 +271,7 @@ class IncrementalMigrationContractTests(unittest.TestCase):
                                         "baseline_manifest": self.baseline, "backup_evidence": self.backup,
                                         "restore_evidence": self.restore})
         request = {**self.request, "environment": "prod-v3", "target_host": "web-saas-prod-v2",
-                   "container": "web-saas-accounts", "run_id": "41"}
+                   "container": "web-saas-postgresql", "run_id": "41"}
         with self.assertRaisesRegex(ValueError, "exact web-saas-prod-vN host"):
             self.contract.validate({"environment": "prod-v3", "request": request,
                                     "baseline_manifest": self.baseline, "backup_evidence": self.backup,
@@ -296,7 +300,7 @@ class IncrementalMigrationContractTests(unittest.TestCase):
         playbook = (ROOT / "web-saas-generation-data-operations.yml").read_text()
         self.assertIn("^prod-v[1-9][0-9]*$", playbook)
         self.assertIn("'web-saas-' ~ web_saas_generation_environment", playbook)
-        self.assertIn("web_saas_generation_migration_request.container == 'web-saas-accounts'", playbook)
+        self.assertIn("web_saas_generation_migration_request.container == ('web-saas-postgresql'", playbook)
         self.assertLess(playbook.index("name: web_saas_data_backup"), playbook.index("name: web_saas_data_restore_verify"))
         self.assertLess(playbook.index("name: web_saas_data_restore_verify"), playbook.index("name: web_saas_data_migration"))
         self.assertIn("/data/backups/web-saas", playbook)
