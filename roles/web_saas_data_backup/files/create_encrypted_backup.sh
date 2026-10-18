@@ -6,6 +6,14 @@ fail() { printf '%s\n' "$1" >&2; exit 2; }
 require() { [[ -n "${!1:-}" ]] || fail "missing required input: $1"; }
 for name in WEB_SAAS_BACKUP_ROOT WEB_SAAS_DATABASE WEB_SAAS_POSTGRES_CONTAINER WEB_SAAS_ENVIRONMENT WEB_SAAS_RUN_ID WEB_SAAS_EXPECTED_VERSION WEB_SAAS_SOURCE_DATABASE_ID WEB_SAAS_BASELINE_ID WEB_SAAS_AUTHORIZED_SUBSCRIPTION_SAMPLE_ID WEB_SAAS_BACKUP_PASSPHRASE; do require "$name"; done
 
+WEB_SAAS_MIGRATION_TABLE="${WEB_SAAS_MIGRATION_TABLE-schema_migrations}"
+WEB_SAAS_MIGRATION_VERSION_COLUMN="${WEB_SAAS_MIGRATION_VERSION_COLUMN-version}"
+WEB_SAAS_MIGRATION_DIRTY_COLUMN="${WEB_SAAS_MIGRATION_DIRTY_COLUMN-dirty}"
+WEB_SAAS_MIGRATION_ORDER_COLUMN="${WEB_SAAS_MIGRATION_ORDER_COLUMN-version}"
+WEB_SAAS_EXPECTED_MIGRATION_ROWS="${WEB_SAAS_EXPECTED_MIGRATION_ROWS:-1}"
+WEB_SAAS_USERS_TABLE="${WEB_SAAS_USERS_TABLE-users}"
+WEB_SAAS_SUBSCRIPTION_TABLE="${WEB_SAAS_SUBSCRIPTION_TABLE-subscriptions}"
+
 [[ "$WEB_SAAS_DATABASE" == account ]] || fail 'only the account database is permitted'
 [[ "$WEB_SAAS_POSTGRES_CONTAINER" == web-saas-postgresql ]] || fail 'unexpected PostgreSQL container'
 [[ "$WEB_SAAS_ENVIRONMENT" =~ ^(uat|prod)$ ]] || fail 'invalid environment'
@@ -15,6 +23,11 @@ for value in "$WEB_SAAS_SOURCE_DATABASE_ID" "$WEB_SAAS_BASELINE_ID" "$WEB_SAAS_A
   [[ "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$ ]] || fail 'invalid source, baseline, or sample reference'
 done
 [[ ${#WEB_SAAS_BACKUP_PASSPHRASE} -ge 32 ]] || fail 'encryption input is too short'
+for identifier in "$WEB_SAAS_MIGRATION_TABLE" "$WEB_SAAS_MIGRATION_VERSION_COLUMN" "$WEB_SAAS_MIGRATION_ORDER_COLUMN" "$WEB_SAAS_USERS_TABLE" "$WEB_SAAS_SUBSCRIPTION_TABLE"; do
+  [[ "$identifier" =~ ^[a-z_][a-z0-9_]*$ ]] || fail 'unsafe database identifier'
+done
+[[ -z "${WEB_SAAS_MIGRATION_DIRTY_COLUMN:-}" || "$WEB_SAAS_MIGRATION_DIRTY_COLUMN" =~ ^[a-z_][a-z0-9_]*$ ]] || fail 'unsafe migration dirty identifier'
+[[ "$WEB_SAAS_EXPECTED_MIGRATION_ROWS" =~ ^[1-9][0-9]*$ ]] || fail 'invalid expected migration row count'
 [[ "$WEB_SAAS_BACKUP_ROOT" =~ ^/data/backups/web-saas/${WEB_SAAS_ENVIRONMENT}/[A-Za-z0-9][A-Za-z0-9._-]*/${WEB_SAAS_RUN_ID}$ ]] || fail 'checkpoint must be beneath the mounted /data backup root for this environment and run'
 
 archive="$WEB_SAAS_BACKUP_ROOT/account.dump.enc"
@@ -35,9 +48,14 @@ data_fingerprint() {
     printf '%s\n' "$commands" "COMMIT;"
   } | docker exec -i "$WEB_SAAS_POSTGRES_CONTAINER" psql -U postgres -d "$1" -XAtq -v ON_ERROR_STOP=1 | sha256sum | awk '{print $1}'
 }
-source_state="$(psql_value "$WEB_SAAS_DATABASE" "SELECT (SELECT count(*) FROM public.schema_migrations)::text || ':' || (SELECT version::text || ':' || dirty::text FROM public.schema_migrations LIMIT 1) || ',' || (SELECT count(*) FROM public.users)::text || ',' || (SELECT count(*) FROM public.subscriptions)::text")" || fail 'could not read source database state'
+if [[ -n "${WEB_SAAS_MIGRATION_DIRTY_COLUMN:-}" ]]; then
+  migration_dirty_sql="(SELECT COALESCE(bool_or(${WEB_SAAS_MIGRATION_DIRTY_COLUMN}), false)::text FROM public.${WEB_SAAS_MIGRATION_TABLE})"
+else
+  migration_dirty_sql="'not-applicable'"
+fi
+source_state="$(psql_value "$WEB_SAAS_DATABASE" "SELECT (SELECT count(*) FROM public.${WEB_SAAS_MIGRATION_TABLE})::text || ':' || (SELECT ${WEB_SAAS_MIGRATION_VERSION_COLUMN}::text FROM public.${WEB_SAAS_MIGRATION_TABLE} ORDER BY ${WEB_SAAS_MIGRATION_ORDER_COLUMN} DESC LIMIT 1) || ':' || ${migration_dirty_sql} || ',' || (SELECT count(*) FROM public.${WEB_SAAS_USERS_TABLE})::text || ',' || (SELECT count(*) FROM public.${WEB_SAAS_SUBSCRIPTION_TABLE})::text")" || fail 'could not read source database state'
 IFS=',' read -r migration_state user_count subscription_count <<<"$source_state"
-[[ "$migration_state" == "1:${WEB_SAAS_EXPECTED_VERSION}:false" ]] || fail 'source migration state is missing, dirty, duplicated, or not the exact target'
+[[ "$migration_state" == "${WEB_SAAS_EXPECTED_MIGRATION_ROWS}:${WEB_SAAS_EXPECTED_VERSION}:${WEB_SAAS_MIGRATION_DIRTY_COLUMN:+false}" || "$migration_state" == "${WEB_SAAS_EXPECTED_MIGRATION_ROWS}:${WEB_SAAS_EXPECTED_VERSION}:not-applicable" ]] || fail 'source migration state is missing, dirty, duplicated, or not the exact target'
 [[ "$user_count" =~ ^[1-9][0-9]*$ ]] || fail 'source user sample is empty'
 [[ "$subscription_count" =~ ^[0-9]+$ ]] || fail 'subscription count is invalid'
 source_schema="$(docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" --schema-only --schema=public --no-owner --no-privileges | sed '/^\\restrict /d; /^\\unrestrict /d' | sha256sum | awk '{print $1}')" || fail 'could not fingerprint source schema'
@@ -62,13 +80,14 @@ archive_sha256="$(sha256sum "$archive" | awk '{print $1}')"
 sync -f "$archive"
 sync -f "$WEB_SAAS_BACKUP_ROOT"
 
-python3 - "$WEB_SAAS_BACKUP_ROOT" "$WEB_SAAS_ENVIRONMENT" "$WEB_SAAS_RUN_ID" "$WEB_SAAS_SOURCE_DATABASE_ID" "$WEB_SAAS_BASELINE_ID" "$WEB_SAAS_AUTHORIZED_SUBSCRIPTION_SAMPLE_ID" "$WEB_SAAS_EXPECTED_VERSION" "$user_count" "$subscription_count" "$source_schema" "$archive_sha256" "$database_system_identifier" "$source_data" <<'PY'
+python3 - "$WEB_SAAS_BACKUP_ROOT" "$WEB_SAAS_ENVIRONMENT" "$WEB_SAAS_RUN_ID" "$WEB_SAAS_SOURCE_DATABASE_ID" "$WEB_SAAS_BASELINE_ID" "$WEB_SAAS_AUTHORIZED_SUBSCRIPTION_SAMPLE_ID" "$WEB_SAAS_EXPECTED_VERSION" "$user_count" "$subscription_count" "$source_schema" "$archive_sha256" "$database_system_identifier" "$source_data" "$WEB_SAAS_EXPECTED_MIGRATION_ROWS" "${WEB_SAAS_MIGRATION_DIRTY_COLUMN:+false}" "$WEB_SAAS_MIGRATION_TABLE" "$WEB_SAAS_USERS_TABLE" "$WEB_SAAS_SUBSCRIPTION_TABLE" <<'PY'
 import json
 import os
 import sys
 
 (root, environment, run_id, source_id, baseline_id, sample_id, version,
- users, subscriptions, schema_sha256, archive_sha256, system_identifier, data_sha256) = sys.argv[1:]
+ users, subscriptions, schema_sha256, archive_sha256, system_identifier, data_sha256,
+ migration_rows, migration_dirty, migration_table, users_table, subscription_table) = sys.argv[1:]
 print(json.dumps({
     "schema": 1,
     "phase": "database_backup_component",
@@ -80,6 +99,11 @@ print(json.dumps({
     "environment": environment,
     "checkpoint_id": f"{environment}_{run_id}",
     "schema_version": int(version),
+    "migration_rows": int(migration_rows),
+    "migration_dirty": migration_dirty or "not-applicable",
+    "migration_table": migration_table,
+    "users_table": users_table,
+    "subscription_table": subscription_table,
     "existing_users": int(users),
     "subscriptions": int(subscriptions),
     "schema_sha256": schema_sha256,

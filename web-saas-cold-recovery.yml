@@ -1,0 +1,21 @@
+---
+# Explicit operator entrypoint. Inventory groups must be supplied by the
+# caller from IaC-produced CMDB; this playbook never invents topology.
+- name: Create the encrypted source checkpoint
+  hosts: web_saas_cold_recovery_source
+  gather_facts: false
+  roles:
+    - role: web_saas_cold_recovery
+      vars:
+        web_saas_cold_recovery_mode: backup
+
+- name: Stage and verify the checkpoint on an independent recovery host
+  hosts: web_saas_cold_recovery_destination
+  gather_facts: false
+  roles:
+    - role: web_saas_cold_recovery
+      vars:
+        web_saas_cold_recovery_mode: stage
+    - role: web_saas_cold_recovery
+      vars:
+        web_saas_cold_recovery_mode: restore_verify

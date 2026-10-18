@@ -1,0 +1,65 @@
+---
+- name: Require a controller archive and receipt for staging
+  ansible.builtin.assert:
+    that:
+      - web_saas_cold_recovery_controller_archive_dir is match('^/[^\n]+$')
+      - web_saas_cold_recovery_receipt_file is match('^/[^\n]+$')
+    fail_msg: Cross-machine staging requires the source archive and nonsecret receipt
+
+- name: Read the source receipt without exposing its contents
+  ansible.builtin.set_fact:
+    web_saas_cold_recovery_source_evidence: '{{ lookup("ansible.builtin.file", web_saas_cold_recovery_receipt_file) | from_json }}'
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Require an explicit service-variant match when one is supplied
+  ansible.builtin.assert:
+    that:
+      - web_saas_cold_recovery_service_variant == '' or web_saas_cold_recovery_source_evidence.service_variant | default('') == web_saas_cold_recovery_service_variant
+    fail_msg: Source receipt belongs to a different web-saas service variant
+
+- name: Create the destination checkpoint directory on /data
+  ansible.builtin.file:
+    path: '{{ web_saas_cold_recovery_root }}/{{ web_saas_cold_recovery_environment }}/{{ web_saas_cold_recovery_release_tag }}/{{ web_saas_cold_recovery_run_id }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Stage the encrypted archive without decrypting it
+  ansible.builtin.copy:
+    src: '{{ web_saas_cold_recovery_controller_archive_dir }}/{{ web_saas_cold_recovery_environment }}-{{ web_saas_cold_recovery_release_tag }}-{{ web_saas_cold_recovery_run_id }}.account.dump.enc'
+    dest: '{{ web_saas_cold_recovery_root }}/{{ web_saas_cold_recovery_environment }}/{{ web_saas_cold_recovery_release_tag }}/{{ web_saas_cold_recovery_run_id }}/account.dump.enc'
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  no_log: true
+
+- name: Verify staged archive checksum against the source receipt
+  ansible.builtin.stat:
+    path: '{{ web_saas_cold_recovery_root }}/{{ web_saas_cold_recovery_environment }}/{{ web_saas_cold_recovery_release_tag }}/{{ web_saas_cold_recovery_run_id }}/account.dump.enc'
+    follow: false
+    checksum_algorithm: sha256
+    get_checksum: true
+  register: web_saas_cold_recovery_staged_archive
+
+- name: Refuse a missing or altered staged archive
+  ansible.builtin.assert:
+    that:
+      - web_saas_cold_recovery_staged_archive.stat.isreg | default(false)
+      - web_saas_cold_recovery_staged_archive.stat.mode == '0600'
+      - web_saas_cold_recovery_staged_archive.stat.checksum == web_saas_cold_recovery_source_evidence.archive_sha256
+    fail_msg: Staged encrypted archive does not match the source receipt
+
+- name: Write the destination checksum manifest from the source receipt
+  ansible.builtin.copy:
+    content: |
+      {{ web_saas_cold_recovery_source_evidence.archive_sha256 }}  account.dump.enc
+    dest: '{{ web_saas_cold_recovery_root }}/{{ web_saas_cold_recovery_environment }}/{{ web_saas_cold_recovery_release_tag }}/{{ web_saas_cold_recovery_run_id }}/SHA256SUMS'
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  no_log: true

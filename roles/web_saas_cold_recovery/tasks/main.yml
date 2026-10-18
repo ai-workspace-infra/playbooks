@@ -1,0 +1,54 @@
+---
+- name: Validate cold recovery mode and immutable identity
+  ansible.builtin.assert:
+    that:
+      - web_saas_cold_recovery_mode in ['backup', 'stage', 'restore_verify', 'restore_primary']
+      - web_saas_cold_recovery_environment in ['uat', 'prod']
+      - web_saas_cold_recovery_root == '/data/backups/web-saas'
+      - web_saas_cold_recovery_service_variant == '' or web_saas_cold_recovery_service_variant is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+      - web_saas_cold_recovery_release_tag is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+      - web_saas_cold_recovery_run_id is match('^[1-9][0-9]*$')
+      - web_saas_cold_recovery_database == 'account'
+      - web_saas_cold_recovery_postgres_container == 'web-saas-postgresql'
+      - web_saas_cold_recovery_passphrase | length >= 32 or web_saas_cold_recovery_mode in ['stage']
+      - web_saas_cold_recovery_migration_table is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_cold_recovery_migration_version_column is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_cold_recovery_migration_dirty_column == '' or web_saas_cold_recovery_migration_dirty_column is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_cold_recovery_migration_order_column is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_cold_recovery_expected_migration_rows | string is match('^[1-9][0-9]*$')
+      - web_saas_cold_recovery_users_table is match('^[a-z_][a-z0-9_]*$')
+      - web_saas_cold_recovery_subscription_table is match('^[a-z_][a-z0-9_]*$')
+    fail_msg: Cold recovery identity, mode, encryption input, or database contract is missing or unsafe
+  no_log: true
+
+- name: Require persistent data storage on recovery targets
+  ansible.builtin.command:
+    argv: [findmnt, --noheadings, --output, TARGET, --target, /data]
+  register: web_saas_cold_recovery_data_mount
+  changed_when: false
+  when: web_saas_cold_recovery_mode in ['stage', 'restore_verify']
+
+- name: Refuse recovery on the root filesystem
+  ansible.builtin.assert:
+    that:
+      - web_saas_cold_recovery_data_mount.stdout | trim == '/data'
+    fail_msg: Recovery requires an independent /data mount
+  when: web_saas_cold_recovery_mode in ['stage', 'restore_verify']
+
+- name: Create encrypted source checkpoint and controller receipt
+  ansible.builtin.include_tasks: backup.yml
+  when: web_saas_cold_recovery_mode == 'backup'
+
+- name: Stage encrypted checkpoint on a separate recovery host
+  ansible.builtin.include_tasks: stage.yml
+  when: web_saas_cold_recovery_mode == 'stage'
+
+- name: Verify an isolated cross-machine restore
+  ansible.builtin.include_tasks: restore_verify.yml
+  when: web_saas_cold_recovery_mode == 'restore_verify'
+
+- name: Refuse primary restore from the reusable role
+  ansible.builtin.assert:
+    that: false
+    fail_msg: Primary restore is intentionally not automated; use the operator-only recovery runbook after an independent destination restore and explicit approval
+  when: web_saas_cold_recovery_mode == 'restore_primary'
