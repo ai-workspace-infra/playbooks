@@ -1,0 +1,17 @@
+---
+- name: Parse every generation data role before the first remote operation
+  hosts: web-saas-prod-v3
+  gather_facts: false
+  tasks:
+    - ansible.builtin.import_role:
+        name: web_saas_backup_key
+    - ansible.builtin.import_role:
+        name: web_saas_data_baseline
+    - ansible.builtin.import_role:
+        name: web_saas_data_backup
+    - ansible.builtin.import_role:
+        name: web_saas_data_restore_verify
+    - ansible.builtin.import_role:
+        name: web_saas_data_migration
+    - ansible.builtin.import_role:
+        name: web_saas_billing_price_mapping
