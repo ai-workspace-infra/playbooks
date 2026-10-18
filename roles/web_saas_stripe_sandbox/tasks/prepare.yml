@@ -1,0 +1,39 @@
+---
+- name: Create the private executor directory
+  ansible.builtin.file:
+    path: /usr/local/libexec/web-saas-stripe-sandbox
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Install the guarded V3 prepare executor
+  ansible.builtin.copy:
+    src: prepare.py
+    dest: /usr/local/libexec/web-saas-stripe-sandbox/prepare.py
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Obtain only the two Sandbox fields on the authenticated control machine
+  ansible.builtin.command:
+    argv: [vault, kv, get, "-field={{ item }}", '{{ stripe_manifest.stripe.vault_path }}']
+  loop: ['{{ stripe_manifest.stripe.secret_key }}', '{{ stripe_manifest.stripe.webhook_secret_key }}']
+  environment:
+    VAULT_ADDR: '{{ web_saas_stripe_vault_addr }}'
+  register: stripe_vault_fields
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  no_log: true
+
+- name: Checkpoint and restore before changing only V3 Sandbox configuration
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/web-saas-stripe-sandbox/prepare.py, prepare]
+    stdin: "{{ {'generation': web_saas_stripe_generation, 'domain': web_saas_stripe_domain_base, 'release_tag': web_saas_stripe_release_tag, 'run_id': web_saas_stripe_run_id, 'schema_version': stripe_manifest.database.expected_schema_version | string, 'users': web_saas_stripe_users, 'declaration': stripe_manifest, 'iac_inventory_sha256': stripe_iac_artifacts.results[0].stat.checksum, 'iac_receipt_sha256': stripe_iac_artifacts.results[1].stat.checksum, 'stripe_key': stripe_vault_fields.results[0].stdout, 'webhook_secret': stripe_vault_fields.results[1].stdout} | to_json }}"
+  register: stripe_prepared
+  no_log: true
+
+- name: Return only the nonsecret prepare receipt
+  ansible.builtin.debug:
+    msg: '{{ stripe_prepared.stdout | from_json }}'
