@@ -1,6 +1,9 @@
 import copy
 import importlib.util
+import json
+import os
 from pathlib import Path
+import subprocess
 import unittest
 
 path = Path(__file__).resolve().parents[1] / 'roles/web_saas_billing_price_mapping/files/apply.py'
@@ -32,6 +35,25 @@ class MappingTest(unittest.TestCase):
             elif mutation == 'duplicate': value['mapping']['prices'] *= 2
             else: value['mapping']['prices'][0]['price_id'] = "price_test'; DROP TABLE users;--"
             with self.assertRaises(ValueError): mapping.build_sql(value)
+
+    @unittest.skipUnless(os.environ.get('MAPPING_TEST_LOCAL_CONTAINER') == 'accounts-catalog-runtime-test-20261019', 'dedicated local PostgreSQL fixture only')
+    def test_transaction_replay_and_conflict_rollback_postgres(self):
+        container = os.environ['MAPPING_TEST_LOCAL_CONTAINER']
+        subprocess.run(['docker', 'exec', container, 'createdb', '-U', 'postgres', 'catalog_mapping_test'], check=True, capture_output=True)
+        def query(body):
+            return subprocess.run(['docker', 'exec', '-i', container, 'psql', '-U', 'postgres', '-d', 'catalog_mapping_test', '-XAtq', '-v', 'ON_ERROR_STOP=1'], input=body, text=True, capture_output=True)
+        try:
+            setup = query("CREATE TABLE schema_migrations(version bigint,dirty bool); INSERT INTO schema_migrations VALUES(2026101902,false); CREATE TABLE billing_plans(plan_id text PRIMARY KEY,stripe_price_id text UNIQUE,active bool,price_amount bigint,price_currency text,price_unit text,updated_at timestamptz); INSERT INTO billing_plans VALUES('PLUS',NULL,true,2000,'CNY','month',now()); CREATE TABLE audit_logs(action text,actor_uuid uuid,details jsonb);")
+            self.assertEqual(setup.returncode, 0, setup.stderr)
+            first = query(mapping.build_sql(self.payload))
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(json.loads(first.stdout)['changed'], 1)
+            self.assertEqual(json.loads(query(mapping.build_sql(self.payload)).stdout)['changed'], 0)
+            bad = copy.deepcopy(self.payload); bad['mapping']['prices'][0]['amount'] = 2001
+            self.assertNotEqual(query(mapping.build_sql(bad)).returncode, 0)
+            self.assertEqual(query("SELECT stripe_price_id FROM billing_plans; SELECT count(*) FROM audit_logs;").stdout.strip(), 'price_test\n1')
+        finally:
+            subprocess.run(['docker', 'exec', container, 'dropdb', '-U', 'postgres', 'catalog_mapping_test'], check=True, capture_output=True)
 
 
 if __name__ == '__main__': unittest.main()
