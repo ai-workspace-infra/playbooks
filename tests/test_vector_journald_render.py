@@ -63,7 +63,7 @@ class JournalRenderTests(unittest.TestCase):
         self.assertTrue(any('xhttp_events_total' in str(panel) for panel in dashboard['panels']))
 
     def test_snapshot_only_relay_gets_shared_xray_collection(self):
-        env = Environment(loader=FileSystemLoader(ROOT / 'roles/vhosts/vector-agent/templates'))
+        env = Environment(loader=FileSystemLoader(ROOT / 'roles/vhosts/vector-agent/templates'), trim_blocks=True)
         env.filters.update(bool=bool, to_json=json.dumps)
         rendered = env.get_template('xhttp-monitoring.toml.j2').render(
             vector_xhttp_monitoring_enabled=True, vector_xhttp_create_sink=True,
