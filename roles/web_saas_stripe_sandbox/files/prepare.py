@@ -23,6 +23,8 @@ BACKUPS = Path('/data/backups/web-saas/prod-v3')
 RESTORED = Path('/data/recovery/prod-v3/restored.json')
 LIVE = 'web-saas-postgresql'
 REQUIRED = {'public.users', 'public.subscription_records', 'public.billing_ledger'}
+CADDY = 'web-saas-caddy'
+TLS_DIR = Path('/etc/xcontrol/tls/svc.plus')
 
 
 def require(condition):
@@ -42,6 +44,8 @@ def contract(c, hostname):
     target, stripe, database = (declaration[key] for key in ('target', 'stripe', 'database'))
     require(declaration['apiVersion'] == 'web-saas/v1' and declaration['kind'] == 'StripeSandboxQualification')
     require(target['generation'] == 'prod-v3' and target['resource_name'] == 'web-saas-prod-v3')
+    public_domains = target['public_domains']
+    require(public_domains == {name: name + '.' + c['domain'] for name in ('console', 'accounts', 'billing')})
     for prefix in ('console', 'accounts', 'billing', 'postgresql'):
         require(target[prefix + '_domain'] == prefix + '-selfhost-prod-v3.' + c['domain'])
     require(target['doco_target'] == 'prod-v3-stripe-sandbox')
@@ -331,7 +335,7 @@ def account_config(original, c):
 
 def caddy_config(c):
     target, stripe = c['declaration']['target'], c['declaration']['stripe']
-    return ('''{
+    config = ('''{
     admin off
     http_port 80
     https_port 443
@@ -360,7 +364,51 @@ BILLING_DOMAIN {
         respond 403
     }
 }
-''').replace('POSTGRES_DOMAIN', target['postgresql_domain']).replace('CONSOLE_DOMAIN', target['console_domain']).replace('ACCOUNTS_DOMAIN', target['accounts_domain']).replace('BILLING_DOMAIN', target['billing_domain']).replace('WEBHOOK_PATH', stripe['webhook_path']).encode()
+''').replace('POSTGRES_DOMAIN', target['postgresql_domain']).replace('CONSOLE_DOMAIN', target['console_domain']).replace('ACCOUNTS_DOMAIN', target['accounts_domain']).replace('BILLING_DOMAIN', target['billing_domain']).replace('WEBHOOK_PATH', stripe['webhook_path'])
+    cert = '/etc/caddy/tls/svc.plus/current'
+    config += f'''{target['public_domains']['console']} {{
+    tls {cert}/fullchain.pem {cert}/key.pem
+    reverse_proxy console:3000
+}}
+{target['public_domains']['accounts']} {{
+    tls {cert}/fullchain.pem {cert}/key.pem
+    handle {stripe['webhook_path']} {{
+        reverse_proxy accounts:8080
+    }}
+    handle {{
+        reverse_proxy accounts:8080
+    }}
+}}
+{target['public_domains']['billing']} {{
+    tls {cert}/fullchain.pem {cert}/key.pem
+    @probe {{
+        method GET HEAD
+        path /readyz /healthz /api/ping
+    }}
+    handle @probe {{
+        reverse_proxy billing:8081
+    }}
+    handle {{
+        respond 403
+    }}
+}}
+'''
+    return config.encode()
+
+
+def validate_caddy_config(config):
+    current = TLS_DIR / 'current'
+    require(TLS_DIR.is_dir() and not TLS_DIR.is_symlink())
+    require(current.is_symlink() and current.resolve().parent == (TLS_DIR / 'versions').resolve())
+    for name in ('fullchain.pem', 'key.pem'):
+        path = current / name
+        require(path.is_file() and not path.is_symlink())
+    info = json.loads(run(['docker', 'inspect', CADDY]))[0]
+    require(info['State']['Running'] and re.fullmatch(r'sha256:[0-9a-f]{64}', info['Image']))
+    run(['docker', 'run', '--rm', '--network', 'none', '--interactive',
+         '--mount', 'type=bind,src=' + str(TLS_DIR) + ',dst=/etc/caddy/tls/svc.plus,readonly',
+         '--entrypoint', 'caddy', info['Image'], 'adapt', '--config', '/dev/stdin',
+         '--adapter', 'caddyfile', '--validate'], data=config)
 
 
 def verify_prepared(c, root, identity):
@@ -402,14 +450,13 @@ def prepare(c, root, image, identity):
     candidates = {'stripe-sandbox.env': sandbox_env(original, c),
                   'account.yaml': account_config((CONFIG / 'account.yaml').read_bytes(), c),
                   'Caddyfile': caddy_config(c)}
+    # Fail before allocating a DB checkpoint unless the already-restored
+    # wildcard certificate can validate the candidate public SNI sites.
+    validate_caddy_config(candidates['Caddyfile'])
     # Run IDs are single-use, including failed runs; never overwrite a checkpoint.
     root.mkdir(mode=0o700)
     private(root, directory=True)
     evidence = checkpoint(DockerPG(), lambda: isolated_pg(image), root, c)
-    # Parse/provision with the already installed Caddy binary without reloading
-    # or requesting a certificate. Invalid ingress never replaces host files.
-    run(['docker', 'exec', '-i', 'web-saas-caddy', 'caddy', 'adapt', '--config', '/dev/stdin',
-         '--adapter', 'caddyfile', '--validate'], data=candidates['Caddyfile'])
     for name in ('secrets.env', 'account.yaml', 'Caddyfile'):
         write_new(root / (name + '.before'), (CONFIG / name).read_bytes())
     require(sha(CONFIG / 'secrets.env') == original_digest)

@@ -19,6 +19,7 @@
       - web_saas_stripe_run_id is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')
       - web_saas_stripe_users is none or (web_saas_stripe_users is integer and web_saas_stripe_users > 0)
       - web_saas_stripe_vault_addr is match('^https://[a-zA-Z0-9.-]+(:[0-9]+)?$')
+      - web_saas_stripe_public_probe_address is match('^[0-9]{1,3}(\.[0-9]{1,3}){3}$')
 
 - name: Authenticate the unchanged IaC artifact against its required receipt
   ansible.builtin.include_tasks: provenance.yml
@@ -56,6 +57,9 @@
       - stripe_manifest.target.accounts_domain == 'accounts-selfhost-prod-v3.' ~ web_saas_stripe_domain_base
       - stripe_manifest.target.billing_domain == 'billing-selfhost-prod-v3.' ~ web_saas_stripe_domain_base
       - stripe_manifest.target.postgresql_domain == 'postgresql-selfhost-prod-v3.' ~ web_saas_stripe_domain_base
+      - stripe_manifest.target.public_domains.console == 'console.' ~ web_saas_stripe_domain_base
+      - stripe_manifest.target.public_domains.accounts == 'accounts.' ~ web_saas_stripe_domain_base
+      - stripe_manifest.target.public_domains.billing == 'billing.' ~ web_saas_stripe_domain_base
       - service_domains | sort == [stripe_manifest.target.console_domain, stripe_manifest.target.accounts_domain, stripe_manifest.target.billing_domain, stripe_manifest.target.postgresql_domain] | sort
       - stripe_manifest.target.doco_target == 'prod-v3-stripe-sandbox'
       - stripe_manifest.database.name == 'account'

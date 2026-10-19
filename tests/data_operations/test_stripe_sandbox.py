@@ -38,6 +38,7 @@ def declaration():
         'apiVersion': 'web-saas/v1', 'kind': 'StripeSandboxQualification',
         'target': dict(generation='prod-v3', resource_name='web-saas-prod-v3',
                        **{p+'_domain': p+'-selfhost-prod-v3.svc.plus' for p in ('console', 'accounts', 'billing', 'postgresql')},
+                       public_domains={'console': 'console.svc.plus', 'accounts': 'accounts.svc.plus', 'billing': 'billing.svc.plus'},
                        doco_target='prod-v3-stripe-sandbox'),
         'database': dict(name='account', expected_schema_version=2026101703,
                          background_writers=False, preserve_existing_accounts=True),
@@ -55,7 +56,7 @@ def declaration():
 def registry():
     return {'apiVersion': 'web-saas/v1', 'kind': 'StripeWebhookRegistry', 'domain_base': 'svc.plus',
             'webhook_path': '/api/billing/stripe/webhook',
-            'environments': {'prod-v'+str(n): {'webhook_url': 'https://accounts-selfhost-prod-v'+str(n)+'.svc.plus/api/billing/stripe/webhook'} for n in (1, 2, 3)}}
+            'environments': {'prod-v'+str(n): {'webhook_url': 'https://accounts-selfhost-prod-v'+str(n)+'.svc.plus/api/billing/stripe/webhook'} for n in (2, 3)}}
 
 
 def original_env():
@@ -138,7 +139,7 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(result['store']['dsn'], '${DATABASE_URL}')
         self.assertEqual(result['auth']['token']['accessSecret'], '${AUTH_TOKEN_ACCESS_SECRET}')
 
-    def test_caddy_public_acme_accounts_webhook_and_billing_probe(self):
+    def test_caddy_shared_public_sni_uses_restored_certificate_and_isolates_routes(self):
         text = s.caddy_config(contract()).decode()
         self.assertIn('http_port 80', text)
         self.assertIn('https_port 443', text)
@@ -149,7 +150,11 @@ class SafetyTests(unittest.TestCase):
         self.assertNotIn('prod-v2', text)
         for alias in ('console', 'accounts', 'billing', 'postgresql'):
             self.assertIn(alias + '-selfhost-prod-v3.svc.plus', text)
+        for domain in ('console.svc.plus', 'accounts.svc.plus', 'billing.svc.plus'):
+            self.assertIn(domain + ' {', text)
+            self.assertIn('tls /etc/caddy/tls/svc.plus/current/fullchain.pem /etc/caddy/tls/svc.plus/current/key.pem', text)
         self.assertNotIn('postgresql-selfhost-prod-v3.svc.plus {', text)
+        self.assertNotIn('postgresql.svc.plus {', text)
         self.assertIn('handle /api/billing/stripe/webhook {\n        reverse_proxy accounts:8080', text)
         console_block = text.split('console-selfhost-prod-v3.svc.plus {')[1].split('accounts-selfhost-prod-v3.svc.plus {')[0]
         self.assertEqual(console_block.strip(), 'reverse_proxy console:3000\n}')

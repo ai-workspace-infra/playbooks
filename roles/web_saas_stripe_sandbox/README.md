@@ -22,7 +22,7 @@ manifest's domains/path. Only `stripe.webhook_environment=prod-v3`, equal to
 target.generation, is selected. The manifest declares `webhook_registry_ref`
 and must not contain a second `webhook_url`. The role merges the selected URL
 into an in-memory runtime declaration; it never edits either input file.
-V1/V2 registry entries are data only and never become execution targets.
+The retained V2 registry entry is data only and never becomes an execution target.
 No independent generated Webhook URL overrides the registry. The resolved digest
 and nonsecret Webhook URL are saved in checkpoint and prepare receipts;
 prepare/verify output returns the declared `webhook_url` without key values.
@@ -42,7 +42,17 @@ that role's read-only verification after Sandbox writes have begun.
 ## Phases and gates
 
 * `preflight` (default): inventory and actual host/mount identity only.
-* `prepare`: read only `SANDBOX_STRIPE_SECRET_KEY` and
+* `prepare`: requires the shared `*.svc.plus` certificate to have been restored
+  to `/etc/xcontrol/tls/svc.plus/current` by the existing
+  `caddy_certificate_restore` Role before it creates a database checkpoint.
+  The caller reads the certificate fields from Vault path
+  `kv/CICD/domains/svc.plus` through the approved Vault/OIDC runtime and passes
+  them only to that Role; certificate values are never stored in GitOps or
+  printed. `prepare.py` validates the candidate Caddyfile in a temporary
+  network-isolated container using the live immutable Caddy image and the
+  restored certificate mounted read-only. It does not reload Caddy or contact
+  ACME.
+* `prepare` also reads only `SANDBOX_STRIPE_SECRET_KEY` and
   `SANDBOX_STRIPE_WEBHOOK_SECRET` with `vault kv get -field=...` from
   `kv/prod/billing-service` on the authenticated controller. There is no full
   KV JSON read or live-key field access. Vault's KV API itself has document-level
@@ -65,7 +75,7 @@ that role's read-only verification after Sandbox writes have begun.
      or credentials. Restore into a new `account` DB and compare PostgreSQL
      engine version, schema version/dirty and every recorded count. Remove
      only these randomly named disposable resources; retain the checkpoint.
-  4. Validate candidate Caddy config with the installed Caddy binary, without
+  4. Validate candidate Caddy config with the exact running Caddy image, without
      reload. Save private copies of existing host config. Write only the new
      `stripe-sandbox.env`, updated `account.yaml`, and `Caddyfile`. Set
      `recovery_app`'s global and account-specific
@@ -97,9 +107,12 @@ are preserved. This Accounts env file contains credentials: never print it or
 share it with any other container. No Sandbox key is passed to Billing,
 PostgreSQL, Console or Caddy by this role.
 
-Caddy uses public ACME and normal 80/443 ports for only Console, Accounts and
-Billing V3 names. The fourth PostgreSQL V3 alias is reserved in a comment with
-no HTTP/TCP listener. All Console methods and paths go to `console:3000`,
+Caddy serves the shared public SNI names `console.svc.plus`,
+`accounts.svc.plus`, and `billing.svc.plus` from the restored wildcard
+certificate, alongside the version-specific V3 aliases. These public names are
+shared across PROD generations; only the IaC DNS cutover chooses the active
+generation. The role does not modify DNS. The fourth PostgreSQL V3 alias is
+reserved in a comment with no HTTP/TCP listener. All Console methods and paths go to `console:3000`,
 including POST `/api/auth/login`, `/api/auth/stripe/checkout` and
 `/api/auth/session`, preserving Next.js cookies and proxy Route handlers.
 The Accounts host accepts application routes, including
@@ -135,9 +148,11 @@ AI_WORKSPACE_CMDB_JSON=/tmp/iac-prod-v3-apply.3NGnEi6R/inventory.json \
 ```
 
 Reuse the same release tag/run ID with `web_saas_stripe_phase=verify` only
-after the separate immutable release selection/reconciliation. Readiness does
-not claim authenticated login, signed webhook delivery or successful checkout;
-use a dedicated Sandbox test user for those acceptance steps.
+after the separate immutable release selection/reconciliation. Verification
+forces each public hostname to the V3 IaC IP using `curl --resolve`; standard
+certificate verification stays enabled and public DNS is unchanged. Readiness
+does not claim authenticated login, signed webhook delivery or successful
+checkout; use a dedicated Sandbox test user for those acceptance steps.
 
 ## GitOps / Doco-CD interface (caller-owned)
 
@@ -149,8 +164,9 @@ and Doco target `prod-v3-stripe-sandbox` with these properties:
   inline empty Stripe environment values, which otherwise win over env_file.
 * Only Accounts receives this file and joins `sandbox_egress`; preserve
   background writers false. Allow its Sandbox Stripe HTTPS requests.
-* Caddy publishes 80/443 and mounts the prepared Caddyfile; preserve persistent
-  ACME storage. PostgreSQL publishes no 5432 port. Preserve DB/image/volume and
+* Caddy publishes 80/443 and mounts the prepared Caddyfile plus
+  `/etc/xcontrol/tls/svc.plus:/etc/caddy/tls/svc.plus:ro`; preserve persistent
+  Caddy data/config volumes. PostgreSQL publishes no 5432 port. Preserve DB/image/volume and
   other services' original env_file, so their config does not change.
 * Console browser/server Accounts origins, billing origin and V3 frontend URLs
   omit `:8443`. Preserve existing auth values, volumes and other recovery limits.
@@ -159,7 +175,7 @@ and Doco target `prod-v3-stripe-sandbox` with these properties:
   `doco_release_host=console-selfhost-prod-v3.svc.plus`,
   `doco_release_repository=https://github.com/ai-workspace-infra/gitops.git`,
   `doco_release_reference=refs/tags/<release-tag>`, and
-  `doco_release_target=prod-v3-stripe-sandbox`. Selection itself deploys;
+`doco_release_target=prod-v3-stripe-sandbox`. Selection itself deploys;
   this role deliberately does not invoke it.
 
 ## Local verification
