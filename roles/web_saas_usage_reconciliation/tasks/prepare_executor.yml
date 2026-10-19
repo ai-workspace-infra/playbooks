@@ -1,0 +1,48 @@
+---
+- name: Restrict executor staging to the reviewed V3 target
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname == 'web-saas-prod-v3'
+      - web_saas_generation_target_host == inventory_hostname
+      - web_saas_generation_environment == 'prod-v3'
+      - web_saas_usage_reconciliation_binary_sha256 is match('^[0-9a-f]{64}$')
+      - web_saas_usage_reconciliation_binary == '/usr/local/libexec/accounts-reconcile/' ~ web_saas_usage_reconciliation_binary_sha256
+
+- name: Create the private immutable executor directory
+  ansible.builtin.file:
+    path: /usr/local/libexec/accounts-reconcile
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Stage the off-host built migration executor without compiling on the host
+  ansible.builtin.copy:
+    src: '{{ web_saas_usage_reconciliation_controller_binary }}'
+    dest: '{{ web_saas_usage_reconciliation_binary }}'
+    owner: root
+    group: root
+    mode: '0500'
+    force: false
+
+- name: Verify staged binary checksum before any maintenance
+  ansible.builtin.stat:
+    path: '{{ web_saas_usage_reconciliation_binary }}'
+    follow: false
+    checksum_algorithm: sha256
+  register: generation_executor
+
+- ansible.builtin.assert:
+    that:
+      - generation_executor.stat.isreg
+      - not generation_executor.stat.islnk
+      - generation_executor.stat.checksum == web_saas_usage_reconciliation_binary_sha256
+      - generation_executor.stat.pw_name == 'root'
+
+- name: Verify the already established loopback tunnel is reachable
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: '{{ web_saas_usage_reconciliation_loopback_port }}'
+    timeout: 10
+    state: started
+  when: web_saas_usage_reconciliation_execution_mode == 'host-loopback'
