@@ -32,7 +32,7 @@ kind = ""
 if unit == "caddy.service" {
   event = parse_json(message) ?? {}
   detail = string(event.msg) ?? message
-  if contains(detail, "no such file or directory") && contains(detail, "xray.sock") { kind = "socket_missing" } else if contains(detail, "unexpected EOF") { kind = "unexpected_eof" } else if contains(detail, "connection refused") { kind = "connection_refused" } else if event.status == 502 { kind = "other_502" }
+  if contains(detail, "no such file or directory") && contains(detail, "xray.sock") { kind = "socket_missing" } else if contains(detail, "unexpected EOF") { kind = "unexpected_eof" } else if contains(detail, "connection reset by peer") { kind = "upstream_reset" } else if contains(detail, "connection refused") { kind = "connection_refused" } else if event.status == 502 { kind = "other_502" }
 }
 if unit == "init.scope" && starts_with(message, "Started ") && contains(downcase(message), "xray") { kind = "xray_started" }
 if kind == "" { abort }

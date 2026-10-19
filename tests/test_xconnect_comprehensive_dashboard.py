@@ -12,7 +12,10 @@ class ComprehensiveDashboardTests(unittest.TestCase):
         self.assertEqual(dashboard['title'], 'XConnect 综合监控')
         panels = dashboard['panels']
         self.assertEqual(len({p['id'] for p in panels}), len(panels))
-        self.assertIn('/grafana/a/aiworkspace-xconnectuserdiagnostics-app', panels[0]['options']['content'])
+        diagnostic = next(p for p in panels if p['id'] == 1)
+        self.assertIn('/grafana/a/aiworkspace-xconnectuserdiagnostics-app', diagnostic['options']['content'])
+        self.assertEqual(panels[0]['title'], '1 · Xray 流量与在线状态')
+        self.assertEqual(panels[-1]['id'], 1)
         expressions = '\n'.join(t.get('expr', '') for p in panels for t in p.get('targets', []))
         for metric in ['xray_up', 'xray_traffic_downlink_bytes_total', 'xhttp_events_total', 'caddy_config_last_reload_successful']:
             self.assertIn(metric, expressions)
