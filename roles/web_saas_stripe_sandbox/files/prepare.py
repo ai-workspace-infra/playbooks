@@ -365,8 +365,9 @@ BILLING_DOMAIN {
     }
 }
 ''').replace('POSTGRES_DOMAIN', target['postgresql_domain']).replace('CONSOLE_DOMAIN', target['console_domain']).replace('ACCOUNTS_DOMAIN', target['accounts_domain']).replace('BILLING_DOMAIN', target['billing_domain']).replace('WEBHOOK_PATH', stripe['webhook_path'])
-    cert = '/etc/caddy/tls/svc.plus/current'
-    config += f'''{target['public_domains']['console']} {{
+    cert = '/etc/xcontrol/tls/svc.plus/current'
+    config += f'''# BEGIN managed shared PROD public SNI
+{target['public_domains']['console']} {{
     tls {cert}/fullchain.pem {cert}/key.pem
     reverse_proxy console:3000
 }}
@@ -376,7 +377,9 @@ BILLING_DOMAIN {
         reverse_proxy accounts:8080
     }}
     handle {{
-        reverse_proxy accounts:8080
+        reverse_proxy accounts:8080 {{
+            header_up X-Forwarded-Host svc.plus
+        }}
     }}
 }}
 {target['public_domains']['billing']} {{
@@ -392,6 +395,7 @@ BILLING_DOMAIN {
         respond 403
     }}
 }}
+# END managed shared PROD public SNI
 '''
     return config.encode()
 
@@ -406,7 +410,7 @@ def validate_caddy_config(config):
     info = json.loads(run(['docker', 'inspect', CADDY]))[0]
     require(info['State']['Running'] and re.fullmatch(r'sha256:[0-9a-f]{64}', info['Image']))
     run(['docker', 'run', '--rm', '--network', 'none', '--interactive',
-         '--mount', 'type=bind,src=' + str(TLS_DIR) + ',dst=/etc/caddy/tls/svc.plus,readonly',
+         '--mount', 'type=bind,src=' + str(TLS_DIR) + ',dst=/etc/xcontrol/tls/svc.plus,readonly',
          '--entrypoint', 'caddy', info['Image'], 'adapt', '--config', '/dev/stdin',
          '--adapter', 'caddyfile', '--validate'], data=config)
 

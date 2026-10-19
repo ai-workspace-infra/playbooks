@@ -1,0 +1,105 @@
+---
+- name: Restrict configuration to the explicit generation and IaC inventory host
+  ansible.builtin.assert:
+    that:
+      - web_saas_public_ingress_generation is match('^prod-v[1-9][0-9]*$')
+      - inventory_hostname == web_saas_public_ingress_target
+      - ansible_play_hosts_all == [web_saas_public_ingress_target]
+      - cmdb_name == 'web-saas-' ~ web_saas_public_ingress_generation
+      - web_saas_public_ingress_config == '/etc/xcontrol/web-saas-recovery/Caddyfile'
+
+- name: Read shared PROD ingress declaration from GitOps
+  ansible.builtin.set_fact:
+    public_ingress: '{{ lookup("ansible.builtin.file", web_saas_public_ingress_manifest_file) | from_yaml }}'
+
+- name: Require the reviewed public domain and certificate contract
+  ansible.builtin.assert:
+    that:
+      - public_ingress.kind == 'WebSaasPublicIngress'
+      - public_ingress.domains == {'console':'console.svc.plus','accounts':'accounts.svc.plus','billing':'billing.svc.plus'}
+      - public_ingress.tls.vault_ref == 'kv/CICD/domains/svc.plus'
+      - public_ingress.tls.directory == '/etc/xcontrol/tls/svc.plus'
+
+- name: Check the actual generation before writing
+  ansible.builtin.command: hostname -s
+  register: public_ingress_hostname
+  changed_when: false
+
+- ansible.builtin.assert:
+    that: public_ingress_hostname.stdout == 'web-saas-' ~ web_saas_public_ingress_generation
+
+- name: Restore validated immutable certificate files from protected runtime input
+  ansible.builtin.include_role:
+    name: docker/caddy_certificate_restore
+  vars:
+    caddy_certificate_restore_directory: '{{ public_ingress.tls.directory }}'
+    caddy_certificate_restore_material: '{{ web_saas_public_ingress_tls_material }}'
+  no_log: true
+
+- name: Require SAN coverage for every public hostname
+  ansible.builtin.command:
+    argv: [openssl, x509, -in, '{{ public_ingress.tls.directory }}/current/cert.pem', -noout, -checkhost, '{{ item }}']
+  loop: '{{ public_ingress.domains.values() | list }}'
+  register: public_ingress_san
+  changed_when: false
+  failed_when: public_ingress_san.rc != 0 or 'does match certificate' not in public_ingress_san.stdout
+
+- name: Read existing configuration without exposing unrelated configuration
+  ansible.builtin.slurp:
+    src: '{{ web_saas_public_ingress_config }}'
+  register: public_ingress_existing
+  no_log: true
+
+- name: Stage current configuration for a separate validation
+  ansible.builtin.copy:
+    content: '{{ public_ingress_existing.content | b64decode }}'
+    dest: '{{ web_saas_public_ingress_config }}.public-candidate'
+    mode: '0600'
+  no_log: true
+
+- name: Add idempotent shared public sites while retaining existing internal sites
+  ansible.builtin.blockinfile:
+    path: '{{ web_saas_public_ingress_config }}.public-candidate'
+    marker: '# {mark} managed shared PROD public SNI'
+    block: '{{ lookup("ansible.builtin.template", "public-sites.caddy.j2") }}'
+
+- name: Inspect the existing Caddy image ID
+  ansible.builtin.command:
+    argv: [docker, inspect, --format, '{{ "{{.Image}}" }}', web-saas-caddy]
+  register: public_ingress_image
+  changed_when: false
+
+- ansible.builtin.assert:
+    that: public_ingress_image.stdout is match('^sha256:[0-9a-f]{64}$')
+
+- name: Validate candidate using the running image with certificates mounted and networking disabled
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network=none
+      - --mount
+      - type=bind,src=/etc/xcontrol/tls,dst=/etc/xcontrol/tls,readonly
+      - --mount
+      - 'type=bind,src={{ web_saas_public_ingress_config }}.public-candidate,dst=/etc/caddy/Caddyfile,readonly'
+      - --entrypoint=caddy
+      - '{{ public_ingress_image.stdout }}'
+      - adapt
+      - --config=/etc/caddy/Caddyfile
+      - --adapter=caddyfile
+      - --validate
+  changed_when: false
+  no_log: true
+
+- name: Publish validated configuration and retain the previous file for recovery
+  ansible.builtin.copy:
+    src: '{{ web_saas_public_ingress_config }}.public-candidate'
+    dest: '{{ web_saas_public_ingress_config }}'
+    remote_src: true
+    mode: '0600'
+    backup: true
+
+- name: Report preparation boundary
+  ansible.builtin.debug:
+    msg: Certificate and public sites prepared. Select the reviewed GitOps release through Doco-CD, then verify public SNI directly.

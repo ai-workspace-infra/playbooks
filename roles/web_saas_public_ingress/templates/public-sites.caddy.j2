@@ -1,0 +1,23 @@
+{{ public_ingress.domains.console }} {
+    tls {{ public_ingress.tls.directory }}/current/fullchain.pem {{ public_ingress.tls.directory }}/current/key.pem
+    reverse_proxy console:3000
+}
+{{ public_ingress.domains.accounts }} {
+    tls {{ public_ingress.tls.directory }}/current/fullchain.pem {{ public_ingress.tls.directory }}/current/key.pem
+    reverse_proxy accounts:8080 {
+        header_up X-Forwarded-Host svc.plus
+    }
+}
+{{ public_ingress.domains.billing }} {
+    tls {{ public_ingress.tls.directory }}/current/fullchain.pem {{ public_ingress.tls.directory }}/current/key.pem
+    @probe {
+        method GET HEAD
+        path /readyz /healthz /api/ping
+    }
+    handle @probe {
+        reverse_proxy billing:8081
+    }
+    handle {
+        respond 403
+    }
+}

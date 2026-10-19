@@ -163,7 +163,7 @@ and Doco target `prod-v3-stripe-sandbox` with these properties:
 * Only Accounts receives this file and joins `sandbox_egress`; preserve
   background writers false. Allow its Sandbox Stripe HTTPS requests.
 * Caddy publishes 80/443 and mounts the prepared Caddyfile plus
-  `/etc/xcontrol/tls/svc.plus:/etc/caddy/tls/svc.plus:ro`; preserve persistent
+  `/etc/xcontrol/tls:/etc/xcontrol/tls:ro`; preserve persistent
   Caddy data/config volumes. PostgreSQL publishes no 5432 port. Preserve DB/image/volume and
   other services' original env_file, so their config does not change.
 * Console browser/server Accounts origins, billing origin and V3 frontend URLs

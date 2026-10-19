@@ -152,7 +152,7 @@ class SafetyTests(unittest.TestCase):
             self.assertIn(alias + '-selfhost-prod-v3.svc.plus', text)
         for domain in ('console.svc.plus', 'accounts.svc.plus', 'billing.svc.plus'):
             self.assertIn(domain + ' {', text)
-            self.assertIn('tls /etc/caddy/tls/svc.plus/current/fullchain.pem /etc/caddy/tls/svc.plus/current/key.pem', text)
+            self.assertIn('tls /etc/xcontrol/tls/svc.plus/current/fullchain.pem /etc/xcontrol/tls/svc.plus/current/key.pem', text)
         self.assertNotIn('postgresql-selfhost-prod-v3.svc.plus {', text)
         self.assertNotIn('postgresql.svc.plus {', text)
         self.assertIn('handle /api/billing/stripe/webhook {\n        reverse_proxy accounts:8080', text)
