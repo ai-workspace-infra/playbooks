@@ -1,0 +1,69 @@
+---
+- name: Bind refresh to the existing V3 host and explicit phase
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname == 'web-saas-prod-v3'
+      - web_saas_generation_target_host == inventory_hostname
+      - web_saas_generation_environment == 'prod-v3'
+      - web_saas_generation_refresh_phase in ['snapshot', 'restore_candidate', 'upgrade_candidate', 'activate', 'verify_runtime']
+      - web_saas_generation_refresh_contract.source_generation == 'prod-v2'
+      - web_saas_generation_refresh_contract.target_generation == 'prod-v3'
+      - web_saas_generation_refresh_contract.public_dns_cutover == false
+      - web_saas_generation_refresh_contract.allow_refresh == true
+
+- name: Inspect immutable controller evidence path before execution
+  ansible.builtin.stat:
+    path: '{{ web_saas_generation_refresh_evidence_file }}'
+  delegate_to: localhost
+  become: false
+  register: refresh_evidence_stat
+
+- name: Refuse to overwrite an existing phase receipt
+  ansible.builtin.assert:
+    that: [not refresh_evidence_stat.stat.exists]
+
+- name: Create private refresh executor directory without changing service config
+  ansible.builtin.file:
+    path: /usr/local/libexec/web-saas-generation-refresh
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Reuse the existing reviewed PostgreSQL transport implementation
+  ansible.builtin.copy:
+    src: '{{ role_path }}/../web_saas_stripe_sandbox/files/prepare.py'
+    dest: /usr/local/libexec/web-saas-generation-refresh/generation_pg.py
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Stage bounded target-side refresh executor
+  ansible.builtin.copy:
+    src: refresh.py
+    dest: /usr/local/libexec/web-saas-generation-refresh/refresh.py
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Execute with secrets only on stdin and preserve all databases on failure
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/web-saas-generation-refresh/refresh.py, '{{ web_saas_generation_refresh_phase }}']
+    stdin: '{{ web_saas_generation_refresh_contract | to_json }}'
+    stdin_add_newline: true
+  register: refresh_result
+  changed_when: refresh_result.rc == 0
+  no_log: true
+
+- name: Save aggregate refresh evidence without secret inputs
+  ansible.builtin.copy:
+    content: '{{ refresh_result.stdout | from_json | to_nice_json }}'
+    dest: '{{ web_saas_generation_refresh_evidence_file }}'
+    mode: '0600'
+    force: false
+  delegate_to: localhost
+  become: false
+
+- name: Display aggregate phase result only
+  ansible.builtin.debug:
+    msg: '{{ (refresh_result.stdout | from_json).phase }} passed; databases retained'

@@ -30,6 +30,24 @@
   when: web_saas_usage_reconciliation_writer_operation == 'resume'
   changed_when: true
 
+- name: Stop optional V3 frontend runtime without removing configuration or volumes
+  ansible.builtin.command:
+    argv: [docker, stop, --time, '30', '{{ item }}']
+  loop: [web-saas-console, web-saas-caddy]
+  when:
+    - web_saas_usage_reconciliation_refresh_frontends | default(false) | bool
+    - web_saas_usage_reconciliation_writer_operation == 'pause'
+  changed_when: true
+
+- name: Resume optional V3 frontend runtime only on explicit resume
+  ansible.builtin.command:
+    argv: [docker, start, '{{ item }}']
+  loop: [web-saas-console, web-saas-caddy]
+  when:
+    - web_saas_usage_reconciliation_refresh_frontends | default(false) | bool
+    - web_saas_usage_reconciliation_writer_operation == 'resume'
+  changed_when: true
+
 - name: Verify every declared writer reached its requested state
   ansible.builtin.command:
     argv: [docker, inspect, --format, '{{ "{{.State.Running}}" }}', '{{ item }}']
