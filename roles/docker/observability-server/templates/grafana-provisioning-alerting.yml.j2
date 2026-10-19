@@ -13,7 +13,7 @@ groups:
     folder: "{{ observability_alerting_folder }}"
     interval: {{ observability_alerting_interval }}
     rules:
-{% macro rule(uid, title, expr, op, threshold, for_, severity, summary, stage) %}
+{% macro rule(uid, title, expr, op, threshold, for_, severity, summary, stage, no_data='NoData') %}
       - uid: {{ uid }}
         title: {{ title }}
         condition: B
@@ -57,7 +57,7 @@ groups:
               maxDataPoints: 43200
               refId: B
               type: threshold
-        noDataState: NoData
+        noDataState: {{ no_data }}
         execErrState: Error
         for: {{ for_ }}
         annotations:

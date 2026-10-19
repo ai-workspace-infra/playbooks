@@ -1,0 +1,69 @@
+{% if vector_xhttp_monitoring_enabled | default(false) | bool %}
+{% if vector_xhttp_add_xray_scrape | default(false) | bool %}
+{% include 'xray-metrics.toml.j2' %}
+
+{% endif %}
+[sources.xhttp_caddy_metrics]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:2019/metrics"]
+scrape_interval_secs = 15
+
+[transforms.xhttp_caddy_labels]
+type = "remap"
+inputs = ["xhttp_caddy_metrics"]
+source = '''
+.tags.instance = {{ inventory_hostname | to_json }}
+.tags.environment = {{ vector_observability_environment | to_json }}
+.tags.job = "xhttp-caddy"
+'''
+
+# A single journal reader also feeds ordinary logs when enabled below.
+# PID 1 lifecycle events are needed: NRestarts excludes explicit restarts.
+[sources.xhttp_journal]
+type = "journald"
+current_boot_only = true
+since_now = true
+include_units = {{ ((vector_system_journald_units | default([])) + ['caddy.service', 'xray.service', 'xray-tcp.service', 'xconnect-edge-agent.service', 'init.scope']) | unique | list | to_json }}
+
+[transforms.xhttp_events]
+type = "remap"
+inputs = ["xhttp_journal"]
+drop_on_abort = true
+source = '''
+message = string(.message) ?? ""
+unit = string(._SYSTEMD_UNIT) ?? ""
+kind = ""
+if unit == "caddy.service" {
+  event = parse_json(message) ?? {}
+  detail = string(event.msg) ?? message
+  if contains(detail, "no such file or directory") && contains(detail, "xray.sock") { kind = "socket_missing" } else if contains(detail, "unexpected EOF") { kind = "unexpected_eof" } else if contains(detail, "connection reset by peer") { kind = "upstream_reset" } else if contains(detail, "connection refused") { kind = "connection_refused" } else if event.status == 502 { kind = "other_502" }
+}
+if unit == "init.scope" && starts_with(message, "Started ") && contains(downcase(message), "xray") { kind = "xray_started" }
+if kind == "" { abort }
+# Retain bounded dimensions only, never session paths, email or client IP.
+. = {"event": kind, "value": 1, "instance": {{ inventory_hostname | to_json }}, "environment": {{ vector_observability_environment | to_json }}}
+'''
+
+[transforms.xhttp_event_metrics]
+type = "log_to_metric"
+inputs = ["xhttp_events"]
+[[transforms.xhttp_event_metrics.metrics]]
+type = "counter"
+field = "value"
+name = "xhttp_events_total"
+increment_by_value = true
+[transforms.xhttp_event_metrics.metrics.tags]
+instance = "{% raw %}{{ instance }}{% endraw %}"
+environment = "{% raw %}{{ environment }}{% endraw %}"
+event = "{% raw %}{{ event }}{% endraw %}"
+{% if vector_xhttp_create_sink | default(false) | bool %}
+[sinks.prometheus_remote]
+type = "prometheus_remote_write"
+inputs = ["xhttp_caddy_labels", "xhttp_event_metrics"{% if vector_xhttp_add_xray_scrape | default(false) | bool %}, "add_xray_xhttp_labels", "add_xray_tcp_labels"{% endif %}]
+endpoint = "{{ vector_observability_endpoint | default('https://observability.svc.plus') }}/ingest/metrics/api/v1/write"
+[sinks.prometheus_remote.auth]
+strategy = "basic"
+user = {{ xhttp_monitoring_vault.json.data.data.user | to_json }}
+password = {{ xhttp_monitoring_vault.json.data.data.password | to_json }}
+{% endif %}
+{% endif %}

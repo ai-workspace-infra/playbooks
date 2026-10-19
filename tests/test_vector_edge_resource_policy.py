@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from urllib.parse import quote
 
-from jinja2 import Environment
+from jinja2 import Environment, FileSystemLoader
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "roles/vhosts/vector-agent/templates/vector.toml.j2"
@@ -13,7 +13,7 @@ TEMPLATE = ROOT / "roles/vhosts/vector-agent/templates/vector.toml.j2"
 
 class VectorEdgeResourcePolicyTests(unittest.TestCase):
     def render(self, docker_running, billing_enabled=False):
-        env = Environment()
+        env = Environment(loader=FileSystemLoader(TEMPLATE.parent))
         env.filters.update(
             bool=lambda value: str(value).lower() in ("true", "1", "yes"),
             to_json=json.dumps,

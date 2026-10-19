@@ -15,6 +15,8 @@ enabled = false # Disable API to save memory
 type = "internal_metrics"
 scrape_interval_secs = {{ xconnect_vector_policy.get('internal_metrics_scrape_interval_secs', 30) | int }}
 
+{% include 'xhttp-monitoring.toml.j2' %}
+
 [sources.node_metrics]
 type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:9100/metrics"]
@@ -96,41 +98,8 @@ source = '''
 
 {% set xray_exporter_enabled = vector_xray_exporter_enabled | default(inventory_hostname in groups.get('xray_exporter', []), true) | bool %}
 {% if xray_exporter_enabled %}
-[sources.xray_xhttp_metrics]
-type = "prometheus_scrape"
-endpoints = ["http://127.0.0.1:8080/scrape"]
-scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+{% include 'xray-metrics.toml.j2' %}
 
-[sources.xray_tcp_metrics]
-type = "prometheus_scrape"
-endpoints = ["http://127.0.0.1:8081/scrape"]
-scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
-
-[transforms.add_xray_xhttp_labels]
-type = "remap"
-inputs = ["xray_xhttp_metrics"]
-source = '''
-.tags.instance = "{{ inventory_hostname }}"
-.tags.environment = "{{ vector_observability_environment }}"
-.tags.env = "{{ vector_observability_environment }}"
-.tags.provider = "{{ vector_observability_provider }}"
-.tags.service_domain = "{{ vector_observability_service_domain }}"
-.tags.job = "xray"
-.tags.transport = "xhttp"
-'''
-
-[transforms.add_xray_tcp_labels]
-type = "remap"
-inputs = ["xray_tcp_metrics"]
-source = '''
-.tags.instance = "{{ inventory_hostname }}"
-.tags.environment = "{{ vector_observability_environment }}"
-.tags.env = "{{ vector_observability_environment }}"
-.tags.provider = "{{ vector_observability_provider }}"
-.tags.service_domain = "{{ vector_observability_service_domain }}"
-.tags.job = "xray"
-.tags.transport = "tcp"
-'''
 {% endif %}
 
 {% set postgres_exporter_enabled = vector_postgres_exporter_enabled_effective | default(vector_postgres_exporter_enabled | default(false)) | bool %}
@@ -245,6 +214,9 @@ max_size = {{ vector_disk_buffer_max_bytes | default(536870912) }}
 [sinks.prometheus_remote]
 type = "prometheus_remote_write"
 {% set remote_inputs = ["add_labels"] %}
+{% if vector_xhttp_monitoring_enabled | default(false) | bool %}
+{% set _ = remote_inputs.extend(["xhttp_caddy_labels", "xhttp_event_metrics"]) %}
+{% endif %}
 {% for source_name in ai_aggregator_remote_inputs %}
   {% set _ = remote_inputs.append(source_name) %}
 {% endfor %}
@@ -302,7 +274,7 @@ include = ["/var/log/syslog", "/var/log/auth.log"]
 {% endif %}
 ignore_older_secs = 86400
 
-{% if vector_system_journald_enabled | default(false) | bool %}
+{% if vector_system_journald_enabled | default(false) | bool and not (vector_xhttp_monitoring_enabled | default(false) | bool) %}
 [sources.system_journal]
 type = "journald"
 current_boot_only = true
@@ -312,7 +284,9 @@ include_units = {{ vector_system_journald_units | to_json }}
 [transforms.process_logs]
 type = "remap"
 drop_on_abort = true
-{% if vector_system_journald_enabled | default(false) | bool %}
+{% if vector_xhttp_monitoring_enabled | default(false) | bool %}
+inputs = ["system_logs", "xhttp_journal"]
+{% elif vector_system_journald_enabled | default(false) | bool %}
 inputs = ["system_logs", "system_journal"]
 {% else %}
 inputs = ["system_logs"]
