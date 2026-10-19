@@ -8,11 +8,16 @@
   ansible.builtin.assert:
     that: xhttp_grafana_provisioning.stat.isdir | default(false)
 
-- name: Install Git-managed XHTTP dashboard
+- name: Install comprehensive dashboard and legacy bookmark navigation
   ansible.builtin.copy:
-    src: xhttp-edge-reliability-dashboard.json
-    dest: "{{ observability_dir }}/grafana/dashboards/xhttp-edge-reliability-dashboard.json"
+    src: "{{ item }}"
+    dest: "{{ observability_dir }}/grafana/dashboards/{{ item }}"
     mode: '0644'
+    backup: true
+  loop:
+    - xconnect-user-connection-diagnostics.json
+    - dashboard.json
+    - xhttp-edge-reliability-dashboard.json
   notify: Restart grafana
 
 - name: Provision dedicated XHTTP alert group

@@ -43,7 +43,7 @@ explicit user-supplied host selection; do not commit a parallel fleet inventory.
 
 Acceptance: validate Vector configuration; verify authenticated backend queries
 for caddy_config_last_reload_successful{job="xhttp-caddy"}; verify dashboard UID
-xhttp-edge-reliability; inspect alert provisioning. An absent event series must
+xconnect-user-connection-diagnostics (XConnect 综合监控); inspect alert provisioning. An absent event series must
 not be displayed as zero. HTTP rate/TTFB panels require ingress HTTP metrics;
 the admin metrics endpoint alone does not prove these series exist. No dashboard
 panel claims socket readiness or authenticated tunnel health. Add an independent

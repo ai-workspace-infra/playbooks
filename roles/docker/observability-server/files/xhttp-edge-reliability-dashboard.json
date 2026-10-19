@@ -1,158 +1,27 @@
 {
   "uid": "xhttp-edge-reliability",
-  "title": "XHTTP Edge Reliability",
+  "title": "XHTTP — 已合并到 XConnect 综合监控",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "tags": [
-    "xhttp",
-    "edge",
-    "reliability"
+    "xconnect",
+    "navigation"
   ],
-  "timezone": "browser",
-  "refresh": "30s",
-  "time": {
-    "from": "now-6h",
-    "to": "now"
-  },
-  "templating": {
-    "list": [
-      {
-        "name": "instance",
-        "type": "query",
-        "datasource": {
-          "uid": "victoriametrics"
-        },
-        "query": "label_values(caddy_config_last_reload_successful{job=\"xhttp-caddy\"}, instance)",
-        "includeAll": true,
-        "allValue": ".*",
-        "multi": true,
-        "refresh": 1,
-        "current": {
-          "text": "All",
-          "value": "$__all"
-        }
-      }
-    ]
-  },
+  "editable": false,
   "panels": [
     {
       "id": 1,
-      "type": "timeseries",
-      "title": "Caddy metrics freshness (seconds)",
-      "datasource": {
-        "uid": "victoriametrics"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "time() - timestamp(caddy_config_last_reload_successful{job=\"xhttp-caddy\",instance=~\"$instance\"})",
-          "legendFormat": "{{instance}} {{event}}"
-        }
-      ],
-      "gridPos": {
-        "x": 0,
-        "y": 0,
-        "w": 12,
-        "h": 8
-      }
-    },
-    {
-      "id": 2,
-      "type": "timeseries",
-      "title": "Proxy failures / 5 minutes",
-      "datasource": {
-        "uid": "victoriametrics"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (instance,event) (increase(xhttp_events_total{instance=~\"$instance\",event!=\"xray_started\"}[5m]))",
-          "legendFormat": "{{instance}} {{event}}"
-        }
-      ],
-      "gridPos": {
-        "x": 12,
-        "y": 0,
-        "w": 12,
-        "h": 8
-      }
-    },
-    {
-      "id": 3,
-      "type": "timeseries",
-      "title": "Xray starts / 10 minutes",
-      "datasource": {
-        "uid": "victoriametrics"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (instance) (increase(xhttp_events_total{instance=~\"$instance\",event=\"xray_started\"}[10m]))",
-          "legendFormat": "{{instance}} {{event}}"
-        }
-      ],
-      "gridPos": {
-        "x": 0,
-        "y": 8,
-        "w": 12,
-        "h": 8
-      }
-    },
-    {
-      "id": 4,
-      "type": "timeseries",
-      "title": "Caddy HTTP 5xx / second",
-      "datasource": {
-        "uid": "victoriametrics"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (instance) (rate(caddy_http_response_duration_seconds_count{job=\"xhttp-caddy\",instance=~\"$instance\",code=~\"5..\",handler=\"subroute\"}[$__rate_interval]))",
-          "legendFormat": "{{instance}} {{event}}"
-        }
-      ],
-      "gridPos": {
-        "x": 12,
-        "y": 8,
-        "w": 12,
-        "h": 8
-      }
-    },
-    {
-      "id": 5,
-      "type": "timeseries",
-      "title": "Caddy TTFB p95 (not tunnel duration)",
-      "datasource": {
-        "uid": "victoriametrics"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (instance,le) (rate(caddy_http_response_duration_seconds_bucket{job=\"xhttp-caddy\",instance=~\"$instance\",handler=\"subroute\"}[$__rate_interval])))",
-          "legendFormat": "{{instance}} {{event}}"
-        }
-      ],
-      "gridPos": {
-        "x": 0,
-        "y": 16,
-        "w": 12,
-        "h": 8
-      }
-    },
-    {
-      "id": 6,
       "type": "text",
-      "title": "Interpretation and limits",
+      "title": "统一监控入口",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      },
       "options": {
         "mode": "markdown",
-        "content": "No data is not zero errors. Event counters appear after the first event; initial increments may not be visible to increase(). Freshness detects stale metrics, not a working tunnel. Caddy HTTP panels require HTTP metrics enabled by the ingress role. TTFB is not full upload duration. A successful authenticated XHTTP tunnel probe is still required for end-to-end acceptance. Correlate socket_missing and unexpected_eof with xray_started. Explicit restarts do not increment systemd NRestarts."
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 16,
-        "w": 12,
-        "h": 8
+        "content": "## [打开 XConnect 综合监控](/grafana/d/xconnect-user-connection-diagnostics/xconnect?${__url_time_range})\n\n用户连接诊断、Xray 流量与在线状态、XHTTP 错误与采集健康已合并到同一个面板。此地址仅为旧书签保留。"
       }
     }
   ]
