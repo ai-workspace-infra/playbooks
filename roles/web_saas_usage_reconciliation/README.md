@@ -20,6 +20,16 @@ Also supply a target-host Linux static `migratectl` path, its SHA-256, compiled
 schema/Billing checksums and the read-only source DSN through role inputs.
 Build/stage the binary off-host using its reviewed source SHA; no host compilation.
 
+For an isolated PostgreSQL container, opt in to
+`web_saas_usage_reconciliation_execution_mode: host-loopback`. The same pinned
+binary runs on the target host; the source URL must use `127.0.0.1` and database
+`account` through an already authenticated SSH reverse forward. The role does not
+create tunnels or change source networking. It resolves target IP and existing
+PostgreSQL credentials in memory from the single running local container and
+requires the `/data/postgresql` bind mount. No password is placed in argv, files
+or evidence. Default container execution is unchanged. Both modes retain the
+same backup/restore and transaction/conflict gates.
+
 Default is preview only. `web_saas_usage_reconciliation_apply=true` explicitly
 enables the transaction after this invocation's encrypted backup and isolated
 restore. The executor recomputes the preview and binds apply to its exact hash;
