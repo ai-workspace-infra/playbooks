@@ -1,4 +1,9 @@
 ---
+- name: Require a direct V3 IPv4 probe target before public SNI checks
+  ansible.builtin.assert:
+    that:
+      - web_saas_stripe_public_probe_address is match('^[0-9]{1,3}(\.[0-9]{1,3}){3}$')
+
 - name: Verify the private configuration and original secrets checksum
   ansible.builtin.command:
     argv: [python3, /usr/local/libexec/web-saas-stripe-sandbox/prepare.py, verify]

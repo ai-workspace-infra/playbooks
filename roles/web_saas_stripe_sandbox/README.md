@@ -42,13 +42,11 @@ that role's read-only verification after Sandbox writes have begun.
 ## Phases and gates
 
 * `preflight` (default): inventory and actual host/mount identity only.
-* `prepare`: requires the shared `*.svc.plus` certificate to have been restored
-  to `/etc/xcontrol/tls/svc.plus/current` by the existing
-  `caddy_certificate_restore` Role before it creates a database checkpoint.
-  The caller reads the certificate fields from Vault path
-  `kv/CICD/domains/svc.plus` through the approved Vault/OIDC runtime and passes
-  them only to that Role; certificate values are never stored in GitOps or
-  printed. `prepare.py` validates the candidate Caddyfile in a temporary
+* `prepare`: reads only the required certificate fields from Vault path
+  `kv/CICD/domains/svc.plus` under the approved least-privilege runtime
+  identity, then restores them through the existing `caddy_certificate_restore`
+  Role. Certificate values are never stored in GitOps or printed.
+  `prepare.py` validates the candidate Caddyfile in a temporary
   network-isolated container using the live immutable Caddy image and the
   restored certificate mounted read-only. It does not reload Caddy or contact
   ACME.

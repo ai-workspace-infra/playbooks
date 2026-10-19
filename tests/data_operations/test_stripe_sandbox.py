@@ -183,7 +183,7 @@ class SafetyTests(unittest.TestCase):
             config = Path(tmp)
             for name, data in {'secrets.env': original_env(), 'account.yaml': account(), 'Caddyfile': b'old'}.items():
                 s.write_new(config / name, data)
-            with mock.patch.object(s, 'CONFIG', config), mock.patch.object(s, 'checkpoint', side_effect=ValueError('restore mismatch')), mock.patch.object(s.DockerPG, 'sql') as sql:
+            with mock.patch.object(s, 'CONFIG', config), mock.patch.object(s, 'validate_caddy_config'), mock.patch.object(s, 'checkpoint', side_effect=ValueError('restore mismatch')), mock.patch.object(s.DockerPG, 'sql') as sql:
                 with self.assertRaises(ValueError):
                     s.prepare(contract(), config / 'run', 'sha256:'+'a'*64, {})
                 self.assertEqual((config / 'secrets.env').read_bytes(), original_env())
@@ -200,7 +200,7 @@ class SafetyTests(unittest.TestCase):
             original_hash = s.sha(config / 'secrets.env')
             evidence = {'schema_version': '2026101703', 'counts': {'public.users': 32},
                         'dirty': False, 'restore_verified': True}
-            with mock.patch.object(s, 'CONFIG', config), mock.patch.object(s, 'checkpoint', return_value=evidence), mock.patch.object(s, 'verify_prepared'), mock.patch.object(s, 'run'), mock.patch.object(s.DockerPG, 'sql') as sql:
+            with mock.patch.object(s, 'CONFIG', config), mock.patch.object(s, 'validate_caddy_config'), mock.patch.object(s, 'checkpoint', return_value=evidence), mock.patch.object(s, 'verify_prepared'), mock.patch.object(s, 'run'), mock.patch.object(s.DockerPG, 'sql') as sql:
                 s.prepare(contract(), config / 'run', 'sha256:'+'a'*64, {})
                 self.assertEqual(s.sha(config / 'secrets.env'), original_hash)
                 self.assertEqual(s.env_values((config / 'stripe-sandbox.env').read_bytes())['STRIPE_SECRET_KEY'], contract()['stripe_key'])
@@ -227,13 +227,19 @@ class SafetyTests(unittest.TestCase):
     def test_vault_reads_only_fields_and_every_secret_task_is_no_log(self):
         tasks = yaml.safe_load((ROLE / 'tasks/prepare.yml').read_text())
         vault = next(t for t in tasks if 'register' in t and t['register'] == 'stripe_vault_fields')
+        tls_vault = next(t for t in tasks if 'register' in t and t['register'] == 'stripe_tls_vault_fields')
         self.assertEqual(vault['ansible.builtin.command']['argv'],
                          ['vault', 'kv', 'get', '-field={{ item }}', '{{ stripe_manifest.stripe.vault_path }}'])
         self.assertEqual(vault['loop'], ['{{ stripe_manifest.stripe.secret_key }}', '{{ stripe_manifest.stripe.webhook_secret_key }}'])
         self.assertEqual(vault['delegate_to'], 'localhost')
+        self.assertEqual(tls_vault['ansible.builtin.command']['argv'],
+                         ['vault', 'kv', 'get', '-field={{ item }}', 'kv/CICD/domains/svc.plus'])
+        self.assertEqual(tls_vault['loop'], ['tls_fullchain_pem_b64', 'tls_cert_pem_b64', 'tls_key_pem_b64', 'tls_ca_pem_b64', 'tls_trust_bundle_pem_b64'])
         for task in tasks:
-            if task.get('register') in ('stripe_vault_fields', 'stripe_prepared'):
+            if task.get('register') in ('stripe_vault_fields', 'stripe_tls_vault_fields', 'stripe_prepared'):
                 self.assertIs(task['no_log'], True)
+        restore = next(t for t in tasks if t.get('name') == 'Restore the shared-domain certificate through the validated file owner')
+        self.assertIs(restore['no_log'], True)
         self.assertNotIn('doco_cd_release_selection', (ROLE / 'tasks/main.yml').read_text())
 
     def test_source_host_is_rejected_before_any_command(self):
