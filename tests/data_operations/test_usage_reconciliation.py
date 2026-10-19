@@ -117,6 +117,19 @@ if 'reconcile-usage' in a:
                          'database_system_identifier', 'migration_dirty', 'restore_database']:
             self.assertIn(required, gates)
 
+    def test_target_writer_and_binary_staging_boundaries(self):
+        tasks = ROOT / 'roles/web_saas_usage_reconciliation/tasks'
+        writer = (tasks / 'writer_state.yml').read_text()
+        self.assertIn("inventory_hostname == 'web-saas-prod-v3'", writer)
+        self.assertIn("in ['pause', 'resume']", writer)
+        self.assertIn("[doco-cd, web-saas-accounts, web-saas-billing]", writer)
+        self.assertIn("[web-saas-billing, web-saas-accounts, doco-cd]", writer)
+        self.assertNotIn('web-saas-postgresql', writer)
+        prepare = (tasks / 'prepare_executor.yml').read_text()
+        for guard in ['checksum_algorithm: sha256', 'not generation_executor.stat.islnk',
+                      "generation_executor.stat.pw_name == 'root'", 'force: false']:
+            self.assertIn(guard, prepare)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -30,6 +30,15 @@ requires the `/data/postgresql` bind mount. No password is placed in argv, files
 or evidence. Default container execution is unchanged. Both modes retain the
 same backup/restore and transaction/conflict gates.
 
+`web-saas-generation-reconciliation-prepare.yml` stages a controller-built binary
+under its SHA-256 filename, verifies root ownership/checksum and checks the
+existing loopback tunnel. It does not pause writers or modify database data.
+`web-saas-generation-writers.yml` requires an explicit `pause` or `resume` in
+`web_saas_usage_reconciliation_writer_operation`; it accepts only V3 and exactly
+the Accounts, Billing and Doco-CD containers. Pause stops the reconciler first;
+explicit resume starts it last. PostgreSQL is never stopped. Resume is a separate
+operator step after inspecting the result, not an automatic failure fallback.
+
 Default is preview only. `web_saas_usage_reconciliation_apply=true` explicitly
 enables the transaction after this invocation's encrypted backup and isolated
 restore. The executor recomputes the preview and binds apply to its exact hash;
