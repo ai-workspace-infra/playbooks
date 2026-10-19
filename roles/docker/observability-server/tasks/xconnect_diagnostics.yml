@@ -1,0 +1,148 @@
+- name: Require immutable XConnect diagnostics plugin release inputs
+  ansible.builtin.assert:
+    that:
+      - observability_xconnect_diagnostics_plugin_version | trim | length > 0
+      - observability_xconnect_diagnostics_plugin_sha256 is match('^[a-fA-F0-9]{64}$')
+      - observability_xconnect_diagnostics_accounts_url is match('^https://')
+    fail_msg: >-
+      XConnect diagnostics requires a pinned plugin release version, SHA-256,
+      and HTTPS Accounts URL.
+  when:
+    - observability_xconnect_diagnostics_enabled | bool
+    - not (ansible_check_mode | bool)
+  tags: [observability, observability_xconnect_diagnostics]
+
+- name: Read XConnect diagnostics resolver credential from Vault
+  delegate_to: localhost
+  become: false
+  ansible.builtin.uri:
+    url: "{{ vault_addr }}/v1/{{ observability_xconnect_diagnostics_vault_path }}"
+    headers:
+      X-Vault-Token: "{{ vault_token }}"
+    method: GET
+  register: observability_xconnect_diagnostics_vault_secret
+  run_once: true
+  check_mode: false
+  no_log: true
+  failed_when: false
+  when:
+    - observability_xconnect_diagnostics_enabled | bool
+    - vault_token | trim | length > 0
+  tags: [observability, observability_xconnect_diagnostics]
+
+- name: Resolve XConnect diagnostics resolver credential
+  ansible.builtin.set_fact:
+    observability_xconnect_diagnostics_identity_token: >-
+      {{ (observability_xconnect_diagnostics_vault_secret.json | default({})).get('data', {}).get('data', {}).get('IDENTITY_LOOKUP_TOKEN', '') }}
+  no_log: true
+  when: observability_xconnect_diagnostics_enabled | bool
+  tags: [observability, observability_xconnect_diagnostics]
+
+- name: Require XConnect diagnostics resolver credential
+  ansible.builtin.assert:
+    that:
+      - observability_xconnect_diagnostics_identity_token | default('') is match('^[A-Za-z0-9_-]{32,}$')
+    fail_msg: >-
+      XConnect diagnostics is enabled but IDENTITY_LOOKUP_TOKEN is unavailable
+      in {{ observability_xconnect_diagnostics_vault_path }}.
+  no_log: true
+  when:
+    - observability_xconnect_diagnostics_enabled | bool
+    - not (ansible_check_mode | bool)
+  tags: [observability, observability_xconnect_diagnostics]
+
+- name: Verify scoped Accounts resolver before publishing the app
+  ansible.builtin.uri:
+    url: "{{ observability_xconnect_diagnostics_accounts_url }}/api/observability/internal/xconnect/identity"
+    method: POST
+    body_format: json
+    body: {}
+    headers:
+      X-XConnect-Observability-Token: "{{ observability_xconnect_diagnostics_identity_token }}"
+    status_code: 400
+  no_log: true
+  when:
+    - observability_xconnect_diagnostics_enabled | bool
+    - not ansible_check_mode
+  tags: [observability, observability_xconnect_diagnostics]
+
+- name: Download pinned XConnect diagnostics Grafana plugin release
+  ansible.builtin.get_url:
+    url: "https://github.com/ai-workspace-infra/observability/releases/download/xconnect-user-diagnostics-v{{ observability_xconnect_diagnostics_plugin_version }}/aiworkspace-xconnectuserdiagnostics-app-{{ observability_xconnect_diagnostics_plugin_version }}.zip"
+    dest: "{{ observability_dir }}/xconnect-diagnostics-plugin.zip"
+    checksum: "sha256:{{ observability_xconnect_diagnostics_plugin_sha256 }}"
+    owner: root
+    group: root
+    mode: '0644'
+  when:
+    - observability_xconnect_diagnostics_enabled | bool
+    - not (ansible_check_mode | bool)
+  notify: "{{ 'Recreate diagnostics Grafana' if observability_xconnect_diagnostics_existing_stack | default(false) | bool else 'Restart observability stack' }}"
+  tags: [observability, observability_xconnect_diagnostics]
+
+- name: Check installed XConnect diagnostics Grafana plugin version
+  ansible.builtin.stat:
+    path: "{{ observability_dir }}/grafana/plugins/aiworkspace-xconnectuserdiagnostics-app/plugin.json"
+  register: observability_xconnect_plugin_json
+  when:
+    - observability_xconnect_diagnostics_enabled | bool
+    - not (ansible_check_mode | bool)
+  tags: [observability, observability_xconnect_diagnostics]
+
+- name: Read installed XConnect diagnostics Grafana plugin version
+  ansible.builtin.slurp:
+    src: "{{ observability_dir }}/grafana/plugins/aiworkspace-xconnectuserdiagnostics-app/plugin.json"
+  register: observability_xconnect_installed_plugin_manifest
+  when:
+    - observability_xconnect_diagnostics_enabled | bool
+    - not (ansible_check_mode | bool)
+    - observability_xconnect_plugin_json.stat.exists | default(false)
+  tags: [observability, observability_xconnect_diagnostics]
+
+- name: Remove previous XConnect diagnostics plugin before a version change
+  ansible.builtin.file:
+    path: "{{ observability_dir }}/grafana/plugins/aiworkspace-xconnectuserdiagnostics-app"
+    state: absent
+  when:
+    - observability_xconnect_diagnostics_enabled | bool
+    - not (ansible_check_mode | bool)
+    - observability_xconnect_plugin_json.stat.exists | default(false)
+    - (observability_xconnect_installed_plugin_manifest.content | b64decode | from_json).info.version != observability_xconnect_diagnostics_plugin_version
+  notify: "{{ 'Recreate diagnostics Grafana' if observability_xconnect_diagnostics_existing_stack | default(false) | bool else 'Restart observability stack' }}"
+  tags: [observability, observability_xconnect_diagnostics]
+
+- name: Install pinned XConnect diagnostics Grafana plugin
+  ansible.builtin.unarchive:
+    src: "{{ observability_dir }}/xconnect-diagnostics-plugin.zip"
+    dest: "{{ observability_dir }}/grafana/plugins"
+    remote_src: true
+    creates: "{{ observability_dir }}/grafana/plugins/aiworkspace-xconnectuserdiagnostics-app/plugin.json"
+  when:
+    - observability_xconnect_diagnostics_enabled | bool
+    - not (ansible_check_mode | bool)
+    - >-
+      not (observability_xconnect_plugin_json.stat.exists | default(false)) or
+      (observability_xconnect_installed_plugin_manifest.content | b64decode | from_json).info.version != observability_xconnect_diagnostics_plugin_version
+  notify: "{{ 'Recreate diagnostics Grafana' if observability_xconnect_diagnostics_existing_stack | default(false) | bool else 'Restart observability stack' }}"
+  tags: [observability, observability_xconnect_diagnostics]
+
+- name: Provision XConnect diagnostics Grafana app with the scoped resolver credential
+  ansible.builtin.template:
+    src: grafana-xconnect-diagnostics-plugin.yml.j2
+    dest: "{{ observability_dir }}/grafana/provisioning/plugins/xconnect-user-diagnostics.yml"
+    owner: root
+    group: '472'
+    mode: '0640'
+  no_log: true
+  when: observability_xconnect_diagnostics_enabled | bool
+  notify: "{{ 'Recreate diagnostics Grafana' if observability_xconnect_diagnostics_existing_stack | default(false) | bool else 'Restart observability stack' }}"
+  tags: [observability, observability_xconnect_diagnostics]
+
+- name: Remove XConnect diagnostics app provisioning when disabled
+  ansible.builtin.file:
+    path: "{{ observability_dir }}/grafana/provisioning/plugins/xconnect-user-diagnostics.yml"
+    state: absent
+  when: not (observability_xconnect_diagnostics_enabled | bool)
+  notify: "{{ 'Recreate diagnostics Grafana' if observability_xconnect_diagnostics_existing_stack | default(false) | bool else 'Restart observability stack' }}"
+  tags: [observability, observability_xconnect_diagnostics]
+
