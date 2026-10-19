@@ -39,3 +39,39 @@
       - --adapter
       - caddyfile
   when: xhttp_caddy_metrics_config.changed | default(false)
+
+- name: Bound Caddy graceful shutdown for long-lived XHTTP streams
+  ansible.builtin.lineinfile:
+    path: /etc/caddy/Caddyfile
+    regexp: '^\s*grace_period\s+'
+    insertafter: '^\s*\{\s*$'
+    firstmatch: true
+    line: '    grace_period 15s'
+    backup: true
+    validate: "{{ xhttp_caddy_binary.stdout }} validate --config %s --adapter caddyfile"
+  register: xhttp_caddy_grace_config
+
+- name: Create Caddy service override directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/caddy.service.d
+    state: directory
+    mode: '0755'
+
+- name: Allow Caddy to finish its bounded graceful shutdown
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/caddy.service.d/30-xhttp-shutdown.conf
+    content: |
+      [Service]
+      TimeoutStopSec=30s
+    mode: '0644'
+  register: xhttp_caddy_shutdown_unit
+
+- name: Load Caddy shutdown service override
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: xhttp_caddy_shutdown_unit.changed
+
+- name: Load bounded Caddy graceful shutdown configuration
+  ansible.builtin.command:
+    argv: ["{{ xhttp_caddy_binary.stdout }}", reload, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+  when: xhttp_caddy_grace_config.changed
