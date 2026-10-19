@@ -46,10 +46,11 @@
       - web_saas_data_restore_verify_archive.stat.checksum == web_saas_data_restore_verify_archive_sha256
     fail_msg: Encrypted archive identity or checksum does not match this run
 
-- name: Restore archive into one run-specific temporary database and compare source identity/schema
-  ansible.builtin.script:
-    cmd: '{{ role_path }}/files/restore_verify.sh'
-    executable: /bin/bash
+- name: Restore and compare through stdin key transport without secret process arguments
+  ansible.builtin.command:
+    argv: [/bin/bash, -c, '{{ lookup("ansible.builtin.file", role_path ~ "/files/restore_verify.sh") }}']
+    stdin: '{{ web_saas_data_restore_verify_passphrase }}'
+    stdin_add_newline: true
   environment:
     WEB_SAAS_ARCHIVE_PATH: '{{ web_saas_data_restore_verify_archive_path }}'
     WEB_SAAS_DATABASE: '{{ web_saas_data_restore_verify_database }}'
@@ -66,7 +67,7 @@
     WEB_SAAS_EXPECTED_DATA_SHA256: '{{ web_saas_data_restore_verify_source_data_sha256 }}'
     WEB_SAAS_DATABASE_SYSTEM_IDENTIFIER: '{{ web_saas_data_restore_verify_database_system_identifier }}'
     WEB_SAAS_ARCHIVE_SHA256: '{{ web_saas_data_restore_verify_archive_sha256 }}'
-    WEB_SAAS_BACKUP_PASSPHRASE: '{{ web_saas_data_restore_verify_passphrase }}'
+    WEB_SAAS_BACKUP_KEY_STDIN: 'true'
     WEB_SAAS_MIGRATION_TABLE: '{{ web_saas_data_restore_verify_migration_table }}'
     WEB_SAAS_MIGRATION_VERSION_COLUMN: '{{ web_saas_data_restore_verify_migration_version_column }}'
     WEB_SAAS_MIGRATION_DIRTY_COLUMN: '{{ web_saas_data_restore_verify_migration_dirty_column }}'

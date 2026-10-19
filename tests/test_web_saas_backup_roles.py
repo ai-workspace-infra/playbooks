@@ -97,16 +97,30 @@ class WebSaaSBackupRoleContractTests(unittest.TestCase):
         self.assertIn("| openssl enc", backup_source)
         self.assertIn("-pass env:WEB_SAAS_BACKUP_PASSPHRASE", backup_source)
 
-    def test_ansible_transfers_role_scripts_to_remote_before_execution(self) -> None:
+    def test_ansible_uses_reviewed_role_source_and_stdin_secret_transport(self) -> None:
         for task_file, script_name in (
             (BACKUP_TASKS, "create_encrypted_backup.sh"),
             (RESTORE_TASKS, "restore_verify.sh"),
         ):
             source = task_file.read_text()
-            self.assertIn("ansible.builtin.script:", source)
-            self.assertIn(f"cmd: '{{{{ role_path }}}}/files/{script_name}'", source)
-            self.assertIn("executable: /bin/bash", source)
-            self.assertNotIn(f"argv: [bash, '{{{{ role_path }}}}/files/{script_name}']", source)
+            self.assertIn("ansible.builtin.command:", source)
+            self.assertIn(f'/files/{script_name}', source)
+            self.assertIn('lookup("ansible.builtin.file", role_path', source)
+            self.assertIn("stdin:", source)
+            self.assertIn("WEB_SAAS_BACKUP_KEY_STDIN: 'true'", source)
+            self.assertNotIn("WEB_SAAS_BACKUP_PASSPHRASE:", source)
+            self.assertIn("no_log: true", source)
+
+    def test_stdin_key_transport_fails_closed_on_eof(self) -> None:
+        for script in (BACKUP, RESTORE):
+            result = subprocess.run(
+                ["bash", str(script)], input="", text=True,
+                env={"WEB_SAAS_BACKUP_KEY_STDIN": "true"},
+                capture_output=True, timeout=5,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("missing stdin encryption key", result.stderr)
+            self.assertNotIn("docker", result.stderr)
 
 
 if __name__ == "__main__":
