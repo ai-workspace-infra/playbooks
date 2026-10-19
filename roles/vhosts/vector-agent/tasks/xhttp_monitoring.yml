@@ -67,8 +67,15 @@
   ansible.builtin.set_fact:
     xhttp_vector_candidate: >-
       {{ xhttp_vector_base | regex_replace(
-         '(?ms)(\[sinks\.prometheus_remote\]\n(?:(?!\n\[).)*?^inputs = \[)(?!"xhttp_caddy_labels")',
+         '(?ms)(\[sinks\.prometheus_remote\]\n(?:(?!\n\[).)*?^[ \t]*inputs[ \t]*=[ \t]*\[)(?!"xhttp_caddy_labels")',
          '\g<1>"xhttp_caddy_labels", "xhttp_event_metrics", ') }}
+  no_log: true
+
+- name: Require new sources to reach the existing remote-write sink
+  ansible.builtin.assert:
+    that:
+      - vector_xhttp_create_sink or xhttp_vector_candidate is search('(?m)^[ \t]*inputs[ \t]*=[ \t]*\["xhttp_caddy_labels", "xhttp_event_metrics"')
+    fail_msg: "XHTTP monitoring sources must be connected to remote write."
   no_log: true
 
 - name: Install validated monitoring configuration atomically
