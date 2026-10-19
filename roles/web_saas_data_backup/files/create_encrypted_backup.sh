@@ -4,6 +4,10 @@ umask 077
 
 fail() { printf '%s\n' "$1" >&2; exit 2; }
 require() { [[ -n "${!1:-}" ]] || fail "missing required input: $1"; }
+if [[ ${WEB_SAAS_BACKUP_KEY_STDIN:-false} == true ]]; then
+  IFS= read -r WEB_SAAS_BACKUP_PASSPHRASE || fail 'missing stdin encryption key'
+  export WEB_SAAS_BACKUP_PASSPHRASE
+fi
 for name in WEB_SAAS_BACKUP_ROOT WEB_SAAS_DATABASE WEB_SAAS_POSTGRES_CONTAINER WEB_SAAS_ENVIRONMENT WEB_SAAS_RUN_ID WEB_SAAS_EXPECTED_VERSION WEB_SAAS_SOURCE_DATABASE_ID WEB_SAAS_BASELINE_ID WEB_SAAS_AUTHORIZED_SUBSCRIPTION_SAMPLE_ID WEB_SAAS_BACKUP_PASSPHRASE; do require "$name"; done
 
 WEB_SAAS_MIGRATION_TABLE="${WEB_SAAS_MIGRATION_TABLE-schema_migrations}"

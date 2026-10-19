@@ -100,10 +100,11 @@
     group: root
     mode: '0700'
 
-- name: Stream one encrypted archive without creating a plaintext dump
-  ansible.builtin.script:
-    cmd: '{{ role_path }}/files/create_encrypted_backup.sh'
-    executable: /bin/bash
+- name: Stream one encrypted archive without putting its key in SSH arguments
+  ansible.builtin.command:
+    argv: [/bin/bash, -c, '{{ lookup("ansible.builtin.file", role_path ~ "/files/create_encrypted_backup.sh") }}']
+    stdin: '{{ web_saas_data_backup_passphrase }}'
+    stdin_add_newline: true
   environment:
     WEB_SAAS_BACKUP_ROOT: '{{ web_saas_data_backup_root }}/{{ web_saas_data_backup_environment }}/{{ web_saas_data_backup_release_tag }}/{{ web_saas_data_backup_run_id }}'
     WEB_SAAS_DATABASE: '{{ web_saas_data_backup_database }}'
@@ -114,7 +115,7 @@
     WEB_SAAS_SOURCE_DATABASE_ID: '{{ web_saas_data_backup_source_database_id }}'
     WEB_SAAS_BASELINE_ID: '{{ web_saas_data_backup_baseline_id }}'
     WEB_SAAS_AUTHORIZED_SUBSCRIPTION_SAMPLE_ID: '{{ web_saas_data_backup_authorized_subscription_sample_id }}'
-    WEB_SAAS_BACKUP_PASSPHRASE: '{{ web_saas_data_backup_passphrase }}'
+    WEB_SAAS_BACKUP_KEY_STDIN: 'true'
     WEB_SAAS_MIGRATION_TABLE: '{{ web_saas_data_backup_migration_table }}'
     WEB_SAAS_MIGRATION_VERSION_COLUMN: '{{ web_saas_data_backup_migration_version_column }}'
     WEB_SAAS_MIGRATION_DIRTY_COLUMN: '{{ web_saas_data_backup_migration_dirty_column }}'
