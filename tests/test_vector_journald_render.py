@@ -62,6 +62,21 @@ class JournalRenderTests(unittest.TestCase):
         self.assertEqual(dashboard['uid'], 'xconnect-user-connection-diagnostics')
         self.assertTrue(any('xhttp_events_total' in str(panel) for panel in dashboard['panels']))
 
+    def test_snapshot_only_relay_gets_shared_xray_collection(self):
+        env = Environment(loader=FileSystemLoader(ROOT / 'roles/vhosts/vector-agent/templates'))
+        env.filters.update(bool=bool, to_json=json.dumps)
+        rendered = env.get_template('xhttp-monitoring.toml.j2').render(
+            vector_xhttp_monitoring_enabled=True, vector_xhttp_create_sink=True,
+            vector_xhttp_add_xray_scrape=True, inventory_hostname='edge.example.test',
+            vector_observability_environment='uat', vector_observability_provider='test',
+            vector_observability_service_domain='edge.example.test',
+            xhttp_monitoring_vault={'json': {'data': {'data': {'user': 'fixture', 'password': 'fixture'}}}})
+        config = tomllib.loads(rendered)
+        for transport, port in [('xhttp', 8080), ('tcp', 8081)]:
+            self.assertEqual(config['sources'][f'xray_{transport}_metrics']['endpoints'],
+                             [f'http://127.0.0.1:{port}/scrape'])
+            self.assertIn(f'add_xray_{transport}_labels', config['sinks']['prometheus_remote']['inputs'])
+
 
 if __name__ == '__main__':
     unittest.main()
