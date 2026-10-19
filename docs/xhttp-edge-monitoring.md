@@ -20,7 +20,7 @@ nodes. Credentials use the existing runtime Vault path and authenticated sinks.
 
 Collection reads Caddy's loopback admin metrics and journal errors before the
 ordinary reverse-proxy log filter. Bounded event labels distinguish socket_missing,
-unexpected_eof, connection_refused, other_502, and xray_started. PID 1 Started
+unexpected_eof, upstream_reset, connection_refused, other_502, and xray_started. PID 1 Started
 events include explicit restarts that systemd NRestarts misses. Journal delivery
 is checkpointed; metric conversion is not an exactly-once audit ledger.
 
@@ -57,3 +57,19 @@ paths. Disable observability_xhttp_alerting_enabled in the server role to remove
 the dedicated alert file.
 Dashboard deletion follows the existing provisioning provider deletion policy.
 This source change does not itself constitute deployment or live acceptance.
+
+## Comprehensive dashboard
+
+The canonical UID is `xconnect-user-connection-diagnostics`, titled
+`XConnect 综合监控`. Sections follow an overview-to-detail workflow: Xray
+traffic and availability, XHTTP failures/restarts/collection freshness, then
+the secure Email/Proxy UUID Trace lookup entry. A top-level shortcut opens
+the existing diagnostic app. This is a linked secure lookup flow, not an
+embedded identity form or a new Trace correlation implementation.
+
+All charts share the dashboard time range and node selector. Job filters
+apply only to Xray. The existing Xray user metric selector is excluded from
+URL synchronization; identity resolution remains a POST to the diagnostic app.
+Node context must not be presented as evidence belonging to an individual Trace.
+The old `begqoward2epsf` and `xhttp-edge-reliability` UIDs remain navigation-only
+bookmark compatibility pages, with no duplicate metric panels.
