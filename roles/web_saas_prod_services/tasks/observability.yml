@@ -1,0 +1,95 @@
+---
+# Focused Accounts-only configuration; no database or release reconciliation.
+- name: Resolve the shared monitoring record through its existing owner
+  ansible.builtin.include_role:
+    name: docker/observability-server
+    tasks_from: diagnostics_credentials
+  vars:
+    observability_xconnect_diagnostics_enabled: true
+    observability_xconnect_diagnostics_provision_credentials: true
+
+- name: Inspect the running Accounts deployment without exposing environment values
+  ansible.builtin.command:
+    argv: [docker, inspect, web-saas-accounts]
+  register: diagnostics_accounts_inspect
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Capture the existing immutable Accounts runtime
+  ansible.builtin.set_fact:
+    diagnostics_accounts_runtime: "{{ (diagnostics_accounts_inspect.stdout | from_json)[0] }}"
+  no_log: true
+
+- name: Build the existing Compose invocation
+  ansible.builtin.set_fact:
+    diagnostics_accounts_compose: >-
+      {{ ['docker', 'compose', '-p', diagnostics_accounts_runtime.Config.Labels['com.docker.compose.project'],
+          '--env-file', accounts_observability_compose_env_file | default('.env.prod-v2')] }}
+
+- name: Retain each running Compose configuration file
+  ansible.builtin.set_fact:
+    diagnostics_accounts_compose: "{{ diagnostics_accounts_compose + ['-f', item] }}"
+  loop: "{{ diagnostics_accounts_runtime.Config.Labels['com.docker.compose.project.config_files'].split(',') }}"
+
+- name: Resolve existing Accounts image before changing runtime credentials
+  ansible.builtin.command:
+    argv: "{{ diagnostics_accounts_compose + ['config', '--no-env-resolution', '--format', 'json'] }}"
+    chdir: "{{ diagnostics_accounts_runtime.Config.Labels['com.docker.compose.project.working_dir'] }}"
+  register: diagnostics_accounts_compose_config
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Refuse an implicit Accounts image upgrade
+  ansible.builtin.assert:
+    that:
+      - (diagnostics_accounts_compose_config.stdout | from_json).services.accounts.image == diagnostics_accounts_runtime.Config.Image
+      - "'@sha256:' in diagnostics_accounts_runtime.Config.Image"
+      - "'/etc/xcontrol/web-saas/accounts-smtp.env' in ((diagnostics_accounts_compose_config.stdout | from_json).services.accounts.env_file | to_json)"
+  no_log: true
+
+- name: Require the existing Accounts-only environment file
+  ansible.builtin.stat:
+    path: /etc/xcontrol/web-saas/accounts-smtp.env
+  register: diagnostics_accounts_env
+
+- name: Require the Accounts-only file to be consumed by the running declaration
+  ansible.builtin.assert:
+    that: diagnostics_accounts_env.stat.isreg | default(false)
+
+- name: Set the scoped resolver token without replacing SMTP configuration
+  ansible.builtin.lineinfile:
+    path: /etc/xcontrol/web-saas/accounts-smtp.env
+    regexp: '^XCONNECT_OBSERVABILITY_SEARCH_TOKEN='
+    line: "XCONNECT_OBSERVABILITY_SEARCH_TOKEN={{ observability_xconnect_diagnostics_identity_token }}"
+    owner: root
+    group: root
+    mode: '0600'
+    backup: true
+  register: diagnostics_accounts_env_update
+  no_log: true
+
+- name: Recreate only Accounts using its current pinned image and Compose files
+  ansible.builtin.command:
+    argv: "{{ diagnostics_accounts_compose + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never', 'accounts'] }}"
+    chdir: "{{ diagnostics_accounts_runtime.Config.Labels['com.docker.compose.project.working_dir'] }}"
+  when: diagnostics_accounts_env_update.changed
+
+- name: Verify Accounts now accepts only the scoped resolver credential
+  ansible.builtin.uri:
+    url: https://accounts.svc.plus/api/observability/internal/xconnect/identity
+    method: POST
+    body_format: json
+    body: {}
+    headers:
+      X-XConnect-Observability-Token: "{{ observability_xconnect_diagnostics_identity_token }}"
+    status_code: 400
+  delegate_to: localhost
+  become: false
+  register: diagnostics_accounts_resolver_health
+  retries: 12
+  delay: 5
+  until: diagnostics_accounts_resolver_health.status | default(0) == 400
+  no_log: true
+  when: not ansible_check_mode

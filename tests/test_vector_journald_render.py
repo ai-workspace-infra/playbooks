@@ -58,8 +58,8 @@ class JournalRenderTests(unittest.TestCase):
         self.assertEqual(set(metric['tags']), {'instance', 'environment', 'event'})
 
     def test_dashboard_is_valid_and_uses_bounded_event_series(self):
-        dashboard = json.loads((ROOT / 'roles/docker/observability-server/files/xconnect-user-connection-diagnostics.json').read_text())
-        self.assertEqual(dashboard['uid'], 'xconnect-user-connection-diagnostics')
+        dashboard = json.loads((ROOT / 'roles/docker/observability-server/files/xconnect-comprehensive.json').read_text())
+        self.assertEqual(dashboard['uid'], 'xconnect-comprehensive')
         self.assertTrue(any('xhttp_events_total' in str(panel) for panel in dashboard['panels']))
 
     def test_snapshot_only_relay_gets_shared_xray_collection(self):

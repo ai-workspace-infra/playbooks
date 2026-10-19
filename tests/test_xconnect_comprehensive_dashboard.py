@@ -7,8 +7,8 @@ FILES = Path(__file__).resolve().parents[1] / 'roles/docker/observability-server
 
 class ComprehensiveDashboardTests(unittest.TestCase):
     def test_three_sources_share_one_dashboard(self):
-        dashboard = json.loads((FILES / 'xconnect-user-connection-diagnostics.json').read_text())
-        self.assertEqual(dashboard['uid'], 'xconnect-user-connection-diagnostics')
+        dashboard = json.loads((FILES / 'xconnect-comprehensive.json').read_text())
+        self.assertEqual(dashboard['uid'], 'xconnect-comprehensive')
         self.assertEqual(dashboard['title'], 'XConnect 综合监控')
         panels = dashboard['panels']
         self.assertEqual(len({p['id'] for p in panels}), len(panels))
@@ -29,8 +29,26 @@ class ComprehensiveDashboardTests(unittest.TestCase):
                 b = right['gridPos']
                 self.assertFalse(a['x'] < b['x']+b['w'] and b['x'] < a['x']+a['w'] and a['y'] < b['y']+b['h'] and b['y'] < a['y']+a['h'])
 
-    def test_legacy_bookmarks_are_navigation_only(self):
-        for name in ['dashboard.json', 'xhttp-edge-reliability-dashboard.json']:
+    def test_existing_dashboards_keep_their_content_and_uids(self):
+        for name, uid, metric in [
+            ('dashboard.json', 'begqoward2epsf', 'xray_'),
+            ('xhttp-edge-reliability-dashboard.json', 'xhttp-edge-reliability', 'xhttp_events_total'),
+        ]:
             dashboard = json.loads((FILES / name).read_text())
-            self.assertEqual(len(dashboard['panels']), 1)
-            self.assertIn('/grafana/d/xconnect-user-connection-diagnostics/', dashboard['panels'][0]['options']['content'])
+            self.assertEqual(dashboard['uid'], uid)
+            self.assertGreater(len(dashboard['panels']), 1)
+            self.assertIn(metric, json.dumps(dashboard))
+            self.assertNotIn('旧书签保留', json.dumps(dashboard, ensure_ascii=False))
+            self.assertNotIn('已合并', dashboard['title'])
+            self.assertFalse({'graph', 'singlestat', 'table-old'} & {p['type'] for p in dashboard['panels']})
+        diagnostics = json.loads((FILES / 'xconnect-user-connection-diagnostics.json').read_text())
+        self.assertEqual(diagnostics['uid'], 'xconnect-user-connection-diagnostics')
+        self.assertEqual(diagnostics['title'], 'XConnect 用户慢连接诊断')
+        self.assertIn('/grafana/a/aiworkspace-xconnectuserdiagnostics-app', diagnostics['panels'][0]['options']['content'])
+
+    def test_all_dashboard_uids_are_unique(self):
+        dashboards = [json.loads(path.read_text()) for path in FILES.glob('*.json')]
+        uids = [d['uid'] for d in dashboards if d.get('uid')]
+        self.assertEqual(len(uids), len(set(uids)))
+        for dashboard in dashboards:
+            self.assertNotIn('统一监控入口', [p.get('title') for p in dashboard.get('panels', [])])

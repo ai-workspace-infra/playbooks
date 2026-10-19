@@ -1,0 +1,23 @@
+---
+- name: Complete the existing Accounts identity resolver
+  hosts: "{{ observability_accounts_hosts }}"
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Apply Accounts runtime configuration through its existing owner
+      ansible.builtin.include_role:
+        name: web_saas_prod_services
+        tasks_from: observability
+
+- name: Complete diagnostics on the existing observability server
+  hosts: "{{ observability_server_hosts | default('observability_hosts') }}"
+  become: true
+  gather_facts: false
+  vars:
+    observability_xconnect_diagnostics_enabled: true
+    observability_xconnect_diagnostics_existing_stack: true
+  tasks:
+    - name: Apply diagnostics through the existing server owner
+      ansible.builtin.include_role:
+        name: docker/observability-server
+        tasks_from: diagnostics_existing
