@@ -48,6 +48,7 @@ class JournalRenderTests(unittest.TestCase):
         config = self.render(True, xhttp=True)
         self.assertNotIn('system_journal', config['sources'])
         self.assertIn('init.scope', config['sources']['xhttp_journal']['include_units'])
+        self.assertTrue(config['sources']['xhttp_journal']['since_now'])
         self.assertIn('xhttp_journal', config['transforms']['process_logs']['inputs'])
         self.assertEqual(config['transforms']['xhttp_events']['inputs'], ['xhttp_journal'])
         for source in ['xhttp_caddy_labels', 'xhttp_event_metrics']:

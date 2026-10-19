@@ -33,6 +33,14 @@ token. Never substitute the billing/internal token. Run --syntax-check and --che
 before applying. Vector changes use the existing role handler; no Xray restart
 is needed. Server provisioning follows the existing Grafana handler.
 
+The narrow entrypoint enables Caddy per-host HTTP metrics through the owning
+Caddy role, validating and gracefully reloading only when necessary. Binary
+paths are discovered on each host; installed Vector config ownership is retained
+instead of assuming a package-managed vector user. Journal counters start from
+new events (since_now=true) to avoid treating deployment-time history replay as
+current failures. SSH targets must come from the existing inventory/CMDB or the
+explicit user-supplied host selection; do not commit a parallel fleet inventory.
+
 Acceptance: validate Vector configuration; verify authenticated backend queries
 for caddy_config_last_reload_successful{job="xhttp-caddy"}; verify dashboard UID
 xhttp-edge-reliability; inspect alert provisioning. An absent event series must

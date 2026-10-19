@@ -1,0 +1,41 @@
+---
+- name: Locate installed Caddy binary
+  ansible.builtin.shell: command -v caddy
+  register: xhttp_caddy_binary
+  changed_when: false
+  check_mode: false
+
+- name: Read existing Caddy configuration for metrics enablement
+  ansible.builtin.slurp:
+    src: /etc/caddy/Caddyfile
+  register: xhttp_caddy_config
+  no_log: true
+
+- name: Require a supported Caddy global options block
+  ansible.builtin.assert:
+    that: (xhttp_caddy_config.content | b64decode) is match('^\s*\{')
+    fail_msg: "Expected an existing global options block in /etc/caddy/Caddyfile."
+
+- name: Enable per-host HTTP metrics with Caddy validation
+  ansible.builtin.copy:
+    content: >-
+      {{ (xhttp_caddy_config.content | b64decode)
+         | regex_replace('^\s*\{', '{\n    metrics {\n        per_host\n    }') }}
+    dest: /etc/caddy/Caddyfile
+    mode: '0644'
+    backup: true
+    validate: "{{ xhttp_caddy_binary.stdout }} validate --config %s --adapter caddyfile"
+  register: xhttp_caddy_metrics_config
+  no_log: true
+  when: not ((xhttp_caddy_config.content | b64decode) is search('(?m)^\s*metrics(?:\s*\{|\s*$)'))
+
+- name: Gracefully reload Caddy metrics configuration
+  ansible.builtin.command:
+    argv:
+      - "{{ xhttp_caddy_binary.stdout }}"
+      - reload
+      - --config
+      - /etc/caddy/Caddyfile
+      - --adapter
+      - caddyfile
+  when: xhttp_caddy_metrics_config.changed | default(false)

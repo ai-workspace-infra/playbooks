@@ -8,6 +8,11 @@
     vector_xhttp_monitoring_enabled: true
     vector_observability_environment: "{{ xhttp_monitoring_environment | default('prod-v2') }}"
   tasks:
+    - name: Enable HTTP metrics through the owning Caddy role
+      ansible.builtin.include_role:
+        name: vhosts/caddy
+        tasks_from: metrics
+      tags: [always]
     - name: Apply collection through the owning Vector role
       ansible.builtin.include_role:
         name: vhosts/vector-agent

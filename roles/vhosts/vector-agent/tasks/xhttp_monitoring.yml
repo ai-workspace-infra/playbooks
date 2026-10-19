@@ -5,6 +5,17 @@
   ansible.builtin.assert:
     that: vector_xhttp_monitoring_enabled | bool
 
+- name: Locate installed Vector binary
+  ansible.builtin.shell: command -v vector
+  register: xhttp_vector_binary
+  changed_when: false
+  check_mode: false
+
+- name: Inspect installed Vector configuration ownership
+  ansible.builtin.stat:
+    path: "{{ vector_config_dir }}/vector.toml"
+  register: xhttp_vector_config_stat
+
 - name: Read installed Vector configuration
   ansible.builtin.slurp:
     src: "{{ vector_config_dir }}/vector.toml"
@@ -69,11 +80,11 @@
       {{ lookup('ansible.builtin.template', 'xhttp-monitoring.toml.j2') }}
       # END ANSIBLE XHTTP MONITORING
     dest: "{{ vector_config_dir }}/vector.toml"
-    owner: "{{ vector_user }}"
-    group: "{{ vector_group }}"
+    owner: "{{ xhttp_vector_config_stat.stat.uid }}"
+    group: "{{ xhttp_vector_config_stat.stat.gid }}"
     mode: '0600'
     backup: true
-    validate: /usr/bin/vector validate --no-environment --config-toml %s
+    validate: "{{ xhttp_vector_binary.stdout }} validate --no-environment --config-toml %s"
   no_log: true
   notify: Restart vector
 
