@@ -1,0 +1,39 @@
+---
+- name: Require the exact audited recovery target and complete writer set
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname == 'web-saas-prod-v3'
+      - web_saas_generation_target_host == inventory_hostname
+      - web_saas_generation_environment == 'prod-v3'
+      - web_saas_usage_reconciliation_writer_operation in ['pause', 'resume']
+      - web_saas_usage_reconciliation_writers | sort == ['doco-cd', 'web-saas-accounts', 'web-saas-billing']
+    fail_msg: Writer operations require an explicit V3-only maintenance invocation
+
+- name: Inspect current writer states before any operation
+  ansible.builtin.command:
+    argv: [docker, inspect, --format, '{{ "{{.State.Running}}" }}', '{{ item }}']
+  loop: '{{ web_saas_usage_reconciliation_writers }}'
+  register: generation_writer_states
+  changed_when: false
+
+- name: Stop reconciler before applications in the explicit pause operation
+  ansible.builtin.command:
+    argv: [docker, stop, --time, '30', '{{ item }}']
+  loop: [doco-cd, web-saas-accounts, web-saas-billing]
+  when: web_saas_usage_reconciliation_writer_operation == 'pause'
+  changed_when: true
+
+- name: Resume applications before reconciler only when explicitly requested
+  ansible.builtin.command:
+    argv: [docker, start, '{{ item }}']
+  loop: [web-saas-billing, web-saas-accounts, doco-cd]
+  when: web_saas_usage_reconciliation_writer_operation == 'resume'
+  changed_when: true
+
+- name: Verify every declared writer reached its requested state
+  ansible.builtin.command:
+    argv: [docker, inspect, --format, '{{ "{{.State.Running}}" }}', '{{ item }}']
+  loop: '{{ web_saas_usage_reconciliation_writers }}'
+  register: generation_writer_result
+  changed_when: false
+  failed_when: generation_writer_result.stdout | trim != ('true' if web_saas_usage_reconciliation_writer_operation == 'resume' else 'false')

@@ -1,0 +1,9 @@
+---
+- name: Explicitly pause or resume reviewed recovery-generation writers
+  hosts: '{{ web_saas_generation_target_host | default("never-matches") }}'
+  gather_facts: false
+  become: true
+  tasks:
+    - ansible.builtin.include_role:
+        name: web_saas_usage_reconciliation
+        tasks_from: writer_state
