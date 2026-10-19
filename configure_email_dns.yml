@@ -157,6 +157,16 @@
         existing_spf_records: "{{ apex_txt_records.json.result | selectattr('content', 'search', 'v=spf1') | list }}"
       when: email_dns_apply
 
+    - name: Remove redundant existing SPF records if multiple exist
+      ansible.builtin.uri:
+        url: "{{ cloudflare_api_base }}/zones/{{ cloudflare_zone_id }}/dns_records/{{ item.id }}"
+        method: DELETE
+        headers: {Authorization: "Bearer {{ cloudflare_api_token }}", Content-Type: application/json}
+      loop: "{{ existing_spf_records[1:] if (existing_spf_records | length > 1) else [] }}"
+      loop_control: {label: "{{ item.content }}"}
+      no_log: true
+      when: email_dns_apply
+
     - name: Merge Google Workspace and Resend SPF into one apex record
       ansible.builtin.uri:
         url: "{{ cloudflare_api_base }}/zones/{{ cloudflare_zone_id }}/dns_records{{ ('/' ~ existing_spf_records[0].id) if (existing_spf_records | length > 0) else '' }}"
@@ -241,7 +251,7 @@
         method: POST
         headers: {Authorization: "Bearer {{ cloudflare_api_token }}", Content-Type: application/json}
         body_format: json
-        body: "{{ {'type': item.type, 'name': item.name, 'content': item.value | default(item.content), 'ttl': item.ttl | default(3600), 'proxied': false} | combine({'priority': item.priority} if item.priority is defined else {}) }}"
+        body: "{{ {'type': item.type, 'name': item.name, 'content': item.value | default(item.content), 'ttl': item.ttl | default(3600)} | combine({'proxied': item.proxied | default(false)} if item.type in ['A', 'AAAA', 'CNAME'] else {}) | combine({'priority': item.priority} if item.priority is defined else {}) }}"
         status_code: [200, 201]
         return_content: true
       loop: "{{ desired_records }}"
