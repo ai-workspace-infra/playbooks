@@ -61,7 +61,11 @@ class BackupRestoreRolesPostgresTests(unittest.TestCase):
         return result.stdout.strip()
 
     def script(self, role, script, env=None):
-        return subprocess.run(["bash", str(ROOT / "roles" / role / "files" / script)], env=env or self.env,
+        runtime_env = dict(env or self.env)
+        passphrase = runtime_env.pop("WEB_SAAS_BACKUP_PASSPHRASE")
+        runtime_env["WEB_SAAS_BACKUP_KEY_STDIN"] = "true"
+        return subprocess.run(["bash", str(ROOT / "roles" / role / "files" / script)], env=runtime_env,
+                              input=passphrase + "\n",
                               capture_output=True, text=True, timeout=90)
 
     def test_encrypted_round_trip_then_fail_closed_paths(self):
