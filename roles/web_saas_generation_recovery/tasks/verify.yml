@@ -1,4 +1,12 @@
 ---
+- name: Resolve and verify the shared runtime credential
+  ansible.builtin.include_tasks: service-token.yml
+  when: web_saas_recovery_phase == 'verify'
+
+- name: Require matching Accounts Billing and Console credentials
+  ansible.builtin.include_tasks: verify-service-token.yml
+  when: web_saas_recovery_phase == 'verify'
+
 - name: Verify the restored database and immutable checkpoint
   ansible.builtin.command:
     argv:

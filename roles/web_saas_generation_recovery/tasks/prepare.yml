@@ -40,6 +40,9 @@
     mode: '0700'
   when: not recovery_existing.results[1].stat.exists
 
+- name: Resolve the shared service credential independently of generation credentials
+  ansible.builtin.include_tasks: service-token.yml
+
 - name: Inspect local recovery credentials
   ansible.builtin.stat:
     path: "{{ web_saas_recovery_config_root }}/secrets.env"
