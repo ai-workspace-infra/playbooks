@@ -13,6 +13,7 @@
     argv: [docker, inspect, web-saas-accounts]
   register: diagnostics_accounts_inspect
   changed_when: false
+  check_mode: false
   no_log: true
 
 - name: Capture the existing immutable Accounts runtime
@@ -37,6 +38,7 @@
     chdir: "{{ diagnostics_accounts_runtime.Config.Labels['com.docker.compose.project.working_dir'] }}"
   register: diagnostics_accounts_compose_config
   changed_when: false
+  check_mode: false
   no_log: true
 
 - name: Refuse an implicit Accounts image upgrade
