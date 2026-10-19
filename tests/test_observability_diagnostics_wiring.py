@@ -19,6 +19,9 @@ class DiagnosticsWiringTests(unittest.TestCase):
         self.assertEqual(options['mode'], '0755')
         self.assertNotIn('recurse', options)
         self.assertNotIn('when', directory)
+        provisioning = next(t for t in tasks if t['name'].startswith('Provision XConnect diagnostics Grafana app'))['ansible.builtin.template']
+        self.assertEqual(provisioning['owner'], '472')
+        self.assertEqual(provisioning['mode'], '0600')
 
     def test_credentials_reuse_monitoring_source_without_reusing_agent_password(self):
         defaults = yaml.safe_load((ROOT / 'roles/docker/observability-server/defaults/main.yml').read_text())

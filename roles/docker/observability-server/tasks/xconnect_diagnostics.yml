@@ -112,9 +112,9 @@
   ansible.builtin.template:
     src: grafana-xconnect-diagnostics-plugin.yml.j2
     dest: "{{ observability_dir }}/grafana/provisioning/plugins/xconnect-user-diagnostics.yml"
-    owner: root
+    owner: '472'
     group: '472'
-    mode: '0640'
+    mode: '0600'
   no_log: true
   when: observability_xconnect_diagnostics_enabled | bool
   notify: "{{ 'Recreate diagnostics Grafana' if observability_xconnect_diagnostics_existing_stack | default(false) | bool else 'Restart observability stack' }}"

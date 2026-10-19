@@ -46,7 +46,7 @@ explicit user-supplied host selection; do not commit a parallel fleet inventory.
 
 Acceptance: validate Vector configuration; verify authenticated backend queries
 for caddy_config_last_reload_successful{job="xhttp-caddy"}; verify dashboard UID
-xconnect-user-connection-diagnostics (XConnect 综合监控); inspect alert provisioning. An absent event series must
+xconnect-comprehensive (XConnect 综合监控); inspect alert provisioning. An absent event series must
 not be displayed as zero. HTTP rate/TTFB panels require ingress HTTP metrics;
 the admin metrics endpoint alone does not prove these series exist. No dashboard
 panel claims socket readiness or authenticated tunnel health. Add an independent
@@ -63,7 +63,7 @@ This source change does not itself constitute deployment or live acceptance.
 
 ## Comprehensive dashboard
 
-The canonical UID is `xconnect-user-connection-diagnostics`, titled
+The comprehensive UID is `xconnect-comprehensive`, titled
 `XConnect 综合监控`. Sections follow an overview-to-detail workflow: Xray
 traffic and availability, XHTTP failures/restarts/collection freshness, then
 the secure Email/Proxy UUID Trace lookup entry. A top-level shortcut opens
@@ -74,5 +74,7 @@ All charts share the dashboard time range and node selector. Job filters
 apply only to Xray. The existing Xray user metric selector is excluded from
 URL synchronization; identity resolution remains a POST to the diagnostic app.
 Node context must not be presented as evidence belonging to an individual Trace.
-The old `begqoward2epsf` and `xhttp-edge-reliability` UIDs remain navigation-only
-bookmark compatibility pages, with no duplicate metric panels.
+The existing `begqoward2epsf`, `xhttp-edge-reliability` and
+`xconnect-user-connection-diagnostics` UIDs retain their original independent
+dashboards and content. The comprehensive dashboard is additive; no dashboard
+is replaced by a navigation-only placeholder.
