@@ -65,6 +65,27 @@
       register: usage_merge_command
       changed_when: web_saas_usage_reconciliation_apply | bool
       no_log: true
+  rescue:
+    - name: Classify only fixed nonsecret failure reasons
+      ansible.builtin.set_fact:
+        usage_failure_flags:
+          source_connection: '{{ "source connection failed" in (usage_merge_command.stderr | default("")) }}'
+          target_connection: '{{ "target connection failed" in (usage_merge_command.stderr | default("")) }}'
+          identity_mapping: '{{ "missing or ambiguous user identity mapping" in (usage_merge_command.stderr | default("")) }}'
+          accounting_conflict: '{{ "accounting or quota conflicts detected" in (usage_merge_command.stderr | default("")) }}'
+          catalog_checkpoint: '{{ "checkpoint" in (usage_merge_command.stderr | default("")) }}'
+          source_visibility: '{{ "readonly visibility" in (usage_merge_command.stderr | default("")) or "source requires an enforced read-only" in (usage_merge_command.stderr | default("")) }}'
+          business_scope: '{{ "business relation" in (usage_merge_command.stderr | default("")) or "required public." in (usage_merge_command.stderr | default("")) }}'
+          column_contract: '{{ "column scope differs" in (usage_merge_command.stderr | default("")) or "column definition differs" in (usage_merge_command.stderr | default("")) }}'
+          key_contract: '{{ "key differs" in (usage_merge_command.stderr | default("")) or "key coverage differs" in (usage_merge_command.stderr | default("")) }}'
+          compiled_hashes: '{{ "compiled schema hashes" in (usage_merge_command.stderr | default("")) }}'
+          source_population: '{{ "source user matching population unavailable" in (usage_merge_command.stderr | default("")) }}'
+          assertion: '{{ "AssertionError" in (usage_merge_command.stderr | default("")) }}'
+          missing_container_password: '{{ "POSTGRES_PASSWORD" in (usage_merge_command.stderr | default("")) }}'
+      no_log: true
+    - name: Stop with sanitized diagnostics while keeping credentials and rows hidden
+      ansible.builtin.fail:
+        msg: 'Reconciliation stopped; fixed-reason flags={{ usage_failure_flags | to_json }}. Inspect before retry; no automatic apply or resume.'
   always:
     - name: Remove only this run's temporary executor
       ansible.builtin.file:
