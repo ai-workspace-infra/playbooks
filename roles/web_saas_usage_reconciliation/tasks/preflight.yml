@@ -20,6 +20,7 @@
 - name: Require immutable declared candidate and compatible rollback identities
   ansible.builtin.assert:
     that:
+      - item.value.keys() | list | sort == ['image_digest', 'rollback_digest', 'source_sha']
       - item.value.source_sha is match('^[0-9a-f]{40}$')
       - item.value.image_digest is match('^sha256:[0-9a-f]{64}$')
       - item.value.rollback_digest is match('^sha256:[0-9a-f]{64}$')
