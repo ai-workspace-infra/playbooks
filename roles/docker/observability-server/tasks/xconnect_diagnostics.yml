@@ -77,6 +77,13 @@
   notify: "{{ 'Recreate diagnostics Grafana' if observability_xconnect_diagnostics_existing_stack | default(false) | bool else 'Restart observability stack' }}"
   tags: [observability, observability_xconnect_diagnostics]
 
+- name: Ensure the plugin ZIP extraction dependency is installed
+  ansible.builtin.package:
+    name: unzip
+    state: present
+  when: observability_xconnect_diagnostics_enabled | bool
+  tags: [observability, observability_xconnect_diagnostics]
+
 - name: Install pinned XConnect diagnostics Grafana plugin
   ansible.builtin.unarchive:
     src: "{{ observability_dir }}/xconnect-diagnostics-plugin.zip"
