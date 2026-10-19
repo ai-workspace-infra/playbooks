@@ -69,48 +69,46 @@
     - Restart caddy
 
 - name: Configure Caddy for agent proxy domains in conf.d
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_domains | default([]) | length == 1
+      - (agent_proxy_domains | first) | length > 0
+    fail_msg: "Agent Proxy requires exactly one canonical node domain; legacy aliases are unsupported."
+
+- name: Configure Caddy for the canonical node domain in conf.d
   ansible.builtin.template:
     src: agent-proxy.conf.j2
-    dest: "{{ agent_proxy_caddy_conf_dir }}/agent-proxy.caddy"
+    dest: "{{ agent_proxy_caddy_conf_dir }}/{{ agent_proxy_domains | first }}.caddy"
     mode: '0644'
   notify:
     - Restart caddy
 
-- name: Configure legacy Agent Proxy Caddy fragment when explicitly enabled
-  ansible.builtin.template:
-    src: agent-proxy.conf.j2
-    dest: "{{ agent_proxy_caddy_conf_dir }}/tky-proxy.caddy"
-    mode: '0644'
-    # Reconcile the long-lived compatibility fragment on every run. Leaving an
-    # old fragment untouched can leak a PROD hostname into a reused UAT node.
-    force: true
-  vars:
-    agent_proxy_domains:
-      - "{{ agent_proxy_legacy_domain }}"
-  when:
-    - agent_proxy_legacy_domain | default('') | length > 0
-    - agent_proxy_legacy_domain not in (agent_proxy_primary_domains | default([]))
-  notify:
-    - Restart caddy
-
-- name: Remove PROD-only compatibility fragment outside PROD
-  ansible.builtin.file:
-    path: "{{ agent_proxy_caddy_conf_dir }}/tky-proxy.caddy"
-    state: absent
-  when:
-    - agent_proxy_legacy_domain | default('') | length == 0
-  notify:
-    - Restart caddy
-
-- name: Remove obsolete legacy Agent Proxy Caddy configuration
+- name: Remove legacy Agent Proxy Caddy fragments
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
+    - "{{ agent_proxy_caddy_conf_dir }}/agent-proxy.caddy"
+    - "{{ agent_proxy_caddy_conf_dir }}/tky-proxy.caddy"
     - "{{ agent_proxy_caddy_conf_dir }}/tky-proxy.conf"
-    # Older releases used this generated filename; remove it before creating
-    # the explicit compatibility fragment to avoid duplicate site addresses.
     - "{{ agent_proxy_caddy_conf_dir }}/tky-proxy-svc-plus.caddy"
+  notify:
+    - Restart caddy
+
+- name: Remove canonical fragments for domains no longer assigned to this node
+  ansible.builtin.find:
+    paths: "{{ agent_proxy_caddy_conf_dir }}"
+    patterns: "*.caddy"
+    excludes:
+      - "{{ agent_proxy_domains | first }}.caddy"
+      - "00-logging.caddy"
+  register: agent_proxy_stale_domain_fragments
+
+- name: Delete stale canonical domain fragments
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ agent_proxy_stale_domain_fragments.files }}"
   notify:
     - Restart caddy
 
