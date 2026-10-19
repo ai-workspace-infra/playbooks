@@ -376,6 +376,30 @@ def verify_runtime(c, root):
     return result
 
 
+def verify_reconciliation(c, root):
+    runtime = load_receipt(root / 'runtime-verified.json')
+    require(runtime['status'] == 'passed' and runtime['gitops_sha'] == c['gitops_sha'])
+    info = json.loads(run(['docker', 'inspect', 'doco-cd']))[0]
+    env = dict(value.split('=', 1) for value in info['Config']['Env'])
+    polls = json.loads(env['POLL_CONFIG'])
+    require(len(polls) == 1)
+    require(polls[0]['reference'] == 'refs/tags/' + c['release_tag'])
+    require(polls[0]['target'] == 'prod-v3-stripe-sandbox')
+    require(polls[0]['url'] == 'https://github.com/ai-workspace-infra/gitops.git')
+    logs = subprocess.run(['docker','logs','--since',info['State']['StartedAt'],'doco-cd'],
+        capture_output=True, check=True)
+    text = (logs.stdout + logs.stderr).decode()
+    # Never publish raw logs (repository URLs can contain credentials).
+    result = dict(status='passed', gitops_sha=c['gitops_sha'],
+        release_tag=c['release_tag'], target=polls[0]['target'],
+        configured_reference_matches=True, expected_commit_observed=c['gitops_sha'] in text,
+        expected_tag_observed=c['release_tag'] in text,
+        controller_healthy=info['State']['Health']['Status'] == 'healthy')
+    require(result['expected_commit_observed'] and result['expected_tag_observed'] and result['controller_healthy'])
+    write_receipt(root / 'reconciliation-verified.json', result)
+    return result
+
+
 def paused():
     for name in WRITERS:
         require(run(['docker', 'inspect', '--format', '{{.State.Running}}', name]).decode().strip() == 'false')
@@ -404,8 +428,8 @@ def main():
         os.chmod(lock.name, 0o600)
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         phase = sys.argv[1]
-        require(phase in ('snapshot', 'restore_candidate', 'upgrade_candidate', 'activate', 'verify_runtime'))
-        if phase != 'verify_runtime':
+        require(phase in ('snapshot', 'restore_candidate', 'upgrade_candidate', 'activate', 'verify_runtime', 'verify_reconciliation'))
+        if phase not in ('verify_runtime', 'verify_reconciliation'):
             paused()
         if phase == 'snapshot':
             result = source_snapshot(c, root, live['Image'])
@@ -415,8 +439,10 @@ def main():
             result = upgrade_candidate(c, root, live['Image'])
         elif phase == 'activate':
             result = activate(c, root)
-        else:
+        elif phase == 'verify_runtime':
             result = verify_runtime(c, root)
+        else:
+            result = verify_reconciliation(c, root)
         print(json.dumps(dict(phase=phase, result='passed', evidence=result), sort_keys=True))
 
 
