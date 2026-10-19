@@ -1,0 +1,20 @@
+---
+- name: Verify all application containers use the canonical service credential
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import hmac, json, subprocess, sys
+        expected = sys.stdin.read().rstrip('\n')
+        names = ['web-saas-accounts', 'web-saas-billing', 'web-saas-console']
+        rows = json.loads(subprocess.check_output(['docker', 'inspect', *names]))
+        valid = len(rows) == len(names) and bool(expected)
+        for row in rows:
+            values = dict(v.split('=', 1) for v in row['Config']['Env'] if '=' in v)
+            valid = hmac.compare_digest(values.get('INTERNAL_SERVICE_TOKEN', ''), expected) and valid
+        print(json.dumps({'internal_service_token_consistent': valid}))
+        sys.exit(0 if valid else 1)
+    stdin: '{{ recovery_internal_service_token }}'
+  changed_when: false
+  no_log: true

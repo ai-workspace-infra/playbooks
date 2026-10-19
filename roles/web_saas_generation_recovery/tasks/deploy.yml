@@ -1,4 +1,7 @@
 ---
+- name: Resolve the canonical service credential before application reconciliation
+  ansible.builtin.include_tasks: service-token.yml
+
 - name: Revalidate the completed restore before starting any application
   ansible.builtin.include_tasks: verify.yml
 
@@ -12,3 +15,6 @@
 
 - name: Validate the restored application and the unchanged data checkpoint
   ansible.builtin.include_tasks: smoke.yml
+
+- name: Require matching shared credentials after application reconciliation
+  ansible.builtin.include_tasks: verify-service-token.yml

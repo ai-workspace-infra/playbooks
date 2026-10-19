@@ -1,0 +1,74 @@
+---
+# Credential reconciliation for an already provisioned target generation.
+# Doco-CD application selection remains a separate, pinned release step.
+- name: Reconcile the canonical service credential on one existing generation
+  hosts: all
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Require one explicitly selected IaC recovery generation
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length == 1
+          - web_saas_service_token_operation in ['prepare', 'verify']
+          - web_saas_service_token_generation is match('^prod-v[1-9][0-9]*$')
+          - cmdb_name == 'web-saas-' ~ web_saas_service_token_generation
+          - "'web_saas_recovery' in group_names"
+          - web_saas_recovery_gitops_sha is match('^[0-9a-f]{40}$')
+
+    - name: Check the actual target identity
+      ansible.builtin.command:
+        argv: [hostname, -s]
+      register: service_token_hostname
+      changed_when: false
+
+    - name: Require the selected host and existing recovery configuration
+      ansible.builtin.assert:
+        that: service_token_hostname.stdout == cmdb_name
+
+    - name: Inspect the existing recovery credential file
+      ansible.builtin.stat:
+        path: /etc/xcontrol/web-saas-recovery/secrets.env
+        follow: false
+      register: service_token_existing
+
+    - name: Require an existing private configuration
+      ansible.builtin.assert:
+        that:
+          - service_token_existing.stat.isreg | default(false)
+          - service_token_existing.stat.mode == '0600'
+
+    - name: Verify the pinned declaration checkout
+      ansible.builtin.command:
+        argv: [git, -C, '{{ web_saas_recovery_gitops_checkout }}', rev-parse, HEAD]
+      delegate_to: localhost
+      become: false
+      register: service_token_revision
+      changed_when: false
+
+    - name: Verify declaration checkout is clean
+      ansible.builtin.command:
+        argv: [git, -C, '{{ web_saas_recovery_gitops_checkout }}', status, --porcelain]
+      delegate_to: localhost
+      become: false
+      register: service_token_checkout_status
+      changed_when: false
+
+    - name: Require exact clean declarations
+      ansible.builtin.assert:
+        that:
+          - service_token_revision.stdout == web_saas_recovery_gitops_sha
+          - service_token_checkout_status.stdout == ''
+
+    - name: Resolve the credential without restarting services
+      ansible.builtin.include_role:
+        name: web_saas_generation_recovery
+        tasks_from: service-token.yml
+      vars:
+        web_saas_recovery_phase: "{{ 'deploy' if web_saas_service_token_operation == 'prepare' else 'verify' }}"
+
+    - name: Verify all three running application credentials
+      ansible.builtin.include_role:
+        name: web_saas_generation_recovery
+        tasks_from: verify-service-token.yml
+      when: web_saas_service_token_operation == 'verify'

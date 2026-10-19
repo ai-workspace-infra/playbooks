@@ -1,0 +1,45 @@
+---
+- name: Load the shared PROD service credential declaration
+  ansible.builtin.set_fact:
+    recovery_service_auth: "{{ (lookup('ansible.builtin.file', web_saas_recovery_gitops_checkout ~ '/compose/web-saas/runtime/prod.yaml') | from_yaml).internal_service_token }}"
+
+- name: Require the canonical environment-scoped credential reference
+  ansible.builtin.assert:
+    that:
+      - recovery_service_auth.vault_path == 'kv/prod/accounts/runtime'
+      - recovery_service_auth.key == 'INTERNAL_SERVICE_TOKEN'
+
+- name: Read the existing shared credential on the authorized controller
+  ansible.builtin.command:
+    argv: [vault, kv, get, '-field={{ recovery_service_auth.key }}', '{{ recovery_service_auth.vault_path }}']
+  environment:
+    VAULT_ADDR: '{{ web_saas_recovery_vault_addr }}'
+  register: recovery_service_token_read
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  no_log: true
+
+- name: Reject missing or multiline environment-file credentials
+  ansible.builtin.assert:
+    that:
+      - recovery_service_token_read.stdout | length >= 32
+      - recovery_service_token_read.stdout is match('^[A-Za-z0-9._~+/=-]+$')
+    fail_msg: Canonical service credential is missing or unsafe for an environment file
+  no_log: true
+
+- name: Retain the canonical credential only as a protected runtime fact
+  ansible.builtin.set_fact:
+    recovery_internal_service_token: '{{ recovery_service_token_read.stdout }}'
+    cacheable: false
+  no_log: true
+
+- name: Write only the shared credential for Accounts Billing and Console
+  ansible.builtin.copy:
+    content: "INTERNAL_SERVICE_TOKEN={{ recovery_internal_service_token }}\n"
+    dest: '{{ web_saas_recovery_config_root }}/internal-service.env'
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  when: web_saas_recovery_phase in ['prepare', 'deploy']
