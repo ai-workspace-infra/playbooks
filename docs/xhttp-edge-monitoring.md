@@ -32,6 +32,9 @@ credentials from kv/data/CICD/observability using the controller's runtime Vault
 token. Never substitute the billing/internal token. Run --syntax-check and --check
 before applying. Vector changes use the existing role handler; no Xray restart
 is needed. Server provisioning follows the existing Grafana handler.
+For a snapshot-only relay with no monitoring sink, verify both installed Xray
+exporters on loopback ports 8080/8081 before adding the shared Xray scrape
+fragment. Existing full monitoring configurations retain their Xray sources.
 
 The narrow entrypoint enables Caddy per-host HTTP metrics through the owning
 Caddy role, validating and gracefully reloading only when necessary. Binary
