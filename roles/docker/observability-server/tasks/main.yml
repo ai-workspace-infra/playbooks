@@ -468,6 +468,10 @@
 # Grafana 直接启动失败;而此前所有任务都会照常报成功,部署结果呈现"假绿"。
 # 这里强制 flush handlers 让重启先发生,再确认 Grafana 真的活着。
 # ---------------------------------------------------------------------------
+- name: Apply optional XHTTP monitoring provisioning
+  ansible.builtin.import_tasks: xhttp_monitoring.yml
+  when: observability_xhttp_alerting_enabled | bool
+
 - name: Flush handlers before verifying Grafana
   ansible.builtin.meta: flush_handlers
 

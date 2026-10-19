@@ -1,0 +1,91 @@
+---
+# Narrow update for already provisioned relays. Existing credentials, billing,
+# endpoint and source configuration are retained in memory and never printed.
+- name: Require explicit XHTTP monitoring enablement
+  ansible.builtin.assert:
+    that: vector_xhttp_monitoring_enabled | bool
+
+- name: Read installed Vector configuration
+  ansible.builtin.slurp:
+    src: "{{ vector_config_dir }}/vector.toml"
+  register: xhttp_existing_vector
+  no_log: true
+
+- name: Build monitoring candidate from installed configuration
+  ansible.builtin.set_fact:
+    xhttp_vector_base: >-
+      {{ (xhttp_existing_vector.content | b64decode)
+         | regex_replace('(?ms)^# BEGIN ANSIBLE XHTTP MONITORING\n.*?^# END ANSIBLE XHTTP MONITORING\n?', '') }}
+  no_log: true
+
+- name: Require no unmanaged XHTTP components
+  ansible.builtin.assert:
+    that:
+      - "'[sources.xhttp_caddy_metrics]' not in xhttp_vector_base"
+    fail_msg: "Unmanaged XHTTP components already exist; refusing to duplicate them."
+  no_log: true
+
+- name: Resolve whether remote-write provisioning is required
+  ansible.builtin.set_fact:
+    vector_xhttp_create_sink: "{{ '[sinks.prometheus_remote]' not in xhttp_vector_base }}"
+
+- name: Load monitoring credentials from canonical Vault path
+  ansible.builtin.uri:
+    url: "{{ vault_addr | default('https://vault.svc.plus') }}/v1/kv/data/CICD/observability"
+    headers:
+      X-Vault-Token: >-
+        {{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default(
+           lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'HOME') ~ '/.vault-token', errors='ignore'), true) }}
+    return_content: true
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  register: xhttp_monitoring_vault
+  no_log: true
+  when: vector_xhttp_create_sink | bool
+
+- name: Require dedicated monitoring credentials
+  ansible.builtin.assert:
+    that:
+      - xhttp_monitoring_vault.json.data.data.user | length > 0
+      - xhttp_monitoring_vault.json.data.data.password | length > 0
+  no_log: true
+  when: vector_xhttp_create_sink | bool
+
+- name: Connect XHTTP metrics to existing remote-write sink
+  ansible.builtin.set_fact:
+    xhttp_vector_candidate: >-
+      {{ xhttp_vector_base | regex_replace(
+         '(?ms)(\[sinks\.prometheus_remote\]\n(?:(?!\n\[).)*?^inputs = \[)(?!"xhttp_caddy_labels")',
+         '\g<1>"xhttp_caddy_labels", "xhttp_event_metrics", ') }}
+  no_log: true
+
+- name: Install validated monitoring configuration atomically
+  ansible.builtin.copy:
+    content: |
+      {{ xhttp_vector_candidate | trim }}
+
+      # BEGIN ANSIBLE XHTTP MONITORING
+      {{ lookup('ansible.builtin.template', 'xhttp-monitoring.toml.j2') }}
+      # END ANSIBLE XHTTP MONITORING
+    dest: "{{ vector_config_dir }}/vector.toml"
+    owner: "{{ vector_user }}"
+    group: "{{ vector_group }}"
+    mode: '0600'
+    backup: true
+    validate: /usr/bin/vector validate --no-environment --config-toml %s
+  no_log: true
+  notify: Restart vector
+
+- name: Apply monitoring handler before acceptance
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify Vector is active
+  ansible.builtin.command: systemctl is-active vector
+  changed_when: false
+
+- name: Verify Caddy metrics endpoint is available
+  ansible.builtin.uri:
+    url: http://127.0.0.1:2019/metrics
+    return_content: false
+    timeout: 5

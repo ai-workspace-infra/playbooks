@@ -1,0 +1,17 @@
+{% from 'grafana-provisioning-alerting.yml.j2' import rule with context %}
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: xhttp-reliability
+    folder: "{{ observability_alerting_folder }}"
+    interval: {{ observability_alerting_interval }}
+    rules:
+{{ rule('obs-xhttp-errors', 'XHTTP repeated proxy failures',
+        'sum by (instance,event) (increase(xhttp_events_total{event!="xray_started"}[5m]))',
+        'gt', 2, '0s', 'warning', 'Repeated XHTTP proxy failures; correlate with Xray starts', 'edge', 'OK') }}
+{{ rule('obs-xhttp-restarts', 'XHTTP repeated Xray starts',
+        'sum by (instance) (increase(xhttp_events_total{event="xray_started"}[10m]))',
+        'gt', 2, '0s', 'warning', 'Xray restarted repeatedly; inspect configuration synchronization', 'edge', 'OK') }}
+{{ rule('obs-xhttp-telemetry-stale', 'XHTTP monitoring data stale',
+        'time() - max_over_time(timestamp(caddy_config_last_reload_successful{job="xhttp-caddy"})[1h:15s])',
+        'gt', 180, '1m', 'warning', 'Caddy monitoring data is stale; inspect Vector and remote write', 'edge') }}

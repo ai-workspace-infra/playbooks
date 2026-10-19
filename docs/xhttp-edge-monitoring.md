@@ -7,8 +7,10 @@ Vector instance, manual dashboard import, or separate node inventory is needed.
 Enable the optional server-side alert group with
 observability_xhttp_alerting_enabled=true. It uses the existing contact policy;
 without a configured receiver, rule provisioning does not prove notification
-delivery. Initial thresholds: more than two same-class errors in five minutes
-or more than two Xray starts in ten minutes, grouped by instance.
+delivery. Initial thresholds: more than two same-class errors in five minutes,
+more than two Xray starts in ten minutes, or metrics older than three minutes
+for one minute, grouped by instance. Sparse event rules treat no data as OK;
+the independent freshness rule monitors telemetry loss.
 
 The canonical deploy_observability_agent.yml enables collection where the
 existing Xray detection enables exporters. Direct role callers may opt in with
@@ -22,8 +24,12 @@ unexpected_eof, connection_refused, other_502, and xray_started. PID 1 Started
 events include explicit restarts that systemd NRestarts misses. Journal delivery
 is checkpointed; metric conversion is not an exactly-once audit ledger.
 
-Deploy the existing agent entrypoint for the selected nodes, then the existing
-server entrypoint for the observability host. Run --syntax-check and --check
+For a full install use the existing agent and server entrypoints. For installed
+hosts use deploy_xhttp_monitoring.yml, which invokes tasks owned by those same
+roles, serializes edge updates and preserves installed billing pipelines and
+credentials. If an edge has no remote-write sink, read dedicated monitoring
+credentials from kv/data/CICD/observability using the controller's runtime Vault
+token. Never substitute the billing/internal token. Run --syntax-check and --check
 before applying. Vector changes use the existing role handler; no Xray restart
 is needed. Server provisioning follows the existing Grafana handler.
 
@@ -35,6 +41,11 @@ the admin metrics endpoint alone does not prove these series exist. No dashboard
 panel claims socket readiness or authenticated tunnel health. Add an independent
 credential-backed tunnel probe before claiming end-to-end availability.
 
-Rollback by disabling vector_xhttp_monitoring_enabled and reapplying the role.
+For a full install rollback, disable vector_xhttp_monitoring_enabled and reapply
+the normal agent role. For a narrow update rollback, restore the protected Vector
+configuration backup made by the copy task and restart Vector through Ansible.
+The narrow entrypoint requires explicit enablement and does not uninstall data
+paths. Disable observability_xhttp_alerting_enabled in the server role to remove
+the dedicated alert file.
 Dashboard deletion follows the existing provisioning provider deletion policy.
 This source change does not itself constitute deployment or live acceptance.

@@ -1,0 +1,47 @@
+---
+- name: Verify existing Grafana provisioning directories
+  ansible.builtin.stat:
+    path: "{{ observability_dir }}/grafana/provisioning/alerting"
+  register: xhttp_grafana_provisioning
+
+- name: Require an existing observability deployment
+  ansible.builtin.assert:
+    that: xhttp_grafana_provisioning.stat.isdir | default(false)
+
+- name: Install Git-managed XHTTP dashboard
+  ansible.builtin.copy:
+    src: xhttp-edge-reliability-dashboard.json
+    dest: "{{ observability_dir }}/grafana/dashboards/xhttp-edge-reliability-dashboard.json"
+    mode: '0644'
+  notify: Restart grafana
+
+- name: Provision dedicated XHTTP alert group
+  ansible.builtin.template:
+    src: grafana-xhttp-alerting.yml.j2
+    dest: "{{ observability_dir }}/grafana/provisioning/alerting/xhttp.yml"
+    mode: '0644'
+    backup: true
+  when: observability_xhttp_alerting_enabled | bool
+  notify: Restart grafana
+
+- name: Remove disabled XHTTP alert provisioning
+  ansible.builtin.file:
+    path: "{{ observability_dir }}/grafana/provisioning/alerting/xhttp.yml"
+    state: absent
+  when: not (observability_xhttp_alerting_enabled | bool)
+  notify: Restart grafana
+
+- name: Apply Grafana provisioning handler
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify Grafana database health after provisioning
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ observability_grafana_port }}/api/health"
+    return_content: true
+  register: xhttp_grafana_health
+  retries: 12
+  delay: 5
+  until:
+    - xhttp_grafana_health.status == 200
+    - xhttp_grafana_health.json.database | default('') == 'ok'
+  when: not ansible_check_mode

@@ -5,14 +5,14 @@ import tomllib
 import unittest
 from urllib.parse import quote
 
-from jinja2 import Environment
+from jinja2 import Environment, FileSystemLoader
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class JournalRenderTests(unittest.TestCase):
     def render(self, enabled, xhttp=False):
-        env = Environment()
+        env = Environment(loader=FileSystemLoader(ROOT / 'roles/vhosts/vector-agent/templates'))
         env.filters.update(bool=lambda v: str(v).lower() in ('true', '1', 'yes'),
                            to_json=json.dumps,
                            regex_replace=lambda s, a, b: re.sub(a, b, s),

@@ -1,0 +1,28 @@
+---
+- name: Update monitoring on existing XHTTP relays
+  hosts: "{{ xhttp_monitoring_hosts | default('xconnect_regional_nodes') }}"
+  become: true
+  gather_facts: false
+  serial: 1
+  vars:
+    vector_xhttp_monitoring_enabled: true
+    vector_observability_environment: "{{ xhttp_monitoring_environment | default('prod-v2') }}"
+  tasks:
+    - name: Apply collection through the owning Vector role
+      ansible.builtin.include_role:
+        name: vhosts/vector-agent
+        tasks_from: xhttp_monitoring
+      tags: [always]
+
+- name: Provision XHTTP dashboard and alerts on existing Grafana
+  hosts: "{{ observability_server_hosts | default('observability_hosts') }}"
+  become: true
+  gather_facts: false
+  vars:
+    observability_xhttp_alerting_enabled: true
+  tasks:
+    - name: Apply provisioning through the owning observability role
+      ansible.builtin.include_role:
+        name: docker/observability-server
+        tasks_from: xhttp_monitoring
+      tags: [always]
