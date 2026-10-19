@@ -1,0 +1,22 @@
+---
+- name: Verify target-only reconciliation boundary before backup
+  hosts: '{{ web_saas_generation_target_host | default("never-matches") }}'
+  gather_facts: false
+  become: true
+  tasks:
+    - ansible.builtin.include_role:
+        name: web_saas_usage_reconciliation
+        tasks_from: preflight
+
+- name: Create and independently restore this run's target checkpoint
+  ansible.builtin.import_playbook: web-saas-generation-data-operations.yml
+  vars:
+    web_saas_generation_data_operation: backup-restore
+
+- name: Preview and optionally merge only after restored backup proof
+  hosts: '{{ web_saas_generation_target_host | default("never-matches") }}'
+  gather_facts: false
+  become: true
+  tasks:
+    - ansible.builtin.include_role:
+        name: web_saas_usage_reconciliation

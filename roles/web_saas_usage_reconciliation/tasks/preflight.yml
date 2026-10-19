@@ -1,0 +1,55 @@
+---
+- name: Restrict initial audited reconciliation lane and require complete writer manifest
+  ansible.builtin.assert:
+    that:
+      - web_saas_usage_reconciliation_source_generation == 'prod-v2'
+      - web_saas_generation_environment == 'prod-v3'
+      - inventory_hostname == 'web-saas-prod-v3'
+      - web_saas_generation_target_host == inventory_hostname
+      - web_saas_generation_migration_request.environment == web_saas_generation_environment
+      - web_saas_generation_migration_request.target_host == inventory_hostname
+      - web_saas_usage_reconciliation_writers | length >= 3
+      - web_saas_usage_reconciliation_writers | select('search', 'accounts') | list | length >= 1
+      - web_saas_usage_reconciliation_writers | select('search', 'billing') | list | length >= 1
+      - web_saas_usage_reconciliation_writers | select('search', 'doco') | list | length >= 1
+      - web_saas_generation_run_id is match('^[1-9][0-9]*$')
+      - web_saas_usage_reconciliation_gitops_sha is match('^[0-9a-f]{40}$')
+      - web_saas_usage_reconciliation_components.keys() | list | sort == ['accounts', 'billing', 'console']
+    fail_msg: Only the audited V2-to-V3 lane is enabled; provide all target writers including Doco-CD
+
+- name: Require immutable declared candidate and compatible rollback identities
+  ansible.builtin.assert:
+    that:
+      - item.value.source_sha is match('^[0-9a-f]{40}$')
+      - item.value.image_digest is match('^sha256:[0-9a-f]{64}$')
+      - item.value.rollback_digest is match('^sha256:[0-9a-f]{64}$')
+  loop: '{{ web_saas_usage_reconciliation_components | dict2items }}'
+  loop_control:
+    label: '{{ item.key }}'
+
+- name: Validate reviewed SQL checksums when schema changes are in this release
+  ansible.builtin.assert:
+    that: item is match('^[0-9a-f]{64}$')
+  loop: '{{ web_saas_usage_reconciliation_sql_checksums }}'
+
+- name: Validate each explicitly declared writer name
+  ansible.builtin.assert:
+    that:
+      - item is match('^[A-Za-z0-9][A-Za-z0-9_.-]+$')
+      - item != 'web-saas-postgresql'
+  loop: '{{ web_saas_usage_reconciliation_writers }}'
+
+- name: Inspect target writers without stopping or restarting services
+  ansible.builtin.command:
+    argv: [docker, inspect, --format, '{{ "{{.State.Running}}" }}', '{{ item }}']
+  loop: '{{ web_saas_usage_reconciliation_writers }}'
+  register: usage_writer_states
+  changed_when: false
+
+- name: Fail closed unless every declared writer is stopped
+  ansible.builtin.assert:
+    that: item.stdout | trim == 'false'
+    fail_msg: Target writers must be quiesced by the reviewed maintenance runbook
+  loop: '{{ usage_writer_states.results }}'
+  loop_control:
+    label: '{{ item.item }}'

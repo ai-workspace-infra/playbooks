@@ -1,0 +1,112 @@
+---
+- ansible.builtin.import_tasks: preflight.yml
+
+- name: Require matching backup and actual isolated restore from this invocation
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_backup_evidence.phase == 'database_backup_component'
+      - web_saas_data_backup_evidence.status == 'passed'
+      - web_saas_data_restore_verify_evidence.phase == 'database_restore_verify_component'
+      - web_saas_data_restore_verify_evidence.status == 'passed'
+      - web_saas_data_restore_verify_evidence.isolated_restore_verified | bool
+      - web_saas_data_restore_verify_evidence.restored_data_matches | bool
+      - web_saas_data_restore_verify_evidence.source_restore_schema_matches | bool
+      - web_saas_data_restore_verify_evidence.migration_dirty == 'false'
+      - web_saas_data_restore_verify_evidence.environment == web_saas_generation_environment
+      - web_saas_data_backup_evidence.environment == web_saas_generation_environment
+      - web_saas_data_restore_verify_evidence.restore_database == 'release_verify_' ~ web_saas_generation_run_id
+      - web_saas_data_backup_evidence.archive_path == '/data/backups/web-saas/' ~ web_saas_generation_environment ~ '/' ~ web_saas_generation_release_tag ~ '/' ~ web_saas_generation_run_id ~ '/account.dump.enc'
+      - web_saas_data_restore_verify_evidence.archive_sha256 == web_saas_data_backup_evidence.archive_sha256
+      - web_saas_data_restore_verify_evidence.schema_sha256 == web_saas_data_backup_evidence.schema_sha256
+      - web_saas_data_restore_verify_evidence.data_sha256 == web_saas_data_backup_evidence.data_sha256
+      - web_saas_data_restore_verify_evidence.database_system_identifier == web_saas_data_backup_evidence.database_system_identifier
+      - web_saas_data_restore_verify_evidence.source_database_id == web_saas_generation_migration_request.target_db_id
+      - web_saas_data_restore_verify_evidence.schema_version | int == web_saas_generation_migration_request.expected_version | int
+      - web_saas_usage_reconciliation_binary_sha256 is match('^[0-9a-f]{64}$')
+      - web_saas_usage_reconciliation_schema_sha256 is match('^[0-9a-f]{64}$')
+      - web_saas_usage_reconciliation_billing_sha256 is match('^[0-9a-f]{64}$')
+      - web_saas_usage_reconciliation_source_dsn | length > 0
+      - "'\n' not in web_saas_usage_reconciliation_source_dsn"
+    fail_msg: Missing this run's verified recoverable checkpoint or pinned executor contract
+  no_log: true
+
+- name: Recheck the encrypted backup has not changed since restore verification
+  ansible.builtin.stat:
+    path: '{{ web_saas_data_backup_evidence.archive_path }}'
+    follow: false
+    checksum_algorithm: sha256
+  register: usage_backup_archive
+
+- ansible.builtin.assert:
+    that:
+      - usage_backup_archive.stat.isreg | default(false)
+      - not usage_backup_archive.stat.islnk | default(false)
+      - usage_backup_archive.stat.mode == '0600'
+      - usage_backup_archive.stat.checksum == web_saas_data_backup_evidence.archive_sha256
+
+- name: Allocate a private target-side executor script
+  ansible.builtin.tempfile:
+    state: file
+    prefix: usage-reconcile-executor.
+  register: usage_executor_script
+
+- name: Execute without placing database credentials in process arguments
+  block:
+    - name: Stage the reviewed executor with private permissions
+      ansible.builtin.copy:
+        src: reconcile.sh
+        dest: '{{ usage_executor_script.path }}'
+        mode: '0700'
+    - name: Run checksum-pinned service migration tool on the target only
+      ansible.builtin.command:
+        argv: [/bin/bash, '{{ usage_executor_script.path }}']
+        stdin: '{{ web_saas_usage_reconciliation_source_dsn }}'
+        stdin_add_newline: true
+      register: usage_merge_command
+      changed_when: web_saas_usage_reconciliation_apply | bool
+      no_log: true
+  always:
+    - name: Remove only this run's temporary executor
+      ansible.builtin.file:
+        path: '{{ usage_executor_script.path }}'
+        state: absent
+  environment:
+    MERGE_BINARY: '{{ web_saas_usage_reconciliation_binary }}'
+    MERGE_BINARY_SHA256: '{{ web_saas_usage_reconciliation_binary_sha256 }}'
+    MERGE_SCHEMA_SHA256: '{{ web_saas_usage_reconciliation_schema_sha256 }}'
+    MERGE_BILLING_SHA256: '{{ web_saas_usage_reconciliation_billing_sha256 }}'
+    MERGE_VERSION: '{{ web_saas_generation_migration_request.expected_version }}'
+    MERGE_RUN: '{{ web_saas_generation_run_id }}'
+    MERGE_APPLY: '{{ web_saas_usage_reconciliation_apply | bool | ternary("true", "false") }}'
+
+- name: Retain only aggregate reconciliation evidence in memory
+  ansible.builtin.set_fact:
+    web_saas_usage_reconciliation_evidence: '{{ usage_merge_command.stdout | from_json }}'
+  no_log: true
+
+- name: Save immutable nonsecret component evidence without claiming deployment acceptance
+  ansible.builtin.copy:
+    dest: '{{ web_saas_data_backup_evidence.archive_path | dirname }}/reconciliation-receipt.json'
+    mode: '0600'
+    force: false
+    content: >-
+      {{ {
+        'format': 1,
+        'run_id': web_saas_generation_run_id,
+        'source_generation': web_saas_usage_reconciliation_source_generation,
+        'target_generation': web_saas_generation_environment,
+        'release_tag': web_saas_generation_release_tag,
+        'gitops_sha': web_saas_usage_reconciliation_gitops_sha,
+        'declared_components': web_saas_usage_reconciliation_components,
+        'sql_checksums': web_saas_usage_reconciliation_sql_checksums,
+        'executor_sha256': web_saas_usage_reconciliation_binary_sha256,
+        'migration_before': web_saas_data_backup_evidence.schema_version,
+        'migration_after': web_saas_usage_reconciliation_evidence.target_version,
+        'backup': web_saas_data_backup_evidence,
+        'restore': web_saas_data_restore_verify_evidence,
+        'data_reconciliation': web_saas_usage_reconciliation_evidence,
+        'doco_cd_reconciliation': 'pending',
+        'business_acceptance': 'pending',
+        'promotion_allowed': false
+      } | to_nice_json }}
+  no_log: true
