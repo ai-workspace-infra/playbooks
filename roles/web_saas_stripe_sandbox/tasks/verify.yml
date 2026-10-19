@@ -1,4 +1,9 @@
 ---
+- name: Require a direct V3 IPv4 probe target before public SNI checks
+  ansible.builtin.assert:
+    that:
+      - web_saas_stripe_public_probe_address is match('^[0-9]{1,3}(\.[0-9]{1,3}){3}$')
+
 - name: Verify the private configuration and original secrets checksum
   ansible.builtin.command:
     argv: [python3, /usr/local/libexec/web-saas-stripe-sandbox/prepare.py, verify]
@@ -41,3 +46,38 @@
 - name: Report the limited public readiness gate
   ansible.builtin.debug:
     msg: V3 HTTPS readiness passed; authenticated login, signed webhook and Sandbox checkout still require dedicated test-user acceptance.
+
+- name: Verify shared public SNI, trusted certificate and routes directly against V3 without DNS changes
+  ansible.builtin.command:
+    argv:
+      - curl
+      - --silent
+      - --show-error
+      - --noproxy
+      - '*'
+      - --output
+      - /dev/null
+      - --write-out
+      - '%{http_code}'
+      - --resolve
+      - '{{ item.domain }}:443:{{ web_saas_stripe_public_probe_address }}'
+      - 'https://{{ item.domain }}{{ item.path }}'
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  loop:
+    - {domain: '{{ stripe_manifest.target.public_domains.console }}', path: /panel, accepted: ['200', '302', '303', '307', '308']}
+    - {domain: '{{ stripe_manifest.target.public_domains.accounts }}', path: /readyz, accepted: ['200']}
+    - {domain: '{{ stripe_manifest.target.public_domains.billing }}', path: /readyz, accepted: ['200']}
+  loop_control:
+    label: '{{ item.domain }}'
+  register: stripe_public_sni_probe
+  no_log: true
+
+- name: Require all public SNI probes to pass with certificate verification enabled
+  ansible.builtin.assert:
+    that:
+      - item.stdout in item.item.accepted
+  loop: '{{ stripe_public_sni_probe.results }}'
+  loop_control:
+    label: '{{ item.item.domain }}'
