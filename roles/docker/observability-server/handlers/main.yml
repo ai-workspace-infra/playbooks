@@ -28,3 +28,14 @@
   ansible.builtin.command: docker compose restart grafana
   args:
     chdir: "{{ observability_dir }}"
+
+- name: Recreate diagnostics Grafana
+  ansible.builtin.command:
+    argv: [docker, compose, -f, docker-compose.yml, -f, docker-compose.diagnostics.yml, up, -d, --no-deps, --no-build, --pull, never, grafana]
+    chdir: "{{ observability_dir }}"
+
+- name: Reload diagnostics provisioning inside Grafana
+  ansible.builtin.command:
+    argv: [docker, compose, restart, grafana]
+    chdir: "{{ observability_dir }}"
+  listen: Recreate diagnostics Grafana

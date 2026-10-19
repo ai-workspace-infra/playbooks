@@ -1,0 +1,59 @@
+---
+- name: Require an existing server before the focused update
+  ansible.builtin.stat:
+    path: "{{ observability_dir }}/docker-compose.yml"
+  register: diagnostics_existing_compose
+
+- name: Refuse to bootstrap a second observability deployment
+  ansible.builtin.assert:
+    that: diagnostics_existing_compose.stat.isreg | default(false)
+
+- name: Ensure existing plugin provisioning paths
+  ansible.builtin.file:
+    path: "{{ observability_dir }}/grafana/{{ item }}"
+    state: directory
+    mode: '0755'
+  loop: [plugins, provisioning/plugins]
+
+- name: Reuse the canonical diagnostics installation and credential checks
+  ansible.builtin.include_tasks: xconnect_diagnostics.yml
+
+- name: Inspect only the current Grafana runtime
+  ansible.builtin.command:
+    argv: [docker, inspect, xstream_grafana]
+  register: diagnostics_grafana_inspect
+  changed_when: false
+  no_log: true
+
+- name: Preserve existing unsigned plugin exceptions
+  ansible.builtin.set_fact:
+    diagnostics_unsigned_plugins: >-
+      {{ ((((diagnostics_grafana_inspect.stdout | from_json)[0].Config.Env
+          | select('match', '^GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=') | list
+          | first | default('GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS='))
+          | regex_replace('^[^=]*=', '')).split(',')
+          + ['aiworkspace-xconnectuserdiagnostics-app']) | reject('equalto', '') | unique | join(',') }}
+  no_log: true
+
+- name: Extend only Grafana plugin loading without rewriting the live stack
+  ansible.builtin.copy:
+    content: "{{ {'services': {'grafana': {'image': (diagnostics_grafana_inspect.stdout | from_json)[0].Image, 'environment': {'GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS': diagnostics_unsigned_plugins}}}} | to_nice_yaml }}"
+    dest: "{{ observability_dir }}/docker-compose.diagnostics.yml"
+    mode: '0644'
+    backup: true
+  notify: Recreate diagnostics Grafana
+
+- name: Apply the focused Grafana handler
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify Grafana database health
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ observability_grafana_port }}/api/health"
+    return_content: true
+  register: diagnostics_grafana_health
+  retries: 12
+  delay: 5
+  until:
+    - diagnostics_grafana_health.status | default(0) == 200
+    - diagnostics_grafana_health.json.database | default('') == 'ok'
+  when: not ansible_check_mode

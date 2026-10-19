@@ -103,6 +103,18 @@
 - name: Refuse an incomplete replacement environment
   ansible.builtin.assert:
     that: smtp_v2_env.stat.isreg | default(false)
+- name: Inspect the existing Accounts-only runtime configuration
+  ansible.builtin.stat:
+    path: /etc/xcontrol/web-saas/accounts-smtp.env
+  register: accounts_scoped_runtime_stat
+
+- name: Preserve the scoped observability token during SMTP rotation
+  ansible.builtin.slurp:
+    src: /etc/xcontrol/web-saas/accounts-smtp.env
+  register: accounts_scoped_runtime_existing
+  no_log: true
+  when: accounts_scoped_runtime_stat.stat.isreg | default(false)
+
 - name: Persist Accounts SMTP in an isolated environment file
   ansible.builtin.template:
     src: templates/prod-v2/accounts-smtp.env.j2
