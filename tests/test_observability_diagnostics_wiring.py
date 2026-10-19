@@ -39,6 +39,8 @@ class DiagnosticsWiringTests(unittest.TestCase):
         self.assertIn(line, rendered)
         self.assertNotIn('old', rendered)
         self.assertNotIn('UNRELATED', rendered)
+        fresh = template.render(prod_services_smtp_env={'SMTP_HOST': 'smtp.example.test'})
+        self.assertNotIn('XCONNECT_OBSERVABILITY_SEARCH_TOKEN=', fresh)
 
     def test_accounts_recreation_does_not_upgrade_other_services(self):
         text = (ROOT / 'roles/web_saas_prod_services/tasks/observability.yml').read_text()
