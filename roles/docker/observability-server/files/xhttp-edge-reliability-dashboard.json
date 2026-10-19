@@ -108,7 +108,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (instance) (rate(caddy_http_requests_total{job=\"xhttp-caddy\",instance=~\"$instance\",code=~\"5..\",handler=\"reverse_proxy\"}[$__rate_interval]))",
+          "expr": "sum by (instance) (rate(caddy_http_response_duration_seconds_count{job=\"xhttp-caddy\",instance=~\"$instance\",code=~\"5..\",handler=\"subroute\"}[$__rate_interval]))",
           "legendFormat": "{{instance}} {{event}}"
         }
       ],
@@ -129,7 +129,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (instance,le) (rate(caddy_http_response_duration_seconds_bucket{job=\"xhttp-caddy\",instance=~\"$instance\",handler=\"reverse_proxy\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (instance,le) (rate(caddy_http_response_duration_seconds_bucket{job=\"xhttp-caddy\",instance=~\"$instance\",handler=\"subroute\"}[$__rate_interval])))",
           "legendFormat": "{{instance}} {{event}}"
         }
       ],
