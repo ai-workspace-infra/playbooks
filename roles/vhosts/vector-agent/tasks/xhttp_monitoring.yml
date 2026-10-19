@@ -39,6 +39,15 @@
 - name: Resolve whether remote-write provisioning is required
   ansible.builtin.set_fact:
     vector_xhttp_create_sink: "{{ '[sinks.prometheus_remote]' not in xhttp_vector_base }}"
+    vector_xhttp_add_xray_scrape: "{{ '[sinks.prometheus_remote]' not in xhttp_vector_base and '[sources.xray_xhttp_metrics]' not in xhttp_vector_base }}"
+
+- name: Verify existing Xray exporters before filling missing monitoring pipeline
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ item }}/scrape"
+    status_code: 200
+  loop: [8080, 8081]
+  when: vector_xhttp_add_xray_scrape | bool
+  check_mode: false
 
 - name: Load monitoring credentials from canonical Vault path
   ansible.builtin.uri:

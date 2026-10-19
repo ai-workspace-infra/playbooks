@@ -98,41 +98,7 @@ source = '''
 
 {% set xray_exporter_enabled = vector_xray_exporter_enabled | default(inventory_hostname in groups.get('xray_exporter', []), true) | bool %}
 {% if xray_exporter_enabled %}
-[sources.xray_xhttp_metrics]
-type = "prometheus_scrape"
-endpoints = ["http://127.0.0.1:8080/scrape"]
-scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
-
-[sources.xray_tcp_metrics]
-type = "prometheus_scrape"
-endpoints = ["http://127.0.0.1:8081/scrape"]
-scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
-
-[transforms.add_xray_xhttp_labels]
-type = "remap"
-inputs = ["xray_xhttp_metrics"]
-source = '''
-.tags.instance = "{{ inventory_hostname }}"
-.tags.environment = "{{ vector_observability_environment }}"
-.tags.env = "{{ vector_observability_environment }}"
-.tags.provider = "{{ vector_observability_provider }}"
-.tags.service_domain = "{{ vector_observability_service_domain }}"
-.tags.job = "xray"
-.tags.transport = "xhttp"
-'''
-
-[transforms.add_xray_tcp_labels]
-type = "remap"
-inputs = ["xray_tcp_metrics"]
-source = '''
-.tags.instance = "{{ inventory_hostname }}"
-.tags.environment = "{{ vector_observability_environment }}"
-.tags.env = "{{ vector_observability_environment }}"
-.tags.provider = "{{ vector_observability_provider }}"
-.tags.service_domain = "{{ vector_observability_service_domain }}"
-.tags.job = "xray"
-.tags.transport = "tcp"
-'''
+{% include 'xray-metrics.toml.j2' %}
 {% endif %}
 
 {% set postgres_exporter_enabled = vector_postgres_exporter_enabled_effective | default(vector_postgres_exporter_enabled | default(false)) | bool %}

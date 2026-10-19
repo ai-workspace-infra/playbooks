@@ -1,4 +1,7 @@
 {% if vector_xhttp_monitoring_enabled | default(false) | bool %}
+{% if vector_xhttp_add_xray_scrape | default(false) | bool %}
+{% include 'xray-metrics.toml.j2' %}
+{% endif %}
 [sources.xhttp_caddy_metrics]
 type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:2019/metrics"]
@@ -55,7 +58,7 @@ event = "{% raw %}{{ event }}{% endraw %}"
 {% if vector_xhttp_create_sink | default(false) | bool %}
 [sinks.prometheus_remote]
 type = "prometheus_remote_write"
-inputs = ["xhttp_caddy_labels", "xhttp_event_metrics"]
+inputs = ["xhttp_caddy_labels", "xhttp_event_metrics"{% if vector_xhttp_add_xray_scrape | default(false) | bool %}, "add_xray_xhttp_labels", "add_xray_tcp_labels"{% endif %}]
 endpoint = "{{ vector_observability_endpoint | default('https://observability.svc.plus') }}/ingest/metrics/api/v1/write"
 [sinks.prometheus_remote.auth]
 strategy = "basic"
