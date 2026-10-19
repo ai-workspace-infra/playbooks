@@ -27,6 +27,8 @@ pinned/checksummed plugin release. A minimal Compose override preserves the
 running Grafana image ID and existing plugin allowlist; only this one plugin is
 added. Existing databases, collectors, metrics/log sinks and Caddy are unchanged.
 Full server installs and focused repairs call the same plugin lifecycle tasks.
+The shared plugin mount root belongs to Grafana UID/GID 472, including when this
+app is disabled, so existing plugins can still be installed at container startup.
 The named observability host opts in through host vars so a future full server
 deployment retains the feature.
 
@@ -37,5 +39,7 @@ Page loading alone does not prove any real connection Trace exists. An empty
 Trace result is not zero latency or proof that a user had no connections.
 
 For rollback, restore the protected Accounts env backup and recreate only its
-existing pinned service; disable app provisioning and remove the focused Grafana
-override through the role. Do not rotate shared ingest credentials as rollback.
+existing pinned service. Restore the prior Grafana provisioning/Compose settings
+from the deployment backup and recreate only Grafana using its recorded image.
+Removing the override alone does not disable an already provisioned app. Do not
+rotate shared ingest credentials as rollback.

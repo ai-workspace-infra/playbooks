@@ -1,3 +1,12 @@
+- name: Ensure the mounted plugin directory is writable by Grafana
+  ansible.builtin.file:
+    path: "{{ observability_dir }}/grafana/plugins"
+    state: directory
+    owner: '472'
+    group: '472'
+    mode: '0755'
+  tags: [observability, observability_xconnect_diagnostics]
+
 - name: Require immutable XConnect diagnostics plugin release inputs
   ansible.builtin.assert:
     that:

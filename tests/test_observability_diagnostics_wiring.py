@@ -9,6 +9,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DiagnosticsWiringTests(unittest.TestCase):
+    def test_shared_plugin_mount_remains_writable_for_grafana(self):
+        tasks = yaml.safe_load((ROOT / 'roles/docker/observability-server/tasks/xconnect_diagnostics.yml').read_text())
+        directory = tasks[0]
+        options = directory['ansible.builtin.file']
+        self.assertEqual(options['path'], '{{ observability_dir }}/grafana/plugins')
+        self.assertEqual(options['owner'], '472')
+        self.assertEqual(options['group'], '472')
+        self.assertEqual(options['mode'], '0755')
+        self.assertNotIn('recurse', options)
+        self.assertNotIn('when', directory)
+
     def test_credentials_reuse_monitoring_source_without_reusing_agent_password(self):
         defaults = yaml.safe_load((ROOT / 'roles/docker/observability-server/defaults/main.yml').read_text())
         self.assertEqual(defaults['observability_xconnect_diagnostics_vault_path'], 'kv/data/CICD/observability')
