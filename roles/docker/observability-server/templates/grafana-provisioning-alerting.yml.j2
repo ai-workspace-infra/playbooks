@@ -123,6 +123,20 @@ groups:
         '{{ $labels.name }} 的证书剩余不足 ' ~ observability_alerting_ssl_days ~ ' 天',
         'store') }}
 
+{% if observability_xhttp_alerting_enabled | default(false) | bool %}
+  - orgId: 1
+    name: xhttp-reliability
+    folder: "{{ observability_alerting_folder }}"
+    interval: {{ observability_alerting_interval }}
+    rules:
+{{ rule('obs-xhttp-errors', 'XHTTP repeated proxy failures',
+        'sum by (instance,event) (increase(xhttp_events_total{event!="xray_started"}[5m]))',
+        'gt', 2, '0s', 'warning', 'Repeated XHTTP proxy failures; correlate with Xray starts', 'edge') }}
+{{ rule('obs-xhttp-restarts', 'XHTTP repeated Xray starts',
+        'sum by (instance) (increase(xhttp_events_total{event="xray_started"}[10m]))',
+        'gt', 2, '0s', 'warning', 'Xray restarted repeatedly; inspect configuration synchronization', 'edge') }}
+{% endif %}
+
 {% if observability_alerting_webhook_url | default('') != '' %}
 contactPoints:
   - orgId: 1

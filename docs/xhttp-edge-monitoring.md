@@ -1,0 +1,40 @@
+# XHTTP edge monitoring
+
+Ownership: collection is managed by roles/vhosts/vector-agent; dashboard and
+Grafana alerts are provisioned by roles/docker/observability-server. No second
+Vector instance, manual dashboard import, or separate node inventory is needed.
+
+Enable the optional server-side alert group with
+observability_xhttp_alerting_enabled=true. It uses the existing contact policy;
+without a configured receiver, rule provisioning does not prove notification
+delivery. Initial thresholds: more than two same-class errors in five minutes
+or more than two Xray starts in ten minutes, grouped by instance.
+
+The canonical deploy_observability_agent.yml enables collection where the
+existing Xray detection enables exporters. Direct role callers may opt in with
+vector_xhttp_monitoring_enabled=true. It defaults to false for other callers.
+Use the IaC-generated CMDB inventory and --limit for the authorized regional
+nodes. Credentials use the existing runtime Vault path and authenticated sinks.
+
+Collection reads Caddy's loopback admin metrics and journal errors before the
+ordinary reverse-proxy log filter. Bounded event labels distinguish socket_missing,
+unexpected_eof, connection_refused, other_502, and xray_started. PID 1 Started
+events include explicit restarts that systemd NRestarts misses. Journal delivery
+is checkpointed; metric conversion is not an exactly-once audit ledger.
+
+Deploy the existing agent entrypoint for the selected nodes, then the existing
+server entrypoint for the observability host. Run --syntax-check and --check
+before applying. Vector changes use the existing role handler; no Xray restart
+is needed. Server provisioning follows the existing Grafana handler.
+
+Acceptance: validate Vector configuration; verify authenticated backend queries
+for caddy_config_last_reload_successful{job="xhttp-caddy"}; verify dashboard UID
+xhttp-edge-reliability; inspect alert provisioning. An absent event series must
+not be displayed as zero. HTTP rate/TTFB panels require ingress HTTP metrics;
+the admin metrics endpoint alone does not prove these series exist. No dashboard
+panel claims socket readiness or authenticated tunnel health. Add an independent
+credential-backed tunnel probe before claiming end-to-end availability.
+
+Rollback by disabling vector_xhttp_monitoring_enabled and reapplying the role.
+Dashboard deletion follows the existing provisioning provider deletion policy.
+This source change does not itself constitute deployment or live acceptance.

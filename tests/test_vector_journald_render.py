@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class JournalRenderTests(unittest.TestCase):
-    def render(self, enabled):
+    def render(self, enabled, xhttp=False):
         env = Environment()
         env.filters.update(bool=lambda v: str(v).lower() in ('true', '1', 'yes'),
                            to_json=json.dumps,
@@ -26,6 +26,7 @@ class JournalRenderTests(unittest.TestCase):
                                  blackbox_ssl_targets=[],
                                  blackbox_exporter_role_defaults={"blackbox_ssl_targets": []},
                                  vector_system_journald_enabled=enabled,
+                                 vector_xhttp_monitoring_enabled=xhttp,
                                  vector_system_journald_units=['xconnect-edge-agent.service', 'xray.service'])
         return tomllib.loads(result)
 
@@ -42,6 +43,23 @@ class JournalRenderTests(unittest.TestCase):
         config = self.render(False)
         self.assertNotIn('system_journal', config['sources'])
         self.assertEqual(config['transforms']['process_logs']['inputs'], ['system_logs'])
+
+    def test_xhttp_metrics_use_existing_sink_and_one_journal_reader(self):
+        config = self.render(True, xhttp=True)
+        self.assertNotIn('system_journal', config['sources'])
+        self.assertIn('init.scope', config['sources']['xhttp_journal']['include_units'])
+        self.assertIn('xhttp_journal', config['transforms']['process_logs']['inputs'])
+        self.assertEqual(config['transforms']['xhttp_events']['inputs'], ['xhttp_journal'])
+        for source in ['xhttp_caddy_labels', 'xhttp_event_metrics']:
+            self.assertIn(source, config['sinks']['prometheus_remote']['inputs'])
+        metric = config['transforms']['xhttp_event_metrics']['metrics'][0]
+        self.assertEqual(metric['tags']['instance'], '{{ instance }}')
+        self.assertEqual(set(metric['tags']), {'instance', 'environment', 'event'})
+
+    def test_dashboard_is_valid_and_uses_bounded_event_series(self):
+        dashboard = json.loads((ROOT / 'roles/docker/observability-server/files/xhttp-edge-reliability-dashboard.json').read_text())
+        self.assertEqual(dashboard['uid'], 'xhttp-edge-reliability')
+        self.assertTrue(any('xhttp_events_total' in str(panel) for panel in dashboard['panels']))
 
 
 if __name__ == '__main__':
