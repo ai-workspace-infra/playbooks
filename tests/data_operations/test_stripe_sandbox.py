@@ -227,19 +227,16 @@ class SafetyTests(unittest.TestCase):
     def test_vault_reads_only_fields_and_every_secret_task_is_no_log(self):
         tasks = yaml.safe_load((ROLE / 'tasks/prepare.yml').read_text())
         vault = next(t for t in tasks if 'register' in t and t['register'] == 'stripe_vault_fields')
-        tls_vault = next(t for t in tasks if 'register' in t and t['register'] == 'stripe_tls_vault_fields')
         self.assertEqual(vault['ansible.builtin.command']['argv'],
                          ['vault', 'kv', 'get', '-field={{ item }}', '{{ stripe_manifest.stripe.vault_path }}'])
         self.assertEqual(vault['loop'], ['{{ stripe_manifest.stripe.secret_key }}', '{{ stripe_manifest.stripe.webhook_secret_key }}'])
         self.assertEqual(vault['delegate_to'], 'localhost')
-        self.assertEqual(tls_vault['ansible.builtin.command']['argv'],
-                         ['vault', 'kv', 'get', '-field={{ item }}', 'kv/CICD/domains/svc.plus'])
-        self.assertEqual(tls_vault['loop'], ['tls_fullchain_pem_b64', 'tls_cert_pem_b64', 'tls_key_pem_b64', 'tls_ca_pem_b64', 'tls_trust_bundle_pem_b64'])
         for task in tasks:
-            if task.get('register') in ('stripe_vault_fields', 'stripe_tls_vault_fields', 'stripe_prepared'):
+            if task.get('register') in ('stripe_vault_fields', 'stripe_prepared'):
                 self.assertIs(task['no_log'], True)
         restore = next(t for t in tasks if t.get('name') == 'Restore the shared-domain certificate through the validated file owner')
         self.assertIs(restore['no_log'], True)
+        self.assertIn('web_saas_stripe_tls_material.fullchain', str(restore['vars']))
         self.assertNotIn('doco_cd_release_selection', (ROLE / 'tasks/main.yml').read_text())
 
     def test_source_host_is_rejected_before_any_command(self):

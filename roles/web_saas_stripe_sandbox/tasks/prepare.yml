@@ -15,21 +15,11 @@
     group: root
     mode: '0700'
 
-- name: Obtain the shared-domain certificate fields from the approved Vault path
-  ansible.builtin.command:
-    argv: [vault, kv, get, "-field={{ item }}", kv/CICD/domains/svc.plus]
-  loop:
-    - tls_fullchain_pem_b64
-    - tls_cert_pem_b64
-    - tls_key_pem_b64
-    - tls_ca_pem_b64
-    - tls_trust_bundle_pem_b64
-  environment:
-    VAULT_ADDR: '{{ web_saas_stripe_vault_addr }}'
-  register: stripe_tls_vault_fields
-  delegate_to: localhost
-  become: false
-  changed_when: false
+- name: Require all shared-domain certificate fields from protected Toolkit runtime input
+  ansible.builtin.assert:
+    that:
+      - web_saas_stripe_tls_material[item] | default('') | length > 0
+  loop: [fullchain, cert, key, ca, trust_bundle]
   no_log: true
 
 - name: Restore the shared-domain certificate through the validated file owner
@@ -38,11 +28,11 @@
   vars:
     caddy_certificate_restore_directory: /etc/xcontrol/tls/svc.plus
     caddy_certificate_restore_material:
-      fullchain: "{{ stripe_tls_vault_fields.results[0].stdout | b64decode }}"
-      cert: "{{ stripe_tls_vault_fields.results[1].stdout | b64decode }}"
-      key: "{{ stripe_tls_vault_fields.results[2].stdout | b64decode }}"
-      ca: "{{ stripe_tls_vault_fields.results[3].stdout | b64decode }}"
-      trust_bundle: "{{ stripe_tls_vault_fields.results[4].stdout | b64decode }}"
+      fullchain: "{{ web_saas_stripe_tls_material.fullchain | b64decode }}"
+      cert: "{{ web_saas_stripe_tls_material.cert | b64decode }}"
+      key: "{{ web_saas_stripe_tls_material.key | b64decode }}"
+      ca: "{{ web_saas_stripe_tls_material.ca | b64decode }}"
+      trust_bundle: "{{ web_saas_stripe_tls_material.trust_bundle | b64decode }}"
   no_log: true
 
 - name: Verify the restored certificate covers every shared V3 public SNI
