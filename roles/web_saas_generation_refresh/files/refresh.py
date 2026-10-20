@@ -244,37 +244,37 @@ def candidate_permissions(db):
     never restored. The retained V3 database is the permission reference.
     """
     old = DB()
-    require(old.sql("SELECT count(*) FROM pg_roles WHERE rolname='recovery_app' AND NOT rolsuper AND NOT rolbypassrls") == '1')
+    require(old.sql("SELECT count(*) FROM pg_roles WHERE rolname='account_user' AND rolcanlogin AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication") == '1')
     tables = json.loads(old.sql("""SELECT json_agg(json_build_object('schema',schemaname,'name',tablename,'owner',tableowner))
         FROM pg_tables WHERE schemaname IN ('public','finance')"""))
     commands = []
     for table in tables:
-        require(table['owner'] in ('postgres', 'recovery_app'))
+        require(table['owner'] in ('postgres', 'account_user'))
         relation = ident(table['schema']) + '.' + ident(table['name'])
         require(db.sql("SELECT to_regclass('" + relation + "') IS NOT NULL") == 't')
-        if table['owner'] == 'recovery_app':
-            commands.append('ALTER TABLE ' + relation + ' OWNER TO recovery_app')
+        if table['owner'] == 'account_user':
+            commands.append('ALTER TABLE ' + relation + ' OWNER TO account_user')
     grants = json.loads(old.sql("""SELECT coalesce(json_agg(json_build_object('schema',table_schema,'name',table_name,'privilege',privilege_type)),'[]')
-        FROM information_schema.role_table_grants WHERE grantee='recovery_app' AND table_schema IN ('public','finance')"""))
+        FROM information_schema.role_table_grants WHERE grantee='account_user' AND table_schema IN ('public','finance')"""))
     for grant in grants:
         require(grant['privilege'] in ('SELECT','INSERT','UPDATE','DELETE','REFERENCES','TRIGGER','TRUNCATE'))
-        commands.append('GRANT ' + grant['privilege'] + ' ON TABLE ' + ident(grant['schema']) + '.' + ident(grant['name']) + ' TO recovery_app')
+        commands.append('GRANT ' + grant['privilege'] + ' ON TABLE ' + ident(grant['schema']) + '.' + ident(grant['name']) + ' TO account_user')
     for schema in ('public', 'finance'):
         if old.sql("SELECT to_regnamespace('" + schema + "') IS NOT NULL") == 't':
             for privilege in ('USAGE', 'CREATE'):
-                if old.sql("SELECT has_schema_privilege('recovery_app','" + schema + "','" + privilege + "')") == 't':
-                    commands.append('GRANT ' + privilege + ' ON SCHEMA ' + ident(schema) + ' TO recovery_app')
+                if old.sql("SELECT has_schema_privilege('account_user','" + schema + "','" + privilege + "')") == 't':
+                    commands.append('GRANT ' + privilege + ' ON SCHEMA ' + ident(schema) + ' TO account_user')
     sequences = json.loads(old.sql("""SELECT coalesce(json_agg(json_build_object('schema',schemaname,'name',sequencename)),'[]')
         FROM pg_sequences WHERE schemaname IN ('public','finance')"""))
     for sequence in sequences:
         relation = ident(sequence['schema']) + '.' + ident(sequence['name'])
         for privilege in ('USAGE', 'SELECT', 'UPDATE'):
-            if old.sql("SELECT has_sequence_privilege('recovery_app','" + relation + "','" + privilege + "')") == 't':
-                commands.append('GRANT ' + privilege + ' ON SEQUENCE ' + relation + ' TO recovery_app')
+            if old.sql("SELECT has_sequence_privilege('account_user','" + relation + "','" + privilege + "')") == 't':
+                commands.append('GRANT ' + privilege + ' ON SEQUENCE ' + relation + ' TO account_user')
     db.sql('BEGIN; SET LOCAL lock_timeout=\'10s\';\n' + ';\n'.join(commands) + ';\nCOMMIT;')
-    require(db.sql("SELECT count(*) FROM information_schema.role_table_grants WHERE grantee='recovery_app' AND table_schema IN ('public','finance')") ==
-            old.sql("SELECT count(*) FROM information_schema.role_table_grants WHERE grantee='recovery_app' AND table_schema IN ('public','finance')"))
-    return dict(application_role='recovery_app', role_attributes_unchanged=True, object_grants_matched=True)
+    require(db.sql("SELECT count(*) FROM information_schema.role_table_grants WHERE grantee='account_user' AND table_schema IN ('public','finance')") ==
+            old.sql("SELECT count(*) FROM information_schema.role_table_grants WHERE grantee='account_user' AND table_schema IN ('public','finance')"))
+    return dict(application_role='account_user', role_attributes_unchanged=True, object_grants_matched=True)
 
 
 def sandbox_catalog(c, db):

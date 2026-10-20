@@ -49,31 +49,31 @@ def main(spec):
             time.sleep(1)
         def query(container, database, sql):
             return run(['docker', 'exec', container, 'psql', '-U', 'postgres', '-d', database, '-XAtq', '-v', 'ON_ERROR_STOP=1', '-c', sql]).stdout.strip()
-        query(pg, 'account', 'CREATE ROLE generation_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION BYPASSRLS')
+        query(pg, 'account', 'CREATE ROLE restore_fixture_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION BYPASSRLS')
         dump = subprocess.Popen(['docker', 'exec', 'web-saas-postgresql', 'pg_dump', '-U', 'postgres', '-d', restored, '-Fc'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        restore = subprocess.run(['docker', 'exec', '-i', pg, 'pg_restore', '-U', 'postgres', '-d', 'account', '--no-owner', '--exit-on-error', '--single-transaction'],
+        restore = subprocess.run(['docker', 'exec', '-i', pg, 'pg_restore', '-U', 'postgres', '-d', 'account', '--no-owner', '--no-privileges', '--exit-on-error', '--single-transaction'],
                                  stdin=dump.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180)
         dump.stdout.close()
         if dump.wait() or restore.returncode:
             raise RuntimeError('populated isolated restore failed')
         counts = "SELECT (SELECT count(*) FROM users)||':'||(SELECT count(*) FROM subscription_records)||':'||(SELECT count(*) FROM billing_ledger)"
         result['business_counts_equal'] = query(pg, 'account', counts) == query('web-saas-postgresql', restored, counts)
-        query(pg, 'account', 'GRANT CONNECT ON DATABASE account TO generation_app; GRANT USAGE ON SCHEMA public TO generation_app; '
-              'GRANT SELECT ON ALL TABLES IN SCHEMA public TO generation_app; GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO generation_app; '
-              'ALTER ROLE generation_app SET default_transaction_read_only=on')
+        query(pg, 'account', 'GRANT CONNECT ON DATABASE account TO restore_fixture_reader; GRANT USAGE ON SCHEMA public TO restore_fixture_reader; '
+              'GRANT SELECT ON ALL TABLES IN SCHEMA public TO restore_fixture_reader; GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO restore_fixture_reader; '
+              'ALTER ROLE restore_fixture_reader SET default_transaction_read_only=on')
         auth_probe = spec.get('candidate_auth_sessions') is True
         if auth_probe:
-            query(pg, 'account', 'GRANT INSERT, UPDATE, DELETE ON TABLE public.sessions TO generation_app; '
-                  'ALTER ROLE generation_app SET default_transaction_read_only=off')
+            query(pg, 'account', 'GRANT INSERT, UPDATE, DELETE ON TABLE public.sessions TO restore_fixture_reader; '
+                  'ALTER ROLE restore_fixture_reader SET default_transaction_read_only=off')
             query(pg, 'account', "INSERT INTO users(uuid,username,password,email,proxy_uuid,email_verified_at) VALUES "
                   "('00000000-0000-0000-0000-000000009901','login-fixture',crypt('isolated-fixture-password',gen_salt('bf')),"
                   "'login-fixture@example.invalid','00000000-0000-0000-0000-000000009902',now())")
-            result['protected_writes_denied'] = query(pg, 'account', "SELECT bool_and(NOT has_table_privilege('generation_app',t,'INSERT,UPDATE,DELETE,TRUNCATE')) "
+            result['protected_writes_denied'] = query(pg, 'account', "SELECT bool_and(NOT has_table_privilege('restore_fixture_reader',t,'INSERT,UPDATE,DELETE,TRUNCATE')) "
                   "FROM unnest(ARRAY['public.users','public.subscriptions','public.subscription_records','public.account_quota_states','public.billing_ledger','public.finance_payments','public.finance_refunds']) t") == 't'
-        identity = {'Host': '127.0.0.1', 'Port': 5432, 'Database': 'account', 'Role': 'generation_app'}
+        identity = {'Host': '127.0.0.1', 'Port': 5432, 'Database': 'account', 'Role': 'restore_fixture_reader'}
         args = ['docker', 'run', '-d', '--name', app, '--network', 'container:' + pg, '--memory=384m',
                 '--mount', 'type=bind,src=/etc/xcontrol/web-saas-recovery/account.yaml,dst=/app/config/account.yaml,readonly']
-        environment = {'DATABASE_URL': 'host=127.0.0.1 port=5432 dbname=account user=generation_app sslmode=disable',
+        environment = {'DATABASE_URL': 'host=127.0.0.1 port=5432 dbname=account user=restore_fixture_reader sslmode=disable',
                        'DATABASE_IDENTITY_SHA256': hashlib.sha256(json.dumps(identity, separators=(',', ':')).encode()).hexdigest(),
                        'DATABASE_RUNTIME_ROLE': 'primary', 'DATABASE_BACKGROUND_WRITERS': 'false',
                        'INTERNAL_SERVICE_TOKEN': 'isolated-acceptance-fixture-token', 'AUTH_TOKEN_PUBLIC_TOKEN': 'isolated-fixture-public',
@@ -90,7 +90,7 @@ def main(spec):
                 break
             time.sleep(1)
         result['actual_accounts_ready'] = ready
-        result['actual_database_connections'] = int(query(pg, 'account', "SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename='generation_app'"))
+        result['actual_database_connections'] = int(query(pg, 'account', "SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename='restore_fixture_reader'"))
         result['status'] = 'PASS' if ready and result['actual_database_connections'] > 0 and result['business_counts_equal'] else 'FAIL'
         if auth_probe and ready:
             login = run(['docker', 'exec', app, 'curl', '-sS', '--max-time', '10', '-w', '\n%{http_code}',

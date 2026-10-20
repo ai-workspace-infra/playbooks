@@ -19,6 +19,7 @@
 }
 {{ public_ingress.domains.billing }}, billing-selfhost-{{ web_saas_public_ingress_generation }}.svc.plus {
     tls {{ public_ingress.tls.directory }}/current/fullchain.pem {{ public_ingress.tls.directory }}/current/key.pem
+{% if not (web_saas_public_ingress_recovery_read_only | bool) %}
     @billing_ingest {
         method POST
         path /v1/ingest/snapshots
@@ -26,6 +27,7 @@
     handle @billing_ingest {
         reverse_proxy billing:8081
     }
+{% endif %}
     @probe {
         method GET HEAD
         path /readyz /healthz /api/ping

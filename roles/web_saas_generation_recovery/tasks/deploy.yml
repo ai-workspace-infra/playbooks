@@ -5,6 +5,16 @@
 - name: Revalidate the completed restore before starting any application
   ansible.builtin.include_tasks: verify.yml
 
+- name: Reuse the canonical business identity after data restore and before CD activation
+  ansible.builtin.include_role:
+    name: web_saas_business_database
+  vars:
+    web_saas_business_database_target: '{{ inventory_hostname }}'
+    web_saas_business_database_gitops_checkout: '{{ web_saas_recovery_gitops_checkout }}'
+    web_saas_business_database_gitops_sha: '{{ web_saas_recovery_gitops_sha }}'
+    web_saas_business_database_backup_manifest: '{{ web_saas_recovery_business_backup_manifest }}'
+    web_saas_business_database_confirm: '{{ web_saas_recovery_business_database_confirm | default(false) }}'
+
 - name: Select the same immutable tag application target
   ansible.builtin.include_role:
     name: doco_cd_release_selection

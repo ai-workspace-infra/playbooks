@@ -42,7 +42,7 @@ class RecoveryPublicIngressIdempotencyTests(unittest.TestCase):
                 for service in ['console', 'accounts', 'billing']:
                     self.assertIn(service + '-selfhost-' + generation + '.svc.plus', output)
                 self.assertIn('redir https://xworktech.com{uri} 301', output)
-                self.assertIn('method POST\n        path /v1/ingest/snapshots', output)
+                self.assertEqual('method POST\n        path /v1/ingest/snapshots' in output, not readonly)
                 self.assertNotIn('tls internal', output)
                 self.assertNotIn('header_up Authorization', output)
                 self.assertEqual('respond @mutating 403' in output, readonly)

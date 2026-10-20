@@ -33,7 +33,7 @@ class RestoreTests(unittest.TestCase):
                 self.fail('fixture did not start')
             admin = FixtureDB('postgres')
             admin.sql('CREATE DATABASE account')
-            admin.sql('CREATE ROLE recovery_app NOSUPERUSER NOBYPASSRLS')
+            admin.sql('CREATE ROLE account_user LOGIN NOSUPERUSER BYPASSRLS')
             db = FixtureDB()
             db.sql('''CREATE TABLE schema_migrations(version bigint, dirty boolean);
                 INSERT INTO schema_migrations VALUES(2026101703,false);
@@ -55,6 +55,10 @@ class RestoreTests(unittest.TestCase):
                 features jsonb NOT NULL DEFAULT '{}', trial_days integer NOT NULL DEFAULT 0,
                 active boolean NOT NULL DEFAULT true, sort_order integer NOT NULL DEFAULT 0,
                 created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());''')
+            db.sql('GRANT SELECT, INSERT, UPDATE, DELETE ON users, subscription_records, billing_ledger TO account_user; '
+                   'GRANT USAGE ON SCHEMA public, finance TO account_user;')
+            role_before = admin.sql("SELECT rolcanlogin::text||':'||rolbypassrls::text||':'||rolsuper::text "
+                                    "FROM pg_roles WHERE rolname='account_user'")
             admin.sql('ALTER DATABASE account SET default_transaction_read_only=on')
             case = ContractTests()
             case.setUp()
@@ -103,6 +107,9 @@ class RestoreTests(unittest.TestCase):
                     self.assertEqual(activated['previous_oid'], old_oid)
                     self.assertEqual(activated['active_oid'], restored['candidate_oid'])
                     self.assertEqual(FixtureDB().sql('SELECT count(*) FROM users'), '1')
+                    self.assertEqual(FixtureDB().sql("SELECT has_table_privilege('account_user','users','INSERT')"), 't')
+                    self.assertEqual(admin.sql("SELECT rolcanlogin::text||':'||rolbypassrls::text||':'||rolsuper::text "
+                                               "FROM pg_roles WHERE rolname='account_user'"), role_before)
                     with self.assertRaises(Exception):
                         refresh.activate(c, root)
         except subprocess.CalledProcessError as exc:

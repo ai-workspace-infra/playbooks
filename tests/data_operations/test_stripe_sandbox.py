@@ -60,12 +60,18 @@ def registry():
 
 
 def original_env():
-    values = dict(POSTGRES_PASSWORD='preserved-postgres', RECOVERY_APP_PASSWORD='a' * 64,
+    values = dict(POSTGRES_PASSWORD='preserved-postgres',
                   AUTH_TOKEN_PUBLIC_TOKEN='preserved-public', AUTH_TOKEN_REFRESH_SECRET='preserved-refresh',
                   AUTH_TOKEN_ACCESS_SECRET='preserved-access', INTERNAL_SERVICE_TOKEN='preserved-service',
-                  DATABASE_BACKGROUND_WRITERS='false', DATABASE_URL='"host=postgres port=5432 dbname=account user=recovery_app password=' + 'a'*64 + ' sslmode=disable"',
+                  DATABASE_BACKGROUND_WRITERS='false',
                   STRIPE_SECRET_KEY='', STRIPE_WEBHOOK_SECRET='', UNRELATED='preserved')
     return ''.join(k + '=' + v + '\n' for k, v in values.items()).encode()
+
+
+def business_env():
+    # Synthetic URL-encoded password only; never read Vault or production data.
+    return (b'DATABASE_URL=postgresql://account_user:fixture%3A%2F%40%25%24%23@postgres:5432/account?sslmode=disable\n'
+            b'DATABASE_RUNTIME_ROLE=primary\n')
 
 
 def account():
@@ -127,9 +133,27 @@ class SafetyTests(unittest.TestCase):
                 s.sandbox_env(original_env(), c)
         for old in (original_env().replace(b'DATABASE_BACKGROUND_WRITERS=false', b'DATABASE_BACKGROUND_WRITERS=true'),
                     original_env() + b'AUTH_TOKEN_PUBLIC_TOKEN=duplicate\n',
-                    original_env().replace(b'host=postgres ', b'host=source ')):
+                    original_env() + b'DATABASE_URL=unexpected-inline-identity\n'):
             with self.assertRaises(ValueError):
                 s.sandbox_env(old, contract())
+
+    def test_canonical_business_identity_is_separate_and_encoded(self):
+        s.validate_business_database_env(business_env())
+        quoted = business_env().replace(b'DATABASE_URL=', b'DATABASE_URL="').replace(
+            b'?sslmode=disable\n', b'?sslmode=disable"\n')
+        s.validate_business_database_env(quoted)
+        for data in (
+                business_env().replace(b'account_user:', b'postgres:'),
+                business_env().replace(b'@postgres:', b'@source:'),
+                business_env().replace(b'/account?', b'/postgres?'),
+                business_env().replace(b'fixture%3A%2F%40%25%24%23', b'unencoded$password'),
+                business_env().replace(b'sslmode=disable', b'sslmode=disable&host='),
+                business_env().replace(b'DATABASE_RUNTIME_ROLE=primary', b'DATABASE_RUNTIME_ROLE=candidate'),
+                business_env() + b'DATABASE_BACKGROUND_WRITERS=false\n',
+                business_env() + b'DATABASE_URL=duplicate\n'):
+            with self.subTest(data=data), self.assertRaises(ValueError):
+                s.validate_business_database_env(data)
+        self.assertNotIn('DATABASE_URL', s.env_values(s.sandbox_env(original_env(), contract())))
 
     def test_account_yaml_urls_and_auth_placeholders(self):
         result = yaml.safe_load(s.account_config(account(), contract()))
@@ -181,7 +205,7 @@ class SafetyTests(unittest.TestCase):
     def test_restore_failure_prevents_any_configuration_or_role_change(self):
         with tempfile.TemporaryDirectory(dir=ROOT, prefix='.stripe-config-') as tmp:
             config = Path(tmp)
-            for name, data in {'secrets.env': original_env(), 'account.yaml': account(), 'Caddyfile': b'old'}.items():
+            for name, data in {'secrets.env': original_env(), 'business-database.env': business_env(), 'account.yaml': account(), 'Caddyfile': b'old'}.items():
                 s.write_new(config / name, data)
             with mock.patch.object(s, 'CONFIG', config), mock.patch.object(s, 'validate_caddy_config'), mock.patch.object(s, 'checkpoint', side_effect=ValueError('restore mismatch')), mock.patch.object(s.DockerPG, 'sql') as sql:
                 with self.assertRaises(ValueError):
@@ -195,7 +219,7 @@ class SafetyTests(unittest.TestCase):
     def test_success_preserves_original_checksum_and_private_files(self):
         with tempfile.TemporaryDirectory(dir=ROOT, prefix='.stripe-config-') as tmp:
             config = Path(tmp)
-            for name, data in {'secrets.env': original_env(), 'account.yaml': account(), 'Caddyfile': b'old'}.items():
+            for name, data in {'secrets.env': original_env(), 'business-database.env': business_env(), 'account.yaml': account(), 'Caddyfile': b'old'}.items():
                 s.write_new(config / name, data)
             original_hash = s.sha(config / 'secrets.env')
             evidence = {'schema_version': '2026101703', 'counts': {'public.users': 32},
@@ -203,6 +227,8 @@ class SafetyTests(unittest.TestCase):
             with mock.patch.object(s, 'CONFIG', config), mock.patch.object(s, 'validate_caddy_config'), mock.patch.object(s, 'checkpoint', return_value=evidence), mock.patch.object(s, 'verify_prepared'), mock.patch.object(s, 'run'), mock.patch.object(s.DockerPG, 'sql') as sql:
                 s.prepare(contract(), config / 'run', 'sha256:'+'a'*64, {})
                 self.assertEqual(s.sha(config / 'secrets.env'), original_hash)
+                self.assertEqual((config / 'business-database.env').read_bytes(), business_env())
+                self.assertEqual((config / 'run/business-database.env.before').read_bytes(), business_env())
                 self.assertEqual(s.env_values((config / 'stripe-sandbox.env').read_bytes())['STRIPE_SECRET_KEY'], contract()['stripe_key'])
                 s.private(config / 'stripe-sandbox.env')
                 s.private(config / 'run', directory=True)
@@ -210,6 +236,34 @@ class SafetyTests(unittest.TestCase):
                 self.assertNotIn('PASSWORD', sql.call_args.args[0])
                 with self.assertRaises(FileExistsError):
                     s.prepare(contract(), config / 'run', 'sha256:'+'a'*64, {})
+
+    def test_missing_canonical_identity_fails_before_checkpoint(self):
+        with tempfile.TemporaryDirectory(dir=ROOT, prefix='.stripe-config-') as tmp:
+            config = Path(tmp)
+            with mock.patch.object(s, 'CONFIG', config), mock.patch.object(s, 'checkpoint') as checkpoint:
+                with self.assertRaises((ValueError, FileNotFoundError)):
+                    s.prepare(contract(), config / 'run', 'sha256:'+'a'*64, {})
+                checkpoint.assert_not_called()
+                self.assertFalse((config / 'run').exists())
+
+    def test_canonical_identity_change_during_restore_prevents_config_changes(self):
+        with tempfile.TemporaryDirectory(dir=ROOT, prefix='.stripe-config-') as tmp:
+            config = Path(tmp)
+            for name, data in {'secrets.env': original_env(), 'business-database.env': business_env(),
+                               'account.yaml': account(), 'Caddyfile': b'old'}.items():
+                s.write_new(config / name, data)
+            def changed_identity(*args):
+                s.replace_private(config / 'business-database.env', business_env().replace(b'fixture', b'changed'))
+                return {}
+            with mock.patch.object(s, 'CONFIG', config), mock.patch.object(s, 'validate_caddy_config'), \
+                    mock.patch.object(s, 'checkpoint', side_effect=changed_identity), \
+                    mock.patch.object(s.DockerPG, 'sql') as sql:
+                with self.assertRaises(ValueError):
+                    s.prepare(contract(), config / 'run', 'sha256:'+'a'*64, {})
+                self.assertEqual((config / 'secrets.env').read_bytes(), original_env())
+                self.assertEqual((config / 'Caddyfile').read_bytes(), b'old')
+                self.assertFalse((config / 'stripe-sandbox.env').exists())
+                sql.assert_not_called()
 
     def test_symlinks_and_public_permissions_rejected(self):
         with tempfile.TemporaryDirectory(dir=ROOT, prefix='.stripe-perms-') as tmp:
@@ -458,7 +512,7 @@ CREATE TABLE subscription_records(id serial PRIMARY KEY); INSERT INTO subscripti
 CREATE TABLE billing_ledger(id serial PRIMARY KEY);
 INSERT INTO billing_ledger VALUES (1);
 CREATE SCHEMA finance; CREATE TABLE finance.invoices(id serial PRIMARY KEY);
-CREATE ROLE recovery_app LOGIN; ALTER ROLE recovery_app SET default_transaction_read_only=on;''')
+CREATE ROLE account_user LOGIN; ALTER ROLE account_user SET default_transaction_read_only=on;''')
         self.root = self.parent / 'checkpoint'
         self.root.mkdir(mode=0o700)
 
@@ -525,15 +579,15 @@ CREATE ROLE recovery_app LOGIN; ALTER ROLE recovery_app SET default_transaction_
         self.assertFalse((self.root / 'checkpoint.json').exists())
 
     def test_existing_role_can_write_only_after_readonly_default_is_disabled(self):
-        self.source.sql('GRANT SELECT,INSERT ON users TO recovery_app;')
-        command = self.source.command('psql', '-U', 'recovery_app', '-d', 'account', '-XAtq',
+        self.source.sql('GRANT SELECT,INSERT ON users TO account_user;')
+        command = self.source.command('psql', '-U', 'account_user', '-d', 'account', '-XAtq',
                                       '-v', 'ON_ERROR_STOP=1', '-c', 'INSERT INTO users VALUES (33);')
         with self.assertRaises(subprocess.CalledProcessError):
             s.run(command)
         s.enable_account_writes(self.source)
         s.run(command)
         self.assertEqual(self.source.sql('SELECT count(*) FROM users;'), '33')
-        self.assertEqual(self.source.sql("SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname='recovery_app';"), 'f')
+        self.assertEqual(self.source.sql("SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname='account_user';"), 'f')
 
 
 @unittest.skipUnless(os.environ.get('STRIPE_TEST_DOCKER_IMAGE'), 'Set STRIPE_TEST_DOCKER_IMAGE=postgres:17 for container acceptance')
