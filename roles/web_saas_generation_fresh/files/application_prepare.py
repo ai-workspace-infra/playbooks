@@ -60,8 +60,8 @@ if auth_sessions:
         'GRANT SELECT ON ALL TABLES IN SCHEMA public TO generation_auth; GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO generation_auth; '
         'GRANT INSERT, UPDATE, DELETE ON TABLE public.sessions TO generation_auth; '
         'ALTER ROLE generation_auth SET default_transaction_read_only=off; COMMIT;')
-    assert sql("SELECT count(*) FROM information_schema.role_table_grants WHERE grantee='generation_auth' "
-               "AND privilege_type IN ('INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER') AND table_name<>'sessions'") == '0', 'unexpected candidate authentication write privilege'
+    assert sql("SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename<>'sessions' "
+               "AND has_table_privilege('generation_auth',quote_ident(schemaname)||'.'||quote_ident(tablename),'INSERT,UPDATE,DELETE,TRUNCATE')") == '0', 'unexpected candidate authentication write privilege'
     auth_identity = dict(identity, Role=auth_role)
     auth_sha = hashlib.sha256(json.dumps(auth_identity, separators=(',', ':')).encode()).hexdigest()
     auth_content = ('DATABASE_URL="host=postgres port=5432 dbname=account user=generation_auth password=' + password + ' sslmode=disable"\n'
