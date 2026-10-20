@@ -184,6 +184,12 @@ def main(spec):
                     retained=root/(name+'.retired')
                     if retained.exists():raise ValueError('retained legacy env checkpoint already exists')
                     path.replace(retained);changed=True
+            for name in ('web-saas-generation-app-prepare.py','application_permissions.py'):
+                path=Path('/usr/local/libexec')/name
+                if path.exists():
+                    retained=path.with_name(path.name+'.retired')
+                    if retained.exists():raise ValueError('retained legacy executor checkpoint already exists')
+                    path.replace(retained);retained.chmod(0o600);changed=True
         else:
             if pg("SELECT count(*) FROM pg_roles WHERE rolname='account_user'")=='1':
                 authenticate(spec['password'])  # Never rotate an existing mismatch.
