@@ -44,7 +44,7 @@ def main(spec):
              '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', '-e', 'POSTGRES_DB=account',
              '--entrypoint', 'docker-entrypoint.sh', spec['postgres_image'], 'postgres'])
         for _ in range(60):
-            if run(['docker', 'exec', pg, 'pg_isready', '-U', 'postgres'], False).returncode == 0:
+            if run(['docker', 'exec', pg, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'], False).returncode == 0:
                 break
             time.sleep(1)
         def query(container, database, sql):

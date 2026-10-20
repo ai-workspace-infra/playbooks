@@ -55,7 +55,7 @@ def main(spec):
                      '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', '-e', 'POSTGRES_DB=' + database,
                      '--entrypoint', 'docker-entrypoint.sh', image, 'postgres', '-p', str(port)])
                 for _ in range(60):
-                    if run(['docker', 'exec', container, 'pg_isready', '-U', 'postgres', '-p', str(port)], check=False).returncode == 0:
+                    if run(['docker', 'exec', container, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres', '-p', str(port)], check=False).returncode == 0:
                         return
                     time.sleep(1)
                 raise RuntimeError('isolated PG17 startup timeout')
@@ -100,7 +100,7 @@ def main(spec):
                 before = fingerprint()
                 run(['docker', 'restart', name])
                 for _ in range(60):
-                    ready = run(['docker', 'exec', name, 'pg_isready', '-U', 'postgres'], check=False)
+                    ready = run(['docker', 'exec', name, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'], check=False)
                     if ready.returncode == 0:
                         break
                     time.sleep(1)
