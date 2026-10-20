@@ -18,7 +18,12 @@
 
 - name: Capture encrypted logical snapshot and verify isolated restore
   ansible.builtin.command:
-    argv: [python3, -c, '{{ lookup("ansible.builtin.file", role_path ~ "/files/policy_roles.py") ~ "\n" ~ lookup("ansible.builtin.file", role_path ~ "/files/capture.py") }}']
+    argv:
+      - python3
+      - -c
+      - |
+        {{ lookup('ansible.builtin.file', role_path ~ '/files/policy_roles.py') }}
+        {{ lookup('ansible.builtin.file', role_path ~ '/files/capture.py') }}
     stdin: '{{ {"key": snapshot_passphrase, "generation": snapshot_generation, "expected_schema": snapshot_expected_schema | int} | to_json }}'
   register: snapshot_capture
   no_log: true
