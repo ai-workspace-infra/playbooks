@@ -22,6 +22,10 @@ the shared token. Other methods and management/job endpoints remain denied.
 The internal recovery aliases retain their probe-only policy; collectors use
 the stable public `billing.svc.plus` endpoint.
 
+The ingestion chain remains Xray Exporter → Vector → Billing. This Role does
+not enable Billing exporter pull or direct Agent-to-Billing reporting. Keep
+the existing Vector disk buffer and exporter snapshot retention in place.
+
 Acceptance must cover missing/invalid token = 401, GET ingest = 403, management
 POST = 403, and real exporter/Vector delivery followed by new checkpoint,
 minute-bucket and ledger timestamps. Readiness alone does not prove ingestion.
