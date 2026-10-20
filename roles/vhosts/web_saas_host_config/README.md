@@ -78,6 +78,14 @@ site block，因为 `*.svc.plus` 证书不覆盖 `xworktech.com`；启用 Cloudf
 - `WEB_SAAS_BILLING_ALLOWED_CIDRS`：允许触发 Billing job 的 agent-proxy 源地址，
   例如 `167.179.64.91/32`。
 
+PROD 渲染时，角色会把经核验的六个 V3 Accounts Proxy 入口地址追加到此列表，
+并与流水线传入的 CMDB CIDR 去重合并。当前地址对应
+`jp-free-selfhost-prod-v2.svc.plus`、`jp-xconnect-01.svc.plus`、
+`sg-free-selfhost-prod-v2.svc.plus`、`us-free-selfhost-prod-v2.svc.plus`、
+`jp-xconnect.svc.plus` 和 `ph-xconnect.svc.plus`；节点 DNS 地址变化时，
+需先复核并更新角色默认值，再发布 Caddy 配置。UAT 不追加这组 PROD 地址，
+仍使用 UAT 专属 CIDR override。
+
 只有这两个值同时非空时，Caddy 才会渲染 Billing 站点；否则不会把
 `/v1/jobs/*` 暴露到公网。agent-proxy 的 `billing.baseURL` 必须使用该 HTTPS 域名，
 而不是 web-saas 容器内的 `127.0.0.1:8081`。Billing 仍然负责从 Exporter 读取快照并

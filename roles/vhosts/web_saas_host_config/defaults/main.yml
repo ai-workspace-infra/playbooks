@@ -124,6 +124,22 @@ web_saas_host_config_billing_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS
 web_saas_host_config_billing_public_domain: >-
   {{ lookup('ansible.builtin.env', 'WEB_SAAS_BILLING_PUBLIC_DOMAIN') | default('', true) | trim }}
 web_saas_host_config_billing_allowed_cidrs: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_BILLING_ALLOWED_CIDRS') | default('', true) }}"
+# Public A records verified on 2026-10-20 for the six Accounts PROD
+# region-pool Proxy entrypoints. Keep these as ingress CIDRs, not as an
+# infrastructure inventory; refresh them when a Proxy DNS record changes.
+web_saas_host_config_billing_v3_agent_proxy_sources:
+  - service_domain: jp-free-selfhost-prod-v2.svc.plus
+    cidr: 172.237.3.205/32
+  - service_domain: jp-xconnect-01.svc.plus
+    cidr: 35.79.83.48/32
+  - service_domain: sg-free-selfhost-prod-v2.svc.plus
+    cidr: 172.236.133.66/32
+  - service_domain: us-free-selfhost-prod-v2.svc.plus
+    cidr: 45.79.140.168/32
+  - service_domain: jp-xconnect.svc.plus
+    cidr: 54.199.179.163/32
+  - service_domain: ph-xconnect.svc.plus
+    cidr: 165.154.32.241/32
 
 # Cloudflare DNS API token, 用于 ACME DNS-01。给了它就走 DNS-01 + 泛域名证书,
 # 没给就退回原来的 HTTP-01 逐域名签发。

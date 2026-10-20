@@ -118,6 +118,15 @@
     - ansible_service_mgr == 'systemd'
     - "'caddy.service' in ansible_facts.services"
 
+- name: Include reviewed V3 Agent Proxy addresses in PROD Billing ingress
+  ansible.builtin.set_fact:
+    web_saas_host_config_billing_allowed_cidrs: >-
+      {{ ((web_saas_host_config_billing_allowed_cidrs | trim).split()
+          + (web_saas_host_config_billing_v3_agent_proxy_sources
+             | map(attribute='cidr') | list))
+         | unique | join(' ') }}
+  when: web_saas_host_config_deploy_env == 'prod'
+
 - name: Report Billing external ingress mode
   ansible.builtin.debug:
     msg: >-
