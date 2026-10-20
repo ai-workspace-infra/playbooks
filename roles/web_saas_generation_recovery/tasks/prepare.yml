@@ -22,6 +22,46 @@
     - "{{ web_saas_recovery_config_root }}"
     - /usr/local/libexec/web-saas-generation-recovery
 
+- name: Check whether public Billing ingress was explicitly activated before
+  ansible.builtin.stat:
+    path: /etc/xcontrol/web-saas-recovery/public-ingress-active.yml
+    follow: false
+  register: recovery_public_ingress_state
+
+- name: Read the prior public-ingress activation record
+  ansible.builtin.slurp:
+    src: /etc/xcontrol/web-saas-recovery/public-ingress-active.yml
+  register: recovery_public_ingress_record
+  no_log: true
+  when: recovery_public_ingress_state.stat.exists
+
+- name: Require the activation record to belong to this exact generation and host
+  ansible.builtin.assert:
+    that:
+      - (recovery_public_ingress_record.content | b64decode | from_yaml).generation == recovery.target.generation
+      - (recovery_public_ingress_record.content | b64decode | from_yaml).target == inventory_hostname
+      - recovery_public_ingress_state.stat.isreg | default(false)
+      - recovery_public_ingress_state.stat.mode == '0600'
+  when: recovery_public_ingress_state.stat.exists
+
+- name: Check that the explicitly activated public Caddy configuration still exists
+  ansible.builtin.slurp:
+    src: '{{ web_saas_recovery_config_root }}/Caddyfile'
+  register: recovery_public_ingress_config
+  no_log: true
+  when: recovery_public_ingress_state.stat.exists
+
+- name: Refuse to overwrite an activated public-ingress configuration that drifted
+  ansible.builtin.assert:
+    that:
+      - "'# BEGIN managed shared PROD public SNI' in (recovery_public_ingress_config.content | b64decode)"
+      - "'billing.svc.plus' in (recovery_public_ingress_config.content | b64decode)"
+  when: recovery_public_ingress_state.stat.exists
+
+- name: Remember whether the reviewed public ingress is active
+  ansible.builtin.set_fact:
+    recovery_public_ingress_active: '{{ recovery_public_ingress_state.stat.exists | bool }}'
+
 - name: Persist this new-host attempt without overwriting previous identity
   ansible.builtin.copy:
     content: "{{ {'generation': recovery.target.generation, 'archive_sha256': recovery.source.archive_sha256, 'disk_uuid': recovery_host_identity.results[1].stdout.split()[1]} | to_nice_yaml }}"
@@ -81,7 +121,15 @@
     mode: '0600'
   loop:
     - {src: account.yaml.j2, dest: account.yaml}
-    - {src: Caddyfile.j2, dest: Caddyfile}
+
+- name: Render probe-only Caddy configuration only for isolated or inactive recovery
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: '{{ web_saas_recovery_config_root }}/Caddyfile'
+    owner: root
+    group: root
+    mode: '0600'
+  when: not recovery_public_ingress_active | bool
 
 - name: Install the guarded generation restore executor
   ansible.builtin.copy:

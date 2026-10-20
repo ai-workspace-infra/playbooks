@@ -46,6 +46,16 @@ read-only probes. Local Caddy certificates are recovery-specific. Do not
 interpret readiness as authenticated login, payment or production cutover
 acceptance.
 
+`prepare` renders this probe-only Caddyfile unless the separate
+`web_saas_public_ingress` role has an explicit activation record for the same
+generation and host. That role writes the record only after
+`web_saas_public_ingress_activate=true` and a successful Caddy restart. A
+matching record makes repeated recovery preparation preserve the managed
+public-site block; a mismatched record or missing/drifted Caddy block stops
+the run. Staging the public candidate with activation false does not create
+the record, so it remains isolated. The record tracks the explicit activation
+operation; public route and billing acceptance still require separate probes.
+
 Required caller variables: web_saas_recovery_target,
 web_saas_recovery_manifest_file, web_saas_recovery_gitops_checkout,
 web_saas_recovery_gitops_sha and web_saas_recovery_phase. Restore additionally
