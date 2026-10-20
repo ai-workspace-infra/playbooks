@@ -5,6 +5,36 @@
 - name: Deploy Xray Exporter collection source
   hosts: "{{ xray_exporter_hosts | default('xray_exporter') }}"
   become: true
+  vars:
+    vector_billing_ingest_enabled: >-
+      {{ lookup('ansible.builtin.env', 'VECTOR_BILLING_INGEST_ENABLED')
+         | default(false, true) | bool }}
+    xray_exporter_snapshot_features_enabled: >-
+      {{ lookup('ansible.builtin.env', 'XRAY_EXPORTER_SNAPSHOT_FEATURES_ENABLED')
+         | default(vector_billing_ingest_enabled, true) | bool }}
+    xray_exporter_accounts_base_url: >-
+      {{ lookup('ansible.builtin.env', 'ACCOUNTS_BASE_URL')
+         | default('https://accounts.svc.plus', true) }}
+    xray_exporter_internal_service_token: >-
+      {{ canonical_internal_service_token | default('') }}
+    xray_exporter_vector_snapshot_url: >-
+      {{ lookup('ansible.builtin.env', 'VECTOR_SNAPSHOT_URL')
+         | default('http://127.0.0.1:8686'
+                  if xray_exporter_snapshot_features_enabled else '', true) }}
+  pre_tasks:
+    - name: Require Xray exporter targets to be in the reviewed exporter group
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length > 0
+          - ansible_play_hosts_all | difference(groups.get('xray_exporter', [])) | length == 0
+      when: vector_billing_ingest_enabled | bool
+
+    - name: Resolve canonical credentials only when billing snapshots are enabled
+      ansible.builtin.include_tasks: tasks/resolve-canonical-service-token.yml
+      when: >-
+        (xray_exporter_snapshot_features_enabled | bool) or
+        (xray_exporter_vector_snapshot_url | trim | length > 0)
+
   roles:
     - vhosts/xray-exporter
 
@@ -64,8 +94,7 @@
       {{ lookup('ansible.builtin.env', 'VECTOR_BILLING_INGEST_URL')
          | default('', true) }}
     vector_billing_ingest_token: >-
-      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
-         | default('', true) }}
+      {{ canonical_internal_service_token | default('') }}
     vector_ai_aggregator_enabled: >-
       {{ lookup('ansible.builtin.env', 'VECTOR_AI_AGGREGATOR_ENABLED')
          | default('false', true) | bool }}
@@ -81,8 +110,7 @@
              true
            ) }}
     xray_exporter_internal_service_token: >-
-      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
-         | default('', true) }}
+      {{ canonical_internal_service_token | default('') }}
     xconnect_gitops_config: >-
       {{ lookup('ansible.builtin.env', 'XCONNECT_GITOPS_CONFIG')
          | default(playbook_dir ~ '/../gitops/topology/prod/selfhost/xconnect-regional-pools.yaml', true) }}
@@ -102,6 +130,17 @@
         - "'xconnect_regional_nodes' in group_names"
         - xconnect_node_maintenance is not defined
   tasks:
+    - name: Restrict Billing snapshot rollout to reviewed Proxy inventory hosts
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length > 0
+          - ansible_play_hosts_all | difference(groups.get('agent_proxy', [])) | length == 0
+      when: vector_billing_ingest_enabled | bool
+
+    - name: Resolve the canonical Vault credential for Vector Billing delivery
+      ansible.builtin.include_tasks: tasks/resolve-canonical-service-token.yml
+      when: vector_billing_ingest_enabled | bool
+
     - name: Include node_exporter role
       ansible.builtin.import_role:
         name: vhosts/node_exporter

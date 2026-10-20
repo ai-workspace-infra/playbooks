@@ -1,0 +1,30 @@
+---
+- name: Read the one canonical runtime service credential from Vault
+  ansible.builtin.command:
+    argv:
+      - vault
+      - kv
+      - get
+      - -field=INTERNAL_SERVICE_TOKEN
+      - kv/prod/accounts/runtime
+  environment:
+    VAULT_ADDR: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: canonical_service_token_read
+  changed_when: false
+  no_log: true
+
+- name: Validate the canonical runtime credential without revealing it
+  ansible.builtin.assert:
+    that:
+      - canonical_service_token_read.stdout is match('^[A-Za-z0-9._~+/=-]{32,}$')
+    fail_msg: "Vault did not return a valid canonical INTERNAL_SERVICE_TOKEN."
+  run_once: true
+  no_log: true
+
+- name: Keep the canonical credential in memory for the selected hosts only
+  ansible.builtin.set_fact:
+    canonical_internal_service_token: "{{ canonical_service_token_read.stdout }}"
+  no_log: true

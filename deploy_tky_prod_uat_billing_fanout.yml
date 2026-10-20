@@ -30,7 +30,7 @@
     xray_exporter_tcp_certificate_domain: "tky-proxy.svc.plus"
     xray_exporter_accounts_base_url: "https://accounts-serverless-uat.onwalk.net"
     xray_exporter_internal_service_token: >-
-      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}
+      {{ canonical_internal_service_token | default('') }}
     xray_exporter_vector_snapshot_url: "http://127.0.0.1:8686"
 
     # Vector is the sole Billing egress. Prometheus remote-write remains the
@@ -40,18 +40,19 @@
     vector_billing_ingest_address: "127.0.0.1:8686"
     vector_billing_ingest_url: "https://billing-serverless-uat.onwalk.net/v1/ingest/snapshots"
     vector_billing_ingest_token: >-
-      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('', true) }}
+      {{ canonical_internal_service_token | default('') }}
     vector_observability_endpoint: "https://observability.svc.plus"
   pre_tasks:
-    - name: Require the Vault-provided UAT internal service token
+    - name: Read the canonical runtime token before configuring the collection bridge
+      ansible.builtin.include_tasks: tasks/resolve-canonical-service-token.yml
+
+    - name: Require the canonical Vault token without revealing it
       ansible.builtin.assert:
         that:
           - xray_exporter_internal_service_token | trim | length > 0
           - vector_billing_ingest_token | trim | length > 0
-        fail_msg: >-
-          INTERNAL_SERVICE_TOKEN must be exported from Vault before deploying
-          the tky production to UAT Billing collection bridge.
-        success_msg: "Internal service token found"
+        fail_msg: "The canonical Vault credential is required for Billing snapshot delivery."
+        success_msg: "Canonical Vault credential is available"
       no_log: true
 
   roles:

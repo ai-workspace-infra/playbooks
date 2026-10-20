@@ -103,8 +103,20 @@
 - name: Activate the prepared configuration on the explicitly selected Caddy only
   ansible.builtin.command:
     argv: [docker, restart, web-saas-caddy]
+  register: public_ingress_activation
   when: web_saas_public_ingress_activate | bool
   changed_when: true
+
+- name: Record that public ingress was explicitly activated for this generation
+  ansible.builtin.copy:
+    content: "{{ {'generation': web_saas_public_ingress_generation, 'target': inventory_hostname} | to_nice_yaml }}"
+    dest: '{{ web_saas_public_ingress_state_file }}'
+    owner: root
+    group: root
+    mode: '0600'
+  when:
+    - web_saas_public_ingress_activate | bool
+    - public_ingress_activation is succeeded
 
 - name: Report activation or preparation boundary
   ansible.builtin.debug:
