@@ -9,8 +9,26 @@ argv or public evidence. Certificate installation reuses `docker/caddy_certifica
 The role checks actual hostname, cert/key/expiry and SANs, retains existing
 internal sites, stages an idempotent public-site block, validates in the running
 immutable Caddy image without networking, and backs up the prior configuration.
-It never reads or changes a database, DNS, or another generation, and never
-restarts services. Billing retains the recovered generation's probe-only public policy.
+It never reads or changes a database, DNS, or another generation. Default runs
+only prepare configuration. Set `web_saas_public_ingress_activate=true` explicitly
+to restart only `web-saas-caddy` after candidate validation and publication.
+The recovery controller disables Caddy's admin API, so activation uses a short
+Caddy restart; Accounts, Billing, Console and PostgreSQL are not restarted.
+
+Billing permits `POST /v1/ingest/snapshots` in addition to health probes. The
+Authorization header reaches Billing unchanged; Billing enforces its configured
+Bearer token and rejects missing or invalid tokens. Caddy does not read or store
+the shared token. Other methods and management/job endpoints remain denied.
+The internal recovery aliases retain their probe-only policy; collectors use
+the stable public `billing.svc.plus` endpoint.
+
+The ingestion chain remains Xray Exporter → Vector → Billing. This Role does
+not enable Billing exporter pull or direct Agent-to-Billing reporting. Keep
+the existing Vector disk buffer and exporter snapshot retention in place.
+
+Acceptance must cover missing/invalid token = 401, GET ingest = 403, management
+POST = 403, and real exporter/Vector delivery followed by new checkpoint,
+minute-bucket and ledger timestamps. Readiness alone does not prove ingestion.
 
 For each generation: restore/validate certificate and prepare configuration;
 select an immutable GitOps release mounting `/etc/xcontrol/tls` read-only;

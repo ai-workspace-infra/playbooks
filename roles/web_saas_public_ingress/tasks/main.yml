@@ -100,6 +100,15 @@
     mode: '0600'
     backup: true
 
-- name: Report preparation boundary
+- name: Activate the prepared configuration on the explicitly selected Caddy only
+  ansible.builtin.command:
+    argv: [docker, restart, web-saas-caddy]
+  when: web_saas_public_ingress_activate | bool
+  changed_when: true
+
+- name: Report activation or preparation boundary
   ansible.builtin.debug:
-    msg: Certificate and public sites prepared. Select the reviewed GitOps release through Doco-CD, then verify public SNI directly.
+    msg: >-
+      {{ 'Caddy restarted with the validated configuration; verify ingestion auth and live node delivery.'
+         if web_saas_public_ingress_activate | bool else
+         'Certificate and public sites prepared; activate via the reviewed release or explicit Caddy activation, then verify public SNI.' }}
