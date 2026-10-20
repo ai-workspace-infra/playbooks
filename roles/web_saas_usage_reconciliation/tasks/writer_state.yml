@@ -2,13 +2,15 @@
 - name: Require the exact audited recovery target and complete writer set
   ansible.builtin.assert:
     that:
-      - inventory_hostname == 'web-saas-prod-v3'
+      - inventory_hostname == 'web-saas-' ~ web_saas_generation_environment
       - web_saas_generation_target_host == inventory_hostname
-      - web_saas_generation_environment == 'prod-v3'
+      - web_saas_generation_environment is match('^prod-v[1-9][0-9]*$')
+      - web_saas_usage_reconciliation_source_generation is match('^prod-v[1-9][0-9]*$')
+      - (web_saas_generation_environment | regex_replace('^prod-v', '') | int) == (web_saas_usage_reconciliation_source_generation | regex_replace('^prod-v', '') | int) + 1
       - web_saas_usage_reconciliation_writer_operation in ['pause', 'resume']
       - web_saas_usage_reconciliation_writers | sort == ['doco-cd', 'web-saas-accounts', 'web-saas-billing']
-      - web_saas_usage_reconciliation_operation_context == 'explicit_target_write_handoff'
-    fail_msg: Writer operations require an explicit V3-only maintenance invocation
+      - web_saas_usage_reconciliation_operation_context in ['explicit_target_write_handoff', 'isolated_target_reconciliation']
+    fail_msg: Writer operations require an explicit exact-target maintenance invocation
 
 - name: Inspect current writer states before any operation
   ansible.builtin.command:

@@ -1,11 +1,12 @@
 ---
-- name: Restrict initial audited reconciliation lane and require complete writer manifest
+- name: Require adjacent source and target generations and complete target writer manifest
   ansible.builtin.assert:
     that:
-      - web_saas_usage_reconciliation_source_generation == 'prod-v2'
+      - web_saas_usage_reconciliation_source_generation is match('^prod-v[1-9][0-9]*$')
       - web_saas_usage_reconciliation_execution_mode in ['container', 'host-loopback']
-      - web_saas_generation_environment == 'prod-v3'
-      - inventory_hostname == 'web-saas-prod-v3'
+      - web_saas_generation_environment is match('^prod-v[1-9][0-9]*$')
+      - (web_saas_generation_environment | regex_replace('^prod-v', '') | int) == (web_saas_usage_reconciliation_source_generation | regex_replace('^prod-v', '') | int) + 1
+      - inventory_hostname == 'web-saas-' ~ web_saas_generation_environment
       - web_saas_generation_target_host == inventory_hostname
       - web_saas_generation_migration_request.environment == web_saas_generation_environment
       - web_saas_generation_migration_request.target_host == inventory_hostname
@@ -16,7 +17,7 @@
       - web_saas_generation_run_id is match('^[1-9][0-9]*$')
       - web_saas_usage_reconciliation_gitops_sha is match('^[0-9a-f]{40}$')
       - web_saas_usage_reconciliation_components.keys() | list | sort == ['accounts', 'billing', 'console']
-    fail_msg: Only the audited V2-to-V3 lane is enabled; provide all target writers including Doco-CD
+    fail_msg: Provide adjacent PROD generations, their exact target host and all target writers including Doco-CD
 
 - name: Require immutable declared candidate and compatible rollback identities
   ansible.builtin.assert:

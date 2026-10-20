@@ -2,7 +2,7 @@
 - name: Validate PostgreSQL read-only binding inputs
   ansible.builtin.assert:
     that:
-      - readonly_ssh_user_postgresql_password | length > 0
+      - readonly_ssh_user_postgresql_passwordless_local | bool or readonly_ssh_user_postgresql_password | length > 0
       - readonly_ssh_user_postgresql_databases | length > 0
       - readonly_ssh_user_postgresql_role is match('^[a-z_][a-z0-9_]*$')
       - (readonly_ssh_user_postgresql_databases | select('match', '^[a-z_][a-z0-9_]*$') | list | length) == (readonly_ssh_user_postgresql_databases | length)
@@ -55,7 +55,9 @@
   environment:
     PGPASSWORD: "{{ readonly_ssh_user_postgresql_admin_password }}"
   no_log: true
-  when: readonly_postgresql_topology == 'compose'
+  when:
+    - readonly_postgresql_topology == 'compose'
+    - not readonly_ssh_user_postgresql_passwordless_local | bool
 
 - name: Create/update read-only PostgreSQL role in native database
   ansible.builtin.command:
@@ -84,10 +86,17 @@
   environment:
     PGPASSWORD: "{{ readonly_ssh_user_postgresql_admin_password }}"
   no_log: true
-  when: readonly_postgresql_topology == 'native'
+  when:
+    - readonly_postgresql_topology == 'native'
+    - not readonly_ssh_user_postgresql_passwordless_local | bool
+
+- name: Bind a dedicated local-only migration reader
+  ansible.builtin.include_tasks: postgresql_passwordless.yml
+  when: readonly_ssh_user_postgresql_passwordless_local | bool
 
 - name: Grant database and schema read-only privileges
   ansible.builtin.include_tasks: postgresql_database.yml
   loop: "{{ readonly_ssh_user_postgresql_databases }}"
   loop_control:
     loop_var: readonly_database_name
+  when: not readonly_ssh_user_postgresql_passwordless_local | bool

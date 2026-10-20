@@ -12,7 +12,8 @@ SCRIPT = ROOT / 'roles/web_saas_usage_reconciliation/files/reconcile.sh'
 
 
 class UsageReconciliationTest(unittest.TestCase):
-    def run_fixture(self, apply=False, conflict=False, bad_checksum=False, host_mode=False, public_source=False):
+    def run_fixture(self, apply=False, conflict=False, bad_checksum=False, host_mode=False, public_source=False,
+                    source_generation='prod-v3', target_generation='prod-v4'):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)
             binary = path / 'migratectl'
@@ -54,6 +55,7 @@ if 'reconcile-usage' in a:
                        MERGE_BINARY=str(binary), MERGE_BINARY_SHA256='0'*64 if bad_checksum else digest,
                        MERGE_SCHEMA_SHA256='b'*64, MERGE_BILLING_SHA256='c'*64,
                        MERGE_RUN='2026101901', MERGE_VERSION='2026101902',
+                       MERGE_SOURCE_GENERATION=source_generation, MERGE_TARGET_GENERATION=target_generation,
                        MERGE_APPLY=str(apply).lower(), MIGRATION_SOURCE_DSN='not-a-real-secret',
                        MERGE_EXECUTION_MODE='host-loopback' if host_mode else 'container',
                        CALL_LOG=str(log), CONFLICT=str(conflict).lower())
@@ -68,6 +70,18 @@ if 'reconcile-usage' in a:
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any('--apply' in call for call in calls))
         self.assertEqual(json.loads(result.stdout)['result'], 'preview')
+
+    def test_runtime_passes_the_selected_pair_and_rejects_nonadjacent_targets(self):
+        for source, target in [('prod-v3', 'prod-v4'), ('prod-v9', 'prod-v10')]:
+            result, calls = self.run_fixture(source_generation=source, target_generation=target)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            invocation = next(call for call in calls if 'reconcile-usage' in call)
+            self.assertEqual(invocation[invocation.index('--source-generation') + 1], source)
+            self.assertEqual(invocation[invocation.index('--target-generation') + 1], target)
+        for source, target in [('prod-v3', 'prod-v5'), ('prod-v4', 'prod-v3'), ('prod-v3', 'uat-v4')]:
+            result, calls = self.run_fixture(source_generation=source, target_generation=target)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(calls, [])
 
     def test_apply_binds_preview_and_keeps_dsn_out_of_argv(self):
         result, calls = self.run_fixture(apply=True)
@@ -120,7 +134,7 @@ if 'reconcile-usage' in a:
     def test_target_writer_and_binary_staging_boundaries(self):
         tasks = ROOT / 'roles/web_saas_usage_reconciliation/tasks'
         writer = (tasks / 'writer_state.yml').read_text()
-        self.assertIn("inventory_hostname == 'web-saas-prod-v3'", writer)
+        self.assertIn("inventory_hostname == 'web-saas-' ~ web_saas_generation_environment", writer)
         self.assertIn("in ['pause', 'resume']", writer)
         self.assertIn("[doco-cd, web-saas-accounts, web-saas-billing]", writer)
         self.assertIn("[web-saas-billing, web-saas-accounts, doco-cd]", writer)

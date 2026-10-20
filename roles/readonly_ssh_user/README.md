@@ -173,3 +173,42 @@ The default role behavior now matches this model:
 - SSH login is expected to happen by public key only
 - `PasswordAuthentication no` is enforced for that user in the SSH Match block
 - password resets and account management should be performed by `root`
+
+## Dedicated local migration reader
+
+`web-saas-migration-readonly.yml` invokes only the shared PostgreSQL task. It
+creates `readonly_release` without a password and grants SELECT on existing
+public tables and sequences in the selected database. It sets the default
+transaction to read-only and rejects effective table writes, sequence writes,
+schema creation, inherited roles, object ownership, existing passwords and
+executable public security-definer routines. Failures roll back the grant
+transaction. Existing application roles and business rows are untouched.
+
+This opt-in mode requires the existing container's local authentication to
+work. It does not change `pg_hba.conf`, publish database ports, or claim that a
+passwordless role is usable through a TCP password-authenticated tunnel. A
+maintenance operator can run `docker exec --user postgres <container> pg_dump
+-U readonly_release -d account -Fc` to stream one read-only MVCC snapshot into
+target-side encryption. Use `--enable-row-security` for this ordinary reader:
+the role adds a validated SELECT-only policy for that identity on RLS tables and
+refuses conflicting or restrictive policies. Existing policies are never edited.
+No application password is required. Do not give the
+audit OS account general Docker access: the existing container's local trust
+authentication could otherwise permit impersonating a privileged DB role.
+
+Run with a freshly verified, explicitly limited inventory:
+
+```sh
+ansible-playbook -i <verified-inventory> web-saas-migration-readonly.yml --limit <selected-host>
+```
+
+Common consumers may opt into the same database mode with
+`common_readonly_ssh_user_postgresql_passwordless_local: true` and
+`common_readonly_ssh_user_postgresql_role: readonly_release`. The OS user is a
+separate identity; this mode alone does not bind arbitrary SSH commands to a
+database role. Reapply after adding tables: no future-object default grants are
+created. A target-side migration still uses the reviewed privileged execution
+owner and pinned tool; the source reader never receives target write grants.
+
+To revoke access, use a separately reviewed `ALTER ROLE readonly_release NOLOGIN`
+and revoke its grants; retain the role for audit and never use `DROP ... CASCADE`.
