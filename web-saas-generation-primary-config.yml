@@ -1,0 +1,9 @@
+---
+- name: Stage the fixed primary configuration without activating a writer
+  hosts: '{{ generation_fresh_target | default("never-matches") }}'
+  gather_facts: false
+  become: true
+  tasks:
+    - ansible.builtin.include_role:
+        name: web_saas_generation_fresh
+        tasks_from: primary-configuration.yml

@@ -1,0 +1,38 @@
+mode: server-agent
+log: {level: info}
+auth:
+  enable: true
+  token:
+    publicToken: "${AUTH_TOKEN_PUBLIC_TOKEN}"
+    refreshSecret: "${AUTH_TOKEN_REFRESH_SECRET}"
+    accessSecret: "${AUTH_TOKEN_ACCESS_SECRET}"
+    accessExpiry: 1h
+    refreshExpiry: 168h
+  oauth:
+    frontendUrl: "https://{{ generation_primary_ingress.domains.console }}"
+    google:
+      clientId: "${GOOGLE_CLIENT_ID}"
+      clientSecret: "${GOOGLE_CLIENT_SECRET}"
+      redirectUrl: "https://{{ generation_primary_ingress.domains.accounts }}/api/auth/oauth/callback/google"
+server:
+  addr: ":8080"
+  publicUrl: "https://{{ generation_primary_ingress.domains.accounts }}"
+  allowedOrigins:
+    - "https://console-selfhost-{{ generation_fresh_spec.target_generation }}.svc.plus"
+    - "https://{{ generation_primary_ingress.domains.console }}"
+    - "https://{{ generation_primary_ingress.brand_domains.root }}"
+    - "https://{{ generation_primary_ingress.brand_domains.www }}"
+  tls: {enabled: false}
+store:
+  driver: postgres
+  dsn: "${DATABASE_URL}"
+  maxOpenConns: 10
+  maxIdleConns: 3
+session: {ttl: 24h}
+smtp:
+  host: "${SMTP_HOST}"
+  port: ${SMTP_PORT}
+  username: "${SMTP_USERNAME}"
+  password: "${SMTP_PASSWORD}"
+  from: "${SMTP_FROM}"
+  tls: {mode: "${SMTP_TLS_MODE}"}

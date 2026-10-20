@@ -13,6 +13,15 @@
       - generation_fresh_gitops_sha is match('^[0-9a-f]{40}$')
       - generation_fresh_gitops_head.stdout == generation_fresh_gitops_sha
       - inventory_hostname == 'web-saas-' ~ generation_fresh_spec.target_generation
+      - generation_fresh_spec.runtime_mode | default('candidate') in ['candidate', 'primary']
+
+- name: Stage and validate declared primary credentials before writer checks
+  ansible.builtin.include_tasks: primary-configuration.yml
+  when: generation_fresh_spec.runtime_mode | default('candidate') == 'primary'
+
+- name: Verify the existing single-writer boundary before primary preparation
+  ansible.builtin.include_tasks: primary-gate.yml
+  when: generation_fresh_spec.runtime_mode | default('candidate') == 'primary'
 
 - name: Reuse the canonical shared service token owner
   ansible.builtin.include_role:
@@ -28,10 +37,16 @@
     dest: /usr/local/libexec/web-saas-generation-app-prepare.py
     mode: '0700'
 
-- name: Prepare the read-only application connection independently of restored databases
+- name: Install the shared business permission contract
+  ansible.builtin.copy:
+    src: application_permissions.py
+    dest: /usr/local/libexec/application_permissions.py
+    mode: '0600'
+
+- name: Prepare the explicitly selected application connection
   ansible.builtin.command:
     argv: [python3, /usr/local/libexec/web-saas-generation-app-prepare.py]
-    stdin: '{{ generation_fresh_spec | combine({"candidate_auth_sessions": (lookup("ansible.builtin.file", generation_fresh_gitops_checkout ~ "/compose/web-saas/recovery/" ~ generation_fresh_spec.target_generation ~ "-upgrade.yaml") | from_yaml).target.candidate_auth_sessions | default(false)}) | to_json }}'
+    stdin: '{{ generation_fresh_spec | combine({"candidate_auth_sessions": (lookup("ansible.builtin.file", generation_fresh_gitops_checkout ~ "/compose/web-saas/recovery/" ~ generation_fresh_spec.target_generation ~ "-upgrade.yaml") | from_yaml).target.candidate_auth_sessions | default(false), "source_writers_fenced": generation_primary_gate_passed | default(false), "target_writers_paused": generation_primary_gate_passed | default(false)}) | to_json }}'
   register: generation_app_prepared
   changed_when: (generation_app_prepared.stdout | from_json).changed | bool
   no_log: true
@@ -41,6 +56,7 @@
     src: account.yaml.j2
     dest: /etc/xcontrol/web-saas-recovery/account.yaml
     mode: '0600'
+  when: generation_fresh_spec.runtime_mode | default('candidate') == 'candidate'
 
 - name: Restore trusted certificates and stage every public and generation SNI
   ansible.builtin.include_role:
@@ -50,5 +66,5 @@
     web_saas_public_ingress_generation: '{{ generation_fresh_spec.target_generation }}'
     web_saas_public_ingress_manifest_file: '{{ generation_fresh_gitops_checkout }}/compose/web-saas/ingress/prod.yaml'
     web_saas_public_ingress_image: "{{ lookup('ansible.builtin.file', generation_fresh_gitops_checkout ~ '/compose/web-saas/.env.' ~ generation_fresh_spec.target_generation) | regex_search('(?m)^CADDY_IMAGE=(.+)$', '\\1') | first }}"
-    web_saas_public_ingress_recovery_read_only: true
+    web_saas_public_ingress_recovery_read_only: '{{ generation_fresh_spec.runtime_mode | default("candidate") != "primary" }}'
     web_saas_public_ingress_activate: false
