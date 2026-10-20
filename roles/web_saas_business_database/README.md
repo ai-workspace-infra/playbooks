@@ -3,13 +3,17 @@
 GitOps `compose/web-saas/runtime/prod.yaml#business_database` selects
 `account_user` and references the existing environment-scoped password. Only
 the controller reads Vault at execution; GitOps contains no password or DSN.
-Accounts and Billing consume the same protected raw `business-database.env`.
+Accounts and Billing consume the same protected `business-database.env`, with
+the password URI-encoded so ordinary dotenv parsing cannot interpolate it.
 No alternative business role or credential is generated during recovery.
 
 Run `web-saas-business-database.yml` with one verified target, clean pinned
 GitOps checkout/SHA, `web_saas_business_database_confirm: true` and the populated
 target `web_saas_business_database_backup_manifest`. The manifest must prove a
 successful isolated restore with equal data fingerprints before role changes.
+Before `prepare`, explicitly pause the selected target's reconciler and application
+writers using the existing writer-state owner. This keeps old CD declarations
+from racing credential-file cleanup. The source is not stopped implicitly.
 `prepare` creates a missing native role using the existing Vault password,
 grants business DML and owned-sequence USAGE/SELECT, and verifies TCP SCRAM
 authentication using a disposable client on the existing internal network.
@@ -17,6 +21,9 @@ It refuses an existing credential mismatch; no password rotation/fallback.
 Schema migration tables, DDL, ownership and administrative grants are excluded.
 RLS bypass is the explicitly declared existing native backend contract.
 
+Preparation removes obsolete connection keys from legacy env files before the
+first new CD activation, while preserving database-admin and auth values.
+This avoids a second unplanned environment change after activation.
 Preparation does not restart services, enable background writers, select CD,
 or change DNS. Deploy the pinned Compose declaration through the existing CD
 selector, preserving source/target writer ownership. `retire` then verifies both

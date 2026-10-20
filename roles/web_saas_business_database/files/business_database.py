@@ -148,6 +148,21 @@ def backup_gate(spec):
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
+def scrub_legacy_env(root):
+    """Only under stopped target writers or verified canonical running identities."""
+    changed=False
+    obsolete_keys={'RECOVERY_APP_PASSWORD','DATABASE_URL','DATABASE_IDENTITY_SHA256','DATABASE_RUNTIME_ROLE'}
+    for name in ('secrets.env','stripe-sandbox.env'):
+        path=root/name
+        if not path.exists():continue
+        original=path.read_text()
+        cleaned='\n'.join(line for line in original.splitlines() if line.split('=',1)[0] not in obsolete_keys)+'\n'
+        if cleaned!=original:
+            stage=root/(name+'.new');stage.write_text(cleaned);stage.chmod(0o600);stage.replace(path)
+            changed=True
+    return changed
+
+
 def main(spec):
     validate(spec)
     if socket.gethostname().split('.')[0] != spec['target']:
@@ -169,15 +184,7 @@ def main(spec):
             changed=pg("SELECT count(*) FROM pg_roles WHERE rolname IN ('recovery_app','generation_auth','generation_app') AND rolcanlogin")!='0'
             for role in RETIRED:
                 pg("SELECT format('ALTER ROLE %I NOLOGIN',rolname) FROM pg_roles WHERE rolname='"+role+"' AND rolcanlogin\n\\gexec\n")
-            obsolete_keys={'RECOVERY_APP_PASSWORD','DATABASE_URL','DATABASE_IDENTITY_SHA256','DATABASE_RUNTIME_ROLE'}
-            for name in ('secrets.env','stripe-sandbox.env'):
-                path=root/name
-                if not path.exists():continue
-                original=path.read_text()
-                cleaned='\n'.join(line for line in original.splitlines() if line.split('=',1)[0] not in obsolete_keys)+'\n'
-                if cleaned!=original:
-                    stage=root/(name+'.new');stage.write_text(cleaned);stage.chmod(0o600);stage.replace(path)
-                    changed=True
+            changed=scrub_legacy_env(root) or changed
             for name in ('generation-app.env','generation-auth.env'):
                 path=root/name
                 if path.exists():
@@ -191,6 +198,9 @@ def main(spec):
                     if retained.exists():raise ValueError('retained legacy executor checkpoint already exists')
                     path.replace(retained);retained.chmod(0o600);changed=True
         else:
+            running=set(run(['docker','ps','--format','{{.Names}}']).splitlines())
+            if running.intersection({'doco-cd','web-saas-accounts','web-saas-billing'}):
+                raise ValueError('pause the selected target applications and reconciler before identity activation')
             if pg("SELECT count(*) FROM pg_roles WHERE rolname='account_user'")=='1':
                 authenticate(spec['password'])  # Never rotate an existing mismatch.
             fingerprint="SELECT md5((SELECT coalesce(string_agg(rolname||coalesce(rolconfig::text,'')||rolbypassrls::text,'' ORDER BY rolname),'') FROM pg_roles WHERE rolname='account_user')||(SELECT coalesce(string_agg(oid::text||coalesce(relacl::text,''),'' ORDER BY oid),'') FROM pg_class WHERE relnamespace IN (SELECT oid FROM pg_namespace WHERE nspname IN ('public','finance'))))"
@@ -203,6 +213,7 @@ def main(spec):
                 stage=root/'business-database.env.new'
                 stage.write_text(content); stage.chmod(0o600); stage.replace(dest)
             dest.chmod(0o600)
+            changed=scrub_legacy_env(root) or changed
             after=pg(fingerprint)
             changed=changed or before!=after
         result=dict(target=spec['target'],action=spec['action'],role=ROLE,database='account',
