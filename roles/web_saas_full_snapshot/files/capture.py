@@ -66,11 +66,16 @@ for name in names:
 verify='snapshot-verify-'+stamp.lower()
 image=json.loads(run(['docker','inspect',container]))[0]['Image']
 run(['docker','run','-d','--name',verify,'--network','none','--memory','1536m','--tmpfs','/var/lib/postgresql/data:rw,size=1024m','-e','POSTGRES_HOST_AUTH_METHOD=trust',image])
-import time
-for attempt in range(60):
-    if subprocess.run(['docker','exec',verify,'pg_isready','-U','postgres'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0: break
-    time.sleep(1)
-else: raise RuntimeError('isolated PostgreSQL unavailable; retained container')
+def wait_for_isolated_postgres(name):
+    import time
+    for attempt in range(60):
+        # The entrypoint's temporary init server accepts Unix sockets and then
+        # shuts down. Only the final server listens on loopback TCP.
+        if subprocess.run(['docker','exec',name,'pg_isready','-h','127.0.0.1','-U','postgres'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:
+            return
+        time.sleep(1)
+    raise RuntimeError('isolated PostgreSQL unavailable; retained container')
+wait_for_isolated_postgres(verify)
 run(['docker','exec',verify,'createdb','-U','postgres','account'])
 # RLS policies retain role references even with --no-owner/--no-acl. Create
 # credential-free identities only inside the network-isolated restore instance;
