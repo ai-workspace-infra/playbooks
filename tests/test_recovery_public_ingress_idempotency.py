@@ -46,7 +46,7 @@ class RecoveryPublicIngressIdempotencyTests(unittest.TestCase):
                 self.assertNotIn('tls internal', output)
                 self.assertNotIn('header_up Authorization', output)
                 self.assertEqual('respond @mutating 403' in output, readonly)
-                self.assertEqual(output.count('@candidate_session {'), 2 if readonly else 0)
+                self.assertEqual(output.count('\n    @candidate_session {'), 2 if readonly else 0)
                 if readonly:
                     self.assertEqual(output.count('path /api/auth/login /api/auth/session'),2)
                     self.assertEqual(output.count('@candidate_read method GET HEAD'),2)
