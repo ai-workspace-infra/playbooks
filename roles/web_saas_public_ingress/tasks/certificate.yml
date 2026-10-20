@@ -1,0 +1,38 @@
+---
+- name: Read only the declared Vault certificate record
+  ansible.builtin.command:
+    argv: [vault, kv, get, -format=json, '{{ public_certificate.vault_ref }}']
+  environment:
+    VAULT_ADDR: https://vault.svc.plus
+  delegate_to: localhost
+  become: false
+  register: public_certificate_read
+  changed_when: false
+  no_log: true
+
+- name: Restore an immutable validated certificate generation
+  ansible.builtin.include_role:
+    name: docker/caddy_certificate_restore
+  vars:
+    caddy_certificate_restore_directory: '{{ public_certificate.directory }}'
+    caddy_certificate_restore_material:
+      fullchain: '{{ (public_certificate_read.stdout | from_json).data.data.tls_fullchain_pem_b64 | b64decode }}'
+      cert: '{{ (public_certificate_read.stdout | from_json).data.data.tls_cert_pem_b64 | b64decode }}'
+      key: '{{ (public_certificate_read.stdout | from_json).data.data.tls_key_pem_b64 | b64decode }}'
+      ca: '{{ (public_certificate_read.stdout | from_json).data.data.tls_ca_pem_b64 | b64decode }}'
+      trust_bundle: '{{ (public_certificate_read.stdout | from_json).data.data.tls_trust_bundle_pem_b64 | b64decode }}'
+  no_log: true
+
+- name: Remember whether the public certificate changed
+  ansible.builtin.set_fact:
+    public_ingress_certificates_changed: '{{ public_ingress_certificates_changed | bool or caddy_certificate_restore_result.changed | bool }}'
+
+- name: Verify every public and generation hostname
+  ansible.builtin.command:
+    argv: [openssl, x509, -in, '{{ public_certificate.directory }}/current/cert.pem', -noout, -checkhost, '{{ certificate_hostname }}']
+  loop: '{{ public_certificate.hosts }}'
+  loop_control:
+    loop_var: certificate_hostname
+  register: public_ingress_san
+  changed_when: false
+  failed_when: public_ingress_san.rc != 0 or 'does match certificate' not in public_ingress_san.stdout

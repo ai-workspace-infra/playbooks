@@ -1,26 +1,29 @@
 ---
-- name: Restrict configuration to the explicit generation and IaC inventory host
+- name: Require one explicit generation and its host
   ansible.builtin.assert:
     that:
       - web_saas_public_ingress_generation is match('^prod-v[1-9][0-9]*$')
-      - inventory_hostname == web_saas_public_ingress_target
       - ansible_play_hosts_all == [web_saas_public_ingress_target]
-      - cmdb_name == 'web-saas-' ~ web_saas_public_ingress_generation
       - web_saas_public_ingress_config == '/etc/xcontrol/web-saas-recovery/Caddyfile'
+      - web_saas_public_ingress_image is match('^ghcr.io/[A-Za-z0-9_./:-]+@sha256:[0-9a-f]{64}$')
 
-- name: Read shared PROD ingress declaration from GitOps
+- name: Read authoritative GitOps ingress declarations
   ansible.builtin.set_fact:
     public_ingress: '{{ lookup("ansible.builtin.file", web_saas_public_ingress_manifest_file) | from_yaml }}'
+    public_ingress_certificates_changed: false
 
-- name: Require the reviewed public domain and certificate contract
+- name: Require public domain and canonical Vault certificate contracts
   ansible.builtin.assert:
     that:
       - public_ingress.kind == 'WebSaasPublicIngress'
       - public_ingress.domains == {'console':'console.svc.plus','accounts':'accounts.svc.plus','billing':'billing.svc.plus'}
+      - public_ingress.brand_domains == {'root':'xworktech.com','www':'www.xworktech.com'}
       - public_ingress.tls.vault_ref == 'kv/CICD/domains/svc.plus'
       - public_ingress.tls.directory == '/etc/xcontrol/tls/svc.plus'
+      - public_ingress.brand_tls.vault_ref == 'kv/CICD/domains/xworktech.com'
+      - public_ingress.brand_tls.directory == '/etc/xcontrol/tls/xworktech.com'
 
-- name: Check the actual generation before writing
+- name: Verify actual host before certificate and config writes
   ansible.builtin.command: hostname -s
   register: public_ingress_hostname
   changed_when: false
@@ -28,99 +31,49 @@
 - ansible.builtin.assert:
     that: public_ingress_hostname.stdout == 'web-saas-' ~ web_saas_public_ingress_generation
 
-- name: Restore validated immutable certificate files from protected runtime input
-  ansible.builtin.include_role:
-    name: docker/caddy_certificate_restore
-  vars:
-    caddy_certificate_restore_directory: '{{ public_ingress.tls.directory }}'
-    caddy_certificate_restore_material: '{{ web_saas_public_ingress_tls_material }}'
-  no_log: true
+- name: Restore both certificate sets through the shared certificate owner
+  ansible.builtin.include_tasks: certificate.yml
+  loop:
+    - vault_ref: '{{ public_ingress.tls.vault_ref }}'
+      directory: '{{ public_ingress.tls.directory }}'
+      hosts: ['console.svc.plus', 'accounts.svc.plus', 'billing.svc.plus', 'console-selfhost-{{ web_saas_public_ingress_generation }}.svc.plus', 'accounts-selfhost-{{ web_saas_public_ingress_generation }}.svc.plus', 'billing-selfhost-{{ web_saas_public_ingress_generation }}.svc.plus']
+    - vault_ref: '{{ public_ingress.brand_tls.vault_ref }}'
+      directory: '{{ public_ingress.brand_tls.directory }}'
+      hosts: [xworktech.com, www.xworktech.com]
+  loop_control:
+    loop_var: public_certificate
 
-- name: Require SAN coverage for every public hostname
-  ansible.builtin.command:
-    argv: [openssl, x509, -in, '{{ public_ingress.tls.directory }}/current/cert.pem', -noout, -checkhost, '{{ item }}']
-  loop: '{{ public_ingress.domains.values() | list }}'
-  register: public_ingress_san
-  changed_when: false
-  failed_when: public_ingress_san.rc != 0 or 'does match certificate' not in public_ingress_san.stdout
-
-- name: Read existing configuration without exposing unrelated configuration
-  ansible.builtin.slurp:
-    src: '{{ web_saas_public_ingress_config }}'
-  register: public_ingress_existing
-  no_log: true
-
-- name: Stage current configuration for a separate validation
-  ansible.builtin.copy:
-    content: '{{ public_ingress_existing.content | b64decode }}'
+- name: Stage the sole generation Caddy configuration
+  ansible.builtin.template:
+    src: public-sites.caddy.j2
     dest: '{{ web_saas_public_ingress_config }}.public-candidate'
     mode: '0600'
-  no_log: true
 
-- name: Add idempotent shared public sites while retaining existing internal sites
-  ansible.builtin.blockinfile:
-    path: '{{ web_saas_public_ingress_config }}.public-candidate'
-    marker: '# {mark} managed shared PROD public SNI'
-    block: '{{ lookup("ansible.builtin.template", "public-sites.caddy.j2") }}'
-
-- name: Inspect the existing Caddy image ID
+- name: Ensure the pinned validation image is available
   ansible.builtin.command:
-    argv: [docker, inspect, --format, '{{ "{{.Image}}" }}', web-saas-caddy]
-  register: public_ingress_image
-  changed_when: false
+    argv: [docker, pull, '{{ web_saas_public_ingress_image }}']
+  register: ingress_pull
+  changed_when: "'Downloaded newer image' in ingress_pull.stdout"
 
-- ansible.builtin.assert:
-    that: public_ingress_image.stdout is match('^sha256:[0-9a-f]{64}$')
-
-- name: Validate candidate using the running image with certificates mounted and networking disabled
+- name: Validate candidate with mounted Vault certificates and no network
   ansible.builtin.command:
-    argv:
-      - docker
-      - run
-      - --rm
-      - --network=none
-      - --mount
-      - type=bind,src=/etc/xcontrol/tls,dst=/etc/xcontrol/tls,readonly
-      - --mount
-      - 'type=bind,src={{ web_saas_public_ingress_config }}.public-candidate,dst=/etc/caddy/Caddyfile,readonly'
-      - --entrypoint=caddy
-      - '{{ public_ingress_image.stdout }}'
-      - adapt
-      - --config=/etc/caddy/Caddyfile
-      - --adapter=caddyfile
-      - --validate
+    argv: [docker, run, --rm, '--network=none', --mount, 'type=bind,src=/etc/xcontrol/tls,dst=/etc/xcontrol/tls,readonly', --mount, 'type=bind,src={{ web_saas_public_ingress_config }}.public-candidate,dst=/etc/caddy/Caddyfile,readonly', '--entrypoint=caddy', '{{ web_saas_public_ingress_image }}', adapt, '--config=/etc/caddy/Caddyfile', '--adapter=caddyfile', --validate]
   changed_when: false
   no_log: true
 
-- name: Publish validated configuration and retain the previous file for recovery
+- name: Publish validated configuration with a recoverable prior copy
   ansible.builtin.copy:
     src: '{{ web_saas_public_ingress_config }}.public-candidate'
     dest: '{{ web_saas_public_ingress_config }}'
     remote_src: true
-    mode: '0600'
     backup: true
+    mode: '0600'
+  register: public_ingress_published
 
-- name: Activate the prepared configuration on the explicitly selected Caddy only
+- name: Activate only changed configuration on the selected Caddy
   ansible.builtin.command:
     argv: [docker, restart, web-saas-caddy]
-  register: public_ingress_activation
-  when: web_saas_public_ingress_activate | bool
-  changed_when: true
-
-- name: Record that public ingress was explicitly activated for this generation
-  ansible.builtin.copy:
-    content: "{{ {'generation': web_saas_public_ingress_generation, 'target': inventory_hostname} | to_nice_yaml }}"
-    dest: '{{ web_saas_public_ingress_state_file }}'
-    owner: root
-    group: root
-    mode: '0600'
   when:
     - web_saas_public_ingress_activate | bool
-    - public_ingress_activation is succeeded
-
-- name: Report activation or preparation boundary
-  ansible.builtin.debug:
-    msg: >-
-      {{ 'Caddy restarted with the validated configuration; verify ingestion auth and live node delivery.'
-         if web_saas_public_ingress_activate | bool else
-         'Certificate and public sites prepared; activate via the reviewed release or explicit Caddy activation, then verify public SNI.' }}
+    - public_ingress_published.changed or public_ingress_certificates_changed | bool
+  changed_when: true
