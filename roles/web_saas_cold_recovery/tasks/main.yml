@@ -3,7 +3,7 @@
   ansible.builtin.assert:
     that:
       - web_saas_cold_recovery_mode in ['backup', 'stage', 'restore_verify', 'restore_primary']
-      - web_saas_cold_recovery_environment in ['uat', 'prod']
+      - web_saas_cold_recovery_environment in ['uat', 'prod'] or web_saas_cold_recovery_environment is match('^prod-v[1-9][0-9]*$')
       - web_saas_cold_recovery_root == '/data/backups/web-saas'
       - web_saas_cold_recovery_service_variant == '' or web_saas_cold_recovery_service_variant is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
       - web_saas_cold_recovery_release_tag is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')

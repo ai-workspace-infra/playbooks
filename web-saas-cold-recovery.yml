@@ -1,9 +1,15 @@
 ---
-# Explicit operator entrypoint. Inventory groups must be supplied by the
-# caller from IaC-produced CMDB; this playbook never invents topology.
+# This is an ONLINE snapshot/restore workflow. It never stops applications,
+# Doco-CD, or PostgreSQL on the source. The backup role uses a PostgreSQL
+# exported MVCC snapshot for a consistent database image while V3 remains live.
+# Any later write freeze belongs to a separately approved final handoff, never
+# to snapshot creation. Inventory may be IaC-produced CMDB or a
+# single-run inventory generated from freshly verified cloud control-plane
+# facts. The caller must verify exact instance identity and SSH host key.
 - name: Create the encrypted source checkpoint
   hosts: web_saas_cold_recovery_source
   gather_facts: false
+  become: true
   roles:
     - role: web_saas_cold_recovery
       vars:
@@ -12,6 +18,7 @@
 - name: Stage and verify the checkpoint on an independent recovery host
   hosts: web_saas_cold_recovery_destination
   gather_facts: false
+  become: true
   roles:
     - role: web_saas_cold_recovery
       vars:

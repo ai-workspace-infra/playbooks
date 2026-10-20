@@ -1,0 +1,38 @@
+---
+- name: Validate snapshot target and immutable checkpoint
+  ansible.builtin.assert:
+    that:
+      - snapshot_generation is match('^prod-v[1-9][0-9]*$')
+      - snapshot_expected_schema | int > 0
+      - snapshot_run_id is match('^[1-9][0-9]*$')
+      - snapshot_passphrase | length >= 32
+  no_log: true
+
+- name: Complete Vault and configuration checkpoint evidence
+  ansible.builtin.command:
+    argv: [python3, -c, '{{ lookup("ansible.builtin.file", role_path ~ "/files/finalize.py") }}']
+    stdin: '{{ snapshot_finalize_payload | to_json }}'
+  register: snapshot_finalized
+  no_log: true
+  when: snapshot_phase | default('capture') == 'finalize'
+
+- name: Capture encrypted logical snapshot and verify isolated restore
+  ansible.builtin.command:
+    argv: [python3, -c, '{{ lookup("ansible.builtin.file", role_path ~ "/files/capture.py") }}']
+    stdin: '{{ {"key": snapshot_passphrase, "generation": snapshot_generation, "expected_schema": snapshot_expected_schema | int} | to_json }}'
+  register: snapshot_capture
+  no_log: true
+  when: snapshot_phase | default('capture') == 'capture'
+
+- name: Ensure private receipt directory
+  ansible.builtin.file:
+    path: '/data/backups/web-saas/{{ snapshot_generation }}/receipts'
+    state: directory
+    mode: '0700'
+
+- name: Persist snapshot restore evidence
+  ansible.builtin.copy:
+    content: "{{ snapshot_finalized.stdout if snapshot_phase | default('capture') == 'finalize' else snapshot_capture.stdout }}"
+    dest: '/data/backups/web-saas/{{ snapshot_generation }}/receipts/{{ snapshot_run_id }}.json'
+    mode: '0600'
+    force: false

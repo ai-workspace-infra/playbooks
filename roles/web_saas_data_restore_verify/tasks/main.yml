@@ -25,6 +25,7 @@
       - web_saas_data_restore_verify_migration_order_column is match('^[a-z_][a-z0-9_]*$')
       - web_saas_data_restore_verify_expected_migration_rows | string is match('^[1-9][0-9]*$')
       - web_saas_data_restore_verify_expected_migration_dirty in ['false', 'not-applicable']
+      - web_saas_data_restore_verify_retain_restore | string in ['True', 'False', 'true', 'false']
       - web_saas_data_restore_verify_users_table is match('^[a-z_][a-z0-9_]*$')
       - web_saas_data_restore_verify_subscription_table is match('^[a-z_][a-z0-9_]*$')
     fail_msg: Restore verification provenance, source schema, archive, or isolated target is missing or unsafe
@@ -77,6 +78,8 @@
     WEB_SAAS_USERS_TABLE: '{{ web_saas_data_restore_verify_users_table }}'
     WEB_SAAS_SUBSCRIPTION_TABLE: '{{ web_saas_data_restore_verify_subscription_table }}'
     WEB_SAAS_CROSS_MACHINE: '{{ web_saas_data_restore_verify_cross_machine | bool | ternary("true", "false") }}'
+    WEB_SAAS_RETAIN_RESTORE: '{{ web_saas_data_restore_verify_retain_restore | bool | ternary("true", "false") }}'
+    WEB_SAAS_DIAGNOSTIC_PATH: '{{ web_saas_data_restore_verify_archive_path | dirname }}/restore-verify-diagnostic.txt'
   register: web_saas_data_restore_verify_command
   changed_when: web_saas_data_restore_verify_command.rc == 0
   no_log: true

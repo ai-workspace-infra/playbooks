@@ -1,0 +1,12 @@
+---
+# Re-run only the isolated restore gate for an already staged immutable backup.
+# The restore is deleted after verification by default; set
+# web_saas_cold_recovery_retain_restore=true only for a dedicated migration rehearsal.
+- name: Verify a staged cold-recovery archive on the isolated destination
+  hosts: web_saas_cold_recovery_destination
+  gather_facts: false
+  become: true
+  roles:
+    - role: web_saas_cold_recovery
+      vars:
+        web_saas_cold_recovery_mode: restore_verify

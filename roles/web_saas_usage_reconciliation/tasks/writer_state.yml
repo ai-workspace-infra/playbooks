@@ -7,6 +7,7 @@
       - web_saas_generation_environment == 'prod-v3'
       - web_saas_usage_reconciliation_writer_operation in ['pause', 'resume']
       - web_saas_usage_reconciliation_writers | sort == ['doco-cd', 'web-saas-accounts', 'web-saas-billing']
+      - web_saas_usage_reconciliation_operation_context == 'explicit_target_write_handoff'
     fail_msg: Writer operations require an explicit V3-only maintenance invocation
 
 - name: Inspect current writer states before any operation
@@ -28,24 +29,6 @@
     argv: [docker, start, '{{ item }}']
   loop: [web-saas-billing, web-saas-accounts, doco-cd]
   when: web_saas_usage_reconciliation_writer_operation == 'resume'
-  changed_when: true
-
-- name: Stop optional V3 frontend runtime without removing configuration or volumes
-  ansible.builtin.command:
-    argv: [docker, stop, --time, '30', '{{ item }}']
-  loop: [web-saas-console, web-saas-caddy]
-  when:
-    - web_saas_usage_reconciliation_refresh_frontends | default(false) | bool
-    - web_saas_usage_reconciliation_writer_operation == 'pause'
-  changed_when: true
-
-- name: Resume optional V3 frontend runtime only on explicit resume
-  ansible.builtin.command:
-    argv: [docker, start, '{{ item }}']
-  loop: [web-saas-console, web-saas-caddy]
-  when:
-    - web_saas_usage_reconciliation_refresh_frontends | default(false) | bool
-    - web_saas_usage_reconciliation_writer_operation == 'resume'
   changed_when: true
 
 - name: Verify every declared writer reached its requested state

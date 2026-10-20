@@ -33,11 +33,15 @@ same backup/restore and transaction/conflict gates.
 `web-saas-generation-reconciliation-prepare.yml` stages a controller-built binary
 under its SHA-256 filename, verifies root ownership/checksum and checks the
 existing loopback tunnel. It does not pause writers or modify database data.
-`web-saas-generation-writers.yml` requires an explicit `pause` or `resume` in
-`web_saas_usage_reconciliation_writer_operation`; it accepts only V3 and exactly
-the Accounts, Billing and Doco-CD containers. Pause stops the reconciler first;
-explicit resume starts it last. PostgreSQL is never stopped. Resume is a separate
-operator step after inspecting the result, not an automatic failure fallback.
+`web-saas-generation-writers.yml` is only for a separately approved final
+target-write handoff, never for snapshot creation or isolated restore. It
+requires `web_saas_usage_reconciliation_operation_context: explicit_target_write_handoff`,
+an explicit `pause` or `resume`, and exactly the Accounts, Billing and Doco-CD
+containers. Pause stops the reconciler first; explicit resume starts it last.
+PostgreSQL, Console and Caddy are never stopped by this writer gate. Snapshot
+creation uses an online PostgreSQL exported snapshot and keeps the source fully
+serving. Resume is a separate operator step after inspecting the result, not an
+automatic failure fallback.
 
 Default is preview only. `web_saas_usage_reconciliation_apply=true` explicitly
 enables the transaction after this invocation's encrypted backup and isolated

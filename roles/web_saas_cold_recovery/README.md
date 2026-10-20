@@ -8,7 +8,9 @@ Supported modes:
 
 - `backup`: create a new encrypted database checkpoint on the source host and
   write `SHA256SUMS`/`receipt.json`, then fetch only the encrypted archive plus
-  a nonsecret JSON receipt to the controller.
+  a nonsecret JSON receipt to the controller. This is online and does not stop
+  source applications, Doco-CD, or PostgreSQL; PostgreSQL exported-snapshot
+  semantics provide a consistent DB boundary.
 - `stage`: copy the encrypted archive from the controller to a separate host's
   `/data` volume and verify its checksum without decrypting it.
 - `restore_verify`: restore into a run-owned temporary database and compare
@@ -31,3 +33,6 @@ parameter so a checkpoint cannot silently cross profiles. The role does not
 assume a fixed `v2`/`v3`/`vN` value.
 The role does not create cloud resources, alter DNS, write CMDB, or perform a
 production deployment.
+It also does not freeze source writers. If a later final reconciliation or
+traffic handoff requires a single writer, that is a separately approved
+operation and must not be conflated with backup or isolated restore.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real encrypted role-script round trip on a GitHub CI service, never UAT/PROD."""
+"""Real encrypted role-script round trip on disposable PostgreSQL 17, never UAT/PROD."""
 import json
 import os
 from pathlib import Path
@@ -11,15 +11,19 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 CONTAINER = os.environ.get("TEST_POSTGRES_CONTAINER", "")
+RUN_ID = os.environ.get("GITHUB_RUN_ID") or os.environ.get("WEB_SAAS_TEST_RUN_ID", "")
+ALLOW_DISPOSABLE_TEST = (os.environ.get("GITHUB_ACTIONS") == "true"
+                         or os.environ.get("WEB_SAAS_ALLOW_DISPOSABLE_POSTGRES_TEST") == "true")
 
 
-@unittest.skipUnless(os.environ.get("GITHUB_ACTIONS") == "true" and re.fullmatch(r"[0-9a-f]{64}", CONTAINER),
-                     "requires the disposable GitHub PostgreSQL service ID")
+@unittest.skipUnless(ALLOW_DISPOSABLE_TEST and re.fullmatch(r"[0-9a-f]{64}", CONTAINER)
+                     and re.fullmatch(r"[1-9][0-9]{0,17}", RUN_ID),
+                     "requires explicit opt-in and a disposable PostgreSQL container ID/run ID")
 class BackupRestoreRolesPostgresTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.docker = shutil.which("docker")
-        cls.fixture_database = "ci_role_fixture_" + os.environ["GITHUB_RUN_ID"]
+        cls.fixture_database = "ci_role_fixture_" + RUN_ID
         cls.temporary = tempfile.TemporaryDirectory()
         shim = Path(cls.temporary.name) / "docker"
         # Redirect only the canonical fixture container name to the CI service.
@@ -31,7 +35,7 @@ class BackupRestoreRolesPostgresTests(unittest.TestCase):
         cls.env = dict(os.environ, PATH=cls.temporary.name + ":" + os.environ["PATH"], TEST_REAL_DOCKER=cls.docker,
                        TEST_FIXTURE_DATABASE=cls.fixture_database,
                        WEB_SAAS_DATABASE="account", WEB_SAAS_POSTGRES_CONTAINER="web-saas-postgresql",
-                       WEB_SAAS_ENVIRONMENT="uat", WEB_SAAS_RUN_ID=os.environ["GITHUB_RUN_ID"],
+                       WEB_SAAS_ENVIRONMENT="uat", WEB_SAAS_RUN_ID=RUN_ID,
                        WEB_SAAS_EXPECTED_VERSION="2026092801", WEB_SAAS_SOURCE_DATABASE_ID="ci-fixture-account",
                        WEB_SAAS_BASELINE_ID="ci-fixture-baseline", WEB_SAAS_AUTHORIZED_SUBSCRIPTION_SAMPLE_ID="ci-only-sample",
                        WEB_SAAS_BACKUP_PASSPHRASE="fixture-only-encryption-material-32-characters")
