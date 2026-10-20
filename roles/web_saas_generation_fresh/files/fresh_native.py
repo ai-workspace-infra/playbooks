@@ -79,6 +79,10 @@ def main(spec):
     require(not set(services) & {'web-saas-accounts', 'web-saas-billing', 'web-saas-console'}, 'target writers must be absent')
     binary = spec['container_binary']
     require(re.fullmatch(r'/tmp/migratectl-[a-zA-Z0-9_-]+', binary) is not None, 'invalid tool path')
+    retained_binary = Path(spec['retained_binary'])
+    require(str(retained_binary).startswith('/data/backups/web-saas/' + generation + '/') and
+            hashlib.sha256(retained_binary.read_bytes()).hexdigest() == spec['binary_sha256'], 'retained tool digest mismatch')
+    run(['docker', 'cp', str(retained_binary), 'web-saas-postgresql:' + binary])
     require(run(['docker', 'exec', 'web-saas-postgresql', 'sha256sum', binary]).decode().split()[0] ==
             spec['binary_sha256'], 'tool digest mismatch')
     source_db = spec['source_database']
@@ -107,7 +111,26 @@ def main(spec):
         require(old.get('target_generation') == generation and old.get('source_generation') == source and
                 old.get('source_sha') == spec['source_sha'], 'checkpoint belongs to another operation')
         if action != 'verify':
-            return dict(status='recorded', action=action, checkpoint=str(receipt))
+            initial = old if action == 'initialize' else json.loads((root / 'initialize.json').read_text())
+            require(sql('postgres', "SELECT oid FROM pg_database WHERE datname='account'") == initial['target_database_oid'],
+                    'replay target identity changed')
+            require(schema_digest('account') == initial['schema_fingerprint'], 'replay schema drift')
+            if action in ['backup-restore', 'post-sync-restore']:
+                archive = root / ('account.after-sync.dump.enc' if action == 'post-sync-restore' else 'account.before-sync.dump.enc')
+                require(hashlib.sha256(archive.read_bytes()).hexdigest() == old['archive_sha256'], 'recorded archive changed')
+                restored = old['isolated_restore_database']
+                require(re.fullmatch(r'fresh_(after_)?verify_[0-9]+', restored) is not None, 'invalid recorded restore identity')
+                require(schema_digest(restored) == old['restored_schema_sha256'], 'restored schema drift')
+                if 'restored_rows_sha256' in old:
+                    require(rows_digest(restored) == old['restored_rows_sha256'], 'restored business rows drift')
+                    require(permissions_digest(restored) == old['permissions_sha256'], 'restored permissions drift')
+            if action in ['preview', 'align']:
+                comparison = migrate(['compare-full-business', '--source-dsn-env', 'SOURCE_DSN', '--target-dsn-env', 'TARGET_DSN',
+                                      '--environment', 'prod', '--writers-paused', '--schema-sha256', native,
+                                      '--billing-schema-sha256', billing, '--dry-run=false'], True)
+                require(comparison.get('full_business_equal') is True and comparison.get('target_writes') is False,
+                        'recorded synchronization no longer matches target')
+            return dict(status='revalidated', action=action, checkpoint=str(receipt), target_writes=False)
     result = {'action': action, 'target_generation': generation, 'source_generation': source,
               'source_sha': spec['source_sha'], 'schema_sha256': native,
               'utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -132,7 +155,7 @@ def main(spec):
         initial = json.loads((root / 'initialize.json').read_text())
         require(sql('postgres', "SELECT oid FROM pg_database WHERE datname='account'") == initial['target_database_oid'],
                 'target database identity changed')
-        require(sql('account', "SELECT version::text||':'||dirty::text FROM schema_migrations") == '2026102002:false',
+        require(sql('account', "SELECT version::text||':'||dirty::text FROM schema_migrations") == str(spec['schema_version']) + ':false',
                 'target schema checkpoint differs')
         if action in ['backup-restore', 'post-sync-restore']:
             key = spec['backup_key']
