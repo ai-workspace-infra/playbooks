@@ -10,6 +10,15 @@
 }
 {{ public_ingress.domains.billing }} {
     tls {{ public_ingress.tls.directory }}/current/fullchain.pem {{ public_ingress.tls.directory }}/current/key.pem
+    # Only ingestion POSTs reach Billing; its handler verifies the Bearer token.
+    # Forward Authorization unchanged, without storing a credential in Caddy.
+    @billing_ingest {
+        method POST
+        path /v1/ingest/snapshots
+    }
+    handle @billing_ingest {
+        reverse_proxy billing:8081
+    }
     @probe {
         method GET HEAD
         path /readyz /healthz /api/ping
