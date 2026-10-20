@@ -23,6 +23,13 @@ https://accounts-selfhost-{{ recovery.target.generation }}.{{ recovery.target.do
 }
 https://billing-selfhost-{{ recovery.target.generation }}.{{ recovery.target.domain_base }} {
     tls internal
+    @billing_ingest {
+        method POST
+        path /v1/ingest/snapshots
+    }
+    handle @billing_ingest {
+        reverse_proxy billing:8081
+    }
     @probe {
         method GET HEAD
         path /readyz /healthz /api/ping
