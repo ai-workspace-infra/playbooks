@@ -1,5 +1,6 @@
 """Real privilege checks; accepts only an explicitly named isolated Docker fixture."""
 import os
+import importlib.util
 from pathlib import Path
 import subprocess
 import unittest
@@ -59,6 +60,36 @@ class MigrationReaderPostgresTest(unittest.TestCase):
         self.assertIn('manual review required', rejected.stderr)
         self.assertEqual(sql("SELECT md5(rolpassword) FROM pg_authid WHERE rolname='readonly_release';").stdout,
                          role_before)
+
+        restore_container = os.environ.get('MIGRATION_READER_RESTORE_TEST_CONTAINER', '')
+        if restore_container:
+            self.assertTrue(restore_container.startswith('migration-reader-restore-fixture-'))
+            spec = importlib.util.spec_from_file_location(
+                'snapshot_policy_roles', ROOT / 'roles/web_saas_full_snapshot/files/policy_roles.py')
+            helper = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(helper)
+
+            def query(database, statement, selected=container):
+                result = subprocess.run(['docker', 'exec', '-i', '--user', 'postgres', selected,
+                                         'psql', '-XAtq', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres',
+                                         '-d', database], input=statement, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                return result.stdout.strip()
+
+            self.assertEqual(helper.restore_policy_role_references(query, restore_container), 1)
+            dump = subprocess.run(['docker', 'exec', '--user', 'postgres', container, 'pg_dump',
+                                   '-U', 'readonly_release', '-d', 'account', '-Fc', '--enable-row-security'],
+                                  capture_output=True)
+            self.assertEqual(dump.returncode, 0, dump.stderr)
+            restored = subprocess.run(['docker', 'exec', '-i', '--user', 'postgres', restore_container,
+                                       'pg_restore', '-U', 'postgres', '-d', 'account', '--no-owner',
+                                       '--no-acl', '--single-transaction', '--exit-on-error'],
+                                      input=dump.stdout, capture_output=True)
+            self.assertEqual(restored.returncode, 0, restored.stderr)
+            self.assertEqual(query('account', 'SELECT count(*) FROM public.audit_fixture;', restore_container), '1')
+            self.assertEqual(query('postgres', "SELECT rolcanlogin::text||':'||(rolpassword IS NULL)::text "
+                                              "FROM pg_authid WHERE rolname='readonly_release';", restore_container),
+                             'false:true')
 
 
 if __name__ == '__main__':
