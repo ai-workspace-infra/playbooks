@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import unittest
 import urllib.parse
+import tempfile
 import yaml
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -57,6 +58,14 @@ class BusinessDatabaseContractTests(unittest.TestCase):
                      'Prepare or retire only the declared application identity'):
             task=next(t for t in tasks if t['name']==name)
             self.assertTrue(task['no_log'])
+
+    def test_legacy_cleanup_preserves_admin_and_auth_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory(prefix='business-env-cleanup-fixture-') as folder:
+            root=Path(folder)
+            (root/'secrets.env').write_text('POSTGRES_PASSWORD=fixture-admin\nAUTH_TOKEN_ACCESS_SECRET=fixture-auth\nDATABASE_URL=obsolete-fixture\nRECOVERY_APP_PASSWORD=obsolete-fixture\n')
+            self.assertTrue(db.scrub_legacy_env(root))
+            self.assertEqual((root/'secrets.env').read_text(),'POSTGRES_PASSWORD=fixture-admin\nAUTH_TOKEN_ACCESS_SECRET=fixture-auth\n')
+            self.assertFalse(db.scrub_legacy_env(root))
 
 
 if __name__=='__main__':unittest.main()
