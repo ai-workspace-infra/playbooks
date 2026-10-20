@@ -1,0 +1,44 @@
+---
+- name: Require the explicitly authorized adjacent-generation primary transition
+  ansible.builtin.assert:
+    that:
+      - generation_fresh_primary_confirm | default(false) | bool
+      - generation_fresh_spec.source_generation is match('^prod-v[1-9][0-9]*$')
+      - generation_fresh_spec.target_generation is match('^prod-v[1-9][0-9]*$')
+      - (generation_fresh_spec.target_generation | regex_replace('^prod-v', '') | int) == (generation_fresh_spec.source_generation | regex_replace('^prod-v', '') | int) + 1
+      - ('web-saas-' ~ generation_fresh_spec.source_generation) in hostvars
+      - ansible_play_hosts_all == [inventory_hostname]
+
+- name: Verify reconciler and applications are stopped at both sides of the handoff
+  ansible.builtin.command:
+    argv: [docker, inspect, --format, '{{ "{{.State.Running}}" }}', '{{ item.1 }}']
+  delegate_to: '{{ item.0 }}'
+  loop: '{{ ["web-saas-" ~ generation_fresh_spec.source_generation, inventory_hostname] | product(["doco-cd", "web-saas-accounts", "web-saas-billing"]) | list }}'
+  register: generation_primary_writer_state
+  changed_when: false
+  failed_when: generation_primary_writer_state.stdout | trim != 'false'
+
+- name: Verify source application database connections are drained
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - web-saas-postgresql
+      - psql
+      - -U
+      - postgres
+      - -d
+      - account
+      - -XAtq
+      - -v
+      - ON_ERROR_STOP=1
+      - -c
+      - "SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND backend_type='client backend' AND usename NOT IN ('postgres','readonly_release')"
+  delegate_to: '{{ "web-saas-" ~ generation_fresh_spec.source_generation }}'
+  register: generation_primary_source_connections
+  changed_when: false
+  failed_when: generation_primary_source_connections.stdout | trim != '0'
+
+- name: Record only the verified gate for the local permission executor
+  ansible.builtin.set_fact:
+    generation_primary_gate_passed: true

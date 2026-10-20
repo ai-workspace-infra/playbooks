@@ -1,0 +1,89 @@
+---
+- name: Verify the selected GitOps revision before primary configuration
+  ansible.builtin.command:
+    argv: [git, -C, '{{ generation_fresh_gitops_checkout }}', rev-parse, HEAD]
+  delegate_to: localhost
+  become: false
+  register: generation_primary_gitops_head
+  changed_when: false
+
+- name: Require one explicit target and an immutable configuration revision
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname == 'web-saas-' ~ generation_fresh_spec.target_generation
+      - ansible_play_hosts_all == [inventory_hostname]
+      - generation_fresh_gitops_sha is match('^[0-9a-f]{40}$')
+      - generation_primary_gitops_head.stdout == generation_fresh_gitops_sha
+
+- name: Read the primary runtime declaration from the pinned GitOps tree
+  ansible.builtin.set_fact:
+    generation_primary_runtime: '{{ lookup("ansible.builtin.file", generation_fresh_gitops_checkout ~ "/compose/web-saas/runtime/" ~ generation_fresh_spec.target_generation ~ "-primary.yaml") | from_yaml }}'
+    generation_primary_ingress: '{{ lookup("ansible.builtin.file", generation_fresh_gitops_checkout ~ "/compose/web-saas/ingress/prod.yaml") | from_yaml }}'
+
+- name: Require the declared business identity and credential owners
+  ansible.builtin.assert:
+    that:
+      - generation_primary_runtime.kind == 'WebSaaSBusinessRuntime'
+      - generation_primary_runtime.source_generation == generation_fresh_spec.source_generation
+      - generation_primary_runtime.target_generation == generation_fresh_spec.target_generation
+      - generation_primary_runtime.runtime_mode == 'primary'
+      - generation_primary_runtime.database_role == 'generation_app'
+      - generation_primary_runtime.background_writers | bool
+      - generation_primary_runtime.smtp.vault_path is match('^kv/prod/')
+      - generation_primary_runtime.oauth.google.vault_path is match('^kv/prod/')
+      - generation_primary_runtime.stripe.vault_path is match('^kv/prod/')
+      - generation_primary_runtime.stripe.mode == 'sandbox'
+      - generation_primary_runtime.stripe.secret_key == 'SANDBOX_STRIPE_SECRET_KEY'
+      - generation_primary_runtime.stripe.webhook_key == 'SANDBOX_STRIPE_WEBHOOK_SECRET'
+    fail_msg: Runtime credentials and payment mode must match the reviewed primary declaration
+
+- name: Read primary credentials from their declared Vault owners
+  ansible.builtin.command:
+    argv: [vault, kv, get, -format=json, '{{ item }}']
+  environment:
+    VAULT_ADDR: '{{ lookup("ansible.builtin.env", "VAULT_ADDR") | default("https://vault.svc.plus", true) }}'
+  loop:
+    - '{{ generation_primary_runtime.smtp.vault_path }}'
+    - '{{ generation_primary_runtime.oauth.google.vault_path }}'
+    - '{{ generation_primary_runtime.stripe.vault_path }}'
+  delegate_to: localhost
+  become: false
+  register: generation_primary_vault
+  changed_when: false
+  no_log: true
+
+- name: Bind credential fields only to protected task memory
+  ansible.builtin.set_fact:
+    generation_primary_smtp: '{{ (generation_primary_vault.results[0].stdout | from_json).data.data }}'
+    generation_primary_google: '{{ (generation_primary_vault.results[1].stdout | from_json).data.data }}'
+    generation_primary_stripe: '{{ (generation_primary_vault.results[2].stdout | from_json).data.data }}'
+  no_log: true
+
+- name: Reject empty credentials, multiline env values or a payment-mode mismatch
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item | trim | length > 0
+      - "'\n' not in item and '\r' not in item"
+      - generation_primary_stripe[generation_primary_runtime.stripe.secret_key] is match('^sk_test_')
+  loop:
+    - '{{ generation_primary_smtp.username }}'
+    - '{{ generation_primary_smtp.password }}'
+    - '{{ generation_primary_google.client_id }}'
+    - '{{ generation_primary_google.client_secret }}'
+    - '{{ generation_primary_stripe[generation_primary_runtime.stripe.secret_key] }}'
+    - '{{ generation_primary_stripe[generation_primary_runtime.stripe.webhook_key] }}'
+  no_log: true
+
+- name: Stage primary credentials without changing any running container
+  ansible.builtin.template:
+    src: primary-runtime.env.j2
+    dest: /etc/xcontrol/web-saas-recovery/primary-runtime.env
+    mode: '0600'
+  no_log: true
+
+- name: Stage the primary Accounts configuration independently of the candidate
+  ansible.builtin.template:
+    src: account-primary.yaml.j2
+    dest: /etc/xcontrol/web-saas-recovery/account-primary.yaml
+    mode: '0600'
