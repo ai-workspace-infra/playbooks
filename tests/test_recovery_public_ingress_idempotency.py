@@ -17,6 +17,15 @@ class RecoveryPublicIngressIdempotencyTests(unittest.TestCase):
         self.assertIn('web_saas_public_ingress_activate | bool', activate['when'])
         self.assertTrue(any('public_ingress_published.changed' in item for item in activate['when']))
 
+    def test_activated_ingress_is_recorded_and_preserved_by_recovery(self):
+        tasks = yaml.safe_load((ROOT / 'roles/web_saas_public_ingress/tasks/main.yml').read_text())
+        record = next(task for task in tasks if task.get('name', '').startswith('Record the explicitly activated'))
+        self.assertEqual(record['when'], 'web_saas_public_ingress_activate | bool')
+        self.assertEqual(record['ansible.builtin.copy']['mode'], '0600')
+        recovery = yaml.safe_load((ROOT / 'roles/web_saas_generation_recovery/tasks/prepare.yml').read_text())
+        ingress = next(task for task in recovery if task.get('name', '').startswith('Prepare canonical Vault ingress'))
+        self.assertEqual(ingress['when'], 'not (recovery_public_ingress_active | bool)')
+
     def test_restore_and_fresh_deployment_share_ingress_owner(self):
         for file in ['roles/web_saas_generation_recovery/tasks/prepare.yml', 'roles/web_saas_generation_fresh/tasks/application.yml']:
             tasks = yaml.safe_load((ROOT / file).read_text())

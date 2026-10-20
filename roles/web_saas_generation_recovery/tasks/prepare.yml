@@ -132,6 +132,7 @@
     web_saas_public_ingress_image: "{{ lookup('ansible.builtin.file', web_saas_recovery_gitops_checkout ~ '/compose/web-saas/.env.' ~ recovery.target.generation) | regex_search('(?m)^CADDY_IMAGE=(.+)$', '\\1') | first }}"
     web_saas_public_ingress_recovery_read_only: true
     web_saas_public_ingress_activate: false
+  when: not (recovery_public_ingress_active | bool)
 
 - name: Install the guarded generation restore executor
   ansible.builtin.copy:

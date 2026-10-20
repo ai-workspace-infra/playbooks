@@ -77,3 +77,12 @@
     - web_saas_public_ingress_activate | bool
     - public_ingress_published.changed or public_ingress_certificates_changed | bool
   changed_when: true
+
+- name: Record the explicitly activated ingress mode for recovery reruns
+  ansible.builtin.copy:
+    content: "{{ {'generation': web_saas_public_ingress_generation, 'target': inventory_hostname, 'runtime_mode': ('candidate' if (web_saas_public_ingress_recovery_read_only | bool) else 'primary')} | to_nice_yaml }}"
+    dest: '{{ web_saas_public_ingress_state_file }}'
+    owner: root
+    group: root
+    mode: '0600'
+  when: web_saas_public_ingress_activate | bool
