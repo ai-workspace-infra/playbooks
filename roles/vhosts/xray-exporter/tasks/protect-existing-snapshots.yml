@@ -1,0 +1,23 @@
+---
+- name: Inspect previous snapshot configuration before rendering
+  ansible.builtin.stat:
+    path: '{{ xray_exporter_env_file }}'
+  register: previous_snapshot_file
+
+- name: Read previous snapshot configuration without disclosing values
+  ansible.builtin.slurp:
+    src: '{{ xray_exporter_env_file }}'
+  register: previous_snapshot_environment
+  no_log: true
+  when: previous_snapshot_file.stat.exists
+
+- name: Prevent metrics-only defaults from disabling an existing snapshot pipeline
+  ansible.builtin.assert:
+    that:
+      - xray_exporter_internal_service_token | trim | length > 0
+      - xray_exporter_vector_snapshot_url | trim | length > 0
+    fail_msg: Existing Vector snapshots require explicit canonical credentials and handoff settings; refusing to overwrite them with metrics-only defaults.
+  no_log: true
+  when:
+    - previous_snapshot_file.stat.exists
+    - (previous_snapshot_environment.content | b64decode) is search('(?m)^VECTOR_SNAPSHOT_URL="?http')
