@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HOST_VARS = (ROOT / "host_vars/web-saas-prod/web_saas.yml").read_text()
 DEFAULTS = (ROOT / "roles/vhosts/web_saas_host_config/defaults/main.yml").read_text()
 CADDY = (ROOT / "roles/vhosts/web_saas_host_config/templates/Caddyfile.j2").read_text()
+TASKS = (ROOT / "roles/vhosts/web_saas_host_config/tasks/main.yml").read_text()
 
 
 class WebSaasDomainAliasContractTest(unittest.TestCase):
@@ -41,6 +42,20 @@ class WebSaasDomainAliasContractTest(unittest.TestCase):
         self.assertIn("web_saas_host_config_brand_domain", DEFAULTS)
         self.assertIn("ACP_ALLOWED_ORIGINS", DEFAULTS)
         self.assertIn("web_saas_host_config_console_public_domain", DEFAULTS)
+
+    def test_prod_billing_allowlist_includes_all_v3_proxy_addresses(self):
+        for cidr in (
+            "172.237.3.205/32",
+            "35.79.83.48/32",
+            "172.236.133.66/32",
+            "45.79.140.168/32",
+            "54.199.179.163/32",
+            "165.154.32.241/32",
+        ):
+            self.assertIn(cidr, DEFAULTS)
+        self.assertIn("web_saas_host_config_deploy_env == 'prod'", TASKS)
+        self.assertIn("web_saas_host_config_billing_v3_agent_proxy_sources", TASKS)
+        self.assertIn("| unique | join(' ')", TASKS)
 
 
 if __name__ == "__main__":
