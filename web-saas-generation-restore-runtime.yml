@@ -1,0 +1,29 @@
+---
+- name: Verify the application connects to populated isolated restored data
+  hosts: '{{ generation_fresh_target | default("never-matches") }}'
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Require the exact target
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all == [inventory_hostname]
+          - inventory_hostname == 'web-saas-' ~ generation_fresh_spec.target_generation
+    - name: Install the actual runtime recovery probe
+      ansible.builtin.copy:
+        src: roles/web_saas_generation_fresh/files/restore_runtime.py
+        dest: /usr/local/libexec/web-saas-restore-runtime.py
+        mode: '0700'
+    - name: Execute an isolated restore with the pinned application image
+      ansible.builtin.command:
+        argv: [python3, /usr/local/libexec/web-saas-restore-runtime.py]
+        stdin: '{{ generation_fresh_spec | combine(generation_regression_spec) | combine(generation_postgres_spec) | combine(generation_runtime_spec) | to_json }}'
+      register: generation_runtime_result
+      failed_when: false
+      changed_when: true
+    - name: Report only redacted connection evidence
+      ansible.builtin.debug:
+        msg: '{{ generation_runtime_result.stdout | from_json }}'
+    - name: Reject an unverified runtime restore
+      ansible.builtin.assert:
+        that: generation_runtime_result.rc == 0

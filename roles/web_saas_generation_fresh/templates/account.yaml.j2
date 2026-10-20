@@ -1,0 +1,32 @@
+mode: server-agent
+log: {level: info}
+auth:
+  enable: true
+  token:
+    publicToken: "${AUTH_TOKEN_PUBLIC_TOKEN}"
+    refreshSecret: "${AUTH_TOKEN_REFRESH_SECRET}"
+    accessSecret: "${AUTH_TOKEN_ACCESS_SECRET}"
+    accessExpiry: 1h
+    refreshExpiry: 168h
+  oauth:
+    frontendUrl: "https://console-selfhost-{{ generation_fresh_spec.target_generation }}.svc.plus"
+server:
+  addr: ":8080"
+  publicUrl: "https://accounts-selfhost-{{ generation_fresh_spec.target_generation }}.svc.plus"
+  allowedOrigins:
+    - "https://console-selfhost-{{ generation_fresh_spec.target_generation }}.svc.plus"
+    - https://console.svc.plus
+    - https://xworktech.com
+    - https://www.xworktech.com
+  tls: {enabled: false}
+store:
+  driver: postgres
+  dsn: "${DATABASE_URL}"
+  maxOpenConns: 10
+  maxIdleConns: 3
+session: {ttl: 24h}
+smtp:
+  host: 127.0.0.1
+  port: 1025
+  from: candidate@invalid.example
+  tls: {mode: none}

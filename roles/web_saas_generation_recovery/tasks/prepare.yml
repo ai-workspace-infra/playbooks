@@ -122,14 +122,16 @@
   loop:
     - {src: account.yaml.j2, dest: account.yaml}
 
-- name: Render probe-only Caddy configuration only for isolated or inactive recovery
-  ansible.builtin.template:
-    src: Caddyfile.j2
-    dest: '{{ web_saas_recovery_config_root }}/Caddyfile'
-    owner: root
-    group: root
-    mode: '0600'
-  when: not recovery_public_ingress_active | bool
+- name: Prepare canonical Vault ingress using the same owner as fresh deployment
+  ansible.builtin.include_role:
+    name: web_saas_public_ingress
+  vars:
+    web_saas_public_ingress_target: '{{ inventory_hostname }}'
+    web_saas_public_ingress_generation: '{{ recovery.target.generation }}'
+    web_saas_public_ingress_manifest_file: '{{ web_saas_recovery_gitops_checkout }}/compose/web-saas/ingress/prod.yaml'
+    web_saas_public_ingress_image: "{{ lookup('ansible.builtin.file', web_saas_recovery_gitops_checkout ~ '/compose/web-saas/.env.' ~ recovery.target.generation) | regex_search('(?m)^CADDY_IMAGE=(.+)$', '\\1') | first }}"
+    web_saas_public_ingress_recovery_read_only: true
+    web_saas_public_ingress_activate: false
 
 - name: Install the guarded generation restore executor
   ansible.builtin.copy:

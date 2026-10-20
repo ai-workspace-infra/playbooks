@@ -1,0 +1,34 @@
+---
+- name: Execute migration regressions on isolated PostgreSQL fixtures only
+  hosts: '{{ generation_fresh_target | default("never-matches") }}'
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Require one exact candidate target
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all == [inventory_hostname]
+          - inventory_hostname == 'web-saas-' ~ generation_fresh_spec.target_generation
+    - name: Install the reviewed isolated fixture runner
+      ansible.builtin.copy:
+        src: roles/web_saas_generation_fresh/files/postgres_cases.py
+        dest: /usr/local/libexec/web-saas-generation-postgres-cases.py
+        mode: '0700'
+    - name: Install the pinned additive migration fixture
+      ansible.builtin.copy:
+        src: '{{ generation_fixture_lifecycle_sql }}'
+        dest: '{{ generation_postgres_spec.lifecycle_sql }}'
+        mode: '0600'
+    - name: Execute actual integration tests without production DSNs
+      ansible.builtin.command:
+        argv: [python3, /usr/local/libexec/web-saas-generation-postgres-cases.py]
+        stdin: '{{ generation_fresh_spec | combine(generation_regression_spec) | combine(generation_postgres_spec) | to_json }}'
+      register: generation_postgres_result
+      failed_when: false
+      changed_when: true
+    - name: Report redacted fixture evidence
+      ansible.builtin.debug:
+        msg: '{{ generation_postgres_result.stdout | from_json }}'
+    - name: Reject failed or skipped fixtures
+      ansible.builtin.assert:
+        that: generation_postgres_result.rc == 0

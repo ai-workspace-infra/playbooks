@@ -1,17 +1,24 @@
-{{ public_ingress.domains.console }} {
+{
+    admin off
+    auto_https disable_redirects
+}
+# BEGIN managed shared PROD public SNI
+{{ public_ingress.domains.console }}, console-selfhost-{{ web_saas_public_ingress_generation }}.svc.plus {
     tls {{ public_ingress.tls.directory }}/current/fullchain.pem {{ public_ingress.tls.directory }}/current/key.pem
     reverse_proxy console:3000
 }
-{{ public_ingress.domains.accounts }} {
+{{ public_ingress.domains.accounts }}, accounts-selfhost-{{ web_saas_public_ingress_generation }}.svc.plus {
     tls {{ public_ingress.tls.directory }}/current/fullchain.pem {{ public_ingress.tls.directory }}/current/key.pem
+{% if web_saas_public_ingress_recovery_read_only | bool %}
+    @mutating not method GET HEAD
+    respond @mutating 403
+{% endif %}
     reverse_proxy accounts:8080 {
         header_up X-Forwarded-Host svc.plus
     }
 }
-{{ public_ingress.domains.billing }} {
+{{ public_ingress.domains.billing }}, billing-selfhost-{{ web_saas_public_ingress_generation }}.svc.plus {
     tls {{ public_ingress.tls.directory }}/current/fullchain.pem {{ public_ingress.tls.directory }}/current/key.pem
-    # Only ingestion POSTs reach Billing; its handler verifies the Bearer token.
-    # Forward Authorization unchanged, without storing a credential in Caddy.
     @billing_ingest {
         method POST
         path /v1/ingest/snapshots
@@ -30,3 +37,12 @@
         respond 403
     }
 }
+{{ public_ingress.brand_domains.root }} {
+    tls {{ public_ingress.brand_tls.directory }}/current/fullchain.pem {{ public_ingress.brand_tls.directory }}/current/key.pem
+    reverse_proxy console:3000
+}
+{{ public_ingress.brand_domains.www }} {
+    tls {{ public_ingress.brand_tls.directory }}/current/fullchain.pem {{ public_ingress.brand_tls.directory }}/current/key.pem
+    redir https://{{ public_ingress.brand_domains.root }}{uri} 301
+}
+# END managed shared PROD public SNI

@@ -1,0 +1,9 @@
+---
+- name: Prepare one fresh isolated candidate through the shared runtime owners
+  hosts: '{{ generation_fresh_target | default("never-matches") }}'
+  gather_facts: false
+  become: true
+  tasks:
+    - ansible.builtin.include_role:
+        name: web_saas_generation_fresh
+        tasks_from: application.yml

@@ -1,0 +1,70 @@
+---
+- name: Read the GitOps generation upgrade contract
+  ansible.builtin.set_fact:
+    generation_fresh_manifest: '{{ lookup("ansible.builtin.file", generation_fresh_manifest_file) | from_yaml }}'
+
+- name: Require one GCP generation and a non-cutover operation
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname == 'web-saas-' ~ generation_fresh_spec.target_generation
+      - ansible_play_hosts_all == [inventory_hostname]
+      - generation_fresh_spec.action in ['initialize', 'backup-restore', 'post-sync-restore', 'preview', 'align', 'verify']
+      - generation_fresh_manifest.kind == 'WebSaaSGenerationUpgrade'
+      - generation_fresh_manifest.target.strategy == 'fresh-native'
+      - generation_fresh_manifest.target.generation == generation_fresh_spec.target_generation
+      - generation_fresh_manifest.source.generation == generation_fresh_spec.source_generation
+      - generation_fresh_manifest.tool.source_sha == generation_fresh_spec.source_sha
+      - generation_fresh_manifest.tool.binary_sha256 == generation_fresh_spec.binary_sha256
+      - generation_fresh_manifest.target.native_schema_sha256 == generation_fresh_spec.schema_sha256
+      - generation_fresh_manifest.target.billing_schema_sha256 == generation_fresh_spec.billing_sha256
+      - generation_fresh_manifest.cutover.automatic == false
+
+- name: Read the existing backup key from Vault without persisting its value
+  ansible.builtin.command:
+    argv: [vault, kv, get, -field=BACKUP_ENCRYPTION_PASS, kv/CICD]
+  environment:
+    VAULT_ADDR: https://vault.svc.plus
+  delegate_to: localhost
+  become: false
+  register: generation_fresh_backup_key
+  changed_when: false
+  no_log: true
+  when: generation_fresh_spec.action in ['backup-restore', 'post-sync-restore']
+
+- name: Bind the key only to this backup operation
+  ansible.builtin.set_fact:
+    generation_fresh_execution_spec: '{{ generation_fresh_spec | combine({"backup_key": generation_fresh_backup_key.stdout}) if generation_fresh_spec.action in ["backup-restore", "post-sync-restore"] else generation_fresh_spec }}'
+  no_log: true
+
+- name: Install the target-only migration executor
+  ansible.builtin.copy:
+    src: fresh_native.py
+    dest: /usr/local/libexec/web-saas-fresh-native.py
+    mode: '0700'
+
+- name: Install the reviewed Billing schema artifact
+  ansible.builtin.copy:
+    src: '{{ generation_fresh_billing_sql }}'
+    dest: '{{ generation_fresh_spec.billing_sql }}'
+    mode: '0600'
+
+- name: Execute one guarded target stage using runtime-only credentials
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/web-saas-fresh-native.py]
+    stdin: '{{ generation_fresh_execution_spec | to_json }}'
+  register: generation_fresh_result
+  changed_when: generation_fresh_spec.action in ['initialize', 'backup-restore', 'post-sync-restore', 'align']
+  failed_when: false
+  no_log: true
+
+- name: Stop at the failed stage with only its controlled error
+  ansible.builtin.fail:
+    msg: '{{ (generation_fresh_result.stdout | from_json).error | default("target stage failed") }}'
+  when: generation_fresh_result.rc != 0
+
+- name: Report the completed stage without credentials
+  ansible.builtin.debug:
+    msg:
+      action: '{{ generation_fresh_spec.action }}'
+      status: completed
+      evidence: '{{ generation_fresh_spec.checkpoint }}/{{ "verify-full" if generation_fresh_spec.action == "verify" else generation_fresh_spec.action }}.json'

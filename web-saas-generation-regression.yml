@@ -1,0 +1,36 @@
+---
+- name: Execute historical cases without granting production write ownership
+  hosts: '{{ generation_fresh_target | default("never-matches") }}'
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Read the canonical token for an in-memory process comparison
+      ansible.builtin.command:
+        argv: [vault, kv, get, -field=INTERNAL_SERVICE_TOKEN, kv/prod/accounts/runtime]
+      environment:
+        VAULT_ADDR: https://vault.svc.plus
+      register: regression_token
+      delegate_to: localhost
+      become: false
+      no_log: true
+      changed_when: false
+    - name: Install the reviewed historical case runner
+      ansible.builtin.copy:
+        src: roles/web_saas_generation_fresh/files/regression_cases.py
+        dest: /usr/local/libexec/web-saas-generation-regression.py
+        mode: '0700'
+    - name: Run every case and retain independent failure evidence
+      ansible.builtin.command:
+        argv: [python3, /usr/local/libexec/web-saas-generation-regression.py]
+        stdin: '{{ generation_fresh_spec | combine(generation_regression_spec) | combine({"case_id": item, "expected_token": regression_token.stdout}) | to_json }}'
+      loop: '{{ generation_regression_cases }}'
+      register: generation_case_results
+      failed_when: false
+      changed_when: false
+      no_log: true
+    - name: Report actual case statuses and evidence paths
+      ansible.builtin.debug:
+        msg: '{{ {"case_id": (item.stdout | from_json).case_id, "status": (item.stdout | from_json).status, "exit_code": item.rc, "evidence": (item.stdout | from_json).evidence} }}'
+      loop: '{{ generation_case_results.results }}'
+      loop_control:
+        label: '{{ item.item }}'

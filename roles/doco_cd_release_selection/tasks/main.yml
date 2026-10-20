@@ -3,7 +3,7 @@
   ansible.builtin.assert:
     that:
       - doco_release_repository is match('^https://github.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?$')
-      - doco_release_reference is match('^refs/tags/[A-Za-z0-9][A-Za-z0-9._-]+$')
+      - doco_release_reference is match('^(refs/tags/[A-Za-z0-9][A-Za-z0-9._-]+|[0-9a-f]{40})$')
       - doco_release_target is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
       - doco_release_interval | int >= 30
 
@@ -27,6 +27,7 @@
     replace: '      POLL_CONFIG: {{ [{"url": doco_release_repository, "reference": doco_release_reference, "target": doco_release_target, "interval": doco_release_interval | int}] | to_json | quote }}'
     backup: true
   no_log: true
+  register: doco_release_selected
 
 - name: Protect controller configuration
   ansible.builtin.file:
@@ -44,3 +45,4 @@
   ansible.builtin.command:
     argv: [docker, compose, --project-name, '{{ doco_release_project }}', -f, '{{ doco_release_compose }}', up, -d, --force-recreate, app]
   changed_when: true
+  when: doco_release_selected.changed
