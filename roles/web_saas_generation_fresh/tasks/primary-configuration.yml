@@ -7,6 +7,15 @@
   register: generation_primary_gitops_head
   changed_when: false
 
+- name: Reject a dirty checkout for primary runtime inputs
+  ansible.builtin.command:
+    argv: [git, -C, '{{ generation_fresh_gitops_checkout }}', status, --porcelain, --untracked-files=all]
+  delegate_to: localhost
+  become: false
+  register: generation_primary_gitops_dirty
+  changed_when: false
+  failed_when: generation_primary_gitops_dirty.stdout | trim | length > 0
+
 - name: Require one explicit target and an immutable configuration revision
   ansible.builtin.assert:
     that:
@@ -14,6 +23,9 @@
       - ansible_play_hosts_all == [inventory_hostname]
       - generation_fresh_gitops_sha is match('^[0-9a-f]{40}$')
       - generation_primary_gitops_head.stdout == generation_fresh_gitops_sha
+      - generation_fresh_spec.source_generation is match('^prod-v[1-9][0-9]*$')
+      - generation_fresh_spec.target_generation is match('^prod-v[1-9][0-9]*$')
+      - (generation_fresh_spec.target_generation | regex_replace('^prod-v', '') | int) == (generation_fresh_spec.source_generation | regex_replace('^prod-v', '') | int) + 1
 
 - name: Read the primary runtime declaration from the pinned GitOps tree
   ansible.builtin.set_fact:

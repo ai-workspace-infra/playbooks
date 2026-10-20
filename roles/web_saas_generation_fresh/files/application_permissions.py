@@ -18,6 +18,7 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM pg_class WHERE relowner = r.oid)
      OR EXISTS (SELECT 1 FROM pg_namespace WHERE nspowner = r.oid)
+     OR EXISTS (SELECT 1 FROM pg_proc WHERE proowner = r.oid)
      OR EXISTS (SELECT 1 FROM pg_database WHERE datdba = r.oid) THEN
     RAISE EXCEPTION 'application role must not own schema objects';
   END IF;
