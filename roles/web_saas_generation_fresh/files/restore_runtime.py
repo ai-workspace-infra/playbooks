@@ -66,7 +66,7 @@ def main(spec):
             query(pg, 'account', 'GRANT INSERT, UPDATE, DELETE ON TABLE public.sessions TO generation_app; '
                   'ALTER ROLE generation_app SET default_transaction_read_only=off')
             query(pg, 'account', "INSERT INTO users(uuid,username,password,email,proxy_uuid,email_verified_at) VALUES "
-                  "('00000000-0000-0000-0000-000000009901','login-fixture',crypt('isolated-fixture-password',gen_salt('bf'))," 
+                  "('00000000-0000-0000-0000-000000009901','login-fixture',crypt('isolated-fixture-password',gen_salt('bf')),"
                   "'login-fixture@example.invalid','00000000-0000-0000-0000-000000009902',now())")
             result['protected_writes_denied'] = query(pg, 'account', "SELECT bool_and(NOT has_table_privilege('generation_app',t,'INSERT,UPDATE,DELETE,TRUNCATE')) "
                   "FROM unnest(ARRAY['public.users','public.subscriptions','public.subscription_records','public.account_quota_states','public.billing_ledger','public.finance_payments','public.finance_refunds']) t") == 't'
