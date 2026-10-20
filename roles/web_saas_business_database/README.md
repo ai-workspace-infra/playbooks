@@ -3,7 +3,8 @@
 GitOps `compose/web-saas/runtime/prod.yaml#business_database` selects
 `account_user` and references the existing environment-scoped password. Only
 the controller reads Vault at execution; GitOps contains no password or DSN.
-Accounts and Billing consume the same protected raw `business-database.env`.
+Accounts and Billing consume the same protected `business-database.env`, with
+the password URI-encoded so ordinary dotenv parsing cannot interpolate it.
 No alternative business role or credential is generated during recovery.
 
 Run `web-saas-business-database.yml` with one verified target, clean pinned

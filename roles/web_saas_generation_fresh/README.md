@@ -71,8 +71,9 @@ It uses the pinned `runtime/<target>-primary.yaml` and fails on missing Vault
 fields. Existing candidate containers do not mount these files. The initial
 primary declaration deliberately retains the serving generation's Stripe test
 mode; live payments require a separate reviewed declaration. The primary Compose
-profile loads the credential env file as raw values to avoid interpolating secret
-characters. No credential is printed or written to the local controller checkout.
+profile uses ordinary env files supported by the pinned CD parser. Secret values
+are quoted/escaped by the template, with literal dollar signs protected from
+interpolation. No credential is printed or written to the controller checkout.
 
 For a disposable PostgreSQL 17 container named
 `generation-permissions-fixture-<unique-run>`, run
