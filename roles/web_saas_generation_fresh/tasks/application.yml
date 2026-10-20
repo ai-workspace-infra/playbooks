@@ -31,7 +31,7 @@
 - name: Prepare the read-only application connection independently of restored databases
   ansible.builtin.command:
     argv: [python3, /usr/local/libexec/web-saas-generation-app-prepare.py]
-    stdin: '{{ generation_fresh_spec | to_json }}'
+    stdin: '{{ generation_fresh_spec | combine({"candidate_auth_sessions": (lookup("ansible.builtin.file", generation_fresh_gitops_checkout ~ "/compose/web-saas/recovery/" ~ generation_fresh_spec.target_generation ~ "-upgrade.yaml") | from_yaml).target.candidate_auth_sessions | default(false)}) | to_json }}'
   register: generation_app_prepared
   changed_when: (generation_app_prepared.stdout | from_json).changed | bool
   no_log: true

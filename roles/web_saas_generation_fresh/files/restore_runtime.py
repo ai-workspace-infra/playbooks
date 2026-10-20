@@ -61,6 +61,15 @@ def main(spec):
         query(pg, 'account', 'GRANT CONNECT ON DATABASE account TO generation_app; GRANT USAGE ON SCHEMA public TO generation_app; '
               'GRANT SELECT ON ALL TABLES IN SCHEMA public TO generation_app; GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO generation_app; '
               'ALTER ROLE generation_app SET default_transaction_read_only=on')
+        auth_probe = spec.get('candidate_auth_sessions') is True
+        if auth_probe:
+            query(pg, 'account', 'GRANT INSERT, UPDATE, DELETE ON TABLE public.sessions TO generation_app; '
+                  'ALTER ROLE generation_app SET default_transaction_read_only=off')
+            query(pg, 'account', "INSERT INTO users(uuid,username,password,email,proxy_uuid,email_verified_at) VALUES "
+                  "('00000000-0000-0000-0000-000000009901','login-fixture',crypt('isolated-fixture-password',gen_salt('bf'))," 
+                  "'login-fixture@example.invalid','00000000-0000-0000-0000-000000009902',now())")
+            result['protected_writes_denied'] = query(pg, 'account', "SELECT bool_and(NOT has_table_privilege('generation_app',t,'INSERT,UPDATE,DELETE,TRUNCATE')) "
+                  "FROM unnest(ARRAY['public.users','public.subscriptions','public.subscription_records','public.account_quota_states','public.billing_ledger','public.finance_payments','public.finance_refunds']) t") == 't'
         identity = {'Host': '127.0.0.1', 'Port': 5432, 'Database': 'account', 'Role': 'generation_app'}
         args = ['docker', 'run', '-d', '--name', app, '--network', 'container:' + pg, '--memory=384m',
                 '--mount', 'type=bind,src=/etc/xcontrol/web-saas-recovery/account.yaml,dst=/app/config/account.yaml,readonly']
@@ -83,6 +92,17 @@ def main(spec):
         result['actual_accounts_ready'] = ready
         result['actual_database_connections'] = int(query(pg, 'account', "SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename='generation_app'"))
         result['status'] = 'PASS' if ready and result['actual_database_connections'] > 0 and result['business_counts_equal'] else 'FAIL'
+        if auth_probe and ready:
+            login = run(['docker', 'exec', app, 'curl', '-sS', '--max-time', '10', '-w', '\n%{http_code}',
+                         '-H', 'Content-Type: application/json', '--data', '{"identifier":"login-fixture@example.invalid","password":"isolated-fixture-password"}',
+                         'http://127.0.0.1:8080/api/login'], False)
+            body, _, status = login.stdout.rpartition('\n')
+            session = json.loads(body) if body.startswith('{') else {}
+            result['login_http_status'] = int(status or '0')
+            result['session_token_issued'] = isinstance(session.get('token'), str) and bool(session.get('token'))
+            result['session_persisted'] = query(pg, 'account', "SELECT count(*) FROM sessions WHERE user_uuid='00000000-0000-0000-0000-000000009901'") == '1'
+            if not (login.returncode == 0 and status == '200' and result['session_token_issued'] and result['session_persisted'] and result['protected_writes_denied']):
+                result['status'] = 'FAIL'
         result['exit_code'] = 0 if result['status'] == 'PASS' else 1
     except Exception as error:
         result['error'] = type(error).__name__
