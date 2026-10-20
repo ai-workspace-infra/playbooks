@@ -66,6 +66,8 @@ def main(spec):
                 start(other, 'container:' + name, 5544)
             elif extra:
                 run(['docker', 'exec', name, 'createdb', '-U', 'postgres', extra])
+                if case_id == 'business-conflict-rollback':
+                    run(['docker', 'exec', name, 'createdb', '-U', 'postgres', 'full_business_native_source'])
             run(['docker', 'exec', name, 'mkdir', '-p', '/work/internal/migrate/testdata', '/work/sql/migrations'])
             run(['docker', 'cp', str(binary), name + ':/work/integration-tests'])
             run(['docker', 'cp', spec['billing_sql'], name + ':/work/internal/migrate/testdata/cloud_vendor_costs_native.sql'])
