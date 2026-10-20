@@ -2,7 +2,15 @@
 set -euo pipefail
 umask 077
 
-fail() { printf '%s\n' "$1" >&2; exit 2; }
+phase='preflight'
+diagnostic_path="${WEB_SAAS_DIAGNOSTIC_PATH:-}"
+write_diagnostic() {
+  [[ -n "$diagnostic_path" ]] || return 0
+  umask 077
+  printf '%s\n' "$1" >"$diagnostic_path"
+  chmod 0600 "$diagnostic_path"
+}
+fail() { [[ -s "$diagnostic_path" ]] || write_diagnostic "backup_failed:${phase}:$1"; printf '%s\n' "$1" >&2; exit 2; }
 require() { [[ -n "${!1:-}" ]] || fail "missing required input: $1"; }
 if [[ ${WEB_SAAS_BACKUP_KEY_STDIN:-false} == true ]]; then
   IFS= read -r WEB_SAAS_BACKUP_PASSPHRASE || fail 'missing stdin encryption key'
@@ -41,14 +49,48 @@ psql_value() {
   docker exec "$WEB_SAAS_POSTGRES_CONTAINER" psql -U postgres -d "$1" -XAtq -v ON_ERROR_STOP=1 -c "$2"
 }
 
-# Hash all public table rows and sequence states without emitting row values or
-# writing a plaintext file. Use a read-only repeatable-read snapshot and stable
-# serialization settings; concurrent writes cause restore verification to block.
+pending=''
+snapshot_pid=''
+snapshot_id=''
+snapshot_read_fd=''
+snapshot_write_fd=''
+cleanup_backup() {
+  local status=$?
+  if [[ -n "$pending" && -e "$pending" ]]; then rm -f -- "$pending"; fi
+  if [[ -n "$snapshot_pid" ]]; then
+    printf 'ROLLBACK;\n\\q\n' >&"$snapshot_write_fd" 2>/dev/null || true
+    wait "$snapshot_pid" 2>/dev/null || true
+    snapshot_pid=''
+  fi
+  return "$status"
+}
+trap cleanup_backup EXIT
+
+begin_exported_snapshot() {
+  coproc WEB_SAAS_SNAPSHOT_SESSION { docker exec -i "$WEB_SAAS_POSTGRES_CONTAINER" psql -U postgres -d "$WEB_SAAS_DATABASE" -XAtq -v ON_ERROR_STOP=1; }
+  snapshot_pid="$WEB_SAAS_SNAPSHOT_SESSION_PID"
+  snapshot_read_fd="${WEB_SAAS_SNAPSHOT_SESSION[0]}"
+  snapshot_write_fd="${WEB_SAAS_SNAPSHOT_SESSION[1]}"
+  printf 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\nSELECT pg_export_snapshot();\n' >&"$snapshot_write_fd"
+  IFS= read -r snapshot_id <&"$snapshot_read_fd" || return 1
+  [[ "$snapshot_id" =~ ^[0-9A-Fa-f-]+$ ]]
+}
+
+snapshot_psql_value() {
+  local database="$1" sql="$2"
+  {
+    printf '%s\n' 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;' "SET TRANSACTION SNAPSHOT '$snapshot_id';" "$sql;" 'COMMIT;'
+  } | docker exec -i "$WEB_SAAS_POSTGRES_CONTAINER" psql -U postgres -d "$database" -XAtq -v ON_ERROR_STOP=1
+}
+
+# Hash all public table rows under the same exported MVCC snapshot used by
+# pg_dump. Sequence state is not MVCC-versioned, so compare it before and after
+# the archive operation and fail closed if a sequence advanced during it.
 data_fingerprint() {
   local commands
-  commands="$(psql_value "$1" "SELECT statement FROM (SELECT format('SELECT %L; SELECT to_jsonb(t)::text FROM %I.%I t ORDER BY (to_jsonb(t)::text) COLLATE \"C\";', 'table:public.' || c.relname, 'public', c.relname) AS statement FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','m') UNION ALL SELECT format('SELECT %L || last_value::text || %L || is_called::text FROM %I.%I;', 'sequence:public.' || c.relname || ':', ':', 'public', c.relname) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='S' ) statements ORDER BY statement COLLATE \"C\"")" || return
+  commands="$(snapshot_psql_value "$1" "SELECT statement FROM (SELECT format('SELECT %L; SELECT to_jsonb(t)::text FROM %I.%I t ORDER BY (to_jsonb(t)::text) COLLATE \"C\";', 'table:public.' || c.relname, 'public', c.relname) AS statement FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','m') UNION ALL SELECT format('SELECT %L || last_value::text || %L || is_called::text FROM %I.%I;', 'sequence:public.' || c.relname || ':', ':', 'public', c.relname) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='S' ) statements ORDER BY statement COLLATE \"C\"")" || return
   {
-    printf "%s\n" "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;" "SET LOCAL TIMEZONE='UTC';" "SET LOCAL DATESTYLE='ISO,YMD';" "SET LOCAL extra_float_digits=3;"
+    printf '%s\n' 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;' "SET TRANSACTION SNAPSHOT '$snapshot_id';" "SET LOCAL TIMEZONE='UTC';" "SET LOCAL DATESTYLE='ISO,YMD';" 'SET LOCAL extra_float_digits=3;'
     printf '%s\n' "$commands" "COMMIT;"
   } | docker exec -i "$WEB_SAAS_POSTGRES_CONTAINER" psql -U postgres -d "$1" -XAtq -v ON_ERROR_STOP=1 | sha256sum | awk '{print $1}'
 }
@@ -57,30 +99,41 @@ if [[ -n "${WEB_SAAS_MIGRATION_DIRTY_COLUMN:-}" ]]; then
 else
   migration_dirty_sql="'not-applicable'"
 fi
-source_state="$(psql_value "$WEB_SAAS_DATABASE" "SELECT (SELECT count(*) FROM public.${WEB_SAAS_MIGRATION_TABLE})::text || ':' || (SELECT ${WEB_SAAS_MIGRATION_VERSION_COLUMN}::text FROM public.${WEB_SAAS_MIGRATION_TABLE} ORDER BY ${WEB_SAAS_MIGRATION_ORDER_COLUMN} DESC LIMIT 1) || ':' || ${migration_dirty_sql} || ',' || (SELECT count(*) FROM public.${WEB_SAAS_USERS_TABLE})::text || ',' || (SELECT count(*) FROM public.${WEB_SAAS_SUBSCRIPTION_TABLE})::text")" || fail 'could not read source database state'
+phase='open_exported_snapshot'
+begin_exported_snapshot || fail 'could not open a consistent read-only database snapshot'
+phase='read_source_state'
+source_state="$(snapshot_psql_value "$WEB_SAAS_DATABASE" "SELECT (SELECT count(*) FROM public.${WEB_SAAS_MIGRATION_TABLE})::text || ':' || (SELECT ${WEB_SAAS_MIGRATION_VERSION_COLUMN}::text FROM public.${WEB_SAAS_MIGRATION_TABLE} ORDER BY ${WEB_SAAS_MIGRATION_ORDER_COLUMN} DESC LIMIT 1) || ':' || ${migration_dirty_sql} || ',' || (SELECT count(*) FROM public.${WEB_SAAS_USERS_TABLE})::text || ',' || (SELECT count(*) FROM public.${WEB_SAAS_SUBSCRIPTION_TABLE})::text")" || fail 'could not read source database state'
 IFS=',' read -r migration_state user_count subscription_count <<<"$source_state"
 [[ "$migration_state" == "${WEB_SAAS_EXPECTED_MIGRATION_ROWS}:${WEB_SAAS_EXPECTED_VERSION}:${WEB_SAAS_MIGRATION_DIRTY_COLUMN:+false}" || "$migration_state" == "${WEB_SAAS_EXPECTED_MIGRATION_ROWS}:${WEB_SAAS_EXPECTED_VERSION}:not-applicable" ]] || fail 'source migration state is missing, dirty, duplicated, or not the exact target'
 [[ "$user_count" =~ ^[1-9][0-9]*$ ]] || fail 'source user sample is empty'
 [[ "$subscription_count" =~ ^[0-9]+$ ]] || fail 'subscription count is invalid'
-source_schema="$(docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" --schema-only --schema=public --no-owner --no-privileges | sed '/^\\restrict /d; /^\\unrestrict /d' | sha256sum | awk '{print $1}')" || fail 'could not fingerprint source schema'
+phase='fingerprint_source'
+source_schema="$(docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" --snapshot="$snapshot_id" --schema-only --schema=public --no-owner --no-privileges | sed '/^\\restrict /d; /^\\unrestrict /d' | sha256sum | awk '{print $1}')" || fail 'could not fingerprint source schema'
 [[ "$source_schema" =~ ^[0-9a-f]{64}$ ]] || fail 'source schema fingerprint is invalid'
 source_data="$(data_fingerprint "$WEB_SAAS_DATABASE")" || fail 'could not fingerprint source rows and sequences'
 [[ "$source_data" =~ ^[0-9a-f]{64}$ ]] || fail 'source data fingerprint is invalid'
 database_system_identifier="$(psql_value "$WEB_SAAS_DATABASE" 'SELECT system_identifier::text FROM pg_control_system()')" || fail 'could not read PostgreSQL system identity'
 [[ "$database_system_identifier" =~ ^[0-9]+$ ]] || fail 'PostgreSQL system identity is invalid'
 
+phase='create_encrypted_archive'
 pending="$(mktemp "$WEB_SAAS_BACKUP_ROOT/.account.dump.enc.pending.XXXXXX")"
-trap 'rm -f -- "$pending"' EXIT
 chmod 0600 "$pending"
-docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" -Fc --schema=public --no-owner --no-privileges \
+docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" --snapshot="$snapshot_id" -Fc --schema=public --no-owner --no-privileges \
   | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -pass env:WEB_SAAS_BACKUP_PASSPHRASE >"$pending"
 [[ -s "$pending" ]] || fail 'encrypted archive is empty'
 mv -n -- "$pending" "$archive"
 [[ ! -e "$pending" ]] || fail 'archive destination appeared concurrently; pending file was not published'
-trap - EXIT
 chmod 0600 "$archive"
 archive_sha256="$(sha256sum "$archive" | awk '{print $1}')"
 [[ "$archive_sha256" =~ ^[0-9a-f]{64}$ ]] || fail 'archive checksum is invalid'
+phase='verify_sequence_stability'
+post_dump_data="$(data_fingerprint "$WEB_SAAS_DATABASE")" || fail 'could not re-fingerprint source rows after archive creation'
+[[ "$post_dump_data" == "$source_data" ]] || fail 'sequence state changed during backup; encrypted artifact retained without a receipt'
+phase='close_exported_snapshot'
+printf 'ROLLBACK;\n\\q\n' >&"$snapshot_write_fd"
+wait "$snapshot_pid" || fail 'could not close exported source snapshot'
+snapshot_pid=''
+phase='finalize_archive'
 sync -f "$archive"
 sync -f "$WEB_SAAS_BACKUP_ROOT"
 

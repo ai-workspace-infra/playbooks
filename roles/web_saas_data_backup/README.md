@@ -3,6 +3,12 @@
 Creates one immutable encrypted custom-format archive beneath
 `/data/backups/web-saas/<environment>/<release-tag>/<run-id>/`. The separate
 `web_saas_data_restore_verify` role restores it into `release_verify_<run-id>`.
+This is an online backup: the source application, Doco-CD and PostgreSQL remain
+running. The script holds a PostgreSQL exported MVCC snapshot across row/schema
+fingerprinting and `pg_dump`, so the archive represents one consistent database
+boundary. Writes committed after that boundary are not included; reconcile them
+later on the isolated target when required. Snapshot creation itself never
+requires freezing source writers.
 The actual `/data` mount is mandatory. The script streams `pg_dump` directly
 through OpenSSL; no plaintext dump or password file is created. The password is
 received only as a task environment value and is hidden from Ansible output.

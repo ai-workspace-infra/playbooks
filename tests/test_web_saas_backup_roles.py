@@ -39,6 +39,14 @@ class WebSaaSBackupRoleContractTests(unittest.TestCase):
         self.assertIn('"restore_gate_status": "passed"', source)
         self.assertIn('"g3_reason_code": None if int(subscriptions) > 0 else "NONEMPTY_SUBSCRIPTION_SAMPLE_REQUIRED"', source)
 
+    def test_backup_fingerprints_and_dumps_the_same_exported_snapshot(self) -> None:
+        source = BACKUP.read_text()
+        self.assertIn('SELECT pg_export_snapshot()', source)
+        self.assertIn('SET TRANSACTION SNAPSHOT', source)
+        self.assertIn('--snapshot="$snapshot_id" -Fc', source)
+        self.assertIn('[[ "$post_dump_data" == "$source_data" ]] || fail', source)
+        self.assertIn('sequence state changed during backup', source)
+
     def test_restore_rejects_missing_inputs_before_database_access(self) -> None:
         result = self.run_rejected(RESTORE, {})
         self.assertEqual(result.returncode, 2)
@@ -50,6 +58,20 @@ class WebSaaSBackupRoleContractTests(unittest.TestCase):
         self.assertIn('"restore_gate_status": "passed"', source)
         self.assertIn('"g3_status": "passed" if int(subscriptions) > 0 else "blocked"', source)
         self.assertIn("web_saas_data_restore_verify_expected_subscriptions | string is match('^[0-9]+$')", RESTORE_TASKS.read_text())
+
+    def test_restore_diagnostic_contains_only_nonsecret_fingerprint_values(self) -> None:
+        source = RESTORE.read_text()
+        self.assertIn('data_fingerprint_mismatch:expected=${source_data}:actual=${restored_data}', source)
+        self.assertIn('[[ -s "$diagnostic_path" ]] || write_diagnostic', source)
+
+    def test_restore_retention_is_opt_in_and_only_after_successful_verification(self) -> None:
+        source = RESTORE.read_text()
+        self.assertIn('WEB_SAAS_RETAIN_RESTORE="${WEB_SAAS_RETAIN_RESTORE-false}"', source)
+        self.assertIn('[[ "$WEB_SAAS_RETAIN_RESTORE" =~ ^(true|false)$ ]]', source)
+        self.assertIn('"$WEB_SAAS_RETAIN_RESTORE" == true && "$exit_status" == 0 && "$restore_verified" == 1', source)
+        self.assertIn('"restore_retained": os.environ.get("WEB_SAAS_RETAIN_RESTORE", "false") == "true"', source)
+        self.assertIn("web_saas_data_restore_verify_retain_restore: false", (ROOT / "roles/web_saas_data_restore_verify/defaults/main.yml").read_text())
+        self.assertIn("web_saas_cold_recovery_retain_restore: false", (ROOT / "roles/web_saas_cold_recovery/defaults/main.yml").read_text())
 
     def test_restore_rejects_invalid_expected_subscription_count(self) -> None:
         env = {

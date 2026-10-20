@@ -17,6 +17,18 @@ class WebSaaSColdRecoveryRoleContractTests(unittest.TestCase):
         self.assertIn("web_saas_cold_recovery_mode: backup", source)
         self.assertIn("web_saas_cold_recovery_mode: stage", source)
         self.assertIn("web_saas_cold_recovery_mode: restore_verify", source)
+        self.assertIn("ONLINE snapshot/restore workflow", source)
+        self.assertIn("never stops applications", source)
+
+    def test_online_backup_uses_exported_snapshot_without_service_stop(self) -> None:
+        source = (ROLE.parent / "web_saas_data_backup/files/create_encrypted_backup.sh").read_text()
+        writer_state = (ROLE.parent / "web_saas_usage_reconciliation/tasks/writer_state.yml").read_text()
+        self.assertIn("pg_export_snapshot()", source)
+        self.assertIn("--snapshot=\"$snapshot_id\"", source)
+        self.assertNotIn("docker stop", source)
+        self.assertNotIn("web-saas-console", writer_state)
+        self.assertNotIn("web-saas-caddy", writer_state)
+        self.assertIn("explicit_target_write_handoff", writer_state)
 
     def test_service_variant_is_explicit_and_receipt_bound(self) -> None:
         defaults = (ROLE / "defaults/main.yml").read_text()
@@ -44,10 +56,13 @@ class WebSaaSColdRecoveryRoleContractTests(unittest.TestCase):
 
     def test_cross_machine_restore_does_not_require_source_connection(self) -> None:
         source = (ROOT / "roles/web_saas_data_restore_verify/files/restore_verify.sh").read_text()
+        role = (ROLE / "tasks/restore_verify.yml").read_text()
         self.assertIn('WEB_SAAS_CROSS_MACHINE', source)
         self.assertIn("source_system_identity_comparison", source)
         self.assertIn('if [[ "${WEB_SAAS_CROSS_MACHINE:-false}" == true ]]; then', source)
         self.assertIn("restored database is not on the expected PostgreSQL instance", source)
+        self.assertIn("restore-verify-receipt.json", role)
+        self.assertIn("mode: '0600'", role)
 
     def test_current_prod_v2_schema_is_documented_without_secret_values(self) -> None:
         source = DOC.read_text()

@@ -42,8 +42,19 @@
     web_saas_data_restore_verify_users_table: '{{ web_saas_cold_recovery_source_evidence.users_table | default(web_saas_cold_recovery_users_table) }}'
     web_saas_data_restore_verify_subscription_table: '{{ web_saas_cold_recovery_source_evidence.subscription_table | default(web_saas_cold_recovery_subscription_table) }}'
     web_saas_data_restore_verify_cross_machine: true
+    web_saas_data_restore_verify_retain_restore: '{{ web_saas_cold_recovery_retain_restore | bool }}'
   no_log: true
 
 - name: Return the isolated restore evidence
   ansible.builtin.set_fact:
     web_saas_cold_recovery_evidence: '{{ web_saas_data_restore_verify_evidence }}'
+
+- name: Persist the nonsecret isolated-restore receipt on the destination
+  ansible.builtin.copy:
+    content: '{{ web_saas_cold_recovery_evidence | to_nice_json }}'
+    dest: '{{ web_saas_cold_recovery_root }}/{{ web_saas_cold_recovery_environment }}/{{ web_saas_cold_recovery_release_tag }}/{{ web_saas_cold_recovery_run_id }}/restore-verify-receipt.json'
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  no_log: true
