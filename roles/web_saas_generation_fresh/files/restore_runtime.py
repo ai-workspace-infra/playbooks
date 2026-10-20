@@ -95,7 +95,7 @@ def main(spec):
         if auth_probe and ready:
             login = run(['docker', 'exec', app, 'curl', '-sS', '--max-time', '10', '-w', '\n%{http_code}',
                          '-H', 'Content-Type: application/json', '--data', '{"identifier":"login-fixture@example.invalid","password":"isolated-fixture-password"}',
-                         'http://127.0.0.1:8080/api/login'], False)
+                         'http://127.0.0.1:8080/api/auth/login'], False)
             body, _, status = login.stdout.rpartition('\n')
             session = json.loads(body) if body.startswith('{') else {}
             result['login_http_status'] = int(status or '0')
