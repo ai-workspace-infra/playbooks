@@ -40,17 +40,11 @@ class GenerationRecoveryTests(unittest.TestCase):
         self.assertFalse(restore.archive_creates_public("2; 3079 16390 EXTENSION - pgcrypto\n"))
         self.assertTrue(restore.archive_creates_public("5; 2615 2200 SCHEMA - public postgres\n"))
 
-    def test_forced_rls_cannot_be_weakened_by_owner_mapping(self):
-        with mock.patch.object(restore, "pg", side_effect=["t", "1"]) as query:
-            with self.assertRaises(ValueError):
-                restore.align_rls_ownership()
-            self.assertEqual(query.call_count, 2)
-
-    def test_owner_mapping_rejects_privileged_application_role(self):
-        with mock.patch.object(restore, "pg", side_effect=["f", "0"]) as query:
-            with self.assertRaises(ValueError):
-                restore.align_rls_ownership()
-            self.assertEqual(query.call_count, 2)
+    def test_restore_cannot_generate_a_business_identity_or_reassign_ownership(self):
+        text = (ROOT / 'roles/web_saas_generation_recovery/files/restore_new_generation.py').read_text()
+        self.assertNotIn('CREATE ROLE', text)
+        self.assertNotIn('OWNER TO', text)
+        self.assertNotIn('RECOVERY_APP_PASSWORD', text)
 
     def test_no_implicit_cleanup_or_production_secret_copy(self):
         text = (ROOT / "roles/web_saas_generation_recovery/files/restore_new_generation.py").read_text()
@@ -67,7 +61,7 @@ class GenerationRecoveryTests(unittest.TestCase):
         guard = next(t for t in tasks if t.get("name") == "Require an exact isolated generation from the IaC inventory")
         assertions = " ".join(guard["ansible.builtin.assert"]["that"])
         for check in ("cmdb_name", "web_saas_recovery", "source.generation", "public_dns_cutover",
-                      "application_database_read_only", "vault_raft_restore"):
+                      "application_ingress_read_only", "vault_raft_restore"):
             self.assertIn(check, assertions)
         self.assertIn("docker_bootstrap_host", (ROOT / "roles/vhosts/docker/meta/main.yml").read_text())
 

@@ -109,21 +109,6 @@ def inspect_target(root, generation, digest):
     return False
 
 
-def align_rls_ownership():
-    ordinary = pg("SELECT NOT rolsuper AND NOT rolbypassrls FROM pg_roles WHERE rolname='recovery_app'")
-    forced = pg("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
-                "WHERE n.nspname='public' AND c.relforcerowsecurity", "account")
-    if ordinary != "t" or forced != "0":
-        raise ValueError("RLS ownership mapping requires an ordinary role and no forced RLS")
-    pg("""DO $mapping$ DECLARE relation record; BEGIN
-FOR relation IN
- SELECT n.nspname,c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
- WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relrowsecurity
- AND NOT c.relforcerowsecurity AND c.relowner<>(SELECT oid FROM pg_roles WHERE rolname='recovery_app')
-LOOP EXECUTE format('ALTER TABLE %I.%I OWNER TO recovery_app',relation.nspname,relation.relname);
-END LOOP; END $mapping$;""", "account")
-
-
 def verify(marker, generation, source, digest, version, counts):
     if not marker.is_file() or marker.is_symlink():
         raise ValueError("completed restore marker is absent")
@@ -137,15 +122,11 @@ def verify(marker, generation, source, digest, version, counts):
         raise ValueError("migration version mismatch")
     if data_fingerprint() != evidence["data_sha256"]:
         raise ValueError("business rows or sequences changed after restore")
-    readonly = pg("SELECT rolconfig @> ARRAY['default_transaction_read_only=on'] "
-                  "FROM pg_roles WHERE rolname='recovery_app'")
-    if readonly != "t":
-        raise ValueError("recovery application role is not read-only")
     return {**evidence, "result": "verified"}
 
 
 def main():
-    if len(sys.argv) != 7 or sys.argv[1] not in ("restore", "verify", "align_rls_ownership"):
+    if len(sys.argv) != 7 or sys.argv[1] not in ("restore", "verify"):
         raise ValueError("usage: restore.py restore|verify generation source sha256 version counts")
     mode, generation, source, digest, version, raw_counts = sys.argv[1:]
     counts = json.loads(raw_counts)
@@ -158,12 +139,6 @@ def main():
         os.chmod(lock.name, 0o600)
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         apps_running = inspect_target(root, generation, digest)
-        if mode == "align_rls_ownership":
-            verify(marker, generation, source, digest, version, counts)
-            align_rls_ownership()
-            print(json.dumps({**verify(marker, generation, source, digest, version, counts),
-                              "rls_owners_aligned": True}))
-            return
         if mode == "verify" or marker.exists():
             print(json.dumps(verify(marker, generation, source, digest, version, counts)))
             return
@@ -181,12 +156,6 @@ def main():
             raise ValueError("archive checksum mismatch")
         if pg("SELECT count(*) FROM pg_database WHERE datname='account'") != "0":
             raise ValueError("account already exists without a completed checkpoint; preserve and investigate")
-        values = dict(line.split("=", 1) for line in
-                      Path("/etc/xcontrol/web-saas-recovery/secrets.env").read_text().splitlines()
-                      if "=" in line)
-        password = values["RECOVERY_APP_PASSWORD"]
-        if not re.fullmatch(r"[0-9a-f]{64}", password):
-            raise ValueError("invalid recovery-only credential")
         # No drop/clean command can target an existing database. The only removed
         # object is template0's empty public schema in the DB created just here.
         run(["docker", "exec", "web-saas-postgresql", "createdb", "-U", "postgres",
@@ -203,17 +172,9 @@ def main():
         current = state(counts)
         if current["schema_version"] != version:
             raise ValueError("restored migration version differs")
-        pg("CREATE ROLE recovery_app LOGIN PASSWORD '" + password + "'")
-        pg("GRANT CONNECT ON DATABASE account TO recovery_app; "
-           "GRANT USAGE ON SCHEMA public TO recovery_app; "
-           "GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO recovery_app; "
-           "GRANT USAGE,SELECT,UPDATE ON ALL SEQUENCES IN SCHEMA public TO recovery_app",
-           "account")
-        align_rls_ownership()
-        pg("ALTER ROLE recovery_app SET default_transaction_read_only=on")
         evidence = {"generation": generation, "source_generation": source,
                     "archive_sha256": digest, **database_identity(), **current,
-                    "data_sha256": data_fingerprint(), "application_read_only": True,
+                    "data_sha256": data_fingerprint(), "application_prepared": False,
                     "public_dns_cutover": False}
         # Exclusive create: a failed run preserves its database for inspection.
         with marker.open("x") as fh:

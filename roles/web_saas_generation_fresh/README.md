@@ -15,7 +15,7 @@ values belong in the repository.
 
 Entrypoints: `web-saas-generation-fresh.yml` with actions `initialize`,
 `backup-restore`, `preview`, `align`, `verify`, `post-sync-restore` in that order.
-`web-saas-generation-application.yml` prepares read-only candidate applications;
+`web-saas-generation-application.yml` prepares isolated candidate applications;
 `select-doco-cd-release.yml` selects the fixed declaration. Follow with
 `web-saas-generation-regression.yml` using explicit case IDs and candidate SHA.
 Each invocation uses `ansible-playbook -i <verified-inventory> <entrypoint>
@@ -27,13 +27,13 @@ treated as renewed acceptance. Target application writers must be absent during
 data operations. Recreated containers receive only the retained hash-verified
 tool. Comparison explicitly disables preview mode to actually compare rows.
 
-When GitOps explicitly sets `target.candidate_auth_sessions: true`, Accounts uses
-an independent `generation_auth` identity with session-table INSERT/UPDATE/DELETE
-only. Effective write grants on every other public table must be absent. Billing
-keeps the read-only `generation_app` identity. This supports candidate login;
-it does not transfer production business write ownership. New target-local login
-sessions are operational facts and must not be removed to force full snapshot
-equality. Record any resulting comparison difference explicitly.
+Accounts and Billing always reuse `web_saas_business_database` and the canonical
+`account_user` identity declared by GitOps. Its password is read from the existing
+Vault owner at execution, never derived from recovery entropy. No session-only
+or alternate business identity is created. Candidate isolation is enforced by
+ingress, disabled background writers and external integration isolation, not by
+substituting a broken business principal. New target-local login sessions are
+operational facts and must not be removed to force snapshot equality.
 
 Keep all databases, backups and failure receipts. Recovery is stop-and-inspect,
 not automatic database overwrite or downgrade. Public traffic and writer handoff
@@ -50,18 +50,17 @@ source state only: both reconcilers and Accounts/Billing must already be stopped
 and source application database sessions must be drained. It does not pause the
 serving generation or select DNS automatically.
 
-Primary preparation grants `generation_app` SELECT/INSERT/UPDATE/DELETE on
-existing public business tables and USAGE/SELECT on their owned sequences.
-Schema migration and migration-tool tables remain outside DML scope. No schema
-CREATE, TRUNCATE, ownership, role membership, administrative privilege or new RLS
-bypass is granted. Existing unexpected administrative grants stop the transaction.
+The shared database owner grants `account_user` business DML and sequence access
+without schema CREATE, TRUNCATE, ownership, role membership or administration.
+Native backend RLS bypass is explicitly selected by the GitOps contract; the
+restorer never changes table owners to bypass policies. Unexpected grants stop
+the transaction. Schema migration and migration-tool tables remain excluded.
 `readonly_release` is exclusively a backup/audit/source-reader identity; this
 task never changes it. Migration writes use the separately reviewed executor.
 
-Both application env files select `generation_app` in primary mode, replacing
-Accounts' candidate session-only connection without granting `generation_auth`
-business privileges or rotating any password. The generated runtime enables
-background writers and removes the candidate ingress method restriction.
+Both applications select the same raw `business-database.env`. Preparation does
+not rotate a password or enable background writers. Primary configuration
+removes the candidate ingress restriction only after the existing source fence.
 The pinned GitOps Compose declaration must also select the matching primary
 profile; its explicit environment settings override env files. Primary mode
 preparation alone does not deploy containers or prove SMTP/OAuth/payment readiness.
@@ -83,8 +82,8 @@ Use a fresh empty fixture each invocation; the test deliberately refuses an
 existing database instead of clearing it. The suite exercises business writes,
 denied DDL/audit writes, transaction rollback and idempotent grants.
 
-Re-running primary preparation is safe. Candidate preparation refuses an already
-promoted role instead of silently restoring read-only mode. Rollback requires
+Re-running preparation is safe. Candidate preparation does not silently revoke
+business permissions or reset credentials. Rollback requires
 stopping the new writer and reconciling new facts before reopening an old writer;
 this task does not downgrade or overwrite databases automatically.
 

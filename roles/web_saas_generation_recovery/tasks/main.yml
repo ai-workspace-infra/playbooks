@@ -36,7 +36,7 @@
 - name: Require an exact isolated generation from the IaC inventory
   ansible.builtin.assert:
     that:
-      - web_saas_recovery_phase in ['preflight', 'prepare', 'restore', 'deploy', 'verify', 'quarantine_empty_failure', 'align_rls_ownership']
+      - web_saas_recovery_phase in ['preflight', 'prepare', 'restore', 'deploy', 'verify', 'quarantine_empty_failure']
       - recovery.kind == 'WebSaaSGenerationRecovery'
       - recovery.target.generation is match('^prod-v[1-9][0-9]*$')
       - recovery.source.generation is match('^prod-v[1-9][0-9]*$')
@@ -48,7 +48,7 @@
       - "'web_saas_recovery' in group_names"
       - cmdb_name == recovery.target.resource_name
       - recovery.target.resource_name == 'web-saas-' ~ recovery.target.generation
-      - recovery.target.application_role == 'recovery_app'
+      - recovery.target.application_role == 'account_user'
       - recovery.target.publish_address == '127.0.0.1'
       - recovery.target.https_port == 8443
       - recovery.target.http_port == 8088
@@ -59,7 +59,7 @@
       - recovery.release.controller_image is match('^ghcr.io/kimdre/doco-cd@sha256:[0-9a-f]{64}$')
       - recovery.source.archive_sha256 is match('^[0-9a-f]{64}$')
       - recovery.isolation.database_background_writers == false
-      - recovery.isolation.application_database_read_only == true
+      - recovery.isolation.application_ingress_read_only == true
       - recovery.isolation.public_dns_cutover == false
       - recovery.isolation.external_mail_payment_agent_access == false
       - recovery.isolation.vault_raft_restore == false
@@ -183,7 +183,3 @@
 - name: Preserve an explicitly inspected empty failed database under its OID
   ansible.builtin.include_tasks: quarantine.yml
   when: web_saas_recovery_phase == 'quarantine_empty_failure'
-
-- name: Align only restored non-forced RLS table owners on the verified generation
-  ansible.builtin.include_tasks: ownership.yml
-  when: web_saas_recovery_phase == 'align_rls_ownership'

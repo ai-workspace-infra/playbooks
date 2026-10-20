@@ -39,7 +39,7 @@ Additional explicit phases (never automatically chained after failure):
   validate the nine approved existing V3 Stripe test prices against Stripe's
   API (no purchases). Remove source-generation live price bindings from the
   candidate catalog only; retain V3 Sandbox mappings and approved catalog terms.
-  Copy the existing non-superuser app role's object-level permissions without
+  Copy the existing non-superuser `account_user` role's object-level permissions without
   changing role passwords/attributes/default grants. Rename the old `account`
   to `account_before_<run>` and the verified candidate to `account` in one
   transaction. No database is dropped, and old/candidate OIDs are verified.
@@ -49,6 +49,13 @@ old database, per-step checkpoints and verification databases are retained.
 Do not claim password-login, proxy connectivity or real-payment acceptance from
 readiness probes. Snapshot counts describe the recorded boundary while V2 keeps
 serving; they are not a claim of perpetual zero lag.
+
+Business credentials belong to the shared canonical owner:
+`kv/prod/databases` key `account_pg_password`, rendered in
+`/etc/xcontrol/web-saas-recovery/business-database.env`. Refresh never generates,
+rotates or injects a business password and preserves the existing role attributes,
+including the reviewed RLS contract. Keep retained databases and receipts for
+recovery; do not recreate a business role to retry a failed refresh.
 
 Local verification:
 

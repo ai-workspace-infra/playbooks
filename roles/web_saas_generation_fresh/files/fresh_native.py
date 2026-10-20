@@ -183,7 +183,7 @@ def main(spec):
             require(before_permissions == restored_permissions, 'restored table and sequence permissions mismatch')
             require(sql(verify_db, 'SELECT count(*) FROM users') == sql('account', 'SELECT count(*) FROM users'), 'restored user count mismatch')
             if action == 'post-sync-restore':
-                count = run(['docker', 'exec', 'web-saas-postgresql', 'psql', '-U', 'generation_app', '-d', verify_db,
+                count = run(['docker', 'exec', 'web-saas-postgresql', 'psql', '-U', 'account_user', '-d', verify_db,
                              '-XAtq', '-c', 'SELECT count(*) FROM public.users']).decode().strip()
                 require(count == sql('account', 'SELECT count(*) FROM users'), 'application role cannot read the restored business data')
             result.update(archive_sha256=hashlib.sha256(archive.read_bytes()).hexdigest(), isolated_restore_database=verify_db,

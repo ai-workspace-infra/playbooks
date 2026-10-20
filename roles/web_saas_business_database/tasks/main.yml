@@ -1,0 +1,80 @@
+---
+- name: Require one verified host and explicit business identity maintenance
+  ansible.builtin.assert:
+    that:
+      - web_saas_business_database_confirm | bool
+      - inventory_hostname == web_saas_business_database_target
+      - inventory_hostname is match('^web-saas-prod-v[1-9][0-9]*$')
+      - ansible_play_hosts_all == [inventory_hostname]
+      - web_saas_business_database_action in ['prepare', 'retire']
+      - web_saas_business_database_gitops_sha is match('^[0-9a-f]{40}$')
+
+- name: Verify the pinned GitOps identity
+  ansible.builtin.command:
+    argv: [git, -C, '{{ web_saas_business_database_gitops_checkout }}', rev-parse, HEAD]
+  delegate_to: localhost
+  become: false
+  register: business_database_gitops_head
+  changed_when: false
+  failed_when: business_database_gitops_head.stdout != web_saas_business_database_gitops_sha
+
+- name: Reject uncommitted database declarations
+  ansible.builtin.command:
+    argv: [git, -C, '{{ web_saas_business_database_gitops_checkout }}', status, --porcelain, --untracked-files=all]
+  delegate_to: localhost
+  become: false
+  register: business_database_gitops_dirty
+  changed_when: false
+  failed_when: business_database_gitops_dirty.stdout | trim | length > 0
+
+- name: Read only the nonsecret business database declaration
+  ansible.builtin.set_fact:
+    business_database_contract: '{{ (lookup("ansible.builtin.file", web_saas_business_database_gitops_checkout ~ "/compose/web-saas/runtime/prod.yaml") | from_yaml).business_database }}'
+
+- name: Require the existing native identity and canonical credential owner
+  ansible.builtin.assert:
+    that:
+      - business_database_contract.role == 'account_user'
+      - business_database_contract.database == 'account'
+      - business_database_contract.host == 'postgres'
+      - business_database_contract.port | int == 5432
+      - business_database_contract.sslmode == 'disable'
+      - business_database_contract.backend_rls_bypass is sameas true
+      - business_database_contract.credential.vault_path == 'kv/prod/databases'
+      - business_database_contract.credential.key == 'account_pg_password'
+
+- name: Read the existing business password from Vault only at execution
+  ansible.builtin.command:
+    argv: [vault, kv, get, '-field={{ business_database_contract.credential.key }}', '{{ business_database_contract.credential.vault_path }}']
+  environment:
+    VAULT_ADDR: '{{ web_saas_business_database_vault_addr }}'
+  delegate_to: localhost
+  become: false
+  register: business_database_password
+  changed_when: false
+  no_log: true
+
+- name: Reject missing or multiline credentials without a fallback
+  ansible.builtin.assert:
+    that:
+      - business_database_password.stdout | length > 0
+      - business_database_password.stdout.splitlines() | length == 1
+  no_log: true
+
+- name: Install the one canonical business identity executor
+  ansible.builtin.copy:
+    src: business_database.py
+    dest: /usr/local/libexec/web-saas-business-database.py
+    mode: '0700'
+
+- name: Prepare or retire only the declared application identity
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/web-saas-business-database.py]
+    stdin: '{{ {"target": inventory_hostname, "action": web_saas_business_database_action, "contract": business_database_contract, "password": business_database_password.stdout, "backup_manifest": web_saas_business_database_backup_manifest} | to_json }}'
+  register: business_database_execution
+  changed_when: (business_database_execution.stdout | from_json).changed | bool
+  no_log: true
+
+- name: Report only sanitized application identity evidence
+  ansible.builtin.debug:
+    msg: '{{ business_database_execution.stdout | from_json }}'

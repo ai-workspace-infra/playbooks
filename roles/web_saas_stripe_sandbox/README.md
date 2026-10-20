@@ -57,8 +57,15 @@ that role's read-only verification after Sandbox writes have begun.
   access; enforce the appropriate runtime Vault policy on the caller.
   Secret tasks use `no_log`; values travel via stdin, never process arguments.
   Then run the locked root executor on V3:
-  1. Verify the previous recovery DB identity and ordinary `recovery_app`
+  1. Verify the previous recovery DB identity and existing `account_user`
      role's existing SELECT/INSERT grants. No password or grant is changed.
+     The shared canonical owner must first render
+     `/etc/xcontrol/web-saas-recovery/business-database.env` from
+     `kv/prod/databases` key `account_pg_password`. Sandbox validates its encoded
+     PostgreSQL URL and primary runtime role, preserves the file unchanged and
+     binds it to the prepare receipt. GitOps must load that file for both business
+     services; `stripe-sandbox.env` contains no database connection override.
+     Missing or incompatible canonical configuration fails before checkpointing.
   2. Export a repeatable-read snapshot, record exact clean schema, users and
      all public/finance table counts, and produce `pg_dump --format=custom`
      using that same snapshot. Schema is taken from the declaration (currently
@@ -76,7 +83,7 @@ that role's read-only verification after Sandbox writes have begun.
   4. Validate candidate Caddy config with the exact running Caddy image, without
      reload. Save private copies of existing host config. Write only the new
      `stripe-sandbox.env`, updated `account.yaml`, and `Caddyfile`. Set
-     `recovery_app`'s global and account-specific
+     `account_user`'s global and account-specific
      `default_transaction_read_only=off`; existing sessions take this setting
      only on reconnect. Background writers remain false.
   5. Verify original `secrets.env` checksum is unchanged and write the receipt.

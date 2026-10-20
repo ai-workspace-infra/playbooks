@@ -31,25 +31,15 @@
     web_saas_recovery_gitops_checkout: '{{ generation_fresh_gitops_checkout }}'
     web_saas_recovery_phase: prepare
 
-- name: Install the candidate permission executor
-  ansible.builtin.copy:
-    src: application_prepare.py
-    dest: /usr/local/libexec/web-saas-generation-app-prepare.py
-    mode: '0700'
-
-- name: Install the shared business permission contract
-  ansible.builtin.copy:
-    src: application_permissions.py
-    dest: /usr/local/libexec/application_permissions.py
-    mode: '0600'
-
-- name: Prepare the explicitly selected application connection
-  ansible.builtin.command:
-    argv: [python3, /usr/local/libexec/web-saas-generation-app-prepare.py]
-    stdin: '{{ generation_fresh_spec | combine({"candidate_auth_sessions": (lookup("ansible.builtin.file", generation_fresh_gitops_checkout ~ "/compose/web-saas/recovery/" ~ generation_fresh_spec.target_generation ~ "-upgrade.yaml") | from_yaml).target.candidate_auth_sessions | default(false), "source_writers_fenced": generation_primary_gate_passed | default(false), "target_writers_paused": generation_primary_gate_passed | default(false)}) | to_json }}'
-  register: generation_app_prepared
-  changed_when: (generation_app_prepared.stdout | from_json).changed | bool
-  no_log: true
+- name: Reuse the canonical Vault backed business database owner
+  ansible.builtin.include_role:
+    name: web_saas_business_database
+  vars:
+    web_saas_business_database_target: '{{ inventory_hostname }}'
+    web_saas_business_database_gitops_checkout: '{{ generation_fresh_gitops_checkout }}'
+    web_saas_business_database_gitops_sha: '{{ generation_fresh_gitops_sha }}'
+    web_saas_business_database_backup_manifest: '{{ generation_fresh_spec.business_backup_manifest }}'
+    web_saas_business_database_confirm: '{{ generation_fresh_database_confirm | default(false) }}'
 
 - name: Render the native candidate Accounts config
   ansible.builtin.template:

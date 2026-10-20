@@ -17,6 +17,7 @@ import subprocess
 import sys
 import time
 import uuid
+from urllib.parse import urlsplit, parse_qs, unquote
 
 CONFIG = Path('/etc/xcontrol/web-saas-recovery')
 BACKUPS = Path('/data/backups/web-saas/prod-v3')
@@ -216,10 +217,11 @@ def inspect_live():
     db = DockerPG()
     require(previous['database_oid'] == db.sql("SELECT oid FROM pg_database WHERE datname='account';"))
     require(previous['system_identifier'] == db.sql('SELECT system_identifier FROM pg_control_system();'))
-    require(db.sql("SELECT NOT rolsuper AND NOT rolbypassrls AND rolcanlogin FROM pg_roles WHERE rolname='recovery_app';") == 't')
-    require(db.sql("""SELECT bool_and(has_table_privilege('recovery_app',c.oid,'INSERT')
-AND has_table_privilege('recovery_app',c.oid,'SELECT')) FROM pg_class c
-JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','finance') AND c.relkind IN ('r','p');""") == 't')
+    require(db.sql("SELECT NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication AND rolcanlogin FROM pg_roles WHERE rolname='account_user';") == 't')
+    require(db.sql("""SELECT bool_and(has_table_privilege('account_user',c.oid,'INSERT')
+AND has_table_privilege('account_user',c.oid,'SELECT')) FROM pg_class c
+JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','finance') AND c.relkind IN ('r','p')
+AND c.relname <> 'schema_migrations' AND c.relname !~ '^(migratectl_|migration_)';""") == 't')
     return info['Image'], {'database_oid': previous['database_oid'], 'system_identifier': previous['system_identifier']}
 
 
@@ -245,7 +247,9 @@ def isolated_pg(image):
         run(['docker', 'start', name])
         for _ in range(60):
             try:
-                run(['docker', 'exec', name, 'pg_isready', '-U', 'postgres'])
+                # The init server accepts Unix sockets before it shuts down.
+                # Only the final server accepts loopback TCP connections.
+                run(['docker', 'exec', name, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'])
                 break
             except subprocess.CalledProcessError:
                 time.sleep(1)
@@ -298,10 +302,11 @@ def sandbox_env(original, c):
     require(re.fullmatch(r'whsec_[A-Za-z0-9]+', c['webhook_secret']))
     values = env_values(original)
     require(values['DATABASE_BACKGROUND_WRITERS'] == 'false')
-    for key in ('POSTGRES_PASSWORD', 'RECOVERY_APP_PASSWORD', 'AUTH_TOKEN_PUBLIC_TOKEN',
-                'AUTH_TOKEN_REFRESH_SECRET', 'AUTH_TOKEN_ACCESS_SECRET', 'INTERNAL_SERVICE_TOKEN', 'DATABASE_URL'):
+    for key in ('POSTGRES_PASSWORD', 'AUTH_TOKEN_PUBLIC_TOKEN',
+                'AUTH_TOKEN_REFRESH_SECRET', 'AUTH_TOKEN_ACCESS_SECRET', 'INTERNAL_SERVICE_TOKEN'):
         require(bool(values[key]))
-    require(re.fullmatch(r'"?host=postgres port=5432 dbname=account user=recovery_app password=[0-9a-f]{64} sslmode=disable"?', values['DATABASE_URL']))
+    # Database credentials are supplied only by the shared canonical env file.
+    require(not {'DATABASE_URL', 'DATABASE_RUNTIME_ROLE', 'DATABASE_IDENTITY_SHA256'} & values.keys())
     replacements = {'STRIPE_SECRET_KEY': c['stripe_key'], 'STRIPE_WEBHOOK_SECRET': c['webhook_secret']}
     frontend = 'https://' + c['declaration']['target']['console_domain']
     # Accounts deployments have used both spellings; defining both is harmless.
@@ -321,6 +326,24 @@ def sandbox_env(original, c):
     require(all(current[key] == value for key, value in values.items()
                 if key not in replaced_keys))
     return output
+
+
+def validate_business_database_env(data):
+    """Consume the canonical owner's URL without generating or changing it."""
+    values = env_values(data)
+    require(values.get('DATABASE_RUNTIME_ROLE') == 'primary')
+    require('DATABASE_BACKGROUND_WRITERS' not in values)
+    url = values.get('DATABASE_URL', '')
+    if len(url) >= 2 and url[0] == url[-1] and url[0] in ('"', "'"):
+        url = url[1:-1]
+    require(not any(c in url for c in '\r\n\t '))
+    parsed = urlsplit(url)
+    require(parsed.scheme in ('postgres', 'postgresql') and parsed.hostname == 'postgres'
+            and parsed.port == 5432 and parsed.path == '/account'
+            and parsed.username == 'account_user' and bool(parsed.password)
+            and bool(unquote(parsed.password)) and not parsed.fragment
+            and re.fullmatch(r'(?:[A-Za-z0-9_.~-]|%[0-9A-Fa-f]{2})+', parsed.password)
+            and parse_qs(parsed.query, keep_blank_values=True) == {'sslmode': ['disable']})
 
 
 def account_config(original, c):
@@ -427,9 +450,9 @@ def verify_prepared(c, root, identity):
             and receipt['declaration_sha256'] == declaration_digest(c)
             and receipt['iac_inventory_sha256'] == c['iac_inventory_sha256']
             and receipt['iac_receipt_sha256'] == c['iac_receipt_sha256'])
-    require(set(receipt['config_sha256']) == {'secrets.env', 'stripe-sandbox.env', 'account.yaml', 'Caddyfile'})
+    require(set(receipt['config_sha256']) == {'secrets.env', 'business-database.env', 'stripe-sandbox.env', 'account.yaml', 'Caddyfile'})
     for name, expected in receipt['config_sha256'].items():
-        require(name in ('secrets.env', 'stripe-sandbox.env', 'account.yaml', 'Caddyfile'))
+        require(name in ('secrets.env', 'business-database.env', 'stripe-sandbox.env', 'account.yaml', 'Caddyfile'))
         private(CONFIG / name)
         require(sha(CONFIG / name) == expected)
     private(root / 'account.dump')
@@ -437,17 +460,21 @@ def verify_prepared(c, root, identity):
     require(DockerPG().sql("SELECT version::text || ':' || dirty::text FROM public.schema_migrations;") == c['schema_version'] + ':false')
     require(DockerPG().sql("""SELECT setconfig @> ARRAY['default_transaction_read_only=off']
 FROM pg_db_role_setting WHERE setdatabase=(SELECT oid FROM pg_database WHERE datname='account')
-AND setrole=(SELECT oid FROM pg_roles WHERE rolname='recovery_app');""") == 't')
+AND setrole=(SELECT oid FROM pg_roles WHERE rolname='account_user');""") == 't')
     return receipt
 
 
 def enable_account_writes(db):
     # Existing DML grants are deliberately not broadened.
-    db.sql('ALTER ROLE recovery_app SET default_transaction_read_only=off; '
-           'ALTER ROLE recovery_app IN DATABASE account SET default_transaction_read_only=off;')
+    db.sql('ALTER ROLE account_user SET default_transaction_read_only=off; '
+           'ALTER ROLE account_user IN DATABASE account SET default_transaction_read_only=off;')
 
 
 def prepare(c, root, image, identity):
+    business = CONFIG / 'business-database.env'
+    private(business)
+    validate_business_database_env(business.read_bytes())
+    business_digest = sha(business)
     original = (CONFIG / 'secrets.env').read_bytes()
     original_digest = sha(CONFIG / 'secrets.env')
     # Validate candidates before allocating any disposable restore resources.
@@ -461,9 +488,11 @@ def prepare(c, root, image, identity):
     root.mkdir(mode=0o700)
     private(root, directory=True)
     evidence = checkpoint(DockerPG(), lambda: isolated_pg(image), root, c)
-    for name in ('secrets.env', 'account.yaml', 'Caddyfile'):
+    require(sha(business) == business_digest)
+    for name in ('secrets.env', 'business-database.env', 'account.yaml', 'Caddyfile'):
         write_new(root / (name + '.before'), (CONFIG / name).read_bytes())
     require(sha(CONFIG / 'secrets.env') == original_digest)
+    require(sha(business) == business_digest)
     for name, data in candidates.items():
         replace_private(CONFIG / name, data)
     # Role metadata only; no grant/password/auth change and no service restart.
@@ -474,7 +503,7 @@ def prepare(c, root, image, identity):
                'background_writers': False, 'doco_target': c['declaration']['target']['doco_target'],
                'deployment_performed': False,
                'config_sha256': {name: sha(CONFIG / name) for name in
-                                 ('secrets.env', 'stripe-sandbox.env', 'account.yaml', 'Caddyfile')}}
+                                 ('secrets.env', 'business-database.env', 'stripe-sandbox.env', 'account.yaml', 'Caddyfile')}}
     write_new(root / 'prepared.json', json.dumps(receipt, sort_keys=True).encode())
     verify_prepared(c, root, identity)
     return receipt
@@ -487,8 +516,9 @@ def main():
     contract(c, socket.gethostname().split('.')[0])
     require(os.geteuid() == 0)
     private(CONFIG, directory=True)
-    for name in ('secrets.env', 'account.yaml', 'Caddyfile'):
+    for name in ('secrets.env', 'business-database.env', 'account.yaml', 'Caddyfile'):
         private(CONFIG / name)
+    validate_business_database_env((CONFIG / 'business-database.env').read_bytes())
     image, identity = inspect_live()
     if sys.argv[1] == 'prepare':
         for path in (BACKUPS.parent, BACKUPS, BACKUPS / c['release_tag']):

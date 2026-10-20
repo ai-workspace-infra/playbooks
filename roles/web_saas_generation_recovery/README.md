@@ -23,7 +23,7 @@ Phases in web-saas-generation-recovery.yml:
 1. preflight: verify contracts and runtime disk/host facts.
 2. prepare: install the existing Docker role with its optional OS baseline
    disabled; obtain recovery-only entropy through Vault sys/tools/random;
-   render independent database/login credentials and read the canonical shared
+   render database-admin and isolated auth material (never business credentials), and read the canonical shared
    service credential from Vault; validate complete Compose; select the
    fixed storage tag/target in Doco-CD and wait for PostgreSQL.
 3. restore: accept only a previously absent account database. Restore in a
@@ -31,18 +31,20 @@ Phases in web-saas-generation-recovery.yml:
    identity, checksum, exact migration state, counts and all public rows /
    sequence fingerprint. Interrupted attempts retain the destination for
    investigation; no automatic drop, reset or destructive retry is offered.
-4. deploy: first revalidate the completed restore, then select the same
-   GitOps tag's application target in Doco-CD.
+4. deploy: revalidate the completed restore and populated backup/isolated-restore
+   manifest; reuse `web_saas_business_database` for the existing Vault-backed
+   business identity, then select the same fixed application target in Doco-CD.
 5. verify: compare identity, migration state, samples and full data/sequence
    digest with the completed checkpoint, including after application startup.
 
 Re-execution after a completed restore verifies the checkpoint instead of
 reapplying SQL. A nonempty/unrecorded destination is rejected. Applications
-have background writers disabled, independent login credentials and no
-Stripe/OAuth/SMTP credentials. The recovery DB application role has
-default_transaction_read_only=on. Isolated application networks block
+have background writers disabled, isolated login material and no
+Stripe/OAuth/SMTP credentials. Both applications use `account_user`, with its
+password supplied only by the canonical Vault owner. Recovery never generates
+an alternate business role or rewrites RLS table owners. Isolated networks block
 outbound external traffic; ingress binds only to loopback and accepts
-read-only probes. Local Caddy certificates are recovery-specific. Do not
+read-only probes. Caddy uses the shared Vault certificate owner. Do not
 interpret readiness as authenticated login, payment or production cutover
 acceptance.
 
@@ -59,7 +61,9 @@ operation; public route and billing acceptance still require separate probes.
 Required caller variables: web_saas_recovery_target,
 web_saas_recovery_manifest_file, web_saas_recovery_gitops_checkout,
 web_saas_recovery_gitops_sha and web_saas_recovery_phase. Restore additionally
-requires web_saas_recovery_controller_archive. Inventory uses the existing
+requires web_saas_recovery_controller_archive. Application preparation also
+requires `web_saas_recovery_business_backup_manifest` and explicit
+`web_saas_recovery_business_database_confirm`. Inventory uses the existing
 inventory/terraform_cmdb.py with AI_WORKSPACE_CMDB_JSON pointing to the
 authenticated IaC artifact. SSH identity overrides are runtime authentication
 inputs, not a replacement CMDB.
