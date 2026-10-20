@@ -3,12 +3,35 @@
   ansible.builtin.set_fact:
     recovery: "{{ lookup('ansible.builtin.file', web_saas_recovery_manifest_file) | from_yaml }}"
 
-- name: Read optional protected Vault registry material on the controller
-  ansible.builtin.include_vars:
-    file: "{{ web_saas_recovery_registry_vars_file }}"
-    name: recovery_registry_credentials
+- name: Read the shared GHCR credentials from the established CICD Vault record
+  ansible.builtin.command:
+    argv: [vault, kv, get, -format=json, kv/CICD]
+  environment:
+    VAULT_ADDR: "{{ web_saas_recovery_vault_addr }}"
+  register: recovery_registry_vault_read
+  delegate_to: localhost
+  become: false
+  changed_when: false
   no_log: true
-  when: web_saas_recovery_registry_vars_file | length > 0
+  when: web_saas_recovery_phase in ['prepare', 'restore', 'deploy']
+
+- name: Retain shared registry credentials only as protected runtime facts
+  ansible.builtin.set_fact:
+    recovery_registry_credentials:
+      registry_username: "{{ (recovery_registry_vault_read.stdout | from_json).data.data.GHCR_USERNAME | default('') }}"
+      registry_password: "{{ (recovery_registry_vault_read.stdout | from_json).data.data.GHCR_TOKEN | default('') }}"
+    cacheable: false
+  no_log: true
+  when: web_saas_recovery_phase in ['prepare', 'restore', 'deploy']
+
+- name: Require the established private image pull credentials
+  ansible.builtin.assert:
+    that:
+      - recovery_registry_credentials.registry_username | length > 0
+      - recovery_registry_credentials.registry_password | length > 0
+    fail_msg: Shared GHCR credentials are unavailable from kv/CICD
+  no_log: true
+  when: web_saas_recovery_phase in ['prepare', 'restore', 'deploy']
 
 - name: Require an exact isolated generation from the IaC inventory
   ansible.builtin.assert:
