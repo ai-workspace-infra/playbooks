@@ -72,6 +72,10 @@ for attempt in range(60):
     time.sleep(1)
 else: raise RuntimeError('isolated PostgreSQL unavailable; retained container')
 run(['docker','exec',verify,'createdb','-U','postgres','account'])
+# RLS policies retain role references even with --no-owner/--no-acl. Create
+# credential-free identities only inside the network-isolated restore instance;
+# never import production login credentials into this logical data drill.
+policy_role_count=restore_policy_role_references(sql,verify)
 decrypt=subprocess.Popen(['openssl','enc','-d','-aes-256-cbc','-pbkdf2','-iter','200000','-pass','env:SNAPSHOT_KEY','-in',str(root/'db/account.dump.enc')],stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env)
 restore=subprocess.run(['docker','exec','-i',verify,'pg_restore','-U','postgres','-d','account','--no-owner','--no-acl','--exit-on-error','--single-transaction'],stdin=decrypt.stdout,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 decrypt.stdout.close()
@@ -80,7 +84,7 @@ restored_hash=fingerprint(verify,"BEGIN ISOLATION LEVEL REPEATABLE READ READ ONL
 assert source_hash==restored_hash, 'restored row fingerprint mismatch; retained container'
 restored_counts=json.loads(sql('account',"SELECT json_build_object('users',(SELECT count(*) FROM users),'subscriptions',(SELECT count(*) FROM subscription_records),'billing_ledger',(SELECT count(*) FROM billing_ledger),'schema',(SELECT version FROM schema_migrations LIMIT 1),'dirty',(SELECT dirty FROM schema_migrations LIMIT 1));",verify))
 assert counts==restored_counts
-manifest.update({'restore_status':'passed','restored_rows_sha256':restored_hash,'isolation':'network none, tmpfs, no published ports, no production bind mounts','sequence_boundary':'pg_dump observed sequence values; not MVCC transactional','vault_status':'pending'})
+manifest.update({'restore_status':'passed','restored_rows_sha256':restored_hash,'restored_policy_role_stubs':policy_role_count,'restore_permissions':'policy role references only; login credentials and ACLs excluded from isolated data drill; encrypted globals retained','isolation':'network none, tmpfs, no published ports, no production bind mounts','sequence_boundary':'pg_dump observed sequence values; not MVCC transactional','vault_status':'pending'})
 run(['docker','rm','-f',verify])
 current_services={x['Name']: (x['Image'],x['State']['StartedAt'],x['RestartCount']) for x in json.loads(run(['docker','inspect']+run(['docker','ps','-q']).decode().split()))}
 assert original_services==current_services, 'running versions changed during capture'

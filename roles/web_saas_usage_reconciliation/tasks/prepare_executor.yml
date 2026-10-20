@@ -1,10 +1,10 @@
 ---
-- name: Restrict executor staging to the reviewed V3 target
+- name: Restrict executor staging to the reviewed target generation
   ansible.builtin.assert:
     that:
-      - inventory_hostname == 'web-saas-prod-v3'
+      - inventory_hostname == 'web-saas-' ~ web_saas_generation_environment
       - web_saas_generation_target_host == inventory_hostname
-      - web_saas_generation_environment == 'prod-v3'
+      - web_saas_generation_environment is match('^prod-v[1-9][0-9]*$')
       - web_saas_usage_reconciliation_binary_sha256 is match('^[0-9a-f]{64}$')
       - web_saas_usage_reconciliation_binary == '/usr/local/libexec/accounts-reconcile/' ~ web_saas_usage_reconciliation_binary_sha256
 

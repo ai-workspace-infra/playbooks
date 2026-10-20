@@ -9,6 +9,9 @@ export MIGRATION_SOURCE_DSN
 [[ ${MERGE_SCHEMA_SHA256:-} =~ ^[0-9a-f]{64}$ ]]
 [[ ${MERGE_BILLING_SHA256:-} =~ ^[0-9a-f]{64}$ ]]
 [[ ${MERGE_VERSION:-} =~ ^[1-9][0-9]*$ ]]
+[[ ${MERGE_SOURCE_GENERATION:-} =~ ^prod-v[1-9][0-9]*$ ]]
+[[ ${MERGE_TARGET_GENERATION:-} =~ ^prod-v[1-9][0-9]*$ ]]
+[[ ${MERGE_TARGET_GENERATION#prod-v} -eq $((${MERGE_SOURCE_GENERATION#prod-v} + 1)) ]]
 [[ ${MERGE_APPLY:-} == true || ${MERGE_APPLY:-} == false ]]
 [[ ${MERGE_EXECUTION_MODE:-container} == container || ${MERGE_EXECUTION_MODE:-container} == host-loopback ]]
 [[ -f "$MERGE_BINARY" && ! -L "$MERGE_BINARY" ]]
@@ -53,7 +56,7 @@ PY
   export MIGRATION_TARGET_DSN
 fi
 args=(reconcile-usage --source-dsn-env MIGRATION_SOURCE_DSN --target-dsn-env MIGRATION_TARGET_DSN
-  --source-generation prod-v2 --target-generation prod-v3
+  --source-generation "$MERGE_SOURCE_GENERATION" --target-generation "$MERGE_TARGET_GENERATION"
   --schema-sha256 "$MERGE_SCHEMA_SHA256" --billing-schema-sha256 "$MERGE_BILLING_SHA256"
   --expected-target-version "$MERGE_VERSION")
 invoke() {

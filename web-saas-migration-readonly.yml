@@ -1,0 +1,14 @@
+---
+- name: Prepare dedicated local database readers on explicitly selected hosts
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    readonly_ssh_user_postgresql_role: readonly_release
+    readonly_ssh_user_postgresql_passwordless_local: true
+    readonly_ssh_user_postgresql_databases: [account]
+  tasks:
+    - name: Apply the shared database identity task without changing application or OS users
+      ansible.builtin.include_role:
+        name: readonly_ssh_user
+        tasks_from: postgresql.yml

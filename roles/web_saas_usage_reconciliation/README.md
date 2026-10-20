@@ -1,8 +1,9 @@
 # Controlled usage reconciliation
 
 Owner: Playbooks. Caller: `web-saas-generation-usage-reconciliation.yml`.
-This initial audited lane is V2 (read-only database source) → V3 (only SSH target).
-It does not stop/start services, change DNS, connect by SSH to V2, or run DDL.
+The lane is an explicitly selected adjacent `prod-vN` source → `prod-vN+1`
+target. Only the target runs the reconciliation executor. Source access is read-only.
+The reconciliation task does not stop/start services, change DNS or run DDL.
 
 Supply IaC-generated inventory with only the exact target selected; force SSH
 host-key checking in the maintenance invocation (the legacy repository-wide
@@ -35,7 +36,8 @@ under its SHA-256 filename, verifies root ownership/checksum and checks the
 existing loopback tunnel. It does not pause writers or modify database data.
 `web-saas-generation-writers.yml` is only for a separately approved final
 target-write handoff, never for snapshot creation or isolated restore. It
-requires `web_saas_usage_reconciliation_operation_context: explicit_target_write_handoff`,
+requires `web_saas_usage_reconciliation_operation_context: explicit_target_write_handoff`
+or `isolated_target_reconciliation`,
 an explicit `pause` or `resume`, and exactly the Accounts, Billing and Doco-CD
 containers. Pause stops the reconciler first; explicit resume starts it last.
 PostgreSQL, Console and Caddy are never stopped by this writer gate. Snapshot
