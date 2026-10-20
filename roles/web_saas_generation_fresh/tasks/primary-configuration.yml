@@ -76,7 +76,7 @@
     that:
       - item is string
       - item | trim | length > 0
-      - "'\n' not in item and '\r' not in item"
+      - item.splitlines() | join('') == item
       - generation_primary_stripe[generation_primary_runtime.stripe.secret_key] is match('^sk_test_')
   loop:
     - '{{ generation_primary_smtp.username }}'
