@@ -1,0 +1,155 @@
+---
+- name: Read the immutable Stripe runtime declaration
+  ansible.builtin.set_fact:
+    generation_stripe_runtime: '{{ lookup("ansible.builtin.file", generation_stripe_gitops_checkout ~ "/compose/web-saas/runtime/" ~ generation_stripe_generation ~ "-primary.yaml") | from_yaml }}'
+
+- name: Require an explicit target and reviewed Sandbox credential owner
+  ansible.builtin.assert:
+    that:
+      - ansible_play_hosts_all == [generation_stripe_target]
+      - inventory_hostname == 'web-saas-' ~ generation_stripe_generation
+      - generation_stripe_generation is match('^prod-v[1-9][0-9]*$')
+      - generation_stripe_gitops_sha is match('^[0-9a-f]{40}$')
+      - generation_stripe_runtime.target_generation == generation_stripe_generation
+      - generation_stripe_runtime.stripe.mode == 'sandbox'
+      - generation_stripe_runtime.stripe.vault_path == 'kv/prod/billing-service'
+      - generation_stripe_runtime.stripe.secret_key == 'SANDBOX_STRIPE_SECRET_KEY'
+      - generation_stripe_runtime.stripe.webhook_key == 'SANDBOX_STRIPE_WEBHOOK_SECRET'
+
+- name: Verify the selected declaration checkout
+  ansible.builtin.command:
+    argv: [git, -C, '{{ generation_stripe_gitops_checkout }}', rev-parse, HEAD]
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: generation_stripe_head
+  failed_when: generation_stripe_head.stdout != generation_stripe_gitops_sha
+
+- name: Verify the target hostname
+  ansible.builtin.command: hostname -s
+  register: generation_stripe_hostname
+  changed_when: false
+  failed_when: generation_stripe_hostname.stdout != inventory_hostname
+
+- name: Reject uncommitted declaration inputs
+  ansible.builtin.command:
+    argv: [git, -C, '{{ generation_stripe_gitops_checkout }}', status, --porcelain, --untracked-files=all]
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: generation_stripe_dirty
+  failed_when: generation_stripe_dirty.stdout | trim | length > 0
+
+- name: Read only the declared payment credential record
+  ansible.builtin.command:
+    argv: [vault, kv, get, -format=json, '{{ generation_stripe_runtime.stripe.vault_path }}']
+  environment:
+    VAULT_ADDR: https://vault.svc.plus
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: generation_stripe_vault
+  no_log: true
+
+- name: Bind payment credentials in protected memory
+  ansible.builtin.set_fact:
+    generation_stripe_secret: '{{ (generation_stripe_vault.stdout | from_json).data.data[generation_stripe_runtime.stripe.secret_key] }}'
+    generation_stripe_webhook: '{{ (generation_stripe_vault.stdout | from_json).data.data[generation_stripe_runtime.stripe.webhook_key] }}'
+  no_log: true
+
+- name: Reject live keys and malformed credential values
+  ansible.builtin.assert:
+    that:
+      - generation_stripe_secret is match('^sk_test_[A-Za-z0-9]+$')
+      - generation_stripe_webhook is match('^whsec_[A-Za-z0-9]+$')
+  no_log: true
+
+- name: Inspect the existing Accounts deployment without exposing environment
+  ansible.builtin.command:
+    argv: [docker, inspect, web-saas-accounts]
+  register: generation_stripe_before
+  changed_when: false
+  no_log: true
+
+- name: Bind existing deployment identity
+  ansible.builtin.set_fact:
+    generation_stripe_container: '{{ (generation_stripe_before.stdout | from_json)[0] }}'
+  no_log: true
+
+- name: Require the declared immutable Compose deployment before credential writes
+  ansible.builtin.assert:
+    that:
+      - generation_stripe_container.Config.Image is search('@sha256:[0-9a-f]{64}$')
+      - generation_stripe_container.Config.Labels['com.docker.compose.project'] == 'web-saas-' ~ generation_stripe_generation
+      - generation_stripe_gitops_sha in generation_stripe_container.Config.Labels['com.docker.compose.project.config_files']
+      - "'docker-compose.generation-app.yml' in generation_stripe_container.Config.Labels['com.docker.compose.project.config_files']"
+  no_log: true
+
+- name: Inspect the existing environment file before changing two keys
+  ansible.builtin.stat:
+    path: /etc/xcontrol/web-saas-recovery/secrets.env
+    follow: false
+  register: generation_stripe_environment
+
+- ansible.builtin.assert:
+    that:
+      - generation_stripe_environment.stat.isreg | default(false)
+      - not (generation_stripe_environment.stat.islnk | default(false))
+      - generation_stripe_environment.stat.mode == '0600'
+
+- name: Bind only the two payment keys without replacing other runtime inputs
+  ansible.builtin.lineinfile:
+    path: /etc/xcontrol/web-saas-recovery/secrets.env
+    regexp: '^{{ item.key }}='
+    line: '{{ item.key }}={{ item.value | to_json(ensure_ascii=false) | replace("$", "$$") }}'
+    owner: root
+    group: root
+    mode: '0600'
+    backup: true
+  loop:
+    - {key: STRIPE_SECRET_KEY, value: '{{ generation_stripe_secret }}'}
+    - {key: STRIPE_WEBHOOK_SECRET, value: '{{ generation_stripe_webhook }}'}
+  register: generation_stripe_bound
+  no_log: true
+
+- name: Build the existing immutable Accounts reconciliation command
+  ansible.builtin.set_fact:
+    generation_stripe_compose: >-
+      {{ ['docker', 'compose', '--project-name', generation_stripe_container.Config.Labels['com.docker.compose.project'],
+      '--env-file', generation_stripe_container.Config.Labels['com.docker.compose.project.working_dir'] ~ '/.env.' ~ generation_stripe_generation] }}
+
+- name: Retain each existing Compose layer in order
+  ansible.builtin.set_fact:
+    generation_stripe_compose: '{{ generation_stripe_compose + ["-f", item] }}'
+  loop: '{{ generation_stripe_container.Config.Labels["com.docker.compose.project.config_files"].split(",") }}'
+
+- name: Validate the effective Compose configuration without printing secrets
+  ansible.builtin.command:
+    argv: '{{ generation_stripe_compose + ["config", "--quiet"] }}'
+  changed_when: false
+  no_log: true
+
+- name: Reconcile Accounts with the same images and updated payment environment
+  ansible.builtin.command:
+    argv: '{{ generation_stripe_compose + ["up", "-d", "--no-deps", "accounts"] }}'
+  changed_when: true
+  when: >-
+    generation_stripe_bound.changed or
+    ('STRIPE_SECRET_KEY=' ~ generation_stripe_secret) not in generation_stripe_container.Config.Env or
+    ('STRIPE_WEBHOOK_SECRET=' ~ generation_stripe_webhook) not in generation_stripe_container.Config.Env
+  no_log: true
+
+- name: Inspect the running payment environment
+  ansible.builtin.command:
+    argv: [docker, inspect, web-saas-accounts]
+  changed_when: false
+  register: generation_stripe_after
+  no_log: true
+
+- name: Verify both declared credentials reached the actual process
+  ansible.builtin.assert:
+    that:
+      - "('STRIPE_SECRET_KEY=' ~ generation_stripe_secret) in (generation_stripe_after.stdout | from_json)[0].Config.Env"
+      - "('STRIPE_WEBHOOK_SECRET=' ~ generation_stripe_webhook) in (generation_stripe_after.stdout | from_json)[0].Config.Env"
+      - (generation_stripe_after.stdout | from_json)[0].Config.Image == generation_stripe_container.Config.Image
+  no_log: true
