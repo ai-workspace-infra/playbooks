@@ -91,3 +91,23 @@ this task does not downgrade or overwrite databases automatically.
 Verification: focused owner tests, syntax checks, real PostgreSQL fixtures and
 per-case receipts. BLOCKED/FAIL/NOT_RUN are not acceptance success even when the
 Ansible recap itself succeeds.
+
+## Explicit Sandbox payment binding on an existing deployment
+
+`web-saas-generation-stripe-config.yml` repairs an already authorized generation
+whose active Compose profile reads empty payment keys from the recovery env file.
+Provide `generation_stripe_target`, `generation_stripe_generation`,
+`generation_stripe_gitops_checkout` and its exact `generation_stripe_gitops_sha`
+through protected operational inputs. It requires the reviewed primary runtime
+declaration and Sandbox credential fields, validates the actual hostname,
+immutable running image and Compose revision, then changes only the two payment
+keys in the existing root-only env file. Credentials remain in task memory and
+the protected host file; live Stripe keys are rejected.
+
+The owner validates the same existing Compose layers and recreates only Accounts
+when its env or actual process credentials differ. A retry also repairs a prior
+interruption between file update and process reconciliation. Matching reruns do
+not recreate Accounts. This action does not select the full primary profile,
+enable background writers, change SMTP/OAuth/database credentials or create a
+checkout, charge or refund. Verify the actual process, readonly price mappings
+and authenticated application preview separately after binding.
