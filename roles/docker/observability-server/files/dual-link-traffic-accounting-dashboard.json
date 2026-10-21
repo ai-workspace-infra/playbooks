@@ -1,0 +1,397 @@
+{
+  "uid": "dual-link-traffic-accounting",
+  "title": "Traffic Statistics & Billing Chain (Exporter → Vector → Billing → PG → Accounts)",
+  "description": "End-to-end traffic accounting and billing observability across Xray Exporter snapshot collection/push, Vector snapshot fan-out, Billing ingest pipeline stages (parse/checkpoint/dedup/bucket_write/quota), PostgreSQL persistence, and Accounts usage/billing query spans.",
+  "tags": [
+    "dual-link",
+    "traffic",
+    "billing",
+    "accounts",
+    "vector",
+    "otel",
+    "victoriametrics"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "Network Latency Chain",
+      "type": "link",
+      "url": "/grafana/d/dual-link-network-latency/network-latency-chain",
+      "icon": "external link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "Explore VictoriaTraces",
+      "type": "link",
+      "url": "/grafana/explore?left=%7B%22datasource%22%3A%22victoriatraces%22%7D",
+      "icon": "external link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "Explore VictoriaLogs",
+      "type": "link",
+      "url": "/grafana/explore?left=%7B%22datasource%22%3A%22victorialogs%22%7D",
+      "icon": "external link",
+      "keepTime": true,
+      "includeVars": true
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "env",
+        "label": "Environment",
+        "type": "query",
+        "datasource": {
+          "uid": "victoriametrics"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, env)",
+        "query": "label_values(traces_span_metrics_calls_total, env)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "environment",
+        "label": "Environment Label",
+        "type": "query",
+        "datasource": {
+          "uid": "victoriametrics"
+        },
+        "definition": "label_values(up, environment)",
+        "query": "label_values(up, environment)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "instance",
+        "label": "Instance",
+        "type": "query",
+        "datasource": {
+          "uid": "victoriametrics"
+        },
+        "definition": "label_values(up, instance)",
+        "query": "label_values(up, instance)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "node",
+        "label": "Node",
+        "type": "query",
+        "datasource": {
+          "uid": "victoriametrics"
+        },
+        "definition": "label_values(node_uname_info, nodename)",
+        "query": "label_values(node_uname_info, nodename)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "transport",
+        "label": "Transport",
+        "type": "custom",
+        "query": "xhttp,tcp,unknown",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "stage",
+        "label": "Ingest Stage",
+        "type": "custom",
+        "query": "request,checkpoint,dedup,bucket_write,quota,UsageSummary,ListBillingEvents,UsageBuckets",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "outcome",
+        "label": "Outcome",
+        "type": "custom",
+        "query": "ok,empty,delta_positive,delta_zero,counter_reset_or_stale,error",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "1 · Xray Up & Exporter Snapshot Freshness / Samples",
+      "description": "Xray process reachability (xray_up), snapshot collection age (seconds since xray_snapshot_last_collected_timestamp_seconds), push mode status, and active sample count.",
+      "datasource": {
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min by (instance) (xray_up{instance=~\"$instance\"})",
+          "legendFormat": "{{instance}} xray_up"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (instance) (time() - xray_snapshot_last_collected_timestamp_seconds{instance=~\"$instance\"})",
+          "legendFormat": "{{instance}} snapshot_age_s"
+        },
+        {
+          "refId": "C",
+          "expr": "max by (instance) (xray_snapshot_push_enabled{instance=~\"$instance\"})",
+          "legendFormat": "{{instance}} push_enabled"
+        },
+        {
+          "refId": "D",
+          "expr": "max by (instance) (xray_snapshot_samples_count{instance=~\"$instance\"})",
+          "legendFormat": "{{instance}} samples_count"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "2 · Exporter Collection & Push Outcomes",
+      "description": "Snapshot collection rate by outcome (success, empty, error) and HTTP push rate by status_class (2xx, 4xx, 5xx, transport_error).",
+      "datasource": {
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (instance, outcome) (rate(xray_snapshot_collect_total{instance=~\"$instance\"}[5m]))",
+          "legendFormat": "collect {{instance}} [{{outcome}}]"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (instance, status_class) (rate(xray_snapshot_push_total{instance=~\"$instance\"}[5m]))",
+          "legendFormat": "push {{instance}} [{{status_class}}]"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "3 · Vector Snapshot Fan-Out (Received / Sent / Errors / Buffer)",
+      "description": "Vector xray_snapshot_input and billing_snapshot_ingest event throughput, component errors, and buffered events.",
+      "datasource": {
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (instance, component_id) (rate(vector_component_received_events_total{instance=~\"$instance\", component_id=~\"xray_snapshot_input|billing_snapshot_ingest\"}[5m]))",
+          "legendFormat": "received {{instance}} {{component_id}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (instance, component_id) (rate(vector_component_sent_events_total{instance=~\"$instance\", component_id=\"billing_snapshot_ingest\"}[5m]))",
+          "legendFormat": "sent {{instance}} {{component_id}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (instance, component_id) (rate(vector_component_errors_total{instance=~\"$instance\", component_id=~\"xray_snapshot_input|billing_snapshot_ingest\"}[5m]))",
+          "legendFormat": "errors {{instance}} {{component_id}}"
+        },
+        {
+          "refId": "D",
+          "expr": "max by (instance, component_id) (vector_buffer_events{instance=~\"$instance\", component_id=\"billing_snapshot_ingest\"})",
+          "legendFormat": "buffer_events {{instance}} {{component_id}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "4 · Billing Ingest Pipeline Stage Calls & Outcomes",
+      "description": "OTel spanmetrics call rate across billing.ingest.request, billing.ingest.checkpoint, billing.ingest.dedup, billing.ingest.bucket_write, and billing.ingest.quota by stage, outcome, error_class, and transport.",
+      "datasource": {
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (span_name, stage, outcome, transport) (rate(traces_span_metrics_calls_total{env=~\"$env\", service_name=\"web-saas-billing\", span_name=~\"billing\\\\.ingest\\\\..*\", stage=~\"$stage|^$\", outcome=~\"$outcome|^$\", transport=~\"$transport|^$\"}[$__rate_interval]))",
+          "legendFormat": "{{span_name}} stage={{stage}} outcome={{outcome}} ({{transport}})"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (span_name, error_class) (rate(traces_span_metrics_calls_total{env=~\"$env\", service_name=\"web-saas-billing\", span_name=~\"billing\\\\.ingest\\\\..*\", error_class!=\"\"}[$__rate_interval]))",
+          "legendFormat": "err {{span_name}} [{{error_class}}]"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "5 · Billing Ingest Pipeline Stage Duration (p50 / p95 / p99)",
+      "description": "Stage-by-stage latency distribution (ms) for web-saas-billing ingest spans.",
+      "datasource": {
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le, stage, span_name) (rate(traces_span_metrics_duration_milliseconds_bucket{env=~\"$env\", service_name=\"web-saas-billing\", span_name=~\"billing\\\\.ingest\\\\..*\", stage=~\"$stage|^$\"}[$__rate_interval])))",
+          "legendFormat": "p50 {{span_name}} ({{stage}})"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le, stage, span_name) (rate(traces_span_metrics_duration_milliseconds_bucket{env=~\"$env\", service_name=\"web-saas-billing\", span_name=~\"billing\\\\.ingest\\\\..*\", stage=~\"$stage|^$\"}[$__rate_interval])))",
+          "legendFormat": "p95 {{span_name}} ({{stage}})"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le, stage, span_name) (rate(traces_span_metrics_duration_milliseconds_bucket{env=~\"$env\", service_name=\"web-saas-billing\", span_name=~\"billing\\\\.ingest\\\\..*\", stage=~\"$stage|^$\"}[$__rate_interval])))",
+          "legendFormat": "p99 {{span_name}} ({{stage}})"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "6 · Accounts Usage & Billing Query Latency & Error Rate",
+      "description": "Accounts usage/billing endpoint and store query rate, error rate, and p95 duration.",
+      "datasource": {
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, span_name, stage) (rate(traces_span_metrics_duration_milliseconds_bucket{env=~\"$env\", service_name=\"web-saas-accounts\", span_name=~\"GET /api/account/(usage|billing)/.*|accounts\\\\.(usage|billing)\\\\..*\"}[$__rate_interval])))",
+          "legendFormat": "p95 {{span_name}} ({{stage}})"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (span_name, outcome, status_code) (rate(traces_span_metrics_calls_total{env=~\"$env\", service_name=\"web-saas-accounts\", span_name=~\"GET /api/account/(usage|billing)/.*|accounts\\\\.(usage|billing)\\\\..*\"}[$__rate_interval]))",
+          "legendFormat": "calls/s {{span_name}} [{{outcome}} {{status_code}}]"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 7,
+      "type": "text",
+      "title": "7 · VictoriaLogs & VictoriaTraces Correlation Guide (Zero-PII Pivot)",
+      "options": {
+        "mode": "markdown",
+        "content": "### Traffic Accounting & Billing Chain — Log / Trace Correlation Guide\n\n1. **Zero-Traffic Alive vs Broken Pipeline**:\n   - **Zero-Traffic Alive (`outcome=\"empty\"` / `outcome=\"delta_zero\"`)**: `xray_up == 1`, `time() - xray_snapshot_last_collected_timestamp_seconds < 120`, and `billing.ingest.dedup` records `outcome=\"empty\"` or `outcome=\"delta_zero\"`. The collection and ingestion chain is healthy while user traffic is idle.\n   - **Broken Pipeline**: `xray_up == 0`, snapshot age `> 120s`, `xray_snapshot_push_total{status_class=~\"5xx|transport_error\"} > 0`, Vector `component_errors_total > 0`, or `billing.ingest.*` spans emit `outcome=\"error\"`.\n2. **Pivoting to VictoriaTraces & VictoriaLogs without PII**:\n   - High-cardinality correlation keys (`snapshot_ref`, `batch_ref`, `trace_id`) are attached to **OTel Spans and Structured Logs only** and are never promoted to Prometheus/VictoriaMetrics labels.\n   - Sensitive attributes (`user.email`, `account.uuid`, `proxy.uuid`, `db.statement`, `http.request.header.authorization`, `http.request.header.x_service_token`) are scrubbed at both the SDK and Collector layers.\n   - In **VictoriaTraces / VictoriaLogs Explore**, filter by `env`, `service.name=\"web-saas-billing\"`, `transport`, `stage`, `snapshot_ref`, or `trace_id` to inspect a specific snapshot batch end-to-end.\n3. **Cross-Chain Drill-Down**:\n   - Use the top-right **[Network Latency Chain](/grafana/d/dual-link-network-latency/network-latency-chain)** link to correlate ingest or query slowdowns with Blackbox RTT, DNS/TLS handshakes, Edge Caddy `/split` latency, or PostgreSQL `sql.conn.query` spans."
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 7
+      }
+    }
+  ]
+}
