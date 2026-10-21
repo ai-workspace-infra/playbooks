@@ -1,0 +1,60 @@
+---
+- name: Verify the isolated resource identity and dedicated volume
+  ansible.builtin.assert:
+    that:
+      - acceptance_only | bool
+      - cmdb_instance_id == acceptance_expected_instance_id
+      - ansible_play_hosts_all | length == 1
+      - acceptance_data_device is match('^/dev/disk/by-id/virtio-[a-z0-9-]+$')
+      - acceptance_data_size_gb | int == 25
+
+- name: Check the exact volume capacity before filesystem operations
+  ansible.builtin.command:
+    argv: [blockdev, '--getsize64', '{{ acceptance_data_device }}']
+  register: acceptance_volume_capacity
+  changed_when: false
+  check_mode: false
+
+- name: Reject a mismatched disk size
+  ansible.builtin.assert:
+    that:
+      - acceptance_volume_capacity.stdout | int == (acceptance_data_size_gb | int * 1024 * 1024 * 1024)
+
+- name: Check existing filesystem without changing it
+  ansible.builtin.command:
+    argv: [blkid, '-o', value, '-s', TYPE, '{{ acceptance_data_device }}']
+  register: acceptance_existing_filesystem
+  changed_when: false
+  failed_when: acceptance_existing_filesystem.rc not in [0, 2]
+  check_mode: false
+
+- name: Refuse to replace an existing filesystem
+  ansible.builtin.assert:
+    that:
+      - acceptance_existing_filesystem.stdout | trim in ['', 'ext4']
+
+- name: Initialize the new dedicated data volume without force
+  community.general.filesystem:
+    dev: "{{ acceptance_data_device }}"
+    fstype: ext4
+    force: false
+
+- name: Mount the independent data volume persistently
+  ansible.posix.mount:
+    path: /data
+    src: "{{ acceptance_data_device }}"
+    fstype: ext4
+    opts: defaults,noatime
+    state: mounted
+
+- name: Verify the mounted data volume
+  ansible.builtin.command:
+    argv: [findmnt, '--noheadings', '--output', SOURCE,FSTYPE,TARGET, /data]
+  register: acceptance_data_mount
+  changed_when: false
+
+- name: Report safe host preparation evidence
+  ansible.builtin.debug:
+    msg:
+      instance_id: "{{ cmdb_instance_id }}"
+      data_mount: "{{ acceptance_data_mount.stdout }}"

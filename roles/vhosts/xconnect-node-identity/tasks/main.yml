@@ -1,0 +1,56 @@
+---
+- name: Require explicit node identity scope before any configuration write
+  ansible.builtin.assert:
+    that:
+      - node_identity_profile in ['standalone', 'shared', 'plus', 'team']
+      - node_identity_id | length > 0
+      - node_identity_profile != 'team' or node_identity_team_id | length > 0
+      - node_identity_profile == 'team' or node_identity_team_id == ''
+      - node_identity_profile != 'team' or node_identity_credential_ref is match('^kv/(sit|uat|prod)/xconnect/teams/[A-Za-z0-9._-]+/nodes/[A-Za-z0-9._-]+$')
+
+- name: Resolve canonical public node credential
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/resolve-canonical-service-token.yml"
+  when: node_identity_profile in ['shared', 'plus']
+
+- name: Bind canonical public identity in memory
+  ansible.builtin.set_fact:
+    agent_api_token: "{{ canonical_internal_service_token }}"
+    agent_resource_class: "{{ node_identity_profile }}"
+    agent_team_id: ''
+  no_log: true
+  when: node_identity_profile in ['shared', 'plus']
+
+- name: Read dedicated team node identity from Vault
+  ansible.builtin.command:
+    argv: [vault, kv, get, '-format=json', '{{ node_identity_credential_ref }}']
+  environment:
+    VAULT_ADDR: "{{ lookup('env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+  delegate_to: localhost
+  become: false
+  register: node_identity_team_read
+  check_mode: false
+  changed_when: false
+  no_log: true
+  when: node_identity_profile == 'team'
+
+- name: Check dedicated credential ownership without a public fallback
+  ansible.builtin.assert:
+    that:
+      - team_identity.node_id == node_identity_id
+      - team_identity.team_id == node_identity_team_id
+      - team_identity.resource_class == 'team'
+      - team_identity.token is match('^[A-Za-z0-9._~+/=-]{32,}$')
+      - node_identity_credential_ref.split('/')[4] == node_identity_team_id
+      - node_identity_credential_ref.split('/')[6] == node_identity_id
+  vars:
+    team_identity: "{{ (node_identity_team_read.stdout | from_json).data.data }}"
+  no_log: true
+  when: node_identity_profile == 'team'
+
+- name: Bind dedicated team identity only in memory
+  ansible.builtin.set_fact:
+    agent_api_token: "{{ (node_identity_team_read.stdout | from_json).data.data.token }}"
+    agent_resource_class: team
+    agent_team_id: "{{ node_identity_team_id }}"
+  no_log: true
+  when: node_identity_profile == 'team'
