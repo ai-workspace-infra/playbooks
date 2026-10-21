@@ -19,6 +19,16 @@ staged but inactive candidate does not create the marker.
 The recovery controller disables Caddy's admin API, so activation uses a short
 Caddy restart; Accounts, Billing, Console and PostgreSQL are not restarted.
 
+For an explicitly authorized serving-generation activation, set
+`web_saas_public_ingress_recovery_read_only=false` and
+`web_saas_public_ingress_activate=true`. This selects the existing production
+routes: Console and Accounts proxy normal business methods; Billing permits
+the token-authenticated snapshot POST and health probes. Candidate mode blocks
+business mutations and must not be retained as the serving ingress policy.
+The activation marker includes the selected runtime mode. Recovery preparation
+preserves an activated configuration instead of rendering its candidate policy
+over it. This marker does not grant database privileges or transfer writer ownership.
+
 Billing permits `POST /v1/ingest/snapshots` in addition to health probes. The
 Authorization header reaches Billing unchanged; Billing enforces its configured
 Bearer token and rejects missing or invalid tokens. Caddy does not read or store
