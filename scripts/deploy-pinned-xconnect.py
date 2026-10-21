@@ -78,24 +78,34 @@ def main():
     parser.add_argument("--gitops", type=Path, required=True)
     parser.add_argument("--gitops-commit", required=True)
     parser.add_argument("--manifest", required=True)
+    parser.add_argument("--cmdb", type=Path, help="IaC-generated CMDB for dynamic inventory")
     parser.add_argument("--mode", choices=("plan", "check", "apply"), default="plan")
     args = parser.parse_args()
     owner = Path(__file__).resolve().parents[1]
     revision(args.gitops, args.gitops_commit)
     contract = validate(json.loads(inside(args.gitops, args.manifest).read_text()))
     revision(owner, contract["playbooks_commit"])
-    inventory = inside(args.gitops, contract["inventory"])
+    if args.cmdb:
+        if not args.cmdb.is_file():
+            raise ValueError("IaC CMDB does not exist")
+        inventory = inside(owner, 'inventory/terraform_cmdb.py')
+    else:
+        inventory = inside(args.gitops, contract["inventory"])
     steps = [(inside(owner, step["playbook"]), step) for step in contract["steps"]]
     # Disable repository defaults that relax SSH host verification.
     env = os.environ.copy()
     env["ANSIBLE_HOST_KEY_CHECKING"] = "True"
     env["ANSIBLE_SSH_ARGS"] = "-o StrictHostKeyChecking=yes"
+    if args.cmdb:
+        env['AI_WORKSPACE_CMDB_JSON'] = str(args.cmdb.resolve())
     print(json.dumps({"node": contract["node"], "profile": contract["profile"],
                       "mode": args.mode, "playbooks_commit": contract["playbooks_commit"],
                       "gitops_commit": args.gitops_commit,
                       "steps": [step["phase"] for _, step in steps]}))
     if args.mode == "plan":
         return
+    if contract.get('deployment_ready') is not True:
+        raise ValueError('The reviewed node profile is not ready for deployment')
     commands = []
     for playbook, step in steps:
         command = ["ansible-playbook", str(playbook), "-i", str(inventory),
