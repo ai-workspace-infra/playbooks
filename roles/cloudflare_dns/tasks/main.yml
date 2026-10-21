@@ -87,7 +87,7 @@
 
     - name: Query existing DNS records
       ansible.builtin.uri:
-        url: "{{ cloudflare_dns_api_base }}/zones/{{ cloudflare_dns_zone_id }}/dns_records?name={{ item.name }}"
+        url: "{{ cloudflare_dns_api_base }}/zones/{{ cloudflare_dns_zone_id }}/dns_records?name={{ item.name }}{{ ('&type=' ~ item.type) if item.type is defined else '' }}"
         method: GET
         headers:
           Authorization: "Bearer {{ cloudflare_dns_api_token }}"
@@ -95,10 +95,10 @@
         return_content: true
       loop: "{{ cloudflare_dns_records }}"
       loop_control:
-        label: "{{ item.name }}"
+        label: "{{ item.type | default('ANY') }} {{ item.name }}"
       register: cloudflare_dns_record_queries
 
-    - name: Remove existing DNS records for target name
+    - name: Remove existing DNS records for target name and type
       ansible.builtin.uri:
         url: "{{ cloudflare_dns_api_base }}/zones/{{ cloudflare_dns_zone_id }}/dns_records/{{ item.1.id }}"
         method: DELETE
