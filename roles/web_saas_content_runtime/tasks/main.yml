@@ -1,0 +1,97 @@
+---
+- name: Require one exact generation host and reviewed GitOps checkout
+  ansible.builtin.assert:
+    that:
+      - web_saas_content_generation is match('^prod-v[1-9][0-9]*$')
+      - inventory_hostname == 'web-saas-' ~ web_saas_content_generation
+      - ansible_play_hosts_all == [inventory_hostname]
+      - web_saas_content_gitops_checkout | length > 0
+      - web_saas_content_gitops_sha is match('^[0-9a-f]{40}$')
+    fail_msg: Content runtime verification requires one exact generation host and a pinned GitOps checkout.
+
+- name: Resolve the exact GitOps revision and checkout cleanliness
+  ansible.builtin.command:
+    argv: "{{ ['git', '-C', web_saas_content_gitops_checkout] + item }}"
+  loop:
+    - [rev-parse, HEAD]
+    - [status, --porcelain, --untracked-files=all]
+  register: web_saas_content_git_state
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Require the reviewed clean GitOps revision
+  ansible.builtin.assert:
+    that:
+      - web_saas_content_git_state.results[0].stdout == web_saas_content_gitops_sha
+      - web_saas_content_git_state.results[1].stdout == ''
+
+- name: Read the generation's image pin, Doco-CD target, and Compose overlay
+  ansible.builtin.set_fact:
+    web_saas_content_env_text: "{{ lookup('ansible.builtin.file', web_saas_content_gitops_checkout ~ '/compose/web-saas/.env.' ~ web_saas_content_generation) }}"
+    web_saas_content_doco_manifest: "{{ lookup('ansible.builtin.file', web_saas_content_gitops_checkout ~ '/.doco-cd.' ~ web_saas_content_generation ~ '-primary.yml') | from_yaml }}"
+    web_saas_content_overlay: "{{ lookup('ansible.builtin.file', web_saas_content_gitops_checkout ~ '/compose/web-saas/docker-compose.generation-content.yml') | from_yaml }}"
+
+- name: Parse the fixed Content image reference
+  ansible.builtin.set_fact:
+    web_saas_content_image: "{{ web_saas_content_env_text | regex_findall('(?m)^CONTENT_IMAGE=(.+)$') | first }}"
+
+- name: Require the primary target to declare the digest-pinned Selfhost service
+  ansible.builtin.assert:
+    that:
+      - web_saas_content_doco_manifest.name == 'web-saas-' ~ web_saas_content_generation
+      - "'docker-compose.generation-content.yml' in web_saas_content_doco_manifest.compose_files"
+      - web_saas_content_image is match('^ghcr.io/ai-workspace-services/docs:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$')
+      - web_saas_content_overlay.services.content.image == '${CONTENT_IMAGE:?fixed digest required}'
+      - web_saas_content_overlay.services.content.env_file == ['/etc/xcontrol/web-saas-recovery/internal-service.env']
+      - web_saas_content_overlay.services.content.networks == ['recovery', 'content_egress']
+      - web_saas_content_overlay.services.console.environment.DOCS_SERVICE_URL == 'http://content:8084'
+      - web_saas_content_overlay.services.console.environment.RUNTIME_DOCS_SERVICE_URL == 'http://content:8084'
+      - web_saas_content_overlay.networks.recovery == {}
+      - web_saas_content_overlay.networks.content_egress.name == 'web_saas_content_egress'
+    fail_msg: The pinned GitOps primary target does not declare the expected isolated Selfhost Content runtime.
+
+- name: Inspect the four running application containers without logging environment values
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - web-saas-accounts
+      - web-saas-billing
+      - web-saas-console
+      - web-saas-content
+  register: web_saas_content_inspect
+  changed_when: false
+  failed_when: web_saas_content_inspect.rc != 0
+  no_log: true
+
+- name: Verify image, health, shared token, endpoint, and network evidence
+  ansible.builtin.command:
+    argv:
+      - python3
+      - '{{ role_path }}/files/verify_runtime.py'
+      - --expected-image
+      - '{{ web_saas_content_image }}'
+  args:
+    stdin: '{{ web_saas_content_inspect.stdout }}'
+  register: web_saas_content_runtime_result
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  failed_when: web_saas_content_runtime_result.rc != 0
+  no_log: true
+
+- name: Verify Console can reach the internal Content health endpoint
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - web-saas-console
+      - node
+      - -e
+      - "fetch('http://content:8084/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+  changed_when: false
+
+- name: Return only sanitized Content runtime evidence
+  ansible.builtin.debug:
+    msg: '{{ web_saas_content_runtime_result.stdout | from_json }}'
