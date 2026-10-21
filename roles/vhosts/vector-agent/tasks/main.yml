@@ -1,4 +1,14 @@
 ---
+- name: Resolve canonical Vault credentials before any Vector changes
+  ansible.builtin.include_tasks: '{{ playbook_dir }}/tasks/resolve-canonical-service-token.yml'
+  when: vector_billing_ingest_enabled | default(false) | bool
+
+- name: Bind Vector billing to the canonical credential
+  ansible.builtin.set_fact:
+    vector_billing_ingest_token: '{{ canonical_internal_service_token }}'
+  no_log: true
+  when: vector_billing_ingest_enabled | default(false) | bool
+
 - name: Gather service state for optional Vector sources
   ansible.builtin.service_facts:
 
