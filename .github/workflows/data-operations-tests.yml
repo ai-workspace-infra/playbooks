@@ -52,6 +52,12 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/tests/uat_data_import_guard_test.sh
+          python3 tests/data_operations/selfhost/v4_acceptance_scripts_test.py
+          python3 tests/data_operations/selfhost/v4_p0_regression_cases_test.py
+          python3 tests/data_operations/selfhost/v4_duplicate_producer_identity_test.py
+          bash -n tests/data_operations/selfhost/v4_business_role_acceptance.sh
+          bash -n tests/data_operations/selfhost/v4_stripe_sandbox_egress.sh
+          bash -n tests/data_operations/selfhost/v4_traffic_chain_acceptance.sh
           python3 -m unittest discover -s tests/data_operations -p 'test_*.py'
           python3 -m unittest discover -s tests/data_operations/import -p 'full_business*bootstrap_test.py'
           python3 -m unittest discover -s tests/data_operations/import -p 'full_business_contract_test.py'
@@ -122,6 +128,39 @@ jobs:
           PGPORT: '5432'
           PGUSER: postgres
           PGPASSWORD: postgres
+  v4-p0-postgres17:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start disposable PostgreSQL 17 fixture
+        run: |
+          set -euo pipefail
+          docker run --detach --name generation-permissions-fixture-v4-p0 \
+            --env POSTGRES_PASSWORD=fixture-only postgres:17
+          for attempt in $(seq 1 30); do
+            if docker exec generation-permissions-fixture-v4-p0 pg_isready -U postgres -d postgres >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          echo 'PostgreSQL 17 fixture did not become ready' >&2
+          exit 1
+      - name: Exercise business-role grants and acceptance query on the fixture
+        run: |
+          set -euo pipefail
+          GENERATION_PERMISSIONS_PG_CONTAINER=generation-permissions-fixture-v4-p0 \
+            python3 tests/data_operations/test_generation_application_permissions.py
+          V4_POSTGRES_CONTAINER=generation-permissions-fixture-v4-p0 \
+            bash tests/data_operations/selfhost/v4_business_role_acceptance.sh
+      - name: Exercise traffic acceptance SQL against synthetic fixture rows only
+        run: |
+          set -euo pipefail
+          docker exec generation-permissions-fixture-v4-p0 psql -U postgres -d account -v ON_ERROR_STOP=1 -c \
+            "CREATE TABLE public.traffic_minute_buckets(bucket_start timestamptz NOT NULL,node_id text NOT NULL,total_bytes bigint NOT NULL); INSERT INTO public.traffic_minute_buckets VALUES (now()-interval '2 minutes','fixture-node',100),(now()-interval '1 minute','fixture-node',200);"
+          V4_POSTGRES_CONTAINER=generation-permissions-fixture-v4-p0 \
+          V4_TRAFFIC_NODE_ID=fixture-node \
+            bash tests/data_operations/selfhost/v4_traffic_chain_acceptance.sh
+      - name: Remove exact disposable fixture
+        if: always()
+        run: docker rm --force generation-permissions-fixture-v4-p0 || true
   native-billing-postgres17:
     runs-on: ubuntu-latest
     services:

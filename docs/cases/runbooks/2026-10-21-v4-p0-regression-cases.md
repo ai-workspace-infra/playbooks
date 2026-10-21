@@ -4,6 +4,8 @@ Historical incident index: [Knowledge V2/V3 upgrade and V3/V4 incident record](h
 
 These cases are per-incident acceptance gates. Run against an isolated candidate or Sandbox unless a case explicitly calls for read-only production observation. Never synthesize production payment or traffic facts. A green process/readiness probe alone does not pass the related business case.
 
+`v4_acceptance_scripts_test.py` tests shell-script success/failure handling with a mocked Docker CLI. The PostgreSQL 17 CI fixture checks the business-role query and the traffic SQL using synthetic rows; neither is evidence of V4 live traffic, billing ingestion, or user-visible freshness.
+
 | Case ID | Regression test / evidence |
 | --- | --- |
 | V4-P0-DB-ROLE | `tests/data_operations/selfhost/v4_business_role_acceptance.sh` (read-only on candidate) plus disposable PostgreSQL 17 grant test; verify canonical runtime `account_user` has required business grants. |

@@ -96,7 +96,8 @@ class GenerationApplicationPermissionsTests(unittest.TestCase):
             self.pg(permissions.permissions_sql("fixture-only-not-production"), ok=False)
             self.assertEqual(self.pg("SELECT has_table_privilege('account_user','users','INSERT')"), 'f')
         finally:
-            self.pg('ALTER ROLE account_user NOCREATEDB')
+            # Leave the disposable fixture reusable by subsequent acceptance checks.
+            self.pg('ALTER ROLE account_user NOCREATEDB; GRANT INSERT,UPDATE,DELETE ON users TO account_user')
 
 
 if __name__ == '__main__':
