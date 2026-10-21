@@ -1,0 +1,10 @@
+---
+- name: Stage the canonical test webhook credential for one existing deployment
+  hosts: "{{ web_saas_stripe_host | default('never-matches') }}"
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Configure only the existing sandbox webhook environment value
+      ansible.builtin.include_role:
+        name: web_saas_stripe_sandbox
+        tasks_from: configure-webhook

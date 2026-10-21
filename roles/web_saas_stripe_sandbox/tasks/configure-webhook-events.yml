@@ -1,0 +1,53 @@
+---
+- name: Read the test account's existing endpoint registrations
+  ansible.builtin.uri:
+    url: https://api.stripe.com/v1/webhook_endpoints?limit=100
+    headers:
+      Authorization: 'Bearer {{ webhook_credentials.results[0].stdout }}'
+    return_content: true
+  delegate_to: localhost
+  become: false
+  register: webhook_registrations
+  check_mode: false
+  no_log: true
+
+- name: Select only the canonical test endpoint
+  ansible.builtin.set_fact:
+    selected_webhook: '{{ webhook_registrations.json.data | selectattr("url", "equalto", canonical_webhook.webhook_url) | selectattr("livemode", "equalto", false) | list }}'
+  no_log: true
+
+- name: Require one enabled canonical endpoint and a complete enumeration
+  ansible.builtin.assert:
+    that:
+      - not webhook_registrations.json.has_more
+      - selected_webhook | length == 1
+      - selected_webhook[0].status == 'enabled'
+      - canonical_webhook.enabled_events | length > 0
+  no_log: true
+
+- name: Prepare the declared event form
+  ansible.builtin.set_fact:
+    webhook_event_form: {}
+
+- name: Bind the declared event types
+  ansible.builtin.set_fact:
+    webhook_event_form: '{{ webhook_event_form | combine({"enabled_events[" ~ webhook_event_index ~ "]": item}) }}'
+  loop: '{{ canonical_webhook.enabled_events }}'
+  loop_control:
+    index_var: webhook_event_index
+
+- name: Update event subscriptions only when they differ
+  ansible.builtin.uri:
+    url: 'https://api.stripe.com/v1/webhook_endpoints/{{ selected_webhook[0].id }}'
+    method: POST
+    headers:
+      Authorization: 'Bearer {{ webhook_credentials.results[0].stdout }}'
+    body_format: form-urlencoded
+    body: '{{ webhook_event_form }}'
+    return_content: true
+  delegate_to: localhost
+  become: false
+  when:
+    - not ansible_check_mode
+    - selected_webhook[0].enabled_events | sort != canonical_webhook.enabled_events | sort
+  no_log: true

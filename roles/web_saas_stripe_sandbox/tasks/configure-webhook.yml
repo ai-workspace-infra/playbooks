@@ -1,0 +1,111 @@
+---
+- name: Validate one explicit deployment and an immutable GitOps source
+  ansible.builtin.assert:
+    that:
+      - ansible_play_hosts_all == [inventory_hostname]
+      - inventory_hostname == web_saas_stripe_host
+      - inventory_hostname is match('^web-saas-prod-v[1-9][0-9]*$')
+      - web_saas_stripe_gitops_sha is match('^[0-9a-f]{40}$')
+      - web_saas_stripe_runtime_env in ['/etc/xcontrol/web-saas-recovery/secrets.env', '/etc/xcontrol/web-saas-recovery/primary-runtime.env']
+
+- name: Verify the selected GitOps commit
+  ansible.builtin.command:
+    argv: [git, -C, '{{ web_saas_stripe_gitops_checkout }}', rev-parse, HEAD]
+  delegate_to: localhost
+  become: false
+  register: webhook_gitops_head
+  changed_when: false
+  check_mode: false
+  failed_when: webhook_gitops_head.stdout != web_saas_stripe_gitops_sha
+
+- name: Reject uncommitted webhook declarations
+  ansible.builtin.command:
+    argv: [git, -C, '{{ web_saas_stripe_gitops_checkout }}', status, --porcelain]
+  delegate_to: localhost
+  become: false
+  register: webhook_gitops_dirty
+  changed_when: false
+  check_mode: false
+  failed_when: webhook_gitops_dirty.stdout | trim | length > 0
+
+- name: Bind the canonical webhook declaration
+  ansible.builtin.set_fact:
+    canonical_webhook: '{{ (lookup("ansible.builtin.file", web_saas_stripe_gitops_checkout ~ "/compose/web-saas/billing/stripe-webhooks.yaml") | from_yaml).canonical }}'
+
+- name: Enforce test-only credentials independent of deployment generation
+  ansible.builtin.assert:
+    that:
+      - canonical_webhook.mode == 'test'
+      - canonical_webhook.webhook_url == 'https://accounts.svc.plus/api/billing/stripe/webhook'
+      - canonical_webhook.vault_path == 'kv/prod/billing-service'
+      - canonical_webhook.secret_key == 'SANDBOX_STRIPE_SECRET_KEY'
+      - canonical_webhook.webhook_secret_key == 'SANDBOX_STRIPE_WEBHOOK_SECRET'
+
+- name: Verify the actual host
+  ansible.builtin.command:
+    argv: [hostname, -s]
+  register: webhook_host
+  changed_when: false
+  check_mode: false
+  failed_when: webhook_host.stdout != inventory_hostname
+
+- name: Verify the existing runtime file is private
+  ansible.builtin.stat:
+    path: '{{ web_saas_stripe_runtime_env }}'
+  register: webhook_runtime
+
+- name: Reject an absent or shared runtime file
+  ansible.builtin.assert:
+    that:
+      - webhook_runtime.stat.exists
+      - webhook_runtime.stat.isreg
+      - webhook_runtime.stat.mode == '0600'
+      - webhook_runtime.stat.uid == 0
+
+- name: Read only the declared Sandbox fields through the authenticated control identity
+  ansible.builtin.command:
+    argv: [vault, kv, get, '-field={{ item }}', '{{ canonical_webhook.vault_path }}']
+  loop: ['{{ canonical_webhook.secret_key }}', '{{ canonical_webhook.webhook_secret_key }}']
+  environment:
+    VAULT_ADDR: '{{ lookup("ansible.builtin.env", "VAULT_ADDR") | default("https://vault.svc.plus", true) }}'
+  delegate_to: localhost
+  become: false
+  register: webhook_credentials
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Reject live, blank or multiline credential values
+  ansible.builtin.assert:
+    that:
+      - webhook_credentials.results[0].stdout is match('^sk_test_')
+      - webhook_credentials.results[1].stdout is match('^whsec_')
+      - webhook_credentials.results[1].stdout.splitlines() | length == 1
+  no_log: true
+
+- name: Require the running Accounts test key to match the declared Vault key
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - 'import json,subprocess,sys; expected=json.load(sys.stdin); obj=json.loads(subprocess.check_output(["docker","inspect","web-saas-accounts"]))[0]; env=dict(s.split("=",1) for s in obj["Config"]["Env"] if "=" in s); assert expected.startswith("sk_test_") and env.get("STRIPE_SECRET_KEY")==expected'
+    stdin: '{{ webhook_credentials.results[0].stdout | to_json }}'
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Stage the webhook value without restarting any service
+  ansible.builtin.lineinfile:
+    path: '{{ web_saas_stripe_runtime_env }}'
+    regexp: '^STRIPE_WEBHOOK_SECRET='
+    line: "STRIPE_WEBHOOK_SECRET={{ webhook_credentials.results[1].stdout | to_json(ensure_ascii=false) | replace('$', '$$') }}"
+    mode: '0600'
+    backup: true
+  no_log: true
+
+- name: Configure only the canonical test endpoint event subscriptions
+  ansible.builtin.include_tasks: configure-webhook-events.yml
+
+- name: Report the staged configuration boundary
+  ansible.builtin.debug:
+    msg: Test webhook credential staged; activate only through the selected immutable Doco-CD release
