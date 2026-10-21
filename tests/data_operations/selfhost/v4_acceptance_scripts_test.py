@@ -48,6 +48,39 @@ class AcceptanceScriptsTest(unittest.TestCase):
         self.assertEqual(no_traffic.returncode, 1)
         self.assertNotIn("fixture-node", no_traffic.stdout + no_traffic.stderr)
 
+    def test_traffic_script_supports_zero_traffic_mode_and_sanitized_receipt_json(self):
+        receipt_path = self.bin / "receipt.json"
+        zero_passed = self.run_script(
+            "v4_traffic_chain_acceptance.sh",
+            output="2|0\n",
+            V4_TRAFFIC_NODE_ID="fixture-node-secret",
+            V4_ALLOW_ZERO_TRAFFIC="1",
+            V4_RECEIPT_JSON=str(receipt_path),
+            V4_CASE_ID="case-zero-traffic-01",
+        )
+        self.assertEqual(zero_passed.returncode, 0, zero_passed.stderr)
+        self.assertIn("PASS (ZERO_TRAFFIC): recent buckets=2; bytes=0", zero_passed.stdout)
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(receipt["case_id"], "case-zero-traffic-01")
+        self.assertEqual(receipt["status"], "PASS")
+        self.assertEqual(receipt["traffic_state"], "zero_traffic")
+        self.assertEqual(receipt["bucket_count"], 2)
+        self.assertEqual(receipt["byte_sum"], 0)
+        self.assertNotIn("fixture-node-secret", json.dumps(receipt))
+
+        insufficient_buckets = self.run_script(
+            "v4_traffic_chain_acceptance.sh",
+            output="1|0\n",
+            V4_TRAFFIC_NODE_ID="fixture-node-secret",
+            V4_ALLOW_ZERO_TRAFFIC="1",
+            V4_RECEIPT_JSON=str(receipt_path),
+        )
+        self.assertEqual(insufficient_buckets.returncode, 1)
+        failed_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(failed_receipt["status"], "FAIL")
+        self.assertEqual(failed_receipt["traffic_state"], "insufficient_buckets")
+        self.assertNotIn("fixture-node-secret", json.dumps(failed_receipt))
+
     def test_stripe_script_is_guarded_and_accepts_only_http_status_output(self):
         guarded = self.run_script("v4_stripe_sandbox_egress.sh")
         self.assertEqual(guarded.returncode, 2)

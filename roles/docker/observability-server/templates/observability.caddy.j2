@@ -28,8 +28,8 @@ observability.svc.plus {
     # ==========================================
     # VictoriaMetrics / Prometheus (Metrics Ingest & Query)
     # ==========================================
-    # [接收] 标准 OTLP/HTTP Metrics 写入 (/v1/metrics, /otlp/v1/metrics, /ingest/otlp/v1/metrics)
-    @otlp_metrics path /v1/metrics* /otlp/v1/metrics* /ingest/otlp/v1/metrics* /insert/opentelemetry/v1/metrics*
+    # [接收] 直接 OTLP/HTTP Metrics 写入 (/v1/metrics, /insert/opentelemetry/v1/metrics)
+    @otlp_metrics path /v1/metrics* /insert/opentelemetry/v1/metrics*
     handle @otlp_metrics {
         rewrite * /insert/opentelemetry/v1/metrics
         reverse_proxy 127.0.0.1:{{ observability_vmetrics_port | default('9090') }}
@@ -51,8 +51,8 @@ observability.svc.plus {
     # ==========================================
     # VictoriaLogs / Loki (Logs Ingest & Query)
     # ==========================================
-    # [接收] 标准 OTLP/HTTP Logs 写入 (/v1/logs, /otlp/v1/logs, /ingest/otlp/v1/logs)
-    @otlp_logs path /v1/logs* /otlp/v1/logs* /ingest/otlp/v1/logs* /insert/opentelemetry/v1/logs*
+    # [接收] 直接 OTLP/HTTP Logs 写入 (/v1/logs, /insert/opentelemetry/v1/logs)
+    @otlp_logs path /v1/logs* /insert/opentelemetry/v1/logs*
     handle @otlp_logs {
         rewrite * /insert/opentelemetry/v1/logs
         reverse_proxy 127.0.0.1:9428
@@ -75,16 +75,17 @@ observability.svc.plus {
     # OpenTelemetry / VictoriaTraces / Jaeger (Traces Ingest & Query)
     # ==========================================
     # Agent and application telemetry enters through the collector so metrics,
-    # logs and traces receive a common resource normalization and trace-derived
-    # RED metrics.  Keep the direct trace endpoint below for compatibility.
+    # logs and traces receive a common resource normalization, sensitive attribute
+    # scrubbing, and trace-derived RED metrics (spanmetrics). Keep the direct
+    # /v1/traces and /insert/opentelemetry/v1/traces endpoints below for compatibility.
     handle_path /otlp/* {
         reverse_proxy 127.0.0.1:4319
     }
     handle_path /ingest/otlp/* {
         reverse_proxy 127.0.0.1:4319
     }
-    # [接收] 标准 OTLP/HTTP Traces 写入 (/v1/traces, /otlp/v1/traces, /ingest/otlp/v1/traces)
-    @otlp_traces path /v1/traces* /otlp/v1/traces* /ingest/otlp/v1/traces* /insert/opentelemetry/v1/traces*
+    # [接收] 直接 OTLP/HTTP Traces 写入 (/v1/traces, /insert/opentelemetry/v1/traces)
+    @otlp_traces path /v1/traces* /insert/opentelemetry/v1/traces*
     handle @otlp_traces {
         rewrite * /insert/opentelemetry/v1/traces
         reverse_proxy 127.0.0.1:10428

@@ -1,0 +1,351 @@
+{
+  "uid": "dual-link-network-latency",
+  "title": "Network Latency Chain (RTT / DNS / TLS / Proxy / App / DB)",
+  "description": "End-to-end network and application latency chain across Blackbox external probes, Exporter outbound HTTP phase instrumentation, Edge Caddy /split reverse proxy, Host TCP/network saturation, and OTel spanmetrics for Accounts/Billing/PostgreSQL.",
+  "tags": [
+    "dual-link",
+    "network",
+    "latency",
+    "xhttp",
+    "otel",
+    "victoriametrics"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "Traffic Statistics & Billing Chain",
+      "type": "link",
+      "url": "/grafana/d/dual-link-traffic-accounting/traffic-statistics-and-billing-chain",
+      "icon": "external link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "Explore VictoriaTraces",
+      "type": "link",
+      "url": "/grafana/explore?left=%7B%22datasource%22%3A%22victoriatraces%22%7D",
+      "icon": "external link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "Explore VictoriaLogs",
+      "type": "link",
+      "url": "/grafana/explore?left=%7B%22datasource%22%3A%22victorialogs%22%7D",
+      "icon": "external link",
+      "keepTime": true,
+      "includeVars": true
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "env",
+        "label": "Environment",
+        "type": "query",
+        "datasource": {
+          "uid": "victoriametrics"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, env)",
+        "query": "label_values(traces_span_metrics_calls_total, env)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "environment",
+        "label": "Environment Label",
+        "type": "query",
+        "datasource": {
+          "uid": "victoriametrics"
+        },
+        "definition": "label_values(up, environment)",
+        "query": "label_values(up, environment)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "instance",
+        "label": "Instance",
+        "type": "query",
+        "datasource": {
+          "uid": "victoriametrics"
+        },
+        "definition": "label_values(up, instance)",
+        "query": "label_values(up, instance)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "node",
+        "label": "Node",
+        "type": "query",
+        "datasource": {
+          "uid": "victoriametrics"
+        },
+        "definition": "label_values(node_uname_info, nodename)",
+        "query": "label_values(node_uname_info, nodename)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "transport",
+        "label": "Transport",
+        "type": "custom",
+        "query": "xhttp,tcp,unknown",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "service_name",
+        "label": "Service Name",
+        "type": "query",
+        "datasource": {
+          "uid": "victoriametrics"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, service_name)",
+        "query": "label_values(traces_span_metrics_calls_total, service_name)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "1 · Blackbox External Probe Reachability & Phase Duration (DNS / TCP / TLS / TTFB / Transfer)",
+      "description": "External Blackbox Exporter probe success, ICMP RTT, and HTTP phase breakdown (resolve, connect, tls, processing, transfer).",
+      "datasource": {
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg by (instance, phase) (probe_http_duration_seconds{instance=~\"$instance\", phase=~\"resolve|connect|tls|processing|transfer\"})",
+          "legendFormat": "{{instance}} http:{{phase}}"
+        },
+        {
+          "refId": "B",
+          "expr": "avg by (instance, phase) (probe_icmp_duration_seconds{instance=~\"$instance\"})",
+          "legendFormat": "{{instance}} icmp:{{phase}}"
+        },
+        {
+          "refId": "C",
+          "expr": "min by (instance) (probe_success{instance=~\"$instance\"})",
+          "legendFormat": "{{instance}} probe_success"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "2 · Exporter Outbound HTTP Phase Latency (DNS / TCP / TLS / TTFB / Total)",
+      "description": "httptrace-instrumented outbound HTTP phase latency from xray-Exporter. Reused connections omit dns/tcp_connect/tls_handshake observations instead of recording synthetic 0s.",
+      "datasource": {
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le, target, phase) (rate(xray_snapshot_http_phase_duration_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "p50 {{target}} {{phase}}"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le, target, phase) (rate(xray_snapshot_http_phase_duration_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "p95 {{target}} {{phase}}"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le, target, phase) (rate(xray_snapshot_http_phase_duration_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "p99 {{target}} {{phase}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "3 · Edge Caddy /split Latency & Upstream Failure Events",
+      "description": "Edge Caddy HTTP response duration quantiles and xhttp_events_total failure categories (socket_missing, unexpected_eof, upstream_reset, connection_refused, other_502, xray_started).",
+      "datasource": {
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, instance) (rate(caddy_http_response_duration_seconds_bucket{job=\"xhttp-caddy\", instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "p95 caddy duration {{instance}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (instance, event) (rate(xhttp_events_total{instance=~\"$instance\", event=~\"socket_missing|unexpected_eof|upstream_reset|connection_refused|other_502|xray_started\"}[5m]))",
+          "legendFormat": "{{instance}} event:{{event}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "4 · Host Network Saturation & TCP Retransmits",
+      "description": "Node Exporter TCP segment retransmission rate and NIC RX/TX packet drop rate.",
+      "datasource": {
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (instance) (rate(node_netstat_Tcp_RetransSegs{instance=~\"$instance\"}[5m]))",
+          "legendFormat": "{{instance}} tcp_retrans_segs/s"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (instance) (rate(node_network_transmit_drop_total{instance=~\"$instance\"}[5m]))",
+          "legendFormat": "{{instance}} tx_drop/s"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (instance) (rate(node_network_receive_drop_total{instance=~\"$instance\"}[5m]))",
+          "legendFormat": "{{instance}} rx_drop/s"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "5 · Application Request & Database Span Latency (OTel spanmetrics)",
+      "description": "Application HTTP handler and PostgreSQL query/exec span latency (p50/p95/p99) and call rate derived from OTel Collector spanmetrics.",
+      "datasource": {
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, service_name, span_name, transport) (rate(traces_span_metrics_duration_milliseconds_bucket{env=~\"$env\", service_name=~\"web-saas-accounts|web-saas-billing|$service_name\", transport=~\"$transport|^$\"}[$__rate_interval])))",
+          "legendFormat": "p95 {{service_name}} {{span_name}} ({{transport}})"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le, service_name, span_name, db_operation) (rate(traces_span_metrics_duration_milliseconds_bucket{env=~\"$env\", span_name=~\"sql\\\\.conn\\\\.(query|exec)\"}[$__rate_interval])))",
+          "legendFormat": "p95 DB {{service_name}} {{span_name}} {{db_operation}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (service_name, span_name, status_code) (rate(traces_span_metrics_calls_total{env=~\"$env\", service_name=~\"web-saas-accounts|web-saas-billing|$service_name\"}[$__rate_interval]))",
+          "legendFormat": "calls/s {{service_name}} {{span_name}} [{{status_code}}]"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 8
+      }
+    },
+    {
+      "id": 6,
+      "type": "text",
+      "title": "6 · Latency Phase Boundaries & Missing-Data Semantics Guide",
+      "options": {
+        "mode": "markdown",
+        "content": "### Network Latency Chain — Phase Boundaries & Missing-Data Semantics\n\n| Phase Metric / Attribute | Boundary Definition | Missing / Reused Connection Semantics |\n| :--- | :--- | :--- |\n| `dns_ms` / `phase=\"dns\"` / `phase=\"resolve\"` | Client DNS lookup start (`DNSStart`) to completion (`DNSDone`) | **Omitted (`not_observed`)** when connecting by IP literal or reusing an existing HTTP keep-alive connection. Never padded with synthetic `0`. |\n| `tcp_connect_ms` / `phase=\"tcp_connect\"` / `phase=\"connect\"` | TCP SYN (`ConnectStart`) to TCP handshake completion (`ConnectDone`) | **Omitted (`not_observed`)** on pooled/reused connections (`GotConnInfo.Reused=true`) or Unix domain sockets. |\n| `tls_handshake_ms` / `phase=\"tls_handshake\"` / `phase=\"tls\"` | TLS ClientHello (`TLSHandshakeStart`) to Finished (`TLSHandshakeDone`) | **Omitted (`not_observed`)** on plaintext HTTP or reused TLS connections. |\n| `ttfb_ms` / `phase=\"ttfb\"` / `phase=\"processing\"` | Request fully written (`WroteRequest`) to first response byte (`GotFirstResponseByte`) | Measures upstream proxy + application processing + network RTT after connection setup. |\n| `request_total_ms` / `phase=\"total\"` | Total client round-trip from request start to response body close | Always recorded on completed requests. |\n| `db_query_ms` (`sql.conn.query` / `sql.conn.exec`) | Application SQL driver query/exec start to result return | Emitted as child OTel spans (`db.system=postgresql`, `db.operation=SELECT|INSERT|UPDATE|DELETE`); raw SQL text is scrubbed at both SDK and Collector layers. |\n\n- **Unobserved Client RTT (`unknown` / `not_observed`)**: When client-side TCP RTT is not directly accessible from a reverse proxy or container namespace, `transport` or RTT fields remain `unknown` / omitted rather than fabricating `0 ms`.\n- **Cross-Chain Drill-Down**: Use the top-right **[Traffic Statistics & Billing Chain](/grafana/d/dual-link-traffic-accounting/traffic-statistics-and-billing-chain)** link to jump directly to the Exporter → Vector → Billing → PostgreSQL → Accounts pipeline with the same time window and filter variables."
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 7
+      }
+    }
+  ]
+}

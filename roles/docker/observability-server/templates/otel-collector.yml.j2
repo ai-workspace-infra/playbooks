@@ -9,28 +9,54 @@ processors:
     check_interval: 1s
     limit_mib: 256
     spike_limit_mib: 64
-  # Applications set deployment.environment.name=uat|prod.  Mirror it to the
-  # concise env label used by Grafana without overwriting an explicit env.
+  # Applications set deployment.environment.name=uat|prod (or deployment.environment).
+  # Mirror it to the concise env/environment labels used by Grafana and strip sensitive
+  # span/log attributes before exporting or generating spanmetrics.
   transform/environment:
     error_mode: ignore
     trace_statements:
       - context: resource
         statements:
           - set(attributes["env"], attributes["deployment.environment.name"]) where attributes["env"] == nil and attributes["deployment.environment.name"] != nil
+          - set(attributes["env"], attributes["deployment.environment"]) where attributes["env"] == nil and attributes["deployment.environment"] != nil
+          - set(attributes["environment"], attributes["env"]) where attributes["environment"] == nil and attributes["env"] != nil
+      - context: span
+        statements:
+          - delete_key(attributes, "db.statement")
+          - delete_key(attributes, "db.query.text")
+          - delete_key(attributes, "http.request.header.authorization")
+          - delete_key(attributes, "http.request.header.x_service_token")
+          - delete_key(attributes, "user.email")
+          - delete_key(attributes, "account.uuid")
+          - delete_key(attributes, "proxy.uuid")
     log_statements:
       - context: resource
         statements:
           - set(attributes["env"], attributes["deployment.environment.name"]) where attributes["env"] == nil and attributes["deployment.environment.name"] != nil
+          - set(attributes["env"], attributes["deployment.environment"]) where attributes["env"] == nil and attributes["deployment.environment"] != nil
+          - set(attributes["environment"], attributes["env"]) where attributes["environment"] == nil and attributes["env"] != nil
+      - context: log
+        statements:
+          - delete_key(attributes, "db.statement")
+          - delete_key(attributes, "db.query.text")
+          - delete_key(attributes, "http.request.header.authorization")
+          - delete_key(attributes, "http.request.header.x_service_token")
+          - delete_key(attributes, "user.email")
+          - delete_key(attributes, "account.uuid")
+          - delete_key(attributes, "proxy.uuid")
     metric_statements:
       - context: resource
         statements:
           - set(attributes["env"], attributes["deployment.environment.name"]) where attributes["env"] == nil and attributes["deployment.environment.name"] != nil
+          - set(attributes["env"], attributes["deployment.environment"]) where attributes["env"] == nil and attributes["deployment.environment"] != nil
+          - set(attributes["environment"], attributes["env"]) where attributes["environment"] == nil and attributes["env"] != nil
   batch:
     timeout: 5s
 
 exporters:
   otlphttp/victoria-traces:
-    endpoint: http://victoria-traces:4318
+    # The exporter appends /v1/traces, producing VictoriaTraces' OTLP endpoint.
+    endpoint: http://victoria-traces:10428/insert/opentelemetry
   otlphttp/victoria-logs:
     # The exporter appends /v1/logs, producing VictoriaLogs' OTLP endpoint.
     endpoint: http://victoria-logs:9428/insert/opentelemetry
@@ -39,8 +65,8 @@ exporters:
 
 connectors:
   # Turn every OTLP span into low-cardinality RED metrics.  The selected
-  # dimensions are the stable Agent / GenAI resource attributes used by the
-  # dashboard; request IDs, prompts and user IDs are deliberately excluded.
+  # dimensions are the stable Agent / GenAI and dual-link attributes used by the
+  # dashboards; high-cardinality IDs, prompts and user IDs are deliberately excluded.
   spanmetrics:
     histogram:
       explicit:
@@ -53,6 +79,16 @@ connectors:
       - name: gen_ai.operation.name
       - name: tool.name
       - name: mcp.server.name
+      - name: env
+      - name: environment
+      - name: transport
+      - name: stage
+      - name: outcome
+      - name: error_class
+      - name: http.route
+      - name: http.response.status_code
+      - name: db.system
+      - name: db.operation
 
 service:
   pipelines:

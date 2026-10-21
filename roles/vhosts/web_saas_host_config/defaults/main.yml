@@ -253,6 +253,13 @@ web_saas_host_config_secrets:
   EXPORTER_SOURCES_JSON: "{{ lookup('ansible.builtin.env', 'EXPORTER_SOURCES_JSON') | default('', true) }}"
   BILLING_INGEST_MODE: "{{ lookup('ansible.builtin.env', 'BILLING_INGEST_MODE') | default('push', true) }}"
 
+  # OpenTelemetry OTLP/HTTP export through the compose-local collector to observability.svc.plus.
+  OTEL_EXPORTER_OTLP_ENDPOINT: "{{ lookup('ansible.builtin.env', 'OTEL_EXPORTER_OTLP_ENDPOINT') | default('http://otel-collector:4318', true) }}"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "{{ lookup('ansible.builtin.env', 'OTEL_EXPORTER_OTLP_PROTOCOL') | default('http/protobuf', true) }}"
+  OTEL_TRACES_SAMPLER: "{{ lookup('ansible.builtin.env', 'OTEL_TRACES_SAMPLER') | default('parentbased_traceidratio', true) }}"
+  OTEL_TRACES_SAMPLER_ARG: "{{ web_saas_host_config_otel_sampling_ratio }}"
+  OTEL_RESOURCE_ATTRIBUTES: "{{ web_saas_host_config_otel_resource_attributes }}"
+
   # Server-side Console BFF calls stay on the compose network. Browser calls
   # use the public environment alias, whose Host is accepted by Caddy.
   ACCOUNT_SERVICE_URL: "{{ lookup('ansible.builtin.env', 'ACCOUNT_SERVICE_URL') | default('http://accounts:8080', true) }}"
