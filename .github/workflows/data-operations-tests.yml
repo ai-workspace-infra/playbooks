@@ -154,7 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           docker exec generation-permissions-fixture-v4-p0 psql -U postgres -d account -v ON_ERROR_STOP=1 -c \
-            "CREATE TABLE public.traffic_minute_buckets(bucket_start timestamptz NOT NULL,node_id text NOT NULL,total_bytes bigint NOT NULL); INSERT INTO public.traffic_minute_buckets VALUES (now()-interval '2 minutes','fixture-node',100),(now()-interval '1 minute','fixture-node',200);"
+            "DROP TABLE IF EXISTS public.traffic_minute_buckets; CREATE TABLE public.traffic_minute_buckets(bucket_start timestamptz NOT NULL,node_id text NOT NULL,total_bytes bigint NOT NULL); INSERT INTO public.traffic_minute_buckets VALUES (now()-interval '2 minutes','fixture-node',100),(now()-interval '1 minute','fixture-node',200);"
           V4_POSTGRES_CONTAINER=generation-permissions-fixture-v4-p0 \
           V4_TRAFFIC_NODE_ID=fixture-node \
             bash tests/data_operations/selfhost/v4_traffic_chain_acceptance.sh
