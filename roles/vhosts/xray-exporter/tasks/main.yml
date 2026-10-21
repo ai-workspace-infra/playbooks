@@ -1,4 +1,23 @@
 ---
+- name: Resolve canonical Vault credentials before any Exporter changes
+  ansible.builtin.include_tasks: '{{ playbook_dir }}/tasks/resolve-canonical-service-token.yml'
+  when: (xray_exporter_snapshot_features_enabled | bool) or (xray_exporter_vector_snapshot_url | trim | length > 0)
+
+- name: Bind Exporter snapshots to the canonical credential
+  ansible.builtin.set_fact:
+    xray_exporter_internal_service_token: '{{ canonical_internal_service_token }}'
+  no_log: true
+  when: (xray_exporter_snapshot_features_enabled | bool) or (xray_exporter_vector_snapshot_url | trim | length > 0)
+
+- name: Validate snapshot inputs before any Exporter changes
+  ansible.builtin.assert:
+    that:
+      - xray_exporter_internal_service_token is match('^[A-Za-z0-9._~+/=-]{32,}$')
+      - xray_exporter_vector_snapshot_url == 'http://127.0.0.1:8686'
+      - not (xray_exporter_repair_xray_services_enabled | bool)
+  no_log: true
+  when: xray_exporter_snapshot_features_enabled | bool
+
 - name: Protect existing snapshot credentials before any deployment changes
   ansible.builtin.include_tasks: protect-existing-snapshots.yml
 
@@ -97,6 +116,8 @@
     owner: root
     group: root
     mode: "0600"
+    backup: true
+  diff: false
   no_log: true
   notify: Restart xray-exporters
 

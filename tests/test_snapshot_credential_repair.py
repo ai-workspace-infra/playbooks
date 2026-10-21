@@ -68,9 +68,23 @@ class SnapshotCredentialRepairTests(unittest.TestCase):
         self.assertTrue(any('120' in rule for rule in probe['until']))
         self.assertNotIn('body', probe['ansible.builtin.uri'])
         self.assertEqual(probe['ansible.builtin.uri'].get('method', 'GET'), 'GET')
+        self.assertEqual(probe['when'], 'not ansible_check_mode')
+        self.assertFalse(binding_diff := next(task for task in tasks if 'ansible.builtin.lineinfile' in task)['diff'])
         entry = yaml.safe_load((ROOT / 'repair_xray_snapshot_credentials.yml').read_text())[0]
         self.assertEqual(entry['serial'], 1)
         self.assertIn('tasks/resolve-canonical-service-token.yml', json.dumps(entry))
+
+    def test_check_mode_reads_fixed_inputs_and_vault_without_mutation(self):
+        resolver = yaml.safe_load((ROOT / 'tasks/resolve-canonical-service-token.yml').read_text())
+        read = next(task for task in resolver if 'ansible.builtin.command' in task)
+        self.assertFalse(read['check_mode'])
+        self.assertFalse(read['changed_when'])
+        self.assertTrue(read['no_log'])
+        entry = yaml.safe_load((ROOT / 'repair_xray_snapshot_credentials.yml').read_text())[0]
+        for task in entry['pre_tasks']:
+            if 'ansible.builtin.command' in task:
+                self.assertFalse(task['check_mode'])
+                self.assertFalse(task['changed_when'])
 
 
 if __name__ == '__main__':

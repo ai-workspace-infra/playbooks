@@ -1,5 +1,19 @@
 # Xray Exporter and Vector snapshots
 
+Snapshot deployment always resolves the shared credential from the canonical
+Vault runtime key before changing host configuration. Direct role callers,
+fresh hosts and existing hosts use this same preflight; environment variables
+and stack environment maps cannot supply the snapshot credential. Missing Vault
+data stops the run. Runtime templates use protected backups and suppress secret
+diffs even with `--diff`. Unchanged templates do not notify the Exporter handler.
+
+Use `repair_xray_snapshot_credentials.yml --diff --check` for a bounded fleet
+credential preview. It reads Vault and current host state without applying
+changes; runtime snapshot probes are deliberately skipped in check mode because
+the proposed credential has not been loaded. A successful preview is not live
+Billing/PostgreSQL acceptance. Run the authorized apply and end-to-end probes
+separately, observing at least two snapshot intervals.
+
 The normal deployment installs the pinned Exporter and renders its services.
 When a host already has a Vector snapshot handoff, a metrics-only invocation
 without an explicit credential/handoff is rejected before any deployment change.

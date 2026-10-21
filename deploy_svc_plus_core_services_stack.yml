@@ -125,9 +125,7 @@
          | default(lookup('ansible.builtin.env', 'XRAY_EXPORTER_HOSTS')
          | default('xray_exporter', true), true) }}
     xray_exporter_internal_service_token: >-
-      {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
-         | default(hostvars['localhost'].stack_env_map.INTERNAL_SERVICE_TOKEN
-         | default('', true), true) }}
+      {{ canonical_internal_service_token | default('') }}
     stack_services: >-
       {{ lookup('ansible.builtin.env', 'STACK_SERVICES')
          | default('billing-service,xworkmate-bridge,xray-exporter,agent,accounts,stunnel-client,apisix,console', true) }}
