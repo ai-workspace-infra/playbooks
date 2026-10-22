@@ -1,0 +1,11 @@
+---
+# ==============================================================================
+# Playbook: Deploy XWorkmate Workspace (xworkmate-bridge + AI Workspace)
+# ==============================================================================
+- name: Deploy XWorkmate Workspace Stack
+  hosts: "{{ target_hosts | default('localhost') }}"
+  connection: "{{ 'local' if (target_hosts | default('localhost')) in ['localhost', '127.0.0.1'] else 'ssh' }}"
+  become: false
+  gather_facts: true
+  roles:
+    - role: roles/xworkmate_workspace

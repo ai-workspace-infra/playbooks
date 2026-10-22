@@ -1,0 +1,16 @@
+---
+- name: 检查 Docker 运行时是否可用
+  ansible.builtin.command: docker --version
+  register: docker_check
+  changed_when: false
+
+- name: 创建持久化存储目录
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - "{{ ai_memory_hub_base_dir }}"
+    - "{{ ai_memory_hub_data_dir }}/pgdata"
+    - "{{ ai_memory_hub_data_dir }}/qmd_models"
+    - "{{ ai_memory_hub_data_dir }}/qmd_storage"

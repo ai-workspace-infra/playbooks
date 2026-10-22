@@ -1,0 +1,25 @@
+---
+- name: 同步 GitOps Compose 声明
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../gitops/compose/ai-memory-hub/docker-compose.yml"
+    dest: "{{ ai_memory_hub_base_dir }}/docker-compose.yml"
+    mode: "0600"
+
+- name: 启动 AI-Memory-Hub 容器堆栈
+  ansible.builtin.command:
+    cmd: >
+      docker compose -f {{ ai_memory_hub_base_dir }}/docker-compose.yml up -d --remove-orphans
+  environment:
+    DATA_DIR: "{{ ai_memory_hub_data_dir }}"
+    LISTEN_IP: "{{ ai_memory_hub_listen_ip }}"
+    PG_PORT: "{{ ai_memory_hub_pg_port | string }}"
+    QMD_PORT: "{{ ai_memory_hub_qmd_port | string }}"
+    POSTGRESQL_IMAGE: "{{ ai_memory_hub_postgres_image }}"
+    QMD_IMAGE: "{{ ai_memory_hub_qmd_image }}"
+    POSTGRES_DB: "{{ ai_memory_hub_postgres_db }}"
+    POSTGRES_USER: "{{ ai_memory_hub_postgres_user }}"
+    POSTGRES_PASSWORD: "{{ ai_memory_hub_pg_password }}"
+    QMD_INGEST_TOKEN: "{{ ai_memory_hub_qmd_ingest_token }}"
+    QMD_MCP_TOKEN: "{{ ai_memory_hub_qmd_mcp_token }}"
+  no_log: true
+  changed_when: true
