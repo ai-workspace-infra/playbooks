@@ -1,0 +1,22 @@
+---
+- name: 验证 Bridge 服务就绪状态
+  ansible.builtin.uri:
+    url: "http://{{ xworkmate_workspace_listen_ip }}:{{ xworkmate_workspace_bridge_port }}/api/v1/agent/catalog"
+    headers:
+      Authorization: "Bearer {{ xworkmate_workspace_auth_token }}"
+    status_code: 200
+  register: bridge_probe
+  until: bridge_probe.status is defined and bridge_probe.status == 200
+  retries: 15
+  delay: 2
+
+- name: 打印部署成功卡片
+  ansible.builtin.debug:
+    msg:
+      - "=========================================================================="
+      - "              XWorkmate Agent Context Stack 部署成功！"
+      - "=========================================================================="
+      - " 部署模式       : {{ xworkmate_workspace_mode }}"
+      - " 服务地址 (URL) : http://{{ xworkmate_workspace_listen_ip }}:{{ xworkmate_workspace_bridge_port }}"
+      - " 认证令牌 (Token): {{ xworkmate_workspace_auth_token }}"
+      - "=========================================================================="

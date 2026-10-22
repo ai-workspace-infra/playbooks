@@ -1,0 +1,19 @@
+---
+- name: 验证 QMD 服务就绪状态
+  ansible.builtin.uri:
+    url: "http://{{ ai_memory_hub_listen_ip }}:{{ ai_memory_hub_qmd_port }}/mcp"
+    status_code: [200, 400, 404, 405]
+  register: qmd_probe
+  until: qmd_probe.status is defined and qmd_probe.status in [200, 400, 404, 405]
+  retries: 15
+  delay: 2
+
+- name: 打印部署成功卡片
+  ansible.builtin.debug:
+    msg:
+      - "=========================================================================="
+      - "              AI-Memory-Hub 存储集群部署成功！"
+      - "=========================================================================="
+      - " QMD 服务端口   : http://{{ ai_memory_hub_listen_ip }}:{{ ai_memory_hub_qmd_port }}/mcp"
+      - " PostgreSQL 端口: {{ ai_memory_hub_listen_ip }}:{{ ai_memory_hub_pg_port }}"
+      - "=========================================================================="

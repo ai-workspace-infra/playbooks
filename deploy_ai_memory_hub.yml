@@ -1,0 +1,11 @@
+---
+# ==============================================================================
+# Playbook: Deploy AI-Memory-Hub (QMD + PostgreSQL + pgvector + 扩展存储)
+# ==============================================================================
+- name: Deploy AI-Memory-Hub Stack
+  hosts: "{{ target_hosts | default('localhost') }}"
+  connection: "{{ 'local' if (target_hosts | default('localhost')) in ['localhost', '127.0.0.1'] else 'ssh' }}"
+  become: false
+  gather_facts: true
+  roles:
+    - role: roles/ai_memory_hub

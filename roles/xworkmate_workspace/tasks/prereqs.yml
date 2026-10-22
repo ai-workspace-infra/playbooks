@@ -1,0 +1,18 @@
+---
+- name: 检查 Docker 运行时是否可用
+  ansible.builtin.command: docker --version
+  register: docker_check
+  changed_when: false
+
+- name: 创建持久化存储目录
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - "{{ xworkmate_workspace_base_dir }}"
+    - "{{ xworkmate_workspace_data_dir }}/pgdata"
+    - "{{ xworkmate_workspace_data_dir }}/qmd_models"
+    - "{{ xworkmate_workspace_data_dir }}/qmd_storage"
+    - "{{ xworkmate_workspace_data_dir }}/caddy_data"
+    - "{{ xworkmate_workspace_data_dir }}/caddy_config"

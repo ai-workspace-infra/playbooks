@@ -1,0 +1,13 @@
+---
+# Main task entrypoint for xworkmate_workspace role
+- name: 准备宿主机依赖与目录
+  ansible.builtin.include_tasks: prereqs.yml
+
+- name: 解析或注入安全凭据 (无落盘)
+  ansible.builtin.include_tasks: secrets.yml
+
+- name: 部署与拉起 Docker Compose 堆栈
+  ansible.builtin.include_tasks: compose.yml
+
+- name: 端到端健康检查与自测
+  ansible.builtin.include_tasks: verify.yml
