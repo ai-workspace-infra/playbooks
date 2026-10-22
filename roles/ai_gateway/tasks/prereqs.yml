@@ -1,0 +1,22 @@
+---
+- name: 检查 Docker 运行时守护进程
+  command: docker --version
+  changed_when: false
+
+- name: 检查 Docker Compose 支持
+  command: docker compose version
+  register: compose_check
+  changed_when: false
+  failed_when: false
+
+- name: 初始化 AI Gateway 宿主机目录并收敛权限 (chmod 700)
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0700'
+  loop:
+    - "{{ ai_gateway_base_dir }}"
+    - "{{ ai_gateway_config_dir }}"
+    - "{{ ai_gateway_data_dir }}/new-api"
+    - "{{ ai_gateway_data_dir }}/caddy"
+    - "{{ ai_gateway_data_dir }}/caddy-config"

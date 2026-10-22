@@ -1,0 +1,32 @@
+---
+- name: 从 GitOps 仓库同步权威 Docker Compose 声明
+  get_url:
+    url: "{{ ai_gateway_gitops_compose_url }}"
+    dest: "{{ ai_gateway_base_dir }}/docker-compose.yml"
+    mode: '0600'
+  ignore_errors: true
+  register: compose_fetch
+
+- name: 启动 AI Gateway 拓扑容器 (New API + LiteLLM + Caddy)
+  community.docker.docker_compose_v2:
+    project_src: "{{ ai_gateway_base_dir }}"
+    state: present
+    remove_orphans: true
+    env_data:
+      CADDY_IMAGE: "{{ ai_gateway_caddy_image }}"
+      NEW_API_IMAGE: "{{ ai_gateway_new_api_image }}"
+      LITELLM_IMAGE: "{{ ai_gateway_litellm_image }}"
+      AI_GATEWAY_DOMAIN: "{{ ai_gateway_domain }}"
+      MCP_DOMAIN: "{{ ai_gateway_mcp_domain }}"
+      MCP_SERVICE_TOKEN: "{{ ai_gateway_mcp_service_token }}"
+      LISTEN_IP: "{{ ai_gateway_listen_ip }}"
+      HTTP_PORT: "{{ ai_gateway_http_port }}"
+      HTTPS_PORT: "{{ ai_gateway_https_port }}"
+      NEW_API_PORT: "{{ ai_gateway_new_api_port }}"
+      LITELLM_PORT: "{{ ai_gateway_litellm_port }}"
+      CONFIG_DIR: "{{ ai_gateway_config_dir }}"
+      DATA_DIR: "{{ ai_gateway_data_dir }}"
+      NEW_API_ROOT_TOKEN: "{{ resolved_new_api_root_token }}"
+      LITELLM_MASTER_KEY: "{{ resolved_litellm_master_key }}"
+      UPSTREAM_API_KEY: "{{ ai_gateway_upstream_api_key }}"
+  no_log: true

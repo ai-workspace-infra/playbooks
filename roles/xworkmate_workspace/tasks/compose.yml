@@ -1,11 +1,40 @@
 ---
-- name: 同步 GitOps Compose 声明
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../gitops/compose/xworkmate-workspace/docker-compose.yml"
+- name: 从 GitOps 仓库同步权威 Compose 声明
+  ansible.builtin.get_url:
+    url: "{{ xworkmate_workspace_gitops_compose_url }}"
     dest: "{{ xworkmate_workspace_base_dir }}/docker-compose.yml"
     mode: "0600"
+  ignore_errors: true
 
-- name: 启动 XWorkmate Workspace 容器堆栈
+- name: 初始化 LiteLLM 默认配置 (若启用 AI Gateway)
+  ansible.builtin.copy:
+    dest: "{{ xworkmate_workspace_data_dir }}/litellm_config.yaml"
+    mode: "0600"
+    content: |
+      model_list:
+        - model_name: default-mock
+          litellm_params:
+            model: mock_response/default-mock
+            mock_response: "Hello! AI Gateway is operational."
+        - model_name: gpt-4o
+          litellm_params:
+            model: mock_response/gpt-4o
+            mock_response: "Mock response for gpt-4o from AI Gateway."
+        - model_name: claude-3-5-sonnet
+          litellm_params:
+            model: mock_response/claude-3-5-sonnet
+            mock_response: "Mock response for claude-3-5-sonnet from AI Gateway."
+
+      general_settings:
+        master_key: "sk-litellm-{{ lookup('password', '/dev/null chars=ascii_letters,digits length=24') }}"
+
+      litellm_settings:
+        json_logs: true
+        drop_params: false
+  when: xworkmate_workspace_enable_ai_gateway | bool
+  no_log: true
+
+- name: 启动 XWorkmate Workspace 容器堆栈 (All-in-One: Bridge + DSH + DS-Bot + QMD + PG + Gateway)
   ansible.builtin.command:
     cmd: >
       docker compose -f {{ xworkmate_workspace_base_dir }}/docker-compose.yml up -d --remove-orphans
@@ -15,14 +44,23 @@
     BRIDGE_PORT: "{{ xworkmate_workspace_bridge_port | string }}"
     QMD_PORT: "{{ xworkmate_workspace_qmd_port | string }}"
     PG_PORT: "{{ xworkmate_workspace_pg_port | string }}"
+    DS_BOT_PORT: "{{ xworkmate_workspace_ds_bot_port | string }}"
+    NEW_API_PORT: "{{ xworkmate_workspace_new_api_port | string }}"
+    LITELLM_PORT: "{{ xworkmate_workspace_litellm_port | string }}"
     POSTGRESQL_IMAGE: "{{ xworkmate_workspace_postgres_image }}"
     QMD_IMAGE: "{{ xworkmate_workspace_qmd_image }}"
     BRIDGE_IMAGE: "{{ xworkmate_workspace_bridge_image }}"
+    DSH_IMAGE: "{{ xworkmate_workspace_dsh_image }}"
+    DS_BOT_IMAGE: "{{ xworkmate_workspace_ds_bot_image }}"
+    NEW_API_IMAGE: "{{ xworkmate_workspace_new_api_image }}"
+    LITELLM_IMAGE: "{{ xworkmate_workspace_litellm_image }}"
     POSTGRES_DB: "{{ xworkmate_workspace_postgres_db }}"
     POSTGRES_USER: "{{ xworkmate_workspace_postgres_user }}"
     POSTGRES_PASSWORD: "{{ xworkmate_workspace_pg_password }}"
     QMD_INGEST_TOKEN: "{{ xworkmate_workspace_qmd_ingest_token }}"
     QMD_MCP_TOKEN: "{{ xworkmate_workspace_qmd_mcp_token }}"
     AI_WORKSPACE_AUTH_TOKEN: "{{ xworkmate_workspace_auth_token }}"
+    NEW_API_ROOT_TOKEN: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=24') }}"
+    LITELLM_MASTER_KEY: "sk-litellm-{{ lookup('password', '/dev/null chars=ascii_letters,digits length=24') }}"
   no_log: true
   changed_when: true

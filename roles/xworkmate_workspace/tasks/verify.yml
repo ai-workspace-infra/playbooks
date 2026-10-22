@@ -1,22 +1,27 @@
 ---
-- name: 验证 Bridge 服务就绪状态
+- name: 验证 Bridge 服务健康端点
   ansible.builtin.uri:
     url: "http://{{ xworkmate_workspace_listen_ip }}:{{ xworkmate_workspace_bridge_port }}/api/v1/agent/catalog"
     headers:
       Authorization: "Bearer {{ xworkmate_workspace_auth_token }}"
     status_code: 200
   register: bridge_probe
-  until: bridge_probe.status is defined and bridge_probe.status == 200
-  retries: 15
+  until: bridge_probe.status == 200
+  retries: 24
   delay: 2
 
-- name: 打印部署成功卡片
+- name: 打印 XWorkmate Workspace All-in-One 部署成功卡片
   ansible.builtin.debug:
     msg:
       - "=========================================================================="
-      - "              XWorkmate Agent Context Stack 部署成功！"
+      - "      XWorkmate Workspace All-in-One 全栈部署成功 (v2.1 目标态)！"
       - "=========================================================================="
-      - " 部署模式       : {{ xworkmate_workspace_mode }}"
-      - " 服务地址 (URL) : http://{{ xworkmate_workspace_listen_ip }}:{{ xworkmate_workspace_bridge_port }}"
-      - " 认证令牌 (Token): {{ xworkmate_workspace_auth_token }}"
+      - " 部署模式             : {{ xworkmate_workspace_mode }}"
+      - " Bridge 服务 (HTTP)   : http://{{ xworkmate_workspace_listen_ip }}:{{ xworkmate_workspace_bridge_port }}"
+      - " DS-Bot 编排插件      : http://{{ xworkmate_workspace_listen_ip }}:{{ xworkmate_workspace_ds_bot_port }}"
+      - " QMD 记忆检索 (MCP)   : http://{{ xworkmate_workspace_listen_ip }}:{{ xworkmate_workspace_qmd_port }}"
+      - " AI Gateway 控制台    : http://{{ xworkmate_workspace_listen_ip }}:{{ xworkmate_workspace_new_api_port }}"
+      - " AI Gateway LiteLLM   : http://{{ xworkmate_workspace_listen_ip }}:{{ xworkmate_workspace_litellm_port }}"
+      - " 认证令牌 (Token)     : {{ xworkmate_workspace_auth_token }}"
       - "=========================================================================="
+  no_log: false
