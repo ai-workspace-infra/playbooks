@@ -1,0 +1,110 @@
+name: Test Ansible CMDB Installer
+
+on:
+  pull_request:
+    paths:
+      - "scripts/setup-ansible-cmdb.sh"
+      - "scripts/cmdb_inventory.py"
+      - ".github/workflows/test-setup-ansible-cmdb.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/setup-ansible-cmdb.sh"
+      - "scripts/cmdb_inventory.py"
+      - ".github/workflows/test-setup-ansible-cmdb.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  static-checks:
+    name: Lint & Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check (bash -n)
+        run: |
+          set -euo pipefail
+          bash -n scripts/setup-ansible-cmdb.sh
+
+      - name: ShellCheck validation
+        run: |
+          set -euo pipefail
+          shellcheck -S error scripts/setup-ansible-cmdb.sh
+
+      - name: Python compile check
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/cmdb_inventory.py
+
+      - name: Test help flags
+        run: |
+          set -euo pipefail
+          bash scripts/setup-ansible-cmdb.sh --help
+          python3 scripts/cmdb_inventory.py --help
+
+  smoke-tests:
+    name: Container Smoke Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Debian 12 smoke tests (--help & standalone --dry-run)
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:12-slim bash scripts/setup-ansible-cmdb.sh --help
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:12-slim bash scripts/setup-ansible-cmdb.sh --domain cmdb.example.com --standalone --dry-run
+
+      - name: Ubuntu 24.04 smoke test (standalone --dry-run)
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ubuntu:24.04 bash scripts/setup-ansible-cmdb.sh --domain cmdb.example.com --standalone --dry-run
+
+      - name: Ubuntu 22.04 smoke test (standalone --dry-run)
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ubuntu:22.04 bash scripts/setup-ansible-cmdb.sh --domain cmdb.example.com --standalone --dry-run
+
+      - name: Team mode fail-closed checks
+        run: |
+          set -euo pipefail
+          # Missing CMDB_DOMAIN should fail
+          if docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:12-slim bash scripts/setup-ansible-cmdb.sh --domain cmdb.example.com --with-inventory-plugin --dry-run; then
+            echo "Expected missing CMDB_DOMAIN to fail closed" >&2
+            exit 1
+          fi
+
+          # Missing CMDB_API_TOKEN should fail
+          if docker run --rm -e CMDB_DOMAIN=cmdb.example.com -v "$PWD:$PWD" -w "$PWD" debian:12-slim bash scripts/setup-ansible-cmdb.sh --domain cmdb.example.com --with-inventory-plugin --dry-run; then
+            echo "Expected missing CMDB_API_TOKEN to fail closed" >&2
+            exit 1
+          fi
+
+          # Domain mismatch should fail
+          if docker run --rm -e CMDB_DOMAIN=cmdb.example.com -e CMDB_API_TOKEN=mock -v "$PWD:$PWD" -w "$PWD" debian:12-slim bash scripts/setup-ansible-cmdb.sh --domain wrong.example.com --with-inventory-plugin --dry-run; then
+            echo "Expected domain mismatch to fail closed" >&2
+            exit 1
+          fi
+
+      - name: Team mode successful dry-run
+        run: |
+          set -euo pipefail
+          docker run --rm -e CMDB_DOMAIN=cmdb.example.com -e CMDB_API_TOKEN=vault-secret-sample -v "$PWD:$PWD" -w "$PWD" debian:12-slim bash scripts/setup-ansible-cmdb.sh --domain cmdb.example.com --with-inventory-plugin --dry-run
+
+      - name: Uninstall dry-run test
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:12-slim bash scripts/setup-ansible-cmdb.sh --uninstall --dry-run
+
+      - name: Idempotency verification in dry-run
+        run: |
+          set -euo pipefail
+          run1=$(docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:12-slim bash scripts/setup-ansible-cmdb.sh --domain cmdb.example.com --standalone --dry-run)
+          run2=$(docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:12-slim bash scripts/setup-ansible-cmdb.sh --domain cmdb.example.com --standalone --dry-run)
+          if [ "$run1" != "$run2" ]; then
+            echo "Dry-run outputs differed between consecutive runs" >&2
+            diff <(echo "$run1") <(echo "$run2")
+            exit 1
+          fi
+          echo "Idempotency verified successfully."
