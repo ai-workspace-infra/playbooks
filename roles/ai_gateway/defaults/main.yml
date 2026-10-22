@@ -1,0 +1,32 @@
+---
+# defaults file for roles/ai_gateway
+ai_gateway_mode: "standalone" # standalone, team
+ai_gateway_domain: "ai.example.com"
+ai_gateway_mcp_domain: "mcp.example.com"
+
+# 监听与端口配置
+ai_gateway_listen_ip: "127.0.0.1"
+ai_gateway_http_port: 80
+ai_gateway_https_port: 443
+ai_gateway_new_api_port: 3000
+ai_gateway_litellm_port: 4000
+
+# 数据与持久化
+ai_gateway_base_dir: "/opt/ai-gateway"
+ai_gateway_data_dir: "{{ ai_gateway_base_dir }}/data"
+ai_gateway_config_dir: "{{ ai_gateway_base_dir }}/config"
+
+# 镜像版本轴锁定
+ai_gateway_caddy_image: "caddy:2.8.4-alpine"
+ai_gateway_new_api_image: "calciumion/new-api:v0.4.10"
+ai_gateway_litellm_image: "ghcr.io/berriai/litellm:v1.51.0"
+
+# GitOps 权威编排源
+ai_gateway_gitops_compose_url: "https://raw.githubusercontent.com/ai-workspace-infra/gitops/main/compose/ai-gateway/docker-compose.yml"
+ai_gateway_gitops_caddyfile_url: "https://raw.githubusercontent.com/ai-workspace-infra/gitops/main/compose/ai-gateway/Caddyfile.template"
+
+# 凭据变量 (Vault 注入或内存生成，严禁落盘)
+ai_gateway_new_api_root_token: ""
+ai_gateway_litellm_master_key: ""
+ai_gateway_mcp_service_token: ""
+ai_gateway_upstream_api_key: ""

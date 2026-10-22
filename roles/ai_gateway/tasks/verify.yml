@@ -1,0 +1,31 @@
+---
+- name: 探测 LiteLLM 健康端点
+  uri:
+    url: "http://{{ ai_gateway_listen_ip }}:{{ ai_gateway_litellm_port }}/health/liveliness"
+    method: GET
+    status_code: 200
+  register: litellm_probe
+  until: litellm_probe.status == 200
+  retries: 15
+  delay: 2
+
+- name: 探测 New API 存活端点
+  uri:
+    url: "http://{{ ai_gateway_listen_ip }}:{{ ai_gateway_new_api_port }}/"
+    method: GET
+    status_code: [200, 302]
+  register: new_api_probe
+  until: new_api_probe.status in [200, 302]
+  retries: 15
+  delay: 2
+
+- name: 输出 AI Gateway 部署完成状态摘要
+  debug:
+    msg:
+      - "=========================================================================="
+      - "                  AI Gateway 网关服务就绪！"
+      - "=========================================================================="
+      - " 部署模式       : {{ ai_gateway_mode }}"
+      - " New API 端点   : http://{{ ai_gateway_listen_ip }}:{{ ai_gateway_new_api_port }}"
+      - " LiteLLM 端点  : http://{{ ai_gateway_listen_ip }}:{{ ai_gateway_litellm_port }}"
+      - "=========================================================================="

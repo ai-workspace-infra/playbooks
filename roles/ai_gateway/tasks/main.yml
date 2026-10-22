@@ -1,0 +1,12 @@
+---
+- name: 阶段 1: 执行前置环境依赖检查与目录初始化
+  ansible.builtin.import_tasks: prereqs.yml
+
+- name: 阶段 2: 内存凭据解析与配置渲染
+  ansible.builtin.import_tasks: secrets.yml
+
+- name: 阶段 3: 同步 GitOps 声明并启动容器拓扑
+  ansible.builtin.import_tasks: compose.yml
+
+- name: 阶段 4: 端到端级联探针健康验证
+  ansible.builtin.import_tasks: verify.yml
