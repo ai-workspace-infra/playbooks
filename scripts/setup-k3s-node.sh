@@ -18,7 +18,7 @@ PINNED_CADDY_IMAGE="caddy:2.8.4-alpine"
 PINNED_PG_IMAGE="pgvector/pgvector:pg16"
 
 # --- Defaults & State ---
-DOMAIN=""
+DOMAIN="${K3S_DOMAIN:-}"
 STANDALONE=false
 WITH_POSTGRESQL=false
 DRY_RUN=false
@@ -52,13 +52,18 @@ supporting standalone and team (Vault injection) modes.
 
 Required Arguments (except for --help / --uninstall):
   --domain <fqdn>       Fully Qualified Domain Name for the K3s node API/ingress
-                        (e.g., k3s.example.com)
+                        (e.g., k3s.example.com). Can also be set via K3S_DOMAIN.
 
 Installation Modes (specify at least one):
   --standalone          Single-node mode with self-contained token and configuration.
   --with-postgresql     Install and configure PostgreSQL with pgvector container.
-                        In team mode, requires K3S_DOMAIN, K3S_TOKEN, and PG_DOMAIN
-                        environment variables.
+                        Requires PG_DOMAIN in team mode.
+
+Environment Variables:
+  PG_DOMAIN             (Required in team mode) FQDN for PostgreSQL database reverse proxy.
+  K3S_DOMAIN            (Optional) Default FQDN for K3s node if --domain is not provided.
+  K3S_TOKEN             (Optional) Pre-shared cluster token. If not provided, a secure
+                        token is generated automatically.
 
 Options:
   --dry-run             Simulate installation and preflight checks without making changes.
@@ -402,26 +407,32 @@ fi
 
 # --- Mode Resolution and Credential Handling ---
 if [ "$STANDALONE" = false ] && [ "$WITH_POSTGRESQL" = true ]; then
-  # Team mode: Fail closed if any required environment variable is missing
+  # Team mode: Fail closed if required environment variables are missing
   MODE="Team"
   POSTGRES_ENABLED=true
 
-  if [ -z "${K3S_DOMAIN:-}" ]; then
-    log_error "Team mode requires K3S_DOMAIN environment variable (fail-closed)."
-    exit 1
-  fi
-  if [ -z "${K3S_TOKEN:-}" ]; then
-    log_error "Team mode requires K3S_TOKEN environment variable (fail-closed)."
-    exit 1
-  fi
   if [ -z "${PG_DOMAIN:-}" ]; then
     log_error "Team mode requires PG_DOMAIN environment variable (fail-closed)."
     exit 1
   fi
 
-  if [ "$DOMAIN" != "$K3S_DOMAIN" ]; then
+  if [ -n "${K3S_DOMAIN:-}" ] && [ "$DOMAIN" != "$K3S_DOMAIN" ]; then
     log_error "CLI --domain '${DOMAIN}' does not match K3S_DOMAIN '${K3S_DOMAIN}'."
     exit 1
+  fi
+
+  K3S_TOKEN="${K3S_TOKEN:-}"
+  if [ -z "$K3S_TOKEN" ]; then
+    # Idempotency check: reuse token from existing k3s config if present
+    if [ -f "/etc/rancher/k3s/config.yaml" ] && grep -q "^token:" /etc/rancher/k3s/config.yaml 2>/dev/null; then
+      K3S_TOKEN="$(awk '/^token:/ {print $2}' /etc/rancher/k3s/config.yaml | tr -d '"'\''')"
+    elif [ -f "/var/lib/rancher/k3s/server/token" ]; then
+      K3S_TOKEN="$(cat /var/lib/rancher/k3s/server/token 2>/dev/null || true)"
+    fi
+    if [ -z "$K3S_TOKEN" ]; then
+      K3S_TOKEN="$(generate_secret 32)"
+      GENERATED_K3S_TOKEN=true
+    fi
   fi
 
   POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
