@@ -16,7 +16,42 @@
 
 ---
 
-## 快速开始
+## 🚀 快速开始
+
+### 1. 一键安装 Ansible + CMDB + 动态清单
+
+在目标主机（Debian 12+ / Ubuntu 22.04+）以 root 用户执行一键安装：
+
+#### 单机模式（Standalone）
+自动安装 `ansible-core`、启动轻量 SQLite CMDB 服务与 Caddy 自动 HTTPS 反代（`caddy:2.8.4-alpine`），并生成 CMDB API Token：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/scripts/setup-ansible-cmdb.sh | \
+  bash -s -- --domain cmdb.example.com --standalone
+```
+
+#### 团队协作模式（Team - Vault 注入凭据）
+在 Ansible 执行节点配置动态清单插件（`/opt/ansible-cmdb/cmdb_inventory.py`），通过 HashiCorp Vault 动态注入凭据连接团队 CMDB 服务：
+
+```bash
+export CMDB_DOMAIN="cmdb.example.com"
+export CMDB_API_TOKEN="<runtime-secret>"
+curl -fsSL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/scripts/setup-ansible-cmdb.sh | \
+  bash -s -- --domain "$CMDB_DOMAIN" --with-inventory-plugin
+unset CMDB_API_TOKEN
+```
+
+#### 卸载服务（Uninstall）
+停止运行栈、备份数据库及配置并安全清理：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/scripts/setup-ansible-cmdb.sh | \
+  bash -s -- --uninstall
+```
+
+---
+
+### 2. 基础依赖与清单验证
 
 ```bash
 # 1. 依赖
