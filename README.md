@@ -79,9 +79,38 @@ curl -fsSL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/s
   bash -s -- --uninstall
 ```
 
+### 3. K3s 节点与 PostgreSQL 一键安装 (scripts/setup-k3s-node.sh)
+
+面向 Debian 12+ / Ubuntu 22.04+ 裸机环境的一键部署命令，快速拉起 K3s Kubernetes 节点 + PostgreSQL (pgvector) + Caddy 自动化 TLS 反向代理。
+
+#### 单机模式（Standalone）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/scripts/setup-k3s-node.sh | \
+  bash -s -- --domain k3s.example.com --standalone
+```
+
+#### 团队模式（Team - Vault 凭据注入）
+
+```bash
+export K3S_DOMAIN="k3s.example.com"
+export K3S_TOKEN="<runtime-secret>"
+export PG_DOMAIN="db.example.com"
+curl -fsSL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/scripts/setup-k3s-node.sh | \
+  bash -s -- --domain "$K3S_DOMAIN" --with-postgresql
+unset K3S_TOKEN
+```
+
+#### 服务卸载（Uninstall）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/scripts/setup-k3s-node.sh | \
+  bash -s -- --uninstall
+```
+
 ---
 
-### 3. 基础依赖与清单验证
+### 4. 基础依赖与清单验证
 
 ```bash
 # 1. 依赖

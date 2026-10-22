@@ -1,0 +1,74 @@
+name: Test setup-k3s-node Installer
+
+on:
+  pull_request:
+    paths:
+      - "scripts/setup-k3s-node.sh"
+      - ".github/workflows/test-setup-k3s-node.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/setup-k3s-node.sh"
+      - ".github/workflows/test-setup-k3s-node.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check (bash -n)
+        run: bash -n scripts/setup-k3s-node.sh
+
+      - name: ShellCheck static analysis
+        run: shellcheck -S error scripts/setup-k3s-node.sh
+
+      - name: Verify executable permission
+        run: test -x scripts/setup-k3s-node.sh
+
+  smoke-tests:
+    needs: static-checks
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - "debian:12-slim"
+          - "ubuntu:22.04"
+          - "ubuntu:24.04"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test --help on ${{ matrix.image }}
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.image }} \
+            bash scripts/setup-k3s-node.sh --help
+
+      - name: Test Standalone mode --dry-run on ${{ matrix.image }}
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.image }} \
+            bash scripts/setup-k3s-node.sh --domain k3s.example.com --standalone --dry-run
+
+      - name: Test Team mode --dry-run on ${{ matrix.image }}
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" \
+            -e K3S_DOMAIN=k3s.example.com \
+            -e K3S_TOKEN=mock-runtime-secret \
+            -e PG_DOMAIN=db.example.com \
+            ${{ matrix.image }} \
+            bash scripts/setup-k3s-node.sh --domain k3s.example.com --with-postgresql --dry-run
+
+      - name: Test --uninstall --dry-run on ${{ matrix.image }}
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.image }} \
+            bash scripts/setup-k3s-node.sh --uninstall --dry-run
+
+      - name: Test Idempotency (repeated dry-run) on ${{ matrix.image }}
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.image }} \
+            bash scripts/setup-k3s-node.sh --domain k3s.example.com --standalone --dry-run
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.image }} \
+            bash scripts/setup-k3s-node.sh --domain k3s.example.com --standalone --dry-run
