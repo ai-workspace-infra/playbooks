@@ -49,9 +49,39 @@ curl -fsSL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/s
   bash -s -- --uninstall
 ```
 
+### 2. Doco CD 持续交付控制器（单机 / 团队）
+
+面向 Debian 12+ / Ubuntu 22.04+ 主机的一键安装入口，支持 Standalone（单机演示）与 Team（团队 GitOps + Vault 注入）两种模式：
+
+#### 单机演示模式（Standalone）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/scripts/setup-doco-cd.sh | \
+  bash -s -- --domain cd.example.com --standalone
+```
+
+#### 团队 GitOps 模式（Team）
+
+```bash
+export DOCO_DOMAIN="cd.example.com"
+export GITOPS_REPO="https://git.example.com/org/gitops.git"
+export GIT_ACCESS_TOKEN="<runtime-secret>"
+export WEBHOOK_SECRET="<runtime-secret>"
+curl -fsSL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/scripts/setup-doco-cd.sh | \
+  bash -s -- --domain "$DOCO_DOMAIN" --env uat
+unset GIT_ACCESS_TOKEN WEBHOOK_SECRET
+```
+
+#### 服务卸载与数据归档（Uninstall）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/scripts/setup-doco-cd.sh | \
+  bash -s -- --uninstall
+```
+
 ---
 
-### 2. 基础依赖与清单验证
+### 3. 基础依赖与清单验证
 
 ```bash
 # 1. 依赖

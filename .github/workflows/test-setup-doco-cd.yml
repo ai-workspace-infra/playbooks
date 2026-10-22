@@ -1,0 +1,86 @@
+name: Test setup-doco-cd installer
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/setup-doco-cd.sh'
+      - '.github/workflows/test-setup-doco-cd.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/setup-doco-cd.sh'
+      - '.github/workflows/test-setup-doco-cd.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify executable bit
+        run: |
+          test -x scripts/setup-doco-cd.sh || {
+            echo "Error: scripts/setup-doco-cd.sh is not executable"
+            exit 1
+          }
+
+      - name: Syntax check (bash -n)
+        run: bash -n scripts/setup-doco-cd.sh
+
+      - name: Static analysis (shellcheck)
+        run: shellcheck -x scripts/setup-doco-cd.sh
+
+  smoke-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        container:
+          - debian:12-slim
+          - ubuntu:22.04
+          - ubuntu:24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Test --help in ${{ matrix.container }}
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.container }} \
+            bash scripts/setup-doco-cd.sh --help
+
+      - name: Test standalone --dry-run in ${{ matrix.container }}
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.container }} \
+            bash scripts/setup-doco-cd.sh --domain cd.example.com --standalone --dry-run
+
+      - name: Test team mode --dry-run in ${{ matrix.container }}
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" \
+            -e DOCO_DOMAIN="cd.example.com" \
+            -e GITOPS_REPO="https://git.example.com/org/gitops.git" \
+            -e GIT_ACCESS_TOKEN="mock-token" \
+            -e WEBHOOK_SECRET="mock-secret" \
+            ${{ matrix.container }} \
+            bash scripts/setup-doco-cd.sh --domain cd.example.com --env uat --dry-run
+
+      - name: Test fail-closed on missing team credentials in ${{ matrix.container }}
+        run: |
+          set +e
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.container }} \
+            bash scripts/setup-doco-cd.sh --domain cd.example.com --env uat --dry-run
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then
+            echo "Expected exit code != 0 when team credentials missing, got $code"
+            exit 1
+          fi
+
+      - name: Test uninstall --dry-run in ${{ matrix.container }}
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.container }} \
+            bash scripts/setup-doco-cd.sh --uninstall --dry-run
