@@ -152,6 +152,20 @@ class RepositoryFixture(unittest.TestCase):
         with self.assertRaises(owner.Refused):
             self.load()
 
+    def test_storage_and_application_selections_must_share_compose_project_name(self):
+        contract, _ = self.load()
+        self.assertEqual([item['compose_project_name'] for item in contract['resolved']['selections']],
+                         ['fixture', 'fixture'])
+
+        storage_manifest = self.gitops / '.doco-cd.storage.yml'
+        manifest = owner.read_yaml(storage_manifest)
+        manifest['name'] = 'fixture-storage'
+        self.write(storage_manifest, manifest)
+        self.commit(self.gitops)
+        self.sha = self.git(self.gitops, 'rev-parse', 'HEAD')
+        with self.assertRaisesRegex(owner.Refused, 'share the Doco-CD Compose project name'):
+            self.load()
+
     def test_plan_is_readonly_without_gitops_snapshot_tag_or_vault_identity(self):
         before = sorted(str(p.relative_to(self.owner)) for p in self.owner.rglob('*'))
         result = subprocess.run([sys.executable, str(self.owner / 'scripts/control_plane/entrypoint.py'),

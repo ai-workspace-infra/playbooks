@@ -135,8 +135,9 @@ def selection(root, target, images, storage=False, listener=False):
     manifest = read_yaml(manifest_path)
     fields(manifest, ["name", "version", "working_dir", "compose_files", "env_files", "remove_orphans"],
            ["force_image_pull", "timeout"])
-    require(manifest["version"] == "doco.v1" and manifest["remove_orphans"] is False,
-            "Doco-CD must use doco.v1 without orphan removal")
+    require(matches(NAME, manifest["name"]) and manifest["version"] == "doco.v1"
+            and manifest["remove_orphans"] is False,
+            "Doco-CD requires a literal project name, doco.v1 and no orphan removal")
     work = (root / manifest["working_dir"]).resolve(strict=True)
     require(root in work.parents and work.is_dir() and ".." not in Path(manifest["working_dir"]).parts,
             "Doco-CD working directory escapes GitOps")
@@ -209,6 +210,7 @@ def selection(root, target, images, storage=False, listener=False):
     require(len(bindings) == 1 and isinstance(bindings[0].get("source"), str),
             "PostgreSQL requires the declared persistent bind, never an anonymous database volume")
     return {"target": target, "manifest": str(manifest_path), "images": resolved_images,
+            "compose_project_name": manifest["name"],
             "postgres_data_path": bindings[0]["source"], **({'services': services} if listener else {})}
 
 
@@ -274,6 +276,8 @@ def load_contract(config, gitops, owner, sha):
             and doco["target"] != doco["storage_target"], "Doco-CD requires the canonical repository and immutable controller image")
     selections = [selection(gitops, doco["storage_target"], release["services"], True),
                   selection(gitops, doco["target"], release["services"])]
+    require(selections[0]["compose_project_name"] == selections[1]["compose_project_name"],
+            "Storage and application selections must share the Doco-CD Compose project name")
     cmdb = os.environ.get("CONTROL_PLANE_CMDB")
     require(bool(cmdb) and bool(os.environ.get('CONTROL_PLANE_VARS_FILE')),
             'External CONTROL_PLANE_CMDB and reference-only CONTROL_PLANE_VARS_FILE are required')
