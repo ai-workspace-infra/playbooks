@@ -41,6 +41,14 @@ class AcceptanceScriptsTest(unittest.TestCase):
         wrong_host = self.run_script("v4_business_role_acceptance.sh", **target,
                                      V4_MOCK_HOSTNAME="web-saas-prod-v4")
         self.assertEqual(wrong_host.returncode, 2)
+        invalid_fixture = self.run_script(
+            "v4_business_role_acceptance.sh", **target, GENERATION_TEST_FIXTURE="1")
+        self.assertEqual(invalid_fixture.returncode, 2)
+        fixture = self.run_script(
+            "v4_business_role_acceptance.sh", output="account_user|t|t|t\n",
+            GENERATION_TEST_FIXTURE="1", GENERATION_TARGET_GENERATION="prod-v4",
+            GENERATION_POSTGRES_CONTAINER="generation-permissions-fixture-v4-p0")
+        self.assertEqual(fixture.returncode, 0, fixture.stderr)
         failed = self.run_script("v4_business_role_acceptance.sh", output="account_user|f|t|t\n", **target)
         self.assertEqual(failed.returncode, 1)
         self.assertNotIn("account_user|f", failed.stderr)
