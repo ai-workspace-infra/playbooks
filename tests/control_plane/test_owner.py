@@ -355,6 +355,29 @@ class ReadinessTests(unittest.TestCase):
 
 
 class NativeRoleTests(unittest.TestCase):
+    def test_postgres_final_probe_rejects_temporary_server_before_readiness(self):
+        probe = (ROOT / 'roles/selfhost_control_plane/files/postgres_final_ready.sh').read_text()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / 'calls'
+            for command, body in {
+                'cat': 'echo "$FIXTURE_PID1"',
+                'pg_isready': 'echo ready >> "$FIXTURE_CALLS"',
+                'psql': 'echo sql >> "$FIXTURE_CALLS"; echo 1',
+            }.items():
+                path = root / command
+                path.write_text('#!/bin/sh\n' + body + '\n')
+                path.chmod(0o700)
+            env = {**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH'],
+                   'FIXTURE_CALLS': str(marker), 'FIXTURE_PID1': 'docker-entrypoi'}
+            result = subprocess.run(['sh'], input=probe, text=True, env=env, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(marker.exists())
+            env['FIXTURE_PID1'] = 'postgres'
+            result = subprocess.run(['sh'], input=probe, text=True, env=env, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(marker.read_text().splitlines(), ['ready', 'sql'])
+
     def test_native_caddy_template_uses_declared_aliases_and_readonly_candidate_route(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
