@@ -65,6 +65,9 @@ release:
     billing_schema_sha256: <64-hex>
     migration_version: 2026102001
     business_tables: [users]     # exact sorted native-schema manifest table list
+  billing:                      # optional schema metadata; execution requires it
+    source_sha: <40-hex>
+    schema_file: sql/billing-service-schema.sql
   doco_cd:
     image: ghcr.io/kimdre/doco-cd@sha256:<64-hex>
     repository: https://github.com/ai-workspace-infra/gitops.git
@@ -95,6 +98,9 @@ Native host-config files use `/etc/xcontrol/web-saas/{secrets.env,config/*,certs
 Compose must reference those paths. Persistent PostgreSQL uses the CMDB storage
 profile's `data_path` bound to `/var/lib/postgresql/data`; no anonymous database
 volumes. Bundled root storage and dedicated mounted disks are both supported.
+Only Caddy may publish public host ports. PostgreSQL, Accounts, Billing, Console,
+Content and dependency telemetry may publish nothing or explicit IPv4/IPv6
+loopback mappings only; implicit/wildcard/host-address mappings fail preflight.
 This owner verifies storage and never formats or clears it. Fresh installation
 means Docker + runtime config + PostgreSQL cluster + native schema + application
 reconciliation; creating a cloud host and preparing its disk remain upstream.
@@ -163,6 +169,18 @@ manifest. Existing initialized targets require this owner's matching receipt,
 unchanged cluster/database identity and schema/checkpoint validation. The owner
 never drops a database or clears a migration marker. Interrupted initialization
 retains storage; ambiguous partial state stops for review.
+
+First initialization also applies the reviewed Billing-owned bootstrap SQL before
+business grants or application startup. Execution requires `BILLING_CHECKOUT`:
+the canonical Billing clone at `release.billing.source_sha`, clean including
+ignored/untracked files. The tracked `sql/billing-service-schema.sql` bytes must
+match `release.accounts.billing_schema_sha256`; the runner never fetches or
+changes the checkout. Only additive table/index DDL, empty business tables,
+paused writers and a bounded transaction are eligible. No seed/catalog overwrite
+or migration-marker rewrite. The Billing hash and post-DDL schema fingerprint
+are journaled; identical reruns only verify. Existing targets without this
+receipt require explicit backup/restore and a separate schema-upgrade gate.
+`--check` remains a credential-free declaration plan, not execution acceptance.
 
 ## Migration owner
 
@@ -237,13 +255,13 @@ actual readiness receipt is an error, even when Ansible returned zero.
 This is **candidate component readiness**, not completed business acceptance.
 OAuth callbacks, payment/webhooks, authenticated user journeys, Agent connectivity
 and billing ingestion observation remain explicit `not_run` gates requiring an
-authorized sandbox. The opt-in migration listener, explicit receipt-schema
-initialization under its dedicated migration owner, and reviewed Caddy sidecar
-route are separate operations; deployment does not silently enable them.
+authorized sandbox. The opt-in listener, receipt-schema initialization and Caddy
+route now have the separate `selfhost_migration_listener` owner; see
+`docs/selfhost-migration-listener-contract.md`. Ordinary install never enables it.
 Native initialization intentionally creates zero business rows. A default
 billing catalog/bootstrap needs a separately reviewed authoritative seed owner;
-it is not fabricated here, and `billing_schema_sha256` is an audit pin, not a
-claim that a separate Billing DDL or catalog migration was executed.
+it is not fabricated here. First empty initialization now applies the pinned
+Billing DDL, but that never claims a paid/default catalog has been seeded.
 
 ## Owner verification
 
@@ -251,7 +269,7 @@ claim that a separate Billing DDL or catalog migration was executed.
 resolver, negative-path, pinned client, evidence adapter, real HTTP and real
 Ansible rerun fixtures. Set `CONTROL_PLANE_GITOPS_SCHEMA` to the reviewed schema
 to validate the same sample in both owners. The schema was checked against
-GitOps PR 506 commit `fea4526df2f3b20d7388b1418ea890d1b58ec0aa`.
+GitOps PR 506 commit `2ae1311547acf5aab9d9b7cf927d166da4b37645`.
 Set `CONTROL_PLANE_PUBLIC_INSTALLER` to the reviewed public wrapper to exercise
 the actual wrapper -> real pinned entrypoint `--check` path; both checkouts
 remain clean and no owner is mocked. No workspace path is baked into the test.
@@ -260,6 +278,17 @@ tmpfs-backed disposable PostgreSQL 17 encrypted populated/empty restore and
 tamper-refusal test. It accepts only a local Unix Docker endpoint and removes
 only its own generated container. These results do not claim live acceptance.
 PR CI runs the owner and PostgreSQL fixtures without Vault/cloud credentials.
+
+The opt-in `test_api_restore_integration.py` now proves real Accounts API/native
+DB -> encrypted backup -> isolated restore -> owner adapter -> gated apply ->
+exact retry on empty and populated targets, using Accounts
+`c5e3bae3bea1d9b71ee2a579e4da8657fc192bc8`. It reproduces the former stripped-ACL
+defect (SQLSTATE42501), then passes with object owners/ACL/default grants preserved.
+Actual account_user TCP SELECT/INSERT rollback probes, password/TOTP checks and
+unchanged retry rows/xmin/sequences/one receipt are independent gates. An empty
+restore remains G3 blocked; it is not relabeled populated recovery acceptance.
+CI uses fixed Accounts/Billing/GitOps source pins and disposable local containers;
+no host deployment or paid-catalog/traffic-cutover acceptance follows from this.
 
 ## Evidence and rollout
 

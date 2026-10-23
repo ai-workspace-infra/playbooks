@@ -8,6 +8,8 @@ import tempfile
 import time
 import unittest
 import uuid
+import hashlib
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -25,10 +27,10 @@ class PostgresRoundTrip(unittest.TestCase):
             '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', os.environ.get('CONTROL_PLANE_POSTGRES_IMAGE', 'postgres:17')], text=True).strip()
         cls.addClassCleanup(lambda: subprocess.run([cls.docker, 'rm', '-f', cls.container], capture_output=True, check=True))
         for _ in range(100):
-            # The official image's initialization server exposes only a Unix
-            # socket and exits before the final server starts. Require TCP to
-            # avoid accepting that temporary server as fixture readiness.
-            if subprocess.run([cls.docker, 'exec', cls.container, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'], capture_output=True).returncode == 0:
+            # Execute the same final-process + TCP + SQL gate as deployment.
+            probe = (ROOT / 'roles/selfhost_control_plane/files/postgres_final_ready.sh').read_text()
+            if subprocess.run([cls.docker, 'exec', '-i', cls.container, 'sh'], input=probe,
+                              text=True, capture_output=True).returncode == 0:
                 break
             time.sleep(0.2)
         else:
@@ -45,8 +47,18 @@ class PostgresRoundTrip(unittest.TestCase):
     def test_populated_and_empty_full_database_round_trip_and_tamper_refusal(self):
         self.q('postgres', 'CREATE DATABASE account')
         self.q('account', 'CREATE TABLE schema_migrations(version bigint PRIMARY KEY, dirty boolean NOT NULL); '
-            'INSERT INTO schema_migrations VALUES(2026102002,false); CREATE TABLE users(id bigserial PRIMARY KEY, fact text); '
-            "INSERT INTO users(fact) VALUES('private-fixture-marker'); CREATE TABLE subscriptions(id bigserial PRIMARY KEY, user_id bigint); "
+            'INSERT INTO schema_migrations VALUES(2026102002,false); CREATE TABLE users(id bigserial PRIMARY KEY, uuid uuid UNIQUE, fact text); '
+            'CREATE TABLE subscriptions(id bigserial PRIMARY KEY, user_id bigint); ')
+        billing_schema = os.environ.get('CONTROL_PLANE_BILLING_SCHEMA')
+        if billing_schema:
+            from test_owner import native_runtime, native
+            sql = Path(billing_schema).read_text()
+            digest = hashlib.sha256(sql.encode()).hexdigest()
+            contract = {'release': {'billing': {'source_sha': 'a' * 40}, 'accounts': {'billing_schema_sha256': digest}}}
+            artifact = {'source_sha': 'a' * 40, 'schema_sha256': digest, 'sql': sql}
+            with mock.patch.object(native, 'sql', side_effect=lambda statement, database: self.q(database, statement)):
+                self.assertEqual(native_runtime.apply_fresh_billing(contract, artifact), digest)
+        self.q('account', "INSERT INTO users(fact) VALUES('private-fixture-marker'); "
             'INSERT INTO subscriptions(user_id) VALUES(1); CREATE SCHEMA extra_domain; '
             "CREATE FUNCTION extra_domain.marker() RETURNS text LANGUAGE sql AS $$SELECT 'fixture'::text$$;")
         with tempfile.TemporaryDirectory(prefix='control-plane-pg-') as temporary:

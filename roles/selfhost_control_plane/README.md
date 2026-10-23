@@ -16,6 +16,18 @@ binds resource, images, schema and database identity. Identical reruns verify
 schema/checkpoint and application password without reinitializing or rotating it.
 Changed artifacts require a separately reviewed upgrade, not journal deletion.
 
+Fresh initialization applies the reviewed Billing-owned bootstrap DDL from the
+canonical clean `BILLING_CHECKOUT` at `release.billing.source_sha`, with bytes
+matching `release.accounts.billing_schema_sha256`. Only additive table/index DDL
+on the still-empty target is eligible, before business grants and application
+startup. No seeds/catalog overwrite. The resulting schema and Billing pin enter
+the journal. Existing targets without that receipt require separate backup/schema
+upgrade approval; reruns never silently alter nonempty databases.
+
+Before native initialization, the shared read-only PostgreSQL probe requires
+`/proc/1/comm` to be `postgres`, TCP readiness and a successful `SELECT 1`.
+The official image's temporary initialization server cannot satisfy this gate.
+
 Check via the runner `--check`; direct Ansible check mode is refused because
 native owners have execution-only tasks. No runtime acceptance was performed.
 On failure preserve the target and inspect its journal. Do not remove storage or

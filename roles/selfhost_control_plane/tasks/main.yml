@@ -8,6 +8,8 @@
       - inventory_hostname == control_plane_contract.target.host
       - ansible_play_hosts_all == [inventory_hostname]
       - cmdb_resource_id == control_plane_contract.resolved.resource_id
+      - control_plane_billing_artifact.source_sha == control_plane_contract.release.billing.source_sha
+      - control_plane_billing_artifact.schema_sha256 == control_plane_contract.release.accounts.billing_schema_sha256
     fail_msg: Use the runner --check for a local plan; execution requires one CMDB-bound candidate
 
 - name: Collect platform facts only from the selected target
@@ -67,7 +69,7 @@
     - name: Validate an existing owned database before persistent configuration or controller changes
       ansible.builtin.command:
         argv: [python3, '{{ control_plane_workspace.path }}/native_runtime.py']
-        stdin: '{{ {"action": "verify", "contract": control_plane_contract, "credentials": control_plane_credentials, "business_password": control_plane_private.secrets.ACCOUNT_PG_PASSWORD} | to_json }}'
+        stdin: '{{ {"action": "verify", "contract": control_plane_contract, "credentials": control_plane_credentials, "business_password": control_plane_private.secrets.ACCOUNT_PG_PASSWORD, "billing": control_plane_billing_artifact} | to_json }}'
       changed_when: false
       no_log: true
       when: control_plane_initialized
@@ -169,9 +171,10 @@
             target: '{{ control_plane_contract.release.doco_cd.target if control_plane_initialized else control_plane_contract.release.doco_cd.storage_target }}'
             interval: 60
 
-    - name: Wait for actual PostgreSQL readiness
+    - name: Wait for final PostgreSQL PID 1 and actual SQL readiness
       ansible.builtin.command:
-        argv: [docker, exec, web-saas-postgresql, pg_isready, -U, postgres, -d, postgres]
+        argv: [docker, exec, -i, web-saas-postgresql, sh]
+        stdin: '{{ lookup("ansible.builtin.file", role_path ~ "/files/postgres_final_ready.sh") }}'
       register: control_plane_postgres
       changed_when: false
       until: control_plane_postgres.rc == 0
@@ -187,7 +190,7 @@
     - name: Initialize only the eligible empty native database or verify the owned database
       ansible.builtin.command:
         argv: [python3, '{{ control_plane_workspace.path }}/native_runtime.py']
-        stdin: '{{ {"action": "verify" if control_plane_initialized else "initialize", "contract": control_plane_contract, "credentials": control_plane_credentials, "business_password": control_plane_private.secrets.ACCOUNT_PG_PASSWORD} | to_json }}'
+        stdin: '{{ {"action": "verify" if control_plane_initialized else "initialize", "contract": control_plane_contract, "credentials": control_plane_credentials, "business_password": control_plane_private.secrets.ACCOUNT_PG_PASSWORD, "billing": control_plane_billing_artifact} | to_json }}'
       register: control_plane_native
       changed_when: (control_plane_native.stdout | from_json).changed
       no_log: true

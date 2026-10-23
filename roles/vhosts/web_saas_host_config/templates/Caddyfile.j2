@@ -37,6 +37,9 @@
 	encode zstd gzip
 
 {% if web_saas_host_config_candidate_mode | bool %}
+	{# Explicit opt-in migration owner supplies a GitOps-declared read-only mount.
+	   No match is valid when the separate listener owner has never run. #}
+	import /etc/caddy/migration-api/*.caddy
 	@candidate_writes method POST PUT PATCH DELETE
 	handle @candidate_writes {
 		respond "candidate ingress is read-only" 403

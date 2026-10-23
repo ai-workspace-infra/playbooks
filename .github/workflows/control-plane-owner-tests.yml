@@ -4,6 +4,7 @@ on:
     paths:
       - 'scripts/control_plane/**'
       - 'roles/selfhost_control_plane/**'
+      - 'roles/selfhost_migration_listener/**'
       - 'roles/selfhost_core_data_*/**'
       - 'roles/web_saas_data_backup/**'
       - 'roles/web_saas_data_restore_verify/**'
@@ -23,6 +24,11 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       CONTROL_PLANE_GITOPS_SCHEMA: ${{ github.workspace }}/.fixture-gitops/schemas/selfhost-control-plane.schema.yaml
+      CONTROL_PLANE_GITOPS_LISTENER_SCHEMA: ${{ github.workspace }}/.fixture-gitops/schemas/selfhost-migration-listener.schema.yaml
+      CONTROL_PLANE_BILLING_SCHEMA: ${{ github.workspace }}/.fixture-billing/sql/billing-service-schema.sql
+      CONTROL_PLANE_API_RESTORE_FIXTURE: '1'
+      CONTROL_PLANE_ACCOUNTS_SOURCE: ${{ github.workspace }}/.fixture-accounts
+      CONTROL_PLANE_ACCOUNTS_SHA: c5e3bae3bea1d9b71ee2a579e4da8657fc192bc8
     steps:
       - uses: actions/checkout@v7
         with:
@@ -30,8 +36,24 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: ai-workspace-infra/gitops
-          ref: fea4526df2f3b20d7388b1418ea890d1b58ec0aa
+          ref: 2ae1311547acf5aab9d9b7cf927d166da4b37645
           path: .fixture-gitops
           persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-services/billing-service
+          ref: 33c96c55bb4d426645ce2cc3c208627581c0d5f9
+          path: .fixture-billing
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-services/accounts
+          ref: c5e3bae3bea1d9b71ee2a579e4da8657fc192bc8
+          path: .fixture-accounts
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.1'
+          cache: false
       - name: Run credential-free owner, Ansible and disposable PostgreSQL fixtures
         run: bash tests/control_plane/run_ci.sh
