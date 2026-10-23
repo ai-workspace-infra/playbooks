@@ -630,6 +630,28 @@ class NativeRoleTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(marker.read_text().splitlines(), ['ready', 'sql'])
 
+    def test_stunnel_reload_only_when_existing_process_predates_configuration(self):
+        state = json.dumps({'StartedAt': '2026-10-23T00:00:00Z'})
+        with mock.patch.object(native_runtime.native, 'command') as command, mock.patch.object(native_runtime.Path, 'stat') as stat:
+            command.side_effect = ['', 'web-saas-stunnel-client', state, 'web-saas-stunnel-client', 'web-saas-stunnel-client', state]
+            self.assertFalse(native_runtime.reload_service_config('web-saas-stunnel-client', ('/fixture/ca.pem', '/fixture/stunnel.conf'))['changed'])
+            stat.return_value.st_mtime = datetime(2026, 10, 23, 1, tzinfo=timezone.utc).timestamp()
+            self.assertTrue(native_runtime.reload_service_config('web-saas-stunnel-client', ('/fixture/ca.pem', '/fixture/stunnel.conf'))['changed'])
+            self.assertEqual(command.call_args.args[0], ['docker', 'restart', 'web-saas-stunnel-client'])
+            stat.return_value.st_mtime = datetime(2026, 10, 22, tzinfo=timezone.utc).timestamp()
+            self.assertFalse(native_runtime.reload_service_config('web-saas-stunnel-client', ('/fixture/ca.pem', '/fixture/stunnel.conf'))['changed'])
+
+    def test_content_probe_uses_content_owners_service_token_header(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.status = 200
+        response.__enter__.return_value.read.return_value = b'{}'
+        with mock.patch.object(readiness.urllib.request, 'build_opener') as opener:
+            opener.return_value.open.return_value = response
+            readiness.http_probe('172.18.0.2', 8084, '/api/v1/docs/home', 'content', {}, token='fixture-token')
+            request = opener.return_value.open.call_args.args[0]
+            self.assertEqual(request.get_header('X-service-token'), 'fixture-token')
+            self.assertIsNone(request.get_header('Authorization'))
+
     def test_stunnel_role_completes_chain_and_rejects_wrong_server_name(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -684,7 +706,7 @@ class NativeRoleTests(unittest.TestCase):
                 native_runtime.stunnel_reader(contract, {})
             command.assert_not_called()
 
-    def test_native_caddy_template_uses_declared_aliases_and_readonly_candidate_route(self):
+    def test_native_caddy_template_uses_declared_aliases_without_target_write_block(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             destination = root / 'Caddyfile'
@@ -707,12 +729,12 @@ class NativeRoleTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             content = destination.read_text()
             self.assertIn('arbitrary-ui.example.invalid, identity.example.invalid, billing-candidate.example.invalid {', content)
-            self.assertIn('candidate ingress is read-only', content)
+            self.assertNotIn('candidate ingress is read-only', content)
             self.assertIn('method GET', content)
             self.assertIn('path /readyz', content)
             self.assertIn('reverse_proxy billing:8081', content)
-            self.assertIn('@candidate_writes method POST PUT PATCH DELETE', content)
-            self.assertIn('respond "candidate ingress is read-only" 403', content)
+            self.assertNotIn('@candidate_writes', content)
+            self.assertNotIn('respond "candidate ingress is read-only" 403', content)
             self.assertNotIn('@billing_agent', content)
             self.assertNotIn('dns cloudflare', content)
             for line in content.splitlines():

@@ -17,5 +17,6 @@ docker pull caddy@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31
 export CONTROL_PLANE_CADDY_IMAGE=caddy@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
 export CONTROL_PLANE_CADDY_FIXTURE=1
 python -m unittest discover -s tests/control_plane -v
+python -m unittest discover -s tests -p test_recovery_public_ingress_idempotency.py -v
 bash -n roles/web_saas_data_backup/files/create_encrypted_backup.sh roles/web_saas_data_restore_verify/files/restore_verify.sh
 git diff --check

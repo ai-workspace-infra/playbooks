@@ -7,7 +7,7 @@
 `compose/web-saas/`,由 Doco-CD 拉取。
 
 新候选 owner 可显式设置 `web_saas_host_config_candidate_mode: true`，只渲染声明的
-Console/Accounts 别名并拒绝入口写方法；`web_saas_host_config_enforce_alias_pattern: false`
+Console/Accounts 别名；全新目标不拦截登录等写请求；`web_saas_host_config_enforce_alias_pattern: false`
 允许声明任意目标别名。两个开关的默认值保持既有行为，且不隐含 DNS、ACME 或切流授权。
 候选入口的 Vault 引用策略和运行时解析见 `docs/selfhost-control-plane-contract.md`。
 
@@ -168,3 +168,7 @@ HTTP 服务上提供 Bearer 保护的 `/v1/snapshots/*`。Prometheus 的 `/scrap
 受管理的系统根证书追加到 Vault 提供的 CA 链，并在发布前验证完整链和目标主机名。
 stunnel 保持 `verifyChain = yes`，同时设置 `checkHost`，不接受未知 CA 或错误域名。
 默认不开启此选项，保留既有调用的私有 CA 行为。
+
+全新目标的业务写请求由应用正常处理。迁移上游的数据只读约束属于源端迁移角色，
+不能用候选域名或 fresh-install 标志对目标全局阻断 POST/PUT/PATCH/DELETE。
+控制平面只在配置比现有进程启动时间更新时重载 Caddy/stunnel 客户端，重复运行不额外重启。
