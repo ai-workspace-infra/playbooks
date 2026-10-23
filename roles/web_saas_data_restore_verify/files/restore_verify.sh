@@ -31,10 +31,10 @@ WEB_SAAS_RETAIN_RESTORE="${WEB_SAAS_RETAIN_RESTORE-false}"
 
 [[ "$WEB_SAAS_DATABASE" == account ]] || fail 'only account is an allowed source database'
 [[ "$WEB_SAAS_POSTGRES_CONTAINER" == web-saas-postgresql ]] || fail 'unexpected PostgreSQL container'
-[[ "$WEB_SAAS_ENVIRONMENT" =~ ^(uat|prod|prod-v[1-9][0-9]*)$ ]] || fail 'invalid environment'
+[[ "$WEB_SAAS_ENVIRONMENT" =~ ^(sit|uat|prod|prod-v[1-9][0-9]*)$ ]] || fail 'invalid environment'
 [[ "$WEB_SAAS_RUN_ID" =~ ^[1-9][0-9]*$ ]] || fail 'invalid run id'
 [[ "$WEB_SAAS_EXPECTED_VERSION" =~ ^[1-9][0-9]*$ ]] || fail 'invalid exact schema version'
-[[ "$WEB_SAAS_EXPECTED_USERS" =~ ^[1-9][0-9]*$ ]] || fail 'empty or invalid user sample'
+[[ "$WEB_SAAS_EXPECTED_USERS" =~ ^[1-9][0-9]*$ || ( "${WEB_SAAS_ALLOW_EMPTY_USERS:-false}" == true && "$WEB_SAAS_EXPECTED_USERS" == 0 ) ]] || fail 'empty or invalid user sample'
 [[ "$WEB_SAAS_EXPECTED_SUBSCRIPTIONS" =~ ^[0-9]+$ ]] || fail 'invalid subscription count'
 [[ "$WEB_SAAS_EXPECTED_SCHEMA_SHA256" =~ ^[0-9a-f]{64}$ && "$WEB_SAAS_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail 'invalid schema or archive fingerprint'
 [[ "$WEB_SAAS_EXPECTED_DATA_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail 'invalid data fingerprint'
@@ -82,7 +82,9 @@ state_value() {
   psql_value "$1" "SELECT (SELECT count(*) FROM public.${WEB_SAAS_MIGRATION_TABLE})::text || ':' || (SELECT ${WEB_SAAS_MIGRATION_VERSION_COLUMN}::text FROM public.${WEB_SAAS_MIGRATION_TABLE} ORDER BY ${WEB_SAAS_MIGRATION_ORDER_COLUMN} DESC LIMIT 1) || ':' || ${migration_dirty_sql} || ',' || (SELECT count(*) FROM public.${WEB_SAAS_USERS_TABLE})::text || ',' || (SELECT count(*) FROM public.${WEB_SAAS_SUBSCRIPTION_TABLE})::text"
 }
 schema_fingerprint() {
-  docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$1" --schema-only --schema=public --no-owner --no-privileges | sed '/^\\restrict /d; /^\\unrestrict /d' | sha256sum | awk '{print $1}'
+  local schema_args=(--schema=public)
+  [[ "${WEB_SAAS_FULL_DATABASE:-false}" != true ]] || schema_args=()
+  docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$1" --schema-only "${schema_args[@]}" --no-owner --no-privileges | sed '/^\\restrict /d; /^\\unrestrict /d' | sha256sum | awk '{print $1}'
 }
 cleanup() {
   local exit_status=$?
@@ -139,7 +141,9 @@ restore_oid="$(psql_value postgres "SELECT oid FROM pg_database WHERE datname = 
 # schema in the brand-new, OID-bound verification database; never the source.
 # No CASCADE: unexpected template contents make this fail safely.
 phase='prepare_isolated_schema'
-docker exec "$WEB_SAAS_POSTGRES_CONTAINER" psql -U postgres -d "$restore_database" -Xq -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public'
+if [[ "${WEB_SAAS_FULL_DATABASE:-false}" != true ]]; then
+  docker exec "$WEB_SAAS_POSTGRES_CONTAINER" psql -U postgres -d "$restore_database" -Xq -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public'
+fi
 phase='decrypt_and_restore_archive'
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:WEB_SAAS_BACKUP_PASSPHRASE -in "$WEB_SAAS_ARCHIVE_PATH" \
   | docker exec -i "$WEB_SAAS_POSTGRES_CONTAINER" pg_restore -U postgres -d "$restore_database" --no-owner --no-privileges --exit-on-error
@@ -198,5 +202,6 @@ print(json.dumps({
     "g3_status": "passed" if int(subscriptions) > 0 else "blocked",
     "g3_reason_code": None if int(subscriptions) > 0 else "NONEMPTY_SUBSCRIPTION_SAMPLE_REQUIRED",
     "business_acceptance": False,
+    "full_database": os.environ.get("WEB_SAAS_FULL_DATABASE", "false") == "true",
 }, sort_keys=True))
 PY

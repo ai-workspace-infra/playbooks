@@ -10,9 +10,11 @@ only the temporary database created by this process and only while its database
 OID still matches the recorded OID. The `account` database is never a restore
 target.
 
-The run-owned verification database is created from template0; only its empty
-default public schema is removed (without CASCADE) so the archive can create
-the schema. No existing or primary schema is dropped or rewritten.
+The run-owned verification database is created from template0. In the default
+public-only mode its empty default public schema is removed (without CASCADE)
+so the archive can create it. With `web_saas_data_restore_verify_full_database: true`,
+the default schema is retained, matching full `pg_dump` semantics.
+No existing or primary schema is dropped or rewritten.
 
 Required inputs are the same source ID, frozen baseline ID, authorized sample
 reference, expected schema version, expected sample counts and schema hash,
@@ -26,3 +28,9 @@ or production promotion.
 The caller owns exact CMDB host selection. Primary database data is not changed, and
 there is no rollback action beyond exact cleanup of a run-owned temporary
 database.
+
+`web_saas_data_restore_verify_allow_empty_users` explicitly permits a zero-user
+target; old callers still require populated users by default. Empty-target
+mechanism checks do not prove populated-data acceptance. Full-database mode
+compares all schema definitions plus complete public rows and sequence states.
+Explicit `sit` is supported without changing the supplied environment label.

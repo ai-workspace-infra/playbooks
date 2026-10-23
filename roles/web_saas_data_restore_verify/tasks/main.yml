@@ -5,7 +5,7 @@
       - web_saas_data_restore_verify_database == 'account'
       - web_saas_data_restore_verify_postgres_container == 'web-saas-postgresql'
       - web_saas_data_restore_verify_restore_database_prefix == 'release_verify_'
-      - web_saas_data_restore_verify_environment in ['uat', 'prod'] or web_saas_data_restore_verify_environment is match('^prod-v[1-9][0-9]*$')
+      - web_saas_data_restore_verify_environment in ['sit', 'uat', 'prod'] or web_saas_data_restore_verify_environment is match('^prod-v[1-9][0-9]*$')
       - web_saas_data_restore_verify_run_id is match('^[1-9][0-9]*$')
       - web_saas_data_restore_verify_expected_version | string is match('^[1-9][0-9]*$')
       - web_saas_data_restore_verify_source_database_id is match('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$')
@@ -14,9 +14,9 @@
       - web_saas_data_restore_verify_source_schema_sha256 is match('^[0-9a-f]{64}$')
       - web_saas_data_restore_verify_source_data_sha256 is match('^[0-9a-f]{64}$')
       - web_saas_data_restore_verify_database_system_identifier is match('^[0-9]+$')
-      - web_saas_data_restore_verify_expected_users | string is match('^[1-9][0-9]*$')
+      - web_saas_data_restore_verify_expected_users | string is match('^[1-9][0-9]*$') or (web_saas_data_restore_verify_allow_empty_users | bool and web_saas_data_restore_verify_expected_users | int == 0)
       - web_saas_data_restore_verify_expected_subscriptions | string is match('^[0-9]+$')
-      - web_saas_data_restore_verify_archive_path is match('^/data/backups/web-saas/(uat|prod|prod-v[1-9][0-9]*)/[A-Za-z0-9._-]+/[1-9][0-9]*/account\.dump\.enc$')
+      - web_saas_data_restore_verify_archive_path is match('^/data/backups/web-saas/(sit|uat|prod|prod-v[1-9][0-9]*)/[A-Za-z0-9._-]+/[1-9][0-9]*/account\.dump\.enc$')
       - web_saas_data_restore_verify_archive_sha256 is match('^[0-9a-f]{64}$')
       - web_saas_data_restore_verify_passphrase | length >= 32
       - web_saas_data_restore_verify_migration_table is match('^[a-z_][a-z0-9_]*$')
@@ -69,6 +69,8 @@
     WEB_SAAS_DATABASE_SYSTEM_IDENTIFIER: '{{ web_saas_data_restore_verify_database_system_identifier }}'
     WEB_SAAS_ARCHIVE_SHA256: '{{ web_saas_data_restore_verify_archive_sha256 }}'
     WEB_SAAS_BACKUP_KEY_STDIN: 'true'
+    WEB_SAAS_FULL_DATABASE: '{{ web_saas_data_restore_verify_full_database | bool | ternary("true", "false") }}'
+    WEB_SAAS_ALLOW_EMPTY_USERS: '{{ web_saas_data_restore_verify_allow_empty_users | bool | ternary("true", "false") }}'
     WEB_SAAS_MIGRATION_TABLE: '{{ web_saas_data_restore_verify_migration_table }}'
     WEB_SAAS_MIGRATION_VERSION_COLUMN: '{{ web_saas_data_restore_verify_migration_version_column }}'
     WEB_SAAS_MIGRATION_DIRTY_COLUMN: '{{ web_saas_data_restore_verify_migration_dirty_column }}'

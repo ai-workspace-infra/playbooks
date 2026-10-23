@@ -1,0 +1,244 @@
+---
+- name: Require one explicit candidate and disallow Ansible check-mode partial execution
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - control_plane_contract.kind == 'selfhost-control-plane'
+      - control_plane_contract.execution.mode == 'candidate'
+      - inventory_hostname == control_plane_contract.target.host
+      - ansible_play_hosts_all == [inventory_hostname]
+      - cmdb_resource_id == control_plane_contract.resolved.resource_id
+    fail_msg: Use the runner --check for a local plan; execution requires one CMDB-bound candidate
+
+- name: Collect platform facts only from the selected target
+  ansible.builtin.setup:
+
+- name: Resolve the reference-only policy from Vault before any configuration writes
+  ansible.builtin.command:
+    argv: [python3, '{{ playbook_dir }}/scripts/control_plane/runtime.py']
+    stdin: '{{ {"policy": control_plane_runtime, "environment": control_plane_contract.environment, "target": control_plane_contract.target} | to_json }}'
+  delegate_to: localhost
+  become: false
+  register: control_plane_runtime_result
+  changed_when: false
+  no_log: true
+
+- name: Retain resolved native credentials only in task memory
+  ansible.builtin.set_fact:
+    control_plane_private: '{{ control_plane_runtime_result.stdout | from_json }}'
+    control_plane_credentials:
+      postgres_password: '{{ (control_plane_runtime_result.stdout | from_json).secrets.POSTGRES_PASSWORD }}'
+      ghcr_username: '{{ (control_plane_runtime_result.stdout | from_json).registry_username }}'
+      ghcr_token: '{{ (control_plane_runtime_result.stdout | from_json).registry_password }}'
+    control_plane_tls_dir: '/etc/xcontrol/tls/{{ control_plane_contract.target.domain_base }}/current'
+    cacheable: false
+  no_log: true
+
+- name: Reuse native helper imports through a private target workspace
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: control-plane-owner-
+  register: control_plane_workspace
+
+- name: Install and validate the explicit candidate
+  block:
+    - name: Stage the reusable native execution helpers
+      ansible.builtin.copy:
+        src: '{{ item.src }}'
+        dest: '{{ control_plane_workspace.path }}/{{ item.dest }}'
+        mode: '0600'
+      loop:
+        - {src: '{{ role_path }}/files/native_runtime.py', dest: native_runtime.py}
+        - {src: '{{ role_path }}/files/candidate_readiness.py', dest: candidate_readiness.py}
+        - {src: '{{ playbook_dir }}/scripts/data_operations/selfhost/native_init_host.py', dest: native_init_host.py}
+        - {src: '{{ playbook_dir }}/roles/web_saas_business_database/files/business_database.py', dest: business_database.py}
+
+    - name: Check fresh storage or matching owner before installing Docker
+      ansible.builtin.command:
+        argv: [python3, '{{ control_plane_workspace.path }}/native_runtime.py']
+        stdin: '{{ {"action": "preflight", "contract": control_plane_contract} | to_json }}'
+      register: control_plane_initial
+      changed_when: false
+
+    - name: Bind the installed target state
+      ansible.builtin.set_fact:
+        control_plane_initialized: '{{ (control_plane_initial.stdout | from_json).initialized }}'
+
+    - name: Validate an existing owned database before persistent configuration or controller changes
+      ansible.builtin.command:
+        argv: [python3, '{{ control_plane_workspace.path }}/native_runtime.py']
+        stdin: '{{ {"action": "verify", "contract": control_plane_contract, "credentials": control_plane_credentials, "business_password": control_plane_private.secrets.ACCOUNT_PG_PASSWORD} | to_json }}'
+      changed_when: false
+      no_log: true
+      when: control_plane_initialized
+
+    - name: Require initialization eligibility before first installation
+      ansible.builtin.assert:
+        that:
+          - control_plane_initialized or control_plane_contract.execution.initialize
+          - control_plane_contract.environment in ['sit', 'uat', 'prod']
+        fail_msg: New native schema requires explicit initialize and an environment supported by Accounts init
+
+    - name: Claim only the verified fresh target with a non-secret ownership journal
+      ansible.builtin.command:
+        argv: [python3, '{{ control_plane_workspace.path }}/native_runtime.py']
+        stdin: '{{ {"action": "claim", "contract": control_plane_contract} | to_json }}'
+      register: control_plane_claim
+      changed_when: (control_plane_claim.stdout | from_json).changed
+
+    - name: Reuse Docker installation without common host firewall or SSH policy changes
+      ansible.builtin.include_role:
+        name: vhosts/docker
+      vars:
+        docker_bootstrap_host: false
+
+    - name: Create the target certificate directory without contacting ACME or DNS
+      ansible.builtin.file:
+        path: '{{ control_plane_tls_dir }}'
+        state: directory
+        mode: '0700'
+
+    - name: Restore the operator-supplied existing certificate and key
+      ansible.builtin.copy:
+        content: '{{ item.value | b64decode }}'
+        dest: '{{ control_plane_tls_dir }}/{{ item.name }}'
+        mode: '0600'
+      loop:
+        - {name: fullchain.pem, value: '{{ control_plane_private.tls_fullchain_b64 }}'}
+        - {name: key.pem, value: '{{ control_plane_private.tls_key_b64 }}'}
+      no_log: true
+
+    - name: Reuse native host configuration with explicit candidate inputs
+      ansible.builtin.include_role:
+        name: vhosts/web_saas_host_config
+      vars:
+        web_saas_host_config_vault_token: ''
+        web_saas_host_config_secrets: '{{ control_plane_private.secrets }}'
+        web_saas_host_config_required_secrets: [POSTGRES_PASSWORD, ACCOUNT_PG_PASSWORD, AUTH_TOKEN_PUBLIC_TOKEN, AUTH_TOKEN_REFRESH_SECRET, AUTH_TOKEN_ACCESS_SECRET, INTERNAL_SERVICE_TOKEN]
+        web_saas_host_config_smtp_required: false
+        web_saas_host_config_ca_cert_b64: '{{ control_plane_private.ca_cert_b64 }}'
+        web_saas_host_config_server_cert_b64: '{{ control_plane_private.server_cert_b64 }}'
+        web_saas_host_config_server_key_b64: '{{ control_plane_private.server_key_b64 }}'
+        web_saas_host_config_deploy_env: '{{ control_plane_contract.target.generation }}'
+        web_saas_host_config_vault_env_path: '{{ control_plane_contract.environment }}'
+        web_saas_host_config_target_domain_base: '{{ control_plane_contract.target.domain_base }}'
+        web_saas_host_config_console_domain: '{{ control_plane_contract.target.console_domain }}'
+        web_saas_host_config_console_public_domain: '{{ control_plane_contract.target.console_domain }}'
+        web_saas_host_config_accounts_domain: '{{ control_plane_contract.target.accounts_domain }}'
+        web_saas_host_config_accounts_public_domain: '{{ control_plane_contract.target.accounts_domain }}'
+        web_saas_host_config_enforce_alias_pattern: false
+        web_saas_host_config_candidate_mode: true
+        web_saas_host_config_domain_tls_fullchain: '{{ control_plane_tls_dir }}/fullchain.pem'
+        web_saas_host_config_domain_tls_key: '{{ control_plane_tls_dir }}/key.pem'
+        web_saas_host_config_cloudflare_dns_api_token: ''
+        web_saas_host_config_acme_dns_enabled: false
+        web_saas_host_config_billing_v3_agent_proxy_sources: []
+        web_saas_host_config_billing_domain: ''
+        web_saas_host_config_billing_allowed_cidrs: ''
+        web_saas_host_config_brand_domain: ''
+        web_saas_host_config_brand_selfhost_domain: ''
+
+    - name: Prepare only a new PostgreSQL directory using the pinned image identity
+      ansible.builtin.command:
+        argv: [python3, '{{ control_plane_workspace.path }}/native_runtime.py']
+        stdin: '{{ {"action": "storage", "contract": control_plane_contract, "credentials": control_plane_credentials} | to_json }}'
+      register: control_plane_storage
+      changed_when: (control_plane_storage.stdout | from_json).changed
+      no_log: true
+      when: not control_plane_initialized
+
+    - name: Install the existing Doco-CD owner with the actual immutable selection
+      ansible.builtin.include_role:
+        name: vhosts/Doco-CD
+      vars:
+        doco_cd_bootstrap_host: false
+        doco_cd_manage_git_cache: false
+        doco_cd_resolve_credentials: false
+        doco_cd_registry_server: ghcr.io
+        doco_cd_image: '{{ control_plane_contract.release.doco_cd.image }}'
+        doco_cd_registry_username: '{{ control_plane_private.registry_username }}'
+        doco_cd_registry_password: '{{ control_plane_private.registry_password }}'
+        doco_cd_git_access_token: '{{ control_plane_private.git_access_token | default("") }}'
+        doco_cd_vault_token: ''
+        doco_cd_vault_jwt_token: ''
+        doco_cd_webhook_port: '127.0.0.1:9080'
+        doco_cd_metrics_port: '127.0.0.1:9120'
+        doco_cd_poll_config:
+          - url: '{{ control_plane_contract.release.doco_cd.repository }}'
+            reference: '{{ control_plane_contract.resolved.gitops_sha }}'
+            target: '{{ control_plane_contract.release.doco_cd.target if control_plane_initialized else control_plane_contract.release.doco_cd.storage_target }}'
+            interval: 60
+
+    - name: Wait for actual PostgreSQL readiness
+      ansible.builtin.command:
+        argv: [docker, exec, web-saas-postgresql, pg_isready, -U, postgres, -d, postgres]
+      register: control_plane_postgres
+      changed_when: false
+      until: control_plane_postgres.rc == 0
+      retries: 40
+      delay: 5
+
+    - name: Pause only this target reconciler before explicit first initialization
+      ansible.builtin.command:
+        argv: [docker, stop, doco-cd]
+      when: not control_plane_initialized
+      changed_when: true
+
+    - name: Initialize only the eligible empty native database or verify the owned database
+      ansible.builtin.command:
+        argv: [python3, '{{ control_plane_workspace.path }}/native_runtime.py']
+        stdin: '{{ {"action": "verify" if control_plane_initialized else "initialize", "contract": control_plane_contract, "credentials": control_plane_credentials, "business_password": control_plane_private.secrets.ACCOUNT_PG_PASSWORD} | to_json }}'
+      register: control_plane_native
+      changed_when: (control_plane_native.stdout | from_json).changed
+      no_log: true
+
+    - name: Select the actual application target at the exact GitOps SHA
+      ansible.builtin.include_role:
+        name: doco_cd_release_selection
+      vars:
+        doco_release_repository: '{{ control_plane_contract.release.doco_cd.repository }}'
+        doco_release_reference: '{{ control_plane_contract.resolved.gitops_sha }}'
+        doco_release_target: '{{ control_plane_contract.release.doco_cd.target }}'
+
+    - name: Wait for all five actual digest references to be running
+      ansible.builtin.command:
+        argv: [docker, inspect, --format, '{{ "{{" }}.Config.Image{{ "}}" }}:{{ "{{" }}.State.Running{{ "}}" }}', '{{ item.container }}']
+      loop:
+        - {container: web-saas-accounts, image: '{{ control_plane_contract.release.services.accounts }}'}
+        - {container: web-saas-billing, image: '{{ control_plane_contract.release.services["billing-service"] }}'}
+        - {container: web-saas-console, image: '{{ control_plane_contract.release.services.portal }}'}
+        - {container: web-saas-content, image: '{{ control_plane_contract.release.services["content-service"] }}'}
+        - {container: web-saas-postgresql, image: '{{ control_plane_contract.release.services.postgresql }}'}
+      register: control_plane_actual_image
+      changed_when: false
+      until: control_plane_actual_image.rc == 0 and control_plane_actual_image.stdout == item.image ~ ':true'
+      retries: 40
+      delay: 5
+
+    - name: Flush only native configuration handlers changed by this installation
+      ansible.builtin.meta: flush_handlers
+
+    - name: Require actual Console document, Accounts and Billing database readiness, Content and trusted HTTPS SNI
+      ansible.builtin.command:
+        argv: [python3, '{{ control_plane_workspace.path }}/candidate_readiness.py']
+        stdin: '{{ {"contract": control_plane_contract, "shared_token": control_plane_private.secrets.INTERNAL_SERVICE_TOKEN} | to_json }}'
+      register: control_plane_readiness_result
+      changed_when: false
+      until: control_plane_readiness_result.rc == 0
+      retries: 12
+      delay: 5
+      no_log: true
+
+    - name: Retain sanitized candidate readiness with separate unrun business gates
+      ansible.builtin.set_fact:
+        control_plane_readiness_evidence: '{{ control_plane_readiness_result.stdout | from_json }}'
+        cacheable: false
+
+    - name: Publish the owner component receipt without process or credential values
+      ansible.builtin.debug:
+        msg: 'CONTROL_PLANE_EVIDENCE={{ control_plane_readiness_evidence | to_json }}'
+  always:
+    - name: Remove the non-secret target helper workspace
+      ansible.builtin.file:
+        path: '{{ control_plane_workspace.path }}'
+        state: absent

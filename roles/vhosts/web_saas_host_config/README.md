@@ -6,6 +6,11 @@
 [`ai-workspace-infra/gitops`](https://github.com/ai-workspace-infra/gitops) 的
 `compose/web-saas/`,由 Doco-CD 拉取。
 
+新候选 owner 可显式设置 `web_saas_host_config_candidate_mode: true`，只渲染声明的
+Console/Accounts 别名并拒绝入口写方法；`web_saas_host_config_enforce_alias_pattern: false`
+允许声明任意目标别名。两个开关的默认值保持既有行为，且不隐含 DNS、ACME 或切流授权。
+候选入口的 Vault 引用策略和运行时解析见 `docs/selfhost-control-plane-contract.md`。
+
 ## 为什么这样切
 
 判据是**谁来管版本**:

@@ -19,7 +19,7 @@
 }
 
 {% if (web_saas_host_config_use_restored_tls | default(false) | bool) or (web_saas_host_config_acme_dns_enabled | bool) %}
-{{ web_saas_host_config_wildcard_domain }} {
+{{ ([web_saas_host_config_console_domain, web_saas_host_config_accounts_domain] | unique | join(', ')) if web_saas_host_config_candidate_mode | bool else web_saas_host_config_wildcard_domain }} {
 {% if web_saas_host_config_use_restored_tls | default(false) | bool %}
 	{# 从 Vault 恢复下来的泛域名证书就在磁盘上, 直接指过去 —— 这条路完全不碰
 	   ACME, 所以重建多少次都不消耗 Let's Encrypt 的签发额度。这才是"有效期内
@@ -35,6 +35,13 @@
 {% endif %}
 
 	encode zstd gzip
+
+{% if web_saas_host_config_candidate_mode | bool %}
+	@candidate_writes method POST PUT PATCH DELETE
+	handle @candidate_writes {
+		respond "candidate ingress is read-only" 403
+	}
+{% endif %}
 
 	{# console 域下的 /api/auth/* 必须留给 console 自己 —— 它不是 accounts 的
 	   API 前缀, 而是 Next 的 BFF 路由(src/app/api/auth/**)。BFF 做两件 Go 服务

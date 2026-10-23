@@ -18,6 +18,12 @@ Deploys [Doco-CD](https://doco.cd/latest/Getting-Started/) with Docker Compose.
 - `doco_cd_poll_config`: optional list rendered as Doco-CD `POLL_CONFIG`.
 - `doco_cd_image`, `doco_cd_base_dir`, `doco_cd_webhook_port`, and
   `doco_cd_metrics_port`: deployment settings.
+- `doco_cd_manage_git_cache`: defaults to `true` for the legacy repair flow.
+  The new candidate owner sets `false` to avoid unconditional teardown/cache repair.
+- `doco_cd_resolve_credentials`: defaults to `true` for existing callers.
+  The candidate owner sets `false` and supplies runtime-resolved Vault values
+  explicitly, preventing ambient token or legacy Vault fallback. With cache repair
+  disabled, an unchanged running controller is not recreated.
 
 ## Deploy
 
@@ -28,7 +34,7 @@ export VAULT_JWT_TOKEN=...
 ansible-playbook -i inventory.ini setup-Doco-CD.yaml
 ```
 
-The role fails when the Git access token is unavailable. It does not provide a
+Public GitOps repositories need no Git access token. The role does not provide a
 placeholder credential or store Vault authentication values in the repository.
 
 ## Rollback

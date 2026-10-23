@@ -28,7 +28,7 @@ WEB_SAAS_SUBSCRIPTION_TABLE="${WEB_SAAS_SUBSCRIPTION_TABLE-subscriptions}"
 
 [[ "$WEB_SAAS_DATABASE" == account ]] || fail 'only the account database is permitted'
 [[ "$WEB_SAAS_POSTGRES_CONTAINER" == web-saas-postgresql ]] || fail 'unexpected PostgreSQL container'
-[[ "$WEB_SAAS_ENVIRONMENT" =~ ^(uat|prod|prod-v[1-9][0-9]*)$ ]] || fail 'invalid environment'
+[[ "$WEB_SAAS_ENVIRONMENT" =~ ^(sit|uat|prod|prod-v[1-9][0-9]*)$ ]] || fail 'invalid environment'
 [[ "$WEB_SAAS_RUN_ID" =~ ^[1-9][0-9]*$ ]] || fail 'invalid run id'
 [[ "$WEB_SAAS_EXPECTED_VERSION" =~ ^[1-9][0-9]*$ ]] || fail 'invalid exact schema version'
 for value in "$WEB_SAAS_SOURCE_DATABASE_ID" "$WEB_SAAS_BASELINE_ID" "$WEB_SAAS_AUTHORIZED_SUBSCRIPTION_SAMPLE_ID"; do
@@ -105,10 +105,12 @@ phase='read_source_state'
 source_state="$(snapshot_psql_value "$WEB_SAAS_DATABASE" "SELECT (SELECT count(*) FROM public.${WEB_SAAS_MIGRATION_TABLE})::text || ':' || (SELECT ${WEB_SAAS_MIGRATION_VERSION_COLUMN}::text FROM public.${WEB_SAAS_MIGRATION_TABLE} ORDER BY ${WEB_SAAS_MIGRATION_ORDER_COLUMN} DESC LIMIT 1) || ':' || ${migration_dirty_sql} || ',' || (SELECT count(*) FROM public.${WEB_SAAS_USERS_TABLE})::text || ',' || (SELECT count(*) FROM public.${WEB_SAAS_SUBSCRIPTION_TABLE})::text")" || fail 'could not read source database state'
 IFS=',' read -r migration_state user_count subscription_count <<<"$source_state"
 [[ "$migration_state" == "${WEB_SAAS_EXPECTED_MIGRATION_ROWS}:${WEB_SAAS_EXPECTED_VERSION}:${WEB_SAAS_MIGRATION_DIRTY_COLUMN:+false}" || "$migration_state" == "${WEB_SAAS_EXPECTED_MIGRATION_ROWS}:${WEB_SAAS_EXPECTED_VERSION}:not-applicable" ]] || fail 'source migration state is missing, dirty, duplicated, or not the exact target'
-[[ "$user_count" =~ ^[1-9][0-9]*$ ]] || fail 'source user sample is empty'
+[[ "$user_count" =~ ^[1-9][0-9]*$ || ( "${WEB_SAAS_ALLOW_EMPTY_USERS:-false}" == true && "$user_count" == 0 ) ]] || fail 'source user sample is empty'
 [[ "$subscription_count" =~ ^[0-9]+$ ]] || fail 'subscription count is invalid'
 phase='fingerprint_source'
-source_schema="$(docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" --snapshot="$snapshot_id" --schema-only --schema=public --no-owner --no-privileges | sed '/^\\restrict /d; /^\\unrestrict /d' | sha256sum | awk '{print $1}')" || fail 'could not fingerprint source schema'
+schema_args=(--schema=public)
+[[ "${WEB_SAAS_FULL_DATABASE:-false}" != true ]] || schema_args=()
+source_schema="$(docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" --snapshot="$snapshot_id" --schema-only "${schema_args[@]}" --no-owner --no-privileges | sed '/^\\restrict /d; /^\\unrestrict /d' | sha256sum | awk '{print $1}')" || fail 'could not fingerprint source schema'
 [[ "$source_schema" =~ ^[0-9a-f]{64}$ ]] || fail 'source schema fingerprint is invalid'
 source_data="$(data_fingerprint "$WEB_SAAS_DATABASE")" || fail 'could not fingerprint source rows and sequences'
 [[ "$source_data" =~ ^[0-9a-f]{64}$ ]] || fail 'source data fingerprint is invalid'
@@ -118,7 +120,7 @@ database_system_identifier="$(psql_value "$WEB_SAAS_DATABASE" 'SELECT system_ide
 phase='create_encrypted_archive'
 pending="$(mktemp "$WEB_SAAS_BACKUP_ROOT/.account.dump.enc.pending.XXXXXX")"
 chmod 0600 "$pending"
-docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" --snapshot="$snapshot_id" -Fc --schema=public --no-owner --no-privileges \
+docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" --snapshot="$snapshot_id" -Fc "${schema_args[@]}" --no-owner --no-privileges \
   | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -pass env:WEB_SAAS_BACKUP_PASSPHRASE >"$pending"
 [[ -s "$pending" ]] || fail 'encrypted archive is empty'
 mv -n -- "$pending" "$archive"
@@ -174,5 +176,6 @@ print(json.dumps({
     "g3_status": "passed" if int(subscriptions) > 0 else "blocked",
     "g3_reason_code": None if int(subscriptions) > 0 else "NONEMPTY_SUBSCRIPTION_SAMPLE_REQUIRED",
     "business_acceptance": False,
+    "full_database": os.environ.get("WEB_SAAS_FULL_DATABASE", "false") == "true",
 }, sort_keys=True))
 PY

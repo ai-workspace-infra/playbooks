@@ -32,8 +32,8 @@
 - name: Protect controller configuration
   ansible.builtin.file:
     path: '{{ doco_release_compose }}'
-    owner: root
-    group: root
+    owner: '{{ doco_release_owner }}'
+    group: '{{ doco_release_group }}'
     mode: '0600'
 
 - name: Validate controller configuration without printing resolved secrets
@@ -41,8 +41,14 @@
     argv: [docker, compose, --project-name, '{{ doco_release_project }}', -f, '{{ doco_release_compose }}', config, --quiet]
   changed_when: false
 
+- name: Inspect whether the selected reconciler is running
+  ansible.builtin.command:
+    argv: [docker, compose, --project-name, '{{ doco_release_project }}', -f, '{{ doco_release_compose }}', ps, --status, running, -q, app]
+  register: doco_release_running
+  changed_when: false
+
 - name: Recreate only the existing release reconciler
   ansible.builtin.command:
     argv: [docker, compose, --project-name, '{{ doco_release_project }}', -f, '{{ doco_release_compose }}', up, -d, --force-recreate, app]
   changed_when: true
-  when: doco_release_selected.changed
+  when: doco_release_selected.changed or doco_release_running.stdout | trim | length == 0

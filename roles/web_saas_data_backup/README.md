@@ -9,7 +9,9 @@ fingerprinting and `pg_dump`, so the archive represents one consistent database
 boundary. Writes committed after that boundary are not included; reconcile them
 later on the isolated target when required. Snapshot creation itself never
 requires freezing source writers.
-The actual `/data` mount is mandatory. The script streams `pg_dump` directly
+The default dedicated profile requires an actual `/data` mount. The explicit
+`web_saas_data_backup_storage_profile: root` additionally permits `/data` on the
+bundled root filesystem for a verified candidate. The script streams `pg_dump` directly
 through OpenSSL; no plaintext dump or password file is created. The password is
 received only as a task environment value and is hidden from Ansible output.
 
@@ -24,6 +26,13 @@ are fingerprinted without emitting data. This role cleans only its own pending
 archive; the restore role owns temporary-database cleanup with an OID check.
 Neither drops `account`, follows a reused test
 database, or rebuilds storage.
+
+New API-owner opt-ins preserve old defaults: `web_saas_data_backup_full_database`
+includes all database schemas in the encrypted archive and schema fingerprint;
+`web_saas_data_backup_allow_empty_users` permits an honest zero-user recovery
+drill. Full public row/sequence equality remains mandatory. Empty-target evidence
+does not establish a populated recovery drill or business acceptance. Supported
+environment labels also include explicit `sit` without a UAT remapping.
 
 The generated evidence separates `restore_gate_status=passed` from
 `g3_status=blocked` when subscriptions are zero. The database-component
