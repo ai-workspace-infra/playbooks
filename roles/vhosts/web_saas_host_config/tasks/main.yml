@@ -206,9 +206,16 @@
       - web_saas_host_config_stunnel_key_mode in ['0600', '0640']
       - web_saas_host_config_stunnel_key_group | string | length > 0
 
+- name: Read the managed host trust roots for the explicit stunnel trust profile
+  ansible.builtin.slurp:
+    src: /etc/ssl/certs/ca-certificates.crt
+  register: web_saas_host_config_system_trust
+  when: web_saas_host_config_stunnel_use_system_trust | bool
+  no_log: true
+
 - name: Write stunnel TLS material
   ansible.builtin.copy:
-    content: "{{ item.value | b64decode }}"
+    content: "{{ (item.value | b64decode) ~ ('\n' ~ (web_saas_host_config_system_trust.content | b64decode) if item.name == 'ca-cert.pem' and web_saas_host_config_stunnel_use_system_trust | bool else '') }}"
     dest: "{{ web_saas_host_config_certs_dir }}/{{ item.name }}"
     owner: root
     group: '{{ web_saas_host_config_stunnel_key_group if item.name == "server-key.pem" else "root" }}'
@@ -219,6 +226,22 @@
     - {name: server-key.pem, value: "{{ web_saas_host_config_server_key_b64 }}", mode: '{{ web_saas_host_config_stunnel_key_mode }}'}
   loop_control:
     label: "{{ item.name }}"
+  no_log: true
+
+- name: Verify the complete stunnel trust chain and declared server identity
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - verify
+      - -no-CApath
+      - -no-CAstore
+      - -CAfile
+      - '{{ web_saas_host_config_certs_dir }}/ca-cert.pem'
+      - -verify_hostname
+      - '{{ web_saas_host_config_stunnel_check_host }}'
+      - '{{ web_saas_host_config_certs_dir }}/server-cert.pem'
+  changed_when: false
+  when: web_saas_host_config_stunnel_use_system_trust | bool
   no_log: true
 
 - name: Render web-saas config files

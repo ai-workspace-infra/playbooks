@@ -1,5 +1,6 @@
 """Local owner contract/runner/role fixtures. Never deployment acceptance."""
 import copy
+import base64
 from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
@@ -628,6 +629,43 @@ class NativeRoleTests(unittest.TestCase):
             result = subprocess.run(['sh'], input=probe, text=True, env=env, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(marker.read_text().splitlines(), ['ready', 'sql'])
+
+    def test_stunnel_role_completes_chain_and_rejects_wrong_server_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def openssl(*args):
+                result = subprocess.run(['openssl', *args], cwd=root, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+            openssl('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', 'root.key', '-out', 'root.pem', '-subj', '/CN=Fixture Root', '-days', '1', '-addext', 'basicConstraints=critical,CA:TRUE')
+            for name, issuer, ca in [('issuer', 'root', True), ('server', 'issuer', False)]:
+                openssl('req', '-newkey', 'rsa:2048', '-nodes', '-keyout', name+'.key', '-out', name+'.csr', '-subj', '/CN='+name)
+                (root/'extensions').write_text('basicConstraints=critical,CA:'+('TRUE' if ca else 'FALSE')+'\n'+('keyUsage=keyCertSign,cRLSign' if ca else 'subjectAltName=DNS:database.example.invalid'))
+                openssl('x509', '-req', '-in', name+'.csr', '-CA', issuer+'.pem', '-CAkey', issuer+'.key', '-CAcreateserial', '-out', name+'.pem', '-days', '1', '-extfile', 'extensions')
+            # A supplied intermediate chain alone is not a trusted root.
+            verify = ['openssl', 'verify', '-no-CApath', '-no-CAstore', '-CAfile', str(root/'issuer.pem'), str(root/'server.pem')]
+            self.assertNotEqual(subprocess.run(verify, capture_output=True).returncode, 0)
+            tasks = yaml.safe_load((ROOT/'roles/vhosts/web_saas_host_config/tasks/main.yml').read_text())
+            names = ['Read the managed host trust roots for the explicit stunnel trust profile', 'Write stunnel TLS material', 'Verify the complete stunnel trust chain and declared server identity']
+            selected = [task for task in tasks if task['name'] in names]
+            selected[0]['ansible.builtin.slurp']['src'] = str(root/'root.pem')
+            selected[1]['ansible.builtin.copy'].update(owner=str(os.getuid()), group=str(os.getgid()))
+            certs = root/'certs'
+            certs.mkdir()
+            variables = {'web_saas_host_config_stunnel_use_system_trust': True,
+                'web_saas_host_config_certs_dir': str(certs), 'web_saas_host_config_stunnel_check_host': 'database.example.invalid',
+                'web_saas_host_config_ca_cert_b64': base64.b64encode((root/'issuer.pem').read_bytes()).decode(),
+                'web_saas_host_config_server_cert_b64': base64.b64encode((root/'server.pem').read_bytes()).decode(),
+                'web_saas_host_config_server_key_b64': base64.b64encode((root/'server.key').read_bytes()).decode(),
+                'web_saas_host_config_stunnel_key_mode': '0600'}
+            fixture = root/'render.yml'
+            fixture.write_text(yaml.safe_dump([{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False, 'vars': variables, 'tasks': selected}]))
+            result = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(fixture)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            openssl('verify', '-no-CApath', '-no-CAstore', '-CAfile', str(certs/'ca-cert.pem'), '-verify_hostname', 'database.example.invalid', str(certs/'server-cert.pem'))
+            variables['web_saas_host_config_stunnel_check_host'] = 'wrong.example.invalid'
+            fixture.write_text(yaml.safe_dump([{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False, 'vars': variables, 'tasks': selected}]))
+            result = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(fixture)], capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(result.returncode, 0)
 
     def test_stunnel_reader_uses_pinned_image_identity_and_rejects_invalid_ids(self):
         image = 'ghcr.io/example/stunnel@sha256:' + 'a' * 64

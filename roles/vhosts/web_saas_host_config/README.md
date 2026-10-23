@@ -163,3 +163,8 @@ HTTP 服务上提供 Bearer 保护的 `/v1/snapshots/*`。Prometheus 的 `/scrap
 非 root 镜像使用 root:<镜像 GID> 0640；既有调用默认仍为 root:root 0600。
 证书目录保持 0700，Compose 单文件只读挂载，私钥不开放给其他用户。
 候选与公共域名相同时，Caddy host matcher 去重后渲染。
+
+候选控制平面显式启用 `web_saas_host_config_stunnel_use_system_trust`，将主机
+受管理的系统根证书追加到 Vault 提供的 CA 链，并在发布前验证完整链和目标主机名。
+stunnel 保持 `verifyChain = yes`，同时设置 `checkHost`，不接受未知 CA 或错误域名。
+默认不开启此选项，保留既有调用的私有 CA 行为。
