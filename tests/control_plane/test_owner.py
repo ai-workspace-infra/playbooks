@@ -284,6 +284,35 @@ class RepositoryFixture(unittest.TestCase):
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_production_policy_accepts_only_established_cross_path_refs(self):
+        declaration = policy()
+        declaration['secret_refs'].update({
+            'POSTGRES_PASSWORD': 'kv/prod/databases#postgres_root_password',
+            'ACCOUNT_PG_PASSWORD': 'kv/prod/databases#account_pg_password',
+            'AUTH_TOKEN_PUBLIC_TOKEN': 'kv/prod-v2/web-saas#AUTH_TOKEN_PUBLIC_TOKEN',
+            'AUTH_TOKEN_REFRESH_SECRET': 'kv/prod-v2/web-saas#AUTH_TOKEN_REFRESH_SECRET',
+            'AUTH_TOKEN_ACCESS_SECRET': 'kv/prod-v2/web-saas#AUTH_TOKEN_ACCESS_SECRET',
+            'INTERNAL_SERVICE_TOKEN': 'kv/prod/accounts/runtime#INTERNAL_SERVICE_TOKEN',
+            'ca_cert_b64': 'kv/CICD/domains/svc.plus#tls_ca_pem_b64',
+            'server_cert_b64': 'kv/CICD/domains/svc.plus#tls_cert_pem_b64',
+            'server_key_b64': 'kv/CICD/domains/svc.plus#tls_key_pem_b64',
+            'tls_fullchain_b64': 'kv/CICD/domains/svc.plus#tls_fullchain_pem_b64',
+            'tls_key_b64': 'kv/CICD/domains/svc.plus#tls_key_pem_b64',
+            'registry_username': 'kv/CICD#GHCR_USERNAME',
+            'registry_password': 'kv/CICD#GHCR_TOKEN',
+        })
+        owner.validate_runtime_policy(declaration, 'prod')
+
+    def test_production_cross_path_refs_are_not_generalized(self):
+        for key, reference in (
+                ('AUTH_TOKEN_PUBLIC_TOKEN', 'kv/prod-v2/web-saas#OTHER_FIELD'),
+                ('tls_key_b64', 'kv/CICD/domains/other.example#tls_key_pem_b64'),
+                ('registry_password', 'kv/CICD#GHCR_USERNAME')):
+            declaration = policy()
+            declaration['secret_refs'][key] = reference
+            with self.assertRaises(owner.Refused):
+                owner.validate_runtime_policy(declaration, 'prod')
+
     def test_custom_vault_identity_overrides_stale_default_and_agent(self):
         declaration = policy()
         declaration['vault_token_env'] = 'JOB_VAULT_TOKEN'
