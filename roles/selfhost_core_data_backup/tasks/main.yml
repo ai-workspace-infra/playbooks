@@ -1,0 +1,129 @@
+---
+- name: Require one CMDB target and an explicit candidate backup request
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - ansible_play_hosts_all == [inventory_hostname]
+      - inventory_hostname == selfhost_core_data_backup_target
+      - cmdb_resource_id == selfhost_core_data_backup_resource_id
+      - selfhost_core_data_backup_storage_profile in ['root', 'dedicated']
+      - selfhost_core_data_backup_request.action == 'status'
+      - selfhost_core_data_backup_key_ref is match('^kv/' ~ selfhost_core_data_backup_request.policy.environment ~ '/[A-Za-z0-9_/-]+#[A-Za-z0-9_]+$')
+      - selfhost_core_data_backup_vault_addr is match('^https://[A-Za-z0-9.:-]+$')
+    fail_msg: API backup owner requires one exact CMDB target, original plan and explicit storage profile
+
+- name: Require target application writers and reconciler already paused by the caller
+  ansible.builtin.script: '{{ playbook_dir }}/scripts/data_operations/selfhost/native_writer_guard_host.sh'
+  changed_when: false
+
+- name: Read the original subject-bound API plan through the pinned Accounts client
+  ansible.builtin.command:
+    argv: [python3, '{{ playbook_dir }}/scripts/control_plane/migration.py']
+    stdin: '{{ selfhost_core_data_backup_request | to_json }}'
+  delegate_to: localhost
+  become: false
+  register: core_backup_original
+  changed_when: false
+  no_log: true
+
+- name: Bind the original live plan in private task memory
+  ansible.builtin.set_fact:
+    core_backup_plan: '{{ (core_backup_original.stdout | from_json).plan }}'
+  no_log: true
+
+- name: Require the original reviewed hash before any backup operation
+  ansible.builtin.assert:
+    that:
+      - core_backup_plan.plan_id == selfhost_core_data_backup_request.plan_id
+      - core_backup_plan.plan_sha256 == selfhost_core_data_backup_plan_sha256
+      - core_backup_plan.state in ['preview', 'applied']
+      - core_backup_plan.conflict_rows == 0
+
+- name: Return an already committed plan without performing a new backup or apply
+  ansible.builtin.meta: end_host
+  when: core_backup_plan.state == 'applied'
+
+- name: Bind the actual immutable owner revision
+  ansible.builtin.command:
+    argv: [git, -C, '{{ playbook_dir }}', rev-parse, HEAD]
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: core_backup_owner_head
+  failed_when: core_backup_owner_head.stdout != selfhost_core_data_backup_owner_sha
+
+- name: Resolve the existing backup encryption key from its declared Vault owner
+  ansible.builtin.command:
+    argv: [vault, kv, get, '-field={{ selfhost_core_data_backup_key_ref.split("#")[1] }}', '{{ selfhost_core_data_backup_key_ref.split("#")[0] }}']
+  environment:
+    VAULT_ADDR: '{{ selfhost_core_data_backup_vault_addr }}'
+  delegate_to: localhost
+  become: false
+  register: core_backup_key
+  changed_when: false
+  no_log: true
+
+- name: Invoke the existing encrypted native database backup owner
+  ansible.builtin.include_role:
+    name: web_saas_data_backup
+  vars:
+    web_saas_data_backup_storage_profile: '{{ selfhost_core_data_backup_storage_profile }}'
+    web_saas_data_backup_full_database: true
+    web_saas_data_backup_allow_empty_users: true
+    web_saas_data_backup_passphrase: '{{ core_backup_key.stdout }}'
+    web_saas_data_backup_environment: '{{ selfhost_core_data_backup_request.policy.environment }}'
+    web_saas_data_backup_source_database_id: '{{ core_backup_plan.target_identity_sha256 }}'
+    web_saas_data_backup_baseline_id: '{{ core_backup_plan.target_baseline_sha256 }}'
+
+- name: Invoke the existing independent isolated restore owner
+  ansible.builtin.include_role:
+    name: web_saas_data_restore_verify
+  vars:
+    web_saas_data_restore_verify_environment: '{{ selfhost_core_data_backup_request.policy.environment }}'
+    web_saas_data_restore_verify_full_database: true
+    web_saas_data_restore_verify_allow_empty_users: true
+    web_saas_data_restore_verify_passphrase: '{{ core_backup_key.stdout }}'
+    web_saas_data_restore_verify_run_id: '{{ web_saas_data_backup_run_id }}'
+    web_saas_data_restore_verify_expected_version: '{{ web_saas_data_backup_expected_version }}'
+    web_saas_data_restore_verify_source_database_id: '{{ core_backup_plan.target_identity_sha256 }}'
+    web_saas_data_restore_verify_baseline_id: '{{ core_backup_plan.target_baseline_sha256 }}'
+    web_saas_data_restore_verify_authorized_subscription_sample_id: '{{ web_saas_data_backup_authorized_subscription_sample_id }}'
+    web_saas_data_restore_verify_source_schema_sha256: '{{ web_saas_data_backup_evidence.schema_sha256 }}'
+    web_saas_data_restore_verify_source_data_sha256: '{{ web_saas_data_backup_evidence.data_sha256 }}'
+    web_saas_data_restore_verify_database_system_identifier: '{{ web_saas_data_backup_evidence.database_system_identifier }}'
+    web_saas_data_restore_verify_expected_users: '{{ web_saas_data_backup_evidence.existing_users }}'
+    web_saas_data_restore_verify_expected_subscriptions: '{{ web_saas_data_backup_evidence.subscriptions }}'
+    web_saas_data_restore_verify_archive_path: '{{ web_saas_data_backup_evidence.archive_path }}'
+    web_saas_data_restore_verify_archive_sha256: '{{ web_saas_data_backup_evidence.archive_sha256 }}'
+
+- name: Revalidate paused target writers after the actual restore
+  ansible.builtin.script: '{{ playbook_dir }}/scripts/data_operations/selfhost/native_writer_guard_host.sh'
+  changed_when: false
+
+- name: Recompute the canonical live API baseline using the same immutable source snapshot
+  ansible.builtin.command:
+    argv: [python3, '{{ playbook_dir }}/scripts/control_plane/migration.py']
+    stdin: '{{ selfhost_core_data_backup_request | combine({"action": "preview", "plan_id": "", "snapshot_id": core_backup_plan.snapshot.snapshot_id}) | to_json }}'
+  delegate_to: localhost
+  become: false
+  register: core_backup_fresh
+  changed_when: false
+  no_log: true
+
+- name: Verify paused target writers immediately before issuing the backup gate
+  ansible.builtin.script: '{{ playbook_dir }}/scripts/data_operations/selfhost/native_writer_guard_host.sh'
+  changed_when: false
+
+- name: Stage the non-secret API backup receipt adapter
+  ansible.builtin.copy:
+    src: api_backup_receipt.py
+    dest: /usr/local/libexec/playbooks-api-backup-receipt.py
+    mode: '0700'
+
+- name: Create the exact target-local API gate and auditable owner proof
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/playbooks-api-backup-receipt.py]
+    stdin: '{{ {"backup": web_saas_data_backup_evidence, "restore": web_saas_data_restore_verify_evidence, "plan": core_backup_plan, "fresh_plan": (core_backup_fresh.stdout | from_json).plan, "plan_id": selfhost_core_data_backup_request.plan_id, "plan_sha256": selfhost_core_data_backup_plan_sha256, "owner_sha": selfhost_core_data_backup_owner_sha, "receipt_file": selfhost_core_data_backup_receipt_file, "proof_file": selfhost_core_data_backup_proof_file} | to_json }}'
+  register: selfhost_core_data_backup_result
+  changed_when: true
+  no_log: true

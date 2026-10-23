@@ -1,0 +1,24 @@
+---
+- name: Require explicit API client request and refuse partial Ansible check execution
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - selfhost_core_data_migration_request is mapping
+      - selfhost_core_data_migration_request.policy.kind == 'accounts-migration'
+    fail_msg: Pass the reviewed API policy/client/evidence request; use its check flag for a local plan
+
+- name: Invoke the pinned Accounts API client with executable backup and restore gates
+  ansible.builtin.command:
+    argv: [python3, '{{ playbook_dir }}/scripts/control_plane/migration.py']
+    stdin: '{{ selfhost_core_data_migration_request | combine({"action": selfhost_core_data_migration_action, "check": selfhost_core_data_migration_check}) | to_json }}'
+  delegate_to: localhost
+  become: false
+  register: selfhost_core_data_migration_result
+  changed_when: selfhost_core_data_migration_action == 'apply' and not selfhost_core_data_migration_check
+  no_log: true
+
+- name: Retain only protected migration evidence in task memory
+  ansible.builtin.set_fact:
+    selfhost_core_data_migration_evidence: '{{ selfhost_core_data_migration_result.stdout | from_json }}'
+    cacheable: false
+  no_log: true

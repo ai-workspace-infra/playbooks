@@ -1,0 +1,37 @@
+name: Control plane owner contracts
+on:
+  pull_request:
+    paths:
+      - 'scripts/control_plane/**'
+      - 'roles/selfhost_control_plane/**'
+      - 'roles/selfhost_core_data_*/**'
+      - 'roles/web_saas_data_backup/**'
+      - 'roles/web_saas_data_restore_verify/**'
+      - 'roles/vhosts/Doco-CD/**'
+      - 'roles/vhosts/web_saas_host_config/**'
+      - 'roles/doco_cd_release_selection/**'
+      - 'inventory/terraform_cmdb.py'
+      - 'scripts/data_operations/selfhost/native_init_host.py'
+      - 'roles/web_saas_business_database/files/business_database.py'
+      - 'selfhost-*.yml'
+      - 'tests/control_plane/**'
+      - '.github/workflows/control-plane-owner-tests.yml'
+permissions:
+  contents: read
+jobs:
+  owner:
+    runs-on: ubuntu-24.04
+    env:
+      CONTROL_PLANE_GITOPS_SCHEMA: ${{ github.workspace }}/.fixture-gitops/schemas/selfhost-control-plane.schema.yaml
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-infra/gitops
+          ref: fea4526df2f3b20d7388b1418ea890d1b58ec0aa
+          path: .fixture-gitops
+          persist-credentials: false
+      - name: Run credential-free owner, Ansible and disposable PostgreSQL fixtures
+        run: bash tests/control_plane/run_ci.sh

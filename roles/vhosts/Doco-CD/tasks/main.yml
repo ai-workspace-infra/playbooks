@@ -23,6 +23,7 @@
   no_log: true
   failed_when: false
   when:
+    - doco_cd_resolve_credentials | bool
     - doco_cd_git_access_token | trim | length == 0
     - doco_cd_vault_jwt_token | trim | length > 0 or doco_cd_vault_token | trim | length > 0
 
@@ -32,6 +33,7 @@
       {{ lookup('ansible.builtin.env', 'DOCO_CD_GIT_ACCESS_TOKEN')
          | default(doco_cd_vault_secret.secret.DOCO_CD_GIT_ACCESS_TOKEN | default('', true), true) }}
   no_log: true
+  when: doco_cd_resolve_credentials | bool
 
 # Git 访问 token 是可选的: 公开仓库不需要它, 强制要求会让部署卡在一个
 # 根本不存在的凭据上。私有仓库才需要, 那时给 DOCO_CD_GIT_ACCESS_TOKEN
@@ -74,6 +76,7 @@
     argv: [docker, login, "{{ doco_cd_registry_server }}", -u, "{{ doco_cd_registry_username }}", --password-stdin]
     stdin: "{{ doco_cd_registry_password }}"
   no_log: true
+  changed_when: false
   when:
     - doco_cd_registry_username | trim | length > 0
     - doco_cd_registry_password | trim | length > 0
@@ -108,6 +111,7 @@
     group: root
     mode: "0600"
   no_log: true
+  register: doco_cd_rendered
 
 - name: Validate Doco-CD Docker Compose file
   ansible.builtin.command:
@@ -130,6 +134,7 @@
 # revision stays deployed forever.  Repair only the affected Git cache.  Do
 # not remove the volume: it may contain state for other Doco-CD jobs.
 - name: Stop Doco-CD before validating its Git cache
+  when: doco_cd_manage_git_cache | bool
   ansible.builtin.command:
     argv:
       - docker
@@ -144,6 +149,7 @@
   changed_when: false
 
 - name: Resolve Doco-CD data volume mountpoint
+  when: doco_cd_manage_git_cache | bool
   ansible.builtin.command:
     argv:
       - docker
@@ -157,6 +163,7 @@
   failed_when: false
 
 - name: Locate Doco-CD Git cache repositories
+  when: doco_cd_manage_git_cache | bool
   ansible.builtin.shell: >-
     find {{ doco_cd_data_volume.stdout | trim | quote }}
     -type d -name .git -print
@@ -178,6 +185,7 @@
   loop_control:
     label: "{{ item | dirname }}"
   when: item | trim | length > 0
+        and doco_cd_manage_git_cache | bool
   register: doco_cd_git_cache_checks
   changed_when: false
   failed_when: false
@@ -188,6 +196,7 @@
     state: absent
   loop: "{{ doco_cd_git_cache_checks.results | default([]) }}"
   when:
+    - doco_cd_manage_git_cache | bool
     - item.rc | int != 0
     - (item.item | dirname) is match('/var/lib/docker/volumes/[^/]+_data/_data/.+')
 
@@ -204,9 +213,19 @@
   args:
     chdir: "{{ doco_cd_base_dir }}"
   when: doco_cd_pull_image | bool
+  changed_when: false
+
+- name: Inspect existing reconciler state without displaying credentials
+  ansible.builtin.command:
+    argv: [docker, inspect, --format, '{{ "{{" }}.State.Running{{ "}}" }}', '{{ doco_cd_container_name }}']
+  register: doco_cd_running
+  changed_when: false
+  failed_when: false
 
 - name: Start Doco-CD
-  when: doco_cd_start_controller | bool
+  when:
+    - doco_cd_start_controller | bool
+    - doco_cd_manage_git_cache | bool or doco_cd_rendered.changed or doco_cd_running.stdout != 'true'
   ansible.builtin.command:
     argv:
       - docker
@@ -220,6 +239,7 @@
       - --remove-orphans
   args:
     chdir: "{{ doco_cd_base_dir }}"
+  changed_when: true
 
 # `up -d` returns as soon as the container is created. A Doco-CD that exits at
 # startup restarts forever while every later task waits on stacks it will
