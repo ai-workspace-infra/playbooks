@@ -1,0 +1,17 @@
+# Managed by Ansible role xray_edge. Keep this site isolated in conf.d.
+{{ xray_edge_domain }} {
+    @xhttp path {{ xray_edge_path }} {{ xray_edge_path }}/*
+    handle @xhttp {
+        reverse_proxy https://{{ xray_edge_upstream_address }}:{{ xray_edge_upstream_port }} {
+            header_up Host {{ xray_edge_upstream_host }}
+            transport http {
+                versions 2
+                tls_server_name {{ xray_edge_upstream_sni }}
+            }
+        }
+    }
+
+    handle {
+        respond 404
+    }
+}
