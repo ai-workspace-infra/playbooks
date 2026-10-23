@@ -169,9 +169,10 @@
             target: '{{ control_plane_contract.release.doco_cd.target if control_plane_initialized else control_plane_contract.release.doco_cd.storage_target }}'
             interval: 60
 
-    - name: Wait for actual PostgreSQL readiness
+    - name: Wait for final PostgreSQL PID 1 and actual SQL readiness
       ansible.builtin.command:
-        argv: [docker, exec, web-saas-postgresql, pg_isready, -U, postgres, -d, postgres]
+        argv: [docker, exec, -i, web-saas-postgresql, sh]
+        stdin: '{{ lookup("ansible.builtin.file", role_path ~ "/files/postgres_final_ready.sh") }}'
       register: control_plane_postgres
       changed_when: false
       until: control_plane_postgres.rc == 0

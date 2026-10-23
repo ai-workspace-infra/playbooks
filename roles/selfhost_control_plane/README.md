@@ -16,6 +16,10 @@ binds resource, images, schema and database identity. Identical reruns verify
 schema/checkpoint and application password without reinitializing or rotating it.
 Changed artifacts require a separately reviewed upgrade, not journal deletion.
 
+Before native initialization, the shared read-only PostgreSQL probe requires
+`/proc/1/comm` to be `postgres`, TCP readiness and a successful `SELECT 1`.
+The official image's temporary initialization server cannot satisfy this gate.
+
 Check via the runner `--check`; direct Ansible check mode is refused because
 native owners have execution-only tasks. No runtime acceptance was performed.
 On failure preserve the target and inspect its journal. Do not remove storage or
