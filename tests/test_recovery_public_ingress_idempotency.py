@@ -31,7 +31,7 @@ class RecoveryPublicIngressIdempotencyTests(unittest.TestCase):
         ingress = next(task for task in tasks if task.get('ansible.builtin.include_role', {}).get('name') == 'web_saas_public_ingress')
         self.assertNotIn('web_saas_public_ingress_recovery_read_only', ingress['vars'])
         defaults = yaml.safe_load((ROOT / 'roles/web_saas_public_ingress/defaults/main.yml').read_text())
-        self.assertFalse(defaults['web_saas_public_ingress_recovery_read_only'])
+        self.assertNotIn('web_saas_public_ingress_recovery_read_only', defaults)
 
     def test_restore_and_fresh_deployment_share_ingress_owner(self):
         for file in ['roles/web_saas_generation_recovery/tasks/prepare.yml', 'roles/web_saas_generation_fresh/tasks/application.yml']:
@@ -52,20 +52,16 @@ class RecoveryPublicIngressIdempotencyTests(unittest.TestCase):
                     'brand_domains': {'root': 'xworktech.com', 'www': 'www.xworktech.com'},
                     'brand_tls': {'directory': '/etc/xcontrol/tls/xworktech.com'}}
         for generation in ['prod-v4', 'prod-v10']:
-            for readonly in [False, True]:
-                output = template.render(public_ingress=contract, web_saas_public_ingress_generation=generation,
-                                         web_saas_public_ingress_recovery_read_only=readonly)
-                for service in ['console', 'accounts', 'billing']:
-                    self.assertIn(service + '-selfhost-' + generation + '.svc.plus', output)
-                self.assertIn('redir https://xworktech.com{uri} 301', output)
-                self.assertEqual('method POST\n        path /v1/ingest/snapshots' in output, not readonly)
-                self.assertNotIn('tls internal', output)
-                self.assertNotIn('header_up Authorization', output)
-                self.assertEqual('respond @mutating 403' in output, readonly)
-                self.assertEqual(output.count('\n    @candidate_session {'), 2 if readonly else 0)
-                if readonly:
-                    self.assertEqual(output.count('path /api/auth/login /api/auth/session'),2)
-                    self.assertEqual(output.count('@candidate_read method GET HEAD'),2)
+            output = template.render(public_ingress=contract, web_saas_public_ingress_generation=generation)
+            for service in ['console', 'accounts', 'billing']:
+                self.assertIn(service + '-selfhost-' + generation + '.svc.plus', output)
+            self.assertIn('redir https://xworktech.com{uri} 301', output)
+            self.assertIn('method POST\n        path /v1/ingest/snapshots', output)
+            self.assertNotIn('tls internal', output)
+            self.assertNotIn('header_up Authorization', output)
+            self.assertNotIn('respond @mutating 403', output)
+            self.assertNotIn('@candidate_session', output)
+            self.assertNotIn('@candidate_read', output)
 
     def test_deployment_reference_accepts_only_fixed_sha_or_release_tag(self):
         tasks = yaml.safe_load((ROOT / 'roles/doco_cd_release_selection/tasks/main.yml').read_text())
