@@ -25,7 +25,10 @@ class PostgresRoundTrip(unittest.TestCase):
             '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', os.environ.get('CONTROL_PLANE_POSTGRES_IMAGE', 'postgres:17')], text=True).strip()
         cls.addClassCleanup(lambda: subprocess.run([cls.docker, 'rm', '-f', cls.container], capture_output=True, check=True))
         for _ in range(100):
-            if subprocess.run([cls.docker, 'exec', cls.container, 'pg_isready', '-U', 'postgres'], capture_output=True).returncode == 0:
+            # The official image's initialization server exposes only a Unix
+            # socket and exits before the final server starts. Require TCP to
+            # avoid accepting that temporary server as fixture readiness.
+            if subprocess.run([cls.docker, 'exec', cls.container, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'], capture_output=True).returncode == 0:
                 break
             time.sleep(0.2)
         else:
