@@ -363,6 +363,11 @@ def run_owner(owner, contract, runtime):
     validate_runtime_policy(runtime, contract['environment'])
     billing = billing_artifact(contract)
     env = {k: v for k, v in os.environ.items() if not k.startswith("ANSIBLE_")}
+    # Preserve only the explicitly provisioned dependency directory, never
+    # unrelated caller overrides for SSH validation, callbacks or inventory.
+    if os.environ.get('ANSIBLE_COLLECTIONS_PATH'):
+        env['ANSIBLE_COLLECTIONS_PATH'] = os.environ['ANSIBLE_COLLECTIONS_PATH']
+        env['ANSIBLE_COLLECTIONS_SCAN_SYS_PATH'] = 'False'
     env.update(ANSIBLE_CONFIG=str(owner / "scripts/control_plane/ansible.cfg"),
                ANSIBLE_STDOUT_CALLBACK='control_plane_receipt',
                ANSIBLE_CALLBACK_PLUGINS=str(owner / 'scripts/control_plane/callback_plugins'),
@@ -394,7 +399,7 @@ def run_owner(owner, contract, runtime):
             failure = {'stage': stage, 'exit_code': result.returncode, 'action': action}
             if stage == 'controller_dependencies' and result.returncode == 4:
                 failure['diagnostic'] = ('Ansible role dependency parsing or module resolution failed; '
-                                         'install collections/requirements-control-plane.yml')
+                                         'prepare roles/vhosts/common controller dependencies')
             stdout = result.stdout if isinstance(result.stdout, str) else ''
             for line in stdout.splitlines():
                 if line.startswith('CONTROL_PLANE_FAILURE='):
