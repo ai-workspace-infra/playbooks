@@ -1,0 +1,86 @@
+---
+- name: Require one explicitly selected owned candidate target
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - ansible_play_hosts_all == [inventory_hostname]
+      - inventory_hostname == migration_listener.contract.target.host
+      - cmdb_resource_id == migration_listener.contract.resolved.resource_id
+      - migration_listener.contract.execution.mode == 'candidate'
+
+- name: Resolve only the dedicated migration Vault references in controller task memory
+  ansible.builtin.command:
+    argv: [python3, '{{ playbook_dir }}/scripts/control_plane/listener.py']
+    stdin: '{{ {"policy": migration_listener_policy, "environment": migration_listener.contract.environment} | to_json }}'
+  environment:
+    CONTROL_PLANE_LISTENER_RESOLVE: '1'
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  no_log: true
+  register: migration_listener_private
+
+- name: Create a private target helper workspace
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: migration-listener-
+  register: migration_listener_workspace
+
+- name: Prepare and verify the explicitly declared listener
+  block:
+    - name: Stage reusable target-only guards
+      ansible.builtin.copy:
+        src: '{{ item.src }}'
+        dest: '{{ migration_listener_workspace.path }}/{{ item.dest }}'
+        mode: '0600'
+      loop:
+        - {src: '{{ role_path }}/files/runtime.py', dest: runtime.py}
+        - {src: '{{ playbook_dir }}/roles/selfhost_core_data_backup/files/api_backup_receipt.py', dest: api_backup_receipt.py}
+
+    - name: Refresh persistent root-private target environment and route from explicit declaration
+      ansible.builtin.command:
+        argv: [python3, '{{ migration_listener_workspace.path }}/runtime.py']
+        stdin: '{{ {"action": "prepare", "validated": migration_listener, "values": migration_listener_private.stdout | from_json} | to_json }}'
+      register: migration_listener_prepared
+      changed_when: (migration_listener_prepared.stdout | from_json).changed
+      no_log: true
+
+    - name: Select only the pinned GitOps-declared opt-in listener stack
+      ansible.builtin.include_role:
+        name: doco_cd_release_selection
+      vars:
+        doco_release_repository: '{{ migration_listener.contract.release.doco_cd.repository }}'
+        doco_release_reference: '{{ migration_listener.contract.resolved.gitops_sha }}'
+        doco_release_target: '{{ migration_listener.declaration.doco_target }}'
+
+    - name: Validate and reload only changed route after GitOps reconciles the actual listener
+      ansible.builtin.command:
+        argv: [python3, '{{ migration_listener_workspace.path }}/runtime.py']
+        stdin: '{{ {"action": "refresh", "validated": migration_listener, "values": migration_listener_private.stdout | from_json, "arguments": migration_listener_arguments} | to_json }}'
+      changed_when: true
+      no_log: true
+      register: migration_listener_refresh
+      until: migration_listener_refresh.rc == 0
+      retries: 40
+      delay: 5
+      when: (migration_listener_prepared.stdout | from_json).changed
+
+    - name: Verify actual pinned listener namespace and trusted authenticated API routing
+      ansible.builtin.command:
+        argv: [python3, '{{ migration_listener_workspace.path }}/runtime.py']
+        stdin: '{{ {"action": "verify", "validated": migration_listener, "values": migration_listener_private.stdout | from_json, "arguments": migration_listener_arguments} | to_json }}'
+      changed_when: false
+      no_log: true
+      register: migration_listener_verified
+      until: migration_listener_verified.rc == 0
+      retries: 40
+      delay: 5
+
+    - name: Publish only sanitized listener component acceptance
+      ansible.builtin.debug:
+        msg: MIGRATION_LISTENER_VERIFIED source_actions=false business_acceptance=false
+  always:
+    - name: Remove only the owned helper workspace
+      ansible.builtin.file:
+        path: '{{ migration_listener_workspace.path }}'
+        state: absent

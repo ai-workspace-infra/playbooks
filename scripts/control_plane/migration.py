@@ -112,7 +112,8 @@ def validate_recovery(request, policy, plan):
     backup, restored = proof['backup'], proof['restore']
     require(backup.get('environment') == policy['environment'] and backup.get('archive_sha256') == evidence['backup_sha256']
             and backup.get('encrypted') is True and backup.get('durable') is True and backup.get('full_database') is True
-            and restored.get('full_database') is True and backup.get('checkpoint_id') == evidence['backup_id'], 'Native backup binding differs')
+            and restored.get('full_database') is True and backup.get('checkpoint_id') == evidence['backup_id']
+            and backup.get('privileges_preserved') is True and restored.get('privileges_preserved') is True, 'Native backup binding differs')
     for key in ('environment', 'schema_sha256', 'data_sha256', 'archive_sha256', 'schema_version', 'migration_dirty',
                 'database_system_identifier', 'baseline_id', 'source_database_id'):
         require(backup.get(key) == restored.get(key) and backup.get(key) is not None, 'Independent native restore differs')
