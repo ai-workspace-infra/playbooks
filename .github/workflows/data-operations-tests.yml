@@ -148,7 +148,9 @@ jobs:
           set -euo pipefail
           GENERATION_PERMISSIONS_PG_CONTAINER=generation-permissions-fixture-v4-p0 \
             python3 tests/data_operations/test_generation_application_permissions.py
-          V4_POSTGRES_CONTAINER=generation-permissions-fixture-v4-p0 \
+          GENERATION_TEST_FIXTURE=1 \
+          GENERATION_TARGET_GENERATION=prod-v4 \
+          GENERATION_POSTGRES_CONTAINER=generation-permissions-fixture-v4-p0 \
             bash tests/data_operations/selfhost/v4_business_role_acceptance.sh
       - name: Exercise traffic acceptance SQL against synthetic fixture rows only
         run: |

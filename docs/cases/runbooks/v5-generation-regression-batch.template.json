@@ -1,0 +1,683 @@
+{
+  "accounts_source_sha": null,
+  "additional_checklist_gates": [
+    {
+      "case_id": "business-runtime-role",
+      "command": "GENERATION_TARGET_GENERATION=prod-v5 GENERATION_POSTGRES_CONTAINER=<verified-v5-container> bash tests/data_operations/selfhost/v4_business_role_acceptance.sh",
+      "coverage_limit": "This script does not verify password source, SELECT/UPDATE/DELETE grants, task flags, or declaration convergence; those remain separate checklist gates.",
+      "execution_pin": "playbooks_runner_sha from this manifest",
+      "expected": "Candidate account_user has INSERT on users, billing_ledger, and traffic_minute_buckets.",
+      "expected_exit_policy": {
+        "BLOCKED": 2,
+        "FAIL": 1,
+        "PASS": 0
+      },
+      "historical_evidence": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/prod-v4-runtime-and-snapshot-baseline-20261021.zh.md \u00a74; current configuration convergence remains open.",
+      "historical_exit_code": null,
+      "historical_pin": {
+        "commit": "6d6c65a200a342ba8cea819bc0120ebf14fc57c6",
+        "sha256": "304fc0e14f06dcc656cde620ea19d65039b5c6a52c88700920af60d9ee8d6d2e"
+      },
+      "historical_status": "PARTIAL",
+      "new_evidence": "candidate task stdout/stderr; runner has no dedicated JSON receipt writer",
+      "runner_path": "tests/data_operations/selfhost/v4_business_role_acceptance.sh"
+    },
+    {
+      "blocker_scope": "not a prerequisite for stages 0-7 regression preparation; implement and pin before stage 8",
+      "case_id": "writer-ownership",
+      "evidence": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md row V4-01,22; no executable case or complete receipt is identified.",
+      "execution_stage": 8,
+      "expected": "At the separately approved manual cutover, fence the old source business writer and establish one-generation write ownership.",
+      "historical_exit_code": null,
+      "historical_status": "NOT_RUN",
+      "runner_path": null,
+      "status": "DEFERRED_UNTIL_MANUAL_CUTOVER"
+    }
+  ],
+  "additional_local_fixture_suites": [
+    {
+      "command": "<ansible-python> -m unittest discover -s tests/data_operations/selfhost -p 'v4_acceptance_scripts_test.py' -v",
+      "expected_exit_code": 0,
+      "runner_path": "tests/data_operations/selfhost/v4_acceptance_scripts_test.py",
+      "scope": "mock Docker CLI contract fixtures; no real Docker daemon calls"
+    },
+    {
+      "command": "python3 -m unittest discover -s tests -p 'test_prepare_generation_regression_batch.py' -v",
+      "expected_exit_code": 0,
+      "runner_path": "tests/test_prepare_generation_regression_batch.py",
+      "scope": "offline manifest and input-validation fixtures"
+    }
+  ],
+  "billing_schema_sha256": null,
+  "billing_sql_sha256": null,
+  "candidate_gitops_sha": null,
+  "cases": [
+    {
+      "case_id": "public-sni-cert",
+      "checklist_status": "PARTIAL",
+      "expected": "Trusted TLS and SANs for declared public names and target aliases; certificate mount read-only.",
+      "expected_exit_policy": {
+        "BLOCKED": 2,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/cases/<candidate-commit>/<case>-<utc>.json; absolute host path and exact filenames are not in the shared checklist.",
+        "note": "Current V4 probe was partial; full pinned case was not rerun.",
+        "observed_exit_codes": [
+          0
+        ],
+        "status": "PASS"
+      },
+      "historical_knowledge_case_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v2-v3-20261019/20261019-prod-v3-public-sni-repair.zh.md",
+      "new_evidence": "<target-checkpoint>/cases/<candidate-gitops-sha>/public-sni-cert-<utc>.json",
+      "runner_path": "roles/web_saas_generation_fresh/files/regression_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "37888cd5fcdc14178ad626cbca95aac284fb335a3fc6e8ad56294787e905c763"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "case_id": "public-host-completeness",
+      "checklist_status": "NEEDS_PARAMETERIZATION",
+      "expected": "Exact DNS A-record set equals the supplied stage declaration; www preserves URI.",
+      "expected_exit_policy": {
+        "BLOCKED": 2,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/cases/<candidate-commit>/<case>-<utc>.json; absolute host path and exact filenames are not in the shared checklist.",
+        "note": "Old expected routing was tied to V3; no historical exit is asserted for that invalidated expectation.",
+        "observed_exit_codes": [],
+        "status": "NOT_REUSABLE"
+      },
+      "historical_knowledge_case_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v2-v3-20261019/README.md",
+      "new_evidence": "<target-checkpoint>/cases/<candidate-gitops-sha>/public-host-completeness-<utc>.json",
+      "runner_path": "roles/web_saas_generation_fresh/files/regression_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "37888cd5fcdc14178ad626cbca95aac284fb335a3fc6e8ad56294787e905c763"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "case_id": "runtime-secret-injection",
+      "checklist_status": "NOT_RUN",
+      "expected": "Accounts, Billing and Console process tokens match the canonical runtime value without emitting it.",
+      "expected_exit_policy": {
+        "BLOCKED": 2,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/cases/<candidate-commit>/<case>-<utc>.json; absolute host path and exact filenames are not in the shared checklist.",
+        "note": "Current baseline did not recheck all three processes.",
+        "observed_exit_codes": [
+          0,
+          0
+        ],
+        "status": "PASS"
+      },
+      "historical_knowledge_case_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v2-v3-20261019/20261019-prod-v3-canonical-service-token.zh.md",
+      "new_evidence": "<target-checkpoint>/cases/<candidate-gitops-sha>/runtime-secret-injection-<utc>.json",
+      "runner_path": "roles/web_saas_generation_fresh/files/regression_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "37888cd5fcdc14178ad626cbca95aac284fb335a3fc6e8ad56294787e905c763"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "case_id": "billing-ingest",
+      "checklist_status": "PARTIAL",
+      "expected": "Missing/invalid tokens reject; management and wrong methods reject; isolated valid event persists once.",
+      "expected_exit_policy": {
+        "BLOCKED": 2,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/cases/<candidate-commit>/<case>-<utc>.json; absolute host path and exact filenames are not in the shared checklist.",
+        "note": "Negative auth boundary passed separately; positive persistence and duplicate fixture remain required.",
+        "observed_exit_codes": [
+          2,
+          1
+        ],
+        "status": "BLOCKED_AND_FAIL"
+      },
+      "historical_knowledge_case_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v2-v3-20261019/20261020-billing-vector-ingest-p0.zh.md",
+      "new_evidence": "<target-checkpoint>/cases/<candidate-gitops-sha>/billing-ingest-<utc>.json",
+      "runner_path": "roles/web_saas_generation_fresh/files/regression_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "37888cd5fcdc14178ad626cbca95aac284fb335a3fc6e8ad56294787e905c763"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "case_id": "exporter-vector",
+      "checklist_status": "BLOCKED",
+      "expected": "Every selected node delivers fresh isolated usage/ledger data without duplicate posting.",
+      "expected_exit_policy": {
+        "BLOCKED": 2,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/cases/<candidate-commit>/<case>-<utc>.json; absolute host path and exact filenames are not in the shared checklist.",
+        "note": "Historical full-chain case blocked; database freshness alone is insufficient.",
+        "observed_exit_codes": [
+          2
+        ],
+        "status": "BLOCKED"
+      },
+      "historical_knowledge_case_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v2-v3-20261019/20261020-billing-vector-ingest-p0.zh.md",
+      "new_evidence": "<target-checkpoint>/cases/<candidate-gitops-sha>/exporter-vector-<utc>.json",
+      "runner_path": "roles/web_saas_generation_fresh/files/regression_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "37888cd5fcdc14178ad626cbca95aac284fb335a3fc6e8ad56294787e905c763"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "case_id": "agent-registration",
+      "checklist_status": "PARTIAL",
+      "expected": "Isolated edge registers, receives configuration, and establishes a user connection.",
+      "expected_exit_policy": {
+        "BLOCKED": 2,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/cases/<candidate-commit>/<case>-<utc>.json; absolute host path and exact filenames are not in the shared checklist.",
+        "note": "Status POST evidence is partial; isolated writable edge fixture is required.",
+        "observed_exit_codes": [
+          2
+        ],
+        "status": "BLOCKED"
+      },
+      "historical_knowledge_case_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v2-v3-20261019/20261019-prod-v3-canonical-service-token.zh.md",
+      "new_evidence": "<target-checkpoint>/cases/<candidate-gitops-sha>/agent-registration-<utc>.json",
+      "runner_path": "roles/web_saas_generation_fresh/files/regression_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "37888cd5fcdc14178ad626cbca95aac284fb335a3fc6e8ad56294787e905c763"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "case_id": "client-transport",
+      "checklist_status": "NOT_RUN",
+      "expected": "Generated VLESS path matches Xray and an isolated client connects.",
+      "expected_exit_policy": {
+        "BLOCKED": 2,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/cases/<candidate-commit>/<case>-<utc>.json; absolute host path and exact filenames are not in the shared checklist.",
+        "note": "Historical case blocked; no current candidate client evidence.",
+        "observed_exit_codes": [
+          2
+        ],
+        "status": "BLOCKED"
+      },
+      "historical_knowledge_case_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v2-v3-20261019/20261019-prod-v3-vless-path-p0-release.zh.md",
+      "new_evidence": "<target-checkpoint>/cases/<candidate-gitops-sha>/client-transport-<utc>.json",
+      "runner_path": "roles/web_saas_generation_fresh/files/regression_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "37888cd5fcdc14178ad626cbca95aac284fb335a3fc6e8ad56294787e905c763"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "case_id": "auth-callback",
+      "checklist_status": "NOT_RUN",
+      "expected": "Isolated login/MFA/OAuth and Sandbox callbacks complete with correct event association.",
+      "expected_exit_policy": {
+        "BLOCKED": 2,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/cases/<candidate-commit>/<case>-<utc>.json; absolute host path and exact filenames are not in the shared checklist.",
+        "note": "Login-page readiness is not a session or payment callback result.",
+        "observed_exit_codes": [
+          2
+        ],
+        "status": "BLOCKED"
+      },
+      "historical_knowledge_case_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v2-v3-20261019/README.md",
+      "new_evidence": "<target-checkpoint>/cases/<candidate-gitops-sha>/auth-callback-<utc>.json",
+      "runner_path": "roles/web_saas_generation_fresh/files/regression_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "37888cd5fcdc14178ad626cbca95aac284fb335a3fc6e8ad56294787e905c763"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "case_id": "schema-data-protection",
+      "checklist_status": "BLOCKED",
+      "expected": "Full migratectl comparison proves business equality, source_read_only=true and target_writes=false.",
+      "expected_exit_policy": {
+        "BLOCKED": 2,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/cases/<candidate-commit>/<case>-<utc>.json; absolute host path and exact filenames are not in the shared checklist.",
+        "note": "b598 candidate recorded FAIL/1 then PASS/0; later 765ea candidate recorded FAIL/1; current comparison must be rerun.",
+        "observed_exit_codes": [
+          1,
+          0,
+          1
+        ],
+        "status": "FAIL_PASS_FAIL"
+      },
+      "historical_candidate_pins": [
+        {
+          "candidate_gitops_sha": "b5987fefc5e591e0fdba33c684ca83766a16ff37",
+          "observed_exit_codes": [
+            1,
+            0
+          ]
+        },
+        {
+          "candidate_gitops_sha": null,
+          "candidate_gitops_sha_prefix": "765ea",
+          "observed_exit_codes": [
+            1
+          ],
+          "pin_status": "full SHA absent from the shared source record"
+        }
+      ],
+      "historical_knowledge_case_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v2-v3-20261019/v2-to-v3-snapshot-refresh-20261019.zh.md",
+      "new_evidence": "<target-checkpoint>/cases/<candidate-gitops-sha>/schema-data-protection-<utc>.json",
+      "runner_path": "roles/web_saas_generation_fresh/files/regression_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "37888cd5fcdc14178ad626cbca95aac284fb335a3fc6e8ad56294787e905c763"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "case_id": "repeat-deploy-restore",
+      "checklist_status": "BLOCKED",
+      "expected": "Same-candidate replay avoids unexpected restart/repeated writes; populated restore reconnects application.",
+      "expected_exit_policy": {
+        "BLOCKED": 2,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/cases/<candidate-commit>/<case>-<utc>.json; absolute host path and exact filenames are not in the shared checklist.",
+        "note": "Historical application-on-restored-database and healthy convergence are not proven.",
+        "observed_exit_codes": [
+          2
+        ],
+        "status": "BLOCKED"
+      },
+      "historical_knowledge_case_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v2-v3-20261019/web-saas-generation-snapshot-recovery-template.zh.md",
+      "new_evidence": "<target-checkpoint>/cases/<candidate-gitops-sha>/repeat-deploy-restore-<utc>.json",
+      "runner_path": "roles/web_saas_generation_fresh/files/regression_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "37888cd5fcdc14178ad626cbca95aac284fb335a3fc6e8ad56294787e905c763"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "accounts_test": {
+        "dsn_environment": "MIGRATECTL_NATIVE_TEST_DSN",
+        "function": "TestNativeInitPostgres17",
+        "source_path": "internal/migrate/native_init_test.go",
+        "source_path_reference": null,
+        "source_path_status": "path recorded; immutable source SHA still required"
+      },
+      "baseline_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/prod-v4-runtime-and-snapshot-baseline-20261021.zh.md",
+      "case_id": "native-initialization",
+      "expected": "PASS with the exact test emitting --- PASS:; skipped=false; restarted fixture row fingerprint unchanged.",
+      "expected_exit_policy": {
+        "BLOCKED": 1,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "accounts_source_sha": null,
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/postgres-cases-20261020T162919330798Z.json",
+        "exit_code": 0,
+        "pin_gap": "the shared checklist does not publish the historical Accounts source SHA, integration binary digest, SQL digests, or PostgreSQL image digest",
+        "skipped": false,
+        "status": "PASS"
+      },
+      "new_evidence": "<target-checkpoint>/postgres-cases-<utc>.json and <target-checkpoint>/<case>-<fixture-run>.log",
+      "runner_path": "roles/web_saas_generation_fresh/files/postgres_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "a93ab85155f6e4f6ee83f9f4b81274a42b2bf73ccbbc1bf9a6363fe2a03eab3d"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "accounts_test": {
+        "dsn_environment": "ACCOUNTS_TEST_POSTGRES_DSN",
+        "function": "TestControlledMigratePostgresIntegration",
+        "source_path": "internal/migrate/controlled_test.go",
+        "source_path_reference": null,
+        "source_path_status": "path recorded; immutable source SHA still required"
+      },
+      "baseline_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/prod-v4-runtime-and-snapshot-baseline-20261021.zh.md",
+      "case_id": "migration-concurrency-retry",
+      "expected": "PASS with the exact test emitting --- PASS:; skipped=false; restarted fixture row fingerprint unchanged.",
+      "expected_exit_policy": {
+        "BLOCKED": 1,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "accounts_source_sha": null,
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/postgres-cases-20261020T162919330798Z.json",
+        "exit_code": 0,
+        "pin_gap": "the shared checklist does not publish the historical Accounts source SHA, integration binary digest, SQL digests, or PostgreSQL image digest",
+        "skipped": false,
+        "status": "PASS"
+      },
+      "new_evidence": "<target-checkpoint>/postgres-cases-<utc>.json and <target-checkpoint>/<case>-<fixture-run>.log",
+      "runner_path": "roles/web_saas_generation_fresh/files/postgres_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "a93ab85155f6e4f6ee83f9f4b81274a42b2bf73ccbbc1bf9a6363fe2a03eab3d"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "accounts_test": {
+        "dsn_environment": "MIGRATECTL_LIFECYCLE_UPGRADE_TEST_DSN",
+        "function": "TestSubscriptionLifecycleUpgradePostgres17",
+        "source_path": "internal/migrate/subscription_upgrade_postgres_test.go",
+        "source_path_reference": {
+          "accounts_main_sha": "a058ae6dbd95c94f9c337dd4f2cd9f30c1fff145",
+          "path_sha256": "b207652b8ea6dce6be3559a749b9fc9a3de3d1f9f402dc09d052f309068c07ca"
+        },
+        "source_path_status": "verified in latest Accounts origin/main; candidate Accounts SHA remains an explicit runtime pin"
+      },
+      "baseline_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/prod-v4-runtime-and-snapshot-baseline-20261021.zh.md",
+      "case_id": "lifecycle-migration-rollback",
+      "expected": "PASS with the exact test emitting --- PASS:; skipped=false; restarted fixture row fingerprint unchanged.",
+      "expected_exit_policy": {
+        "BLOCKED": 1,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "accounts_source_sha": null,
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/postgres-cases-20261020T162919330798Z.json",
+        "exit_code": 0,
+        "pin_gap": "the shared checklist does not publish the historical Accounts source SHA, integration binary digest, SQL digests, or PostgreSQL image digest",
+        "skipped": false,
+        "status": "PASS"
+      },
+      "new_evidence": "<target-checkpoint>/postgres-cases-<utc>.json and <target-checkpoint>/<case>-<fixture-run>.log",
+      "runner_path": "roles/web_saas_generation_fresh/files/postgres_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "a93ab85155f6e4f6ee83f9f4b81274a42b2bf73ccbbc1bf9a6363fe2a03eab3d"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "accounts_test": {
+        "dsn_environment": "MIGRATECTL_FULL_BUSINESS_TEST_DSN",
+        "function": "TestFullBusinessPostgres17",
+        "source_path": "internal/migrate/full_business_postgres_test.go",
+        "source_path_reference": null,
+        "source_path_status": "path recorded; immutable source SHA still required"
+      },
+      "baseline_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/prod-v4-runtime-and-snapshot-baseline-20261021.zh.md",
+      "case_id": "business-conflict-rollback",
+      "expected": "PASS with the exact test emitting --- PASS:; skipped=false; restarted fixture row fingerprint unchanged.",
+      "expected_exit_policy": {
+        "BLOCKED": 1,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "accounts_source_sha": null,
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/postgres-cases-20261020T162919330798Z.json",
+        "exit_code": 0,
+        "pin_gap": "the shared checklist does not publish the historical Accounts source SHA, integration binary digest, SQL digests, or PostgreSQL image digest",
+        "skipped": false,
+        "status": "PASS"
+      },
+      "new_evidence": "<target-checkpoint>/postgres-cases-<utc>.json and <target-checkpoint>/<case>-<fixture-run>.log",
+      "runner_path": "roles/web_saas_generation_fresh/files/postgres_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "a93ab85155f6e4f6ee83f9f4b81274a42b2bf73ccbbc1bf9a6363fe2a03eab3d"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "accounts_test": {
+        "dsn_environment": "MIGRATECTL_USAGE_MERGE_TEST_DSN",
+        "function": "TestFullBusinessUsageMergePostgres17",
+        "source_path": "internal/migrate/usage_merge_postgres_test.go",
+        "source_path_reference": null,
+        "source_path_status": "path recorded; immutable source SHA still required"
+      },
+      "baseline_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/prod-v4-runtime-and-snapshot-baseline-20261021.zh.md",
+      "case_id": "usage-merge-conflicts",
+      "expected": "PASS with the exact test emitting --- PASS:; skipped=false; restarted fixture row fingerprint unchanged.",
+      "expected_exit_policy": {
+        "BLOCKED": 1,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "accounts_source_sha": null,
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/postgres-cases-20261020T162919330798Z.json",
+        "exit_code": 0,
+        "pin_gap": "the shared checklist does not publish the historical Accounts source SHA, integration binary digest, SQL digests, or PostgreSQL image digest",
+        "skipped": false,
+        "status": "PASS"
+      },
+      "new_evidence": "<target-checkpoint>/postgres-cases-<utc>.json and <target-checkpoint>/<case>-<fixture-run>.log",
+      "runner_path": "roles/web_saas_generation_fresh/files/postgres_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "a93ab85155f6e4f6ee83f9f4b81274a42b2bf73ccbbc1bf9a6363fe2a03eab3d"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    },
+    {
+      "accounts_test": {
+        "dsn_environment": "MIGRATECTL_GENERATION_USERS_SOURCE_TEST_DSN",
+        "function": "TestGenerationUsersPostgres17",
+        "source_path": "internal/migrate/generation_users_postgres_test.go",
+        "source_path_reference": null,
+        "source_path_status": "path recorded; immutable source SHA still required"
+      },
+      "baseline_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/prod-v4-runtime-and-snapshot-baseline-20261021.zh.md",
+      "case_id": "late-users-single-backfill",
+      "expected": "PASS with the exact test emitting --- PASS:; skipped=false; restarted fixture row fingerprint unchanged.",
+      "expected_exit_policy": {
+        "BLOCKED": 1,
+        "FAIL": 1,
+        "NOT_RUN": null,
+        "PASS": 0
+      },
+      "historical": {
+        "accounts_source_sha": null,
+        "evidence": "private V4 receipt reference: fresh-native-20261020-233500/postgres-cases-20261020T162919330798Z.json",
+        "exit_code": 0,
+        "pin_gap": "the shared checklist does not publish the historical Accounts source SHA, integration binary digest, SQL digests, or PostgreSQL image digest",
+        "skipped": false,
+        "status": "PASS"
+      },
+      "new_evidence": "<target-checkpoint>/postgres-cases-<utc>.json and <target-checkpoint>/<case>-<fixture-run>.log",
+      "runner_path": "roles/web_saas_generation_fresh/files/postgres_cases.py",
+      "runner_pin": {
+        "commit": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+        "sha256": "a93ab85155f6e4f6ee83f9f4b81274a42b2bf73ccbbc1bf9a6363fe2a03eab3d"
+      },
+      "source_record_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md"
+    }
+  ],
+  "execution_boundary": {
+    "candidate_target_writer": "candidate target writers remain paused for migration comparison; --writers-paused refers to target writers only",
+    "existing_container_reuse": false,
+    "integration_fixture_isolation": "fresh disposable PostgreSQL fixtures use Docker network none and are distinct from V4 and existing containers",
+    "live_source_business_writer_changed": false,
+    "live_source_business_writer_fence_action": "not performed by this batch; manual cutover stage 8 only",
+    "migration_source_access": "dedicated read-only migration identity/transaction against a retained isolated source snapshot; never the live business writer identity",
+    "migration_source_writes": false,
+    "operator_note": "This planner did not run Ansible, Docker, database commands, DNS queries, or network probes.",
+    "public_dns_or_cloud_changes": false,
+    "source_generation_business_writer": "continues serving and accepting business writes through stages 0-7; do not fence or pause V4 for this regression batch",
+    "source_writer_handoff": "fence V4 business writes only in separately approved manual cutover stage 8"
+  },
+  "historical_playbooks_case_pin": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
+  "historical_runner_sha256": {
+    "roles/web_saas_generation_fresh/files/postgres_cases.py": "a93ab85155f6e4f6ee83f9f4b81274a42b2bf73ccbbc1bf9a6363fe2a03eab3d",
+    "roles/web_saas_generation_fresh/files/regression_cases.py": "37888cd5fcdc14178ad626cbca95aac284fb335a3fc6e8ad56294787e905c763"
+  },
+  "integration_binary_sha256": null,
+  "invocations": [
+    {
+      "case_ids": [
+        "public-sni-cert",
+        "public-host-completeness",
+        "runtime-secret-injection",
+        "billing-ingest",
+        "exporter-vector",
+        "agent-registration",
+        "client-transport",
+        "auth-callback",
+        "schema-data-protection",
+        "repeat-deploy-restore"
+      ],
+      "command": "ansible-playbook -i <verified-v5-inventory> web-saas-generation-regression.yml -e @<protected-v5-regression-vars.json>",
+      "entrypoint": "web-saas-generation-regression.yml",
+      "execution_now": false
+    },
+    {
+      "case_ids": [
+        "native-initialization",
+        "migration-concurrency-retry",
+        "lifecycle-migration-rollback",
+        "business-conflict-rollback",
+        "usage-merge-conflicts",
+        "late-users-single-backfill"
+      ],
+      "command": "ansible-playbook -i <verified-v5-inventory> web-saas-generation-postgres-cases.yml -e @<protected-v5-regression-vars.json>",
+      "entrypoint": "web-saas-generation-postgres-cases.yml",
+      "execution_now": false
+    },
+    {
+      "case_ids": [
+        "business-runtime-role"
+      ],
+      "command": "candidate-only read-only acceptance; exact pinned command and variables must be supplied by the runner owner",
+      "entrypoint": "tests/data_operations/selfhost/v4_business_role_acceptance.sh",
+      "execution_now": false
+    },
+    {
+      "blocker": "No executable pinned writer-ownership case is identified; prepare it before manual cutover stage 8.",
+      "case_ids": [
+        "writer-ownership"
+      ],
+      "command": null,
+      "deferred": true,
+      "entrypoint": null,
+      "execution_now": false,
+      "execution_stage": 8
+    }
+  ],
+  "known_pin_and_evidence_gaps": [
+    "Schema case candidate 765ea has only a short SHA prefix in the shared checklist; its full commit cannot be recovered from that record.",
+    "The historical PostgreSQL receipt filename is known, but its exact private per-case logs and Accounts/tool/image/SQL pins are not in the shared record.",
+    "The stage-8 writer-ownership gate has no executable case path or immutable runner pin in the identified source records; it is deferred and does not gate stages 0-7."
+  ],
+  "lifecycle_sql_sha256": null,
+  "lifecycle_test_source_path": "internal/migrate/subscription_upgrade_postgres_test.go",
+  "lifecycle_test_source_reference": {
+    "accounts_main_sha": "a058ae6dbd95c94f9c337dd4f2cd9f30c1fff145",
+    "path_sha256": "b207652b8ea6dce6be3559a749b9fc9a3de3d1f9f402dc09d052f309068c07ca"
+  },
+  "local_fixture_cases": {
+    "cases": [
+      "test_activation_requires_change_and_explicit_enablement",
+      "test_activated_ingress_is_recorded_and_preserved_by_recovery",
+      "test_restore_and_fresh_deployment_share_ingress_owner",
+      "test_all_sni_hosts_and_ingestion_survive_generation_render",
+      "test_deployment_reference_accepts_only_fixed_sha_or_release_tag"
+    ],
+    "command": "<ansible-python> -m unittest discover -s tests -p 'test_recovery_public_ingress_idempotency.py' -v",
+    "expected_exit_code": 0,
+    "pin": {
+      "commit": "611cc12b443ea669dc1460e6597320acaed7a418",
+      "sha256": "e98eb58938216c7773f53779d1dd68171dc1a6140fcbdc9d63dab12fc1fcb60d"
+    },
+    "runner_path": "tests/test_recovery_public_ingress_idempotency.py",
+    "scope": "offline rendered-config and task contract fixtures; not V5 deployment or live ingress acceptance"
+  },
+  "missing_required_inputs": [
+    "candidate_gitops_sha",
+    "playbooks_runner_sha",
+    "accounts_source_sha",
+    "run_id",
+    "target_ip",
+    "postgres_image_digest",
+    "integration_binary_path",
+    "integration_binary_sha256",
+    "billing_sql_path",
+    "billing_sql_sha256",
+    "lifecycle_sql_path",
+    "lifecycle_sql_sha256",
+    "verified_inventory",
+    "target_cmdb_instance_id",
+    "target_postgres_container",
+    "protected_vars_file",
+    "checkpoint",
+    "schema_version",
+    "schema_sha256",
+    "billing_schema_sha256",
+    "source_archive_sha256",
+    "public_route_expectations_file",
+    "isolated_source_restore_receipt",
+    "readonly_migration_access_evidence",
+    "isolated_fixture_isolation_evidence"
+  ],
+  "playbooks_runner_sha": null,
+  "postgres_image_digest": null,
+  "private_operational_inputs_present": [],
+  "public_route_expectations": null,
+  "schema": "playbooks-generation-regression-batch/v1",
+  "schema_sha256": null,
+  "schema_version": null,
+  "source_archive_sha256": null,
+  "source_generation": "prod-v4",
+  "status": "BLOCKED",
+  "target_generation": "prod-v5",
+  "unresolved_case_inputs": []
+}

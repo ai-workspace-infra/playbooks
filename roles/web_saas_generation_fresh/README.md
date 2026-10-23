@@ -3,7 +3,10 @@
 Target-only manual owner for native initialization, reviewed `migratectl` data
 alignment, encrypted populated backup and independent restore. Never resets an
 existing database. Source access is to a retained read-only snapshot on the target;
-it does not freeze or modify the serving generation.
+it does not freeze or modify the serving generation. The V4 business writer
+continues through stages 0-7. A separate manual cutover at stage 8 owns any
+source-writer fence and one-writer handoff. The `--writers-paused` comparison
+gate applies to candidate/target writers, not the live source writer.
 
 Inputs: one verified target inventory; `generation_fresh_manifest_file` from a
 fixed GitOps checkout; `generation_fresh_billing_sql`; `generation_fresh_spec`
