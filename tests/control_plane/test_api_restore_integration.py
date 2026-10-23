@@ -4,6 +4,7 @@ Run with CONTROL_PLANE_API_RESTORE_FIXTURE=1, CONTROL_PLANE_ACCOUNTS_SOURCE
 pointing to a clean Accounts checkout, and CONTROL_PLANE_POSTGRES_IMAGE pinned
 to postgres@sha256:<digest>. No existing container, database or service is used.
 Optional CONTROL_PLANE_ACCOUNTS_SHA pins the expected source commit;
+CONTROL_PLANE_PLAYBOOKS_SHA pins the exact committed Playbooks revision.
 CONTROL_PLANE_BASH selects Bash >=4. The fixture builds the native CLI itself.
 CONTROL_PLANE_API_RESTORE_REPORT may name a new private JSON file under /tmp
 for aggregate proof after cleanup (no credentials or row data).
@@ -68,6 +69,14 @@ class APIRestoreIntegration(unittest.TestCase):
         self.evidence = {'format': 1, 'fixture': 'real-api-native-restore',
                          'production_providers': False, 'cases': [], 'exit_codes': self.codes}
         self.addCleanup(self.report)
+        self.evidence['harness_sha256'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        self.adapter = ROOT / 'roles/selfhost_core_data_backup/files/api_backup_receipt.py'
+        self.evidence['adapter_sha256'] = hashlib.sha256(self.adapter.read_bytes()).hexdigest()
+        self.playbooks_sha = self.run_command('playbooks_head', ['git', 'rev-parse', 'HEAD'], cwd=ROOT).stdout.strip()
+        expected_playbooks = os.environ.get('CONTROL_PLANE_PLAYBOOKS_SHA', self.playbooks_sha)
+        self.assertEqual(self.playbooks_sha, expected_playbooks, 'Playbooks checkout differs from required full SHA')
+        self.assert_playbooks_clean('playbooks_clean')
+        self.evidence['playbooks_sha'] = self.playbooks_sha
         self.temporary = tempfile.TemporaryDirectory(prefix='control-plane-api-', dir='/tmp')
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
@@ -95,8 +104,7 @@ class APIRestoreIntegration(unittest.TestCase):
         self.assertTrue(self.sha.startswith(expected), 'Accounts checkout differs from required SHA')
         self.assertEqual(self.run_command('accounts_clean', ['git', 'status', '--porcelain'], cwd=self.source).stdout, '',
                          'Accounts source must be clean')
-        self.evidence.update(accounts_sha=self.sha, postgres_image=image,
-                             playbooks_sha=self.run_command('playbooks_head', ['git', 'rev-parse', 'HEAD'], cwd=ROOT).stdout.strip())
+        self.evidence.update(accounts_sha=self.sha, postgres_image=image)
         self.binary = self.root / 'migratectl'
         build_env = {'CGO_ENABLED': '0', 'GOWORK': 'off'}
         self.run_command('build_migratectl', [self.go, 'build', '-o', str(self.binary), './cmd/migratectl'],
@@ -157,6 +165,17 @@ class APIRestoreIntegration(unittest.TestCase):
                 handle.flush()
                 os.fsync(handle.fileno())
         print('CONTROL_PLANE_API_RESTORE_PROOF=' + json.dumps(self.evidence, sort_keys=True), flush=True)
+
+    def assert_playbooks_clean(self, label):
+        # CI intentionally nests these three pinned producer checkouts. Only
+        # their untracked directories are allowed; every tracked file and all
+        # other untracked paths must match the recorded Playbooks revision.
+        status = self.run_command(label, ['git', 'status', '--porcelain', '--untracked-files=all'], cwd=ROOT).stdout
+        fixtures = ('.fixture-accounts/', '.fixture-billing/', '.fixture-gitops/')
+        unexpected = [line for line in status.splitlines()
+                      if not (line.startswith('?? ') and line[3:].startswith(fixtures))]
+        self.assertFalse(unexpected, 'Playbooks checkout must be clean except pinned CI fixture checkouts')
+        self.evidence['playbooks_clean_except_ci_fixtures'] = True
 
     def secret(self):
         value = secrets.token_urlsafe(36)
@@ -609,8 +628,9 @@ VALUES('00000000-0000-0000-0000-000000000103',456789,44.125);
                     'plan_id': plan['plan_id'], 'plan_sha256': plan['plan_sha256'],
                     'owner_sha': self.evidence['playbooks_sha'], 'receipt_file': str(directory / 'receipt.json'),
                     'proof_file': str(directory / 'proof.json')}
-                adapter = ROOT / 'roles/selfhost_core_data_backup/files/api_backup_receipt.py'
-                proof = json.loads(self.run_command(case + '_real_adapter', [sys.executable, adapter],
+                self.assertEqual(hashlib.sha256(self.adapter.read_bytes()).hexdigest(), self.evidence['adapter_sha256'],
+                                 'Adapter changed after setup; refusing mixed-revision evidence')
+                proof = json.loads(self.run_command(case + '_real_adapter', [sys.executable, self.adapter],
                     data=json.dumps(request), env=env).stdout)
                 self.assertTrue(proof['backup_gate_issued'])
                 self.assertEqual(proof['proof']['populated_restore'], populated)
@@ -636,6 +656,11 @@ VALUES('00000000-0000-0000-0000-000000000103',456789,44.125);
         self.assertFalse(permissions_failures,
             'Restored account_user SELECT/INSERT permissions lost for targets: ' + ', '.join(permissions_failures)
             + '; native data/schema restore passed but application acceptance failed; adapter/apply not run')
+        self.assertEqual(self.run_command('playbooks_head_after', ['git', 'rev-parse', 'HEAD'], cwd=ROOT).stdout.strip(),
+                         self.playbooks_sha, 'Playbooks revision changed during execution')
+        self.assert_playbooks_clean('playbooks_clean_after')
+        self.assertEqual(hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), self.evidence['harness_sha256'],
+                         'Harness changed during execution')
 
 
 if __name__ == '__main__':

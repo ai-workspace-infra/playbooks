@@ -32,8 +32,8 @@ class ListenerOwnerTests(unittest.TestCase):
         self.compose = root / 'compose/listener.yml'
         self.services = owner.read_yaml(root / 'compose/application.yml')['services']
         self.services['caddy'] = {'image': 'ghcr.io/example/caddy@sha256:' + 'e' * 64,
-            'container_name': 'web-saas-caddy', 'volumes': [{'type': 'bind', 'source': '/etc/xcontrol/migration-api/route.caddy',
-                'target': '/etc/caddy/migration-listener.caddy', 'read_only': True, 'bind': {'create_host_path': False}}]}
+            'container_name': 'web-saas-caddy', 'volumes': [{'type': 'bind', 'source': '/etc/xcontrol/migration-api/caddy',
+                'target': '/etc/caddy/migration-api', 'read_only': True, 'bind': {'create_host_path': False}}]}
         self.services['migration'] = {'image': self.fixture.images['accounts'], 'container_name': 'web-saas-migration-listener',
             'entrypoint': ['/usr/local/bin/migratectl'], 'command': listener.arguments(self.document['listener']),
             'network_mode': 'service:caddy', 'env_file': ['/etc/xcontrol/migration-api/listener.env'],
@@ -106,6 +106,8 @@ class ListenerOwnerTests(unittest.TestCase):
                        lambda s: s['migration'].update(devices=['/dev/sda']),
                        lambda s: s['migration'].update(command=['serve', '--role', 'source']),
                        lambda s: s['migration'].update(env_file=['/run/control-plane-migration/listener.env']),
+                       lambda s: s['caddy'].update(volumes=[{'type': 'bind', 'source': '/etc/xcontrol/migration-api',
+                            'target': '/etc/caddy/migration-api', 'read_only': True, 'bind': {'create_host_path': False}}]),
                        lambda s: s['caddy'].update(volumes=[])):
             self.services = copy.deepcopy(original)
             mutate(self.services)
@@ -179,6 +181,45 @@ class ListenerRuntimeTests(unittest.TestCase):
             values[listener.KEYS[2]] = values[listener.KEYS[1]]
             with self.assertRaises(owner.Refused):
                 listener.resolve(policy, 'uat')
+
+    @unittest.skipUnless(os.environ.get('CONTROL_PLANE_CADDY_FIXTURE') == '1', 'Explicit local Caddy fixture opt-in')
+    def test_actual_docker_route_directory_sees_atomic_replace_without_recreate(self):
+        import tempfile
+        endpoint = subprocess.check_output(['docker', 'context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'], text=True).strip()
+        self.assertTrue(endpoint.startswith('unix://'))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            routes = root / 'caddy'
+            routes.mkdir(mode=0o700)
+            route = routes / 'route.caddy'
+            with mock.patch.object(target, 'private', side_effect=lambda value: value):
+                target.write(route, 'respond 401\n')
+                (root / 'listener.env').write_text('fixture-secret-must-not-be-mounted')
+                container = subprocess.check_output(['docker', 'run', '--rm', '-d', '--network', 'none',
+                    '--mount', 'type=bind,source=' + str(routes) + ',target=/etc/caddy/migration-api,readonly',
+                    '--entrypoint', 'sh', os.environ.get('CONTROL_PLANE_CADDY_IMAGE', 'caddy:2-alpine'), '-c', 'sleep 120'], text=True).strip()
+                sidecar = None
+                try:
+                    sidecar = subprocess.check_output(['docker', 'run', '--rm', '-d', '--network', 'container:' + container,
+                        '--entrypoint', 'sh', os.environ.get('CONTROL_PLANE_CADDY_IMAGE', 'caddy:2-alpine'), '-c', 'sleep 120'], text=True).strip()
+                    def read():
+                        return subprocess.check_output(['docker', 'exec', container, 'cat', '/etc/caddy/migration-api/route.caddy'], text=True)
+                    self.assertEqual(read(), 'respond 401\n')
+                    previous_inode = route.stat().st_ino
+                    target.write(route, 'respond 403\n')
+                    self.assertNotEqual(previous_inode, route.stat().st_ino)
+                    self.assertEqual(read(), 'respond 403\n')
+                    for owned in (container, sidecar):
+                        subprocess.run(['docker', 'restart', owned], check=True, capture_output=True)
+                    namespaces = [subprocess.check_output(['docker', 'exec', owned, 'readlink', '/proc/1/ns/net'], text=True)
+                                  for owned in (container, sidecar)]
+                    self.assertEqual(*namespaces)
+                    self.assertEqual(read(), 'respond 403\n')
+                    self.assertNotEqual(subprocess.run(['docker', 'exec', container, 'test', '-e', '/etc/caddy/listener.env']).returncode, 0)
+                finally:
+                    if sidecar:
+                        subprocess.run(['docker', 'rm', '-f', sidecar], capture_output=True, check=True)
+                    subprocess.run(['docker', 'rm', '-f', container], capture_output=True, check=True)
 
     @unittest.skipUnless(os.environ.get('CONTROL_PLANE_CADDY_FIXTURE') == '1', 'Explicit local Caddy fixture opt-in')
     def test_actual_caddy_adapts_scoped_readonly_exception(self):

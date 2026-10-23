@@ -269,7 +269,7 @@ Billing DDL, but that never claims a paid/default catalog has been seeded.
 resolver, negative-path, pinned client, evidence adapter, real HTTP and real
 Ansible rerun fixtures. Set `CONTROL_PLANE_GITOPS_SCHEMA` to the reviewed schema
 to validate the same sample in both owners. The schema was checked against
-GitOps PR 506 commit `9a297862779f3999daf8dd8afe8812fc4805df8e`.
+GitOps PR 506 commit `2ae1311547acf5aab9d9b7cf927d166da4b37645`.
 Set `CONTROL_PLANE_PUBLIC_INSTALLER` to the reviewed public wrapper to exercise
 the actual wrapper -> real pinned entrypoint `--check` path; both checkouts
 remain clean and no owner is mocked. No workspace path is baked into the test.

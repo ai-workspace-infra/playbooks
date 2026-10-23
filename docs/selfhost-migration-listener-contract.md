@@ -1,7 +1,7 @@
 # Explicit target migration listener contract
 
 Shared declaration schema/examples: GitOps Draft PR506 at
-`9a297862779f3999daf8dd8afe8812fc4805df8e` (not merged). CLI/server source and
+`2ae1311547acf5aab9d9b7cf927d166da4b37645` (not merged). CLI/server source and
 backup gate contract qualified at Accounts `c5e3bae3bea1d9b71ee2a579e4da8657fc192bc8`.
 
 Owner: Playbooks `selfhost_migration_listener`. Caller: an explicitly authorized
@@ -47,8 +47,12 @@ and no-new-privileges. The role creates no Compose or alternate polling model.
 Explicit mounts: private persistent `<parent-of-data_path>/migration-stage` to
 `/private/target-stage`, plus optional target-only receipt at the same absolute
 path read-only. The native target Caddy template imports
-`/etc/caddy/migration-listener*.caddy` before its general read-only method guard.
-GitOps must explicitly bind `/etc/xcontrol/migration-api/route.caddy` there.
+`/etc/caddy/migration-api/*.caddy` before its general read-only method guard.
+GitOps must bind only the persistent route child directory
+`/etc/xcontrol/migration-api/caddy` to `/etc/caddy/migration-api`, read-only.
+`listener.env` stays outside that mount. Atomic route-file replacement is visible
+through the directory bind; actual mount contents and current namespace identity
+are verified after reconciliation/restarts, never just a different validation mount.
 The route matches exact Accounts Host AND migration API path AND allowed client
 CIDRs; other clients receive 403. The rest of candidate ingress stays read-only.
 

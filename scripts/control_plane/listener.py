@@ -65,11 +65,11 @@ def validate(document, contract, gitops):
         path = cfg['receipt_file']
         expected.append({'type': 'bind', 'source': path, 'target': path, 'read_only': True, 'bind': {'create_host_path': False}})
     owner.require(service.get('volumes') == expected, 'Listener may mount only private staging and target backup receipt')
-    route = {'type': 'bind', 'source': RUNTIME + '/route.caddy', 'target': '/etc/caddy/migration-listener.caddy',
+    route = {'type': 'bind', 'source': RUNTIME + '/caddy', 'target': '/etc/caddy/migration-api',
              'read_only': True, 'bind': {'create_host_path': False}}
     owner.require(route in services['caddy'].get('volumes', []) and services['caddy'].get('container_name') == 'web-saas-caddy',
                   'GitOps must explicitly mount the candidate migration route')
-    return {'declaration': document, 'contract': contract, 'stage': stage}
+    return {'declaration': document, 'contract': contract, 'stage': stage, 'caddy_image': selected['images']['caddy']}
 
 
 def reject_example(document):

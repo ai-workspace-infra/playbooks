@@ -17,7 +17,7 @@ TARGET_MIGRATION_SIGNING_KEY and TARGET_MIGRATION_STAGING_KEY. Paths must be
 `kv/<environment>/accounts/migration/<record>#<field>`. Dedicated database role,
 different 32-byte signing/staging keys; no account_user or shared JWT fallback.
 Vault resolves in delegated no_log task memory. Secrets are written only to
-root-private target files `/etc/xcontrol/migration-api/{listener.env,route.caddy}`
+root-private target files `/etc/xcontrol/migration-api/{listener.env,caddy/route.caddy}`
 (0700 directory, 0600 files). Required mounts survive reboot. Each deployment
 re-resolves Vault and verifies the actual process uses current resolved values;
 there is no ambient credential or old-file fallback.
