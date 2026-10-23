@@ -96,6 +96,21 @@ def protected(path):
     return path
 
 
+def protected_ssh_key(path):
+    require(isinstance(path, str) and path.startswith('/')
+            and not any(char in path for char in ('\n', '\r', '\x00', '{{', '{%', '{#')),
+            'SSH key reference must be an absolute local file path')
+    try:
+        resolved = Path(path).resolve(strict=True)
+        info = resolved.stat()
+    except OSError:
+        require(False, 'SSH key file must be available to the operator')
+    require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
+            and info.st_mode & 0o077 == 0 and os.access(resolved, os.R_OK),
+            'SSH key file must be operator-owned and protected')
+    return str(resolved)
+
+
 def merge(left, right):
     result = dict(left)
     for key, value in right.items():
@@ -279,6 +294,13 @@ def load_contract(config, gitops, owner, sha):
     hostvars = inventory["_meta"]["hostvars"][target["host"]]
     require(not any(k.startswith("ansible_") for k in record.get("host_vars", {})),
             "CMDB host_vars must not override connection identity")
+    cmdb_ssh_key = record.get('ssh_private_key_file')
+    operator_ssh_key = os.environ.get('ANSIBLE_PRIVATE_KEY_FILE')
+    ssh_private_key_file = protected_ssh_key(cmdb_ssh_key) if cmdb_ssh_key is not None else None
+    operator_ssh_key = protected_ssh_key(operator_ssh_key) if operator_ssh_key else None
+    require(not (ssh_private_key_file and operator_ssh_key and ssh_private_key_file != operator_ssh_key),
+            'CMDB and operator SSH key references must agree')
+    ssh_private_key_file = ssh_private_key_file or operator_ssh_key
     disk = record.get("storage") or record.get("host_vars", {}).get("control_plane_storage") or execution.get('storage')
     if disk is None and record.get("data_disk"):
         original = record["data_disk"]
@@ -319,6 +341,8 @@ def load_contract(config, gitops, owner, sha):
     require(literal(runtime), "Runtime values must be literal single-line strings")
     resolved = {"gitops_sha": sha, "gitops_checkout": str(gitops), "cmdb_file": str(cmdb_path),
                 "resource_id": hostvars["cmdb_resource_id"], "data_disk": disk, "selections": selections}
+    if ssh_private_key_file is not None:
+        resolved['ssh_private_key_file'] = ssh_private_key_file
     return {**contract, "resolved": resolved}, runtime
 
 
@@ -340,20 +364,47 @@ def run_owner(owner, contract, runtime):
                ANSIBLE_CALLBACK_PLUGINS=str(owner / 'scripts/control_plane/callback_plugins'),
                ANSIBLE_ROLES_PATH=str(owner / "roles"), AI_WORKSPACE_CMDB_JSON=contract["resolved"]["cmdb_file"],
                CMDB_FILE=contract["resolved"]["cmdb_file"], PYTHONDONTWRITEBYTECODE="1")
+    if contract['resolved'].get('ssh_private_key_file'):
+        env['ANSIBLE_PRIVATE_KEY_FILE'] = contract['resolved']['ssh_private_key_file']
     inventory = str(owner / "inventory/terraform_cmdb.py")
     host = contract["target"]["host"]
     variables = json.dumps({"control_plane_contract": contract, "control_plane_runtime": runtime,
                             "control_plane_billing_artifact": billing})
     playbook = str(owner / "selfhost-control-plane.yml")
     commands = [
-        (["ansible-inventory", "-i", inventory, "--host", host], None),
-        (["ansible-playbook", "-i", inventory, playbook, "--limit", host, "--syntax-check", "-e", "@/dev/stdin"], variables),
-        (["ansible", "-i", inventory, host, "-m", "ansible.builtin.ping"], None),
-        (["ansible-playbook", "-i", inventory, playbook, "--limit", host, "-e", "@/dev/stdin"], variables),
+        ("inventory", "ansible-inventory", ["ansible-inventory", "-i", inventory, "--host", host], None),
+        ("syntax_check", "ansible-playbook --syntax-check", ["ansible-playbook", "-i", inventory, playbook, "--limit", host, "--syntax-check", "-e", "@/dev/stdin"], variables),
+        ("ssh_connectivity", "ansible.builtin.ping", ["ansible", "-i", inventory, host, "-m", "ansible.builtin.ping"], None),
+        ("apply", "ansible-playbook", ["ansible-playbook", "-i", inventory, playbook, "--limit", host, "-e", "@/dev/stdin"], variables),
     ]
-    for command, data in commands:
-        result = subprocess.run(command, cwd=owner, env=env, input=data, text=True, capture_output=True)
-        require(result.returncode == 0, "Owner stage failed; private Ansible output withheld")
+    for stage, action, command, data in commands:
+        stage_env = {**env, 'CONTROL_PLANE_STAGE': stage}
+        try:
+            result = subprocess.run(command, cwd=owner, env=stage_env, input=data, text=True, capture_output=True)
+        except OSError:
+            require(False, 'Owner stage could not start: ' + json.dumps(
+                {'stage': stage, 'exit_code': None, 'action': action}, sort_keys=True))
+        if result.returncode != 0:
+            failure = {'stage': stage, 'exit_code': result.returncode, 'action': action}
+            stdout = result.stdout if isinstance(result.stdout, str) else ''
+            for line in stdout.splitlines():
+                if line.startswith('CONTROL_PLANE_FAILURE='):
+                    try:
+                        event = json.loads(line.split('=', 1)[1])
+                    except (TypeError, ValueError):
+                        continue
+                    if (isinstance(event, dict) and event.get('stage') == stage
+                            and event.get('status') in ('failed', 'unreachable')
+                            and isinstance(event.get('action'), str)
+                            and re.fullmatch(r'[A-Za-z0-9_.-]{1,100}', event['action'])):
+                        failure['failure_status'] = event['status']
+                        failure['failure_action'] = event['action']
+                        task_name = event.get('task_name')
+                        if (isinstance(task_name, str) and len(task_name) <= 120
+                                and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9 ._:/-]*', task_name)):
+                            failure['task_name'] = task_name
+                    break
+            require(False, 'Owner stage failed: ' + json.dumps(failure, sort_keys=True))
     receipts = [json.loads(line.split('=', 1)[1]) for line in result.stdout.splitlines()
                 if line.startswith('CONTROL_PLANE_EVIDENCE=')]
     receipt = receipts[0] if len(receipts) == 1 else None

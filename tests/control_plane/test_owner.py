@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 import uuid
@@ -39,6 +40,7 @@ sys.modules['business_database'] = business
 native_runtime = imported('native_runtime', ROOT / 'roles/selfhost_control_plane/files/native_runtime.py')
 readiness = imported('candidate_readiness', ROOT / 'roles/selfhost_control_plane/files/candidate_readiness.py')
 adapter = imported('api_backup_receipt', ROOT / 'roles/selfhost_core_data_backup/files/api_backup_receipt.py')
+owner_callback = imported('control_plane_receipt_fixture', ROOT / 'scripts/control_plane/callback_plugins/control_plane_receipt.py')
 
 
 def utc(delta=3600):
@@ -280,6 +282,71 @@ class RepositoryFixture(unittest.TestCase):
             with self.assertRaises(owner.Refused):
                 owner.run_owner(self.owner, contract, refs)
             self.assertEqual(execute.call_count, 1)
+
+    def test_cmdb_ssh_key_selection_survives_runner_environment_filter(self):
+        host = self.contract['target']['host']
+        key_path = self.directory / 'control-plane-ed25519'
+        key_path.write_text('fixture-only private key bytes')
+        key_path.chmod(0o600)
+        self.cmdb[host]['ssh_private_key_file'] = str(key_path)
+        self.cmdb_path.write_text(json.dumps(self.cmdb))
+        inventory = imported('cmdb_inventory_fixture', self.owner / 'inventory/terraform_cmdb.py')
+        vars_for_host = inventory.build_inventory(self.cmdb)['_meta']['hostvars'][host]
+        self.assertEqual(vars_for_host['ansible_ssh_private_key_file'], self.cmdb[host]['ssh_private_key_file'])
+        receipt = 'CONTROL_PLANE_EVIDENCE=' + json.dumps({'status': 'candidate_runtime_ready', 'business_acceptance': False})
+        with mock.patch.dict(os.environ, {'ANSIBLE_PRIVATE_KEY_FILE': str(key_path),
+                                          'ANSIBLE_SSH_ARGS': '-o BatchMode=no'}):
+            contract, refs = self.load()
+            with mock.patch.object(owner, 'billing_artifact', return_value={}), mock.patch.object(
+                    owner.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout=receipt)) as execute:
+                owner.run_owner(self.owner, contract, refs)
+        self.assertEqual(execute.call_count, 4)
+        self.assertTrue(all(call.kwargs['env']['ANSIBLE_PRIVATE_KEY_FILE'] == self.cmdb[host]['ssh_private_key_file']
+                            for call in execute.call_args_list))
+        self.assertTrue(all('ANSIBLE_SSH_ARGS' not in call.kwargs['env'] for call in execute.call_args_list))
+
+    def test_runner_reports_sanitized_ssh_stage_and_callback_failure(self):
+        contract, refs = self.load()
+        callback = 'CONTROL_PLANE_FAILURE=' + json.dumps({
+            'stage': 'ssh_connectivity', 'status': 'unreachable', 'action': 'ansible.builtin.ping',
+            'task_name': 'Ping candidate host'})
+        ok = mock.Mock(returncode=0, stdout='')
+        failed = mock.Mock(returncode=4, stdout=callback + '\nprivate-output-must-not-escape',
+                           stderr='sensitive-host-or-secret-output')
+        with mock.patch.object(owner, 'billing_artifact', return_value={}), mock.patch.object(
+                owner.subprocess, 'run', side_effect=[ok, ok, failed]) as execute:
+            with self.assertRaises(owner.Refused) as error:
+                owner.run_owner(self.owner, contract, refs)
+        message = str(error.exception)
+        self.assertIn('"stage": "ssh_connectivity"', message)
+        self.assertIn('"exit_code": 4', message)
+        self.assertIn('"failure_action": "ansible.builtin.ping"', message)
+        self.assertIn('"task_name": "Ping candidate host"', message)
+        self.assertNotIn('private-output-must-not-escape', message)
+        self.assertNotIn('sensitive-host-or-secret-output', message)
+        self.assertEqual(execute.call_count, 3)
+        self.assertEqual(execute.call_args.kwargs['env']['CONTROL_PLANE_STAGE'], 'ssh_connectivity')
+
+    def test_callback_failure_contains_only_static_task_identity(self):
+        task = SimpleNamespace(action='ansible.builtin.command', name='Resolve {{ private_value }}')
+        result = SimpleNamespace(_task=task)
+        with mock.patch.dict(os.environ, {'CONTROL_PLANE_STAGE': 'apply'}):
+            failure = owner_callback.CallbackModule._failure(result, 'failed')
+        self.assertEqual(failure, {'status': 'failed', 'stage': 'apply', 'action': 'ansible.builtin.command'})
+        task.name = 'Install Docker runtime'
+        with mock.patch.dict(os.environ, {'CONTROL_PLANE_STAGE': 'apply'}):
+            failure = owner_callback.CallbackModule._failure(result, 'unreachable')
+        self.assertEqual(failure['task_name'], 'Install Docker runtime')
+        self.assertEqual(failure['status'], 'unreachable')
+
+    def test_owner_ssh_connect_timeout_and_retry_budget_are_bounded(self):
+        import configparser
+        config = configparser.ConfigParser()
+        config.read(ROOT / 'scripts/control_plane/ansible.cfg')
+        self.assertTrue(config.getboolean('defaults', 'host_key_checking'))
+        self.assertEqual(config.getint('ssh_connection', 'timeout'), 30)
+        self.assertEqual(config.getint('ssh_connection', 'retries'), 2)
+        self.assertIn('StrictHostKeyChecking=yes', config.get('ssh_connection', 'ssh_args'))
 
     def test_success_without_actual_readiness_receipt_is_refused(self):
         contract, refs = self.load()

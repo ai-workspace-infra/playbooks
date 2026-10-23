@@ -122,6 +122,17 @@ are explicit declaration metadata and are not inferred from generation names.
 For the existing flat Akamai IaC CMDB without storage metadata,
 `execution.storage` declares the nonsecret profile; it is verified on the actual
 CMDB-selected host. This does not alter or supplement cloud resource facts.
+For operators that require a specific local SSH identity, the exact target may
+also declare the controller-local absolute path as `ssh_private_key_file` at
+the CMDB host-record level. The inventory maps that nonsecret path to Ansible's
+connection identity; it does not accept connection overrides from `host_vars`
+or copy private-key contents into the CMDB. When omitted, the normal SSH key
+selection rules apply. The manual pinned-owner entrypoint also accepts the
+allowlisted `ANSIBLE_PRIVATE_KEY_FILE` environment reference when the CMDB has
+no key path. It is path-only (never key material), must resolve to an
+operator-owned regular file readable only by its owner, and must agree with a
+CMDB key path if both are set. The runner reconstructs only this validated
+setting; arbitrary `ANSIBLE_*` environment variables are not forwarded.
 `source.host`, when present, must differ from the target and may not alias its
 CMDB address/resource identity. No source connection or source mutation occurs.
 Verified manual temporary inventories allowed by AGENTS remain separate manual
