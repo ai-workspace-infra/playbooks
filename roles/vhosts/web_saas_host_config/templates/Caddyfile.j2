@@ -37,13 +37,9 @@
 	encode zstd gzip
 
 {% if web_saas_host_config_candidate_mode | bool %}
-	{# Explicit opt-in migration owner supplies a GitOps-declared read-only mount.
+	{# Explicit opt-in migration owner supplies a GitOps-declared listener mount.
 	   No match is valid when the separate listener owner has never run. #}
 	import /etc/caddy/migration-api/*.caddy
-	@candidate_writes method POST PUT PATCH DELETE
-	handle @candidate_writes {
-		respond "candidate ingress is read-only" 403
-	}
 {% if web_saas_host_config_billing_domain | trim | length > 0 %}
 	{# Candidate Billing is intentionally limited to its safe readiness GET.
 	   This does not enable checkout, ingest, callbacks, or other business writes. #}

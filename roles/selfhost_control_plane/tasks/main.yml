@@ -161,6 +161,14 @@
       no_log: true
       when: not control_plane_initialized
 
+    - name: Reload only pre-existing host-config readers with newer configuration
+      ansible.builtin.command:
+        argv: [python3, '{{ control_plane_workspace.path }}/native_runtime.py']
+        stdin: '{{ {"action": "reload_host_config", "contract": control_plane_contract, "credentials": control_plane_credentials} | to_json }}'
+      register: control_plane_host_config_reload
+      changed_when: (control_plane_host_config_reload.stdout | from_json).changed
+      no_log: true
+
     - name: Install the existing Doco-CD owner with the actual immutable selection
       ansible.builtin.include_role:
         name: vhosts/Doco-CD

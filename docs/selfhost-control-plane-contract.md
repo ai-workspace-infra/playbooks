@@ -210,10 +210,10 @@ owner supplies `account_user` grants and never rotates its canonical password.
 `target.billing_domain` is optional and must be a distinct literal hostname under
 `target.domain_base`. When declared, candidate Caddy serves only Billing `GET
 /readyz` on that HTTPS/SNI host so the installer can verify the endpoint and
-certificate. The global candidate `POST`/`PUT`/`PATCH`/`DELETE` 403 remains in
-force; this does not enable Console login, checkout, callbacks, ingestion, or
-business acceptance. Do not infer public login or full business readiness from
-the transport/readiness probe.
+certificate. Fresh targets accept normal application methods, including login POST.
+Candidate isolation does not imply read-only ingress; upstream migration source
+read-only enforcement belongs to the source owner. Component readiness alone does
+not establish authenticated business acceptance or authorize public traffic cutover.
 
 Initialization requires `execution.initialize: true`, an absent or empty account
 database, no application writers/reconciler and a matching compiled native schema

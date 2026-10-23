@@ -26,6 +26,13 @@ class RecoveryPublicIngressIdempotencyTests(unittest.TestCase):
         ingress = next(task for task in recovery if task.get('name', '').startswith('Prepare canonical Vault ingress'))
         self.assertEqual(ingress['when'], 'not (recovery_public_ingress_active | bool)')
 
+    def test_fresh_target_does_not_inherit_recovery_readonly_policy(self):
+        tasks = yaml.safe_load((ROOT / 'roles/web_saas_generation_fresh/tasks/application.yml').read_text())
+        ingress = next(task for task in tasks if task.get('ansible.builtin.include_role', {}).get('name') == 'web_saas_public_ingress')
+        self.assertNotIn('web_saas_public_ingress_recovery_read_only', ingress['vars'])
+        defaults = yaml.safe_load((ROOT / 'roles/web_saas_public_ingress/defaults/main.yml').read_text())
+        self.assertFalse(defaults['web_saas_public_ingress_recovery_read_only'])
+
     def test_restore_and_fresh_deployment_share_ingress_owner(self):
         for file in ['roles/web_saas_generation_recovery/tasks/prepare.yml', 'roles/web_saas_generation_fresh/tasks/application.yml']:
             tasks = yaml.safe_load((ROOT / file).read_text())

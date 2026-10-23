@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Target-local fresh installation guard; domain SQL stays in native owners."""
+from datetime import datetime
 import fcntl
 import hashlib
 import json
@@ -129,10 +130,31 @@ def stunnel_reader(contract, credentials):
     return {'uid': int(values[0]), 'gid': int(values[1])}
 
 
+def reload_service_config(name, paths):
+    if name not in native.command(['docker', 'ps', '-a', '--format', '{{.Names}}']).splitlines():
+        return {'changed': False}
+    state = json.loads(native.command(['docker', 'inspect', '--format', '{{json .State}}', name]))
+    started = datetime.fromisoformat(state['StartedAt'].replace('Z', '+00:00')).timestamp()
+    changed = any(Path(path).stat().st_mtime > started for path in paths)
+    if changed:
+        # Existing stunnel caches its trust context; restart remounts atomic file replacements.
+        native.command(['docker', 'restart', name])
+    return {'changed': changed}
+
+
+def reload_host_config():
+    services = [
+        ('web-saas-stunnel-client', ('/etc/xcontrol/web-saas/certs/ca-cert.pem', '/etc/xcontrol/web-saas/config/stunnel-client.conf')),
+        ('web-saas-caddy', ('/etc/xcontrol/web-saas/Caddyfile',)),
+    ]
+    changed = [name for name, paths in services if reload_service_config(name, paths)['changed']]
+    return {'changed': bool(changed), 'services': changed}
+
+
 def execute(request):
     contract = request['contract']
     action = request['action']
-    native.require(action in ('preflight', 'claim', 'stunnel_reader', 'storage', 'initialize', 'verify'), 'Unknown native stage')
+    native.require(action in ('preflight', 'claim', 'stunnel_reader', 'reload_host_config', 'storage', 'initialize', 'verify'), 'Unknown native stage')
     data = Path(contract['resolved']['data_disk']['data_path'])
     state = data.parent / 'control-plane-owner.json'
     record = inspect(contract, state)
@@ -156,6 +178,8 @@ def execute(request):
         native.require(state.exists(), 'Target must be claimed before preparation')
         credentials = request['credentials']
         native.validate_credentials(credentials)
+        if action == 'reload_host_config':
+            return reload_host_config()
         if action == 'stunnel_reader':
             return stunnel_reader(contract, credentials)
         if action == 'storage':

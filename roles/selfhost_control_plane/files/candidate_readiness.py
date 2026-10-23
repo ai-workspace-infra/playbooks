@@ -33,7 +33,7 @@ def http_probe(address, port, path, host, expected, html=False, token=None):
     authority = '[' + str(ip) + ']' if ip.version == 6 else str(ip)
     headers = {'Host': host}
     if token:
-        headers['Authorization'] = 'Bearer ' + token
+        headers['X-Service-Token'] = token
     request = urllib.request.Request('http://' + authority + ':' + str(port) + path, headers=headers)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     with opener.open(request, timeout=10) as response:
