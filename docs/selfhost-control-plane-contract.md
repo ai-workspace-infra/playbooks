@@ -35,6 +35,18 @@ both checkouts must be clean, including untracked files. The Playbooks HEAD must
 equal `execution.playbooks_sha`. No fetching, package installation, SSH, Vault,
 Ansible invocation or file creation occurs in `--check`; it emits a JSON plan.
 The caller provisions Python 3.11+, PyYAML, Ansible and required collections.
+For the pinned owner runtime, install the controller collection before execution:
+
+```sh
+ansible-galaxy collection install -r collections/requirements-control-plane.yml
+```
+
+This pins `ansible.posix` 2.1.0. The owner runs a localhost-only static
+import-role syntax preflight before inventory or SSH; it fails closed with a
+sanitized dependency diagnostic if parsing or module resolution fails. The
+preflight sets `docker_bootstrap_host: false` and does not enable host bootstrap
+or contact any host. The CI runner installs the same requirements and checks
+this fixture.
 
 ## Declaration
 
