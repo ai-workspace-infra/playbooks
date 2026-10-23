@@ -23,7 +23,7 @@ CASES = {
     'agent-registration': ('20261019-prod-v3-canonical-service-token.zh.md', 'An isolated edge registers, receives configuration and connects'),
     'client-transport': ('20261019-prod-v3-vless-path-p0-release.zh.md', 'Generated VLESS path matches Xray and an isolated client connects'),
     'auth-callback': ('README.md', 'Isolated session, OAuth and Stripe callback paths execute correctly'),
-    'schema-data-protection': ('v2-to-v3-snapshot-refresh-20261019.zh.md', 'Full migratectl readonly comparison proves business equality'),
+    'schema-data-protection': ('v2-to-v3-snapshot-refresh-20261019.zh.md', 'Full migratectl comparison proves business equality, source_read_only=true and target_writes=false'),
     'repeat-deploy-restore': ('web-saas-generation-snapshot-recovery-template.zh.md', 'Same candidate replay and populated restore preserve state and application connectivity'),
 }
 PUBLIC_HOSTS = ['console.svc.plus', 'accounts.svc.plus', 'billing.svc.plus', 'xworktech.com', 'www.xworktech.com']
@@ -52,6 +52,11 @@ def validate_public_route_expectations(expectations):
         except ipaddress.AddressValueError as error:
             raise ValueError('public route expectation contains a non-IPv4 address') from error
     return normalized
+
+
+def full_business_comparison_passed(exit_code, receipt):
+    return (exit_code == 0 and receipt.get('full_business_equal') is True and
+            receipt.get('source_read_only') is True and receipt.get('target_writes') is False)
 
 
 def command(argv):
@@ -147,6 +152,9 @@ def main(spec):
         assert checked.returncode == 0 and checked.stdout.split()[0] == spec['binary_sha256']
         source = 'postgresql://postgres@127.0.0.1:5432/' + spec['source_database'] + '?sslmode=disable'
         target = 'postgresql://postgres@127.0.0.1:5432/account?sslmode=disable'
+        # The source is a retained isolated snapshot read through the migration
+        # reader. --writers-paused is the candidate-target writer gate; it does
+        # not pause or fence the serving V4 business writer.
         comparison = command(['docker', 'exec', '-e', 'SOURCE_DSN=' + source, '-e', 'TARGET_DSN=' + target, 'web-saas-postgresql',
                               spec['container_binary'], 'compare-full-business', '--source-dsn-env', 'SOURCE_DSN', '--target-dsn-env', 'TARGET_DSN',
                               '--environment', 'prod', '--writers-paused', '--schema-sha256', spec['schema_sha256'],
@@ -154,7 +162,7 @@ def main(spec):
         data = json.loads(comparison.stdout) if comparison.returncode == 0 else {}
         result['checks'] = {'comparison_exit_code': comparison.returncode, 'full_business_equal': data.get('full_business_equal', False),
                             'source_read_only': data.get('source_read_only', False), 'target_writes': data.get('target_writes'), 'user_count': data.get('user_count')}
-        verdict(comparison.returncode == 0 and data.get('full_business_equal') is True and data.get('target_writes') is False)
+        verdict(full_business_comparison_passed(comparison.returncode, data))
     else:
         result['blocker'] = {
             'exporter-vector': 'Candidate Billing is unavailable; no production collector is redirected or double-posted',

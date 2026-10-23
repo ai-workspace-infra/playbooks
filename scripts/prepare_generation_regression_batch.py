@@ -13,6 +13,11 @@ from pathlib import Path
 
 
 HISTORICAL_PLAYBOOKS_COMMIT = 'e2b584716fd6770f64d2ba2a7c4137fa4117c7ae'
+LIFECYCLE_TEST_SOURCE_PATH = 'internal/migrate/subscription_upgrade_postgres_test.go'
+LIFECYCLE_TEST_SOURCE_REFERENCE = {
+    'accounts_main_sha': 'a058ae6dbd95c94f9c337dd4f2cd9f30c1fff145',
+    'path_sha256': 'b207652b8ea6dce6be3559a749b9fc9a3de3d1f9f402dc09d052f309068c07ca',
+}
 HISTORICAL_RUNNER_SHA256 = {
     'roles/web_saas_generation_fresh/files/regression_cases.py':
         '37888cd5fcdc14178ad626cbca95aac284fb335a3fc6e8ad56294787e905c763',
@@ -55,14 +60,14 @@ HOST_CASES = [
     ('agent-registration', 'Isolated edge registers, receives configuration, and establishes a user connection.', 'BLOCKED', [2], 'PARTIAL', 'Status POST evidence is partial; isolated writable edge fixture is required.'),
     ('client-transport', 'Generated VLESS path matches Xray and an isolated client connects.', 'BLOCKED', [2], 'NOT_RUN', 'Historical case blocked; no current candidate client evidence.'),
     ('auth-callback', 'Isolated login/MFA/OAuth and Sandbox callbacks complete with correct event association.', 'BLOCKED', [2], 'NOT_RUN', 'Login-page readiness is not a session or payment callback result.'),
-    ('schema-data-protection', 'Pinned full-business comparison protects source and rejects identity/finance/quota conflicts.', 'FAIL_PASS_FAIL', [1, 0, 1], 'BLOCKED', 'b598 candidate recorded FAIL/1 then PASS/0; later 765ea candidate recorded FAIL/1; current comparison must be rerun.'),
+    ('schema-data-protection', 'Full migratectl comparison proves business equality, source_read_only=true and target_writes=false.', 'FAIL_PASS_FAIL', [1, 0, 1], 'BLOCKED', 'b598 candidate recorded FAIL/1 then PASS/0; later 765ea candidate recorded FAIL/1; current comparison must be rerun.'),
     ('repeat-deploy-restore', 'Same-candidate replay avoids unexpected restart/repeated writes; populated restore reconnects application.', 'BLOCKED', [2], 'BLOCKED', 'Historical application-on-restored-database and healthy convergence are not proven.'),
 ]
 
 POSTGRES_CASES = [
     ('native-initialization', 'TestNativeInitPostgres17', 'MIGRATECTL_NATIVE_TEST_DSN', 'internal/migrate/native_init_test.go', 'PASS', 0),
     ('migration-concurrency-retry', 'TestControlledMigratePostgresIntegration', 'ACCOUNTS_TEST_POSTGRES_DSN', 'internal/migrate/controlled_test.go', 'PASS', 0),
-    ('lifecycle-migration-rollback', 'TestSubscriptionLifecycleUpgradePostgres17', 'MIGRATECTL_LIFECYCLE_UPGRADE_TEST_DSN', None, 'PASS', 0),
+    ('lifecycle-migration-rollback', 'TestSubscriptionLifecycleUpgradePostgres17', 'MIGRATECTL_LIFECYCLE_UPGRADE_TEST_DSN', LIFECYCLE_TEST_SOURCE_PATH, 'PASS', 0),
     ('business-conflict-rollback', 'TestFullBusinessPostgres17', 'MIGRATECTL_FULL_BUSINESS_TEST_DSN', 'internal/migrate/full_business_postgres_test.go', 'PASS', 0),
     ('usage-merge-conflicts', 'TestFullBusinessUsageMergePostgres17', 'MIGRATECTL_USAGE_MERGE_TEST_DSN', 'internal/migrate/usage_merge_postgres_test.go', 'PASS', 0),
     ('late-users-single-backfill', 'TestGenerationUsersPostgres17', 'MIGRATECTL_GENERATION_USERS_SOURCE_TEST_DSN', 'internal/migrate/generation_users_postgres_test.go', 'PASS', 0),
@@ -106,10 +111,11 @@ def _host_case(row, candidate_commit=None):
     return item
 
 
-def _postgres_case(row, lifecycle_source_path=None):
+def _postgres_case(row):
     case_id, test_name, dsn_env, source_path, status, exit_code = row
-    if case_id == 'lifecycle-migration-rollback' and lifecycle_source_path:
-        source_path = lifecycle_source_path
+    source_status = 'path recorded; immutable source SHA still required'
+    if case_id == 'lifecycle-migration-rollback':
+        source_status = 'verified in latest Accounts origin/main; candidate Accounts SHA remains an explicit runtime pin'
     return {
         'case_id': case_id,
         'runner_path': POSTGRES_RUNNER,
@@ -119,7 +125,8 @@ def _postgres_case(row, lifecycle_source_path=None):
                        'sha256': HISTORICAL_RUNNER_SHA256[POSTGRES_RUNNER]},
         'accounts_test': {'function': test_name, 'dsn_environment': dsn_env,
                           'source_path': source_path,
-                          'source_path_status': 'unresolved in available Accounts checkout' if source_path is None else 'path recorded; immutable source SHA still required'},
+                          'source_path_status': source_status,
+                          'source_path_reference': LIFECYCLE_TEST_SOURCE_REFERENCE if case_id == 'lifecycle-migration-rollback' else None},
         'expected': 'PASS with the exact test emitting --- PASS:; skipped=false; restarted fixture row fingerprint unchanged.',
         'expected_exit_policy': {'PASS': 0, 'FAIL': 1, 'BLOCKED': 1, 'NOT_RUN': None},
         'historical': {'status': status, 'exit_code': exit_code, 'skipped': False,
@@ -137,7 +144,6 @@ def build_batch(args):
         'candidate_gitops_sha': args.candidate_commit,
         'playbooks_runner_sha': args.playbooks_runner_sha,
         'accounts_source_sha': args.accounts_source_sha,
-        'lifecycle_test_source_path': args.lifecycle_test_source_path,
         'run_id': args.run_id,
         'target_ip': args.target_ip,
         'postgres_image_digest': args.postgres_image_digest,
@@ -157,8 +163,9 @@ def build_batch(args):
         'billing_schema_sha256': args.billing_schema_sha256,
         'source_archive_sha256': args.source_archive_sha256,
         'public_route_expectations_file': args.public_route_expectations_file,
-        'source_restore_receipt': args.source_restore_receipt,
-        'source_writer_fence_evidence': args.source_writer_fence_evidence,
+        'isolated_source_restore_receipt': args.isolated_source_restore_receipt,
+        'readonly_migration_access_evidence': args.readonly_migration_access_evidence,
+        'isolated_fixture_isolation_evidence': args.isolated_fixture_isolation_evidence,
     }
     missing.extend(key for key, value in required.items() if not value)
     routes = None
@@ -179,11 +186,6 @@ def build_batch(args):
                 raise ValueError('public route values must be IPv4 addresses') from error
     if args.accounts_source_sha and not re.fullmatch(r'[0-9a-f]{40}', args.accounts_source_sha):
         raise ValueError('accounts_source_sha must be a full lowercase Git SHA')
-    if args.lifecycle_test_source_path and (
-            Path(args.lifecycle_test_source_path).is_absolute() or
-            '..' in Path(args.lifecycle_test_source_path).parts or
-            not args.lifecycle_test_source_path.endswith('.go')):
-        raise ValueError('lifecycle_test_source_path must be a relative Go source path without parent traversal')
     if args.candidate_commit and not re.fullmatch(r'[0-9a-f]{40}', args.candidate_commit):
         raise ValueError('candidate GitOps SHA must be a full lowercase Git SHA')
     if args.playbooks_runner_sha and not re.fullmatch(r'[0-9a-f]{40}', args.playbooks_runner_sha):
@@ -213,13 +215,7 @@ def build_batch(args):
             raise ValueError(key + ' must be a lowercase SHA-256')
 
     unresolved_case_inputs = []
-    if not args.lifecycle_test_source_path:
-        unresolved_case_inputs.append('lifecycle-migration-rollback test source path')
-    unresolved_case_inputs.append('writer-ownership executable case path and immutable pin')
-    resolved_postgres_cases = [
-        _postgres_case(row, args.lifecycle_test_source_path)
-        for row in POSTGRES_CASES
-    ]
+    resolved_postgres_cases = [_postgres_case(row) for row in POSTGRES_CASES]
 
     return {
         'schema': 'playbooks-generation-regression-batch/v1',
@@ -229,7 +225,8 @@ def build_batch(args):
         'candidate_gitops_sha': args.candidate_commit,
         'playbooks_runner_sha': args.playbooks_runner_sha,
         'accounts_source_sha': args.accounts_source_sha,
-        'lifecycle_test_source_path': args.lifecycle_test_source_path,
+        'lifecycle_test_source_path': LIFECYCLE_TEST_SOURCE_PATH,
+        'lifecycle_test_source_reference': LIFECYCLE_TEST_SOURCE_REFERENCE,
         'schema_version': args.schema_version,
         'schema_sha256': args.schema_sha256,
         'billing_schema_sha256': args.billing_schema_sha256,
@@ -259,9 +256,11 @@ def build_batch(args):
                          ' GENERATION_POSTGRES_CONTAINER=<verified-v5-container>' +
                          ' bash tests/data_operations/selfhost/v4_business_role_acceptance.sh')},
             {'case_id': 'writer-ownership', 'runner_path': None,
-             'expected': 'One generation owns business writes; old source is fenced; source/target user baseline is recorded.',
+             'execution_stage': 8, 'status': 'DEFERRED_UNTIL_MANUAL_CUTOVER',
+             'expected': 'At the separately approved manual cutover, fence the old source business writer and establish one-generation write ownership.',
              'historical_status': 'NOT_RUN', 'historical_exit_code': None,
-             'evidence': SOURCE_RECORD_DIRECTORY + '/regression-and-closure-checklist-20261021.zh.md row V4-01,22; no executable case or complete receipt is identified.'},
+             'evidence': SOURCE_RECORD_DIRECTORY + '/regression-and-closure-checklist-20261021.zh.md row V4-01,22; no executable case or complete receipt is identified.',
+             'blocker_scope': 'not a prerequisite for stages 0-7 regression preparation; implement and pin before stage 8'},
         ],
         'local_fixture_cases': {
             'runner_path': 'tests/test_recovery_public_ingress_idempotency.py',
@@ -293,7 +292,7 @@ def build_batch(args):
         'known_pin_and_evidence_gaps': [
             'Schema case candidate 765ea has only a short SHA prefix in the shared checklist; its full commit cannot be recovered from that record.',
             'The historical PostgreSQL receipt filename is known, but its exact private per-case logs and Accounts/tool/image/SQL pins are not in the shared record.',
-            'The writer-ownership gate has no executable case path or immutable runner pin in the identified source records.',
+            'The stage-8 writer-ownership gate has no executable case path or immutable runner pin in the identified source records; it is deferred and does not gate stages 0-7.',
         ],
         'invocations': [
             {'entrypoint': 'web-saas-generation-regression.yml',
@@ -305,14 +304,21 @@ def build_batch(args):
             {'entrypoint': 'tests/data_operations/selfhost/v4_business_role_acceptance.sh',
              'command': 'candidate-only read-only acceptance; exact pinned command and variables must be supplied by the runner owner',
              'case_ids': ['business-runtime-role'], 'execution_now': False},
-            {'entrypoint': None, 'command': None, 'case_ids': ['writer-ownership'], 'execution_now': False,
-             'blocker': 'No executable isolated writer-ownership case is present in the identified batch.'},
+            {'entrypoint': None, 'command': None, 'case_ids': ['writer-ownership'], 'execution_stage': 8,
+             'execution_now': False, 'deferred': True,
+             'blocker': 'No executable pinned writer-ownership case is identified; prepare it before manual cutover stage 8.'},
         ],
         'execution_boundary': {
-            'source_generation_access': 'read-only isolated snapshot only; no source application or database writes',
+            'source_generation_business_writer': 'continues serving and accepting business writes through stages 0-7; do not fence or pause V4 for this regression batch',
+            'live_source_business_writer_fence_action': 'not performed by this batch; manual cutover stage 8 only',
+            'migration_source_access': 'dedicated read-only migration identity/transaction against a retained isolated source snapshot; never the live business writer identity',
+            'candidate_target_writer': 'candidate target writers remain paused for migration comparison; --writers-paused refers to target writers only',
+            'integration_fixture_isolation': 'fresh disposable PostgreSQL fixtures use Docker network none and are distinct from V4 and existing containers',
+            'source_writer_handoff': 'fence V4 business writes only in separately approved manual cutover stage 8',
             'public_dns_or_cloud_changes': False,
             'existing_container_reuse': False,
-            'source_mutations': False,
+            'live_source_business_writer_changed': False,
+            'migration_source_writes': False,
             'operator_note': 'This planner did not run Ansible, Docker, database commands, DNS queries, or network probes.',
         },
     }
@@ -325,7 +331,6 @@ def parser():
     result.add_argument('--candidate-gitops-sha', '--candidate-commit', dest='candidate_commit')
     result.add_argument('--playbooks-runner-sha')
     result.add_argument('--accounts-source-sha')
-    result.add_argument('--lifecycle-test-source-path')
     result.add_argument('--run-id')
     result.add_argument('--target-ip')
     result.add_argument('--postgres-image-digest')
@@ -345,8 +350,9 @@ def parser():
     result.add_argument('--billing-schema-sha256')
     result.add_argument('--source-archive-sha256')
     result.add_argument('--public-route-expectations-file')
-    result.add_argument('--source-restore-receipt')
-    result.add_argument('--source-writer-fence-evidence')
+    result.add_argument('--isolated-source-restore-receipt')
+    result.add_argument('--readonly-migration-access-evidence')
+    result.add_argument('--isolated-fixture-isolation-evidence')
     result.add_argument('--output', type=Path)
     return result
 

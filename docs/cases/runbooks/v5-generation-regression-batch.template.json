@@ -23,12 +23,15 @@
       "runner_path": "tests/data_operations/selfhost/v4_business_role_acceptance.sh"
     },
     {
+      "blocker_scope": "not a prerequisite for stages 0-7 regression preparation; implement and pin before stage 8",
       "case_id": "writer-ownership",
       "evidence": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/regression-and-closure-checklist-20261021.zh.md row V4-01,22; no executable case or complete receipt is identified.",
-      "expected": "One generation owns business writes; old source is fenced; source/target user baseline is recorded.",
+      "execution_stage": 8,
+      "expected": "At the separately approved manual cutover, fence the old source business writer and establish one-generation write ownership.",
       "historical_exit_code": null,
       "historical_status": "NOT_RUN",
-      "runner_path": null
+      "runner_path": null,
+      "status": "DEFERRED_UNTIL_MANUAL_CUTOVER"
     }
   ],
   "additional_local_fixture_suites": [
@@ -268,7 +271,7 @@
     {
       "case_id": "schema-data-protection",
       "checklist_status": "BLOCKED",
-      "expected": "Pinned full-business comparison protects source and rejects identity/finance/quota conflicts.",
+      "expected": "Full migratectl comparison proves business equality, source_read_only=true and target_writes=false.",
       "expected_exit_policy": {
         "BLOCKED": 2,
         "FAIL": 1,
@@ -343,6 +346,7 @@
         "dsn_environment": "MIGRATECTL_NATIVE_TEST_DSN",
         "function": "TestNativeInitPostgres17",
         "source_path": "internal/migrate/native_init_test.go",
+        "source_path_reference": null,
         "source_path_status": "path recorded; immutable source SHA still required"
       },
       "baseline_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/prod-v4-runtime-and-snapshot-baseline-20261021.zh.md",
@@ -375,6 +379,7 @@
         "dsn_environment": "ACCOUNTS_TEST_POSTGRES_DSN",
         "function": "TestControlledMigratePostgresIntegration",
         "source_path": "internal/migrate/controlled_test.go",
+        "source_path_reference": null,
         "source_path_status": "path recorded; immutable source SHA still required"
       },
       "baseline_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/prod-v4-runtime-and-snapshot-baseline-20261021.zh.md",
@@ -406,8 +411,12 @@
       "accounts_test": {
         "dsn_environment": "MIGRATECTL_LIFECYCLE_UPGRADE_TEST_DSN",
         "function": "TestSubscriptionLifecycleUpgradePostgres17",
-        "source_path": null,
-        "source_path_status": "unresolved in available Accounts checkout"
+        "source_path": "internal/migrate/subscription_upgrade_postgres_test.go",
+        "source_path_reference": {
+          "accounts_main_sha": "a058ae6dbd95c94f9c337dd4f2cd9f30c1fff145",
+          "path_sha256": "b207652b8ea6dce6be3559a749b9fc9a3de3d1f9f402dc09d052f309068c07ca"
+        },
+        "source_path_status": "verified in latest Accounts origin/main; candidate Accounts SHA remains an explicit runtime pin"
       },
       "baseline_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/prod-v4-runtime-and-snapshot-baseline-20261021.zh.md",
       "case_id": "lifecycle-migration-rollback",
@@ -439,6 +448,7 @@
         "dsn_environment": "MIGRATECTL_FULL_BUSINESS_TEST_DSN",
         "function": "TestFullBusinessPostgres17",
         "source_path": "internal/migrate/full_business_postgres_test.go",
+        "source_path_reference": null,
         "source_path_status": "path recorded; immutable source SHA still required"
       },
       "baseline_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/prod-v4-runtime-and-snapshot-baseline-20261021.zh.md",
@@ -471,6 +481,7 @@
         "dsn_environment": "MIGRATECTL_USAGE_MERGE_TEST_DSN",
         "function": "TestFullBusinessUsageMergePostgres17",
         "source_path": "internal/migrate/usage_merge_postgres_test.go",
+        "source_path_reference": null,
         "source_path_status": "path recorded; immutable source SHA still required"
       },
       "baseline_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/prod-v4-runtime-and-snapshot-baseline-20261021.zh.md",
@@ -503,6 +514,7 @@
         "dsn_environment": "MIGRATECTL_GENERATION_USERS_SOURCE_TEST_DSN",
         "function": "TestGenerationUsersPostgres17",
         "source_path": "internal/migrate/generation_users_postgres_test.go",
+        "source_path_reference": null,
         "source_path_status": "path recorded; immutable source SHA still required"
       },
       "baseline_path": "content/02-iac-devops/cloud-infrastructure-devsecops-baseline/records/prod-v3-v4-20261020/prod-v4-runtime-and-snapshot-baseline-20261021.zh.md",
@@ -532,11 +544,17 @@
     }
   ],
   "execution_boundary": {
+    "candidate_target_writer": "candidate target writers remain paused for migration comparison; --writers-paused refers to target writers only",
     "existing_container_reuse": false,
+    "integration_fixture_isolation": "fresh disposable PostgreSQL fixtures use Docker network none and are distinct from V4 and existing containers",
+    "live_source_business_writer_changed": false,
+    "live_source_business_writer_fence_action": "not performed by this batch; manual cutover stage 8 only",
+    "migration_source_access": "dedicated read-only migration identity/transaction against a retained isolated source snapshot; never the live business writer identity",
+    "migration_source_writes": false,
     "operator_note": "This planner did not run Ansible, Docker, database commands, DNS queries, or network probes.",
     "public_dns_or_cloud_changes": false,
-    "source_generation_access": "read-only isolated snapshot only; no source application or database writes",
-    "source_mutations": false
+    "source_generation_business_writer": "continues serving and accepting business writes through stages 0-7; do not fence or pause V4 for this regression batch",
+    "source_writer_handoff": "fence V4 business writes only in separately approved manual cutover stage 8"
   },
   "historical_playbooks_case_pin": "e2b584716fd6770f64d2ba2a7c4137fa4117c7ae",
   "historical_runner_sha256": {
@@ -584,22 +602,28 @@
       "execution_now": false
     },
     {
-      "blocker": "No executable isolated writer-ownership case is present in the identified batch.",
+      "blocker": "No executable pinned writer-ownership case is identified; prepare it before manual cutover stage 8.",
       "case_ids": [
         "writer-ownership"
       ],
       "command": null,
+      "deferred": true,
       "entrypoint": null,
-      "execution_now": false
+      "execution_now": false,
+      "execution_stage": 8
     }
   ],
   "known_pin_and_evidence_gaps": [
     "Schema case candidate 765ea has only a short SHA prefix in the shared checklist; its full commit cannot be recovered from that record.",
     "The historical PostgreSQL receipt filename is known, but its exact private per-case logs and Accounts/tool/image/SQL pins are not in the shared record.",
-    "The writer-ownership gate has no executable case path or immutable runner pin in the identified source records."
+    "The stage-8 writer-ownership gate has no executable case path or immutable runner pin in the identified source records; it is deferred and does not gate stages 0-7."
   ],
   "lifecycle_sql_sha256": null,
-  "lifecycle_test_source_path": null,
+  "lifecycle_test_source_path": "internal/migrate/subscription_upgrade_postgres_test.go",
+  "lifecycle_test_source_reference": {
+    "accounts_main_sha": "a058ae6dbd95c94f9c337dd4f2cd9f30c1fff145",
+    "path_sha256": "b207652b8ea6dce6be3559a749b9fc9a3de3d1f9f402dc09d052f309068c07ca"
+  },
   "local_fixture_cases": {
     "cases": [
       "test_activation_requires_change_and_explicit_enablement",
@@ -621,7 +645,6 @@
     "candidate_gitops_sha",
     "playbooks_runner_sha",
     "accounts_source_sha",
-    "lifecycle_test_source_path",
     "run_id",
     "target_ip",
     "postgres_image_digest",
@@ -641,8 +664,9 @@
     "billing_schema_sha256",
     "source_archive_sha256",
     "public_route_expectations_file",
-    "source_restore_receipt",
-    "source_writer_fence_evidence"
+    "isolated_source_restore_receipt",
+    "readonly_migration_access_evidence",
+    "isolated_fixture_isolation_evidence"
   ],
   "playbooks_runner_sha": null,
   "postgres_image_digest": null,
@@ -655,8 +679,5 @@
   "source_generation": "prod-v4",
   "status": "BLOCKED",
   "target_generation": "prod-v5",
-  "unresolved_case_inputs": [
-    "lifecycle-migration-rollback test source path",
-    "writer-ownership executable case path and immutable pin"
-  ]
+  "unresolved_case_inputs": []
 }

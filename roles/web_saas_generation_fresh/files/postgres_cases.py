@@ -48,6 +48,8 @@ def main(spec):
         name = 'upgrade-fixture-' + suffix + '-' + str(index)
         containers = [name]
         row = {'case_id': case_id, 'test': test, 'containers': containers,
+               'fixture_network_isolation': 'network-none; secondary fixtures share this isolated namespace',
+               'live_v4_writer_fence_action': 'not_performed',
                'started_utc': datetime.datetime.now(datetime.timezone.utc).isoformat()}
         try:
             def start(container, network, port=5432):
@@ -116,7 +118,10 @@ def main(spec):
         results.append(row)
     result = {'run_id': spec['run_id'], 'candidate_commit': spec['candidate_commit'], 'source_sha': spec['source_sha'],
               'script_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'binary_sha256': spec['integration_binary_sha256'],
-              'postgres_image': image, 'production_connections': False, 'results': results,
+              'postgres_image': image, 'production_connections': False,
+              'live_v4_writer_fence_action': 'not_performed',
+              'fixture_network_isolation': 'network-none; secondary fixtures share this isolated namespace',
+              'results': results,
               'status': 'PASS' if all(r['status'] == 'PASS' for r in results) else 'FAIL'}
     path = root / ('postgres-cases-' + started.strftime('%Y%m%dT%H%M%S%fZ') + '.json')
     with path.open('x') as stream:
