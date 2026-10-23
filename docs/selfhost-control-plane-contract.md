@@ -154,7 +154,13 @@ control_plane_runtime:
 
 The paths above are illustrative references, not requests to create/copy Vault
 records. Use the established environment-scoped owners. The database and shared
-service-token references shown are canonical and enforced. Ansible resolves
+service-token references shown are canonical and enforced. For `prod` only, the
+three AUTH token fields may reference their same-named fields in the established
+`kv/prod-v2/web-saas` record; the `prod` TLS inputs map to the existing
+`kv/CICD/domains/svc.plus` PEM fields, and GHCR credentials map to
+`kv/CICD#GHCR_USERNAME` and `kv/CICD#GHCR_TOKEN`. These are exact field/path
+exceptions, not a general cross-environment allowance. Never copy these values
+into policy, GitOps, or files. Ansible resolves
 references only at execution in a delegated `no_log` task using an already-issued
 short-lived OIDC/Vault identity. Results remain in non-cacheable task memory;
 no controller credential files are created. `--check` never authenticates to

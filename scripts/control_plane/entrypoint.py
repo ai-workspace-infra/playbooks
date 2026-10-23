@@ -386,8 +386,22 @@ def validate_runtime_policy(policy, environment):
     refs = policy['secret_refs']
     fields(refs, (*SECRET_KEYS, *RUNTIME_KEYS), ['git_access_token'])
     prefix = 'kv/' + environment + '/'
-    require(all(matches(re.escape(prefix) + r'[A-Za-z0-9_/-]+#[A-Za-z0-9_]+', value) for value in refs.values()),
-            'Runtime configuration must contain environment-scoped Vault field references only')
+    established_prod_refs = {
+        'AUTH_TOKEN_PUBLIC_TOKEN': 'kv/prod-v2/web-saas#AUTH_TOKEN_PUBLIC_TOKEN',
+        'AUTH_TOKEN_REFRESH_SECRET': 'kv/prod-v2/web-saas#AUTH_TOKEN_REFRESH_SECRET',
+        'AUTH_TOKEN_ACCESS_SECRET': 'kv/prod-v2/web-saas#AUTH_TOKEN_ACCESS_SECRET',
+        'ca_cert_b64': 'kv/CICD/domains/svc.plus#tls_ca_pem_b64',
+        'server_cert_b64': 'kv/CICD/domains/svc.plus#tls_cert_pem_b64',
+        'server_key_b64': 'kv/CICD/domains/svc.plus#tls_key_pem_b64',
+        'tls_fullchain_b64': 'kv/CICD/domains/svc.plus#tls_fullchain_pem_b64',
+        'tls_key_b64': 'kv/CICD/domains/svc.plus#tls_key_pem_b64',
+        'registry_username': 'kv/CICD#GHCR_USERNAME',
+        'registry_password': 'kv/CICD#GHCR_TOKEN',
+    } if environment == 'prod' else {}
+    for key, value in refs.items():
+        environment_scoped = matches(re.escape(prefix) + r'[A-Za-z0-9_/-]+#[A-Za-z0-9_]+', value)
+        require(environment_scoped or established_prod_refs.get(key) == value,
+                'Runtime configuration must contain established field references only')
     require(refs['ACCOUNT_PG_PASSWORD'] == prefix + 'databases#account_pg_password'
             and refs['POSTGRES_PASSWORD'] == prefix + 'databases#postgres_root_password'
             and refs['INTERNAL_SERVICE_TOKEN'] == prefix + 'accounts/runtime#INTERNAL_SERVICE_TOKEN',
