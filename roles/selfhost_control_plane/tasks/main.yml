@@ -110,6 +110,14 @@
         - {name: key.pem, value: '{{ control_plane_private.tls_key_b64 }}'}
       no_log: true
 
+    - name: Resolve the certificate reader from the exact declared stunnel image
+      ansible.builtin.command:
+        argv: [python3, '{{ control_plane_workspace.path }}/native_runtime.py']
+        stdin: '{{ {"action": "stunnel_reader", "contract": control_plane_contract, "credentials": control_plane_credentials} | to_json }}'
+      register: control_plane_stunnel_reader
+      changed_when: false
+      no_log: true
+
     - name: Reuse native host configuration with explicit candidate inputs
       ansible.builtin.include_role:
         name: vhosts/web_saas_host_config
@@ -121,6 +129,8 @@
         web_saas_host_config_ca_cert_b64: '{{ control_plane_private.ca_cert_b64 }}'
         web_saas_host_config_server_cert_b64: '{{ control_plane_private.server_cert_b64 }}'
         web_saas_host_config_server_key_b64: '{{ control_plane_private.server_key_b64 }}'
+        web_saas_host_config_stunnel_key_group: '{{ (control_plane_stunnel_reader.stdout | from_json).gid }}'
+        web_saas_host_config_stunnel_key_mode: '{{ "0600" if (control_plane_stunnel_reader.stdout | from_json).uid == 0 else "0640" }}'
         web_saas_host_config_deploy_env: '{{ control_plane_contract.target.generation }}'
         web_saas_host_config_vault_env_path: '{{ control_plane_contract.environment }}'
         web_saas_host_config_target_domain_base: '{{ control_plane_contract.target.domain_base }}'
