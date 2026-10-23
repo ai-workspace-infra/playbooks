@@ -20,6 +20,9 @@ class AcceptanceScriptsTest(unittest.TestCase):
         docker = self.bin / "docker"
         docker.write_text("#!/bin/sh\nprintf '%s' \"${V4_MOCK_DOCKER_OUTPUT:-}\"\n")
         docker.chmod(0o755)
+        hostname = self.bin / "hostname"
+        hostname.write_text("#!/bin/sh\nprintf '%s\\n' \"${V4_MOCK_HOSTNAME:-web-saas-prod-v5}\"\n")
+        hostname.chmod(0o755)
 
     def run_script(self, name, *, output="", **env):
         process_env = dict(os.environ)
@@ -29,12 +32,20 @@ class AcceptanceScriptsTest(unittest.TestCase):
                               capture_output=True, text=True, timeout=10)
 
     def test_business_role_script_passes_and_fails_on_exact_grant_contract(self):
-        passed = self.run_script("v4_business_role_acceptance.sh", output="account_user|t|t|t\n")
+        target = {"GENERATION_TARGET_GENERATION": "prod-v5",
+                  "GENERATION_POSTGRES_CONTAINER": "web-saas-postgresql-v5-fixture"}
+        guarded = self.run_script("v4_business_role_acceptance.sh")
+        self.assertEqual(guarded.returncode, 2)
+        passed = self.run_script("v4_business_role_acceptance.sh", output="account_user|t|t|t\n", **target)
         self.assertEqual(passed.returncode, 0, passed.stderr)
-        failed = self.run_script("v4_business_role_acceptance.sh", output="account_user|f|t|t\n")
+        wrong_host = self.run_script("v4_business_role_acceptance.sh", **target,
+                                     V4_MOCK_HOSTNAME="web-saas-prod-v4")
+        self.assertEqual(wrong_host.returncode, 2)
+        failed = self.run_script("v4_business_role_acceptance.sh", output="account_user|f|t|t\n", **target)
         self.assertEqual(failed.returncode, 1)
         self.assertNotIn("account_user|f", failed.stderr)
-        wrong_role = self.run_script("v4_business_role_acceptance.sh", V4_BUSINESS_DB_ROLE="readonly_release")
+        wrong_role = self.run_script("v4_business_role_acceptance.sh", **target,
+                                     GENERATION_BUSINESS_DB_ROLE="readonly_release")
         self.assertEqual(wrong_role.returncode, 2)
 
     def test_traffic_script_requires_node_and_two_recent_positive_buckets(self):
