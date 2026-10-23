@@ -8,7 +8,7 @@ The role currently supports **diagnostic mode only**. It fails closed if a calle
 
 | Variable | Required/default | Meaning |
 | --- | --- | --- |
-| `xray_edge_hosts` | Required by caller | Explicit inventory host or group; `all` and `*` are rejected. Use the CMDB inventory for routine delivery. |
+| `xray_edge_hosts` | Required by caller | Explicit inventory host or group; `all` and `*` are rejected. The selected host/group must exist in the inventory used for this run. |
 | `xray_edge_domain` | Required | Public Edge hostname whose TLS certificate Caddy will obtain/manage. |
 | `xray_edge_upstream_address` | Required | Upstream host used in the TLS connection. |
 | `xray_edge_upstream_host` | Upstream address | HTTP Host header sent upstream. |
@@ -26,17 +26,19 @@ When adopting this role for an already-running Edge, set `xray_edge_site_filenam
 
 ## Run
 
-Use the Terraform CMDB inventory and a host selector confirmed for this deployment. Do not use the repository's legacy static inventory as an implicit default.
+Pass the target explicitly with `-e xray_edge_hosts=...`. The value can be a CMDB group/hostname or a host/group from another inventory. Dynamic CMDB inventory is supported, but not mandatory; use the inventory that actually contains the selected target. Ansible inventory selection is independent of this variable; pass `-i` when the target is not in the repository-configured default inventory.
 
 ```bash
 ansible-playbook -i inventory/terraform_cmdb.py deploy_xray_edge.yml \
-  -e 'xray_edge_hosts=edge-host-from-cmdb' \
+  -e 'xray_edge_hosts=cmdb-edge-host-or-group' \
   -e 'xray_edge_domain=edge.example.net' \
   -e 'xray_edge_upstream_address=exit.example.net' \
   -e 'xray_edge_upstream_host=exit.example.net' \
   -e 'xray_edge_upstream_sni=exit.example.net' \
   -e 'xray_edge_site_filename=edge-existing-site.caddy'
 ```
+
+For a static inventory, select the matching host/group instead, for example `-i inventory.ini -e 'xray_edge_hosts=jp_xhttp_contabo_host'`. For a one-off host that is not already in a configured inventory, use a single-host inline inventory such as `-i '203.0.113.10,' -e 'xray_edge_hosts=203.0.113.10'`; verify the host identity and SSH settings before applying.
 
 Run `--syntax-check` before applying. Tags `configure` and `validate` are both included on the candidate-render/combined-validation path so a normal tagged configuration cannot bypass pre-install validation. `--check` performs preflight only because the combined Caddy check requires a temporary remote candidate.
 
