@@ -22,7 +22,8 @@ def build(request):
     backup, restore = request['backup'], request['restore']
     plan, fresh = request['plan'], request['fresh_plan']
     require(backup['status'] == restore['status'] == 'passed' and backup.get('encrypted') is True
-            and backup.get('durable') is True and backup.get('full_database') is True and restore.get('full_database') is True)
+            and backup.get('durable') is True and backup.get('full_database') is True and restore.get('full_database') is True
+            and backup.get('privileges_preserved') is True and restore.get('privileges_preserved') is True)
     for key in ('environment', 'source_database_id', 'baseline_id', 'schema_version', 'migration_rows', 'migration_dirty',
                 'schema_sha256', 'data_sha256', 'archive_sha256', 'database_system_identifier', 'existing_users', 'subscriptions'):
         require(backup[key] == restore[key])

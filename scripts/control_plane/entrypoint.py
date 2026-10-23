@@ -2,6 +2,7 @@
 """Pinned Playbooks owner. --check is a local, read-only declaration plan."""
 import argparse
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -113,7 +114,7 @@ def resolve_value(value, env):
     return value
 
 
-def selection(root, target, images, storage=False):
+def selection(root, target, images, storage=False, listener=False):
     require(matches(NAME, target), "Invalid Doco-CD selection")
     manifest_path = inside(root, root, ".doco-cd." + target + ".yml")
     manifest = read_yaml(manifest_path)
@@ -138,7 +139,7 @@ def selection(root, target, images, storage=False):
     def load_compose(path, stack=()):
         require(path not in stack, "Cyclic Compose extends")
         document = read_yaml(path)
-        require(not set(document).intersection({"include", "configs", "secrets"}),
+        require(not set(document).intersection({"include", "configs", "secrets", "x-example-only", "example_only"}),
                 "Unsupported external Compose input")
         services = document.get("services", {})
         require(isinstance(services, dict), "Compose services must be a mapping")
@@ -160,8 +161,10 @@ def selection(root, target, images, storage=False):
             "Doco-CD selection lacks required services or storage is not PostgreSQL-only")
     resolved_images = {}
     for name, service in services.items():
+        validate_ports(name, service.get('ports', []), env)
         require(not set(service).intersection({"build", "post_start", "pre_stop", "provider", "use_api_socket"})
-                and not service.get("privileged") and not set(service).intersection({"pid", "ipc", "network_mode"}),
+                and not service.get("privileged") and not set(service).intersection({"pid", "ipc"})
+                and ('network_mode' not in service or listener and name == 'migration' and service['network_mode'] == 'service:caddy'),
                 "Unsupported candidate Compose execution capability")
         image = resolve_value(service.get("image", ""), env)
         require(matches(IMAGE, image), "All candidate dependency images must be digest pinned")
@@ -191,7 +194,22 @@ def selection(root, target, images, storage=False):
     require(len(bindings) == 1 and isinstance(bindings[0].get("source"), str),
             "PostgreSQL requires the declared persistent bind, never an anonymous database volume")
     return {"target": target, "manifest": str(manifest_path), "images": resolved_images,
-            "postgres_data_path": bindings[0]["source"]}
+            "postgres_data_path": bindings[0]["source"], **({'services': services} if listener else {})}
+
+
+def validate_ports(service, ports, env):
+    require(isinstance(ports, list), 'Compose ports must be an explicit list')
+    for port in ports:
+        if service == 'caddy':
+            continue  # The only permitted public ingress; all dependencies below.
+        if isinstance(port, str):
+            value = resolve_value(port, env)
+            require(matches(r'(?:127\.0\.0\.1|\[::1\]):[0-9]{1,5}:[0-9]{1,5}(?:/(?:tcp|udp))?', value),
+                    'Only Caddy may publish publicly; dependencies require explicit loopback')
+        else:
+            require(isinstance(port, dict) and port.get('host_ip') in ('127.0.0.1', '::1')
+                    and 'published' in port and 'target' in port,
+                    'Only Caddy may publish publicly; dependencies require loopback host_ip')
 
 
 def load_contract(config, gitops, owner, sha):
@@ -213,7 +231,11 @@ def load_contract(config, gitops, owner, sha):
     fields(target, ["host", "generation", "domain_base", "console_domain", "accounts_domain"])
     require(all(matches(NAME, target[k]) for k in ("host", "generation", "domain_base", "console_domain", "accounts_domain")),
             "Target metadata must use literal names, never inventory patterns")
-    fields(release, ["snapshot_tag", "services", "accounts", "doco_cd"])
+    fields(release, ["snapshot_tag", "services", "accounts", "doco_cd"], ['billing'])
+    if 'billing' in release:
+        fields(release['billing'], ['source_sha', 'schema_file'])
+        require(matches(SHA, release['billing']['source_sha']) and
+                release['billing']['schema_file'] == 'sql/billing-service-schema.sql', 'Invalid Billing source artifact')
     require(matches(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", release["snapshot_tag"]), "Invalid snapshot tag")
     fields(release["services"], SERVICES)
     require(all(matches(IMAGE, value) for value in release["services"].values()), "Five digest-pinned service images are required")
@@ -305,6 +327,7 @@ def plan(contract):
 
 def run_owner(owner, contract, runtime):
     validate_runtime_policy(runtime, contract['environment'])
+    billing = billing_artifact(contract)
     env = {k: v for k, v in os.environ.items() if not k.startswith("ANSIBLE_")}
     env.update(ANSIBLE_CONFIG=str(owner / "scripts/control_plane/ansible.cfg"),
                ANSIBLE_STDOUT_CALLBACK='control_plane_receipt',
@@ -313,7 +336,8 @@ def run_owner(owner, contract, runtime):
                CMDB_FILE=contract["resolved"]["cmdb_file"], PYTHONDONTWRITEBYTECODE="1")
     inventory = str(owner / "inventory/terraform_cmdb.py")
     host = contract["target"]["host"]
-    variables = json.dumps({"control_plane_contract": contract, "control_plane_runtime": runtime})
+    variables = json.dumps({"control_plane_contract": contract, "control_plane_runtime": runtime,
+                            "control_plane_billing_artifact": billing})
     playbook = str(owner / "selfhost-control-plane.yml")
     commands = [
         (["ansible-inventory", "-i", inventory, "--host", host], None),
@@ -330,6 +354,22 @@ def run_owner(owner, contract, runtime):
     require(isinstance(receipt, dict) and receipt.get('status') == 'candidate_runtime_ready'
             and receipt.get('business_acceptance') is False, 'Candidate readiness receipt is absent or invalid')
     return {**plan(contract), "status": "owner_completed", "host_actions": True, 'readiness': receipt}
+
+
+def billing_artifact(contract):
+    declaration = contract['release'].get('billing')
+    require(declaration is not None and bool(os.environ.get('BILLING_CHECKOUT')),
+            'Execution requires release.billing and the fixed BILLING_CHECKOUT source artifact')
+    root = Path(os.environ['BILLING_CHECKOUT']).resolve(strict=True)
+    checkout(root, declaration['source_sha'])
+    require(git(root, 'remote', 'get-url', 'origin') == 'https://github.com/ai-workspace-services/billing-service.git',
+            'Billing artifact must use its canonical owner')
+    path = inside(root, root, declaration['schema_file'])
+    raw = path.read_bytes()
+    require(hashlib.sha256(raw).hexdigest() == contract['release']['accounts']['billing_schema_sha256'],
+            'Billing schema bytes differ from the reviewed pin')
+    return {'source_sha': declaration['source_sha'], 'schema_sha256': hashlib.sha256(raw).hexdigest(),
+            'sql': raw.decode('utf-8')}
 
 
 SECRET_KEYS = ('POSTGRES_PASSWORD', 'ACCOUNT_PG_PASSWORD', 'AUTH_TOKEN_PUBLIC_TOKEN',

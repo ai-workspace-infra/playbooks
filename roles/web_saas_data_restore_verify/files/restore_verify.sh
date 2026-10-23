@@ -83,8 +83,10 @@ state_value() {
 }
 schema_fingerprint() {
   local schema_args=(--schema=public)
+  local ownership_args=(--no-owner --no-privileges)
   [[ "${WEB_SAAS_FULL_DATABASE:-false}" != true ]] || schema_args=()
-  docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$1" --schema-only "${schema_args[@]}" --no-owner --no-privileges | sed '/^\\restrict /d; /^\\unrestrict /d' | sha256sum | awk '{print $1}'
+  [[ "${WEB_SAAS_FULL_DATABASE:-false}" != true ]] || ownership_args=()
+  docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$1" --schema-only "${schema_args[@]}" "${ownership_args[@]}" | sed '/^\\restrict /d; /^\\unrestrict /d' | sha256sum | awk '{print $1}'
 }
 cleanup() {
   local exit_status=$?
@@ -145,8 +147,10 @@ if [[ "${WEB_SAAS_FULL_DATABASE:-false}" != true ]]; then
   docker exec "$WEB_SAAS_POSTGRES_CONTAINER" psql -U postgres -d "$restore_database" -Xq -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public'
 fi
 phase='decrypt_and_restore_archive'
+ownership_args=(--no-owner --no-privileges)
+[[ "${WEB_SAAS_FULL_DATABASE:-false}" != true ]] || ownership_args=()
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:WEB_SAAS_BACKUP_PASSPHRASE -in "$WEB_SAAS_ARCHIVE_PATH" \
-  | docker exec -i "$WEB_SAAS_POSTGRES_CONTAINER" pg_restore -U postgres -d "$restore_database" --no-owner --no-privileges --exit-on-error
+  | docker exec -i "$WEB_SAAS_POSTGRES_CONTAINER" pg_restore -U postgres -d "$restore_database" "${ownership_args[@]}" --exit-on-error
 
 phase='compare_restored_database'
 restored_state="$(state_value "$restore_database")" || fail 'could not inspect restored database'
@@ -177,6 +181,7 @@ print(json.dumps({
     "schema": 1,
     "phase": "database_restore_verify_component",
     "status": "passed",
+    "privileges_preserved": os.environ.get("WEB_SAAS_FULL_DATABASE", "false") == "true",
     "database": "account",
     "restore_database": f"release_verify_{run_id}",
     "source_database_id": source_id,

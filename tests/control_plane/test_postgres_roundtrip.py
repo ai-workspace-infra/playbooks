@@ -8,6 +8,8 @@ import tempfile
 import time
 import unittest
 import uuid
+import hashlib
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -45,8 +47,18 @@ class PostgresRoundTrip(unittest.TestCase):
     def test_populated_and_empty_full_database_round_trip_and_tamper_refusal(self):
         self.q('postgres', 'CREATE DATABASE account')
         self.q('account', 'CREATE TABLE schema_migrations(version bigint PRIMARY KEY, dirty boolean NOT NULL); '
-            'INSERT INTO schema_migrations VALUES(2026102002,false); CREATE TABLE users(id bigserial PRIMARY KEY, fact text); '
-            "INSERT INTO users(fact) VALUES('private-fixture-marker'); CREATE TABLE subscriptions(id bigserial PRIMARY KEY, user_id bigint); "
+            'INSERT INTO schema_migrations VALUES(2026102002,false); CREATE TABLE users(id bigserial PRIMARY KEY, uuid uuid UNIQUE, fact text); '
+            'CREATE TABLE subscriptions(id bigserial PRIMARY KEY, user_id bigint); ')
+        billing_schema = os.environ.get('CONTROL_PLANE_BILLING_SCHEMA')
+        if billing_schema:
+            from test_owner import native_runtime, native
+            sql = Path(billing_schema).read_text()
+            digest = hashlib.sha256(sql.encode()).hexdigest()
+            contract = {'release': {'billing': {'source_sha': 'a' * 40}, 'accounts': {'billing_schema_sha256': digest}}}
+            artifact = {'source_sha': 'a' * 40, 'schema_sha256': digest, 'sql': sql}
+            with mock.patch.object(native, 'sql', side_effect=lambda statement, database: self.q(database, statement)):
+                self.assertEqual(native_runtime.apply_fresh_billing(contract, artifact), digest)
+        self.q('account', "INSERT INTO users(fact) VALUES('private-fixture-marker'); "
             'INSERT INTO subscriptions(user_id) VALUES(1); CREATE SCHEMA extra_domain; '
             "CREATE FUNCTION extra_domain.marker() RETURNS text LANGUAGE sql AS $$SELECT 'fixture'::text$$;")
         with tempfile.TemporaryDirectory(prefix='control-plane-pg-') as temporary:

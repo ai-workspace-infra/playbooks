@@ -1,5 +1,12 @@
 # Web SaaS isolated restore verification
 
+Explicit full-database restores retain object owners/ACLs/default grants and
+compare the ownership/ACL-inclusive schema fingerprint, not just table shapes.
+All referenced roles must already exist; no ad-hoc post-restore grant repair or
+role-password substitution. The isolated Accounts API fixture additionally
+verifies real account_user TCP SELECT/INSERT rollback transactions before proof
+or apply. Global role/credential provisioning remains separate.
+
 Independently decrypts the immutable `/data` archive into the unique
 `release_verify_<run-id>` database on the same PostgreSQL instance. It refuses
 an existing database of that name, rechecks source database identity metadata,

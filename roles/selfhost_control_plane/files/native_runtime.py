@@ -25,7 +25,8 @@ def schema_fingerprint():
 def binding(contract):
     return {'target': contract['target']['host'], 'resource_id': contract['resolved']['resource_id'],
             'environment': contract['environment'], 'services': contract['release']['services'],
-            'accounts': contract['release']['accounts'], 'storage': contract['resolved']['data_disk']}
+            'accounts': contract['release']['accounts'], 'billing': contract['release'].get('billing'),
+            'storage': contract['resolved']['data_disk']}
 
 
 def verify_storage(storage):
@@ -79,6 +80,8 @@ def save(state, record):
 
 def verify_initialized(contract, record):
     native.require(record.get('initialized') is True, 'Native initialization receipt is absent')
+    native.require(record.get('billing_schema_sha256') == contract['release']['accounts']['billing_schema_sha256'],
+                   'Existing target lacks the reviewed Billing DDL receipt; explicit backup/schema upgrade required')
     checkpoint = native.sql('SELECT version::text||\':\'||dirty::text FROM public.schema_migrations', 'account')
     native.require(checkpoint == str(contract['release']['accounts']['migration_version']) + ':false',
                    'Native checkpoint changed or is dirty')
@@ -87,6 +90,32 @@ def verify_initialized(contract, record):
     native.require(record['database_identity'] == identity and record['schema_fingerprint'] == schema_fingerprint(),
                    'Initialized database identity or schema changed')
     return identity
+
+
+def apply_fresh_billing(contract, artifact):
+    """Only the fixed, reviewed Billing-owned bootstrap DDL; no domain SQL copy."""
+    native.require(isinstance(artifact, dict) and artifact.get('source_sha') == contract['release']['billing']['source_sha']
+                   and artifact.get('schema_sha256') == contract['release']['accounts']['billing_schema_sha256']
+                   and hashlib.sha256(artifact.get('sql', '').encode()).hexdigest() == artifact['schema_sha256'],
+                   'Billing artifact differs from the immutable source/schema pins')
+    # Bootstrap permits only additive table/index DDL. Never execute a seed,
+    # overwrite, session command or psql metacommand from an arbitrary artifact.
+    sql = re.sub(r'--[^\n]*', '', artifact['sql'])
+    statements = [part.strip() for part in sql.split(';') if part.strip()]
+    native.require(statements and all(re.match(r'^CREATE (?:TABLE IF NOT EXISTS public\.[a-z_][a-z0-9_]*\s*\(|(?:UNIQUE )?INDEX IF NOT EXISTS [a-z_][a-z0-9_]*\s+ON public\.[a-z_][a-z0-9_]*\s*\()', part,
+                   re.IGNORECASE) and '\\' not in part and not re.search(r'\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|COPY|DO|EXECUTE|SELECT)\b',
+                   re.sub(r'ON DELETE CASCADE', '', part, flags=re.IGNORECASE), re.IGNORECASE) for part in statements),
+                   'Billing bootstrap must contain only reviewed additive table/index DDL, no seeds')
+    tables = json.loads(native.sql("SELECT coalesce(json_agg(tablename),'[]') FROM pg_tables WHERE schemaname='public' AND tablename<>'schema_migrations'", 'account'))
+    native.require(all(re.fullmatch('[a-z_][a-z0-9_]*', name) for name in tables), 'Unexpected table identifiers')
+    empty = 'SELECT ' + ' + '.join('(SELECT count(*) FROM public."' + name + '")' for name in tables)
+    native.require(tables and native.sql(empty, 'account') == '0', 'Billing bootstrap refuses nonempty targets')
+    native.sql('BEGIN; SET LOCAL lock_timeout=\'15s\'; SET LOCAL statement_timeout=\'5min\';\n' +
+               artifact['sql'] + '\nCOMMIT;', 'account')
+    expected = re.findall(r'CREATE TABLE IF NOT EXISTS public\.([a-z_][a-z0-9_]*)', sql, re.IGNORECASE)
+    native.require(expected and all(native.sql("SELECT to_regclass('public." + name + "') IS NOT NULL", 'account') == 't'
+                                   for name in expected), 'Billing table verification failed')
+    return artifact['schema_sha256']
 
 
 def execute(request):
@@ -170,12 +199,13 @@ def execute(request):
         native.require(receipt.get('result') == 'initialized' and receipt.get('business_rows') == 0
                        and receipt.get('schema_sha256') == spec['schema_sha256']
                        and receipt.get('database_cutover_approved') is False, 'Native initialization receipt differs')
+        billing_hash = apply_fresh_billing(contract, request.get('billing'))
         # Reuse the existing domain permission owner; never duplicate grants or rotate passwords.
         if native.sql("SELECT count(*) FROM pg_roles WHERE rolname='account_user'") == '1':
             business.authenticate(request['business_password'])
         business.pg(business.permissions_sql(request['business_password']))
         business.authenticate(request['business_password'])
-        record.update(initialized=True, schema_fingerprint=schema_fingerprint(),
+        record.update(initialized=True, billing_schema_sha256=billing_hash, schema_fingerprint=schema_fingerprint(),
                       database_identity=native.sql('SELECT system_identifier::text FROM pg_control_system()') + ':' +
                       native.sql("SELECT oid::text FROM pg_database WHERE datname='account'"))
         save(state, record)

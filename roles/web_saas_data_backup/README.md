@@ -1,5 +1,11 @@
 # Web SaaS encrypted data backup
 
+The explicit full-database path preserves object ownership, ACLs and default
+grants in both the custom archive and schema fingerprint. Its evidence reports
+`privileges_preserved: true`; the API gate refuses older stripped-ACL proofs.
+Global login-role credentials remain outside the archive and under their Vault
+owner. Legacy public-only defaults retain their existing behavior.
+
 Creates one immutable encrypted custom-format archive beneath
 `/data/backups/web-saas/<environment>/<release-tag>/<run-id>/`. The separate
 `web_saas_data_restore_verify` role restores it into `release_verify_<run-id>`.

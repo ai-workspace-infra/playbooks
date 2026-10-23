@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / 'scripts/control_plane'))
 import entrypoint as owner
 import migration
 import runtime
+import listener
 
 
 def imported(name, path):
@@ -229,10 +230,31 @@ class RepositoryFixture(unittest.TestCase):
             with self.assertRaises((owner.Refused, OSError)):
                 self.load()
 
+    def test_public_database_application_and_telemetry_ports_are_rejected_before_actions(self):
+        for service in ('postgres', 'accounts', 'billing', 'content', 'console', 'telemetry'):
+            for ports in (['5432:5432'], ['0.0.0.0:8080:8080'], ['[::]:8080:8080'],
+                          [{'target': 5432, 'published': 5432}], [{'target': 8080, 'published': 8080, 'host_ip': '0.0.0.0'}]):
+                with self.assertRaises(owner.Refused):
+                    owner.validate_ports(service, ports, {})
+            owner.validate_ports(service, ['127.0.0.1:5432:5432', '[::1]:8080:8080'], {})
+            owner.validate_ports(service, [{'target': 8080, 'published': 8080, 'host_ip': '::1'}], {})
+        owner.validate_ports('caddy', ['80:80', '443:443'], {})
+        path = self.gitops / 'compose/application.yml'
+        compose = owner.read_yaml(path)
+        for service, port in (('postgres', '5432:5432'), ('accounts', '8080:8080')):
+            value = copy.deepcopy(compose)
+            value['services'][service]['ports'] = [port]
+            self.write(path, value)
+            self.changed()
+            with mock.patch.object(owner, 'run_owner') as execute:
+                with self.assertRaises(owner.Refused):
+                    self.load()
+                execute.assert_not_called()
+
     def test_runner_calls_only_exact_cmdb_inventory_target_and_stops_on_failure(self):
         contract, refs = self.load()
         receipt = 'CONTROL_PLANE_EVIDENCE=' + json.dumps({'status': 'candidate_runtime_ready', 'business_acceptance': False})
-        with mock.patch.object(owner.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout=receipt)) as execute:
+        with mock.patch.object(owner, 'billing_artifact', return_value={}), mock.patch.object(owner.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout=receipt)) as execute:
             output = owner.run_owner(self.owner, contract, refs)
         self.assertTrue(output['host_actions'])
         self.assertEqual(len(execute.call_args_list), 4)
@@ -241,14 +263,14 @@ class RepositoryFixture(unittest.TestCase):
             self.assertIn(contract['target']['host'], call.args[0])
             self.assertNotIn('secrets', call.kwargs.get('input') or '')
             self.assertEqual(call.kwargs['env']['ANSIBLE_CONFIG'], str(self.owner / 'scripts/control_plane/ansible.cfg'))
-        with mock.patch.object(owner.subprocess, 'run', return_value=mock.Mock(returncode=1)) as execute:
+        with mock.patch.object(owner, 'billing_artifact', return_value={}), mock.patch.object(owner.subprocess, 'run', return_value=mock.Mock(returncode=1)) as execute:
             with self.assertRaises(owner.Refused):
                 owner.run_owner(self.owner, contract, refs)
             self.assertEqual(execute.call_count, 1)
 
     def test_success_without_actual_readiness_receipt_is_refused(self):
         contract, refs = self.load()
-        with mock.patch.object(owner.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout='no hosts matched')):
+        with mock.patch.object(owner, 'billing_artifact', return_value={}), mock.patch.object(owner.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout='no hosts matched')):
             with self.assertRaisesRegex(owner.Refused, 'readiness'):
                 owner.run_owner(self.owner, contract, refs)
 
@@ -355,6 +377,45 @@ class ReadinessTests(unittest.TestCase):
 
 
 class NativeRoleTests(unittest.TestCase):
+    def test_fresh_billing_owner_checks_bytes_empty_state_and_no_seeds(self):
+        sql = 'CREATE TABLE IF NOT EXISTS public.billing_fact (id bigint PRIMARY KEY);'
+        digest = hashlib.sha256(sql.encode()).hexdigest()
+        contract = {'release': {'billing': {'source_sha': 'a' * 40}, 'accounts': {'billing_schema_sha256': digest}}}
+        artifact = {'source_sha': 'a' * 40, 'schema_sha256': digest, 'sql': sql}
+        def query(statement, database):
+            if statement.startswith('SELECT coalesce'):
+                return '["users"]'
+            if statement.startswith('SELECT (SELECT count'):
+                return '0'
+            if statement.startswith('SELECT to_regclass'):
+                return 't'
+            self.assertTrue(statement.startswith('BEGIN;'))
+            return ''
+        with mock.patch.object(native, 'sql', side_effect=query):
+            self.assertEqual(native_runtime.apply_fresh_billing(contract, artifact), digest)
+        with mock.patch.object(native, 'sql', side_effect=['["users"]', '1']) as execute:
+            with self.assertRaises(native.Refused):
+                native_runtime.apply_fresh_billing(contract, artifact)
+            self.assertEqual(execute.call_count, 2)
+        for bad in ({**artifact, 'sql': sql + 'INSERT INTO public.users VALUES(1);'}, {**artifact, 'source_sha': 'b' * 40}):
+            with mock.patch.object(native, 'sql') as execute:
+                with self.assertRaises(native.Refused):
+                    native_runtime.apply_fresh_billing(contract, bad)
+                execute.assert_not_called()
+
+    def test_listener_arguments_never_enable_apply_or_receipt_ddl_implicitly(self):
+        cfg = {'target_audience': 'target-migration', 'source_audience': 'source-migration',
+               'job_id': str(uuid.uuid4()), 'allowed_peer_cidrs': ['192.0.2.0/24'],
+               'source_url': 'https://source.example.invalid', 'apply_enabled': False, 'initialize_receipts': False}
+        args = listener.arguments(cfg)
+        self.assertEqual(args[:3], ['serve', '--role', 'target'])
+        self.assertNotIn('--initialize-receipts', args)
+        self.assertNotIn('--backup-receipt-file', args)
+        cfg.update(apply_enabled=True, initialize_receipts=True, receipt_file='/run/target-gate/receipt.json', receipt_owner_role='migration_owner')
+        args = listener.arguments(cfg)
+        self.assertIn('--initialize-receipts', args)
+        self.assertEqual(args[args.index('--backup-receipt-file') + 1], cfg['receipt_file'])
+
     def test_postgres_final_probe_rejects_temporary_server_before_readiness(self):
         probe = (ROOT / 'roles/selfhost_control_plane/files/postgres_final_ready.sh').read_text()
         with tempfile.TemporaryDirectory() as directory:
@@ -471,7 +532,7 @@ class NativeRoleTests(unittest.TestCase):
         for path in [ROOT / 'roles/selfhost_control_plane/tasks/main.yml', ROOT / 'roles/selfhost_core_data_backup/tasks/main.yml',
                      ROOT / 'roles/selfhost_core_data_migration/tasks/main.yml', ROOT / 'roles/vhosts/Doco-CD/tasks/main.yml']:
             self.assertIsInstance(yaml.safe_load(path.read_text()), list)
-        for entry in ('selfhost-control-plane.yml', 'selfhost-core-data-backup.yml', 'selfhost-core-data-migration.yml'):
+        for entry in ('selfhost-control-plane.yml', 'selfhost-core-data-backup.yml', 'selfhost-core-data-migration.yml', 'selfhost-migration-listener.yml'):
             result = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(ROOT / entry), '--syntax-check', '-e',
                 '{"control_plane_contract":{"target":{"host":"localhost"}},"selfhost_core_data_backup_target":"localhost"}'],
                 cwd=ROOT, env={**os.environ, 'ANSIBLE_CONFIG': str(ROOT / 'scripts/control_plane/ansible.cfg'),
@@ -542,7 +603,7 @@ class MigrationTests(unittest.TestCase):
         archive.chmod(0o600)
         cluster, oid = '123456789', '16384'
         self.plan['target_identity_sha256'] = adapter.hashed([cluster, oid])
-        backup = {'status': 'passed', 'encrypted': True, 'durable': True, 'full_database': True,
+        backup = {'status': 'passed', 'encrypted': True, 'durable': True, 'full_database': True, 'privileges_preserved': True,
             'environment': 'uat', 'source_database_id': self.plan['target_identity_sha256'],
             'baseline_id': self.plan['target_baseline_sha256'], 'schema_version': 2026102002, 'migration_rows': 1,
             'migration_dirty': 'false', 'schema_sha256': 'a' * 64, 'data_sha256': 'b' * 64,
@@ -594,7 +655,8 @@ class MigrationTests(unittest.TestCase):
         _, request = self.recovery()
         for mutate in (lambda r: r['restore'].update(restored_data_matches=False),
                        lambda r: r['fresh_plan'].update(target_baseline_sha256='0' * 64),
-                       lambda r: r['backup'].update(full_database=False)):
+                       lambda r: r['backup'].update(full_database=False),
+                       lambda r: r['restore'].update(privileges_preserved=False)):
             value = copy.deepcopy(request)
             mutate(value)
             with self.assertRaises(ValueError):

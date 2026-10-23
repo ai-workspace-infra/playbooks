@@ -110,7 +110,9 @@ IFS=',' read -r migration_state user_count subscription_count <<<"$source_state"
 phase='fingerprint_source'
 schema_args=(--schema=public)
 [[ "${WEB_SAAS_FULL_DATABASE:-false}" != true ]] || schema_args=()
-source_schema="$(docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" --snapshot="$snapshot_id" --schema-only "${schema_args[@]}" --no-owner --no-privileges | sed '/^\\restrict /d; /^\\unrestrict /d' | sha256sum | awk '{print $1}')" || fail 'could not fingerprint source schema'
+ownership_args=(--no-owner --no-privileges)
+[[ "${WEB_SAAS_FULL_DATABASE:-false}" != true ]] || ownership_args=()
+source_schema="$(docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" --snapshot="$snapshot_id" --schema-only "${schema_args[@]}" "${ownership_args[@]}" | sed '/^\\restrict /d; /^\\unrestrict /d' | sha256sum | awk '{print $1}')" || fail 'could not fingerprint source schema'
 [[ "$source_schema" =~ ^[0-9a-f]{64}$ ]] || fail 'source schema fingerprint is invalid'
 source_data="$(data_fingerprint "$WEB_SAAS_DATABASE")" || fail 'could not fingerprint source rows and sequences'
 [[ "$source_data" =~ ^[0-9a-f]{64}$ ]] || fail 'source data fingerprint is invalid'
@@ -120,7 +122,7 @@ database_system_identifier="$(psql_value "$WEB_SAAS_DATABASE" 'SELECT system_ide
 phase='create_encrypted_archive'
 pending="$(mktemp "$WEB_SAAS_BACKUP_ROOT/.account.dump.enc.pending.XXXXXX")"
 chmod 0600 "$pending"
-docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" --snapshot="$snapshot_id" -Fc "${schema_args[@]}" --no-owner --no-privileges \
+docker exec "$WEB_SAAS_POSTGRES_CONTAINER" pg_dump -U postgres -d "$WEB_SAAS_DATABASE" --snapshot="$snapshot_id" -Fc "${schema_args[@]}" "${ownership_args[@]}" \
   | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -pass env:WEB_SAAS_BACKUP_PASSPHRASE >"$pending"
 [[ -s "$pending" ]] || fail 'encrypted archive is empty'
 mv -n -- "$pending" "$archive"
@@ -177,5 +179,6 @@ print(json.dumps({
     "g3_reason_code": None if int(subscriptions) > 0 else "NONEMPTY_SUBSCRIPTION_SAMPLE_REQUIRED",
     "business_acceptance": False,
     "full_database": os.environ.get("WEB_SAAS_FULL_DATABASE", "false") == "true",
+    "privileges_preserved": os.environ.get("WEB_SAAS_FULL_DATABASE", "false") == "true",
 }, sort_keys=True))
 PY
