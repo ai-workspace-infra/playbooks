@@ -157,3 +157,9 @@ HTTP 服务上提供 Bearer 保护的 `/v1/snapshots/*`。Prometheus 的 `/scrap
 目录而不是失败。
 
 所以这些检查必须在写任何文件之前跑,并且必须让 play 失败。
+
+控制平面从固定 stunnel-server 镜像读取实际 UID/GID，显式传入
+`web_saas_host_config_stunnel_key_group` 和 `web_saas_host_config_stunnel_key_mode`。
+非 root 镜像使用 root:<镜像 GID> 0640；既有调用默认仍为 root:root 0600。
+证书目录保持 0700，Compose 单文件只读挂载，私钥不开放给其他用户。
+候选与公共域名相同时，Caddy host matcher 去重后渲染。

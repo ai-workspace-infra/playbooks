@@ -200,17 +200,23 @@
       https://{{ web_saas_host_config_bridge_domain }}. Do not route UAT
       profile sync to a source-zone or separately unmanaged Bridge.
 
+- name: Validate private stunnel key reader permissions
+  ansible.builtin.assert:
+    that:
+      - web_saas_host_config_stunnel_key_mode in ['0600', '0640']
+      - web_saas_host_config_stunnel_key_group | string | length > 0
+
 - name: Write stunnel TLS material
   ansible.builtin.copy:
     content: "{{ item.value | b64decode }}"
     dest: "{{ web_saas_host_config_certs_dir }}/{{ item.name }}"
     owner: root
-    group: root
+    group: '{{ web_saas_host_config_stunnel_key_group if item.name == "server-key.pem" else "root" }}'
     mode: "{{ item.mode }}"
   loop:
     - {name: ca-cert.pem, value: "{{ web_saas_host_config_ca_cert_b64 }}", mode: "0644"}
     - {name: server-cert.pem, value: "{{ web_saas_host_config_server_cert_b64 }}", mode: "0644"}
-    - {name: server-key.pem, value: "{{ web_saas_host_config_server_key_b64 }}", mode: "0600"}
+    - {name: server-key.pem, value: "{{ web_saas_host_config_server_key_b64 }}", mode: '{{ web_saas_host_config_stunnel_key_mode }}'}
   loop_control:
     label: "{{ item.name }}"
   no_log: true

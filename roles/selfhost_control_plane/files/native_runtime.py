@@ -118,10 +118,21 @@ def apply_fresh_billing(contract, artifact):
     return artifact['schema_sha256']
 
 
+def stunnel_reader(contract, credentials):
+    image = contract['resolved']['selections'][1]['images']['stunnel-server']
+    native.require(re.fullmatch(r'[a-z0-9./:_-]+@sha256:[0-9a-f]{64}', image), 'Pinned stunnel reader image required')
+    with native.registry_session(credentials) as env:
+        native.command(['docker', 'pull', image], env=env)
+        values = [native.command(['docker', 'run', '--rm', '--network', 'none', '--entrypoint', 'id', image, flag], env=env)
+                  for flag in ('-u', '-g')]
+    native.require(all(re.fullmatch(r'(0|[1-9][0-9]*)', value) for value in values), 'Invalid stunnel reader identity')
+    return {'uid': int(values[0]), 'gid': int(values[1])}
+
+
 def execute(request):
     contract = request['contract']
     action = request['action']
-    native.require(action in ('preflight', 'claim', 'storage', 'initialize', 'verify'), 'Unknown native stage')
+    native.require(action in ('preflight', 'claim', 'stunnel_reader', 'storage', 'initialize', 'verify'), 'Unknown native stage')
     data = Path(contract['resolved']['data_disk']['data_path'])
     state = data.parent / 'control-plane-owner.json'
     record = inspect(contract, state)
@@ -145,6 +156,8 @@ def execute(request):
         native.require(state.exists(), 'Target must be claimed before preparation')
         credentials = request['credentials']
         native.validate_credentials(credentials)
+        if action == 'stunnel_reader':
+            return stunnel_reader(contract, credentials)
         if action == 'storage':
             image = contract['release']['services']['postgresql']
             with native.registry_session(credentials) as env:

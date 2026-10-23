@@ -629,6 +629,23 @@ class NativeRoleTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(marker.read_text().splitlines(), ['ready', 'sql'])
 
+    def test_stunnel_reader_uses_pinned_image_identity_and_rejects_invalid_ids(self):
+        image = 'ghcr.io/example/stunnel@sha256:' + 'a' * 64
+        contract = {'resolved': {'selections': [{}, {'images': {'stunnel-server': image}}]}}
+        with mock.patch.object(native_runtime.native, 'registry_session') as registry, mock.patch.object(native_runtime.native, 'command') as command:
+            registry.return_value.__enter__.return_value = {}
+            command.side_effect = ['', '100', '101']
+            self.assertEqual(native_runtime.stunnel_reader(contract, {}), {'uid': 100, 'gid': 101})
+            self.assertEqual(command.call_args_list[1].args[0], ['docker', 'run', '--rm', '--network', 'none', '--entrypoint', 'id', image, '-u'])
+            command.side_effect = ['', '100', '-1']
+            with self.assertRaises(Exception):
+                native_runtime.stunnel_reader(contract, {})
+            contract['resolved']['selections'][1]['images']['stunnel-server'] = 'example:latest'
+            command.reset_mock()
+            with self.assertRaises(Exception):
+                native_runtime.stunnel_reader(contract, {})
+            command.assert_not_called()
+
     def test_native_caddy_template_uses_declared_aliases_and_readonly_candidate_route(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -660,6 +677,10 @@ class NativeRoleTests(unittest.TestCase):
             self.assertIn('respond "candidate ingress is read-only" 403', content)
             self.assertNotIn('@billing_agent', content)
             self.assertNotIn('dns cloudflare', content)
+            for line in content.splitlines():
+                if ' host ' in line:
+                    hosts = line.split(' host ', 1)[1].split()
+                    self.assertEqual(len(hosts), len(set(hosts)), line)
             if os.environ.get('CONTROL_PLANE_CADDY_FIXTURE') == '1':
                 migration_routes = root / 'migration-api'
                 migration_routes.mkdir(mode=0o700)
@@ -669,6 +690,17 @@ class NativeRoleTests(unittest.TestCase):
                     '--entrypoint', 'caddy', os.environ['CONTROL_PLANE_CADDY_IMAGE'], 'adapt', '--config', '/dev/stdin',
                     '--adapter', 'caddyfile'], input=content, capture_output=True, text=True, timeout=30)
                 self.assertEqual(adapted.returncode, 0, adapted.stderr)
+                # Provision the adapted config too: adaptation alone accepts duplicate hosts.
+                adapted_json = json.loads(adapted.stdout)
+                for server in adapted_json['apps']['http']['servers'].values():
+                    server['listen'] = [':8080']
+                    server.pop('tls_connection_policies', None)
+                    server['automatic_https'] = {'disable': True}
+                adapted_json['apps'].pop('tls', None)
+                validated = subprocess.run(['docker', 'run', '--rm', '-i', '--network', 'none',
+                    '--entrypoint', 'caddy', os.environ['CONTROL_PLANE_CADDY_IMAGE'], 'validate', '--config', '/dev/stdin'],
+                    input=json.dumps(adapted_json), capture_output=True, text=True, timeout=30)
+                self.assertEqual(validated.returncode, 0, validated.stderr)
 
     def test_real_ansible_selection_rerun_has_zero_changes_and_no_extra_restart(self):
         with tempfile.TemporaryDirectory() as directory:
