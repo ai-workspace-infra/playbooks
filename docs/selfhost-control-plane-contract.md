@@ -51,6 +51,7 @@ target:
   domain_base: example.invalid
   console_domain: console-selfhost-uat-next.example.invalid
   accounts_domain: accounts-selfhost-uat-next.example.invalid
+  billing_domain: billing-selfhost-uat-next.example.invalid # optional; candidate HTTPS GET /readyz only
 release:
   snapshot_tag: uat-daily-build-YYYY.MM.DD-rN
   services:                     # exactly these five immutable image references
@@ -161,13 +162,23 @@ three AUTH token fields may reference their same-named fields in the established
 `kv/CICD#GHCR_USERNAME` and `kv/CICD#GHCR_TOKEN`. These are exact field/path
 exceptions, not a general cross-environment allowance. Never copy these values
 into policy, GitOps, or files. Ansible resolves
-references only at execution in a delegated `no_log` task using an already-issued
-short-lived OIDC/Vault identity. Results remain in non-cacheable task memory;
+references only at execution in a delegated `no_log` task using the operator's
+already-authorized runtime Vault credential supplied through the environment.
+This may be the current manual Vault CLI credential; OIDC is not a deployment
+prerequisite. Results remain in non-cacheable task memory;
 no controller credential files are created. `--check` never authenticates to
 Vault. Native configuration is rendered only on the target, with its existing
 permission controls. Candidate mode forces managed schema and disabled background
 writers, root bootstrap, SMTP, OAuth and Stripe. The existing business permission
 owner supplies `account_user` grants and never rotates its canonical password.
+
+`target.billing_domain` is optional and must be a distinct literal hostname under
+`target.domain_base`. When declared, candidate Caddy serves only Billing `GET
+/readyz` on that HTTPS/SNI host so the installer can verify the endpoint and
+certificate. The global candidate `POST`/`PUT`/`PATCH`/`DELETE` 403 remains in
+force; this does not enable Console login, checkout, callbacks, ingestion, or
+business acceptance. Do not infer public login or full business readiness from
+the transport/readiness probe.
 
 Initialization requires `execution.initialize: true`, an absent or empty account
 database, no application writers/reconciler and a matching compiled native schema

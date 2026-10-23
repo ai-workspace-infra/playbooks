@@ -228,9 +228,15 @@ def load_contract(config, gitops, owner, sha):
             "Only candidate mode with explicit initialize eligibility is supported")
     checkout(owner, execution["playbooks_sha"])
     target, release = contract["target"], contract["release"]
-    fields(target, ["host", "generation", "domain_base", "console_domain", "accounts_domain"])
+    fields(target, ["host", "generation", "domain_base", "console_domain", "accounts_domain"], ['billing_domain'])
     require(all(matches(NAME, target[k]) for k in ("host", "generation", "domain_base", "console_domain", "accounts_domain")),
             "Target metadata must use literal names, never inventory patterns")
+    if 'billing_domain' in target:
+        billing_domain = target['billing_domain']
+        hostname = r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+        require(matches(hostname, billing_domain) and billing_domain.endswith('.' + target['domain_base'])
+                and billing_domain not in (target['console_domain'], target['accounts_domain']),
+                "Billing host must be a distinct literal hostname under the declared domain base")
     fields(release, ["snapshot_tag", "services", "accounts", "doco_cd"], ['billing'])
     if 'billing' in release:
         fields(release['billing'], ['source_sha', 'schema_file'])

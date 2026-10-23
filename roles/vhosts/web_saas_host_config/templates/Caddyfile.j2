@@ -19,7 +19,7 @@
 }
 
 {% if (web_saas_host_config_use_restored_tls | default(false) | bool) or (web_saas_host_config_acme_dns_enabled | bool) %}
-{{ ([web_saas_host_config_console_domain, web_saas_host_config_accounts_domain] | unique | join(', ')) if web_saas_host_config_candidate_mode | bool else web_saas_host_config_wildcard_domain }} {
+{{ ([web_saas_host_config_console_domain, web_saas_host_config_accounts_domain] + ([web_saas_host_config_billing_domain] if web_saas_host_config_candidate_mode | bool and web_saas_host_config_billing_domain | trim | length > 0 else [])) | unique | join(', ') if web_saas_host_config_candidate_mode | bool else web_saas_host_config_wildcard_domain }} {
 {% if web_saas_host_config_use_restored_tls | default(false) | bool %}
 	{# 从 Vault 恢复下来的泛域名证书就在磁盘上, 直接指过去 —— 这条路完全不碰
 	   ACME, 所以重建多少次都不消耗 Let's Encrypt 的签发额度。这才是"有效期内
@@ -44,6 +44,20 @@
 	handle @candidate_writes {
 		respond "candidate ingress is read-only" 403
 	}
+{% if web_saas_host_config_billing_domain | trim | length > 0 %}
+	{# Candidate Billing is intentionally limited to its safe readiness GET.
+	   This does not enable checkout, ingest, callbacks, or other business writes. #}
+	@candidate_billing_ready {
+		host {{ web_saas_host_config_billing_domain }}
+		method GET
+		path /readyz
+	}
+	handle @candidate_billing_ready {
+		reverse_proxy billing:8081 {
+			header_up X-Forwarded-Host {host}
+		}
+	}
+{% endif %}
 {% endif %}
 
 	{# console 域下的 /api/auth/* 必须留给 console 自己 —— 它不是 accounts 的
