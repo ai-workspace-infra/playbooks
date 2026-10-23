@@ -5,6 +5,7 @@ task_runtime="${RUNNER_TEMP}/control-plane-owner-runtime"
 python3 -m venv "$task_runtime"
 "$task_runtime/bin/python" -m pip install --disable-pip-version-check \
   ansible-core==2.18.12 PyYAML==6.0.3 jsonschema==4.26.0
+"$task_runtime/bin/ansible-galaxy" collection install -r collections/requirements-control-plane.yml
 export PATH="$task_runtime/bin:$PATH"
 export PYTHONDONTWRITEBYTECODE=1
 docker pull postgres@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232

@@ -376,6 +376,8 @@ def run_owner(owner, contract, runtime):
                             "control_plane_billing_artifact": billing})
     playbook = str(owner / "selfhost-control-plane.yml")
     commands = [
+        ("controller_dependencies", "ansible-playbook --syntax-check controller dependencies",
+         ["ansible-playbook", "-i", "localhost,", str(owner / "scripts/control_plane/ansible_dependency_preflight.yml"), "--syntax-check"], None),
         ("inventory", "ansible-inventory", ["ansible-inventory", "-i", inventory, "--host", host], None),
         ("syntax_check", "ansible-playbook --syntax-check", ["ansible-playbook", "-i", inventory, playbook, "--limit", host, "--syntax-check", "-e", "@/dev/stdin"], variables),
         ("ssh_connectivity", "ansible.builtin.ping", ["ansible", "-i", inventory, host, "-m", "ansible.builtin.ping"], None),
@@ -390,6 +392,9 @@ def run_owner(owner, contract, runtime):
                 {'stage': stage, 'exit_code': None, 'action': action}, sort_keys=True))
         if result.returncode != 0:
             failure = {'stage': stage, 'exit_code': result.returncode, 'action': action}
+            if stage == 'controller_dependencies' and result.returncode == 4:
+                failure['diagnostic'] = ('Ansible role dependency parsing or module resolution failed; '
+                                         'install collections/requirements-control-plane.yml')
             stdout = result.stdout if isinstance(result.stdout, str) else ''
             for line in stdout.splitlines():
                 if line.startswith('CONTROL_PLANE_FAILURE='):

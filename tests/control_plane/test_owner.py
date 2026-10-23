@@ -286,8 +286,9 @@ class RepositoryFixture(unittest.TestCase):
         with mock.patch.object(owner, 'billing_artifact', return_value={}), mock.patch.object(owner.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout=receipt)) as execute:
             output = owner.run_owner(self.owner, contract, refs)
         self.assertTrue(output['host_actions'])
-        self.assertEqual(len(execute.call_args_list), 4)
-        for call in execute.call_args_list:
+        self.assertEqual(len(execute.call_args_list), 5)
+        self.assertIn('ansible_dependency_preflight.yml', execute.call_args_list[0].args[0][-2])
+        for call in execute.call_args_list[1:]:
             self.assertIn(str(self.owner / 'inventory/terraform_cmdb.py'), call.args[0])
             self.assertIn(contract['target']['host'], call.args[0])
             self.assertNotIn('secrets', call.kwargs.get('input') or '')
@@ -314,7 +315,7 @@ class RepositoryFixture(unittest.TestCase):
             with mock.patch.object(owner, 'billing_artifact', return_value={}), mock.patch.object(
                     owner.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout=receipt)) as execute:
                 owner.run_owner(self.owner, contract, refs)
-        self.assertEqual(execute.call_count, 4)
+        self.assertEqual(execute.call_count, 5)
         self.assertTrue(all(call.kwargs['env']['ANSIBLE_PRIVATE_KEY_FILE'] == self.cmdb[host]['ssh_private_key_file']
                             for call in execute.call_args_list))
         self.assertTrue(all('ANSIBLE_SSH_ARGS' not in call.kwargs['env'] for call in execute.call_args_list))
@@ -328,7 +329,7 @@ class RepositoryFixture(unittest.TestCase):
         failed = mock.Mock(returncode=4, stdout=callback + '\nprivate-output-must-not-escape',
                            stderr='sensitive-host-or-secret-output')
         with mock.patch.object(owner, 'billing_artifact', return_value={}), mock.patch.object(
-                owner.subprocess, 'run', side_effect=[ok, ok, failed]) as execute:
+                owner.subprocess, 'run', side_effect=[ok, ok, ok, failed]) as execute:
             with self.assertRaises(owner.Refused) as error:
                 owner.run_owner(self.owner, contract, refs)
         message = str(error.exception)
@@ -338,8 +339,25 @@ class RepositoryFixture(unittest.TestCase):
         self.assertIn('"task_name": "Ping candidate host"', message)
         self.assertNotIn('private-output-must-not-escape', message)
         self.assertNotIn('sensitive-host-or-secret-output', message)
-        self.assertEqual(execute.call_count, 3)
+        self.assertEqual(execute.call_count, 4)
         self.assertEqual(execute.call_args.kwargs['env']['CONTROL_PLANE_STAGE'], 'ssh_connectivity')
+
+    def test_controller_dependency_parser_failure_is_sanitized_before_inventory_or_ssh(self):
+        contract, refs = self.load()
+        failed = mock.Mock(returncode=4, stdout='private-output-must-not-escape',
+                           stderr='sensitive-controller-output')
+        with mock.patch.object(owner, 'billing_artifact', return_value={}), mock.patch.object(
+                owner.subprocess, 'run', return_value=failed) as execute:
+            with self.assertRaises(owner.Refused) as error:
+                owner.run_owner(self.owner, contract, refs)
+        message = str(error.exception)
+        self.assertIn('"stage": "controller_dependencies"', message)
+        self.assertIn('"exit_code": 4', message)
+        self.assertIn('Ansible role dependency parsing or module resolution failed', message)
+        self.assertNotIn('private-output-must-not-escape', message)
+        self.assertNotIn('sensitive-controller-output', message)
+        self.assertEqual(execute.call_count, 1)
+        self.assertIn('ansible_dependency_preflight.yml', execute.call_args.args[0][-2])
 
     def test_callback_failure_contains_only_static_task_identity(self):
         task = SimpleNamespace(action='ansible.builtin.command', name='Resolve {{ private_value }}')
@@ -706,7 +724,8 @@ class NativeRoleTests(unittest.TestCase):
         for path in [ROOT / 'roles/selfhost_control_plane/tasks/main.yml', ROOT / 'roles/selfhost_core_data_backup/tasks/main.yml',
                      ROOT / 'roles/selfhost_core_data_migration/tasks/main.yml', ROOT / 'roles/vhosts/Doco-CD/tasks/main.yml']:
             self.assertIsInstance(yaml.safe_load(path.read_text()), list)
-        for entry in ('selfhost-control-plane.yml', 'selfhost-core-data-backup.yml', 'selfhost-core-data-migration.yml', 'selfhost-migration-listener.yml'):
+        for entry in ('scripts/control_plane/ansible_dependency_preflight.yml', 'selfhost-control-plane.yml',
+                      'selfhost-core-data-backup.yml', 'selfhost-core-data-migration.yml', 'selfhost-migration-listener.yml'):
             result = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(ROOT / entry), '--syntax-check', '-e',
                 '{"control_plane_contract":{"target":{"host":"localhost"}},"selfhost_core_data_backup_target":"localhost"}'],
                 cwd=ROOT, env={**os.environ, 'ANSIBLE_CONFIG': str(ROOT / 'scripts/control_plane/ansible.cfg'),
