@@ -87,6 +87,9 @@ def execute(request):
     for key, path in (('console_domain', '/'), ('accounts_domain', '/readyz')):
         sni_probe(contract['target'][key], path)
         probes.append({'service': key, 'status': 'passed', 'check': 'trusted_https_sni'})
+    if contract['target'].get('billing_domain'):
+        sni_probe(contract['target']['billing_domain'], '/readyz')
+        probes.append({'service': 'billing', 'status': 'passed', 'check': 'trusted_https_readiness_sni'})
     controller = json.loads(command(['docker', 'inspect', 'doco-cd']))[0]
     require(controller['State']['Running'] and controller['Config']['Image'] == contract['release']['doco_cd']['image'],
             'Actual Doco-CD controller image differs')

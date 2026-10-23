@@ -81,7 +81,8 @@ class RepositoryFixture(unittest.TestCase):
         self.images = {k: 'ghcr.io/example/' + k + ':RC1@sha256:' + str(i) * 64 for i, k in enumerate(owner.SERVICES, 1)}
         self.contract = {'schema_version': 1, 'kind': 'selfhost-control-plane', 'environment': 'uat',
             'target': {'host': 'arbitrary-target.example.invalid', 'generation': 'vnext', 'domain_base': 'example.invalid',
-                       'console_domain': 'console-candidate.example.invalid', 'accounts_domain': 'identity.example.invalid'},
+                       'console_domain': 'console-candidate.example.invalid', 'accounts_domain': 'identity.example.invalid',
+                       'billing_domain': 'billing-candidate.example.invalid'},
             'release': {'snapshot_tag': 'uat-daily-build-2026.10.23-r101', 'services': self.images,
                 'accounts': {'source_sha': 'a' * 40, 'schema_sha256': 'b' * 64, 'billing_schema_sha256': 'c' * 64,
                              'migration_version': 2026102002, 'business_tables': ['users']},
@@ -136,6 +137,18 @@ class RepositoryFixture(unittest.TestCase):
 
     def load(self):
         return owner.load_contract('candidate.yaml', self.gitops, self.owner, self.sha)
+
+    def test_billing_domain_is_a_distinct_hostname_under_domain_base(self):
+        self.contract['target'].pop('billing_domain')
+        self.changed()
+        self.assertNotIn('billing_domain', self.load()[0]['target'])
+        self.contract['target']['billing_domain'] = 'billing-candidate.example.invalid'
+        self.changed()
+        self.assertEqual(self.load()[0]['target']['billing_domain'], 'billing-candidate.example.invalid')
+        self.contract['target']['billing_domain'] = 'billing-candidate.other.invalid'
+        self.changed()
+        with self.assertRaises(owner.Refused):
+            self.load()
 
     def test_plan_is_readonly_without_gitops_snapshot_tag_or_vault_identity(self):
         before = sorted(str(p.relative_to(self.owner)) for p in self.owner.rglob('*'))
@@ -369,6 +382,41 @@ class RuntimeTests(unittest.TestCase):
 
 
 class ReadinessTests(unittest.TestCase):
+    def test_declared_billing_hostname_gets_https_readiness_probe_without_business_acceptance(self):
+        images = {key: 'ghcr.io/example/' + key + '@sha256:' + str(index) * 64
+                  for index, key in enumerate(owner.SERVICES, 1)}
+        controller_image = 'ghcr.io/example/doco@sha256:' + 'f' * 64
+        contract = {'target': {'console_domain': 'console.example.invalid', 'accounts_domain': 'accounts.example.invalid',
+                    'billing_domain': 'billing.example.invalid'},
+            'release': {'services': images, 'doco_cd': {'image': controller_image, 'target': 'candidate',
+                'repository': 'https://github.com/ai-workspace-infra/gitops.git'}},
+            'resolved': {'gitops_sha': 'a' * 40}}
+        def inspect(argv):
+            name = argv[2]
+            if name == 'doco-cd':
+                image, env = controller_image, ['POLL_CONFIG=' + json.dumps([{'reference': 'a' * 40,
+                    'target': 'candidate', 'url': 'https://github.com/ai-workspace-infra/gitops.git'}])]
+            else:
+                service = name.removeprefix('web-saas-')
+                image = images[{'accounts': 'accounts', 'billing': 'billing-service', 'content': 'content-service',
+                    'console': 'portal'}[service]]
+                env = ['INTERNAL_SERVICE_TOKEN=fixture-shared-token']
+                if service in ('accounts', 'billing'):
+                    env += ['DATABASE_BACKGROUND_WRITERS=false', 'DATABASE_RUNTIME_ROLE=primary']
+            return json.dumps([{'State': {'Running': True}, 'Config': {'Image': image, 'Env': env},
+                'NetworkSettings': {'Networks': {'candidate': {'IPAddress': '172.18.0.2'}}}}])
+        def command(argv):
+            if argv[:2] == ['docker', 'inspect']:
+                return inspect(argv)
+            return ''
+        with mock.patch.object(readiness, 'command', side_effect=command), \
+             mock.patch.object(readiness, 'http_probe'), \
+             mock.patch.object(readiness, 'sni_probe') as probe:
+            result = readiness.execute({'contract': contract, 'shared_token': 'fixture-shared-token'})
+        probe.assert_any_call('billing.example.invalid', '/readyz')
+        self.assertFalse(result['business_acceptance'])
+        self.assertFalse(result['cutover'])
+
     def test_trusted_sni_probe_never_disables_tls_or_follows_redirects(self):
         with mock.patch.object(readiness.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout='200')) as execute:
             readiness.sni_probe('candidate.example.invalid', '/readyz')
@@ -483,15 +531,31 @@ class NativeRoleTests(unittest.TestCase):
                 'web_saas_host_config_console_public_domain': 'arbitrary-ui.example.invalid',
                 'web_saas_host_config_accounts_domain': 'identity.example.invalid',
                 'web_saas_host_config_accounts_public_domain': 'identity.example.invalid',
-                'web_saas_host_config_deploy_env': 'sit', 'web_saas_host_config_billing_domain': '',
+                'web_saas_host_config_deploy_env': 'sit', 'web_saas_host_config_billing_domain': 'billing-candidate.example.invalid',
+                'web_saas_host_config_billing_allowed_cidrs': '',
                 'web_saas_host_config_brand_domain': '', 'web_saas_host_config_brand_selfhost_domain': ''}
             result = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(fixture), '-e', json.dumps(variables)],
                 env={**os.environ, 'ANSIBLE_CONFIG': str(ROOT / 'scripts/control_plane/ansible.cfg')}, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             content = destination.read_text()
-            self.assertIn('arbitrary-ui.example.invalid, identity.example.invalid {', content)
+            self.assertIn('arbitrary-ui.example.invalid, identity.example.invalid, billing-candidate.example.invalid {', content)
             self.assertIn('candidate ingress is read-only', content)
+            self.assertIn('method GET', content)
+            self.assertIn('path /readyz', content)
+            self.assertIn('reverse_proxy billing:8081', content)
+            self.assertIn('@candidate_writes method POST PUT PATCH DELETE', content)
+            self.assertIn('respond "candidate ingress is read-only" 403', content)
+            self.assertNotIn('@billing_agent', content)
             self.assertNotIn('dns cloudflare', content)
+            if os.environ.get('CONTROL_PLANE_CADDY_FIXTURE') == '1':
+                migration_routes = root / 'migration-api'
+                migration_routes.mkdir(mode=0o700)
+                (migration_routes / 'fixture.caddy').write_text('respond 401\n')
+                adapted = subprocess.run(['docker', 'run', '--rm', '-i', '--network', 'none',
+                    '--mount', 'type=bind,source=' + str(migration_routes) + ',target=/etc/caddy/migration-api,readonly',
+                    '--entrypoint', 'caddy', os.environ['CONTROL_PLANE_CADDY_IMAGE'], 'adapt', '--config', '/dev/stdin',
+                    '--adapter', 'caddyfile'], input=content, capture_output=True, text=True, timeout=30)
+                self.assertEqual(adapted.returncode, 0, adapted.stderr)
 
     def test_real_ansible_selection_rerun_has_zero_changes_and_no_extra_restart(self):
         with tempfile.TemporaryDirectory() as directory:
