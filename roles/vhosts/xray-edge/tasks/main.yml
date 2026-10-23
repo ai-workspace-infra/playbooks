@@ -1,0 +1,164 @@
+---
+- name: Validate required XHTTP Edge relay inputs
+  ansible.builtin.assert:
+    that:
+      - xray_edge_domain | length > 0
+      - xray_edge_domain is match('^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$')
+      - xray_edge_upstream_address | length > 0
+      - xray_edge_upstream_address is match('^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$')
+      - xray_edge_upstream_host | length > 0
+      - xray_edge_upstream_host is match('^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$')
+      - xray_edge_upstream_sni | length > 0
+      - xray_edge_upstream_sni is match('^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$')
+      - xray_edge_upstream_port | int > 0
+      - xray_edge_upstream_port | int < 65536
+      - xray_edge_path is match('^/[A-Za-z0-9._/-]+$')
+      - xray_edge_path != '/'
+      - not xray_edge_path.endswith('/')
+      - "'//' not in xray_edge_path"
+      - xray_edge_mode == 'diagnostic'
+      - xray_edge_site_filename is match('^[A-Za-z0-9._-]+[.]caddy$')
+    fail_msg: >-
+      Provide explicit domain/upstream values and use diagnostic mode. PRO mode is
+      intentionally rejected until a server-side subscription entitlement gate exists.
+  tags: [always]
+
+- name: Check Caddy configuration paths and executable
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ xray_edge_caddyfile_path }}"
+    - "{{ xray_edge_caddy_conf_dir }}"
+  register: xray_edge_paths
+  tags: [configure, validate]
+
+- name: Require an existing Caddy main configuration and conf.d directory
+  ansible.builtin.assert:
+    that:
+      - xray_edge_paths.results[0].stat.isreg | default(false)
+      - xray_edge_paths.results[1].stat.isdir | default(false)
+    fail_msg: >-
+      Existing Caddy and its conf.d directory are required; this role does not
+      install Caddy or alter the main Caddyfile.
+  tags: [configure, validate]
+
+- name: Check existing Caddy service state
+  ansible.builtin.service_facts:
+  tags: [configure, validate]
+
+- name: Require Caddy to be active before adding a site
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.services.get(xray_edge_caddy_service + '.service', {}).get('state', '') == 'running'
+    fail_msg: "Caddy must already be active; this role will not install or start it."
+  tags: [configure, validate]
+
+- name: Check that Caddy is available
+  ansible.builtin.command:
+    argv:
+      - "{{ xray_edge_caddy_binary }}"
+      - version
+  changed_when: false
+  tags: [configure, validate]
+
+- name: Render XHTTP Edge relay candidate outside the imported glob
+  ansible.builtin.template:
+    src: site.caddy.j2
+    dest: "{{ xray_edge_candidate_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: not ansible_check_mode
+  tags: [configure, validate]
+
+- name: Validate candidate with all existing Caddy fragments before installation
+  ansible.builtin.script:
+    cmd: >-
+      {{ (role_path ~ '/files/validate_candidate.py') | quote }}
+      --main {{ xray_edge_caddyfile_path | quote }}
+      --conf-dir {{ xray_edge_caddy_conf_dir | quote }}
+      --managed-name {{ xray_edge_site_filename | quote }}
+      --candidate {{ xray_edge_candidate_path | quote }}
+      --caddy {{ xray_edge_caddy_binary | quote }}
+  changed_when: false
+  become: true
+  when: not ansible_check_mode
+  tags: [configure, validate]
+
+- name: Explain check-mode limitation
+  ansible.builtin.debug:
+    msg: "Check mode ran preflight only; candidate rendering and combined Caddy validation require a remote temporary file."
+  when: ansible_check_mode
+  changed_when: false
+  tags: [validate]
+
+- name: Install validated XHTTP Edge site and reload Caddy
+  when: not ansible_check_mode
+  tags: [configure]
+  block:
+    - name: Install only the role-owned Caddy site fragment
+      ansible.builtin.copy:
+        src: "{{ xray_edge_candidate_path }}"
+        dest: "{{ xray_edge_caddy_conf_dir }}/{{ xray_edge_site_filename }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      become: true
+      register: xray_edge_site_install
+      notify: Reload XHTTP Edge Caddy configuration
+
+    - name: Apply and validate the changed site before leaving the role
+      ansible.builtin.meta: flush_handlers
+
+  rescue:
+    - name: Restore previous role-owned site after validation or reload failure
+      ansible.builtin.copy:
+        src: "{{ xray_edge_site_install.backup_file }}"
+        dest: "{{ xray_edge_caddy_conf_dir }}/{{ xray_edge_site_filename }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+      when:
+        - xray_edge_site_install is defined
+        - xray_edge_site_install.changed | default(false)
+        - xray_edge_site_install.backup_file is defined
+
+    - name: Remove newly created site after validation or reload failure
+      ansible.builtin.file:
+        path: "{{ xray_edge_caddy_conf_dir }}/{{ xray_edge_site_filename }}"
+        state: absent
+      become: true
+      when:
+        - xray_edge_site_install is defined
+        - xray_edge_site_install.changed | default(false)
+        - xray_edge_site_install.backup_file is not defined
+
+    - name: Reload restored Caddy configuration after rollback
+      ansible.builtin.command:
+        argv:
+          - "{{ xray_edge_caddy_binary }}"
+          - reload
+          - --config
+          - "{{ xray_edge_caddyfile_path }}"
+      become: true
+      changed_when: true
+      when: xray_edge_site_install.changed | default(false)
+
+    - name: Stop after restoring the prior relay configuration
+      ansible.builtin.fail:
+        msg: >-
+          XHTTP Edge site validation/reload failed. The role-owned fragment was
+          restored or removed; inspect Caddy logs before retrying.
+
+- name: Remove temporary candidate after successful configuration
+  ansible.builtin.file:
+    path: "{{ xray_edge_candidate_path }}"
+    state: absent
+  become: true
+  when: not ansible_check_mode
+  tags: [configure, validate]

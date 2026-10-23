@@ -1,0 +1,22 @@
+---
+- name: Validate full Caddy configuration
+  ansible.builtin.command:
+    argv:
+      - "{{ xray_edge_caddy_binary }}"
+      - validate
+      - --config
+      - "{{ xray_edge_caddyfile_path }}"
+  changed_when: false
+  listen: Reload XHTTP Edge Caddy configuration
+  become: true
+
+- name: Reload Caddy without restarting the service
+  ansible.builtin.command:
+    argv:
+      - "{{ xray_edge_caddy_binary }}"
+      - reload
+      - --config
+      - "{{ xray_edge_caddyfile_path }}"
+  changed_when: true
+  listen: Reload XHTTP Edge Caddy configuration
+  become: true
