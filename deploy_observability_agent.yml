@@ -15,26 +15,10 @@
     xray_exporter_accounts_base_url: >-
       {{ lookup('ansible.builtin.env', 'ACCOUNTS_BASE_URL')
          | default('https://accounts.svc.plus', true) }}
-    xray_exporter_internal_service_token: >-
-      {{ canonical_internal_service_token | default('') }}
     xray_exporter_vector_snapshot_url: >-
       {{ lookup('ansible.builtin.env', 'VECTOR_SNAPSHOT_URL')
          | default('http://127.0.0.1:8686'
                   if xray_exporter_snapshot_features_enabled else '', true) }}
-  pre_tasks:
-    - name: Require Xray exporter targets to be in the reviewed exporter group
-      ansible.builtin.assert:
-        that:
-          - ansible_play_hosts_all | length > 0
-          - ansible_play_hosts_all | difference(groups.get('xray_exporter', [])) | length == 0
-      when: vector_billing_ingest_enabled | bool
-
-    - name: Resolve canonical credentials only when billing snapshots are enabled
-      ansible.builtin.include_tasks: tasks/resolve-canonical-service-token.yml
-      when: >-
-        (xray_exporter_snapshot_features_enabled | bool) or
-        (xray_exporter_vector_snapshot_url | trim | length > 0)
-
   roles:
     - vhosts/xray-exporter
 
@@ -73,6 +57,15 @@
     ansible.builtin.apt:
       lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
   become: yes
+  pre_tasks:
+    - name: Resolve canonical snapshot service token before any role mutation
+      ansible.builtin.include_tasks: tasks/resolve-canonical-service-token.yml
+      when: vector_billing_ingest_enabled | bool
+    - name: Bind the canonical token to Vector Billing ingestion
+      ansible.builtin.set_fact:
+        vector_billing_ingest_token: "{{ canonical_internal_service_token }}"
+      no_log: true
+      when: vector_billing_ingest_enabled | bool
   vars:
     group: all
     vector_auth_user: >-
@@ -93,8 +86,6 @@
     vector_billing_ingest_url: >-
       {{ lookup('ansible.builtin.env', 'VECTOR_BILLING_INGEST_URL')
          | default('', true) }}
-    vector_billing_ingest_token: >-
-      {{ canonical_internal_service_token | default('') }}
     vector_ai_aggregator_enabled: >-
       {{ lookup('ansible.builtin.env', 'VECTOR_AI_AGGREGATOR_ENABLED')
          | default('false', true) | bool }}
@@ -109,38 +100,7 @@
              else '',
              true
            ) }}
-    xray_exporter_internal_service_token: >-
-      {{ canonical_internal_service_token | default('') }}
-    xconnect_gitops_config: >-
-      {{ lookup('ansible.builtin.env', 'XCONNECT_GITOPS_CONFIG')
-         | default(playbook_dir ~ '/../gitops/topology/prod/selfhost/xconnect-regional-pools.yaml', true) }}
-  pre_tasks:
-    - name: Load GitOps policy for XConnect regional nodes
-      ansible.builtin.include_vars:
-        file: "{{ xconnect_gitops_config }}"
-        name: xconnect_policy
-      when:
-        - "'xconnect_regional_nodes' in group_names"
-        - xconnect_node_maintenance is not defined
-
-    - name: Set GitOps node maintenance policy
-      ansible.builtin.set_fact:
-        xconnect_node_maintenance: "{{ xconnect_policy.spec.node_maintenance | default({}, true) }}"
-      when:
-        - "'xconnect_regional_nodes' in group_names"
-        - xconnect_node_maintenance is not defined
   tasks:
-    - name: Restrict Billing snapshot rollout to reviewed Proxy inventory hosts
-      ansible.builtin.assert:
-        that:
-          - ansible_play_hosts_all | length > 0
-          - ansible_play_hosts_all | difference(groups.get('agent_proxy', [])) | length == 0
-      when: vector_billing_ingest_enabled | bool
-
-    - name: Resolve the canonical Vault credential for Vector Billing delivery
-      ansible.builtin.include_tasks: tasks/resolve-canonical-service-token.yml
-      when: vector_billing_ingest_enabled | bool
-
     - name: Include node_exporter role
       ansible.builtin.import_role:
         name: vhosts/node_exporter

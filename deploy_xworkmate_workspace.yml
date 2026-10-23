@@ -3,9 +3,18 @@
 # Playbook: Deploy XWorkmate Workspace (xworkmate-bridge + AI Workspace)
 # ==============================================================================
 - name: Deploy XWorkmate Workspace Stack
-  hosts: "{{ target_hosts | default('localhost') }}"
-  connection: "{{ 'local' if (target_hosts | default('localhost')) in ['localhost', '127.0.0.1'] else 'ssh' }}"
+  hosts: "{{ target_hosts | mandatory }}"
   become: false
   gather_facts: true
+  pre_tasks:
+    - name: Require one explicit host or inventory group
+      ansible.builtin.assert:
+        that:
+          - target_hosts is match('^[A-Za-z0-9_.-]+$')
+          - target_hosts not in ['all', 'localhost', '127.0.0.1']
+        fail_msg: >-
+          Pass -e target_hosts=<inventory-host-or-group>. Select the inventory
+          separately with -i when it is not the configured default.
+      tags: [always]
   roles:
     - role: roles/xworkmate_workspace

@@ -10,7 +10,7 @@ class SnapshotTokenIdempotencyTest(unittest.TestCase):
         for name in (
             "deploy_xray_exporter.yml",
             "deploy_observability_agent.yml",
-            "repair_xray_snapshot_credentials.yml",
+            "deploy_xray_proxy_server.yml",
         ):
             content = (ROOT / name).read_text()
             self.assertIn("tasks/resolve-canonical-service-token.yml", content, name)
@@ -29,6 +29,13 @@ class SnapshotTokenIdempotencyTest(unittest.TestCase):
         self.assertLess(protection, render)
         protection_tasks = (ROOT / "roles/vhosts/xray-exporter/tasks/protect-existing-snapshots.yml").read_text()
         self.assertIn("refusing to overwrite", protection_tasks)
+        self.assertIn("search('(?m)^VECTOR_SNAPSHOT_URL=\"?http')", protection_tasks)
+
+    def test_resolved_token_is_bound_to_each_consumer_contract(self):
+        observability = (ROOT / "deploy_observability_agent.yml").read_text()
+        proxy = (ROOT / "deploy_xray_proxy_server.yml").read_text()
+        self.assertIn("vector_billing_ingest_token: \"{{ canonical_internal_service_token }}\"", observability)
+        self.assertIn("agent_api_token: \"{{ canonical_internal_service_token }}\"", proxy)
 
     def test_only_exporter_handler_is_used_for_runtime_environment_changes(self):
         tasks = (ROOT / "roles/vhosts/xray-exporter/tasks/main.yml").read_text()

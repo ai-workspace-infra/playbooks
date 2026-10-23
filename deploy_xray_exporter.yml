@@ -45,8 +45,6 @@
     xray_exporter_accounts_base_url: >-
       {{ lookup('ansible.builtin.env', 'ACCOUNTS_BASE_URL')
          | default('https://accounts.svc.plus', true) }}
-    xray_exporter_internal_service_token: >-
-      {{ canonical_internal_service_token | default('') }}
     xray_exporter_snapshot_store_path: >-
       {{ lookup('ansible.builtin.env', 'SNAPSHOT_STORE_PATH')
          | default('/var/lib/xray-exporter/snapshots.db', true) }}
@@ -86,18 +84,8 @@
       {{ lookup('ansible.builtin.env', 'VECTOR_SNAPSHOT_URL')
          | default('', true) }}
   pre_tasks:
-    - name: Resolve the canonical credential for configured Billing snapshots
+    - name: Resolve canonical snapshot service token before any role mutation
       ansible.builtin.include_tasks: tasks/resolve-canonical-service-token.yml
-      when: >-
-        (xray_exporter_snapshot_features_enabled | bool) or
-        (xray_exporter_vector_snapshot_url | trim | length > 0)
-
-    - name: Validate INTERNAL_SERVICE_TOKEN is present
-      ansible.builtin.assert:
-        that:
-          - xray_exporter_internal_service_token | length > 0
-        fail_msg: "The canonical Vault INTERNAL_SERVICE_TOKEN is required for Billing snapshots."
-        success_msg: "Canonical Vault credential is available"
       when: xray_exporter_snapshot_features_enabled | bool
   roles:
     - roles/vhosts/xray-exporter

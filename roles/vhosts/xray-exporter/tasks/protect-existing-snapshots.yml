@@ -1,23 +1,27 @@
 ---
-- name: Inspect previous snapshot configuration before rendering
+- name: Inspect existing exporter environment before rendering
   ansible.builtin.stat:
-    path: '{{ xray_exporter_env_file }}'
-  register: previous_snapshot_file
+    path: "{{ xray_exporter_env_file }}"
+  register: xray_exporter_env_stat
 
-- name: Read previous snapshot configuration without disclosing values
+- name: Read existing exporter environment without exposing secrets
   ansible.builtin.slurp:
-    src: '{{ xray_exporter_env_file }}'
-  register: previous_snapshot_environment
+    src: "{{ xray_exporter_env_file }}"
+  register: xray_exporter_existing_env
+  when:
+    - xray_exporter_env_stat.stat.exists
+    - xray_exporter_env_stat.stat.isreg
   no_log: true
-  when: previous_snapshot_file.stat.exists
 
-- name: Prevent metrics-only defaults from disabling an existing snapshot pipeline
+- name: Protect an existing enabled snapshot contract from empty input
   ansible.builtin.assert:
     that:
-      - xray_exporter_internal_service_token | trim | length > 0
-      - xray_exporter_vector_snapshot_url | trim | length > 0
-    fail_msg: Existing Vector snapshots require explicit canonical credentials and handoff settings; refusing to overwrite them with metrics-only defaults.
-  no_log: true
+      - xray_exporter_internal_service_token | default('') | trim | length >= 32
+      - xray_exporter_vector_snapshot_url | default('') | trim | length > 0
+    fail_msg: >-
+      Existing snapshot configuration is enabled but the canonical Vault
+      inputs are incomplete; refusing to overwrite {{ xray_exporter_env_file }}.
   when:
-    - previous_snapshot_file.stat.exists
-    - (previous_snapshot_environment.content | b64decode) is search('(?m)^VECTOR_SNAPSHOT_URL="?http')
+    - xray_exporter_existing_env is defined
+    - (xray_exporter_existing_env.content | b64decode) is search('(?m)^VECTOR_SNAPSHOT_URL="?http')
+  no_log: true
