@@ -53,6 +53,12 @@
         doco_release_reference: '{{ migration_listener.contract.resolved.gitops_sha }}'
         doco_release_target: '{{ migration_listener.declaration.doco_target }}'
 
+    - name: Requeue pinned reconciliation when target runtime inputs changed without a Git change
+      ansible.builtin.command:
+        argv: [docker, restart, doco-cd]
+      changed_when: true
+      when: (migration_listener_prepared.stdout | from_json).changed
+
     - name: Validate and reload only changed route after GitOps reconciles the actual listener
       ansible.builtin.command:
         argv: [python3, '{{ migration_listener_workspace.path }}/runtime.py']

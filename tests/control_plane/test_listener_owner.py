@@ -158,6 +158,11 @@ class ListenerRuntimeTests(unittest.TestCase):
                 self.assertEqual(original, path.stat().st_mtime_ns)
                 self.assertTrue(target.write(path, 'CURRENT=new-resolved\n'))
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        import yaml
+        document = yaml.safe_load((fixtures.ROOT / 'roles/selfhost_migration_listener/tasks/main.yml').read_text())
+        block = next(item['block'] for item in document if 'block' in item)
+        restart = next(item for item in block if item.get('ansible.builtin.command', {}).get('argv') == ['docker', 'restart', 'doco-cd'])
+        self.assertIn('migration_listener_prepared', restart['when'])
 
     def test_dedicated_vault_identity_and_distinct_keys(self):
         policy = {'vault_addr': 'https://vault.example.invalid', 'vault_token_env': 'JOB_IDENTITY',
