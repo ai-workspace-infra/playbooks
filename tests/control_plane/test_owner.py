@@ -298,6 +298,20 @@ class RepositoryFixture(unittest.TestCase):
                 owner.run_owner(self.owner, contract, refs)
             self.assertEqual(execute.call_count, 1)
 
+    def test_private_collection_path_survives_without_inheriting_unsafe_ansible_overrides(self):
+        contract, refs = self.load()
+        receipt = 'CONTROL_PLANE_EVIDENCE=' + json.dumps({'status': 'candidate_runtime_ready', 'business_acceptance': False})
+        with mock.patch.dict(os.environ, {'ANSIBLE_COLLECTIONS_PATH': '/private/controller/collections',
+                'ANSIBLE_COLLECTIONS_SCAN_SYS_PATH': 'True', 'ANSIBLE_HOST_KEY_CHECKING': 'False'}), \
+                mock.patch.object(owner, 'billing_artifact', return_value={}), \
+                mock.patch.object(owner.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout=receipt)) as execute:
+            owner.run_owner(self.owner, contract, refs)
+        for call in execute.call_args_list:
+            env = call.kwargs['env']
+            self.assertEqual(env['ANSIBLE_COLLECTIONS_PATH'], '/private/controller/collections')
+            self.assertEqual(env['ANSIBLE_COLLECTIONS_SCAN_SYS_PATH'], 'False')
+            self.assertNotIn('ANSIBLE_HOST_KEY_CHECKING', env)
+
     def test_cmdb_ssh_key_selection_survives_runner_environment_filter(self):
         host = self.contract['target']['host']
         key_path = self.directory / 'control-plane-ed25519'

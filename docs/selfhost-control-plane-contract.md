@@ -35,16 +35,28 @@ both checkouts must be clean, including untracked files. The Playbooks HEAD must
 equal `execution.playbooks_sha`. No fetching, package installation, SSH, Vault,
 Ansible invocation or file creation occurs in `--check`; it emits a JSON plan.
 The caller provisions Python 3.11+, PyYAML, Ansible and required collections.
-For the pinned owner runtime, install the controller collection before execution:
+For the pinned owner runtime, install the controller collections in an isolated
+directory before execution:
+
+The public `install-control-plane.sh` apply path calls this fixed common owner
+automatically before invoking the runner. `--check` remains read-only. Direct
+owner callers and CI prepare the same dependency source as follows:
 
 ```sh
-ansible-galaxy collection install -r collections/requirements-control-plane.yml
+export ANSIBLE_COLLECTIONS_PATH=/absolute/private/runtime/collections
+export ANSIBLE_COLLECTIONS_SCAN_SYS_PATH=False
+bash roles/vhosts/common/files/prepare_controller.sh
 ```
 
-This pins `ansible.posix` 2.1.0. The owner runs a localhost-only static
+The common role owns `roles/vhosts/common/controller-collections.yml`, pinning
+`ansible.posix` 2.1.0 and `community.hashi_vault` 7.1.0. Skipping
+Vault reads does not remove the parser's dependency on its module. The owner
+preserves the explicit collection directory, disables system Python collection
+scanning, and runs a localhost-only static
 import-role syntax preflight before inventory or SSH; it fails closed with a
 sanitized dependency diagnostic if parsing or module resolution fails. The
-preflight sets `docker_bootstrap_host: false` and does not enable host bootstrap
+preflight parses Docker, host configuration, Doco-CD and final release selection;
+it sets `docker_bootstrap_host: false` and does not enable host bootstrap
 or contact any host. The CI runner installs the same requirements and checks
 this fixture.
 
