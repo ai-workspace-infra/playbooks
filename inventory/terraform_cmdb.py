@@ -124,6 +124,8 @@ def build_inventory(cmdb):
             "cmdb_tags": host.get("tags", []),
             "cmdb_source_resources": cmdb.get("source_resources", []),
         }
+        if host.get("ssh_private_key_file"):
+            hostvars["ansible_ssh_private_key_file"] = host["ssh_private_key_file"]
         # CMDB 其余字段一并暴露给 playbook 使用
         hostvars.update(host.get("host_vars", {}))
         inv["_meta"]["hostvars"][name] = hostvars
