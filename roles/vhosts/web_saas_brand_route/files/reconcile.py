@@ -51,8 +51,18 @@ def containers(excluded):
 
 def probe(domain):
     return command('curl', '--silent', '--show-error', '--connect-timeout', '5', '--max-time', '15',
+                   '--noproxy', '*',
                    '--resolve', domain + ':443:127.0.0.1', '--output', '/dev/null',
                    '--write-out', '%{http_code}', 'https://' + domain + '/').strip()
+
+
+def verify_certificate(path, domain):
+    hostname_check = command('openssl', 'x509', '-in', path, '-checkhost', domain, '-noout')
+    if 'does match certificate' not in hostname_check:
+        raise ValueError('brand certificate hostname mismatch')
+    # OpenSSL treats -checkend as an early-return operation; do not combine it
+    # with -checkhost or the hostname match result is never produced.
+    command('openssl', 'x509', '-in', path, '-checkend', '1209600', '-noout')
 
 
 def replace(path, data):
@@ -76,7 +86,7 @@ def reconcile(args):
         current = config.read_text()
         candidate, base = render(current, args.domain)
         tls = '/etc/xcontrol/tls/' + args.domain + '/current/cert.pem'
-        command('openssl', 'x509', '-in', tls, '-checkhost', args.domain, '-checkend', '1209600', '-noout')
+        verify_certificate(tls, args.domain)
         before = {domain: probe(domain) for domain in args.probe_domains.split(',')}
         peers = containers(args.container)
         receipt = dict(changed=candidate != current, existing_domains=before,

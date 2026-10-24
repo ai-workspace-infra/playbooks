@@ -9,12 +9,40 @@
       - hostvars[inventory_hostname].cmdb_resource_id | default('') | string | length > 0
     fail_msg: Require the exact CMDB target, explicit restart approval and existing domain probes.
 
+- name: Inspect the existing brand PEM generation without exposing hashes
+  ansible.builtin.stat:
+    path: '/etc/xcontrol/tls/{{ web_saas_brand_domain }}/current/{{ item.file }}'
+    checksum_algorithm: sha256
+  loop:
+    - {key: fullchain, file: fullchain.pem, mode: '0644'}
+    - {key: cert, file: cert.pem, mode: '0644'}
+    - {key: key, file: key.pem, mode: '0600'}
+    - {key: ca, file: ca.pem, mode: '0644'}
+    - {key: trust_bundle, file: trust-bundle.pem, mode: '0644'}
+  register: web_saas_brand_existing_pem
+  no_log: true
+
+- name: Start the complete PEM identity comparison
+  ansible.builtin.set_fact:
+    web_saas_brand_pem_current: true
+
+- name: Require matching content and permissions before skipping restoration
+  ansible.builtin.set_fact:
+    web_saas_brand_pem_current: false
+  when: >-
+    not item.stat.exists or not (item.stat.isreg | default(false)) or
+    item.stat.checksum | default('') != web_saas_brand_material[item.item.key] | hash('sha256') or
+    item.stat.mode | default('') != item.item.mode or item.stat.uid | default(-1) != 0
+  loop: '{{ web_saas_brand_existing_pem.results }}'
+  no_log: true
+
 - name: Restore only the brand certificate through its owner role
   ansible.builtin.include_role:
     name: docker/caddy_certificate_restore
   vars:
     caddy_certificate_restore_directory: '/etc/xcontrol/tls/{{ web_saas_brand_domain }}'
     caddy_certificate_restore_material: '{{ web_saas_brand_material }}'
+  when: not web_saas_brand_pem_current | bool
 
 - name: Reconcile the isolated Caddy brand block with rollback and probes
   ansible.builtin.script:
@@ -25,7 +53,7 @@
       --probe-domains {{ web_saas_brand_probe_domains | join(',') | quote }}
     executable: /usr/bin/python3
   register: web_saas_brand_result
-  changed_when: (web_saas_brand_result.stdout | from_json).changed | bool
+  changed_when: web_saas_brand_result.rc == 0 and (web_saas_brand_result.stdout | from_json).changed | bool
 
 - name: Report the route receipt without certificate values
   ansible.builtin.debug:
