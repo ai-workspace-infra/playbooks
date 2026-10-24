@@ -23,6 +23,10 @@ inputs:
     description: Skip restore inside this certificate renewal window.
     required: false
     default: '14'
+  expected_hostname:
+    description: Require the restored certificate to cover this hostname.
+    required: false
+    default: ''
 outputs:
   restore_required:
     description: Whether complete, sufficiently valid material was restored.
@@ -42,6 +46,7 @@ runs:
         INPUT_TARGET: ${{ inputs.target }}
         INPUT_DOMAIN_TLS_DIRECTORY: ${{ inputs.domain_tls_directory }}
         INPUT_RENEW_MARGIN_DAYS: ${{ inputs.renew_margin_days }}
+        INPUT_EXPECTED_HOSTNAME: ${{ inputs.expected_hostname }}
       run: |
         set -euo pipefail
         owner_root="$(cd "${GITHUB_ACTION_PATH}/../../.." && pwd -P)"
@@ -53,6 +58,7 @@ runs:
           --target "${INPUT_TARGET}" \
           --directory "${INPUT_DOMAIN_TLS_DIRECTORY}" \
           --margin-days "${INPUT_RENEW_MARGIN_DAYS}" \
+          --expected-hostname "${INPUT_EXPECTED_HOSTNAME}" \
           --vars-file "${vars_file}" \
           --github-output "${GITHUB_OUTPUT}"
     - name: Restore PEM with the owner Role

@@ -280,6 +280,49 @@
       {{ web_saas_host_config_restored_tls.results
          | map(attribute='stat.exists') | select | list | length == 2 }}
 
+- name: Require the brand TLS record to match the configured brand hostname
+  ansible.builtin.assert:
+    that:
+      - web_saas_host_config_brand_tls_domain | length > 0
+      - web_saas_host_config_brand_tls_domain == web_saas_host_config_brand_domain
+    fail_msg: >-
+      WEB_SAAS_BRAND_TLS_DOMAIN must match WEB_SAAS_BRAND_DOMAIN when the
+      Console brand hostname is enabled; use its domain-scoped Vault cert.
+  when: web_saas_host_config_brand_domain | length > 0
+
+- name: Check restored brand certificate and key
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "/etc/xcontrol/tls/{{ web_saas_host_config_brand_tls_domain }}/current/cert.pem"
+    - "/etc/xcontrol/tls/{{ web_saas_host_config_brand_tls_domain }}/current/key.pem"
+  register: web_saas_host_config_brand_tls_files
+  when: web_saas_host_config_brand_domain | length > 0
+
+- name: Require complete restored brand TLS material
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists | default(false)
+      - item.stat.isreg | default(false)
+    fail_msg: The xworktech.com Vault certificate and private key must be restored before Caddy configuration.
+  loop: "{{ web_saas_host_config_brand_tls_files.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item | basename }}"
+  when: web_saas_host_config_brand_domain | length > 0
+
+- name: Verify the restored brand certificate covers its configured hostname
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -in
+      - "/etc/xcontrol/tls/{{ web_saas_host_config_brand_tls_domain }}/current/cert.pem"
+      - -noout
+      - -checkhost
+      - "{{ web_saas_host_config_brand_domain }}"
+  changed_when: false
+  when: web_saas_host_config_brand_domain | length > 0
+
 - name: Render web-saas Caddyfile
   ansible.builtin.template:
     src: Caddyfile.j2
