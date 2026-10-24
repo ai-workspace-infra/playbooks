@@ -72,6 +72,11 @@ web_saas_host_config_stunnel_check_host: ""
 # 域名分流；公共环境域名由 DNS 指向这些 selfhost 目标。
 web_saas_host_config_console_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_CONSOLE_DOMAIN') | default('', true) }}"
 web_saas_host_config_accounts_domain: "{{ lookup('ansible.builtin.env', 'WEB_SAAS_ACCOUNTS_DOMAIN') | default('', true) }}"
+# Additional reviewed aliases arrive through the IaC CMDB host variables.
+# Keep canonical, generation and selfhost names in the same service matcher.
+web_saas_host_config_console_aliases: []
+web_saas_host_config_accounts_aliases: []
+web_saas_host_config_billing_aliases: []
 # The public environment aliases resolve to the VPS selfhost names in DNS, but
 # DNS-only routing preserves the public Host header. Caddy must therefore serve
 # both names on the same host instead of relying on the CNAME target name.

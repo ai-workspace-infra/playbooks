@@ -245,7 +245,9 @@ def load_contract(config, gitops, owner, sha):
             "Only candidate mode with explicit initialize eligibility is supported")
     checkout(owner, execution["playbooks_sha"])
     target, release = contract["target"], contract["release"]
-    fields(target, ["host", "generation", "domain_base", "console_domain", "accounts_domain"], ['billing_domain', 'console_public_domain', 'accounts_public_domain', 'billing_public_domain'])
+    fields(target, ["host", "generation", "domain_base", "console_domain", "accounts_domain"],
+           ['billing_domain', 'console_public_domain', 'accounts_public_domain', 'billing_public_domain',
+            'console_aliases', 'accounts_aliases', 'billing_aliases'])
     require(all(matches(NAME, target[k]) for k in ("host", "generation", "domain_base", "console_domain", "accounts_domain")),
             "Target metadata must use literal names, never inventory patterns")
     if 'console_public_domain' in target:
@@ -274,6 +276,18 @@ def load_contract(config, gitops, owner, sha):
         require(matches(hostname, billing_domain) and billing_domain.endswith('.' + target['domain_base'])
                 and billing_domain not in (target['console_domain'], target['accounts_domain']),
                 "Billing host must be a distinct literal hostname under the declared domain base")
+    hostname = r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+    service_hosts = {target['console_domain'], target['accounts_domain'], target.get('billing_domain'),
+                     target.get('console_public_domain'), target.get('accounts_public_domain'),
+                     target.get('billing_public_domain')}
+    aliases_seen = set()
+    for service in ('console', 'accounts', 'billing'):
+        aliases = target.get(service + '_aliases', [])
+        require(isinstance(aliases, list) and len(aliases) == len(set(aliases))
+                and all(matches(hostname, alias) and alias.endswith('.' + target['domain_base'])
+                and alias not in service_hosts and alias not in aliases_seen for alias in aliases),
+                service.title() + " aliases must be unique literal hosts under the declared domain base")
+        aliases_seen.update(aliases)
     fields(release, ["snapshot_tag", "services", "accounts", "doco_cd"], ['billing'])
     if 'billing' in release:
         fields(release['billing'], ['source_sha', 'schema_file'])
