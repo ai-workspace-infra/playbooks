@@ -1,0 +1,46 @@
+- name: Validate explicit configuration-only scope
+  ansible.builtin.assert:
+    that:
+      - grafana_config_environment in ['prod', 'uat']
+      - grafana_config_operation in ['export', 'render', 'verify']
+      - grafana_config_target_url is match('^https://[^/@]+(?:/[^?]*)?$')
+      - grafana_config_operation == 'verify' or grafana_config_gitops_root is match('^/')
+      - grafana_config_operation == 'verify' or grafana_config_output_relative_path is match('^[a-zA-Z0-9_/-]+$')
+      - not grafana_config_output_relative_path.startswith('/')
+      - "'..' not in grafana_config_output_relative_path.split('/')"
+      - grafana_config_operation == 'verify' or grafana_config_source_url is match('^https://[^/@]+(?:/[^?]*)?$')
+      - grafana_config_source_url != grafana_config_target_url
+    fail_msg: Select distinct HTTPS source/target identities and an explicit GitOps output path.
+  run_once: true
+
+- name: Export or verify Grafana configuration through bounded GET-only APIs
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/files/grafana_config.py"
+    stdin: "{{ grafana_config_payload | to_json }}"
+  vars:
+    grafana_config_payload:
+      operation: "{{ grafana_config_operation }}"
+      source_url: "{{ grafana_config_source_url }}"
+      target_url: "{{ grafana_config_target_url }}"
+      source_auth: "{{ grafana_config_source_auth }}"
+      target_auth: "{{ grafana_config_target_auth }}"
+      snapshot: "{{ grafana_config_source_snapshot }}"
+      inventory: "{{ grafana_config_inventory }}"
+      app_ids: "{{ grafana_config_app_ids }}"
+      options: "{{ grafana_config_options }}"
+      output_dir: "{{ grafana_config_gitops_root }}/{{ grafana_config_output_relative_path }}"
+      apply: "{{ grafana_config_apply | bool and not ansible_check_mode }}"
+  register: grafana_config_result
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  no_log: true
+  changed_when: (grafana_config_result.stdout | from_json).changed_files | default([]) | length > 0
+
+- name: Report sanitized configuration-only result
+  ansible.builtin.debug:
+    msg: "{{ grafana_config_result.stdout | from_json }}"
+  run_once: true
