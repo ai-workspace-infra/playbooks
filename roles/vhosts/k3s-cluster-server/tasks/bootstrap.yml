@@ -2,7 +2,7 @@
 # =============================================================================
 # roles/vhosts/k3s-cluster-server/tasks/bootstrap.yml
 # K3s 集群节点初始化与控制面装配（K3s + Flux v2 + External Secrets Operator + Vault 身份）
-# 边界约束：纯幂等重跑，独立 namespace web-saas-k3s-v5，严禁触碰生产 V5 主机与状态
+# 边界约束：按显式环境/ref/path 初始化 K3s 与 Flux；不修改 DNS 或其他主机状态
 # =============================================================================
 
 - name: Set Kubernetes bootstrap defaults
@@ -12,8 +12,34 @@
     flux_namespace: "{{ k8s_flux_namespace | default('flux-system') }}"
     eso_namespace: "{{ k8s_eso_namespace | default('platform') }}"
     gitops_repo_url: "{{ k8s_gitops_repo_url | default('https://github.com/ai-workspace-infra/gitops.git') }}"
-    gitops_branch: "{{ k8s_gitops_branch | default('main') }}"
+    gitops_environment: "{{ k8s_deployment_environment | default('uat') }}"
+    gitops_ref_kind: "{{ k8s_gitops_ref_kind | default('branch') }}"
+    gitops_ref_name: "{{ k8s_gitops_ref_name | default('main') }}"
+    gitops_source_name: "{{ k8s_gitops_source_name | default('platform-config') }}"
+    gitops_kustomization_name: "{{ k8s_gitops_kustomization_name | default('uat-web-saas-k3s-v5') }}"
     gitops_path: "{{ k8s_gitops_path | default('./environments/clusters/uat-web-saas-k3s-v5') }}"
+
+- name: Validate GitOps bootstrap reference and environment
+  ansible.builtin.assert:
+    that:
+      - gitops_ref_kind in ['branch', 'tag']
+      - gitops_ref_name | length > 0
+      - gitops_ref_name is match('^[A-Za-z0-9._/-]+$')
+      - gitops_source_name | length > 0
+      - gitops_source_name is match('^[a-z0-9-]+$')
+      - gitops_kustomization_name | length > 0
+      - gitops_kustomization_name is match('^[a-z0-9-]+$')
+      - gitops_path | length > 0
+      - gitops_path is match('^\./[A-Za-z0-9._/-]+$')
+      - gitops_environment != 'prod' or gitops_ref_kind == 'tag'
+      - gitops_environment != 'prod' or gitops_path is match('^\./environments/clusters/prod-')
+      - gitops_environment != 'prod' or gitops_source_name == 'platform-config-prod'
+      - gitops_environment != 'prod' or gitops_kustomization_name == 'prod-web-saas-k3s-v5'
+    fail_msg: >-
+      PROD K3s bootstrap requires an immutable GitOps tag, the PROD cluster path,
+      and source name platform-config-prod. DNS and host routing are not changed
+      by this bootstrap role.
+  changed_when: false
 
 # 1. 验证或安装基础环境与工具链
 - name: Ensure required tools are present (curl, tar, git)
@@ -154,7 +180,7 @@
     executable: /bin/bash
   no_log: true
 
-# 7. 接入 GitOps 仓库源并触发初始协调
+# 7. 接入固定 GitOps 引用并触发初始协调
 - name: Apply GitOps root source and reconciliation
   ansible.builtin.shell: |
     set -euo pipefail
@@ -169,18 +195,18 @@
       interval: 1m0s
       url: {{ gitops_repo_url }}
       ref:
-        branch: {{ gitops_branch }}
+        {{ gitops_ref_kind }}: {{ gitops_ref_name }}
     ---
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
     metadata:
-      name: uat-web-saas-k3s-v5
+      name: {{ gitops_kustomization_name }}
       namespace: {{ flux_namespace }}
     spec:
       interval: 5m0s
       sourceRef:
         kind: GitRepository
-        name: platform-config
+        name: {{ gitops_source_name }}
       path: {{ gitops_path }}
       prune: true
       wait: true
