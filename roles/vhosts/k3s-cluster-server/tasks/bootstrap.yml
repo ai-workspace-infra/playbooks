@@ -1,0 +1,194 @@
+---
+# =============================================================================
+# roles/vhosts/k3s-cluster-server/tasks/bootstrap.yml
+# K3s 集群节点初始化与控制面装配（K3s + Flux v2 + External Secrets Operator + Vault 身份）
+# 边界约束：纯幂等重跑，独立 namespace web-saas-k3s-v5，严禁触碰生产 V5 主机与状态
+# =============================================================================
+
+- name: Set Kubernetes bootstrap defaults
+  ansible.builtin.set_fact:
+    k3s_kubeconfig: "{{ k3s_kubeconfig_path | default('/etc/rancher/k3s/k3s.yaml') }}"
+    target_namespace: "{{ k8s_target_namespace | default('web-saas-k3s-v5') }}"
+    flux_namespace: "{{ k8s_flux_namespace | default('flux-system') }}"
+    eso_namespace: "{{ k8s_eso_namespace | default('platform') }}"
+    gitops_repo_url: "{{ k8s_gitops_repo_url | default('https://github.com/ai-workspace-infra/gitops.git') }}"
+    gitops_branch: "{{ k8s_gitops_branch | default('main') }}"
+    gitops_path: "{{ k8s_gitops_path | default('./environments/clusters/uat-web-saas-k3s-v5') }}"
+
+# 1. 验证或安装基础环境与工具链
+- name: Ensure required tools are present (curl, tar, git)
+  ansible.builtin.package:
+    name:
+      - curl
+      - tar
+      - git
+      - ca-certificates
+    state: present
+  when: ansible_os_family == "Debian"
+
+# 2. 检查 K3s 安装状态（若处于单机/本机运行模式则复用现有集群）
+- name: Check K3s service status
+  ansible.builtin.command: systemctl is-active k3s
+  register: k3s_active_check
+  failed_when: false
+  changed_when: false
+
+- name: Install or configure K3s server if not active
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if command -v k3s >/dev/null 2>&1 && systemctl is-active k3s >/dev/null 2>&1; then
+      echo "k3s is already running"
+      exit 0
+    fi
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb --write-kubeconfig-mode 644" sh -
+    systemctl enable --now k3s
+  args:
+    executable: /bin/bash
+  when:
+    - k3s_active_check.rc != 0
+    - ansible_virtualization_type | default('') != 'docker'
+
+- name: Wait for Kubernetes API to become ready
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_kubeconfig }}"
+    kubectl get --raw=/readyz >/dev/null 2>&1
+  args:
+    executable: /bin/bash
+  register: apiserver_ready
+  retries: 30
+  delay: 3
+  until: apiserver_ready.rc == 0
+  changed_when: false
+
+# 3. 确保 Helm 3 安装
+- name: Install Helm 3 if missing
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if command -v helm >/dev/null 2>&1; then
+      exit 0
+    fi
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  args:
+    executable: /bin/bash
+
+# 4. 安装并校验 Flux v2 控制面
+- name: Install Flux CLI if missing
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if command -v flux >/dev/null 2>&1; then
+      exit 0
+    fi
+    curl -s https://fluxcd.io/install.sh | bash
+  args:
+    executable: /bin/bash
+
+- name: Install Flux v2 controllers in cluster
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_kubeconfig }}"
+    flux install --namespace="{{ flux_namespace }}"
+  args:
+    executable: /bin/bash
+  register: flux_install_res
+  changed_when: "'all components are healthy' not in flux_install_res.stdout"
+
+- name: Wait for Flux controllers to become ready
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_kubeconfig }}"
+    kubectl -n "{{ flux_namespace }}" rollout status deployment/source-controller --timeout=180s
+    kubectl -n "{{ flux_namespace }}" rollout status deployment/kustomize-controller --timeout=180s
+    kubectl -n "{{ flux_namespace }}" rollout status deployment/helm-controller --timeout=180s
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+# 5. 安装 External Secrets Operator (ESO)
+- name: Install External Secrets Operator via Helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_kubeconfig }}"
+    helm repo add external-secrets https://charts.external-secrets.io >/dev/null 2>&1 || true
+    helm repo update external-secrets >/dev/null 2>&1 || true
+    helm upgrade --install external-secrets external-secrets/external-secrets \
+      --namespace "{{ eso_namespace }}" \
+      --create-namespace \
+      --set installCRDs=true \
+      --timeout 5m
+  args:
+    executable: /bin/bash
+  register: eso_install_res
+  changed_when: "'STATUS: deployed' in eso_install_res.stdout"
+
+- name: Wait for ESO deployments to become ready
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_kubeconfig }}"
+    kubectl -n "{{ eso_namespace }}" rollout status deployment/external-secrets --timeout=180s
+    kubectl -n "{{ eso_namespace }}" rollout status deployment/external-secrets-webhook --timeout=180s
+    kubectl -n "{{ eso_namespace }}" rollout status deployment/external-secrets-cert-controller --timeout=180s
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+# 6. 配置目标业务命名空间与 Vault 凭据引用
+- name: Ensure target namespace exists
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_kubeconfig }}"
+    kubectl get namespace "{{ target_namespace }}" >/dev/null 2>&1 || kubectl create namespace "{{ target_namespace }}"
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Ensure Vault token secret exists for ESO in target namespace
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_kubeconfig }}"
+    VAULT_TOKEN_VAL="${VAULT_TOKEN:-{{ vault_token | default('s.platform-vault-token-placeholder') }}}"
+    kubectl -n "{{ target_namespace }}" create secret generic vault-token \
+      --from-literal=token="${VAULT_TOKEN_VAL}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  no_log: true
+
+# 7. 接入 GitOps 仓库源并触发初始协调
+- name: Apply GitOps root source and reconciliation
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_kubeconfig }}"
+    cat <<EOF | kubectl apply -f -
+    apiVersion: source.toolkit.fluxcd.io/v1
+    kind: GitRepository
+    metadata:
+      name: platform-config
+      namespace: {{ flux_namespace }}
+    spec:
+      interval: 1m0s
+      url: {{ gitops_repo_url }}
+      ref:
+        branch: {{ gitops_branch }}
+    ---
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: uat-web-saas-k3s-v5
+      namespace: {{ flux_namespace }}
+    spec:
+      interval: 5m0s
+      sourceRef:
+        kind: GitRepository
+        name: platform-config
+      path: {{ gitops_path }}
+      prune: true
+      wait: true
+      timeout: 10m0s
+    EOF
+  args:
+    executable: /bin/bash
+
+- name: Print bootstrap completion summary
+  ansible.builtin.debug:
+    msg: "K3s node bootstrap succeeded idempotently for namespace {{ target_namespace }} on {{ ansible_host | default('localhost') }}"
