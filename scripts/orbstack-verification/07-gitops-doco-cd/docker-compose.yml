@@ -1,0 +1,20 @@
+services:
+  doco-cd:
+    image: ghcr.io/kimdre/doco-cd:0.1.28
+    pull_policy: if_not_present
+    container_name: platform-doco-cd-controller
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:19088:80"
+      - "127.0.0.1:19128:9120"
+    environment:
+      - LOG_LEVEL=info
+      - GITOPS_REPO=https://github.com/ai-workspace-infra/playbooks.git
+      - GITOPS_BRANCH=main
+      - POLL_INTERVAL=300
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - doco_cd_data:/data
+
+volumes:
+  doco_cd_data:

@@ -1,0 +1,17 @@
+services:
+  pg-testdb:
+    image: postgres:16-alpine
+    container_name: platform-pg-backup-source
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=test_backup_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres-backup-secret
+    ports:
+      - "127.0.0.1:15436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d test_backup_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 2s

@@ -1,0 +1,23 @@
+services:
+  silo:
+    image: pgsty/silo:RELEASE.2026-10-18T00-00-00Z
+    container_name: platform-silo-storage
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=silo-admin
+      - MINIO_ROOT_PASSWORD=silo-secret-key-123
+    ports:
+      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:19001:9001"
+    volumes:
+      - silo_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+
+volumes:
+  silo_data:
