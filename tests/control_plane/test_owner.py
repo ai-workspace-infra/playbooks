@@ -141,6 +141,17 @@ class RepositoryFixture(unittest.TestCase):
     def load(self):
         return owner.load_contract('candidate.yaml', self.gitops, self.owner, self.sha)
 
+    def test_accounts_public_domain_requires_explicit_valid_service_alias(self):
+        self.contract['target']['accounts_public_domain'] = 'accounts.example.invalid'
+        self.changed()
+        self.assertEqual(self.load()[0]['target']['accounts_public_domain'], 'accounts.example.invalid')
+        for invalid in ('accounts.other.invalid', 'https://accounts.example.invalid',
+                        self.contract['target']['console_domain'], self.contract['target']['billing_domain']):
+            self.contract['target']['accounts_public_domain'] = invalid
+            self.changed()
+            with self.assertRaises(owner.Refused):
+                self.load()
+
     def test_billing_domain_is_a_distinct_hostname_under_domain_base(self):
         self.contract['target'].pop('billing_domain')
         self.changed()
@@ -720,7 +731,7 @@ class NativeRoleTests(unittest.TestCase):
                 'web_saas_host_config_console_domain': 'arbitrary-ui.example.invalid',
                 'web_saas_host_config_console_public_domain': 'arbitrary-ui.example.invalid',
                 'web_saas_host_config_accounts_domain': 'identity.example.invalid',
-                'web_saas_host_config_accounts_public_domain': 'identity.example.invalid',
+                'web_saas_host_config_accounts_public_domain': 'accounts.example.invalid',
                 'web_saas_host_config_deploy_env': 'sit', 'web_saas_host_config_billing_domain': 'billing-candidate.example.invalid',
                 'web_saas_host_config_billing_allowed_cidrs': '',
                 'web_saas_host_config_brand_domain': '', 'web_saas_host_config_brand_selfhost_domain': ''}
@@ -728,7 +739,8 @@ class NativeRoleTests(unittest.TestCase):
                 env={**os.environ, 'ANSIBLE_CONFIG': str(ROOT / 'scripts/control_plane/ansible.cfg')}, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             content = destination.read_text()
-            self.assertIn('arbitrary-ui.example.invalid, identity.example.invalid, billing-candidate.example.invalid {', content)
+            self.assertIn('arbitrary-ui.example.invalid, identity.example.invalid, accounts.example.invalid, billing-candidate.example.invalid {', content)
+            self.assertIn('@accounts host identity.example.invalid accounts.example.invalid', content)
             self.assertNotIn('candidate ingress is read-only', content)
             self.assertIn('method GET', content)
             self.assertIn('path /readyz', content)

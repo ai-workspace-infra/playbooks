@@ -172,3 +172,15 @@ stunnel 保持 `verifyChain = yes`，同时设置 `checkHost`，不接受未知 
 全新目标的业务写请求由应用正常处理。迁移上游的数据只读约束属于源端迁移角色，
 不能用候选域名或 fresh-install 标志对目标全局阻断 POST/PUT/PATCH/DELETE。
 控制平面只在配置比现有进程启动时间更新时重载 Caddy/stunnel 客户端，重复运行不额外重启。
+
+### Accounts 公共域名交接
+
+控制平面声明可显式设置 `target.accounts_public_domain`。该值必须是目标
+`domain_base` 下的合法域名，且不能与 Console/Billing 域名冲突；未声明时只服务
+候选 Accounts 域名。候选模式会将显式公共别名同时加入 TLS 站点地址和
+Accounts host matcher，不能只添加 matcher：CNAME 不会改写 HTTP Host/SNI。
+声明别名只准备 HTTP 路由，不修改 DNS，也不转移源端数据库写入权。
+
+验收应从真实代理检查公共域名 `/api/agent-server/v1/users` 返回可解析 JSON，
+`/users/events` 返回持续事件流，以及现有代理的 `/status` 上报进入 Accounts。
+仅 HTTP 200 不代表成功；空响应体必须判失败。
