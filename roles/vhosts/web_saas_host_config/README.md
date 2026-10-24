@@ -184,3 +184,9 @@ Accounts host matcher，不能只添加 matcher：CNAME 不会改写 HTTP Host/S
 验收应从真实代理检查公共域名 `/api/agent-server/v1/users` 返回可解析 JSON，
 `/users/events` 返回持续事件流，以及现有代理的 `/status` 上报进入 Accounts。
 仅 HTTP 200 不代表成功；空响应体必须判失败。
+
+控制平面可显式声明 `target.billing_public_domain`，仅为公共 Billing Host
+放行 `POST /v1/ingest/snapshots` 和 GET/HEAD 健康探针，Bearer 鉴权由 Billing
+执行，管理接口及采集 GET 均返回 403。未声明则不增加公共入口；声明不修改 DNS。
+验收必须包含缺/错 Token=401、错误方法/管理路径=403，以及真实 Vector 投递后
+checkpoint、分钟桶和账本的新鲜度与正值增量。HTTP 200 空响应不能判为采集成功。

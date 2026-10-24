@@ -733,17 +733,22 @@ class NativeRoleTests(unittest.TestCase):
                 'web_saas_host_config_accounts_domain': 'identity.example.invalid',
                 'web_saas_host_config_accounts_public_domain': 'accounts.example.invalid',
                 'web_saas_host_config_deploy_env': 'sit', 'web_saas_host_config_billing_domain': 'billing-candidate.example.invalid',
+                'web_saas_host_config_billing_public_domain': 'billing.example.invalid',
                 'web_saas_host_config_billing_allowed_cidrs': '',
                 'web_saas_host_config_brand_domain': '', 'web_saas_host_config_brand_selfhost_domain': ''}
             result = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(fixture), '-e', json.dumps(variables)],
                 env={**os.environ, 'ANSIBLE_CONFIG': str(ROOT / 'scripts/control_plane/ansible.cfg')}, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             content = destination.read_text()
-            self.assertIn('arbitrary-ui.example.invalid, identity.example.invalid, accounts.example.invalid, billing-candidate.example.invalid {', content)
+            self.assertIn('arbitrary-ui.example.invalid, identity.example.invalid, accounts.example.invalid, billing-candidate.example.invalid, billing.example.invalid {', content)
             self.assertIn('@accounts host identity.example.invalid accounts.example.invalid', content)
             self.assertNotIn('candidate ingress is read-only', content)
             self.assertIn('method GET', content)
             self.assertIn('path /readyz', content)
+            self.assertIn('@public_billing host billing.example.invalid', content)
+            self.assertIn('path /v1/ingest/snapshots', content)
+            self.assertIn('method POST', content)
+            self.assertIn('respond 403', content)
             self.assertIn('reverse_proxy billing:8081', content)
             self.assertNotIn('@candidate_writes', content)
             self.assertNotIn('respond "candidate ingress is read-only" 403', content)

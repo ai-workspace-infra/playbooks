@@ -19,7 +19,7 @@
 }
 
 {% if (web_saas_host_config_use_restored_tls | default(false) | bool) or (web_saas_host_config_acme_dns_enabled | bool) %}
-{{ ([web_saas_host_config_console_domain, web_saas_host_config_console_public_domain, web_saas_host_config_accounts_domain, web_saas_host_config_accounts_public_domain] + ([web_saas_host_config_billing_domain] if web_saas_host_config_candidate_mode | bool and web_saas_host_config_billing_domain | trim | length > 0 else [])) | map('trim') | reject('equalto', '') | unique | join(', ') if web_saas_host_config_candidate_mode | bool else web_saas_host_config_wildcard_domain }} {
+{{ ([web_saas_host_config_console_domain, web_saas_host_config_console_public_domain, web_saas_host_config_accounts_domain, web_saas_host_config_accounts_public_domain] + ([web_saas_host_config_billing_domain, web_saas_host_config_billing_public_domain] if web_saas_host_config_candidate_mode | bool and web_saas_host_config_billing_domain | trim | length > 0 else [])) | map('trim') | reject('equalto', '') | unique | join(', ') if web_saas_host_config_candidate_mode | bool else web_saas_host_config_wildcard_domain }} {
 {% if web_saas_host_config_use_restored_tls | default(false) | bool %}
 	{# 从 Vault 恢复下来的泛域名证书就在磁盘上, 直接指过去 —— 这条路完全不碰
 	   ACME, 所以重建多少次都不消耗 Let's Encrypt 的签发额度。这才是"有效期内
@@ -54,6 +54,30 @@
 		}
 	}
 {% endif %}
+{% endif %}
+
+
+{% if web_saas_host_config_candidate_mode | bool and web_saas_host_config_billing_public_domain | trim | length > 0 %}
+	@public_billing host {{ web_saas_host_config_billing_public_domain }}
+	handle @public_billing {
+		@billing_ingest {
+			method POST
+			path /v1/ingest/snapshots
+		}
+		handle @billing_ingest {
+			reverse_proxy billing:8081
+		}
+		@billing_probe {
+			method GET HEAD
+			path /readyz /healthz /api/ping
+		}
+		handle @billing_probe {
+			reverse_proxy billing:8081
+		}
+		handle {
+			respond 403
+		}
+	}
 {% endif %}
 
 	{# console 域下的 /api/auth/* 必须留给 console 自己 —— 它不是 accounts 的
