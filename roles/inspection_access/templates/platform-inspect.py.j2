@@ -1,0 +1,36 @@
+#!/usr/bin/python3
+"""Fixed operations only; never expose the Docker socket or a privileged shell."""
+import re
+import os
+import subprocess
+import sys
+
+os.environ.clear()
+os.environ.update(PATH="/usr/sbin:/usr/bin:/sbin:/bin", HOME="/root", LANG="C.UTF-8")
+if sys.argv[1:] == ["containers"]:
+    args = ["/usr/bin/docker", "ps", "--format", "{% raw %}{{.Names}} {{.Status}}{% endraw %}"]
+    result = subprocess.run(args, check=False)
+elif sys.argv[1:] == ["container-logs"]:
+    name = sys.stdin.readline(128).strip()
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,100}", name):
+        sys.exit("A container name is required on stdin")
+    result = subprocess.run(["/usr/bin/docker", "logs", "--tail", "200", "--", name], check=False)
+elif sys.argv[1:] == ["logs"]:
+    result = subprocess.run(["/usr/bin/journalctl", "--no-pager", "-n", "200"], check=False)
+elif sys.argv[1:] == ["services"]:
+    result = subprocess.run(["/usr/bin/systemctl", "--no-pager", "--all", "list-units", "--type=service"], check=False)
+elif sys.argv[1:] == ["processes"]:
+    result = subprocess.run(["/usr/bin/ps", "-eo", "pid,ppid,user,stat,pcpu,pmem,comm"], check=False)
+elif sys.argv[1:] == ["database"]:
+    sql = sys.stdin.read(1048577)
+    if not sql.strip() or len(sql) > 1048576:
+        sys.exit("SQL required, maximum 1 MiB")
+    # -c receives SQL with a fixed prefix, never psql backslash commands.
+    args = ["/usr/bin/docker", "exec", "--user", "postgres", "{{ inspection_container }}",
+            "psql", "-X", "-v", "ON_ERROR_STOP=1", "-P", "pager=off",
+            "-U", "{{ inspection_db_role }}", "-d", "{{ inspection_database }}",
+            "-c", "BEGIN READ ONLY; SET LOCAL statement_timeout='30s'; " + sql + "\n; ROLLBACK;"]
+    result = subprocess.run(args, check=False)
+else:
+    sys.exit("Usage: platform-inspect containers|container-logs|logs|services|processes|database")
+sys.exit(result.returncode)
