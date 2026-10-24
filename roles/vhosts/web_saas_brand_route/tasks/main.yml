@@ -53,7 +53,7 @@
       --probe-domains {{ web_saas_brand_probe_domains | join(',') | quote }}
     executable: /usr/bin/python3
   register: web_saas_brand_result
-  changed_when: (web_saas_brand_result.stdout | from_json).changed | bool
+  changed_when: web_saas_brand_result.rc == 0 and (web_saas_brand_result.stdout | from_json).changed | bool
 
 - name: Report the route receipt without certificate values
   ansible.builtin.debug:
