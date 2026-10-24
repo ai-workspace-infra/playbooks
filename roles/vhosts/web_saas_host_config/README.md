@@ -70,12 +70,12 @@ DNS-only，Caddy 必须同时接受这两个 Host。Caddy 转发给 Accounts 的
 | Billing ingest | `billing-selfhost-prod.svc.plus` | `billing.svc.plus` | 仅在 agent CIDR 已配置时反代 `billing:8081` |
 | PostgreSQL | `postgresql-selfhost-prod.svc.plus` | `postgresql.svc.plus` | 仅作为服务/DNS 身份，不经过 HTTP Caddy、不开放公网 5432 |
 
-生产还将 `xworktech.com` 和 `selfhost-prod.xworktech.com` 作为 Console 镜像的品牌入口。
+生产可将 `xworktech.com` 和 `selfhost-prod.xworktech.com` 作为 Console 镜像的品牌入口。
 `WEB_SAAS_BRAND_SELFHOST_DOMAIN` 为不切换正式品牌域名即可验证源站提供入口。
-这些域名使用独立 Caddy
-site block，因为 `*.svc.plus` 证书不覆盖 `xworktech.com`；启用 Cloudflare DNS-01
-时单独签发，否则使用 DNS 已切到该主机后的 HTTP-01。品牌域名仍由 DNS/IaC 决定，
-本 role 不修改 DNS。
+这些域名使用独立 Caddy site block，因为 `*.svc.plus` 证书不覆盖 `xworktech.com`。
+正式品牌入口通过 `WEB_SAAS_BRAND_TLS_DOMAIN` 指向
+`kv/CICD/domains/xworktech.com` 恢复的证书；角色会校验私钥文件存在并检查证书覆盖品牌
+主机名。缺少或不匹配时部署失败，不回退到 ACME。品牌域名仍由 DNS/IaC 决定，本 role 不修改 DNS。
 
 **可选的跨节点 Billing 入口**:
 

@@ -8,6 +8,8 @@ import base64
 import json
 import os
 import re
+import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -44,6 +46,8 @@ def plan(args: argparse.Namespace) -> dict[str, str]:
     if args.margin_days < 0:
         raise ValueError("renewal margin cannot be negative")
     if args.http_status == 404:
+        if args.expected_hostname:
+            raise ValueError("required hostname certificate is missing")
         return {"restore_required": "false", "reason": "no-backup", "vars_file": ""}
     if args.http_status != 200:
         raise ValueError(f"Vault read returned HTTP {args.http_status}")
@@ -51,17 +55,35 @@ def plan(args: argparse.Namespace) -> dict[str, str]:
     response = json.loads(args.vault_response.read_text(encoding="utf-8"))
     record = ((response.get("data") or {}).get("data") or {})
     if not all(record.get(field) for field in FIELDS.values()):
+        if args.expected_hostname:
+            raise ValueError("required hostname certificate backup is incomplete")
         return {"restore_required": "false", "reason": "incomplete-backup", "vars_file": ""}
     expiry = record.get("not_after_epoch")
     margin_seconds = args.margin_days * 86400
     if expiry not in (None, "") and int(expiry) - time.time() < margin_seconds:
+        if args.expected_hostname:
+            raise ValueError("required hostname certificate is inside its renewal margin")
         return {"restore_required": "false", "reason": "renewal-margin", "vars_file": ""}
+
+    decoded = material(record)
+    if args.expected_hostname:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as cert_file:
+            cert_file.write(decoded["cert"])
+            cert_file.flush()
+            result = subprocess.run(
+                ["openssl", "x509", "-in", cert_file.name, "-noout", "-checkhost", args.expected_hostname],
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+        if result.returncode != 0:
+            raise ValueError("Vault certificate does not cover the required hostname")
 
     variables = {
         "caddy_certificate_restore_target": args.target,
         "caddy_certificate_restore_directory": args.directory,
         "caddy_certificate_restore_min_validity_seconds": margin_seconds,
-        "caddy_certificate_restore_material": material(record),
+        "caddy_certificate_restore_material": decoded,
     }
     args.vars_file.parent.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(args.vars_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -81,6 +103,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target", required=True)
     parser.add_argument("--directory", required=True)
     parser.add_argument("--margin-days", type=int, default=14)
+    parser.add_argument("--expected-hostname", default="")
     parser.add_argument("--vars-file", type=Path, required=True)
     parser.add_argument("--github-output", type=Path, required=True)
     return parser.parse_args()
