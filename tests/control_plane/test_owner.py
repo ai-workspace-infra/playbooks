@@ -141,6 +141,19 @@ class RepositoryFixture(unittest.TestCase):
     def load(self):
         return owner.load_contract('candidate.yaml', self.gitops, self.owner, self.sha)
 
+    def test_console_public_domain_requires_explicit_valid_service_alias(self):
+        self.contract['target']['console_public_domain'] = 'console.example.invalid'
+        self.changed()
+        self.assertEqual(self.load()[0]['target']['console_public_domain'], 'console.example.invalid')
+        self.contract['target']['accounts_public_domain'] = 'accounts.example.invalid'
+        for invalid in ('console.other.invalid', 'https://console.example.invalid',
+                        '*.example.invalid', self.contract['target']['accounts_domain'],
+                        self.contract['target']['billing_domain'], 'accounts.example.invalid'):
+            self.contract['target']['console_public_domain'] = invalid
+            self.changed()
+            with self.assertRaises(owner.Refused):
+                self.load()
+
     def test_accounts_public_domain_requires_explicit_valid_service_alias(self):
         self.contract['target']['accounts_public_domain'] = 'accounts.example.invalid'
         self.changed()
@@ -512,7 +525,7 @@ class ReadinessTests(unittest.TestCase):
                   for index, key in enumerate(owner.SERVICES, 1)}
         controller_image = 'ghcr.io/example/doco@sha256:' + 'f' * 64
         contract = {'target': {'console_domain': 'console.example.invalid', 'accounts_domain': 'accounts.example.invalid',
-                    'billing_domain': 'billing.example.invalid'},
+                    'console_public_domain': 'public-console.example.invalid', 'billing_domain': 'billing.example.invalid'},
             'release': {'services': images, 'doco_cd': {'image': controller_image, 'target': 'candidate',
                 'repository': 'https://github.com/ai-workspace-infra/gitops.git'}},
             'resolved': {'gitops_sha': 'a' * 40}}
@@ -539,6 +552,8 @@ class ReadinessTests(unittest.TestCase):
              mock.patch.object(readiness, 'sni_probe') as probe:
             result = readiness.execute({'contract': contract, 'shared_token': 'fixture-shared-token'})
         probe.assert_any_call('billing.example.invalid', '/readyz')
+        probe.assert_any_call('public-console.example.invalid', '/', html=True)
+        probe.assert_any_call('public-console.example.invalid', '/login', html=True)
         self.assertFalse(result['business_acceptance'])
         self.assertFalse(result['cutover'])
 
@@ -553,6 +568,14 @@ class ReadinessTests(unittest.TestCase):
         with mock.patch.object(readiness.subprocess, 'run', return_value=mock.Mock(returncode=60, stdout='')):
             with self.assertRaises(readiness.Refused):
                 readiness.sni_probe('candidate.example.invalid', '/')
+
+    def test_console_sni_rejects_empty_200_and_requires_html(self):
+        for body in ('200', '\n200', '{"status":"ok"}\n200'):
+            with mock.patch.object(readiness, 'command', return_value=body):
+                with self.assertRaises(readiness.Refused):
+                    readiness.sni_probe('console.example.invalid', '/', html=True)
+        with mock.patch.object(readiness, 'command', return_value='<html><body>Console</body></html>\n200'):
+            readiness.sni_probe('console.example.invalid', '/login', html=True)
 
     def test_actual_http_body_and_database_readiness_are_required(self):
         from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -729,7 +752,7 @@ class NativeRoleTests(unittest.TestCase):
             variables = {'web_saas_host_config_candidate_mode': True, 'web_saas_host_config_use_restored_tls': True,
                 'web_saas_host_config_acme_dns_enabled': False, 'web_saas_host_config_target_domain_base': 'example.invalid',
                 'web_saas_host_config_console_domain': 'arbitrary-ui.example.invalid',
-                'web_saas_host_config_console_public_domain': 'arbitrary-ui.example.invalid',
+                'web_saas_host_config_console_public_domain': 'console.example.invalid',
                 'web_saas_host_config_accounts_domain': 'identity.example.invalid',
                 'web_saas_host_config_accounts_public_domain': 'accounts.example.invalid',
                 'web_saas_host_config_deploy_env': 'sit', 'web_saas_host_config_billing_domain': 'billing-candidate.example.invalid',
@@ -740,7 +763,8 @@ class NativeRoleTests(unittest.TestCase):
                 env={**os.environ, 'ANSIBLE_CONFIG': str(ROOT / 'scripts/control_plane/ansible.cfg')}, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             content = destination.read_text()
-            self.assertIn('arbitrary-ui.example.invalid, identity.example.invalid, accounts.example.invalid, billing-candidate.example.invalid, billing.example.invalid {', content)
+            self.assertIn('arbitrary-ui.example.invalid, console.example.invalid, identity.example.invalid, accounts.example.invalid, billing-candidate.example.invalid, billing.example.invalid {', content)
+            self.assertIn('@console host arbitrary-ui.example.invalid console.example.invalid', content)
             self.assertIn('@accounts host identity.example.invalid accounts.example.invalid', content)
             self.assertNotIn('candidate ingress is read-only', content)
             self.assertIn('method GET', content)
