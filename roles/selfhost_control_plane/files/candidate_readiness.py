@@ -47,12 +47,15 @@ def http_probe(address, port, path, host, expected, html=False, token=None):
             require(isinstance(result, dict) and all(result.get(k) == v for k, v in expected.items()), 'Candidate API readiness response differs')
 
 
-def sni_probe(domain, path):
+def sni_probe(domain, path, html=False):
     # curl verifies trust, SAN and expiry. No -k, custom DNS mutation, redirect,
     # authentication value, response body or raw certificate enters evidence.
     status = command(['curl', '--fail', '--silent', '--show-error', '--noproxy', '*', '--proto', '=https',
         '--connect-timeout', '5', '--max-time', '15', '--max-redirs', '0', '--resolve', domain + ':443:127.0.0.1',
-        '--output', '/dev/null', '--write-out', '%{http_code}', 'https://' + domain + path])
+        '--output', '-' if html else '/dev/null', '--write-out', '\n%{http_code}' if html else '%{http_code}', 'https://' + domain + path])
+    if html:
+        body, separator, status = status.rpartition('\n')
+        require(separator and '<html' in body.lower(), 'Console HTTPS/SNI endpoint did not return an actual HTML document')
     require(status == '200', 'Candidate HTTPS/SNI endpoint did not return HTTP 200')
 
 
@@ -85,8 +88,15 @@ def execute(request):
             probes.append({'service': service, 'status': 'passed', 'check': 'authenticated_content_endpoint'})
     command(['docker', 'exec', 'web-saas-caddy', 'caddy', 'validate', '--config', '/etc/caddy/Caddyfile'])
     for key, path in (('console_domain', '/'), ('accounts_domain', '/readyz')):
-        sni_probe(contract['target'][key], path)
+        if key == 'console_domain':
+            sni_probe(contract['target'][key], path, html=True)
+        else:
+            sni_probe(contract['target'][key], path)
         probes.append({'service': key, 'status': 'passed', 'check': 'trusted_https_sni'})
+    if contract['target'].get('console_public_domain'):
+        for path in ('/', '/login'):
+            sni_probe(contract['target']['console_public_domain'], path, html=True)
+        probes.append({'service': 'console_public_domain', 'status': 'passed', 'check': 'trusted_https_html'})
     if contract['target'].get('billing_domain'):
         sni_probe(contract['target']['billing_domain'], '/readyz')
         probes.append({'service': 'billing', 'status': 'passed', 'check': 'trusted_https_readiness_sni'})

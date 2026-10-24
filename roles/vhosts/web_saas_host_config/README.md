@@ -190,3 +190,5 @@ Accounts host matcher，不能只添加 matcher：CNAME 不会改写 HTTP Host/S
 执行，管理接口及采集 GET 均返回 403。未声明则不增加公共入口；声明不修改 DNS。
 验收必须包含缺/错 Token=401、错误方法/管理路径=403，以及真实 Vector 投递后
 checkpoint、分钟桶和账本的新鲜度与正值增量。HTTP 200 空响应不能判为采集成功。
+
+Console 公共入口由 `target.console_public_domain` 显式声明，必须是本域名基座下的普通主机名且不与 Accounts/Billing 入口冲突。角色将别名同时送入 Caddy site 与 Console host matcher，保留 Console 自己处理认证 BFF 和静态资源。仅切换 DNS、未声明对应别名不能视为入口交接完成；应在切换前用实际 Host/SNI 验证非空首页、登录 HTML 和脚本资源。
