@@ -131,16 +131,21 @@ data_volume: ${DATA_DIR}
 trivy:
   ignore_unfixed: false
   skip_update: false
+  skip_java_db_update: false
+  db_repository: ghcr.io/aquasecurity/trivy-db
+  java_db_repository: ghcr.io/aquasecurity/trivy-java-db
   offline_scan: false
-  security_check: vuln
   insecure: false
 jobservice:
   max_job_workers: 10
+  max_job_duration_hours: 24
   job_loggers:
     - STD_OUTPUT
     - FILE
+  logger_sweeper_duration: 1
 notification:
   webhook_job_max_retry: 3
+  webhook_job_http_client_timeout: 3
 log:
   level: info
   local:
@@ -191,8 +196,13 @@ YML
 }
 
 render_caddyfile() {
+    local tls_line=""
+    if [[ "${DOMAIN}" =~ \.(example\.com|local|internal|test)$ ]] || [ "${HARBOR_TLS_INTERNAL:-false}" = true ]; then
+        tls_line="    tls internal"
+    fi
     cat <<CADDY
 ${DOMAIN} {
+${tls_line}
     request_body {
         max_size 0
     }
@@ -203,26 +213,61 @@ CADDY
 
 ensure_docker() {
     if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-        log "Docker + Compose plugin present."; return 0
+        log "Docker + Compose plugin present."
+    else
+        run sh -c 'curl -fsSL https://get.docker.com | sh'
+        run systemctl enable --now docker
     fi
-    run sh -c 'curl -fsSL https://get.docker.com | sh'
-    run systemctl enable --now docker
+    if ! command -v docker-compose >/dev/null 2>&1; then
+        if [ -x /usr/libexec/docker/cli-plugins/docker-compose ]; then
+            run ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+        elif [ -x /usr/local/lib/docker/cli-plugins/docker-compose ]; then
+            run ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+        fi
+    fi
 }
 
 install_standalone() {
     check_root; check_inputs
-    ADMIN_PW="${HARBOR_ADMIN_PASSWORD:-$(gen_secret)}"; DB_PW="${HARBOR_DB_PASSWORD:-$(gen_secret)}"
+    local existing_yml="$INSTALL_ROOT/harbor/harbor.yml"
+    if [ ! -f "$existing_yml" ]; then
+        local latest_archive; latest_archive="$(find /opt -maxdepth 1 -name "harbor-config-*.tgz" 2>/dev/null | sort -r | head -n 1 || true)"
+        if [ -n "$latest_archive" ]; then
+            tar -zxvf "$latest_archive" ./harbor/harbor.yml -O > /tmp/harbor_restored.yml 2>/dev/null || true
+            [ -s /tmp/harbor_restored.yml ] && existing_yml="/tmp/harbor_restored.yml"
+        fi
+    fi
+    if [ -z "${HARBOR_ADMIN_PASSWORD:-}" ] && [ -f "$existing_yml" ]; then
+        ADMIN_PW="$(awk '/^harbor_admin_password:/{print $2; exit}' "$existing_yml" 2>/dev/null || true)"
+    fi
+    ADMIN_PW="${ADMIN_PW:-${HARBOR_ADMIN_PASSWORD:-$(gen_secret)}}"
+
+    if [ -z "${HARBOR_DB_PASSWORD:-}" ] && [ -f "$existing_yml" ]; then
+        DB_PW="$(awk '/^database:/{flag=1; next} flag && /^[[:space:]]+password:/{print $2; exit}' "$existing_yml" 2>/dev/null || true)"
+    fi
+    DB_PW="${DB_PW:-${HARBOR_DB_PASSWORD:-$(gen_secret)}}"
+    rm -f /tmp/harbor_restored.yml 2>/dev/null || true
     ensure_docker
     run mkdir -p "$INSTALL_ROOT" "$DATA_DIR"
     local tgz="harbor-offline-installer-${HARBOR_VERSION}.tgz"
     if [ ! -d "$INSTALL_ROOT/harbor" ]; then
-        log "Downloading official offline installer ${HARBOR_VERSION} ..."
-        run curl -fSL -o "$INSTALL_ROOT/$tgz" "$RELEASE_URL/$tgz"
-        run curl -fSL -o "$INSTALL_ROOT/md5sum" "$RELEASE_URL/md5sum"
+        if [ ! -f "$INSTALL_ROOT/$tgz" ]; then
+            log "Downloading official offline installer ${HARBOR_VERSION} ..."
+            run curl -fSL -o "$INSTALL_ROOT/$tgz" "$RELEASE_URL/$tgz"
+        fi
+        if [ ! -f "$INSTALL_ROOT/md5sum" ]; then
+            run curl -fSL -o "$INSTALL_ROOT/md5sum" "$RELEASE_URL/md5sum"
+        fi
         if [ "$DRY" = false ]; then
             (cd "$INSTALL_ROOT" && grep " $tgz\$" md5sum | md5sum -c -) || error_exit "Checksum mismatch for $tgz"
         fi
         run tar -xzf "$INSTALL_ROOT/$tgz" -C "$INSTALL_ROOT"
+    fi
+    if [ "$DRY" = false ]; then
+        if ! getent hosts "${DOMAIN}" >/dev/null 2>&1; then
+            log "Configuring /etc/hosts for ${DOMAIN} -> 127.0.0.1"
+            echo "127.0.0.1 ${DOMAIN}" >> /etc/hosts
+        fi
     fi
     if [ "$DRY" = true ]; then
         log "[DRY-RUN] harbor.yml would be:"; render_harbor_yml | sed -E 's/(password|secretkey|accesskey): .*/\1: ***/'
@@ -231,9 +276,49 @@ install_standalone() {
     fi
     log "Running install.sh --with-trivy ..."
     run bash -c "cd '$INSTALL_ROOT/harbor' && ./install.sh --with-trivy"
-    if [ "$DRY" = false ]; then render_caddyfile > "$INSTALL_ROOT/Caddyfile"; fi
+    if [ "$DRY" = false ]; then
+        render_caddyfile > "$INSTALL_ROOT/Caddyfile"
+        run docker rm -f harbor-caddy 2>/dev/null || true
+    fi
     run docker run -d --name harbor-caddy --restart unless-stopped --network host \
         -v "$INSTALL_ROOT/Caddyfile:/etc/caddy/Caddyfile:ro" -v harbor_caddy_data:/data "$CADDY_IMAGE"
+
+    if [ "$DRY" = false ] && { [[ "${DOMAIN}" =~ \.(example\.com|local|internal|test)$ ]] || [ "${HARBOR_TLS_INTERNAL:-false}" = true ]; }; then
+        log "Configuring local self-signed TLS trust for Docker and system ..."
+        for _ in {1..30}; do
+            if docker cp harbor-caddy:/data/caddy/pki/authorities/local/root.crt /tmp/harbor-root-ca.crt 2>/dev/null; then
+                break
+            fi
+            sleep 1
+        done
+        if [ -f /tmp/harbor-root-ca.crt ]; then
+            mkdir -p "/etc/docker/certs.d/${DOMAIN}"
+            cp /tmp/harbor-root-ca.crt "/etc/docker/certs.d/${DOMAIN}/ca.crt"
+            if [ -d /usr/local/share/ca-certificates ]; then
+                cp /tmp/harbor-root-ca.crt /usr/local/share/ca-certificates/harbor-local-ca.crt
+                update-ca-certificates 2>/dev/null || true
+            fi
+            rm -f /tmp/harbor-root-ca.crt
+            log "Docker and host CA trust installed."
+        fi
+    fi
+
+    if [ "$DRY" = false ]; then
+        log "Waiting for Harbor API readiness (http://127.0.0.1:${HTTP_PORT}/api/v2.0/ping) ..."
+        local ready=false
+        for _ in {1..40}; do
+            if curl -fsSL -k "http://127.0.0.1:${HTTP_PORT}/api/v2.0/ping" >/dev/null 2>&1; then
+                ready=true; break
+            fi
+            sleep 3
+        done
+        if [ "$ready" = true ]; then
+            log "Harbor is healthy and responding!"
+        else
+            warn "Harbor services still starting, check 'docker compose ps' in $INSTALL_ROOT/harbor."
+        fi
+    fi
+
     log "Harbor is starting at https://${DOMAIN} (user: admin)."
     [ -n "${HARBOR_ADMIN_PASSWORD:-}" ] || log "Generated admin password (shown once): ${ADMIN_PW}"
     log "Next: create projects, robot accounts for CI, enable scan-on-push and tag retention."
@@ -302,7 +387,11 @@ install_k8s() {
     command -v kubectl >/dev/null || [ "$DRY" = true ] || error_exit "kubectl not found."
     command -v helm >/dev/null || [ "$DRY" = true ] || error_exit "helm not found."
     local pw="${HARBOR_ADMIN_PASSWORD:-$(gen_secret)}"
-    run kubectl create namespace "$NS" --dry-run=client -o yaml | { [ "$DRY" = true ] && cat >/dev/null || kubectl apply -f -; }
+    if [ "$DRY" = true ]; then
+        kubectl create namespace "$NS" --dry-run=client -o yaml >/dev/null
+    else
+        kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+    fi
     if [ "$DRY" = false ]; then
         kubectl -n "$NS" create secret generic harbor-admin --from-literal=HARBOR_ADMIN_PASSWORD="$pw" \
             --dry-run=client -o yaml | kubectl apply -f -
@@ -335,9 +424,9 @@ uninstall() {
         return
     fi
     check_root
-    run docker rm -f harbor-caddy || true
-    if [ -d "$INSTALL_ROOT/harbor" ]; then run bash -c "cd '$INSTALL_ROOT/harbor' && docker compose down"; fi
-    run tar -czf "$INSTALL_ROOT-config-$(date +%Y%m%d%H%M%S).tgz" -C "$INSTALL_ROOT" .
+    run docker rm -f harbor-caddy 2>/dev/null || true
+    if [ -d "$INSTALL_ROOT/harbor" ]; then run bash -c "cd '$INSTALL_ROOT/harbor' && docker compose down" 2>/dev/null || true; fi
+    run tar -czf "$INSTALL_ROOT-config-$(date +%Y%m%d%H%M%S).tgz" --exclude="*.tgz" --exclude="*.tar.gz" -C "$INSTALL_ROOT" . 2>/dev/null || true
     log "Stopped Harbor. Data kept in ${DATA_DIR}."
 }
 
