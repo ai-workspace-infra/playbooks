@@ -26,13 +26,22 @@
     # API 的请求量"之间取的值 —— 一次 git ls-remote 很轻, 但 180s 的默认
     # 值会让一次 UAT 验证多等三分钟。
     doco_cd_poll_config:
-      - url: https://github.com/ai-workspace-infra/gitops.git
-        reference: main
+      - url: "{{ web_saas_doco_cd_repository | default('https://github.com/ai-workspace-infra/gitops.git') }}"
+        reference: "{{ web_saas_doco_cd_reference | default('main') }}"
         interval: 60
-        target: "{{ 'prod' if web_saas_deployment_environment == 'prod' else '' }}"
+        target: "{{ web_saas_doco_cd_target | default('prod' if web_saas_deployment_environment == 'prod' else '') }}"
     # webhook 需要一个共享 secret(第 ③ 层环境业务密钥)与 CD 侧的 HMAC
     # 签名。轮询不需要任何新凭据, 所以先走轮询; 要压到秒级再开 webhook。
     doco_cd_enable_webhook: false
+  pre_tasks:
+    - name: Refuse implicit Doco-CD defaults for generation deployments
+      ansible.builtin.assert:
+        that:
+          - doco_cd_image is match('^ghcr[.]io/.+@sha256:[a-f0-9]{64}$')
+          - web_saas_doco_cd_target | default('') | length > 0
+          - web_saas_doco_cd_reference | default('') is match('^[a-f0-9]{40}$')
+        fail_msg: Generation deployment requires its declared Doco-CD digest, target and immutable GitOps SHA.
+      when: web_saas_deployment_environment is match('^prod-v[0-9]+$')
   roles:
     - role: roles/web_saas_prod_storage
       when: web_saas_deployment_environment == 'prod'

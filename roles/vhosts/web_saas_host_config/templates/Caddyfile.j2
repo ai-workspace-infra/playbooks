@@ -14,12 +14,16 @@
    DNS-01 需要 caddy-dns/cloudflare 模块 —— 官方 caddy 镜像不含它, 用的是
    ghcr.io/ai-workspace-infra/caddy-cloudflare(artifacts 仓构建)。 #}
 {% set brand_domains = [web_saas_host_config_brand_domain, web_saas_host_config_brand_selfhost_domain | default('')] | map('trim') | reject('equalto', '') | unique | list %}
+{% set console_hosts = ([web_saas_host_config_console_domain, web_saas_host_config_console_public_domain] + web_saas_host_config_console_aliases) | map('trim') | reject('equalto', '') | unique | list %}
+{% set accounts_hosts = ([web_saas_host_config_accounts_domain, web_saas_host_config_accounts_public_domain] + web_saas_host_config_accounts_aliases) | map('trim') | reject('equalto', '') | unique | list %}
+{% set billing_public_hosts = ([web_saas_host_config_billing_public_domain] + web_saas_host_config_billing_aliases) | map('trim') | reject('equalto', '') | unique | list %}
+{% set billing_hosts = ([web_saas_host_config_billing_domain] + billing_public_hosts) | map('trim') | reject('equalto', '') | unique | list %}
 {
 	admin off
 }
 
 {% if (web_saas_host_config_use_restored_tls | default(false) | bool) or (web_saas_host_config_acme_dns_enabled | bool) %}
-{{ ([web_saas_host_config_console_domain, web_saas_host_config_console_public_domain, web_saas_host_config_accounts_domain, web_saas_host_config_accounts_public_domain] + ([web_saas_host_config_billing_domain, web_saas_host_config_billing_public_domain] if web_saas_host_config_candidate_mode | bool and web_saas_host_config_billing_domain | trim | length > 0 else [])) | map('trim') | reject('equalto', '') | unique | join(', ') if web_saas_host_config_candidate_mode | bool else web_saas_host_config_wildcard_domain }} {
+{{ (console_hosts + accounts_hosts + (billing_hosts if web_saas_host_config_candidate_mode | bool and web_saas_host_config_billing_domain | trim | length > 0 else [])) | map('trim') | reject('equalto', '') | unique | join(', ') if web_saas_host_config_candidate_mode | bool else web_saas_host_config_wildcard_domain }} {
 {% if web_saas_host_config_use_restored_tls | default(false) | bool %}
 	{# 从 Vault 恢复下来的泛域名证书就在磁盘上, 直接指过去 —— 这条路完全不碰
 	   ACME, 所以重建多少次都不消耗 Let's Encrypt 的签发额度。这才是"有效期内
@@ -57,8 +61,8 @@
 {% endif %}
 
 
-{% if web_saas_host_config_candidate_mode | bool and web_saas_host_config_billing_public_domain | trim | length > 0 %}
-	@public_billing host {{ web_saas_host_config_billing_public_domain }}
+{% if web_saas_host_config_candidate_mode | bool and billing_public_hosts | length > 0 %}
+	@public_billing host {{ billing_public_hosts | join(' ') }}
 	handle @public_billing {
 		@billing_ingest {
 			method POST
@@ -87,7 +91,7 @@
 	   把该前缀转给 accounts:8080 的规则, 结果 MFA 绑定四个端点全废(setup 404、
 	   status/disable 401、verify 语义错) —— 见 docs/cases/runbooks/。
 	   console 自己要访问 accounts 时走 authUrl(accounts-selfhost-${DEPLOY_ENV} 这个 vhost), 不靠本域。 #}
-	@accounts host {{ [web_saas_host_config_accounts_domain, web_saas_host_config_accounts_public_domain] | map('trim') | reject('equalto', '') | unique | join(' ') }}
+	@accounts host {{ accounts_hosts | join(' ') }}
 	handle @accounts {
 		tracing {
 			span http.server.request
@@ -99,7 +103,7 @@
 		}
 	}
 
-	@console host {{ [web_saas_host_config_console_domain, web_saas_host_config_console_public_domain] | map('trim') | reject('equalto', '') | unique | join(' ') }}
+	@console host {{ console_hosts | join(' ') }}
 	handle @console {
 		tracing {
 			span http.server.request
@@ -119,7 +123,7 @@
 	   都由部署流水线提供时才生成, Caddy 先做源 IP 限制, Billing ingest
 	   再用与 Accounts 相同的 INTERNAL_SERVICE_TOKEN 做 Bearer 认证。 #}
 {% if web_saas_host_config_billing_domain | trim | length > 0 and web_saas_host_config_billing_allowed_cidrs | trim | length > 0 %}
-	@billing host {{ [web_saas_host_config_billing_domain, web_saas_host_config_billing_public_domain] | map('trim') | reject('equalto', '') | unique | join(' ') }}{{ '\n' }}
+	@billing host {{ billing_hosts | join(' ') }}{{ '\n' }}
 	handle @billing {
 		@billing_agent remote_ip {{ web_saas_host_config_billing_allowed_cidrs }}
 		handle @billing_agent {
@@ -164,7 +168,7 @@
 }
 {% endif %}
 {% else %}
-https://{{ web_saas_host_config_console_domain }}, https://{{ web_saas_host_config_console_public_domain }}{% if brand_domains | length > 0 %}, https://{{ brand_domains | join(', https://') }}{% endif %} {
+https://{{ console_hosts | join(', https://') }}{% if brand_domains | length > 0 %}, https://{{ brand_domains | join(', https://') }}{% endif %} {
 	encode zstd gzip
 
 	# /api/auth/* 不做分流: 那是 console 自己的 Next BFF 路由, 不是 accounts 的
@@ -177,7 +181,7 @@ https://{{ web_saas_host_config_console_domain }}, https://{{ web_saas_host_conf
 	}
 }
 
-https://{{ web_saas_host_config_accounts_domain }}, https://{{ web_saas_host_config_accounts_public_domain }} {
+https://{{ accounts_hosts | join(', https://') }} {
 	encode zstd gzip
 	tracing {
 		span http.server.request
@@ -197,7 +201,7 @@ https://{{ web_saas_host_config_bridge_domain }} {
 }
 
 {% if web_saas_host_config_billing_domain | trim | length > 0 and web_saas_host_config_billing_allowed_cidrs | trim | length > 0 %}
-https://{{ web_saas_host_config_billing_domain }}{% if web_saas_host_config_billing_public_domain | trim | length > 0 %}, https://{{ web_saas_host_config_billing_public_domain }}{% endif %} {
+https://{{ billing_hosts | join(', https://') }} {
 	encode zstd gzip
 	@billing_agent remote_ip {{ web_saas_host_config_billing_allowed_cidrs }}
 	handle @billing_agent {

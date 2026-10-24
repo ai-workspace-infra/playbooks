@@ -26,7 +26,7 @@ class WebSaasDomainAliasContractTest(unittest.TestCase):
 
     def test_caddy_accepts_canonical_http_aliases(self):
         self.assertIn(
-            "@accounts host {{ web_saas_host_config_accounts_domain }} {{ web_saas_host_config_accounts_public_domain }}",
+            "@accounts host {{ accounts_hosts | join(' ') }}",
             CADDY,
         )
         self.assertIn("web_saas_host_config_billing_public_domain", CADDY)

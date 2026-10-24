@@ -165,6 +165,21 @@ class RepositoryFixture(unittest.TestCase):
             with self.assertRaises(owner.Refused):
                 self.load()
 
+    def test_service_aliases_are_validated_and_rendered_together(self):
+        aliases = {'console_aliases': ['console-prod-vnext.example.invalid'],
+                   'accounts_aliases': ['accounts-prod-vnext.example.invalid'],
+                   'billing_aliases': ['billing-prod-vnext.example.invalid']}
+        self.contract['target'].update(aliases)
+        self.changed()
+        self.assertEqual(self.load()[0]['target']['console_aliases'], aliases['console_aliases'])
+        for invalid in (['https://console.example.invalid'], ['console.other.invalid'],
+                        ['identity.example.invalid'],
+                        ['console-prod-vnext.example.invalid', 'console-prod-vnext.example.invalid']):
+            self.contract['target']['console_aliases'] = invalid
+            self.changed()
+            with self.assertRaises(owner.Refused):
+                self.load()
+
     def test_billing_domain_is_a_distinct_hostname_under_domain_base(self):
         self.contract['target'].pop('billing_domain')
         self.changed()
@@ -753,19 +768,25 @@ class NativeRoleTests(unittest.TestCase):
                 'web_saas_host_config_acme_dns_enabled': False, 'web_saas_host_config_target_domain_base': 'example.invalid',
                 'web_saas_host_config_console_domain': 'arbitrary-ui.example.invalid',
                 'web_saas_host_config_console_public_domain': 'console.example.invalid',
+                'web_saas_host_config_console_aliases': ['console-prod-vnext.example.invalid', 'console.example.invalid'],
                 'web_saas_host_config_accounts_domain': 'identity.example.invalid',
                 'web_saas_host_config_accounts_public_domain': 'accounts.example.invalid',
+                'web_saas_host_config_accounts_aliases': ['accounts-prod-vnext.example.invalid'],
                 'web_saas_host_config_deploy_env': 'sit', 'web_saas_host_config_billing_domain': 'billing-candidate.example.invalid',
                 'web_saas_host_config_billing_public_domain': 'billing.example.invalid',
+                'web_saas_host_config_billing_aliases': ['billing-prod-vnext.example.invalid'],
                 'web_saas_host_config_billing_allowed_cidrs': '',
                 'web_saas_host_config_brand_domain': '', 'web_saas_host_config_brand_selfhost_domain': ''}
             result = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(fixture), '-e', json.dumps(variables)],
                 env={**os.environ, 'ANSIBLE_CONFIG': str(ROOT / 'scripts/control_plane/ansible.cfg')}, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             content = destination.read_text()
-            self.assertIn('arbitrary-ui.example.invalid, console.example.invalid, identity.example.invalid, accounts.example.invalid, billing-candidate.example.invalid, billing.example.invalid {', content)
+            self.assertIn('arbitrary-ui.example.invalid, console.example.invalid, console-prod-vnext.example.invalid, identity.example.invalid, accounts.example.invalid, accounts-prod-vnext.example.invalid, billing-candidate.example.invalid, billing.example.invalid, billing-prod-vnext.example.invalid {', content)
             self.assertIn('@console host arbitrary-ui.example.invalid console.example.invalid', content)
             self.assertIn('@accounts host identity.example.invalid accounts.example.invalid', content)
+            self.assertIn('console-prod-vnext.example.invalid', content)
+            self.assertIn('accounts-prod-vnext.example.invalid', content)
+            self.assertIn('billing-prod-vnext.example.invalid', content)
             self.assertNotIn('candidate ingress is read-only', content)
             self.assertIn('method GET', content)
             self.assertIn('path /readyz', content)
