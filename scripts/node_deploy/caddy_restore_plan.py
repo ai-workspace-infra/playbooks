@@ -76,7 +76,7 @@ def plan(args: argparse.Namespace) -> dict[str, str]:
                 check=False,
                 timeout=30,
             )
-        if result.returncode != 0:
+        if result.returncode != 0 or b'does match certificate' not in result.stdout:
             raise ValueError("Vault certificate does not cover the required hostname")
 
     variables = {

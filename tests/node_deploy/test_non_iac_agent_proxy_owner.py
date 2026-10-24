@@ -163,7 +163,7 @@ class InventoryOwnerTest(unittest.TestCase):
 
 
 class CaddyRestorePlanTest(unittest.TestCase):
-    def invoke(self, directory: Path, status: int, record: dict | None):
+    def invoke(self, directory: Path, status: int, record: dict | None, expected_hostname=''):
         response = directory / "vault.json"
         response.write_text(json.dumps({"data": {"data": record or {}}}), encoding="utf-8")
         output = directory / "output"
@@ -176,6 +176,8 @@ class CaddyRestorePlanTest(unittest.TestCase):
                 str(response),
                 "--http-status",
                 str(status),
+                '--expected-hostname',
+                expected_hostname,
                 "--target",
                 "ph-node",
                 "--directory",
@@ -212,6 +214,23 @@ class CaddyRestorePlanTest(unittest.TestCase):
                 self.assertIn("restore_required=false", output.read_text())
                 self.assertIn(f"reason={reason}", output.read_text())
                 self.assertFalse(variables.exists())
+
+    def test_hostname_mismatch_is_rejected_even_when_openssl_exits_zero(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cert = root / 'cert.pem'
+            subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+                '-keyout', str(root / 'key.pem'), '-out', str(cert), '-days', '30',
+                '-subj', '/CN=brand.example', '-addext', 'subjectAltName=DNS:brand.example'],
+                check=True, capture_output=True)
+            record = self.complete_record(int(time.time()) + 30 * 86400)
+            record['tls_cert_pem_b64'] = base64.b64encode(cert.read_bytes()).decode()
+            for hostname, expected_status in [('brand.example', 0), ('wrong.example', 1)]:
+                directory = root / hostname
+                directory.mkdir()
+                process, _, variables = self.invoke(directory, 200, record, hostname)
+                self.assertEqual(process.returncode, expected_status)
+                self.assertEqual(variables.exists(), expected_status == 0)
 
     def test_ready_record_writes_private_role_contract_only(self):
         with tempfile.TemporaryDirectory() as temporary:

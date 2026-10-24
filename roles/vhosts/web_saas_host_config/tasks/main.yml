@@ -320,7 +320,11 @@
       - -noout
       - -checkhost
       - "{{ web_saas_host_config_brand_domain }}"
+  register: web_saas_host_config_brand_hostname_check
   changed_when: false
+  failed_when: >-
+    web_saas_host_config_brand_hostname_check.rc != 0 or
+    'does match certificate' not in web_saas_host_config_brand_hostname_check.stdout
   when: web_saas_host_config_brand_domain | length > 0
 
 - name: Render web-saas Caddyfile

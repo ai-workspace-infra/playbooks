@@ -76,7 +76,9 @@ def reconcile(args):
         current = config.read_text()
         candidate, base = render(current, args.domain)
         tls = '/etc/xcontrol/tls/' + args.domain + '/current/cert.pem'
-        command('openssl', 'x509', '-in', tls, '-checkhost', args.domain, '-checkend', '1209600', '-noout')
+        hostname_check = command('openssl', 'x509', '-in', tls, '-checkhost', args.domain, '-checkend', '1209600', '-noout')
+        if 'does match certificate' not in hostname_check:
+            raise ValueError('brand certificate hostname mismatch')
         before = {domain: probe(domain) for domain in args.probe_domains.split(',')}
         peers = containers(args.container)
         receipt = dict(changed=candidate != current, existing_domains=before,
