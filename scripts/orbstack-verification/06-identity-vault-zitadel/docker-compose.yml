@@ -1,0 +1,41 @@
+services:
+  vault:
+    image: hashicorp/vault:1.17.6
+    container_name: platform-vault-server
+    restart: unless-stopped
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=vault-root-token-dev
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+      - VAULT_ADDR=http://127.0.0.1:8200
+    ports:
+      - "127.0.0.1:18200:8200"
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+
+  postgres-zitadel:
+    image: postgres:16-alpine
+    container_name: platform-zitadel-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=zitadel
+      - POSTGRES_USER=zitadel
+      - POSTGRES_PASSWORD=zitadel-secret-123
+    ports:
+      - "127.0.0.1:15434:5432"
+    volumes:
+      - zitadel_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zitadel -d zitadel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+
+volumes:
+  zitadel_db_data:

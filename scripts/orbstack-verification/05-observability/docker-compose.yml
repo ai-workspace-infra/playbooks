@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  victoria-metrics:
+    image: victoriametrics/victoria-metrics:v1.101.0
+    container_name: platform-obs-victoriametrics
+    restart: always
+    command:
+      - '-storageDataPath=/vmetrics_data'
+      - '-retentionPeriod=30d'
+    ports:
+      - "127.0.0.1:19090:8428"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8428/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  victoria-logs:
+    image: victoriametrics/victoria-logs:v1.52.0
+    container_name: platform-obs-victorialogs
+    restart: always
+    command:
+      - '-storageDataPath=/vlogs_data'
+      - '-retentionPeriod=1y'
+    ports:
+      - "127.0.0.1:19428:9428"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9428/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  victoria-traces:
+    image: victoriametrics/victoria-traces:v0.1.0
+    container_name: platform-obs-victoriatraces
+    restart: always
+    command:
+      - '-storageDataPath=/vtraces_data'
+    ports:
+      - "127.0.0.1:10428:10428"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:10428/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: platform-obs-grafana
+    restart: always
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "127.0.0.1:13030:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: platform-obs-node-exporter
+    restart: always
+    ports:
+      - "127.0.0.1:19100:9100"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9100/metrics"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  vector:
+    image: timberio/vector:0.41.1-alpine
+    container_name: platform-obs-vector
+    restart: always
+    volumes:
+      - ./vector.toml:/etc/vector/vector.toml:ro
+    command: ["vector", "--config", "/etc/vector/vector.toml"]
+    ports:
+      - "127.0.0.1:18686:8686"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8686/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      - node-exporter
+      - victoria-metrics

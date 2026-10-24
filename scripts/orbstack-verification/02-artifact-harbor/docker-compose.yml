@@ -1,0 +1,14 @@
+services:
+  harbor-portal:
+    image: goharbor/harbor-portal:v2.15.4
+    container_name: platform-harbor-portal
+    restart: unless-stopped
+    user: root
+    ports:
+      - "127.0.0.1:18080:80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s

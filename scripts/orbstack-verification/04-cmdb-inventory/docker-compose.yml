@@ -1,0 +1,17 @@
+services:
+  cmdb:
+    image: python:3.11-alpine
+    container_name: platform-cmdb-api
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./cmdb_server.py:/app/cmdb_server.py:ro
+    command: python3 cmdb_server.py
+    ports:
+      - "127.0.0.1:18000:8000"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 2s
