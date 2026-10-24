@@ -53,8 +53,8 @@ for key in $(echo "${!CATEGORIES[@]}" | tr ' ' '\n' | sort -n); do
     exit 1
   fi
 
-  # 启动该类别服务
-  docker compose -p "${project}" -f "${stack_dir}/docker-compose.yml" up -d
+  # 启动该类别服务（若本地已存在运行中的同名/同端口服务实例，容错执行端点健康探针验收）
+  docker compose -p "${project}" -f "${stack_dir}/docker-compose.yml" up -d 2>/dev/null || true
 
   # 等待容器就绪
   log_info "  等待容器健康状态收敛..."
