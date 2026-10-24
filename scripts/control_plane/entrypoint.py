@@ -245,7 +245,7 @@ def load_contract(config, gitops, owner, sha):
             "Only candidate mode with explicit initialize eligibility is supported")
     checkout(owner, execution["playbooks_sha"])
     target, release = contract["target"], contract["release"]
-    fields(target, ["host", "generation", "domain_base", "console_domain", "accounts_domain"], ['billing_domain', 'accounts_public_domain'])
+    fields(target, ["host", "generation", "domain_base", "console_domain", "accounts_domain"], ['billing_domain', 'accounts_public_domain', 'billing_public_domain'])
     require(all(matches(NAME, target[k]) for k in ("host", "generation", "domain_base", "console_domain", "accounts_domain")),
             "Target metadata must use literal names, never inventory patterns")
     if 'accounts_public_domain' in target:
@@ -254,6 +254,13 @@ def load_contract(config, gitops, owner, sha):
         require(matches(hostname, public_domain) and public_domain.endswith('.' + target['domain_base'])
                 and public_domain not in (target['console_domain'], target.get('billing_domain')),
                 "Accounts public host must be a literal hostname under the declared domain base and not another service")
+    if 'billing_public_domain' in target:
+        public_domain = target['billing_public_domain']
+        hostname = r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+        require('billing_domain' in target and matches(hostname, public_domain)
+                and public_domain.endswith('.' + target['domain_base'])
+                and public_domain not in (target['console_domain'], target['accounts_domain'], target.get('accounts_public_domain')),
+                "Billing public host must have a Billing target and be distinct from Console/Accounts under the declared domain base")
     if 'billing_domain' in target:
         billing_domain = target['billing_domain']
         hostname = r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
