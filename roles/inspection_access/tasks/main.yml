@@ -1,0 +1,41 @@
+---
+- name: Validate inspection inputs
+  ansible.builtin.assert:
+    that:
+      - inspection_os_user is match('^[a-z_][a-z0-9_]*$')
+      - inspection_db_role is match('^[a-z_][a-z0-9_]*$')
+      - inspection_database is match('^[a-z_][a-z0-9_]*$')
+      - inspection_container is match('^[a-zA-Z0-9_-]+$')
+      - inspection_public_keys | length > 0
+      - inspection_database_owners | select('match', '^[a-z_][a-z0-9_]*$') | list | length == inspection_database_owners | length
+
+- name: Install fixed inspection gateway
+  ansible.builtin.template:
+    src: platform-inspect.py.j2
+    dest: /usr/local/sbin/platform-inspect
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create unprivileged system auditor
+  ansible.builtin.include_role:
+    name: readonly_ssh_user
+  vars:
+    readonly_ssh_user_name: '{{ inspection_os_user }}'
+    readonly_ssh_user_authorized_keys: '{{ inspection_public_keys }}'
+    readonly_ssh_user_manage_sudoers: true
+    readonly_ssh_user_allow_tcp_forwarding: false
+    readonly_ssh_user_sudo_commands:
+      - /usr/local/sbin/platform-inspect containers
+      - /usr/local/sbin/platform-inspect database
+      - /usr/local/sbin/platform-inspect container-logs
+      - /usr/local/sbin/platform-inspect logs
+      - /usr/local/sbin/platform-inspect services
+      - /usr/local/sbin/platform-inspect processes
+
+- name: Provision business database reader
+  ansible.builtin.command:
+    argv: [docker, exec, -i, --user, postgres, '{{ inspection_container }}', psql, -XAtq, -v, ON_ERROR_STOP=1, -U, postgres, -d, '{{ inspection_database }}']
+    stdin: '{{ lookup("template", "reader.sql.j2") }}'
+  register: inspection_grants
+  changed_when: "'changed' in inspection_grants.stdout_lines"
