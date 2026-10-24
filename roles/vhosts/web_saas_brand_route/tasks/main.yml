@@ -1,0 +1,32 @@
+---
+- name: Require an explicit isolated brand-route operation
+  ansible.builtin.assert:
+    that:
+      - web_saas_brand_domain is match('^[a-z0-9][a-z0-9.-]+[.][a-z]{2,}$')
+      - web_saas_brand_allow_caddy_restart | bool
+      - web_saas_brand_target == inventory_hostname
+      - web_saas_brand_probe_domains | length > 0
+      - hostvars[inventory_hostname].cmdb_resource_id | default('') | string | length > 0
+    fail_msg: Require the exact CMDB target, explicit restart approval and existing domain probes.
+
+- name: Restore only the brand certificate through its owner role
+  ansible.builtin.include_role:
+    name: docker/caddy_certificate_restore
+  vars:
+    caddy_certificate_restore_directory: '/etc/xcontrol/tls/{{ web_saas_brand_domain }}'
+    caddy_certificate_restore_material: '{{ web_saas_brand_material }}'
+
+- name: Reconcile the isolated Caddy brand block with rollback and probes
+  ansible.builtin.script:
+    cmd: >-
+      reconcile.py --domain {{ web_saas_brand_domain | quote }}
+      --config {{ web_saas_brand_caddyfile | quote }}
+      --container {{ web_saas_brand_container | quote }}
+      --probe-domains {{ web_saas_brand_probe_domains | join(',') | quote }}
+    executable: /usr/bin/python3
+  register: web_saas_brand_result
+  changed_when: (web_saas_brand_result.stdout | from_json).changed | bool
+
+- name: Report the route receipt without certificate values
+  ansible.builtin.debug:
+    msg: '{{ web_saas_brand_result.stdout | from_json }}'
