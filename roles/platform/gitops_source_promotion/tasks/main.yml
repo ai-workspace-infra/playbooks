@@ -11,6 +11,7 @@
       - gitops_promotion_config.environment | default('') == 'prod'
       - gitops_promotion_config.mode | default('plan') in ['plan', 'apply', 'audit-report']
       - gitops_promotion_config.mode | default('plan') != 'apply' or gitops_promotion_apply | bool
+      - (gitops_promotion_config.rollback | default(false) | bool) == (gitops_promotion_rollback | bool)
     fail_msg: Use the verified owner adapter with a fresh single-target inventory and strict host-key transport.
   delegate_to: localhost
   become: false

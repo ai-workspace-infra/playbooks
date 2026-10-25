@@ -87,6 +87,24 @@ The resulting audit boundary PASS is explicitly scoped to those Kubernetes permi
 
 ## Rollback
 
-Create a separately reviewed plan with current=new and desired=previous known-good immutable tag/SHA, verify the same host and declaration-scope constraints, run plan, and only apply with the corresponding authorization. This selects configuration only: it does not restore data, downgrade storage formats or redirect writers. A rollback across unrelated business changes is rejected and requires its own properly scoped recovery design.
+Create a separately reviewed plan with current=new and desired=previous known-good immutable tag/SHA. Set top-level `"rollback": true` and a bounded `"rollback_reason"`, and pass `--rollback`; a marker or CLI option alone is rejected. The controller verifies that desired is a distinct ancestor of expected using the local Git graph after both tags/commits have also matched their remote identities. The observability-only changed-path gate, host/machine/SSH boundary and Source concurrency tests remain unchanged.
+
+```sh
+# Recovery plan: reads only; no --apply means no Source change.
+python3 scripts/run_gitops_source_promotion.py \
+  --plan "$ROLLBACK_PLAN_JSON" --cmdb "$VERIFIED_CMDB" \
+  --gitops-root "$FIXED_GITOPS_WORKTREE" --evidence-dir "$NEW_ROLLBACK_PLAN_EVIDENCE" --rollback
+
+# Only with explicit authorization for the exact recovery target:
+python3 scripts/run_gitops_source_promotion.py \
+  --plan "$ROLLBACK_PLAN_JSON" --cmdb "$VERIFIED_CMDB" \
+  --gitops-root "$FIXED_GITOPS_WORKTREE" --evidence-dir "$NEW_ROLLBACK_APPLY_EVIDENCE" --rollback --apply
+```
+
+For this explicitly verified rollback only, the root Kustomization may be non-Ready, because a failed Helm health check can leave its last-applied revision on the previous known-good commit. Its last-applied revision must nevertheless be exactly the expected or desired known tag/SHA; unrelated, blank or unknown revisions are rejected. Its source, namespace and root path must still match. The Source itself must be Ready at its exact observed generation and the artifact SHA matching its selected expected/desired ref. Default forward mode still rejects an unhealthy baseline.
+
+Recovery evidence records the direction, reason, controller ancestor verification, baseline Source/root Ready state and their precise revisions. The owner still requires Source/root convergence at the desired revision for success and preserves timeout/unknown-mutation failures. No automatic rollback is introduced.
+
+This selects configuration only: it does not restore data, downgrade storage formats or redirect writers. A rollback across unrelated business changes is rejected and requires its own properly scoped recovery design.
 
 No new CI dispatch or Vault trust allowlist is introduced. An operator may run this owner with authorized runtime credentials, or a separately reviewed control-plane caller may select and invoke it later. Do not widen existing pipeline permissions merely to get a new caller through.

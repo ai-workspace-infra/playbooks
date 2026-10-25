@@ -16,6 +16,12 @@ ROOT_KUSTOMIZATION = "prod-web-saas-k3s-v5"
 
 
 def validate(config):
+    if not isinstance(config.get("rollback", False), bool):
+        raise ValueError("rollback must be an explicit boolean")
+    if config.get("rollback", False) and (config.get("rollback_ancestor_verified") is not True
+            or not isinstance(config.get("rollback_reason"), str)
+            or not 1 <= len(config["rollback_reason"]) <= 300 or "\n" in config["rollback_reason"]):
+        raise ValueError("rollback requires controller-verified ancestry and a bounded recovery reason")
     if config.get("environment") != "prod" or config.get("mode") not in {"plan", "apply", "audit-report"}:
         raise ValueError("unsupported environment or mode")
     if not re.fullmatch(r"[a-f0-9]{32}", config.get("machine_id", "")):
@@ -76,7 +82,15 @@ def assess(config, source, root):
                               if spec["ref"] == desired else (config["expected_tag"], config["expected_sha"]))
     if spec["ref"] == expected and (not revision_matches(observed, wanted_tag, wanted_sha) or not ready(source)):
         raise ValueError("live Source generation/revision is not the verified baseline")
-    if spec["ref"] == expected and (not ready(root) or not revision_matches(
+    known_revisions = ((config["expected_tag"], config["expected_sha"]),
+                       (config["desired_tag"], config["desired_sha"]))
+    if config.get("rollback", False):
+        if not ready(source) or not revision_matches(observed, wanted_tag, wanted_sha):
+            raise ValueError("rollback Source is not the exact ready baseline")
+        if not any(revision_matches(root.get("status", {}).get("lastAppliedRevision", ""), tag, sha)
+                   for tag, sha in known_revisions):
+            raise ValueError("rollback root has an unrelated or unknown applied revision")
+    elif spec["ref"] == expected and (not ready(root) or not revision_matches(
             root.get("status", {}).get("lastAppliedRevision", ""), wanted_tag, wanted_sha)):
         raise ValueError("live cluster root is not the verified ready baseline")
     if spec["ref"] == desired and observed and not any(revision_matches(observed, tag, sha)
@@ -149,13 +163,19 @@ def execute(config, client=None, machine_file="/etc/machine-id", sleep=time.slee
               "changed": False, "result": "preflight_failed", "source": SOURCE,
               "expected_ref": {"tag": config["expected_tag"], "sha": config["expected_sha"]},
               "desired_ref": {"tag": config["desired_tag"], "sha": config["desired_sha"]},
-              "runtime_metrics_acceptance": "NOT_RUN", "audit_identity_isolation": "NOT_RUN"}
+              "runtime_metrics_acceptance": "NOT_RUN", "audit_identity_isolation": "NOT_RUN",
+              "direction": "rollback" if config.get("rollback", False) else "forward"}
     if config["mode"] == "audit-report":
         report["audit_identity_isolation"] = audit_permissions(client, config)
     source, root = client.read("gitrepository", SOURCE), client.read("kustomization", ROOT_KUSTOMIZATION)
     already = assess(config, source, root)
     report["source_revision"] = source["status"]["artifact"]["revision"]
     report["root_revision"] = root.get("status", {}).get("lastAppliedRevision")
+    if config.get("rollback", False):
+        report["recovery"] = {"ancestor_verified": True, "reason": config["rollback_reason"],
+                              "baseline_root_ready": ready(root), "baseline_source_ready": ready(source),
+                              "baseline_root_revision": report["root_revision"],
+                              "baseline_source_revision": report["source_revision"]}
     if config["mode"] != "apply":
         report["result"] = "planned" if config["mode"] == "plan" else "reported"
         report["would_change"] = not already
