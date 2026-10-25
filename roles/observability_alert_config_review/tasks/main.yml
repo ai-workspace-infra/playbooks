@@ -1,0 +1,45 @@
+---
+- name: Require authorized management-only configuration review scope
+  ansible.builtin.assert:
+    that:
+      - observability_config_review_environment in ['sit', 'uat', 'prod']
+      - observability_config_review_base_url is match('^https://[A-Za-z0-9.-]+(:[0-9]+)?$')
+      - observability_config_review_vault_addr is match('^https://[A-Za-z0-9.-]+(:[0-9]+)?$')
+      - observability_config_review_vault_path | length > 0
+      - observability_config_review_password_field | length > 0
+      - observability_config_review_admin_username | length > 0
+      - observability_config_review_expected_org_id | int > 0
+      - observability_config_review_management_evidence_ref | length > 0
+      - observability_config_review_output_file is match('^/')
+    fail_msg: Explicit target, expected organization and preverified management identity evidence are required.
+
+- name: Verify management identity then read expected organization and alert configuration only
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/files/review_config.py"
+      - --base-url
+      - "{{ observability_config_review_base_url }}"
+      - --vault-path
+      - "{{ observability_config_review_vault_path }}"
+      - --password-field
+      - "{{ observability_config_review_password_field }}"
+      - --admin-username
+      - "{{ observability_config_review_admin_username }}"
+      - --expected-org-id
+      - "{{ observability_config_review_expected_org_id | int | string }}"
+      - --management-evidence-ref
+      - "{{ observability_config_review_management_evidence_ref }}"
+      - --environment
+      - "{{ observability_config_review_environment }}"
+      - --output
+      - "{{ observability_config_review_output_file }}"
+  environment:
+    VAULT_ADDR: "{{ observability_config_review_vault_addr }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: not ansible_check_mode
+  register: observability_config_review_result
+  changed_when: false
+  failed_when: observability_config_review_result.rc != 0
