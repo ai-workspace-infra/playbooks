@@ -79,14 +79,16 @@ def verify(args, token, expected_identity):
         checks["live_queries"] = {"status": "NOT_RUN", "reason": "Strict Viewer role not verified"}
         return save()
     code, permissions = get("/api/access-control/user/permissions")
+    valid_permissions = (isinstance(permissions, dict) and "error" not in permissions
+                         and all(isinstance(scopes, list) for scopes in permissions.values()))
     forbidden = [action for action, scopes in permissions.items()
                  if scopes and (action.endswith(":write") or action.endswith(":create")
                                 or action.endswith(":delete") or action.endswith(":admin"))] if isinstance(permissions, dict) else []
     checks["permission_introspection"] = {
-        "status": ("FAIL" if forbidden else "PASS") if code == 200 else "NOT_RUN",
+        "status": ("FAIL" if forbidden or not valid_permissions else "PASS") if code == 200 else "NOT_RUN",
         "http_status": code, "forbidden_actions": forbidden,
         "reason": "Permission introspection only; no production write/denial operation attempted"}
-    if forbidden:
+    if forbidden or (code == 200 and not valid_permissions):
         return save()
     code, search = get("/api/search?type=dash-db&limit=1000")
     uids = {item.get("uid") for item in search if item.get("type") == "dash-db"} if isinstance(search, list) else set()
@@ -110,7 +112,10 @@ def verify(args, token, expected_identity):
         if range_query:
             end = time.time()
             params.update(start=str(end - 1800), end=str(end), step="60")
-        return get(proxy + ("query_range" if range_query else "query") + "?" + urllib.parse.urlencode(params))
+        code, payload = get(proxy + ("query_range" if range_query else "query") + "?" + urllib.parse.urlencode(params))
+        if code == 200 and payload.get("status") != "success":
+            return 0, {"error": "prometheus_query_not_successful"}
+        return code, payload
 
     code, payload = query("kube_node_info{" + scope + "}")
     result = payload.get("data", {}).get("result", [])
@@ -143,6 +148,9 @@ def verify(args, token, expected_identity):
     code, payload = query('kube_node_info{cluster="__nonexistent_obs_probe__",environment=' + json.dumps(args.environment) + "}")
     result = payload.get("data", {}).get("result", [])
     checks["nonexistent_cluster"] = {"status": "PASS" if code == 200 and not result else "FAIL", "http_status": code}
+    code, payload = query("kube_node_info{cluster=" + json.dumps(args.cluster) + ',environment="__invalid_env__"}')
+    result = payload.get("data", {}).get("result", [])
+    checks["nonexistent_environment"] = {"status": "PASS" if code == 200 and not result else "FAIL", "http_status": code}
     code, payload = query("count by(node,namespace,pod,container)(container_memory_working_set_bytes{" + scope + ',container!=""}) > 1')
     result = payload.get("data", {}).get("result", [])
     checks["duplicate_container_memory"] = {"status": "PASS" if code == 200 and not result else "FAIL", "duplicate_count": len(result)}
