@@ -1,0 +1,27 @@
+---
+- name: Validate local Dashboard render targets
+  ansible.builtin.assert:
+    that:
+      - starsl_dashboard_gitops_root == '' or starsl_dashboard_gitops_root is match('^/')
+      - starsl_dashboard_output_file is match('^/')
+    fail_msg: Select explicit absolute controller-side render paths.
+
+- name: Render pinned StarsL Dashboard and optional GitOps declarations locally
+  ansible.builtin.command:
+    argv: >-
+      {{ [ansible_playbook_python, role_path ~ '/files/render_dashboard.py',
+          '--output-dashboard', starsl_dashboard_output_file]
+         + (['--gitops-root', starsl_dashboard_gitops_root] if starsl_dashboard_gitops_root else [])
+         + (['--apply'] if (starsl_dashboard_apply | bool and not ansible_check_mode) else []) }}
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  register: starsl_dashboard_render
+  changed_when: >-
+    (starsl_dashboard_apply | bool and not ansible_check_mode)
+    and (starsl_dashboard_render.stdout | from_json).changed_files | length > 0
+
+- name: Report source checksum and local render plan
+  ansible.builtin.debug:
+    msg: "{{ starsl_dashboard_render.stdout | from_json }}"

@@ -13,6 +13,7 @@ copies by hand.
 | File | Dashboard UID | Title |
 | --- | --- | --- |
 | `Node-Exporter-Dashboard.json` | `StarsL-JOB-node` | Node Exporter Dashboard 20240520 通用JOB分组版 |
+| `starsl-k8s-dashboard.json` | `StarsL_cn_K8S` | K8S Dashboard CN 20240513 StarsL.cn |
 | `agent-ai-application-observability-dashboard.json` | `agent-ai-observability` | Agent / AI Application Observability |
 | `ai-aggregator-overview.json` | `ai-aggregator-overview` | AI Aggregator Overview |
 | `blackbox-exporter-dashboard.json` | `blackbox-exporter-overview` | Blackbox Exporter & SSL Probe Overview |
@@ -27,6 +28,13 @@ copies by hand.
 
 The AI Aggregator collection and dashboard contract is documented in
 [`ai-aggregator-observability.md`](ai-aggregator-observability.md).
+
+The StarsL K8s source is pinned and adapted by the controller-side
+[`grafana_starsl_dashboard` role](../roles/platform/grafana_starsl_dashboard/README.md).
+Run `import_starsl_k8s_dashboard.yml` to plan/replay its file-provisioning source
+and optional GitOps ConfigMap. The role documents kube-state-metrics/kubelet
+requirements, cluster/environment isolation and deliberately omitted sensitive
+inventory counts. Importing the file does not prove live telemetry acceptance.
 
 The source-host SQLite `dashboard` table contained zero rows during the
 2026-09-27 migration inventory, confirming that the active dashboards were
