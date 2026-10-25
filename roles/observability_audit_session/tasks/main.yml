@@ -13,6 +13,7 @@
       - observability_audit_expected_nodes is sequence
       - observability_audit_expected_nodes is not string
       - observability_audit_expected_nodes | length > 0
+      - observability_audit_dashboard_query_manifest == '' or observability_audit_dashboard_query_manifest is match('^/')
       - observability_audit_output_file is match('^/')
       - observability_audit_token_ttl_seconds | int >= 1800
       - observability_audit_token_ttl_seconds | int <= 3600
@@ -32,6 +33,7 @@
           '--datasource-uid', observability_audit_datasource_uid,
           '--token-ttl', observability_audit_token_ttl_seconds | int | string,
           '--output', observability_audit_output_file]
+         + (['--dashboard-query-manifest', observability_audit_dashboard_query_manifest] if observability_audit_dashboard_query_manifest else [])
          + (observability_audit_expected_nodes | map('regex_replace', '^(.*)$', '--expected-node=\1') | list) }}
   environment:
     VAULT_ADDR: "{{ observability_audit_vault_addr }}"

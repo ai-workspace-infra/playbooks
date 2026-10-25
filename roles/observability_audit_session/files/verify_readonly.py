@@ -2,6 +2,8 @@
 """Bounded GET-only StarsL/exporter checks, using an explicit Viewer identity."""
 import datetime
 import hashlib
+import importlib.util
+from pathlib import Path
 import json
 import re
 import time
@@ -408,6 +410,14 @@ def verify(args, token, expected_identity):
                                        "unexpected_node_count": len(set(per_node) - expected_nodes),
                                        "covered_seconds": covered, "max_source_sample_gap_seconds": gap}
     checks["pvc_statistics"] = {"status": "NOT_RUN", "reason": "Optional: requires volume-plugin support and a real PVC; not inferred as healthy zero"}
+    if getattr(args, "_dashboard_manifest", None):
+        if checks["permission_introspection"]["status"] != "PASS":
+            checks["dashboard_manifest"] = {"status": "NOT_RUN", "reason": "Viewer permission introspection not verified"}
+        else:
+            spec = importlib.util.spec_from_file_location("observability_viewer_manifest", Path(__file__).with_name("verify_manifest.py"))
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            checks["dashboard_manifest"] = module.execute(args._dashboard_manifest, args, get)
     return save()
 
 
