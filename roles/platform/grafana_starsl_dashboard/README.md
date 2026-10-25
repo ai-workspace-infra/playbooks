@@ -67,6 +67,14 @@ clusters. Every metric selector is scoped to the selected cluster/environment.
   `namespace` and `persistentvolumeclaim`. These are optional for volume
   plugins that do not expose volume statistics; absence is not a healthy zero.
 
+Raw `container_*` selectors use the canonical `job="cadvisor"`; this is the
+kubelet's existing `/metrics/cadvisor` endpoint, not a separately installed
+cAdvisor service. Ten application CPU/working-set aggregations that previously
+only excluded empty container labels also exclude `container="POD"`. Pod network
+selectors retain sandbox samples, and the `id="/"` CPU totals keep their explicit
+host-cgroup meaning. This prevents pause/container ambiguity without changing
+network or host-total semantics.
+
 There are no recording-rule dependencies. The upstream `origin_prometheus`
 label is mapped to cluster/environment; bare Pod-info joins are scoped and
 Pod joins include namespace. Docker-only `name`/`image` restrictions are removed

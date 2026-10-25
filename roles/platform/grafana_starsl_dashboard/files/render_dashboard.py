@@ -20,6 +20,18 @@ SCOPE = 'cluster=~"${cluster:regex}",environment=~"${environment:regex}"'
 DS = {"type": "prometheus", "uid": "${DS_METRICS}"}
 
 
+def canonical_container_selector(match):
+    """Keep raw cAdvisor ownership and distinguish app containers from sandboxes."""
+    metric, labels = match.groups()
+    # Only application CPU/memory selectors already declaring container != ""
+    # exclude pause containers. Network and id="/" host totals retain their scope.
+    if (metric.startswith(("container_cpu_", "container_memory_"))
+            and re.search(r'\bcontainer\s*!=\s*""', labels)
+            and not re.search(r'\bcontainer\s*!=\s*"POD"', labels)):
+        labels += ',container!="POD"'
+    return metric + '{job="cadvisor",' + labels + '}'
+
+
 def rewrite(value):
     if isinstance(value, dict):
         return {k: rewrite(v) for k, v in value.items()}
@@ -32,6 +44,10 @@ def rewrite(value):
                    r'kube_pod_container_resource_limits{\1,resource="cpu",unit="core"}', value)
     value = re.sub(r"container_spec_memory_limit_bytes\{([^}]*)\}",
                    r'kube_pod_container_resource_limits{\1,resource="memory",unit="byte"}', value)
+    # Apply to the pinned source before Grafana formatter braces are introduced.
+    # KSM resource-limit replacements above are not cAdvisor metrics.
+    value = re.sub(r"\b(container_[A-Za-z0-9_:]+)\{([^{}]*)\}",
+                   canonical_container_selector, value)
     value = value.replace("${DS__VICTORIAMETRICS-PROD-ALL}", "${DS_METRICS}")
     value = value.replace('origin_prometheus=~"$origin_prometheus"', SCOPE)
     # Keep grouping names consistent with the new cluster selector.
