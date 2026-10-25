@@ -1,0 +1,48 @@
+---
+- name: Read authoritative runtime secret
+  ansible.builtin.uri:
+    url: '{{ k3s_runtime_secret_sync_vault_addr }}/v1/kv/data/{{ sync_item.source }}'
+    headers:
+      X-Vault-Token: '{{ k3s_runtime_secret_sync_token }}'
+    return_content: true
+  register: sync_source
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Read target record and version for compare-and-set
+  ansible.builtin.uri:
+    url: '{{ k3s_runtime_secret_sync_vault_addr }}/v1/kv/data/{{ sync_item.target }}'
+    headers:
+      X-Vault-Token: '{{ k3s_runtime_secret_sync_token }}'
+    return_content: true
+    status_code: [200, 404]
+  register: sync_target
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Select required fields without replacing unrelated target fields
+  ansible.builtin.set_fact:
+    sync_fields: '{{ dict(sync_item.fields | zip(sync_item.fields | map("extract", sync_source.json.data.data))) }}'
+    sync_existing: '{{ sync_target.json.data.data if sync_target.status == 200 else {} }}'
+    sync_version: '{{ sync_target.json.data.metadata.version if sync_target.status == 200 else 0 }}'
+  no_log: true
+
+- name: Compare-and-set changed target fields
+  ansible.builtin.uri:
+    url: '{{ k3s_runtime_secret_sync_vault_addr }}/v1/kv/data/{{ sync_item.target }}'
+    method: POST
+    headers:
+      X-Vault-Token: '{{ k3s_runtime_secret_sync_token }}'
+    body_format: json
+    body:
+      options:
+        cas: '{{ sync_version | int }}'
+      data: '{{ sync_existing | combine(sync_fields) }}'
+    status_code: 200
+  when: sync_existing | combine(sync_fields) != sync_existing
+  changed_when: true
+  delegate_to: localhost
+  become: false
+  no_log: true

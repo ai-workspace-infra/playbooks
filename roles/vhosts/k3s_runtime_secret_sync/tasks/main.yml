@@ -1,0 +1,17 @@
+---
+- name: Validate explicit reconciliation scope
+  ansible.builtin.assert:
+    that:
+      - k3s_runtime_secret_sync_apply | bool
+      - k3s_runtime_secret_sync_vault_addr is match('^https://')
+      - k3s_runtime_secret_sync_items | length > 0
+      - k3s_runtime_secret_sync_token | length > 0
+    fail_msg: Explicit HTTPS Vault address, runtime identity, items and apply approval are required.
+  no_log: true
+
+- name: Reconcile only selected Vault fields
+  ansible.builtin.include_tasks: item.yml
+  loop: '{{ k3s_runtime_secret_sync_items }}'
+  loop_control:
+    loop_var: sync_item
+    label: '{{ sync_item.target }}'
