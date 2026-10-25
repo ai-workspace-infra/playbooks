@@ -1,4 +1,10 @@
 {% if vector_xhttp_monitoring_enabled | default(false) | bool %}
+{% set xhttp_obs_provider = vector_observability_provider | default(provider | default(cloud_provider | default(cmdb_cloud_provider | default('unknown', true), true), true), true) %}
+{% set xhttp_obs_region = vector_observability_region | default(region | default(cmdb_region | default(cloud_region | default(provider_region | default(logical_region | default('unknown', true), true), true), true), true), true) %}
+{% set xhttp_obs_resource_id = vector_observability_resource_id | default(resource_id | default(cmdb_resource_id | default(instance_id | default(cmdb_instance_id | default(inventory_hostname, true), true), true), true), true) %}
+{% set xhttp_obs_runtime_form = vector_observability_runtime_form | default(runtime_form | default(cmdb_runtime_form | default('systemd', true), true), true) %}
+{% set xhttp_obs_account = vector_observability_project_id | default(project_id | default(cmdb_project_id | default(account | default('unknown', true), true), true), true) %}
+{% set xhttp_obs_resource_key = vector_observability_resource_key | default(resource_key | default(cmdb_resource_key | default(xhttp_obs_provider ~ ':' ~ xhttp_obs_account ~ ':' ~ xhttp_obs_region ~ ':' ~ xhttp_obs_resource_id, true), true), true) %}
 {% if vector_xhttp_add_xray_scrape | default(false) | bool %}
 {% include 'xray-metrics.toml.j2' %}
 
@@ -13,8 +19,16 @@ type = "remap"
 inputs = ["xhttp_caddy_metrics"]
 source = '''
 .tags.instance = {{ inventory_hostname | to_json }}
+.tags.host = {{ inventory_hostname | to_json }}
 .tags.environment = {{ vector_observability_environment | to_json }}
+.tags.env = {{ vector_observability_environment | to_json }}
+.tags.provider = {{ xhttp_obs_provider | to_json }}
+.tags.region = {{ xhttp_obs_region | to_json }}
+.tags.resource_id = {{ xhttp_obs_resource_id | to_json }}
+.tags.runtime_form = {{ xhttp_obs_runtime_form | to_json }}
+.tags.resource_key = {{ xhttp_obs_resource_key | to_json }}
 .tags.job = "xhttp-caddy"
+.tags.service = "xhttp-caddy"
 '''
 
 # A single journal reader also feeds ordinary logs when enabled below.

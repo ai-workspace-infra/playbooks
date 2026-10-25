@@ -37,7 +37,8 @@
       ansible.builtin.assert:
         that:
           - ansible_facts.services.get('vector.service', {}).get('state', 'stopped') != 'running'
-        fail_msg: Existing Vector is running; use its current profile rather than installing a second collector.
+          - ansible_facts.services.get('alloy.service', {}).get('state', 'stopped') != 'running'
+        fail_msg: Existing Vector or Alloy collector is running; use its current profile rather than installing a second collector.
 
     - name: Require runtime ingest credentials (no default password)
       ansible.builtin.assert:

@@ -1,96 +1,218 @@
-// VictoriaLogs配置
+{% set _env = alloy_environment | default(environment | default('production', true), true) %}
+{% set _provider = alloy_provider | default(cloud_provider | default(provider | default('unknown', true), true), true) %}
+{% set _project_id = alloy_project_id | default(project_id | default(_provider, true), true) %}
+{% set _region = alloy_region | default(region | default('unknown', true), true) %}
+{% set _instance = alloy_instance | default(inventory_hostname | default('localhost', true), true) %}
+{% set _resource_id = alloy_resource_id | default(resource_id | default(_instance, true), true) %}
+{% set _runtime_form = alloy_runtime_form | default(runtime_form | default('systemd', true), true) %}
+{% set _resource_key = alloy_resource_key | default(resource_key | default(_provider ~ ':' ~ _project_id ~ ':' ~ _region ~ ':' ~ _resource_id, true), true) %}
+{% set _metrics_url = alloy_metrics_endpoint_url | default('https://observability.svc.plus/ingest/metrics/api/v1/write', true) %}
+{% set _logs_url = loki_endpoint_url | default(alloy_logs_endpoint_url | default('https://observability.svc.plus/ingest/logs/insert/loki/api/v1/push', true), true) %}
+{% set _traces_url = alloy_traces_endpoint_url | default('https://observability.svc.plus/ingest/otlp', true) %}
+{% set _auth_user = loki_basic_auth_username | default(alloy_basic_auth_username | default('', true), true) %}
+{% set _auth_pass = loki_basic_auth_password | default(alloy_basic_auth_password | default('', true), true) %}
+{% set _scrape_interval = alloy_scrape_interval | default('15s', true) %}
+
+// VictoriaLogs remote sink
 loki.write "victorialogs" {
   endpoint {
-    url = "http://10.146.0.6:9428/loki/api/v1/push"
+    url = {{ _logs_url | to_json }}
 
     headers = {
-      "X-Scope-OrgID" = "default"
+      "X-Scope-OrgID" = "default",
     }
+{% if _auth_user | length > 0 and _auth_pass | length > 0 %}
+    basic_auth {
+      username = {{ _auth_user | to_json }}
+      password = {{ _auth_pass | to_json }}
+    }
+{% endif %}
+    tls_config {
+      insecure_skip_verify = {{ (alloy_tls_insecure_skip_verify | default(false) | bool) | lower }}
+    }
+  }
+  external_labels = {
+    environment  = {{ _env | to_json }},
+    env          = {{ _env | to_json }},
+    provider     = {{ _provider | to_json }},
+    project_id   = {{ _project_id | to_json }},
+    region       = {{ _region | to_json }},
+    instance     = {{ _instance | to_json }},
+    host         = {{ _instance | to_json }},
+    resource_id  = {{ _resource_id | to_json }},
+    runtime_form = {{ _runtime_form | to_json }},
+    resource_key = {{ _resource_key | to_json }},
   }
 }
 
-// VictoriaMetrics配置 (Prometheus remote_write)
+// VictoriaMetrics remote_write sink
 prometheus.remote_write "victoriametrics" {
   endpoint {
-    url = "http://10.146.0.6:8428/api/v1/write"
+    url = {{ _metrics_url | to_json }}
+{% if _auth_user | length > 0 and _auth_pass | length > 0 %}
+    basic_auth {
+      username = {{ _auth_user | to_json }}
+      password = {{ _auth_pass | to_json }}
+    }
+{% endif %}
+    tls_config {
+      insecure_skip_verify = {{ (alloy_tls_insecure_skip_verify | default(false) | bool) | lower }}
+    }
 
     queue_config {
       max_samples_per_send = 1000
-      max_shards = 200
-      capacity = 2500
+      max_shards           = 200
+      capacity             = 2500
+      min_backoff          = "500ms"
+      max_backoff          = "30s"
+      retry_on_http_429    = true
+    }
+  }
+  external_labels = {
+    environment  = {{ _env | to_json }},
+    env          = {{ _env | to_json }},
+    provider     = {{ _provider | to_json }},
+    project_id   = {{ _project_id | to_json }},
+    region       = {{ _region | to_json }},
+    instance     = {{ _instance | to_json }},
+    host         = {{ _instance | to_json }},
+    resource_id  = {{ _resource_id | to_json }},
+    runtime_form = {{ _runtime_form | to_json }},
+    resource_key = {{ _resource_key | to_json }},
+  }
+}
+
+// OTLP Traces exporter
+otelcol.exporter.otlphttp "victoriatraces" {
+  client {
+    endpoint = {{ _traces_url | to_json }}
+    tls {
+      insecure_skip_verify = {{ (alloy_tls_insecure_skip_verify | default(false) | bool) | lower }}
     }
   }
 }
 
-// VictoriaTraces配置 (Jaeger)
-jaeger "victoriatraces" {
-  endpoint = "http://10.146.0.6:10428"
-}
-
-// 本地Prometheus配置用于指标收集
+// Local Alloy self-metrics scrape
 prometheus.scrape "local" {
+  scrape_interval = {{ _scrape_interval | to_json }}
   targets = [
     {
-      job          = "alloy"
-      instance     = "localhost"
-      metrics_path = "/metrics"
-      scheme       = "http"
-    }
+      __address__  = "127.0.0.1:12345",
+      job          = "alloy",
+      service      = "alloy",
+      instance     = {{ _instance | to_json }},
+      host         = {{ _instance | to_json }},
+      environment  = {{ _env | to_json }},
+      env          = {{ _env | to_json }},
+      provider     = {{ _provider | to_json }},
+      project_id   = {{ _project_id | to_json }},
+      region       = {{ _region | to_json }},
+      resource_id  = {{ _resource_id | to_json }},
+      runtime_form = {{ _runtime_form | to_json }},
+      resource_key = {{ _resource_key | to_json }},
+      metrics_path = "/metrics",
+      scheme       = "http",
+    },
   ]
   forward_to = [prometheus.remote_write.victoriametrics.receiver]
 }
 
-// 系统指标收集
+{% if alloy_node_exporter_enabled | default(true) | bool %}
+// Host node_exporter metrics scrape
 prometheus.scrape "node" {
+  scrape_interval = {{ _scrape_interval | to_json }}
   targets = [
     {
-      job          = "node"
-      instance     = "localhost"
-      metrics_path = "/metrics"
-      scheme       = "http"
-    }
+      __address__  = {{ (alloy_node_exporter_address | default('127.0.0.1:9100', true)) | to_json }},
+      job          = "node-exporter",
+      service      = "node-exporter",
+      instance     = {{ _instance | to_json }},
+      host         = {{ _instance | to_json }},
+      environment  = {{ _env | to_json }},
+      env          = {{ _env | to_json }},
+      provider     = {{ _provider | to_json }},
+      project_id   = {{ _project_id | to_json }},
+      region       = {{ _region | to_json }},
+      resource_id  = {{ _resource_id | to_json }},
+      runtime_form = {{ _runtime_form | to_json }},
+      resource_key = {{ _resource_key | to_json }},
+      metrics_path = "/metrics",
+      scheme       = "http",
+    },
   ]
   forward_to = [prometheus.remote_write.victoriametrics.receiver]
 }
+{% endif %}
 
-// 本地Loki日志收集
+{% if alloy_process_exporter_enabled | default(true) | bool %}
+// Host process-exporter metrics scrape
+prometheus.scrape "process" {
+  scrape_interval = {{ _scrape_interval | to_json }}
+  targets = [
+    {
+      __address__  = {{ (alloy_process_exporter_address | default('127.0.0.1:9256', true)) | to_json }},
+      job          = "process-exporter",
+      service      = "process-exporter",
+      instance     = {{ _instance | to_json }},
+      host         = {{ _instance | to_json }},
+      environment  = {{ _env | to_json }},
+      env          = {{ _env | to_json }},
+      provider     = {{ _provider | to_json }},
+      project_id   = {{ _project_id | to_json }},
+      region       = {{ _region | to_json }},
+      resource_id  = {{ _resource_id | to_json }},
+      runtime_form = {{ _runtime_form | to_json }},
+      resource_key = {{ _resource_key | to_json }},
+      metrics_path = "/metrics",
+      scheme       = "http",
+    },
+  ]
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+}
+{% endif %}
+
+// Host system log collection
 loki.source.file "system_logs" {
   targets = [
     {
-      job      = "system"
-      instance = "localhost"
-      labels   = {job = "system"}
-      path     = "/var/log/*.log"
-    }
+      __path__     = "/var/log/*.log",
+      job          = "system",
+      service      = "system",
+      instance     = {{ _instance | to_json }},
+      host         = {{ _instance | to_json }},
+      environment  = {{ _env | to_json }},
+      env          = {{ _env | to_json }},
+      provider     = {{ _provider | to_json }},
+      project_id   = {{ _project_id | to_json }},
+      region       = {{ _region | to_json }},
+      resource_id  = {{ _resource_id | to_json }},
+      runtime_form = {{ _runtime_form | to_json }},
+      resource_key = {{ _resource_key | to_json }},
+    },
   ]
   forward_to = [loki.write.victorialogs.receiver]
 }
 
-// journal日志收集
-{% for source in loki_journal_sources %}
-loki.source.journal "{{ source.name }}"  {
-  format_as_json  = true
-  labels          = {job = "{{ source.name }}"}
-  matches         = "_SYSTEMD_UNIT={{ source.unit }}"
-  forward_to      = [loki.write.victorialogs.receiver]
+// Systemd journal log collection
+{% for source in loki_journal_sources | default([]) %}
+loki.source.journal "{{ source.name }}" {
+  format_as_json = true
+  labels = {
+    job          = "{{ source.name }}",
+    service      = "{{ source.name }}",
+    instance     = {{ _instance | to_json }},
+    host         = {{ _instance | to_json }},
+    environment  = {{ _env | to_json }},
+    env          = {{ _env | to_json }},
+    provider     = {{ _provider | to_json }},
+    project_id   = {{ _project_id | to_json }},
+    region       = {{ _region | to_json }},
+    resource_id  = {{ _resource_id | to_json }},
+    runtime_form = {{ _runtime_form | to_json }},
+    resource_key = {{ _resource_key | to_json }},
+  }
+  matches    = "_SYSTEMD_UNIT={{ source.unit }}"
+  forward_to = [loki.write.victorialogs.receiver]
 }
 {% endfor %}
 
-// 保留原有的loki配置作为备选
-loki.write "grafanacloud" {
-  endpoint {
-    url = "{{ loki_endpoint_url | default("http://10.146.0.6:9428/loki/api/v1/push") }}"
-
-    basic_auth {
-      username = "{{ loki_basic_auth_username | default("") }}"
-      password = "{{ loki_basic_auth_password | default("") }}"
-    }
-  }
-}
-
-// 追踪数据发送到VictoriaTraces
-tracing "victoriatraces" {
-  receivers = [jaeger.victoriatraces.receiver]
-  processors = []
-  exporters = []
-}
