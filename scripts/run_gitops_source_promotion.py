@@ -39,8 +39,23 @@ def rollback_requested(plan, rollback=False):
     return rollback
 
 
-def verify_release(plan, gitops_root, rollback=False):
+def recover_forward_requested(plan, recover_forward=False):
+    marked = plan.get("recover_forward", False)
+    if not isinstance(marked, bool) or marked != recover_forward:
+        raise ValueError("forward recovery requires matching explicit CLI option and boolean plan marker")
+    if recover_forward and (plan.get("rollback", False)
+            or not isinstance(plan.get("recovery_reason"), str)
+            or not 1 <= len(plan["recovery_reason"].strip()) <= 300
+            or any(c in plan["recovery_reason"] for c in "\r\n")):
+        raise ValueError("forward recovery requires a bounded reason and excludes rollback")
+    return recover_forward
+
+
+def verify_release(plan, gitops_root, rollback=False, recover_forward=False):
     rollback_requested(plan, rollback)
+    recover_forward_requested(plan, recover_forward)
+    if rollback and recover_forward:
+        raise ValueError("rollback and forward recovery are mutually exclusive")
     cluster, release = plan["cluster"], plan["release"]
     repo_url = release["repo_url"]
     if repo_url != "https://github.com/ai-workspace-infra/gitops.git":
@@ -67,6 +82,13 @@ def verify_release(plan, gitops_root, rollback=False):
             git(root, "merge-base", "--is-ancestor", release["desired_sha"], cluster["expected_sha"])
         except subprocess.CalledProcessError as error:
             raise ValueError("rollback target is not a verified ancestor") from error
+    if recover_forward:
+        if cluster["expected_sha"] == release["desired_sha"]:
+            raise ValueError("forward recovery must select a distinct descendant commit")
+        try:
+            git(root, "merge-base", "--is-ancestor", cluster["expected_sha"], release["desired_sha"])
+        except subprocess.CalledProcessError as error:
+            raise ValueError("forward recovery expected commit is not a verified ancestor of desired") from error
     paths = git(root, "diff", "--name-only", cluster["expected_sha"], release["desired_sha"]).splitlines()
     if any(p != ROOT_SOURCE_PATH and not p.startswith(ALLOWED_PATHS) for p in paths):
         raise ValueError("release snapshot carries non-observability changes")
@@ -119,22 +141,25 @@ def verify_target(plan, inventory, now=None):
     return host
 
 
-def execute(plan, cmdb, gitops_root, output, apply=False, audit_report=False, rollback=False):
+def execute(plan, cmdb, gitops_root, output, apply=False, audit_report=False, rollback=False, recover_forward=False):
     if plan.get("schema_version") != "flux-source-operator-plan/v1":
         raise ValueError("unsupported operator plan")
     if git(ROOT, "rev-parse", "HEAD") != plan.get("owner_sha"):
         raise ValueError("Playbooks checkout does not match reviewed owner SHA")
     subprocess.run(["git", "-C", str(ROOT), "diff", "--quiet", "HEAD", "--", *OWNER_PATHS], check=True)
-    changed_paths = verify_release(plan, gitops_root, rollback)
+    changed_paths = verify_release(plan, gitops_root, rollback, recover_forward)
     spec = importlib.util.spec_from_file_location("cmdb_inventory", ROOT / "inventory/terraform_cmdb.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     host = verify_target(plan, module.build_inventory(cmdb))
     mode = "audit-report" if audit_report else "apply" if apply else "plan"
+    direction = "rollback" if rollback else "recover-forward" if recover_forward else "forward"
     config = {**plan["cluster"], **plan["release"], "environment": "prod", "mode": mode,
               "machine_id": plan["target"]["machine_id"],
               "admin_kubeconfig": "/etc/rancher/k3s/k3s.yaml", "rollback": rollback,
-              "rollback_ancestor_verified": rollback, "rollback_reason": plan.get("rollback_reason", "")}
+              "rollback_ancestor_verified": rollback, "rollback_reason": plan.get("rollback_reason", ""),
+              "recover_forward": recover_forward, "recover_forward_ancestor_verified": recover_forward,
+              "recovery_reason": plan.get("recovery_reason", "")}
     if audit_report:
         config["audit_username"] = plan["target"].get("audit_username", "")
     agent_socket = os.environ.get("SSH_AUTH_SOCK", "")
@@ -157,7 +182,7 @@ def execute(plan, cmdb, gitops_root, output, apply=False, audit_report=False, ro
         (temp / "inventory.json").write_text(json.dumps({"all": {"hosts": {plan["target"]["host"]: selected}}}))
         variables = {"gitops_promotion_target": plan["target"]["host"], "gitops_promotion_config": config,
                      "gitops_promotion_report": str(output / "observation.json"), "gitops_promotion_apply": apply,
-                     "gitops_promotion_rollback": rollback}
+                     "gitops_promotion_rollback": rollback, "gitops_promotion_recover_forward": recover_forward}
         (temp / "vars.json").write_text(json.dumps(variables))
         (temp / "ansible.cfg").write_text("[defaults]\nhost_key_checking = True\nretry_files_enabled = False\nlocal_tmp = "
                                            + str(temp / "local") + "\n[ssh_connection]\nssh_args = " + ssh_args + "\n")
@@ -171,12 +196,13 @@ def execute(plan, cmdb, gitops_root, output, apply=False, audit_report=False, ro
         if not (output / "observation.json").exists():
             (output / "observation.json").write_text(json.dumps({"schema_version": "flux-source-promotion/v1",
                 "mode": mode, "result": "transport_failed_or_unknown" if apply else "transport_failed",
-                "changed": "UNKNOWN" if apply else False, "direction": "rollback" if rollback else "forward",
+                "changed": "UNKNOWN" if apply else False, "direction": direction,
                 "runtime_metrics_acceptance": "NOT_RUN"}) + "\n")
         (output / "controller-receipt.json").write_text(json.dumps({"owner_sha": plan["owner_sha"], "mode": mode,
             "changed_declaration_paths": changed_paths, "exit_code": result.returncode,
-            "direction": "rollback" if rollback else "forward", "rollback_ancestor_verified": rollback,
+            "direction": direction, "rollback_ancestor_verified": rollback,
             "rollback_reason": plan.get("rollback_reason", ""),
+            "recover_forward_ancestor_verified": recover_forward, "recovery_reason": plan.get("recovery_reason", ""),
             "runtime_metrics_acceptance": "NOT_RUN"}, indent=2) + "\n")
         for path in output.iterdir():
             if path.is_file(): path.chmod(0o600)
@@ -192,12 +218,15 @@ def main():
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--apply", action="store_true")
     modes.add_argument("--audit-report", action="store_true")
-    parser.add_argument("--rollback", action="store_true",
+    directions = parser.add_mutually_exclusive_group()
+    directions.add_argument("--rollback", action="store_true",
                         help="Explicit ancestor rollback; plan must also contain rollback=true and recovery reason")
+    directions.add_argument("--recover-forward", action="store_true",
+                            help="Explicit forward recovery from a known unhealthy root; plan marker/reason required")
     args = parser.parse_args()
     try:
         return execute(json.loads(Path(args.plan).read_text()), json.loads(Path(args.cmdb).read_text()),
-                       args.gitops_root, args.evidence_dir, args.apply, args.audit_report, args.rollback)
+                       args.gitops_root, args.evidence_dir, args.apply, args.audit_report, args.rollback, args.recover_forward)
     except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError):
         print("Owner rejected scope, refs or target, or transport failed; no acceptance granted.")
         return 2
