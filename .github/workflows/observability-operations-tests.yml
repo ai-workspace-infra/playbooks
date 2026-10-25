@@ -22,6 +22,7 @@ on:
       - roles/platform/grafana_starsl_dashboard/**
       - roles/docker/observability-server/files/starsl-k8s-dashboard.json
       - tests/test_starsl_k8s_dashboard.py
+      - tests/test_observability_dashboard_promql.py
       - roles/docker/observability_server_operations/**
       - roles/observability_acceptance/**
       - scripts/verify_observability_closure.py
@@ -53,6 +54,7 @@ on:
       - roles/platform/grafana_starsl_dashboard/**
       - roles/docker/observability-server/files/starsl-k8s-dashboard.json
       - tests/test_starsl_k8s_dashboard.py
+      - tests/test_observability_dashboard_promql.py
       - roles/docker/observability_server_operations/**
       - roles/observability_acceptance/**
       - scripts/verify_observability_closure.py
@@ -86,6 +88,11 @@ jobs:
           tests/test_observability_audit_verifier.py
           tests/test_observability_viewer_manifest.py
           tests/test_observability_alert_config_review.py
+      - name: Verify Dashboard expressions with disposable loopback-only query engine
+        timeout-minutes: 3
+        env:
+          OBS_DASHBOARD_PROMQL_TESTS: '1'
+        run: python3 -m unittest tests/test_observability_dashboard_promql.py
       - name: Validate role shell and playbook syntax
         run: |
           for script in roles/docker/observability_server_operations/files/*.sh; do bash -n "$script"; done

@@ -1128,6 +1128,7 @@
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
+      "description": "Untainted-node count subtracts distinct nodes carrying non-system taints from the real node inventory. Multiple taints on one node count once. No taints means all inventoried nodes are untainted; missing node inventory stays No data. Taint-detail queries A/D stay empty when there are no matching taints.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1259,7 +1260,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "count by(cluster)(kube_node_info{cluster=~\"${cluster:regex}\",environment=~\"${environment:regex}\"}) - count by(cluster)(kube_node_spec_taint{cluster=~\"${cluster:regex}\",environment=~\"${environment:regex}\",key!~\"node.kubernetes.io.*\"})",
+          "expr": "count by(cluster)(kube_node_info{cluster=~\"${cluster:regex}\",environment=~\"${environment:regex}\"}) - (count by(cluster)(count by(cluster,node)(kube_node_spec_taint{cluster=~\"${cluster:regex}\",environment=~\"${environment:regex}\",key!~\"node.kubernetes.io.*\"})) or on(cluster) (count by(cluster)(kube_node_info{cluster=~\"${cluster:regex}\",environment=~\"${environment:regex}\"}) * 0))",
           "hide": false,
           "instant": true,
           "legendFormat": "正常节点",
@@ -3195,6 +3196,7 @@
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
+      "description": "Shows namespaces exceeding 0.5 CPU cores only. An empty result can mean none exceed the threshold; confirm CPU collection/freshness separately. Empty is not a zero CPU measurement.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3302,6 +3304,7 @@
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
+      "description": "Shows namespaces whose working-set memory exceeds 1 GiB only. An empty result can mean none exceed the threshold; confirm memory collection/freshness separately. Empty is not zero memory usage.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3427,6 +3430,7 @@
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
+      "description": "Filesystem targets J/S require per-application-container container_fs_usage_bytes / container_fs_limit_bytes with pod/container labels. Current k3s/containerd telemetry does not provide these selected series. These fields remain No data; node/root filesystem metrics do not substitute for per-container usage or limits. No synthetic zero or additional collector permissions are used.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -5091,6 +5095,7 @@
             "type": "prometheus",
             "uid": "${DS_METRICS}"
           },
+          "description": "Filesystem targets J/M require per-application-container container_fs_usage_bytes / container_fs_limit_bytes with pod/container labels. Current k3s/containerd telemetry does not provide these selected series. These fields remain No data; node/root filesystem metrics do not substitute for per-container usage or limits. No synthetic zero or additional collector permissions are used.",
           "fieldConfig": {
             "defaults": {
               "color": {

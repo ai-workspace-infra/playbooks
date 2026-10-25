@@ -973,7 +973,7 @@
         "type": "prometheus",
         "uid": "victoriametrics"
       },
-      "description": "- P99：数据集按升序排列，第99分位置大的数据。（即升序排列后排在99%位置的数据）\n- 该表格需要在Prometheus增加记录规则（参考看板下载页）\n- 增加记录规则1小时后才会有展示的数据。\n- 时间范围[7d:1h]表示要查看过去 7 天内每小时的数据点。",
+      "description": "P99 CPU/memory percentages are derived from raw node-exporter metrics, without recording rules. CPU uses the idle-rate complement; memory uses 1 - MemAvailable/MemTotal. The [7d:5m] subquery samples the available history within a seven-day window. A newly collected node may have only minutes of history: this does not prove seven days of coverage. Missing source metrics remain No data. Rows join by instance within the selected cluster/environment.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1160,7 +1160,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "quantile_over_time(0.99, cpu:usage:rate1m{job=~\"$job\"}[7d:1h])",
+          "expr": "quantile_over_time(0.99,(100 * (1 - avg by(instance,cluster,environment)(rate(node_cpu_seconds_total{job=\"node-exporter\",cluster=~\"${cluster:regex}\",environment=~\"${environment:regex}\",mode=\"idle\"}[3m]))))[7d:5m])",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -1175,7 +1175,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "quantile_over_time(0.99, mem:usage:rate1m{job=~\"$job\"}[7d:1h])",
+          "expr": "quantile_over_time(0.99,(100 * (1 - avg by(instance,cluster,environment)(node_memory_MemAvailable_bytes{job=\"node-exporter\",cluster=~\"${cluster:regex}\",environment=~\"${environment:regex}\"} / node_memory_MemTotal_bytes{job=\"node-exporter\",cluster=~\"${cluster:regex}\",environment=~\"${environment:regex}\"})))[7d:5m])",
           "format": "table",
           "hide": false,
           "instant": true,
