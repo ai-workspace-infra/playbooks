@@ -114,3 +114,7 @@ panels intentionally show only threshold exceedances. Panels 47 J/S and 87 J/M
 retain real per-container filesystem queries and explain unavailable selected
 k3s/containerd series; root/node disk statistics and zero values do not replace
 missing container telemetry. No collector privileges change.
+
+## Nonterminal resource totals
+
+Resource requests/limits and summary Pod counts match canonical KSM Pod phase by cluster/environment/namespace/pod/UID. Only Pending, Running and Unknown count; Succeeded/Failed operational Pods do not reserve capacity. Active Jobs count too. Historical Pod metadata joins remain available. Missing phase data remains No data, never a synthetic zero. See ai-workspace-infra/gitops#593.
