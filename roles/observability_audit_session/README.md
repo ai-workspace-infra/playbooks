@@ -11,7 +11,8 @@ selection; a successful controller exit cannot replace the rollout receipt.
 All targets and names are explicit. Required non-secret inputs are Grafana
 HTTPS origin, `VAULT_ADDR` HTTPS origin, environment-scoped logical KV-v2 path,
 password field name, verified management username, dedicated service-account
-name `observability-audit-<scope>`, cluster/environment and absolute evidence
+name `observability-audit-<scope>`, cluster/environment, externally verified node
+set and absolute evidence
 output path. Default token lifetime is 3600 seconds (allowed 1800–3600).
 
 The password record needs only the explicitly supplied password field; the
@@ -27,6 +28,7 @@ ansible-playbook -i localhost, observability_audit_session.yml \
   -e observability_audit_base_url=https://grafana.example.test \
   -e observability_audit_environment=prod \
   -e observability_audit_cluster=cluster-name \
+  -e '{"observability_audit_expected_nodes":["node-a","node-b"]}' \
   -e observability_audit_vault_path=kv/prod/services/observability \
   -e observability_audit_password_field=grafana_password \
   -e observability_audit_admin_username=admin \
@@ -49,6 +51,11 @@ evidence is mode 0600. No management password, Basic header or Viewer key is
 written into evidence. Unexpected exceptions are represented by fixed error
 codes rather than exception/response text. Known in-memory credentials are
 also scrubbed from the report as a final safeguard.
+The CLI requires repeatable `--expected-node node-a --expected-node node-b`;
+these must come from a separately verified management/provider inventory, not
+the KSM response being tested. Missing, invalid or duplicate node inputs fail
+before Vault is read. The report records this external-input provenance; it
+does not manufacture management evidence for a supplied node list.
 
 ## Management phase
 
@@ -96,18 +103,36 @@ review; shared container metrics remain NOT_RUN until actual old/new metric-set
 comparison. No permissions or identities are expanded for a forbidden endpoint.
 
 A valid response alone does not establish full rule visibility. Complete
-Ruler scope requires all-folder rule/folder reads and all-datasource query
-permissions; provisioning completeness requires the dedicated provisioning
-read action. Unknown or partial visibility, unsupported schemas and forbidden
+Ruler scope conservatively requires all-folder rule/folder reads and
+all-datasource query permissions. Provisioning completeness accepts a dedicated
+provisioning read action; for the source-verified Grafana 13.2.4 API contract it
+also accepts `alert.rules:read` plus `folders:read`, both with all-folder scopes.
+Its handler uses `CanReadAllRules` and returns all organization rules before
+per-folder filtering; global datasource query is not required for this
+configuration-only path. Relevant granted action/scopes and the runtime
+version are retained as evidence. This is versioned API-contract verification,
+not binary/source attestation. See fixed upstream source:
+[authorization](https://github.com/grafana/grafana/blob/af4a33e3786594ad72f72d97e6744010330c2977/pkg/services/ngalert/api/authorization.go#L365),
+[GetAlertRules](https://github.com/grafana/grafana/blob/af4a33e3786594ad72f72d97e6744010330c2977/pkg/services/ngalert/provisioning/alert_rules.go#L320),
+[CanReadAllRules](https://github.com/grafana/grafana/blob/af4a33e3786594ad72f72d97e6744010330c2977/pkg/services/ngalert/accesscontrol/rules.go#L85).
+Unknown versions without sufficient explicit read actions, partial scopes,
+unsupported schemas and forbidden
 reads remain NOT_RUN, never zero rules or proof of no dependency. This check is
 limited to Grafana-managed rules, not arbitrary external alerting systems.
 
 GET-only queries verify all original 17 Dashboard UIDs plus StarsL, its variable
-model, all actual KSM nodes against node/process/kubelet/cAdvisor `up` coverage,
+model, KSM inventory exactly against the externally expected node set, and
+node/process/kubelet/cAdvisor `up` coverage against that same external set,
 representative metrics and freshness, the absent-cluster negative case,
 duplicate/noncanonical container-memory series, process scrape errors, and
-three original K3s overview queries. Thirty-minute continuity uses source
-timestamps per node rather than a count hidden by query lookback.
+three original K3s overview queries. Signals and thirty-minute continuity bind
+KSM to `job="kube-state-metrics"`, Node to `job="node-exporter"`, Process to
+`job="process-exporter"`, and cAdvisor to `job="cadvisor"`. cAdvisor CPU/memory
+signals select only non-empty, non-`POD` application containers. Old OTel series
+with the same metric name cannot stand in for cAdvisor. Every expected node
+must have a qualifying range series, coverage and source-sample gap; missing
+nodes cannot disappear from a minimum over only returned series. Scrape `up`
+freshness is checked as well as its value.
 
 PVC metrics remain explicitly NOT_RUN until actual volume-plugin applicability
 is established; missing metrics are never reported as healthy zero. New agent
@@ -126,6 +151,8 @@ of other tokens, credential redaction, permission blocking, node coverage and
 source-sample gaps. Run the playbook syntax check before use.
 Additional tests cover the observed service-account DTO, mismatched identities,
 forbidden/partial/malformed rule reads, and expression redaction.
+Regression fixtures include canonical cAdvisor absent while old OTel data
+exists, incomplete per-node range results, and missing/unexpected KSM nodes.
 
 Rollback of this owner is a focused PR revert. Its runtime cleanup is token
 revocation, not a service restart, account deletion, database/DNS change or

@@ -20,7 +20,7 @@ def args(**kwargs):
         "vault_path": "kv/prod/services/observability", "password_field": "grafana_password",
         "admin_username": "admin", "service_account_name": "observability-audit-prod",
         "cluster": "cluster-fixture", "environment": "prod", "datasource_uid": "victoriametrics",
-        "token_ttl": 3600} | kwargs))
+        "token_ttl": 3600, "expected_node": ["node-a", "node-b"]} | kwargs))
 
 
 class FakeGrafana:
@@ -148,6 +148,12 @@ class AuditSessionTests(unittest.TestCase):
                           {"service_account_name": "admin"}]:
             with self.assertRaises(session.SessionError):
                 self.run_fake(FakeGrafana(), **overrides)
+
+    def test_external_node_set_is_required_before_credential_read(self):
+        for nodes in [None, [], ["node-a", "node-a"], ["node-a", "bad/node"]]:
+            with self.subTest(nodes=nodes):
+                with self.assertRaises(session.SessionError):
+                    self.run_fake(FakeGrafana(), expected_node=nodes)
 
     @patch.object(session.subprocess, "run")
     def test_vault_cli_captures_in_memory_and_does_not_take_secret_arguments(self, run):

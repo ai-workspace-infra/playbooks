@@ -29,11 +29,15 @@ class Response:
 
 class Fixture:
     def __init__(self, write=False, missing_node=False, source_gap=False, query_error=False,
-                 user_overrides=None):
+                 user_overrides=None, cadvisor_absent=False, missing_range_node=False,
+                 ksm_node_change=None):
         self.calls = []
         self.write, self.missing_node, self.source_gap = write, missing_node, source_gap
         self.query_error = query_error
         self.user_overrides = user_overrides or {}
+        self.cadvisor_absent = cadvisor_absent
+        self.missing_range_node = missing_range_node
+        self.ksm_node_change = ksm_node_change
     def open(self, request, timeout):
         self.calls.append(request)
         assert request.get_method() == "GET"
@@ -65,18 +69,25 @@ class Fixture:
         expr = parameters["query"][0]
         if self.query_error:
             return Response({"status": "error", "error": "fixture failure"})
+        if self.cadvisor_absent and 'job="cadvisor"' in expr:
+            return Response({"status": "success", "data": {"result": []}})
         result = []
         if path.endswith("query_range"):
             end = float(parameters["end"][0])
             stamps = [end - 1800 + i * 60 for i in range(31)]
             if self.source_gap:
                 stamps = [stamp for i, stamp in enumerate(stamps) if i not in [10, 11, 12, 13, 14]]
+            nodes = ["node-a"] if self.missing_range_node and 'job="cadvisor"' in expr else ["node-a", "node-b"]
             result = [{"metric": {"node": node}, "values": [[stamp, str(stamp)] for stamp in stamps]}
-                      for node in ["node-a", "node-b"]]
+                      for node in nodes]
         elif "__nonexistent_obs_probe__" in expr or "__invalid_env__" in expr or " > 1" in expr or 'job!="cadvisor"' in expr:
             result = []
         elif expr.startswith("kube_node_info{") or (expr.startswith("up{") and " == 1" in expr):
             nodes = ["node-a"] if self.missing_node and 'job="process-exporter"' in expr else ["node-a", "node-b"]
+            if expr.startswith("kube_node_info{") and self.ksm_node_change == "missing":
+                nodes = ["node-a"]
+            if expr.startswith("kube_node_info{") and self.ksm_node_change == "extra":
+                nodes = ["node-a", "node-b", "unknown-node"]
             result = [{"metric": {"node": node}, "value": [time.time(), "1"]} for node in nodes]
         elif expr.startswith("time()"):
             result = [{"metric": {"node": node}, "value": [time.time(), "30"]} for node in ["node-a", "node-b"]]
@@ -87,9 +98,10 @@ class Fixture:
 
 
 class AuditVerifierTests(unittest.TestCase):
-    def run_fixture(self, fixture):
+    def run_fixture(self, fixture, expected_nodes=None):
         config = argparse.Namespace(base_url="https://grafana.example.test", cluster="cluster-fixture",
-                                    environment="prod", datasource_uid="victoriametrics")
+                                    environment="prod", datasource_uid="victoriametrics",
+                                    expected_node=["node-a", "node-b"] if expected_nodes is None else expected_nodes)
         with patch.object(verifier.urllib.request, "build_opener", return_value=fixture):
             return verifier.verify(config, "viewer-token-sentinel", {"id": 7, "orgId": 1, "role": "Viewer",
                 "login": "sa-1-observability-audit-prod", "name": "observability-audit-prod"})
@@ -149,14 +161,45 @@ class AuditVerifierTests(unittest.TestCase):
         for key in ["nonexistent_cluster", "nonexistent_environment", "duplicate_container_memory"]:
             self.assertEqual(report["checks"][key]["status"], "FAIL")
 
+    def test_old_otel_same_named_series_cannot_pass_cadvisor_acceptance(self):
+        fixture = Fixture(cadvisor_absent=True)
+        report = self.run_fixture(fixture)
+        for key in ["cadvisor_cpu", "cadvisor_memory", "continuity_cadvisor"]:
+            self.assertEqual(report["checks"][key]["status"], "FAIL")
+        self.assertEqual(report["checks"]["continuity_node"]["status"], "PASS")
+        expressions = [urllib.parse.parse_qs(urllib.parse.urlsplit(request.full_url).query)["query"][0]
+                       for request in fixture.calls if "/api/v1/query" in request.full_url]
+        cadvisor = [expr for expr in expressions if 'job="cadvisor"' in expr and "container_" in expr]
+        self.assertTrue(cadvisor)
+        for expr in cadvisor:
+            self.assertIn('container!=""', expr)
+            self.assertIn('container!="POD"', expr)
+
+    def test_range_requires_every_external_expected_node(self):
+        report = self.run_fixture(Fixture(missing_range_node=True))
+        check = report["checks"]["continuity_cadvisor"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertEqual(check["missing_node_count"], 1)
+        self.assertEqual(check["covered_seconds"], 0)
+
+    def test_ksm_cannot_self_attest_missing_or_extra_node_inventory(self):
+        for change in ["missing", "extra"]:
+            report = self.run_fixture(Fixture(ksm_node_change=change))
+            self.assertEqual(report["checks"]["node_inventory"]["status"], "FAIL")
+
+    def test_missing_external_node_input_is_not_run(self):
+        report = self.run_fixture(Fixture(), expected_nodes=[])
+        self.assertEqual(report["checks"]["external_node_inventory"]["status"], "NOT_RUN")
+        self.assertNotIn("continuity_cadvisor", report["checks"])
+
 
 class AlertDependencyTests(unittest.TestCase):
-    def scan(self, ruler, provisioning, permissions=None):
+    def scan(self, ruler, provisioning, permissions=None, version=""):
         def get(path):
             return ruler if "/ruler/" in path else provisioning
         return verifier.scan_alert_dependencies(get, permissions or {
             "alert.rules:read": ["folders:*"], "folders:read": ["folders:*"],
-            "datasources:query": ["datasources:*"]})
+            "datasources:query": ["datasources:*"]}, version)
 
     def test_empty_ruler_requires_complete_scope_and_does_not_use_admin(self):
         report = self.scan((200, {}), (403, {}))
@@ -187,6 +230,18 @@ class AlertDependencyTests(unittest.TestCase):
         self.assertEqual(report["status"], "NOT_RUN")
         self.assertTrue(report["rules"][0]["shared_metric_review"])
         self.assertFalse(report["rules"][0]["dependency_candidate"])
+
+    def test_grafana13_provisioning_global_folder_read_needs_no_global_datasource_query(self):
+        permissions = {"alert.rules:read": ["folders:*"], "folders:read": ["folders:*"],
+                       "datasources:query": ["datasources:uid:metrics"]}
+        report = self.scan((200, {}), (200, []), permissions, "13.2.4")
+        self.assertEqual(report["status"], "PASS")
+        self.assertEqual(report["provisioning_completeness_basis"], "grafana_13.2.4_all_folder_rule_and_folder_read")
+        self.assertEqual(report["read_scope_evidence"]["datasources:query"], ["datasources:uid:metrics"])
+        for version in ["", "future-unknown"]:
+            self.assertEqual(self.scan((200, {}), (200, []), permissions, version)["status"], "NOT_RUN")
+        limited = permissions | {"folders:read": ["folders:uid:one"]}
+        self.assertEqual(self.scan((200, {}), (200, []), limited, "13.2.4")["status"], "NOT_RUN")
 
 
 
