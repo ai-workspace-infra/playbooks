@@ -68,6 +68,40 @@
       - tar
     state: present
 
+- name: Ensure cloud-init configuration directory exists
+  ansible.builtin.file:
+    path: /etc/cloud/cloud.cfg.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Preserve the configured node hostname across cloud-init runs
+  ansible.builtin.copy:
+    content: "preserve_hostname: true\n"
+    dest: /etc/cloud/cloud.cfg.d/99-k3s-platform-hostname.cfg
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Set host hostname to the configured K3s node identity
+  ansible.builtin.hostname:
+    name: "{{ k3s_platform_node_name }}"
+
+- name: Remove explicitly retired hostnames from local hosts entries
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: "(^|\\s){{ item | regex_escape }}(\\s|$)"
+    state: absent
+  loop: "{{ k3s_platform_retired_hostnames }}"
+
+- name: Set local loopback mapping for the configured K3s node identity
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\s+'
+    line: "127.0.1.1 {{ k3s_platform_node_name }} {{ k3s_platform_node_name }}.svc.plus"
+    state: present
+
 - name: Ensure k3s config directory exists
   ansible.builtin.file:
     path: "{{ k3s_platform_k3s_config_path | dirname }}"
@@ -134,6 +168,8 @@
     executable: /bin/bash
   async: "{{ k3s_platform_k3s_install_timeout_seconds }}"
   poll: 15
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_platform_k3s_version }}"
   when:
     - k3s_platform_k3s_install_state.stdout | default('missing') != 'installed'
 
@@ -177,7 +213,8 @@
     if command -v helm >/dev/null 2>&1; then
       exit 0
     fi
-    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+      | DESIRED_VERSION="{{ k3s_platform_helm_version }}" bash
   args:
     executable: /bin/bash
 
@@ -187,7 +224,8 @@
     if command -v flux >/dev/null 2>&1; then
       exit 0
     fi
-    curl -s https://fluxcd.io/install.sh | bash
+    curl -fsSL https://fluxcd.io/install.sh \
+      | FLUX_VERSION="{{ k3s_platform_flux_version }}" bash
   args:
     executable: /bin/bash
 
@@ -397,3 +435,14 @@
     kubectl -n "{{ k3s_platform_flux_namespace }}" get gitrepositories,kustomizations
   args:
     executable: /bin/bash
+
+- name: Remove temporary K3s and Flux bootstrap files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ k3s_platform_k3s_install_script_path }}"
+    - "{{ k3s_platform_k3s_install_log_path }}"
+    - /tmp/flux-bootstrap.env
+    - /tmp/flux-git-deploy.key
+    - /tmp/flux-git-deploy.pub
