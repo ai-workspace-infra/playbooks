@@ -8,7 +8,7 @@
   delegate_to: localhost
   become: false
   register: vault_github_oidc_result
-  changed_when: (vault_github_oidc_result.stdout | from_json).changed | int > 0 and vault_github_oidc_request.apply | default(false) | bool
+  changed_when: vault_github_oidc_result.rc == 0 and ((vault_github_oidc_result.stdout | default("{}", true) | from_json).get("changed", 0) | int > 0) and (vault_github_oidc_request.apply | default(false) | bool)
   no_log: true
 
 - name: Report sanitized OIDC reconciliation counts
