@@ -1,0 +1,50 @@
+---
+- name: Require exact scope and strict controller transport before connection
+  ansible.builtin.assert:
+    that:
+      - ansible_play_hosts_all | length == 1
+      - lookup('ansible.builtin.config', 'HOST_KEY_CHECKING') | bool
+      - "'StrictHostKeyChecking=yes' in (ansible_ssh_common_args | default(''))"
+      - "'UserKnownHostsFile=' in (ansible_ssh_common_args | default(''))"
+      - cmdb_environment == 'prod'
+      - gitops_promotion_report is match('^/')
+      - gitops_promotion_config.environment | default('') == 'prod'
+      - gitops_promotion_config.mode | default('plan') in ['plan', 'apply', 'audit-report']
+      - gitops_promotion_config.mode | default('plan') != 'apply' or gitops_promotion_apply | bool
+    fail_msg: Use the verified owner adapter with a fresh single-target inventory and strict host-key transport.
+  delegate_to: localhost
+  become: false
+
+- name: Resolve check mode as a read-only plan
+  ansible.builtin.set_fact:
+    gitops_promotion_effective_config: >-
+      {{ gitops_promotion_config | combine({'mode': 'plan'} if ansible_check_mode else {}) }}
+
+- name: Run the scoped source owner on the verified host
+  ansible.builtin.script:
+    cmd: files/promote.py
+    executable: python3
+  environment:
+    GITOPS_PROMOTION_CONFIG: "{{ gitops_promotion_effective_config | to_json }}"
+  register: gitops_promotion_result
+  check_mode: false
+  changed_when: >-
+    (gitops_promotion_result.stdout | default('{}', true) | from_json).changed | default(false) == true
+  failed_when: false
+  become: false
+
+- name: Preserve sanitized operation evidence on the controller
+  ansible.builtin.copy:
+    content: "{{ gitops_promotion_result.stdout }}\n"
+    dest: "{{ gitops_promotion_report }}"
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+  check_mode: false
+
+- name: Require owner success without converting missing runtime acceptance into PASS
+  ansible.builtin.assert:
+    that:
+      - gitops_promotion_result.rc == 0
+      - (gitops_promotion_result.stdout | from_json).result in ['planned', 'reported', 'verified']
+    fail_msg: Source promotion did not verify; retain evidence and inspect the exact Source before retrying.
