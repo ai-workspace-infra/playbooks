@@ -179,3 +179,41 @@ revocation, not a service restart, account deletion, database/DNS change or
 credential rotation. An existing exact-name non-Viewer account is an explicit
 conflict to resolve through its owning authorization process, never an excuse
 to widen permissions or reuse administrator credentials for audit.
+
+
+## Optional full Dashboard query manifest
+
+`--dashboard-query-manifest /absolute/reviewed-manifest.yaml` (Role input
+`observability_audit_dashboard_query_manifest`, empty by default) loads the
+bounded YAML before Vault or token operations. Generate it with the separate
+host Dashboard scope owner, choosing the actual deployed model source. The
+owner never silently adapts an old live Dashboard into a newer one: exact
+query-variable/target contracts must match. Grafana-only ID/version metadata
+is excluded from semantic comparison. New undeployed models explicitly fail
+comparison against old live models. A manifest generated from old live models
+can inspect that exact query set, preserving its unresolved collection/scope gaps.
+
+Execution reuses the existing independently verified Viewer callback inside the
+same token lifecycle; no token parameter, alternate origin, credentials or write
+path is added. Identity/permission gates run first; cleanup remains in `finally`.
+The executor permits only fixed Dashboard model GETs and fixed datasource query
+GETs, at most 500 queries / 300 seconds, backend timeout 5s, existing HTTP timeout
+15s / 2 MB response bound, 5000 vector rows and 200 variable choices. Output has
+UIDs, target IDs, expression hashes, counts and statuses only, not raw expressions,
+labels, process names or samples.
+
+Resolve known variables from real metric label queries in dependency order;
+use explicit cluster/environment, selected datasource and fixed bounded time
+macros (3m rate / 1m interval / 30m range). Discovered option unions test the
+combined scope, not every UI selection combination. Query errors/nonfinite
+samples/stale required families/missing expected node families FAIL. Unsupported
+macros, conditional absence and empty target results remain NOT_RUN. Old live
+queries lacking cluster/environment isolation are executed as-is for diagnosis
+but remain NOT_RUN, even when nonempty; deliberately excluded IO/FD families
+remain NOT_RUN with their profile limitation, not healthy zero. Node variable
+choices are restricted to the separately expected node set. Hidden
+targets are explicitly skipped. Family freshness and instant target execution
+supplement existing external-node continuity checks; they do not prove all UI
+transformations, plugin rendering or global alert-rule visibility. No admin query
+fallback or permission expansion is allowed. No live acceptance is performed by
+adding this implementation.

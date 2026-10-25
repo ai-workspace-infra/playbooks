@@ -103,6 +103,16 @@ def validate(args):
     if len(set(nodes)) != len(nodes):
         raise SessionError("duplicate_expected_node")
 
+    manifest_path = getattr(args, "dashboard_query_manifest", None)
+    if manifest_path:
+        try:
+            spec = importlib.util.spec_from_file_location("observability_manifest_preflight", Path(__file__).with_name("verify_manifest.py"))
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            args._dashboard_manifest = module.load_manifest(manifest_path)
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            raise SessionError("dashboard_query_manifest_invalid") from None
+
 
 def default_verify(args, token, identity):
     path = Path(__file__).with_name("verify_readonly.py")
@@ -240,6 +250,7 @@ def main():
     parser.add_argument("--environment", required=True, choices=["sit", "uat", "prod"])
     parser.add_argument("--datasource-uid", default="victoriametrics")
     parser.add_argument("--token-ttl", type=int, default=3600)
+    parser.add_argument("--dashboard-query-manifest", help="Optional absolute reviewed YAML manifest; read before credentials")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     output = Path(args.output)
