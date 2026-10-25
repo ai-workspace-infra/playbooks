@@ -51,6 +51,28 @@ class StarslDashboardTest(unittest.TestCase):
         self.assertEqual(names[:3], ["DS_METRICS", "cluster", "environment"])
         self.assertEqual(self.dashboard["uid"], "StarsL_cn_K8S")
 
+    def test_cadvisor_metric_owner_and_application_sandbox_scope(self):
+        import re
+        queries = {(p.get("id"), t.get("refId")): t.get("expr", "")
+                   for p in module.panels(self.dashboard["panels"])
+                   for t in p.get("targets", [])}
+        expected = [(44,"C"),(45,"C"),(71,"C"),(79,"C"),(75,"I"),
+                    (76,"I"),(52,"I"),(52,"J"),(52,"M"),(52,"P")]
+        for key in expected:
+            self.assertIn('container!="POD"', queries[key], key)
+        for key, expr in queries.items():
+            for selector in re.finditer(r'\bcontainer_[A-Za-z0-9_:]+\{((?:\$\{[^}]+\}|[^{}])*)\}', expr):
+                self.assertIn('job="cadvisor"', selector.group(1), key)
+        # Node root cgroup CPU is an intentional total, not application usage.
+        for key in [(72,"C"),(80,"C")]:
+            self.assertIn('id="/"', queries[key])
+            self.assertNotIn('container!="POD"', queries[key])
+        # Pod network is often exposed by the sandbox, so retain it.
+        for expr in queries.values():
+            if 'container_network_' in expr:
+                for selector in re.finditer(r'container_network_[A-Za-z0-9_]+\{((?:\$\{[^}]+\}|[^{}])*)\}', expr):
+                    self.assertNotIn('container!="POD"', selector.group(1))
+
     def test_legacy_output_matches_renderer(self):
         path = ROOT / "roles/docker/observability-server/files/starsl-k8s-dashboard.json"
         self.assertEqual(json.loads(path.read_text()), self.dashboard)
