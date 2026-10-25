@@ -5,6 +5,9 @@ on:
     paths:
       - observability_operations.yml
       - observability_closure_acceptance.yml
+      - observability_alert_config_review.yml
+      - roles/observability_alert_config_review/**
+      - tests/test_observability_alert_config_review.py
       - observability_audit_session.yml
       - roles/observability_audit_session/**
       - tests/test_observability_audit_session.py
@@ -27,6 +30,9 @@ on:
     paths:
       - observability_operations.yml
       - observability_closure_acceptance.yml
+      - observability_alert_config_review.yml
+      - roles/observability_alert_config_review/**
+      - tests/test_observability_alert_config_review.py
       - observability_audit_session.yml
       - roles/observability_audit_session/**
       - tests/test_observability_audit_session.py
@@ -65,6 +71,7 @@ jobs:
           tests/test_starsl_k8s_dashboard.py
           tests/test_observability_audit_session.py
           tests/test_observability_audit_verifier.py
+          tests/test_observability_alert_config_review.py
       - name: Validate role shell and playbook syntax
         run: |
           for script in roles/docker/observability_server_operations/files/*.sh; do bash -n "$script"; done
@@ -72,4 +79,5 @@ jobs:
           ansible-playbook --syntax-check -i 'localhost,' observability_closure_acceptance.yml
           ansible-playbook --syntax-check -i 'localhost,' import_starsl_k8s_dashboard.yml
           ansible-playbook --syntax-check -i 'localhost,' observability_audit_session.yml
+          ansible-playbook --syntax-check -i 'localhost,' observability_alert_config_review.yml
           git diff --check
