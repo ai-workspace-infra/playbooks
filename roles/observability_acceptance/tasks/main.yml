@@ -1,0 +1,65 @@
+---
+- name: Validate read-only Observability acceptance probe inputs
+  ansible.builtin.assert:
+    that:
+      - observability_acceptance_environment in ['sit', 'uat', 'prod']
+      - observability_acceptance_target_urls is sequence
+      - observability_acceptance_target_urls | length >= 1
+      - observability_acceptance_metrics_max_age_seconds | int > 0
+      - observability_acceptance_logs_max_age_seconds | int > 0
+      - observability_acceptance_cmdb_max_age_seconds | int > 0
+      - observability_acceptance_continuity_window_seconds | int >= 300
+    fail_msg: Invalid Observability closure acceptance probe parameters.
+
+- name: Build CLI arguments for verify_observability_closure.py
+  ansible.builtin.set_fact:
+    observability_acceptance_argv: >-
+      {{
+        [
+          ansible_playbook_python,
+          playbook_dir ~ '/scripts/verify_observability_closure.py',
+          '--environment', observability_acceptance_environment | string,
+          '--metrics-max-age', observability_acceptance_metrics_max_age_seconds | int | string,
+          '--logs-max-age', observability_acceptance_logs_max_age_seconds | int | string,
+          '--cmdb-max-age', observability_acceptance_cmdb_max_age_seconds | int | string,
+          '--continuity-window', observability_acceptance_continuity_window_seconds | int | string
+        ]
+        + (observability_acceptance_target_urls | map('regex_replace', '^(.*)$', '--target-url=\1') | list)
+        + (['--output-dir', observability_acceptance_output_dir] if (observability_acceptance_output_dir | length > 0) else [])
+        + (['--config-json', observability_acceptance_config_json] if (observability_acceptance_config_json | length > 0) else [])
+        + (['--allow-loopback-http'] if (observability_acceptance_allow_loopback_http | bool) else [])
+        + (['--require-pass'] if (observability_acceptance_require_pass | bool) else [])
+      }}
+
+- name: Execute read-only Observability closure acceptance probe
+  ansible.builtin.command:
+    argv: "{{ observability_acceptance_argv }}"
+  environment:
+    OBSERVABILITY_GRAFANA_API_TOKEN: "{{ observability_acceptance_api_token }}"
+  register: observability_acceptance_probe_run
+  changed_when: false
+  failed_when: false
+  no_log: "{{ (observability_acceptance_api_token | length) > 0 }}"
+
+- name: Parse sanitized Observability closure acceptance report
+  ansible.builtin.set_fact:
+    observability_acceptance_report: "{{ observability_acceptance_probe_run.stdout | from_json }}"
+
+- name: Emit sanitized Observability closure acceptance summary
+  ansible.builtin.debug:
+    msg:
+      schema_version: "{{ observability_acceptance_report.schema_version }}"
+      environment: "{{ observability_acceptance_report.environment }}"
+      overall_status: "{{ observability_acceptance_report.overall_status }}"
+      queried_at: "{{ observability_acceptance_report.timestamps.queried_at }}"
+      freshness_thresholds: "{{ observability_acceptance_report.freshness_thresholds }}"
+
+- name: Enforce fail-closed Observability acceptance gate
+  ansible.builtin.assert:
+    that:
+      - observability_acceptance_probe_run.rc == 0
+      - observability_acceptance_report.overall_status != 'FAIL'
+      - (not (observability_acceptance_require_pass | bool)) or observability_acceptance_report.overall_status == 'PASS'
+    fail_msg: >-
+      Observability closure acceptance gate blocked (overall_status={{ observability_acceptance_report.overall_status }},
+      rc={{ observability_acceptance_probe_run.rc }}).

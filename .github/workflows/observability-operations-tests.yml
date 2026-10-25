@@ -4,19 +4,29 @@ on:
   pull_request:
     paths:
       - observability_operations.yml
+      - observability_closure_acceptance.yml
       - roles/docker/observability_server_operations/**
+      - roles/observability_acceptance/**
+      - scripts/verify_observability_closure.py
+      - docs/observability-diagnostics.md
       - tests/test_observability_operations_role_contract.py
       - tests/test_observability_post_dns_cutover.py
       - tests/test_observability_local_grafana.py
+      - tests/test_observability_closure_acceptance.py
       - .github/workflows/observability-operations-tests.yml
   push:
     branches: [main]
     paths:
       - observability_operations.yml
+      - observability_closure_acceptance.yml
       - roles/docker/observability_server_operations/**
+      - roles/observability_acceptance/**
+      - scripts/verify_observability_closure.py
+      - docs/observability-diagnostics.md
       - tests/test_observability_operations_role_contract.py
       - tests/test_observability_post_dns_cutover.py
       - tests/test_observability_local_grafana.py
+      - tests/test_observability_closure_acceptance.py
       - .github/workflows/observability-operations-tests.yml
 
 permissions:
@@ -35,8 +45,10 @@ jobs:
           tests/test_observability_operations_role_contract.py
           tests/test_observability_post_dns_cutover.py
           tests/test_observability_local_grafana.py
+          tests/test_observability_closure_acceptance.py
       - name: Validate role shell and playbook syntax
         run: |
           for script in roles/docker/observability_server_operations/files/*.sh; do bash -n "$script"; done
           ansible-playbook --syntax-check -i 'localhost,' observability_operations.yml
+          ansible-playbook --syntax-check -i 'localhost,' observability_closure_acceptance.yml
           git diff --check
