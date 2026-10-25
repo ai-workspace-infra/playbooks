@@ -19,7 +19,7 @@ EXPECTED_UIDS = {
 }
 
 
-def scan_alert_dependencies(get, permissions):
+def scan_alert_dependencies(get, permissions, grafana_version=""):
     """Read only rule configuration; never retain expression/annotation text."""
     endpoints = [("ruler", "/api/ruler/grafana/api/v1/rules"),
                  ("provisioning", "/api/v1/provisioning/alert-rules")]
@@ -81,10 +81,16 @@ def scan_alert_dependencies(get, permissions):
                         "visible_rule_count": len(rules) if parsed else None})
     def global_scope(action, allowed):
         return any(scope in allowed for scope in permissions.get(action, []))
-    ruler_complete = (global_scope("alert.rules:read", {"*", "folders:*", "folders:uid:*"})
-                      and global_scope("folders:read", {"*", "folders:*", "folders:uid:*"})
+    all_folder_rules = (global_scope("alert.rules:read", {"*", "folders:*", "folders:uid:*"})
+                        and global_scope("folders:read", {"*", "folders:*", "folders:uid:*"}))
+    ruler_complete = (all_folder_rules
                       and global_scope("datasources:query", {"*", "datasources:*", "datasources:uid:*"}))
-    provisioning_complete = bool(permissions.get("alert.rules.provisioning:read") or permissions.get("alert.provisioning:read"))
+    provisioning_read = bool(permissions.get("alert.rules.provisioning:read") or permissions.get("alert.provisioning:read"))
+    # Exact running-version source proof: Grafana 13.2.4's provisioning
+    # GetAlertRules returns all org rules when CanReadAllRules holds; that
+    # evaluator requires only both all-folder reads, not datasource query.
+    provisioning_blanket = grafana_version == "13.2.4" and all_folder_rules
+    provisioning_complete = provisioning_read or provisioning_blanket
     complete = any(source["http_status"] == 200 and source["parsed"]
                    and (ruler_complete if source["source"] == "ruler" else provisioning_complete)
                    for source in sources)
@@ -92,6 +98,13 @@ def scan_alert_dependencies(get, permissions):
     shared_review = any(item["shared_metric_review"] for item in summaries)
     return {"status": "FAIL" if dependencies else "PASS" if complete and not shared_review else "NOT_RUN",
             "scope_completeness_verified": complete, "sources": sources, "rules": summaries,
+            "grafana_version": grafana_version,
+            "provisioning_completeness_basis": ("explicit_provisioning_read" if provisioning_read
+                                                  else "grafana_13.2.4_all_folder_rule_and_folder_read" if provisioning_blanket
+                                                  else "NOT_VERIFIED"),
+            "read_scope_evidence": {action: permissions.get(action, []) for action in [
+                "alert.rules:read", "folders:read", "datasources:query",
+                "alert.rules.provisioning:read", "alert.provisioning:read"]},
             "reason": ("OTel container metric/label dependency candidate requires review" if dependencies
                        else "Shared container metrics require actual old/new metric-set comparison" if shared_review
                        else "Full permitted rule scope scanned with no container dependency matches" if complete
@@ -186,7 +199,8 @@ def verify(args, token, expected_identity):
         "reason": "Permission introspection only; no production write/denial operation attempted"}
     if forbidden or (code == 200 and not valid_permissions):
         return save()
-    checks["alert_rule_dependencies"] = scan_alert_dependencies(get, permissions if valid_permissions else {})
+    checks["alert_rule_dependencies"] = scan_alert_dependencies(
+        get, permissions if valid_permissions else {}, checks["endpoint_health"].get("version", ""))
     code, search = get("/api/search?type=dash-db&limit=1000")
     uids = {item.get("uid") for item in search if item.get("type") == "dash-db"} if isinstance(search, list) else set()
     checks["dashboard_count"] = {"status": "PASS" if code == 200 and EXPECTED_UIDS <= uids else "FAIL",
@@ -198,10 +212,24 @@ def verify(args, token, expected_identity):
     checks["starsl_dashboard_model"] = {"status": "PASS" if code == 200 and variables[:3] == ["DS_METRICS", "cluster", "environment"] else "FAIL",
                                         "http_status": code, "variables": variables}
     scope = 'cluster=' + json.dumps(args.cluster) + ',environment=' + json.dumps(args.environment)
-    metrics = {"ksm_node": "kube_node_info", "ksm_pod": "kube_pod_info",
-               "node_cpu": "node_cpu_seconds_total", "node_memory": "node_memory_MemAvailable_bytes",
-               "process_groups": "namedprocess_namegroup_num_procs", "cadvisor_cpu": "container_cpu_usage_seconds_total",
-               "cadvisor_memory": "container_memory_working_set_bytes"}
+    metrics = {"ksm_node": ("kube_node_info", "kube-state-metrics"),
+               "ksm_pod": ("kube_pod_info", "kube-state-metrics"),
+               "node_cpu": ("node_cpu_seconds_total", "node-exporter"),
+               "node_memory": ("node_memory_MemAvailable_bytes", "node-exporter"),
+               "process_groups": ("namedprocess_namegroup_num_procs", "process-exporter"),
+               "process_cpu": ("namedprocess_namegroup_cpu_seconds_total", "process-exporter"),
+               "cadvisor_cpu": ("container_cpu_usage_seconds_total", "cadvisor"),
+               "cadvisor_memory": ("container_memory_working_set_bytes", "cadvisor")}
+    expected_nodes = set(getattr(args, "expected_node", []) or [])
+    if not expected_nodes:
+        checks["external_node_inventory"] = {"status": "NOT_RUN", "reason": "Separately verified expected-node input is required"}
+        return save()
+    checks["external_node_inventory"] = {"status": "PASS", "expected_node_count": len(expected_nodes),
+                                          "provenance": "Explicit caller input; not inferred from KSM"}
+
+    def selector(metric, job):
+        application = ',container!="",container!="POD"' if job == "cadvisor" else ""
+        return metric + "{" + scope + ',job=' + json.dumps(job) + application + "}"
     proxy = "/api/datasources/proxy/uid/" + args.datasource_uid + "/api/v1/"
 
     def query(expression, range_query=False):
@@ -214,28 +242,37 @@ def verify(args, token, expected_identity):
             return 0, {"error": "prometheus_query_not_successful"}
         return code, payload
 
-    code, payload = query("kube_node_info{" + scope + "}")
+    code, payload = query(selector("kube_node_info", "kube-state-metrics"))
     result = payload.get("data", {}).get("result", [])
-    expected_nodes = {row.get("metric", {}).get("node") for row in result if row.get("metric", {}).get("node")}
-    checks["node_inventory"] = {"status": "PASS" if code == 200 and expected_nodes else "FAIL",
-                                 "http_status": code, "node_count": len(expected_nodes)}
+    observed_nodes = {row.get("metric", {}).get("node") for row in result if row.get("metric", {}).get("node")}
+    checks["node_inventory"] = {"status": "PASS" if code == 200 and observed_nodes == expected_nodes else "FAIL",
+                                 "http_status": code, "node_count": len(observed_nodes),
+                                 "expected_node_count": len(expected_nodes),
+                                 "missing_node_count": len(expected_nodes - observed_nodes),
+                                 "unexpected_node_count": len(observed_nodes - expected_nodes)}
 
-    for key, metric in metrics.items():
-        expr = metric + "{" + scope + "}"
+    for key, (metric, job) in metrics.items():
+        expr = selector(metric, job)
         code, payload = query("time() - max by(node)(timestamp(" + expr + "))")
         result = payload.get("data", {}).get("result", [])
         per_node = {row.get("metric", {}).get("node"): float(row["value"][1])
                     for row in result if row.get("metric", {}).get("node")} if code == 200 else {}
-        valid = (expected_nodes and expected_nodes <= set(per_node)
+        valid = (expected_nodes and expected_nodes == set(per_node)
                  and all(0 <= per_node[node] <= 180 for node in expected_nodes))
-        checks[key] = {"status": "PASS" if valid else "FAIL", "http_status": code,
+        checks[key] = {"status": "PASS" if valid else "FAIL", "http_status": code, "canonical_job": job,
                        "worst_age_seconds": max(per_node.values()) if per_node else None,
-                       "missing_node_count": len(expected_nodes - set(per_node))}
+                       "missing_node_count": len(expected_nodes - set(per_node)),
+                       "unexpected_node_count": len(set(per_node) - expected_nodes)}
     for job in ["kube-state-metrics", "node-exporter", "process-exporter", "kubelet", "cadvisor"]:
         code, payload = query("min(up{" + scope + ',job=' + json.dumps(job) + "})")
         result = payload.get("data", {}).get("result", [])
         value = float(result[0]["value"][1]) if code == 200 and result else None
         checks["scrape_" + job] = {"status": "PASS" if value == 1 else "FAIL", "http_status": code, "value": value}
+        age_code, age_payload = query("time() - min(timestamp(up{" + scope + ',job=' + json.dumps(job) + "}))")
+        age_rows = age_payload.get("data", {}).get("result", [])
+        age = float(age_rows[0]["value"][1]) if age_code == 200 and age_rows else None
+        checks["scrape_freshness_" + job] = {"status": "PASS" if age is not None and 0 <= age <= 180 else "FAIL",
+                                              "http_status": age_code, "worst_age_seconds": age}
         if job != "kube-state-metrics":
             node_code, node_payload = query("up{" + scope + ',job=' + json.dumps(job) + "} == 1")
             nodes = {row.get("metric", {}).get("node") for row in node_payload.get("data", {}).get("result", [])}
@@ -255,7 +292,7 @@ def verify(args, token, expected_identity):
     result = payload.get("data", {}).get("result", [])
     checks["noncanonical_container_memory"] = {"status": "PASS" if code == 200 and not result else "FAIL",
                                                 "noncanonical_series_count": len(result)}
-    code, payload = query("max(namedprocess_scrape_errors{" + scope + '})')
+    code, payload = query("max(" + selector("namedprocess_scrape_errors", "process-exporter") + ")")
     result = payload.get("data", {}).get("result", [])
     value = float(result[0]["value"][1]) if code == 200 and result else None
     checks["process_scrape_errors"] = {"status": "PASS" if value == 0 else "FAIL", "value": value}
@@ -271,20 +308,29 @@ def verify(args, token, expected_identity):
         overview_results.append(query_code == 200 and bool(query_payload.get("data", {}).get("result", [])))
     checks["original_k3s_overview"] = {"status": "PASS" if code == 200 and len(overview_results) == 3 and all(overview_results) else "FAIL",
                                        "query_count": len(overview_results), "passing_queries": sum(overview_results)}
-    for key, metric in {"ksm": "kube_node_info", "node": "node_cpu_seconds_total", "process": "namedprocess_namegroup_num_procs", "cadvisor": "container_memory_working_set_bytes"}.items():
+    for key, (metric, job) in {"ksm": ("kube_node_info", "kube-state-metrics"),
+                              "node": ("node_cpu_seconds_total", "node-exporter"),
+                              "process": ("namedprocess_namegroup_num_procs", "process-exporter"),
+                              "cadvisor": ("container_memory_working_set_bytes", "cadvisor")}.items():
         # Retain source sample timestamps; count(metric) over a range can hide
         # a stopped producer behind the backend's lookback interval.
-        code, payload = query("max by(node)(timestamp(" + metric + "{" + scope + "}))", True)
+        code, payload = query("max by(node)(timestamp(" + selector(metric, job) + "))", True)
         result = payload.get("data", {}).get("result", [])
-        coverages, gaps = [], []
+        per_node = {}
         for series in result if code == 200 else []:
             timestamps = sorted({float(point[1]) for point in series.get("values", [])})
-            gaps.append(max([b - a for a, b in zip(timestamps, timestamps[1:])] or [1801]))
-            coverages.append(timestamps[-1] - timestamps[0] if len(timestamps) > 1 else 0)
-        gap = max(gaps or [1801])
-        covered = min(coverages or [0])
-        checks["continuity_" + key] = {"status": "PASS" if covered >= 1740 and gap <= 180 else "FAIL",
-                                       "series_count": len(result), "covered_seconds": covered, "max_source_sample_gap_seconds": gap}
+            node = series.get("metric", {}).get("node")
+            per_node[node] = {"gap": max([b - a for a, b in zip(timestamps, timestamps[1:])] or [1801]),
+                              "covered": timestamps[-1] - timestamps[0] if len(timestamps) > 1 else 0}
+        gap = max([per_node.get(node, {"gap": 1801})["gap"] for node in expected_nodes])
+        covered = min([per_node.get(node, {"covered": 0})["covered"] for node in expected_nodes])
+        node_set_matches = set(per_node) == expected_nodes
+        checks["continuity_" + key] = {"status": "PASS" if code == 200 and node_set_matches and covered >= 1740 and gap <= 180 else "FAIL",
+                                       "canonical_job": job, "series_count": len(result),
+                                       "expected_node_count": len(expected_nodes),
+                                       "missing_node_count": len(expected_nodes - set(per_node)),
+                                       "unexpected_node_count": len(set(per_node) - expected_nodes),
+                                       "covered_seconds": covered, "max_source_sample_gap_seconds": gap}
     checks["pvc_statistics"] = {"status": "NOT_RUN", "reason": "Optional: requires volume-plugin support and a real PVC; not inferred as healthy zero"}
     return save()
 

@@ -10,6 +10,9 @@
       - observability_audit_admin_username | length > 0
       - observability_audit_service_account_name is match('^observability-audit-[a-z0-9-]{1,40}$')
       - observability_audit_cluster | length > 0
+      - observability_audit_expected_nodes is sequence
+      - observability_audit_expected_nodes is not string
+      - observability_audit_expected_nodes | length > 0
       - observability_audit_output_file is match('^/')
       - observability_audit_token_ttl_seconds | int >= 1800
       - observability_audit_token_ttl_seconds | int <= 3600
@@ -17,29 +20,19 @@
 
 - name: Run controlled management then independent Viewer queries with guaranteed token cleanup
   ansible.builtin.command:
-    argv:
-      - "{{ ansible_playbook_python }}"
-      - "{{ role_path }}/files/session.py"
-      - --base-url
-      - "{{ observability_audit_base_url }}"
-      - --vault-path
-      - "{{ observability_audit_vault_path }}"
-      - --password-field
-      - "{{ observability_audit_password_field }}"
-      - --admin-username
-      - "{{ observability_audit_admin_username }}"
-      - --service-account-name
-      - "{{ observability_audit_service_account_name }}"
-      - --cluster
-      - "{{ observability_audit_cluster }}"
-      - --environment
-      - "{{ observability_audit_environment }}"
-      - --datasource-uid
-      - "{{ observability_audit_datasource_uid }}"
-      - --token-ttl
-      - "{{ observability_audit_token_ttl_seconds | int | string }}"
-      - --output
-      - "{{ observability_audit_output_file }}"
+    argv: >-
+      {{ [ansible_playbook_python, role_path ~ '/files/session.py',
+          '--base-url', observability_audit_base_url,
+          '--vault-path', observability_audit_vault_path,
+          '--password-field', observability_audit_password_field,
+          '--admin-username', observability_audit_admin_username,
+          '--service-account-name', observability_audit_service_account_name,
+          '--cluster', observability_audit_cluster,
+          '--environment', observability_audit_environment,
+          '--datasource-uid', observability_audit_datasource_uid,
+          '--token-ttl', observability_audit_token_ttl_seconds | int | string,
+          '--output', observability_audit_output_file]
+         + (observability_audit_expected_nodes | map('regex_replace', '^(.*)$', '--expected-node=\1') | list) }}
   environment:
     VAULT_ADDR: "{{ observability_audit_vault_addr }}"
   delegate_to: localhost

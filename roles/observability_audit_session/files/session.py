@@ -95,6 +95,13 @@ def validate(args):
         raise SessionError("explicit_cluster_required")
     if not re.fullmatch(r"[A-Za-z0-9_-]+", args.datasource_uid):
         raise SessionError("invalid_datasource_uid")
+    nodes = getattr(args, "expected_node", None)
+    if not isinstance(nodes, list) or not nodes:
+        raise SessionError("externally_verified_expected_nodes_required")
+    if any(not isinstance(node, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", node) for node in nodes):
+        raise SessionError("invalid_expected_node")
+    if len(set(nodes)) != len(nodes):
+        raise SessionError("duplicate_expected_node")
 
 
 def default_verify(args, token, identity):
@@ -110,6 +117,8 @@ def run(args, credential_reader=vault_password, client_factory=Grafana, verifier
     report = {"schema_version": "observability-audit-session/v1",
               "collected_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "environment": args.environment, "cluster": args.cluster, "target_origin": args.base_url,
+              "expected_nodes": sorted(args.expected_node),
+              "expected_nodes_provenance": "Explicit caller input from separately verified management inventory",
               "management": {"status": "NOT_RUN", "role": "Viewer", "created_service_account": False},
               "audit": {"overall_status": "NOT_RUN"},
               "cleanup": {"status": "NOT_RUN", "service_account_deleted": False,
@@ -226,6 +235,8 @@ def main():
     parser.add_argument("--admin-username", required=True)
     parser.add_argument("--service-account-name", required=True)
     parser.add_argument("--cluster", required=True)
+    parser.add_argument("--expected-node", action="append", required=True,
+                        help="Repeat for every node from the separately verified management inventory")
     parser.add_argument("--environment", required=True, choices=["sit", "uat", "prod"])
     parser.add_argument("--datasource-uid", default="victoriametrics")
     parser.add_argument("--token-ttl", type=int, default=3600)
