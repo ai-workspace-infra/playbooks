@@ -11,8 +11,22 @@ import urllib.parse
 import yaml
 
 UIDS = {'StarsL_cn_K8S', 'StarsL-JOB-node', 'process-exporter-with-tree'}
+NODE_SELF_PROCESS_METRICS = {'process_open_fds', 'process_max_fds'}
 JOBS = {'node_': 'node-exporter', 'namedprocess_': 'process-exporter', 'kube_': 'kube-state-metrics',
         'kubelet_': 'kubelet', 'container_': 'cadvisor'}
+
+
+def metric_job(metric, uid):
+    if metric in NODE_SELF_PROCESS_METRICS:
+        if uid != 'StarsL-JOB-node':
+            raise ValueError('node_self_metric_outside_node_dashboard')
+        return 'node-exporter'
+    if not re.fullmatch(r'(?:node_|namedprocess_|kube_|kubelet_|container_)[A-Za-z0-9_:]+', metric):
+        raise ValueError('manifest_family_invalid')
+    for prefix, job in JOBS.items():
+        if metric.startswith(prefix):
+            return job
+    raise ValueError('manifest_family_invalid')
 
 
 def load_manifest(path):
@@ -46,8 +60,9 @@ def load_manifest(path):
         if not isinstance(dashboard.get('families'), list) or len(dashboard['families']) > 120:
             raise ValueError('manifest_family_bounds_invalid')
         for metric in dashboard['families']:
-            if not isinstance(metric, str) or not re.fullmatch(r'(?:node_|namedprocess_|kube_|kubelet_|container_)[A-Za-z0-9_:]+', metric):
+            if not isinstance(metric, str):
                 raise ValueError('manifest_family_invalid')
+            metric_job(metric, dashboard['uid'])
         count += len(variables) + len(targets) + len(dashboard['families'])
     if count > 500:
         raise ValueError('manifest_total_query_bound_invalid')
@@ -187,13 +202,14 @@ def execute(manifest, args, get, clock=time.monotonic):
                 result = {'status': 'NOT_RUN', 'reason': 'variable_resolution_unsupported_or_bounded'}
             variable_results.append({'name': name, **result})
         for metric in plan['families']:
-            job = next(value for prefix, value in JOBS.items() if metric.startswith(prefix))
+            job = metric_job(metric, uid)
             expr = 'time()-min by(node)(timestamp(' + metric + '{' + scope + ',job=' + json.dumps(job) + '}))'
             result, rows = query(expr)
             if rows:
                 age = max(float(row['value'][1]) for row in rows)
                 nodes = {row['metric'].get('node') for row in rows}
-                nodes_ok = not metric.startswith(('node_', 'namedprocess_')) or nodes == set(args.expected_node)
+                node_scoped = metric.startswith(('node_', 'namedprocess_')) or metric in NODE_SELF_PROCESS_METRICS
+                nodes_ok = not node_scoped or nodes == set(args.expected_node)
                 result['status'] = 'PASS' if 0 <= age <= 180 and nodes_ok else 'FAIL'
                 if not nodes_ok:
                     result['reason'] = 'external_node_family_coverage_mismatch'

@@ -61,3 +61,8 @@ Node panel 200 derives P99 CPU/memory percentages from scoped raw metrics with
 rules. A seven-day window samples only available history; recent data does not
 prove seven-day continuity. The pinned disposable local VictoriaMetrics fixture
 verifies percentages and new-node behavior without production access.
+
+Node panels 206 F and 16 D additionally scope the exact `process_open_fds` /
+`process_max_fds` self-instrumentation metrics to `node-exporter`. These describe
+the Node exporter process itself, not per-process `namedprocess_*` coverage.
+The manifest recognizes only these exact names in the Node Dashboard context.

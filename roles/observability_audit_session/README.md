@@ -217,3 +217,9 @@ supplement existing external-node continuity checks; they do not prove all UI
 transformations, plugin rendering or global alert-rule visibility. No admin query
 fallback or permission expansion is allowed. No live acceptance is performed by
 adding this implementation.
+
+The full-family owner maps exact `process_open_fds` and `process_max_fds` names
+to `node-exporter` only for `StarsL-JOB-node`, including external expected-node
+coverage. They are exporter self-instrumentation, not `namedprocess_*` metrics.
+Other generic `process_*` families are not automatically accepted or attributed
+to the process exporter; these two names in other Dashboard contexts are rejected.

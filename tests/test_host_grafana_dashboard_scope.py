@@ -54,7 +54,7 @@ class HostScope(unittest.TestCase):
                     queries.append(query['query'] if isinstance(query, dict) else query)
             for expr in queries:
                 for name, start, end in m.tokens(expr):
-                    if name.startswith(('node_', 'namedprocess_')):
+                    if name.startswith(('node_', 'namedprocess_')) or name in m.NODE_SELF_PROCESS_METRICS:
                         stop = m.selector_end(expr, end)
                         selector = expr[end:stop + 1]
                         self.assertIn(m.SCOPE, selector, expr)
@@ -119,6 +119,23 @@ class HostScope(unittest.TestCase):
         self.assertIn("note='x,y}'", result)
         self.assertIn('nodename=`a,b`', result)
         self.assertEqual(m.scope_query(result, 'node-exporter'), result)
+
+
+    def test_node_exporter_self_fd_metrics_are_scoped_only_in_node_context(self):
+        node = self.model('StarsL-JOB-node')
+        queries = {(p['id'], t.get('refId')): t.get('expr', '')
+                   for p in m.walk_panels(node['panels']) for t in p.get('targets', [])}
+        for key in [(206, 'F'), (16, 'D')]:
+            expr = queries[key]
+            self.assertIn('process_max_fds{job="node-exporter",' + m.SCOPE, expr)
+            self.assertNotIn('node_exporter', expr)
+        self.assertIn('process_open_fds{job="node-exporter",' + m.SCOPE, queries[(16, 'D')])
+        raw = 'process_open_fds{instance=~"$instance"}/process_max_fds{instance=~"$instance"}'
+        self.assertEqual(m.scope_query(raw, 'process-exporter'), raw)
+        self.assertEqual(m.families(raw, 'process-exporter-with-tree'), [])
+        self.assertEqual(m.families(raw, 'StarsL-JOB-node'), sorted(m.NODE_SELF_PROCESS_METRICS))
+        plan = m.manifest([node])['dashboards'][0]
+        self.assertTrue(m.NODE_SELF_PROCESS_METRICS <= set(plan['families']))
 
 
     def test_p99_raw_queries_do_not_require_recording_rules(self):

@@ -118,6 +118,40 @@ class ViewerManifest(unittest.TestCase):
         with self.assertRaises(ValueError):
             m.expand('${cluster:raw}', {'cluster': value})
 
+    def test_exact_node_self_fd_family_ownership_and_node_coverage(self):
+        node = next(d for d in self.plan['dashboards'] if d['uid'] == 'StarsL-JOB-node')
+        node['families'] += ['process_open_fds', 'process_max_fds']
+        self.assertEqual(m.metric_job('process_open_fds', 'StarsL-JOB-node'), 'node-exporter')
+        result = self.run_manifest()
+        self.assertEqual(result['status'], 'PASS')
+        queries = [urllib.parse.parse_qs(urllib.parse.urlsplit(path).query).get('query', [''])[0] for path in self.paths]
+        for name in m.NODE_SELF_PROCESS_METRICS:
+            expressions = [expr for expr in queries if name in expr]
+            self.assertEqual(len(expressions), 1)
+            self.assertIn('job="node-exporter"', expressions[0])
+            self.assertNotIn('job="process-exporter"', expressions[0])
+        self.mode = 'missing_node'
+        self.assertEqual(self.run_manifest()['status'], 'FAIL')
+
+    def test_self_fd_metrics_rejected_outside_node_dashboard(self):
+        for name in m.NODE_SELF_PROCESS_METRICS:
+            with self.assertRaises(ValueError):
+                m.metric_job(name, 'process-exporter-with-tree')
+        with self.assertRaises(ValueError):
+            m.metric_job('process_arbitrary_metric', 'StarsL-JOB-node')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp).resolve() / 'manifest.yaml'
+            node = next(d for d in self.plan['dashboards'] if d['uid'] == 'StarsL-JOB-node')
+            node['families'].append('process_max_fds')
+            path.write_text(yaml.safe_dump(self.plan))
+            self.assertEqual(len(m.load_manifest(path)['dashboards']), 3)
+            process = next(d for d in self.plan['dashboards'] if d['uid'] == 'process-exporter-with-tree')
+            process['families'].append('process_max_fds')
+            path.write_text(yaml.safe_dump(self.plan))
+            with self.assertRaises(ValueError):
+                m.load_manifest(path)
+
+
     def test_actual_interval_type_and_query_result_variables(self):
         for model, plan in zip(self.models.values(), self.plan['dashboards']):
             model['templating']['list'].insert(0, {'name': 'interval', 'type': 'interval', 'query': '3m'})
