@@ -11,6 +11,7 @@ import yaml
 
 HOSTS = {'StarsL-JOB-node': ('Node-Exporter-Dashboard.json', 'node-exporter', 'node_uname_info'),
          'process-exporter-with-tree': ('process-exporter-dashboard-with-treemap.json', 'process-exporter', 'namedprocess_namegroup_num_procs')}
+NODE_SELF_PROCESS_METRICS = {'process_open_fds', 'process_max_fds'}
 SCOPE = 'cluster=~"${cluster:regex}",environment=~"${environment:regex}"'
 DROPPED = {11: 'file descriptors', 12: 'process read bytes', 13: 'process write bytes'}
 PSS = ('PSS requires readable /proc/<pid>/smaps. The non-root collector may have partial or no '
@@ -84,7 +85,8 @@ def scope_query(value, job):
     edits = []
     # Only metric identifiers outside quotes are touched, never label values.
     for name, start, end in tokens(value):
-        if not name.startswith(('node_', 'namedprocess_')):
+        if not (name.startswith(('node_', 'namedprocess_'))
+                or (job == 'node-exporter' and name in NODE_SELF_PROCESS_METRICS)):
             continue
         j = end
         while j < len(value) and value[j].isspace():
@@ -186,8 +188,10 @@ def model_text(model):
     return json.dumps(model, ensure_ascii=False, indent=2) + '\n'
 
 
-def families(expr):
-    return sorted({name for name, _, _ in tokens(expr) if name.startswith(('node_', 'namedprocess_', 'kube_', 'kubelet_', 'container_'))})
+def families(expr, dashboard_uid=None):
+    return sorted({name for name, _, _ in tokens(expr)
+                   if name.startswith(('node_', 'namedprocess_', 'kube_', 'kubelet_', 'container_'))
+                   or (dashboard_uid == 'StarsL-JOB-node' and name in NODE_SELF_PROCESS_METRICS)})
 
 
 def manifest(models):
@@ -200,14 +204,14 @@ def manifest(models):
             query = variable.get('query', '')
             if isinstance(query, dict):
                 query = query['query']
-            variables.append({'name': variable['name'], 'query': query, 'families': families(query)})
+            variables.append({'name': variable['name'], 'query': query, 'families': families(query, model['uid'])})
         targets = []
         for panel in walk_panels(model.get('panels', [])):
             for target in panel.get('targets', []):
                 if target.get('expr'):
                     targets.append({'panel_id': panel['id'], 'ref_id': target.get('refId', ''),
                                     'hidden': bool(target.get('hide', False)), 'expr': target['expr'],
-                                    'families': families(target['expr'])})
+                                    'families': families(target['expr'], model['uid'])})
         dashboards.append({'uid': model['uid'], 'model_sha256': hashlib.sha256(model_text(model).encode()).hexdigest(),
                            'variables_in_order': variables, 'targets': targets,
                            'families': sorted({f for t in [*variables, *targets] for f in t['families']})})
@@ -219,6 +223,7 @@ def manifest(models):
             'Record target statuses and only sanitized summaries; no tokens, raw process profiles or full labels in evidence. No management fallback.'],
         'canonical_jobs': {'node_*': 'node-exporter', 'namedprocess_*': 'process-exporter',
                            'kube_*': 'kube-state-metrics', 'kubelet_*': 'kubelet', 'container_*': 'cadvisor'},
+        'exact_metric_jobs': {'StarsL-JOB-node': {name: 'node-exporter' for name in sorted(NODE_SELF_PROCESS_METRICS)}},
         'conditional_data': {'kube_node_spec_taint': 'No taints can be valid; corroborate actual node applicability.',
             'kube_pod_container_resource_limits': 'Unset limits can be valid; corroborate workload configuration.',
             'kube_pod_container_resource_requests': 'Unset requests can be valid; corroborate workload configuration.',
