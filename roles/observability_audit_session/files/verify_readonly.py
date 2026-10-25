@@ -155,7 +155,8 @@ def verify(args, token, expected_identity):
     numeric_id_matches = type(user.get("id")) is int and user.get("id") == expected_id
     service_account_uid_matches = (type(user.get("id")) is int and user.get("id") == 0
                                    and user_uid == expected_uid)
-    conflicting_sa_uid = isinstance(user_uid, str) and user_uid.startswith("service-account:") and not service_account_uid_matches
+    conflicting_sa_uid = (isinstance(user_uid, str) and user_uid.startswith("service-account:")
+                          and user_uid != expected_uid)
     login_matches = bool(expected_identity.get("login")) and user.get("login") == expected_identity["login"]
     name_matches = bool(expected_identity.get("name")) and user.get("name") == expected_identity["name"]
     org_matches = user.get("orgId") == expected_identity["orgId"]

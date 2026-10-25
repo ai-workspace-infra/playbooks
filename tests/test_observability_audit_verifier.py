@@ -129,6 +129,8 @@ class AuditVerifierTests(unittest.TestCase):
                 self.assertNotIn("permission_introspection", report["checks"])
 
     def test_legacy_id_still_requires_login_binding_and_no_conflicting_sa_uid(self):
+        report = self.run_fixture(Fixture(user_overrides={"uid": "service-account:7"}))
+        self.assertEqual(report["checks"]["viewer_identity"]["status"], "PASS")
         for mismatch in [{"login": "sa-other"}, {"uid": "service-account:8"}]:
             report = self.run_fixture(Fixture(user_overrides=mismatch))
             self.assertEqual(report["checks"]["viewer_identity"]["status"], "FAIL")
