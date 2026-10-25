@@ -1,0 +1,56 @@
+---
+- name: Require explicit bounded Grafana audit-session target
+  ansible.builtin.assert:
+    that:
+      - observability_audit_environment in ['sit', 'uat', 'prod']
+      - observability_audit_base_url is match('^https://[A-Za-z0-9.-]+(:[0-9]+)?$')
+      - observability_audit_vault_addr is match('^https://[A-Za-z0-9.-]+(:[0-9]+)?$')
+      - observability_audit_vault_path | length > 0
+      - observability_audit_password_field | length > 0
+      - observability_audit_admin_username | length > 0
+      - observability_audit_service_account_name is match('^observability-audit-[a-z0-9-]{1,40}$')
+      - observability_audit_cluster | length > 0
+      - observability_audit_output_file is match('^/')
+      - observability_audit_token_ttl_seconds | int >= 1800
+      - observability_audit_token_ttl_seconds | int <= 3600
+    fail_msg: Explicit environment, target, dedicated Viewer name and runtime Vault source are required.
+
+- name: Run controlled management then independent Viewer queries with guaranteed token cleanup
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/files/session.py"
+      - --base-url
+      - "{{ observability_audit_base_url }}"
+      - --vault-path
+      - "{{ observability_audit_vault_path }}"
+      - --password-field
+      - "{{ observability_audit_password_field }}"
+      - --admin-username
+      - "{{ observability_audit_admin_username }}"
+      - --service-account-name
+      - "{{ observability_audit_service_account_name }}"
+      - --cluster
+      - "{{ observability_audit_cluster }}"
+      - --environment
+      - "{{ observability_audit_environment }}"
+      - --datasource-uid
+      - "{{ observability_audit_datasource_uid }}"
+      - --token-ttl
+      - "{{ observability_audit_token_ttl_seconds | int | string }}"
+      - --output
+      - "{{ observability_audit_output_file }}"
+  environment:
+    VAULT_ADDR: "{{ observability_audit_vault_addr }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: observability_audit_apply | bool and not ansible_check_mode
+  register: observability_audit_result
+  changed_when: true
+  failed_when: observability_audit_result.rc != 0
+
+- name: Report plan-only scope without fetching credentials
+  ansible.builtin.debug:
+    msg: "Plan only: exact Viewer SA reuse/create, finite token, GET-only queries, finally token revocation; no service-account deletion."
+  when: not (observability_audit_apply | bool) or ansible_check_mode
