@@ -18,16 +18,30 @@ except (OSError, json.JSONDecodeError) as exc:
 if not isinstance(cmdb, dict) or not isinstance(config, dict):
     raise SystemExit("caller CMDB and migration config must be JSON objects")
 
+requested_env = str(config.get("environment") or os.environ.get("REQUESTED_ENVIRONMENT") or "").strip().lower()
+cmdb_env = str(cmdb.get("environment") or "").strip().lower()
+if requested_env and cmdb_env and cmdb_env != "unknown" and cmdb_env != requested_env:
+    raise SystemExit(f"caller CMDB environment {cmdb_env!r} conflicts with requested environment {requested_env!r}")
+
+hosts_map = cmdb.get("hosts") if isinstance(cmdb.get("hosts"), dict) else {}
+serverless_map = cmdb.get("serverless_resources") if isinstance(cmdb.get("serverless_resources"), dict) else {}
+
 for field in ("accounts_source_host", "accounts_target_host"):
     host = config.get(field, "")
     if not host:
         continue
-    entry = cmdb.get(host)
-    address = entry.get("ip") if isinstance(entry, dict) else None
+    if host in serverless_map and host not in hosts_map and host not in cmdb:
+        raise SystemExit(f"configured {field} {host!r} is a serverless resource without SSH/IP")
+    entry = hosts_map.get(host) if host in hosts_map else cmdb.get(host)
+    if isinstance(entry, dict) and str(entry.get("runtime_form") or "").lower() == "serverless":
+        raise SystemExit(f"configured {field} {host!r} is a serverless resource without SSH/IP")
+    address = (entry.get("ip") or entry.get("primary_ip") or entry.get("ssh_host")) if isinstance(entry, dict) else None
     if not isinstance(address, str):
         raise SystemExit(f"caller CMDB has no IP entry for configured {field}")
     try:
-        ipaddress.ip_address(address)
+        ip_obj = ipaddress.ip_address(address)
+        if ip_obj.is_unspecified or ip_obj.is_loopback:
+            raise SystemExit(f"caller CMDB has a placeholder/loopback IP for configured {field}")
     except ValueError:
         raise SystemExit(f"caller CMDB has an invalid IP for configured {field}")
 
