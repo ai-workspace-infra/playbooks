@@ -1,5 +1,14 @@
 # Vector Configuration optimized for low resource footprint
 {% set xconnect_vector_policy = ((xconnect_node_maintenance | default({})).get('vector', {})) %}
+{% set obs_k3s_node = (vector_k3s_node_effective | default(false) | bool) or ('k3s' in (group_names | default([]))) or ('k3s_server' in (group_names | default([]))) or ('k3s_agent' in (group_names | default([]))) or ((runtime_form | default(cmdb_runtime_form | default(''))) == 'k3s') %}
+{% set obs_docker_logs_enabled = (vector_docker_logs_enabled | bool) if (vector_docker_logs_enabled is defined) else ((false if obs_k3s_node else (vector_docker_logs_enabled_effective | default(true) | bool))) %}
+{% set obs_runtime_form = vector_observability_runtime_form | default(runtime_form | default(cmdb_runtime_form | default('k3s' if obs_k3s_node else ('docker' if obs_docker_logs_enabled else 'systemd'), true), true), true) %}
+{% set obs_region = vector_observability_region | default(region | default(cmdb_region | default(cloud_region | default(provider_region | default(logical_region | default('unknown', true), true), true), true), true), true) %}
+{% set obs_resource_id = vector_observability_resource_id | default(resource_id | default(cmdb_resource_id | default(instance_id | default(cmdb_instance_id | default(inventory_hostname, true), true), true), true), true) %}
+{% set obs_account_or_project = vector_observability_project_id | default(project_id | default(cmdb_project_id | default(account | default('unknown', true), true), true), true) %}
+{% set obs_resource_key = vector_observability_resource_key | default(resource_key | default(cmdb_resource_key | default(vector_observability_provider ~ ':' ~ obs_account_or_project ~ ':' ~ obs_region ~ ':' ~ obs_resource_id, true), true), true) %}
+{% set obs_node_metrics_enabled = (vector_node_metrics_enabled | default(not (obs_k3s_node and (vector_k3s_cluster_scrapes_node_exporter | default(false) | bool))) | bool) %}
+{% set obs_process_metrics_enabled = (vector_process_metrics_enabled | default(true) | bool) %}
 {% if vector_billing_ingest_enabled | default(false) | bool %}
 [secret.local_secret]
 type = "exec"
@@ -17,15 +26,19 @@ scrape_interval_secs = {{ xconnect_vector_policy.get('internal_metrics_scrape_in
 
 {% include 'xhttp-monitoring.toml.j2' %}
 
+{% if obs_node_metrics_enabled %}
 [sources.node_metrics]
 type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:9100/metrics"]
 scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+{% endif %}
 
+{% if obs_process_metrics_enabled %}
 [sources.process_metrics]
 type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:9256/metrics"]
 scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+{% endif %}
 
 {% set ai_aggregator_remote_inputs = [] %}
 {% if vector_ai_aggregator_enabled | default(false) | bool %}
@@ -41,11 +54,17 @@ type = "remap"
 inputs = ["ai_aggregator_{{ target_id }}_metrics"]
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
+.tags.host = "{{ inventory_hostname }}"
 .tags.environment = "{{ vector_observability_environment }}"
 .tags.env = "{{ vector_observability_environment }}"
 .tags.provider = "{{ vector_observability_provider }}"
+.tags.region = {{ obs_region | to_json }}
+.tags.resource_id = {{ obs_resource_id | to_json }}
+.tags.runtime_form = {{ obs_runtime_form | to_json }}
+.tags.resource_key = {{ obs_resource_key | to_json }}
 .tags.service_domain = "{{ vector_observability_service_domain }}"
 .tags.job = "ai-aggregator"
+.tags.service = "ai-aggregator"
 .tags.component = "{{ target.name }}"
 del(.tags.consumer)
 '''
@@ -64,11 +83,17 @@ type = "remap"
 inputs = ["ai_aggregator_{{ target_id }}_probe"]
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
+.tags.host = "{{ inventory_hostname }}"
 .tags.environment = "{{ vector_observability_environment }}"
 .tags.env = "{{ vector_observability_environment }}"
 .tags.provider = "{{ vector_observability_provider }}"
+.tags.region = {{ obs_region | to_json }}
+.tags.resource_id = {{ obs_resource_id | to_json }}
+.tags.runtime_form = {{ obs_runtime_form | to_json }}
+.tags.resource_key = {{ obs_resource_key | to_json }}
 .tags.service_domain = "{{ vector_observability_service_domain }}"
 .tags.job = "ai-aggregator-probe"
+.tags.service = "ai-aggregator-probe"
 .tags.component = "{{ target.name }}"
 '''
 {% set _ = ai_aggregator_remote_inputs.append('ai_aggregator_' ~ target_id ~ '_probe_labels') %}
@@ -85,11 +110,17 @@ type = "remap"
 inputs = ["ai_aggregator_caddy_public_probe"]
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
+.tags.host = "{{ inventory_hostname }}"
 .tags.environment = "{{ vector_observability_environment }}"
 .tags.env = "{{ vector_observability_environment }}"
 .tags.provider = "{{ vector_observability_provider }}"
+.tags.region = {{ obs_region | to_json }}
+.tags.resource_id = {{ obs_resource_id | to_json }}
+.tags.runtime_form = {{ obs_runtime_form | to_json }}
+.tags.resource_key = {{ obs_resource_key | to_json }}
 .tags.service_domain = "{{ vector_observability_service_domain }}"
 .tags.job = "ai-aggregator-probe"
+.tags.service = "ai-aggregator-probe"
 .tags.component = "caddy-public"
 '''
 {% set _ = ai_aggregator_remote_inputs.append('ai_aggregator_caddy_public_probe_labels') %}
@@ -114,22 +145,40 @@ type = "remap"
 inputs = ["postgres_metrics"]
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
+.tags.host = "{{ inventory_hostname }}"
 .tags.job = "postgres"
+.tags.service = "postgres"
 .tags.environment = "{{ vector_observability_environment }}"
 .tags.env = "{{ vector_observability_environment }}"
 .tags.provider = "{{ vector_observability_provider }}"
+.tags.region = {{ obs_region | to_json }}
+.tags.resource_id = {{ obs_resource_id | to_json }}
+.tags.runtime_form = {{ obs_runtime_form | to_json }}
+.tags.resource_key = {{ obs_resource_key | to_json }}
 .tags.service_domain = "{{ vector_observability_service_domain }}"
 '''
 {% endif %}
 
+{% set base_metric_inputs = ["internal_metrics"] %}
+{% if obs_node_metrics_enabled %}
+{% set _ = base_metric_inputs.append("node_metrics") %}
+{% endif %}
+{% if obs_process_metrics_enabled %}
+{% set _ = base_metric_inputs.append("process_metrics") %}
+{% endif %}
 [transforms.add_labels]
 type = "remap"
-inputs = ["internal_metrics", "node_metrics", "process_metrics"]
+inputs = {{ base_metric_inputs | to_json }}
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
+.tags.host = "{{ inventory_hostname }}"
 .tags.environment = "{{ vector_observability_environment }}"
 .tags.env = "{{ vector_observability_environment }}"
 .tags.provider = "{{ vector_observability_provider }}"
+.tags.region = {{ obs_region | to_json }}
+.tags.resource_id = {{ obs_resource_id | to_json }}
+.tags.runtime_form = {{ obs_runtime_form | to_json }}
+.tags.resource_key = {{ obs_resource_key | to_json }}
 {% if vector_observability_project_id | default('') | length > 0 %}
 .tags.project_id = {{ vector_observability_project_id | to_json }}
 {% endif %}
@@ -138,11 +187,14 @@ source = '''
 {% endif %}
 .tags.service_domain = "{{ vector_observability_service_domain }}"
 .tags.job = "vector"
+.tags.service = "vector"
 if exists(.name) && starts_with(string!(.name), "node_") {
   .tags.job = "node-exporter"
+  .tags.service = "node-exporter"
 }
 if exists(.name) && starts_with(string!(.name), "namedprocess_") {
   .tags.job = "process-exporter"
+  .tags.service = "process-exporter"
 }
 '''
 
@@ -160,7 +212,9 @@ type = "remap"
 inputs = ["blackbox_{{ target_id }}_ssl"]
 source = '''
 .tags.instance = "{{ inventory_hostname }}"
+.tags.host = "{{ inventory_hostname }}"
 .tags.job = "blackbox"
+.tags.service = "blackbox"
 .tags.module = "https_ssl"
 {# company/project/env 原本写死成 svc.plus + production。UAT 主机因此把自己的
    指标当成生产数据送进集中式可观测, 在看板上与真生产无法区分。这三个标签
@@ -171,6 +225,10 @@ source = '''
 .tags.environment = "{{ blackbox_probe_env | default(vector_observability_environment) }}"
 .tags.env = "{{ blackbox_probe_env | default('production') }}"
 .tags.provider = "{{ vector_observability_provider }}"
+.tags.region = {{ obs_region | to_json }}
+.tags.resource_id = {{ obs_resource_id | to_json }}
+.tags.runtime_form = {{ obs_runtime_form | to_json }}
+.tags.resource_key = {{ obs_resource_key | to_json }}
 .tags.service_domain = "{{ vector_observability_service_domain }}"
 .tags.name = "{{ target.name }}"
 .tags.target = "{{ target.url }}"
@@ -301,6 +359,12 @@ if is_string(.message) {
 .environment = "{{ vector_observability_environment }}"
 .env = "{{ vector_observability_environment }}"
 .provider = "{{ vector_observability_provider }}"
+.region = {{ obs_region | to_json }}
+.resource_id = {{ obs_resource_id | to_json }}
+.runtime_form = {{ obs_runtime_form | to_json }}
+.resource_key = {{ obs_resource_key | to_json }}
+.service = "{{ vector_observability_service_domain }}"
+.job = "system_logs"
 .service_domain = "{{ vector_observability_service_domain }}"
 .source_type = "system_logs"
 '''
@@ -308,7 +372,7 @@ if is_string(.message) {
 # Docker containers are the primary runtime for the platform services. Keep
 # their stdout/stderr as structured events so Victoria Logs can filter the
 # core applications by container, host and stream.
-{% if vector_docker_logs_enabled_effective | default(true) | bool %}
+{% if obs_docker_logs_enabled %}
 [sources.docker_logs]
 type = "docker_logs"
 auto_partial_merge = true
@@ -324,6 +388,10 @@ source = '''
 .environment = "{{ vector_observability_environment }}"
 .env = "{{ vector_observability_environment }}"
 .provider = "{{ vector_observability_provider }}"
+.region = {{ obs_region | to_json }}
+.resource_id = {{ obs_resource_id | to_json }}
+.runtime_form = {{ obs_runtime_form | to_json }}
+.resource_key = {{ obs_resource_key | to_json }}
 .service_domain = "{{ vector_observability_service_domain }}"
 
 # Application services emit JSON slog/Node records. Promote the structured
@@ -339,6 +407,12 @@ if !exists(.service_name) && exists(.container_name) {
 }
 if exists(.service_name) {
   . = set!(., ["service.name"], .service_name)
+  if !exists(.service) {
+    .service = .service_name
+  }
+  if !exists(.job) {
+    .job = .service_name
+  }
 }
 if !exists(.environment) {
   .environment = "unknown"
@@ -348,7 +422,7 @@ if !exists(.environment) {
 
 [sinks.victorialogs]
 type = "http"
-inputs = ["process_logs"{% if vector_docker_logs_enabled_effective | default(true) | bool %}, "process_docker_logs"{% endif %}]
+inputs = ["process_logs"{% if obs_docker_logs_enabled %}, "process_docker_logs"{% endif %}]
 {% if vector_local_observability_enabled | default(false) | bool or inventory_hostname == 'install.svc.plus' %}
 uri = "http://127.0.0.1:9428/insert/jsonline?_msg_field=message&_stream_fields=instance,file"
 {% else %}
@@ -359,6 +433,11 @@ framing.method = "newline_delimited"
 [sinks.victorialogs.batch]
 max_bytes = {{ xconnect_vector_policy.get('sink_batch_max_bytes', 1048576) | int }}
 timeout_secs = {{ xconnect_vector_policy.get('sink_batch_timeout_secs', 5) | int }}
+[sinks.victorialogs.request]
+retry_initial_backoff_secs = 2
+retry_max_duration_secs = 3600
+rate_limit_duration_secs = 1
+rate_limit_num = 10
 [sinks.victorialogs.buffer]
 type = "memory"
 max_events = {{ xconnect_vector_policy.get('sink_buffer_max_events', 500) | int }}

@@ -12,11 +12,46 @@
 - name: Gather service state for optional Vector sources
   ansible.builtin.service_facts:
 
-- name: Resolve Docker log source state
+- name: Resolve K3s and Docker runtime state
+  ansible.builtin.set_fact:
+    vector_k3s_node_effective: >-
+      {{ (vector_k3s_node | default(false) | bool)
+         or ('k3s' in (group_names | default([])))
+         or ('k3s_server' in (group_names | default([])))
+         or ('k3s_agent' in (group_names | default([])))
+         or ((runtime_form | default(cmdb_runtime_form | default(''))) == 'k3s')
+         or ((deployment_mode | default('')) in ['kubernetes', 'k3s'])
+         or ((ansible_facts.services | default({})).get('k3s.service', {}).get('state', 'stopped') == 'running')
+         or ((ansible_facts.services | default({})).get('k3s-agent.service', {}).get('state', 'stopped') == 'running') }}
+    vector_docker_service_running: >-
+      {{ (ansible_facts.services | default({})).get('docker.service', {}).get('state', 'stopped') == 'running' }}
+
+- name: Resolve Docker log source state and canonical runtime form
   ansible.builtin.set_fact:
     vector_docker_logs_enabled_effective: >-
-      {{ vector_docker_logs_enabled | default(
-           (ansible_facts.services | default({})).get('docker.service', {}).get('state', 'stopped') == 'running') | bool }}
+      {{ (vector_docker_logs_enabled | bool)
+         if (vector_docker_logs_enabled is defined)
+         else (false if (vector_k3s_node_effective | bool) else (vector_docker_service_running | bool)) }}
+    vector_observability_runtime_form: >-
+      {{ vector_observability_runtime_form
+         if (vector_observability_runtime_form | default('') | trim | length > 0)
+         else ('k3s' if (vector_k3s_node_effective | bool)
+               else ('docker' if (vector_docker_service_running | bool) else 'systemd')) }}
+
+- name: Stop duplicate secondary host collectors when Vector is canonical
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop:
+    - alloy.service
+    - cmdb-metrics-agent.service
+    - cmdb-node-exporter.service
+  when:
+    - not ansible_check_mode
+    - vector_stop_duplicate_collectors | default(true) | bool
+    - (ansible_facts.services | default({})).get(item, {}).get('state', 'stopped') == 'running'
+  failed_when: false
 
 - name: Determine Vector architecture
   ansible.builtin.set_fact:

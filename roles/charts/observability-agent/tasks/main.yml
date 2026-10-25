@@ -1,3 +1,8 @@
 - name: Setup Observability Agent
-  script: files/setup.sh {{ domain }} {{ deepflowserverip }} {{ deepflowk8sclusterid }}
-  when: inventory_hostname in groups[group]
+  script: files/setup.sh "{{ domain | default('svc.plus') }}" "{{ deepflowserverip | default('') }}" "{{ deepflowk8sclusterid | default('') }}"
+  when:
+    - observability_k3s_chart_agent_enabled | default(false) | bool
+    - group is defined
+    - group in groups
+    - inventory_hostname in groups[group]
+

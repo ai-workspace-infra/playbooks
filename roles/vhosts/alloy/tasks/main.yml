@@ -1,4 +1,17 @@
 ---
+- name: Discover existing collection services before installing Alloy
+  ansible.builtin.service_facts:
+
+- name: Reject duplicate host collection when Vector or CMDB metrics agent is already running
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.services.get('vector.service', {}).get('state', 'stopped') != 'running'
+      - ansible_facts.services.get('cmdb-metrics-agent.service', {}).get('state', 'stopped') != 'running'
+    fail_msg: >-
+      Existing host collector (vector.service or cmdb-metrics-agent.service) is already running;
+      do not run Alloy in parallel on the same host unless alloy_allow_duplicate_collector=true.
+  when: not (alloy_allow_duplicate_collector | default(false) | bool)
+
 - name: Install GPG
   apt:
     name: gpg
@@ -11,24 +24,39 @@
     mode: '0755'
   become: yes
 
+- name: Check if Grafana GPG key file already exists
+  ansible.builtin.stat:
+    path: /etc/apt/keyrings/grafana.gpg
+  register: grafana_gpg_key_existing
+
 - name: Add Grafana GPG key
   shell: |
     wget -q -O - {{ grafana_gpg_key_url }} | gpg --dearmor | sudo tee /etc/apt/keyrings/grafana.gpg > /dev/null
+  args:
+    creates: /etc/apt/keyrings/grafana.gpg
   become: yes
+  when:
+    - not ansible_check_mode
+    - not (grafana_gpg_key_existing.stat.exists | default(false)) or (grafana_gpg_key_existing.stat.size | default(0)) == 0
 
 - name: Check if Grafana GPG key file is not empty
   ansible.builtin.stat:
     path: /etc/apt/keyrings/grafana.gpg
   register: grafana_gpg_key_stat
+  when: not ansible_check_mode
 
 - name: Fail if Grafana GPG key file is empty
   ansible.builtin.fail:
     msg: "The Grafana GPG key file is empty or does not exist."
-  when: grafana_gpg_key_stat.stat.size == 0
+  when:
+    - not ansible_check_mode
+    - grafana_gpg_key_stat.stat.size | default(0) == 0
 
 - name: Add Grafana APT source
-  shell: |
-    echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/grafana.list
+    content: "{{ grafana_apt_source }}\n"
+    mode: '0644'
   become: yes
 
 - name: Update APT package list and install Grafana Alloy
@@ -41,15 +69,21 @@
   file:
     path: /etc/alloy
     state: directory
-    mode: '0770'
+    mode: '0750'
 
 - name: Create Alloy configuration file
   template:
     src: templates/config.alloy.j2
-    dest: "/etc/alloy/config.alloy"
+    dest: "{{ alloy_config_path | default('/etc/alloy/config.alloy') }}"
+    mode: '0600'
+  no_log: true
+  register: alloy_config_rendered
 
-- name: Reload and restart Alloy service
+- name: Ensure Alloy service is enabled and running
   systemd:
     name: alloy
-    state: restarted
+    state: "{{ 'restarted' if (alloy_config_rendered is changed) else 'started' }}"
+    enabled: yes
     daemon_reload: yes
+  when: not ansible_check_mode
+

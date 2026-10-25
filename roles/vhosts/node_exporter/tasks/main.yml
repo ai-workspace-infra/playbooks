@@ -1,3 +1,15 @@
+- name: Check if node_exporter binary already exists
+  ansible.builtin.stat:
+    path: /opt/metrics-agent/node_exporter
+  register: node_exporter_bin_check
+  when: inventory_hostname in groups[group]
+
+- name: Check if consolidated xconnect-host-metrics service is active or installed
+  ansible.builtin.stat:
+    path: /etc/systemd/system/xconnect-host-metrics.service
+  register: node_exporter_combined_service_check
+  when: inventory_hostname in groups[group]
+
 - name: Download node_exporter archive
   ansible.builtin.get_url:
     url: >-
@@ -9,6 +21,7 @@
   when:
     - inventory_hostname in groups[group]
     - not ansible_check_mode
+    - not (node_exporter_bin_check.stat.exists | default(false))
 
 - name: Extract node_exporter
   ansible.builtin.unarchive:
@@ -19,6 +32,7 @@
   when:
     - inventory_hostname in groups[group]
     - not ansible_check_mode
+    - not (node_exporter_bin_check.stat.exists | default(false))
 
 - name: Ensure metrics-agent directory exists
   ansible.builtin.file:
@@ -37,9 +51,11 @@
     dest: /opt/metrics-agent/node_exporter
     mode: '0755'
     remote_src: true
+  register: node_exporter_bin_install
   when:
     - inventory_hostname in groups[group]
     - not ansible_check_mode
+    - not (node_exporter_bin_check.stat.exists | default(false))
 
 - name: Remove node_exporter archive
   ansible.builtin.file:
@@ -48,12 +64,15 @@
   when:
     - inventory_hostname in groups[group]
     - not ansible_check_mode
+    - not (node_exporter_bin_check.stat.exists | default(false))
 
 - name: Cleanup extracted directory
   ansible.builtin.file:
     path: "/tmp/node_exporter-{{ node_exporter_version | default('1.8.2') }}.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
     state: absent
-  when: inventory_hostname in groups[group]
+  when:
+    - inventory_hostname in groups[group]
+    - not (node_exporter_bin_check.stat.exists | default(false))
 
 - name: Ensure textfile collector directory exists
   ansible.builtin.file:
@@ -77,14 +96,18 @@
     owner: root
     group: root
     mode: '0644'
-  when: inventory_hostname in groups[group]
+  register: node_exporter_unit_template
+  when:
+    - inventory_hostname in groups[group]
+    - not (node_exporter_combined_service_check.stat.exists | default(false))
 
 - name: Enable and start node_exporter
   ansible.builtin.systemd:
     name: node-exporter
     enabled: true
-    state: restarted
-    daemon_reload: true
+    state: "{{ 'restarted' if ((node_exporter_unit_template.changed | default(false)) or (node_exporter_bin_install.changed | default(false))) else 'started' }}"
+    daemon_reload: "{{ node_exporter_unit_template.changed | default(false) }}"
   when:
     - inventory_hostname in groups[group]
     - not ansible_check_mode
+    - not (node_exporter_combined_service_check.stat.exists | default(false))

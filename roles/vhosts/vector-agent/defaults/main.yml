@@ -12,9 +12,18 @@ vector_buffer_max_events: 1000
 
 # Stable labels on every metric and log let shared backends separate UAT and
 # PROD without relying on host IPs.
-vector_observability_environment: "{{ lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('unknown', true) }}"
-vector_observability_provider: "{{ cloud_provider | default('unknown', true) }}"
+vector_observability_endpoint: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ENDPOINT') | default('https://observability.svc.plus', true) }}"
+vector_observability_environment: "{{ environment | default(cmdb_environment | default(lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('unknown', true), true), true) }}"
+vector_observability_provider: "{{ provider | default(cloud_provider | default(cmdb_cloud_provider | default('unknown', true), true), true) }}"
+vector_observability_region: "{{ region | default(cmdb_region | default(cloud_region | default(provider_region | default(logical_region | default('unknown', true), true), true), true), true) }}"
+vector_observability_project_id: "{{ project_id | default(cmdb_project_id | default(account | default('', true), true), true) }}"
+vector_observability_resource_id: "{{ resource_id | default(cmdb_resource_id | default(instance_id | default(cmdb_instance_id | default(inventory_hostname, true), true), true), true) }}"
+vector_observability_runtime_form: "{{ runtime_form | default(cmdb_runtime_form | default('', true), true) }}"
 vector_observability_service_domain: "{{ observability_service_domain | default(inventory_hostname, true) }}"
+vector_node_metrics_enabled: true
+vector_process_metrics_enabled: true
+vector_k3s_cluster_scrapes_node_exporter: false
+vector_stop_duplicate_collectors: true
 
 # Disk buffer & rate limiting optimization for off-peak snapshot fanout
 vector_disk_buffer_max_bytes: 536870912 # 512 MiB persistent disk buffer
