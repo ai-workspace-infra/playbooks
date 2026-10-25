@@ -147,8 +147,16 @@ def rendered_files(dashboard, output_dashboard=None, gitops_root=None):
         # Chart deployment annotations force a deterministic restart to pick up
         # subPath provisioning updates. The original archived inventory is not
         # rewritten or represented as containing this additional dashboard.
+        bundle = {}
+        for path in sorted(target.glob("*.yaml")):
+            if path == vpath:
+                continue  # Exclude the values ConfigMap's checksum self-reference.
+            document = yaml.safe_load(path.read_text())
+            if isinstance(document, dict) and document.get("kind") == "ConfigMap":
+                bundle[document["metadata"]["name"]] = document.get("data", {})
+        bundle[CONFIGMAP] = cm["data"]
         values["grafana"]["bundleChecksum"] = hashlib.sha256(
-            (model + "\n" + SOURCE_SHA).encode()).hexdigest()
+            json.dumps(bundle, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         values_cm["data"]["values.yaml"] = yaml.safe_dump(values, sort_keys=False, allow_unicode=True)
         files[vpath] = yaml.safe_dump(values_cm, sort_keys=False, allow_unicode=True)
     if not files:

@@ -77,6 +77,15 @@ class StarslDashboardTest(unittest.TestCase):
                              ["existing-dashboard", "starsl-k8s-dashboard"])
             self.assertEqual(actual["grafana"]["dashboardProviders"][1],
                              {"name": "other", "configMaps": ["other-dashboard"]})
+            # Replaying an independent source migration must still reload
+            # datasource/app provisioning when one of its ConfigMaps changes.
+            before = actual["grafana"]["bundleChecksum"]
+            (target / "existing-datasource.yaml").write_text(yaml.safe_dump({
+                "kind": "ConfigMap", "metadata": {"name": "existing-datasource"},
+                "data": {"datasources.yaml": "changed provisioning input"}}))
+            refreshed = module.rendered_files(self.dashboard, gitops_root=root)
+            after = yaml.safe_load(yaml.safe_load(refreshed[path.resolve()])["data"]["values.yaml"])
+            self.assertNotEqual(before, after["grafana"]["bundleChecksum"])
 
 
 if __name__ == "__main__":
