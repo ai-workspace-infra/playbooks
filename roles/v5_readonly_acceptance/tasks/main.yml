@@ -1,0 +1,92 @@
+---
+- name: Require safe report identity and new output location
+  ansible.builtin.assert:
+    that:
+      - v5_acceptance_run_id is match('^[A-Za-z0-9_.-]{1,100}$')
+      - v5_acceptance_owner_sha is match('^[a-f0-9]{40}$')
+      - v5_acceptance_host_id is match('^[A-Za-z0-9_.-]+$')
+      - v5_acceptance_environment in ['sit', 'uat', 'prod']
+      - v5_acceptance_report_dir is match('^/')
+      - v5_acceptance_output is match('^/')
+
+- name: Collect observations or retain a bounded failure result
+  block:
+    - name: Require explicit target and read-only acceptance scope
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length == 1
+          - v5_acceptance_environment in ['sit', 'uat', 'prod']
+          - (cmdb_environment | default(verified_environment | default(''))) == v5_acceptance_environment
+          - v5_acceptance_namespace | length > 0
+          - v5_acceptance_database_pod | length > 0
+          - v5_acceptance_database_user | length > 0
+          - v5_acceptance_database_name | length > 0
+          - v5_acceptance_machine_id is match('^[a-f0-9]{32}$')
+          - v5_acceptance_gitops_sha is match('^[a-f0-9]{40}$')
+          - v5_acceptance_schema is match('^[0-9]+$')
+          - v5_acceptance_expected_agents | int > 0
+          - v5_acceptance_source_name | length > 0
+          - v5_acceptance_source_namespace | length > 0
+          - v5_acceptance_run_id is match('^[A-Za-z0-9_.-]{1,100}$')
+          - v5_acceptance_owner_sha is match('^[a-f0-9]{40}$')
+          - v5_acceptance_host_id is match('^[A-Za-z0-9_.-]+$')
+          - v5_acceptance_report_dir is match('^/')
+          - v5_acceptance_output is match('^/')
+        fail_msg: Exact single target, trusted machine identity and release expectations are mandatory.
+
+    - name: Run read-only K3s and database observations over SSH
+      ansible.builtin.script:
+        cmd: files/observe.py
+        executable: python3
+      environment:
+        V5_ACCEPTANCE_CONFIG: "{{ {'environment': v5_acceptance_environment, 'namespace': v5_acceptance_namespace, 'pod': v5_acceptance_database_pod, 'db_user': v5_acceptance_database_user, 'db_name': v5_acceptance_database_name, 'machine_id': v5_acceptance_machine_id, 'schema': v5_acceptance_schema, 'expected_agents': v5_acceptance_expected_agents | int, 'gitops_sha': v5_acceptance_gitops_sha, 'source_name': v5_acceptance_source_name, 'source_namespace': v5_acceptance_source_namespace} | to_json }}"
+      register: v5_acceptance_observation
+      changed_when: false
+      failed_when: v5_acceptance_observation.rc != 0
+
+    - name: Parse sanitized observation
+      ansible.builtin.set_fact:
+        v5_acceptance_payload: "{{ v5_acceptance_observation.stdout | from_json }}"
+  rescue:
+    - name: Retain no-false-success result for preflight or transport failure
+      ansible.builtin.set_fact:
+        v5_acceptance_payload:
+          schema_version: v5-readonly-observation/v1
+          result: FAIL
+          checks: {}
+  always:
+    - name: Save sanitized observation on the controller even when checks fail
+      ansible.builtin.copy:
+        content: "{{ v5_acceptance_payload | to_nice_json }}\n"
+        dest: "{{ v5_acceptance_output }}"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+
+    - name: Generate Markdown JUnit and sanitized evidence bundle before gate
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ role_path }}/files/report.py"
+          - --output
+          - "{{ v5_acceptance_report_dir }}"
+          - --run-id
+          - "{{ v5_acceptance_run_id }}"
+          - --owner-sha
+          - "{{ v5_acceptance_owner_sha }}"
+          - --environment
+          - "{{ v5_acceptance_environment }}"
+          - --host-id
+          - "{{ v5_acceptance_host_id }}"
+        stdin: "{{ v5_acceptance_payload | to_json }}"
+      delegate_to: localhost
+      become: false
+      register: v5_acceptance_report
+      changed_when: true
+
+- name: Block incomplete acceptance without hiding the observation
+  ansible.builtin.assert:
+    that:
+      - v5_acceptance_payload.result == 'PASS'
+      - (v5_acceptance_report.stdout | from_json).result == 'PASS'
+    fail_msg: Read-only observations saved. Required checks failed or remain NOT_RUN; full V5 acceptance is blocked.
