@@ -1,0 +1,16 @@
+---
+- name: Reconcile the selected Vault GitHub OIDC contract
+  ansible.builtin.command:
+    argv:
+      - '{{ ansible_playbook_python }}'
+      - '{{ role_path }}/files/reconcile.py'
+    stdin: '{{ vault_github_oidc_request | to_json }}'
+  delegate_to: localhost
+  become: false
+  register: vault_github_oidc_result
+  changed_when: vault_github_oidc_result.rc == 0 and ((vault_github_oidc_result.stdout | default("{}", true) | from_json).get("changed", 0) | int > 0) and (vault_github_oidc_request.apply | default(false) | bool)
+  no_log: true
+
+- name: Report sanitized OIDC reconciliation counts
+  ansible.builtin.debug:
+    msg: '{{ vault_github_oidc_result.stdout | from_json }}'
