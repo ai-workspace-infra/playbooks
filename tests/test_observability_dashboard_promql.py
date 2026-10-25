@@ -81,15 +81,28 @@ class DashboardPromQL(unittest.TestCase):
         with urllib.request.urlopen(request, timeout=5) as response:
             if response.status != 204:
                 raise RuntimeError('Fixture import failed')
-        for _ in range(50):
-            params = urllib.parse.urlencode({'query': 'count(kube_node_info)', 'time': str(cls.at), 'nocache': '1'})
+        # The import API acknowledges before every series is query-visible.
+        # Require the complete fixture, not the first node sample to appear.
+        checks = [
+            'count(kube_node_info)==4',
+            'count(kube_pod_info{cluster="lifecycle"})==5',
+            'count(kube_pod_status_phase{cluster="lifecycle"})==7',
+            'count(kube_pod_container_resource_requests{cluster="lifecycle"})==6',
+            'count(kube_pod_container_resource_limits{cluster="lifecycle"})==5',
+            'sum(count_over_time(node_cpu_seconds_total{cluster="recent"}[15m]))==13',
+            'sum(count_over_time(node_memory_MemAvailable_bytes{cluster="recent"}[15m]))==13',
+            'sum(count_over_time(node_memory_MemTotal_bytes{cluster="recent"}[15m]))==13']
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            params = urllib.parse.urlencode({'query': ' and '.join('(' + q + ')' for q in checks),
+                                             'time': str(cls.at), 'nocache': '1'})
             with urllib.request.urlopen(cls.url + '/api/v1/query?' + params, timeout=5) as response:
                 rows = json.load(response)['data']['result']
             if rows:
                 break
             time.sleep(0.1)
         else:
-            raise RuntimeError('Fixture samples not visible')
+            raise RuntimeError('Complete fixture samples not visible within bounded wait')
 
     def query(self, expr, cluster):
         expr = expr.replace('${cluster:regex}', cluster).replace('${environment:regex}', 'uat')
