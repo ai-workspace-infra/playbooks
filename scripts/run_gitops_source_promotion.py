@@ -28,7 +28,19 @@ def git(directory, *args):
     return subprocess.check_output(["git", "-C", str(directory), *args], text=True).strip()
 
 
-def verify_release(plan, gitops_root):
+def rollback_requested(plan, rollback=False):
+    marked = plan.get("rollback", False)
+    if not isinstance(marked, bool) or marked != rollback:
+        raise ValueError("rollback requires matching explicit CLI option and boolean plan marker")
+    if rollback and (not isinstance(plan.get("rollback_reason"), str)
+                     or not 1 <= len(plan["rollback_reason"]) <= 300
+                     or "\n" in plan["rollback_reason"]):
+        raise ValueError("rollback requires a bounded operator recovery reason")
+    return rollback
+
+
+def verify_release(plan, gitops_root, rollback=False):
+    rollback_requested(plan, rollback)
     cluster, release = plan["cluster"], plan["release"]
     repo_url = release["repo_url"]
     if repo_url != "https://github.com/ai-workspace-infra/gitops.git":
@@ -48,6 +60,13 @@ def verify_release(plan, gitops_root):
         resolved = refs.get(f"refs/tags/{tag}^{{}}", refs.get(f"refs/tags/{tag}"))
         if resolved != sha:
             raise ValueError("remote immutable tag does not resolve to expected commit")
+    if rollback:
+        if cluster["expected_sha"] == release["desired_sha"]:
+            raise ValueError("rollback must select a previous distinct ancestor commit")
+        try:
+            git(root, "merge-base", "--is-ancestor", release["desired_sha"], cluster["expected_sha"])
+        except subprocess.CalledProcessError as error:
+            raise ValueError("rollback target is not a verified ancestor") from error
     paths = git(root, "diff", "--name-only", cluster["expected_sha"], release["desired_sha"]).splitlines()
     if any(p != ROOT_SOURCE_PATH and not p.startswith(ALLOWED_PATHS) for p in paths):
         raise ValueError("release snapshot carries non-observability changes")
@@ -100,13 +119,13 @@ def verify_target(plan, inventory, now=None):
     return host
 
 
-def execute(plan, cmdb, gitops_root, output, apply=False, audit_report=False):
+def execute(plan, cmdb, gitops_root, output, apply=False, audit_report=False, rollback=False):
     if plan.get("schema_version") != "flux-source-operator-plan/v1":
         raise ValueError("unsupported operator plan")
     if git(ROOT, "rev-parse", "HEAD") != plan.get("owner_sha"):
         raise ValueError("Playbooks checkout does not match reviewed owner SHA")
     subprocess.run(["git", "-C", str(ROOT), "diff", "--quiet", "HEAD", "--", *OWNER_PATHS], check=True)
-    changed_paths = verify_release(plan, gitops_root)
+    changed_paths = verify_release(plan, gitops_root, rollback)
     spec = importlib.util.spec_from_file_location("cmdb_inventory", ROOT / "inventory/terraform_cmdb.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -114,7 +133,8 @@ def execute(plan, cmdb, gitops_root, output, apply=False, audit_report=False):
     mode = "audit-report" if audit_report else "apply" if apply else "plan"
     config = {**plan["cluster"], **plan["release"], "environment": "prod", "mode": mode,
               "machine_id": plan["target"]["machine_id"],
-              "admin_kubeconfig": "/etc/rancher/k3s/k3s.yaml"}
+              "admin_kubeconfig": "/etc/rancher/k3s/k3s.yaml", "rollback": rollback,
+              "rollback_ancestor_verified": rollback, "rollback_reason": plan.get("rollback_reason", "")}
     if audit_report:
         config["audit_username"] = plan["target"].get("audit_username", "")
     agent_socket = os.environ.get("SSH_AUTH_SOCK", "")
@@ -136,7 +156,8 @@ def execute(plan, cmdb, gitops_root, output, apply=False, audit_report=False):
         selected.update(ansible_python_interpreter="/usr/bin/python3", ansible_ssh_common_args=ssh_args)
         (temp / "inventory.json").write_text(json.dumps({"all": {"hosts": {plan["target"]["host"]: selected}}}))
         variables = {"gitops_promotion_target": plan["target"]["host"], "gitops_promotion_config": config,
-                     "gitops_promotion_report": str(output / "observation.json"), "gitops_promotion_apply": apply}
+                     "gitops_promotion_report": str(output / "observation.json"), "gitops_promotion_apply": apply,
+                     "gitops_promotion_rollback": rollback}
         (temp / "vars.json").write_text(json.dumps(variables))
         (temp / "ansible.cfg").write_text("[defaults]\nhost_key_checking = True\nretry_files_enabled = False\nlocal_tmp = "
                                            + str(temp / "local") + "\n[ssh_connection]\nssh_args = " + ssh_args + "\n")
@@ -150,9 +171,12 @@ def execute(plan, cmdb, gitops_root, output, apply=False, audit_report=False):
         if not (output / "observation.json").exists():
             (output / "observation.json").write_text(json.dumps({"schema_version": "flux-source-promotion/v1",
                 "mode": mode, "result": "transport_failed_or_unknown" if apply else "transport_failed",
-                "changed": "UNKNOWN" if apply else False, "runtime_metrics_acceptance": "NOT_RUN"}) + "\n")
+                "changed": "UNKNOWN" if apply else False, "direction": "rollback" if rollback else "forward",
+                "runtime_metrics_acceptance": "NOT_RUN"}) + "\n")
         (output / "controller-receipt.json").write_text(json.dumps({"owner_sha": plan["owner_sha"], "mode": mode,
             "changed_declaration_paths": changed_paths, "exit_code": result.returncode,
+            "direction": "rollback" if rollback else "forward", "rollback_ancestor_verified": rollback,
+            "rollback_reason": plan.get("rollback_reason", ""),
             "runtime_metrics_acceptance": "NOT_RUN"}, indent=2) + "\n")
         for path in output.iterdir():
             if path.is_file(): path.chmod(0o600)
@@ -168,10 +192,12 @@ def main():
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--apply", action="store_true")
     modes.add_argument("--audit-report", action="store_true")
+    parser.add_argument("--rollback", action="store_true",
+                        help="Explicit ancestor rollback; plan must also contain rollback=true and recovery reason")
     args = parser.parse_args()
     try:
         return execute(json.loads(Path(args.plan).read_text()), json.loads(Path(args.cmdb).read_text()),
-                       args.gitops_root, args.evidence_dir, args.apply, args.audit_report)
+                       args.gitops_root, args.evidence_dir, args.apply, args.audit_report, args.rollback)
     except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError):
         print("Owner rejected scope, refs or target, or transport failed; no acceptance granted.")
         return 2

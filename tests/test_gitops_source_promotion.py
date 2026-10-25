@@ -2,6 +2,7 @@ import copy
 import datetime
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -66,6 +67,8 @@ class Client:
                 rev = self.c["desired_tag"] + "@sha1:" + self.c["desired_sha"]
                 self.source["status"]["artifact"]["revision"] = rev
                 self.root["status"]["lastAppliedRevision"] = rev
+                self.root["status"]["conditions"] = [{"type": "Ready", "status": "True"}]
+                self.root["status"]["observedGeneration"] = self.root["metadata"]["generation"]
         return {}
 
 
@@ -129,6 +132,67 @@ class SourceOwnerTest(unittest.TestCase):
         report = owner.execute(c, Client(c, read_error=True), self.machine)
         self.assertEqual(report["result"], "mutated_and_failed")
 
+    def rollback_case(self, mode="apply", converge=True):
+        c = config(mode)
+        c.update(rollback=True, rollback_ancestor_verified=True,
+                 rollback_reason="Recover failed process-exporter health canary")
+        client = Client(c, converge=converge)
+        client.root["status"]["conditions"] = [{"type": "Ready", "status": "False"}]
+        client.root["status"]["lastAppliedRevision"] = c["desired_tag"] + "@sha1:" + c["desired_sha"]
+        return c, client
+
+    def test_explicit_rollback_recovers_known_unhealthy_root_and_retains_evidence(self):
+        c, client = self.rollback_case()
+        report = owner.execute(c, client, self.machine)
+        self.assertEqual(report["result"], "verified")
+        self.assertEqual(report["direction"], "rollback")
+        self.assertFalse(report["recovery"]["baseline_root_ready"])
+        self.assertTrue(report["recovery"]["baseline_source_ready"])
+        self.assertTrue(report["recovery"]["ancestor_verified"])
+        self.assertEqual(len(client.calls), 1)
+        operations = json.loads(client.calls[0][client.calls[0].index("-p") + 1])
+        self.assertEqual([op["op"] for op in operations], ["test", "test", "replace"])
+        self.assertEqual(operations[0]["path"], "/metadata/resourceVersion")
+
+    def test_rollback_plan_does_not_mutate_and_forward_still_rejects_unhealthy_root(self):
+        c, client = self.rollback_case("plan")
+        self.assertEqual(owner.execute(c, client, self.machine)["result"], "planned")
+        self.assertEqual(client.calls, [])
+        c["rollback"] = False
+        with self.assertRaises(ValueError): owner.execute(c, client, self.machine)
+        self.assertEqual(client.calls, [])
+
+    def test_rollback_rejects_unknown_root_or_unready_source(self):
+        for mutate in (
+                lambda c, x: x.root["status"].update(lastAppliedRevision=""),
+                lambda c, x: x.root["status"].update(lastAppliedRevision="other@sha1:" + "e" * 40),
+                lambda c, x: x.source["status"].update(conditions=[{"type": "Ready", "status": "False"}]),
+                lambda c, x: x.source["status"]["artifact"].update(revision="other@sha1:" + "e" * 40),
+                lambda c, x: x.source["status"].update(observedGeneration=0)):
+            c, client = self.rollback_case()
+            mutate(c, client)
+            with self.assertRaises(ValueError): owner.execute(c, client, self.machine)
+            self.assertEqual(client.calls, [])
+
+    def test_rollback_requires_ancestor_attestation_and_reason(self):
+        for values in ({"rollback_ancestor_verified": False}, {"rollback_reason": ""}, {"rollback": "true"}):
+            c, client = self.rollback_case()
+            c.update(values)
+            with self.assertRaises(ValueError): owner.execute(c, client, self.machine)
+            self.assertEqual(client.calls, [])
+
+    def test_rollback_timeout_preserves_recovery_and_idempotent_success_does_not_patch(self):
+        c, client = self.rollback_case(converge=False)
+        times = iter((0, 20))
+        report = owner.execute(c, client, self.machine, monotonic=lambda: next(times))
+        self.assertEqual(report["result"], "mutated_and_failed")
+        self.assertFalse(report["recovery"]["baseline_root_ready"])
+        c, client = self.rollback_case()
+        owner.execute(c, client, self.machine)
+        client.calls.clear()
+        self.assertEqual(owner.execute(c, client, self.machine)["result"], "verified")
+        self.assertEqual(client.calls, [])
+
     def test_audit_rejects_root_or_readable_admin_config(self):
         c = config("audit-report")
         c.update(kubeconfig="/home/audit/kubeconfig", audit_username="audit")
@@ -156,6 +220,45 @@ class ControllerTest(unittest.TestCase):
                             {"verified_at": (now - datetime.timedelta(hours=2)).isoformat()}):
             wrong = copy.deepcopy(plan); wrong["target"].update(replacement)
             with self.assertRaises(ValueError): runner.verify_target(wrong, inventory, now)
+
+    def test_rollback_requires_matching_cli_and_boolean_plan_marker(self):
+        for plan, flag in (({}, True), ({"rollback": True, "rollback_reason": "failure"}, False),
+                           ({"rollback": "true", "rollback_reason": "failure"}, True),
+                           ({"rollback": True}, True)):
+            with self.assertRaises(ValueError): runner.rollback_requested(plan, flag)
+        self.assertTrue(runner.rollback_requested({"rollback": True, "rollback_reason": "failed canary"}, True))
+        self.assertFalse(runner.rollback_requested({}, False))
+
+    def test_rollback_ancestry_and_scope_are_both_required(self):
+        c = config()
+        plan = {"cluster": c, "release": c, "rollback": True, "rollback_reason": "failed canary"}
+        calls = []
+        def fake_git(directory, *args):
+            calls.append(args)
+            if args[:3] == ("remote", "get-url", "origin"): return c["repo_url"]
+            if args[0] == "rev-parse": return c["expected_sha"] if c["expected_tag"] in args[1] else c["desired_sha"]
+            if args[0] == "ls-remote":
+                tag = args[2].split("/")[-1]
+                return (c["expected_sha"] if tag == c["expected_tag"] else c["desired_sha"]) + "\trefs/tags/" + tag
+            if args[0] == "merge-base": return ""
+            if args[0] == "diff": return "services/platform-observability/prod/values.yaml"
+            if args[0] == "show" and args[1].endswith(runner.ROOT_SOURCE_PATH):
+                return json.dumps({"kind": "GitRepository", "metadata": {"name": owner.SOURCE, "namespace": "flux-system"},
+                                   "spec": {"url": c["repo_url"], "ref": {"tag": c["desired_tag"]}}})
+            if args[0] == "show":
+                return json.dumps({"kind": "Kustomization", "metadata": {"name": owner.ROOT_KUSTOMIZATION},
+                                   "spec": {"path": owner.ROOT_PATH, "sourceRef": {"name": owner.SOURCE}}})
+            raise AssertionError(args)
+        with patch.object(runner, "git", side_effect=fake_git):
+            self.assertEqual(runner.verify_release(plan, "/tmp/example", True), ["services/platform-observability/prod/values.yaml"])
+        self.assertIn(("merge-base", "--is-ancestor", c["desired_sha"], c["expected_sha"]), calls)
+        def bad_ancestor(directory, *args):
+            if args[0] == "merge-base": raise subprocess.CalledProcessError(1, "git")
+            return fake_git(directory, *args)
+        with patch.object(runner, "git", side_effect=bad_ancestor):
+            with self.assertRaisesRegex(ValueError, "not a verified ancestor"): runner.verify_release(plan, "/tmp/example", True)
+        with patch.object(runner, "git", side_effect=lambda directory, *args: "services/unrelated/prod/values.yaml" if args[0] == "diff" else fake_git(directory, *args)):
+            with self.assertRaisesRegex(ValueError, "non-observability"): runner.verify_release(plan, "/tmp/example", True)
 
     def test_release_rejects_unrelated_changes_and_retagged_commit(self):
         c = config()

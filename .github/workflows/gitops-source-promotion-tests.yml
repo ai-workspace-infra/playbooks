@@ -1,0 +1,38 @@
+name: GitOps Source promotion owner tests
+
+on:
+  pull_request:
+    paths:
+      - gitops_source_promotion.yml
+      - roles/platform/gitops_source_promotion/**
+      - scripts/run_gitops_source_promotion.py
+      - tests/test_gitops_source_promotion.py
+      - .github/workflows/gitops-source-promotion-tests.yml
+  push:
+    branches: [main]
+    paths:
+      - gitops_source_promotion.yml
+      - roles/platform/gitops_source_promotion/**
+      - scripts/run_gitops_source_promotion.py
+      - tests/test_gitops_source_promotion.py
+      - .github/workflows/gitops-source-promotion-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  owner-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 2
+      - name: Install fixed syntax-test runtime
+        run: python3 -m pip install 'ansible-core==2.21.3' 'PyYAML==6.0.3'
+      - name: Verify scoped forward and recovery contracts without remote operations
+        run: python3 -m unittest discover -s tests -p test_gitops_source_promotion.py
+      - name: Validate owner playbook syntax
+        run: ansible-playbook --syntax-check -i 'localhost,' gitops_source_promotion.yml -e gitops_promotion_target=localhost
+      - name: Check committed diff formatting
+        run: git diff --check HEAD^ HEAD
