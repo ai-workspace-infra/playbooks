@@ -108,3 +108,26 @@ Recovery evidence records the direction, reason, controller ancestor verificatio
 This selects configuration only: it does not restore data, downgrade storage formats or redirect writers. A rollback across unrelated business changes is rejected and requires its own properly scoped recovery design.
 
 No new CI dispatch or Vault trust allowlist is introduced. An operator may run this owner with authorized runtime credentials, or a separately reviewed control-plane caller may select and invoke it later. Do not widen existing pipeline permissions merely to get a new caller through.
+
+
+## Explicit forward repair from a known unhealthy root
+
+When the prior configuration itself cannot recover (for example, both the failed release and older rollback package share the same plugin archive-size defect), use a separately reviewed fixed descendant release. This is not a general forward-health bypass. Default forward mode still requires the healthy exact baseline.
+
+The plan must contain top-level `"recover_forward": true` and a non-empty, single-line `"recovery_reason"` of at most 300 characters, and the CLI must also select `--recover-forward`. The CLI/boolean plan marker must match; `--rollback` and `--recover-forward` are mutually exclusive. The controller independently verifies that expected SHA is a strict ancestor of desired SHA **after** both immutable tags resolve to their exact local and remote commits. The same Observability-only plus exact Source path gate, selected host/machine/SSH checks, reviewed owner SHA and bounded evidence rules remain in effect.
+
+```sh
+# Explicit repair plan only; does not mutate the Source.
+python3 scripts/run_gitops_source_promotion.py \
+  --plan "$REPAIR_PLAN_JSON" --cmdb "$VERIFIED_CMDB" \
+  --gitops-root "$FIXED_GITOPS_WORKTREE" --evidence-dir "$NEW_REPAIR_PLAN_EVIDENCE" --recover-forward
+
+# Only after the exact repair tag/chart and target are authorized:
+python3 scripts/run_gitops_source_promotion.py \
+  --plan "$REPAIR_PLAN_JSON" --cmdb "$VERIFIED_CMDB" \
+  --gitops-root "$FIXED_GITOPS_WORKTREE" --evidence-dir "$NEW_REPAIR_APPLY_EVIDENCE" --recover-forward --apply
+```
+
+For this explicit recovery only, the root may be non-Ready but its `lastAppliedRevision` must exactly match the selected expected or desired tag/SHA. Empty, unrelated and unknown root revisions are rejected. The Source must still be Ready at its exact observed generation and match its selected expected/desired immutable revision. Its repository/ref, root path, namespace and source identity constraints are unchanged. The patch still tests resourceVersion and old ref and only replaces the one Source ref.
+
+Evidence records direction `recover-forward`, the bounded reason, controller ancestry verification/direction and baseline Source/root readiness/revisions. The operation still succeeds only after Source **and** root converge Ready at the desired exact revision; failed/lost writes or convergence timeouts retain non-success/unknown evidence. No automatic rollback, workload patch, data migration, permission expansion or infrastructure change is added. `verified` still does not prove plugin behavior, telemetry, audit isolation or business recovery; those require independent runtime checks.

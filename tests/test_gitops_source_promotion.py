@@ -193,6 +193,77 @@ class SourceOwnerTest(unittest.TestCase):
         self.assertEqual(owner.execute(c, client, self.machine)["result"], "verified")
         self.assertEqual(client.calls, [])
 
+    def forward_recovery_case(self, mode="apply", converge=True):
+        c = config(mode)
+        c.update(recover_forward=True, recover_forward_ancestor_verified=True,
+                 recovery_reason="Advance the reviewed plugin archive-bound repair")
+        client = Client(c, converge=converge)
+        client.root["status"]["conditions"] = [{"type": "Ready", "status": "False"}]
+        return c, client
+
+    def test_explicit_forward_recovery_only_allows_known_unhealthy_root(self):
+        for applied in ("expected", "desired"):
+            c, client = self.forward_recovery_case()
+            client.root["status"]["lastAppliedRevision"] = c[applied + "_tag"] + "@sha1:" + c[applied + "_sha"]
+            report = owner.execute(c, client, self.machine)
+            self.assertEqual(report["result"], "verified")
+            self.assertEqual(report["direction"], "recover-forward")
+            self.assertEqual(report["recovery"]["ancestry_direction"], "expected_to_desired")
+            self.assertFalse(report["recovery"]["baseline_root_ready"])
+            self.assertTrue(report["recovery"]["baseline_source_ready"])
+            self.assertEqual(len(client.calls), 1)
+            operations = json.loads(client.calls[0][client.calls[0].index("-p") + 1])
+            self.assertEqual([op["op"] for op in operations], ["test", "test", "replace"])
+            self.assertEqual(operations[-1]["path"], "/spec/ref")
+
+    def test_recover_plan_is_readonly_and_default_forward_is_not_weakened(self):
+        c, client = self.forward_recovery_case("plan")
+        self.assertEqual(owner.execute(c, client, self.machine)["result"], "planned")
+        self.assertEqual(client.calls, [])
+        c["recover_forward"] = False
+        with self.assertRaises(ValueError): owner.execute(c, client, self.machine)
+        self.assertEqual(client.calls, [])
+
+    def test_recover_forward_requires_attestation_reason_and_no_rollback(self):
+        for values in ({"recover_forward_ancestor_verified": False}, {"recovery_reason": ""},
+                       {"recovery_reason": "line\nbreak"}, {"recover_forward": "true"},
+                       {"rollback": True, "rollback_ancestor_verified": True, "rollback_reason": "previous"}):
+            c, client = self.forward_recovery_case()
+            c.update(values)
+            with self.assertRaises(ValueError): owner.execute(c, client, self.machine)
+            self.assertEqual(client.calls, [])
+
+    def test_recover_forward_rejects_unknown_root_source_and_scope(self):
+        for mutate in (
+                lambda c, x: x.root["status"].update(lastAppliedRevision=""),
+                lambda c, x: x.root["status"].update(lastAppliedRevision="unknown@sha1:" + "e" * 40),
+                lambda c, x: x.source["spec"].update(ref={"branch": "main"}),
+                lambda c, x: x.source["status"].update(conditions=[{"type": "Ready", "status": "False"}]),
+                lambda c, x: x.source["status"]["artifact"].update(revision="unknown@sha1:" + "e" * 40),
+                lambda c, x: x.source["status"].update(observedGeneration=0),
+                lambda c, x: x.root["spec"].update(path="./unrelated")):
+            c, client = self.forward_recovery_case()
+            mutate(c, client)
+            with self.assertRaises(ValueError): owner.execute(c, client, self.machine)
+            self.assertEqual(client.calls, [])
+
+    def test_forward_recovery_timeout_unknown_mutation_and_retry_are_not_success(self):
+        c, client = self.forward_recovery_case(converge=False)
+        times = iter((0, 20))
+        report = owner.execute(c, client, self.machine, monotonic=lambda: next(times))
+        self.assertEqual(report["result"], "mutated_and_failed")
+        self.assertEqual(report["direction"], "recover-forward")
+        c, client = self.forward_recovery_case()
+        client.patch_error = True
+        report = owner.execute(c, client, self.machine)
+        self.assertEqual(report["result"], "mutation_failed_or_unknown")
+        self.assertEqual(report["changed"], "UNKNOWN")
+        c, client = self.forward_recovery_case()
+        owner.execute(c, client, self.machine)
+        client.calls.clear()
+        self.assertEqual(owner.execute(c, client, self.machine)["result"], "verified")
+        self.assertEqual(client.calls, [])
+
     def test_audit_rejects_root_or_readable_admin_config(self):
         c = config("audit-report")
         c.update(kubeconfig="/home/audit/kubeconfig", audit_username="audit")
@@ -259,6 +330,60 @@ class ControllerTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not a verified ancestor"): runner.verify_release(plan, "/tmp/example", True)
         with patch.object(runner, "git", side_effect=lambda directory, *args: "services/unrelated/prod/values.yaml" if args[0] == "diff" else fake_git(directory, *args)):
             with self.assertRaisesRegex(ValueError, "non-observability"): runner.verify_release(plan, "/tmp/example", True)
+
+    def test_forward_recovery_cli_and_plan_markers_must_match(self):
+        for plan, flag in (({}, True), ({"recover_forward": True, "recovery_reason": "repair"}, False),
+                           ({"recover_forward": "true", "recovery_reason": "repair"}, True),
+                           ({"recover_forward": True}, True),
+                           ({"recover_forward": True, "recovery_reason": "repair", "rollback": True}, True)):
+            with self.assertRaises(ValueError): runner.recover_forward_requested(plan, flag)
+        self.assertTrue(runner.recover_forward_requested({"recover_forward": True, "recovery_reason": "reviewed repair"}, True))
+        self.assertFalse(runner.recover_forward_requested({}, False))
+        command = [__import__("sys").executable, str(ROOT / "scripts/run_gitops_source_promotion.py"),
+                   "--plan", "/unused", "--cmdb", "/unused", "--gitops-root", "/unused", "--evidence-dir", "/unused",
+                   "--rollback", "--recover-forward"]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("not allowed with argument", result.stderr)
+
+    def test_forward_recovery_ancestry_direction_and_scope_are_verified(self):
+        c = config()
+        plan = {"cluster": c, "release": c, "recover_forward": True, "recovery_reason": "plugin repair"}
+        calls = []
+        def fake_git(directory, *args):
+            calls.append(args)
+            if args[:3] == ("remote", "get-url", "origin"): return c["repo_url"]
+            if args[0] == "rev-parse": return c["expected_sha"] if c["expected_tag"] in args[1] else c["desired_sha"]
+            if args[0] == "ls-remote":
+                tag = args[2].split("/")[-1]
+                return (c["expected_sha"] if tag == c["expected_tag"] else c["desired_sha"]) + "\trefs/tags/" + tag
+            if args[0] == "merge-base": return ""
+            if args[0] == "diff": return "services/platform-observability/prod/release.yaml"
+            if args[0] == "show" and args[1].endswith(runner.ROOT_SOURCE_PATH):
+                return json.dumps({"kind": "GitRepository", "metadata": {"name": owner.SOURCE, "namespace": "flux-system"},
+                                   "spec": {"url": c["repo_url"], "ref": {"tag": c["desired_tag"]}}})
+            if args[0] == "show":
+                return json.dumps({"kind": "Kustomization", "metadata": {"name": owner.ROOT_KUSTOMIZATION},
+                                   "spec": {"path": owner.ROOT_PATH, "sourceRef": {"name": owner.SOURCE}}})
+            raise AssertionError(args)
+        with patch.object(runner, "git", side_effect=fake_git):
+            self.assertEqual(runner.verify_release(plan, "/tmp/example", recover_forward=True),
+                             ["services/platform-observability/prod/release.yaml"])
+        self.assertIn(("merge-base", "--is-ancestor", c["expected_sha"], c["desired_sha"]), calls)
+        def bad_ancestor(directory, *args):
+            if args[0] == "merge-base": raise subprocess.CalledProcessError(1, "git")
+            return fake_git(directory, *args)
+        with patch.object(runner, "git", side_effect=bad_ancestor):
+            with self.assertRaisesRegex(ValueError, "not a verified ancestor"):
+                runner.verify_release(plan, "/tmp/example", recover_forward=True)
+        with patch.object(runner, "git", side_effect=lambda directory, *args: "services/unrelated/prod/config.yaml" if args[0] == "diff" else fake_git(directory, *args)):
+            with self.assertRaisesRegex(ValueError, "non-observability"):
+                runner.verify_release(plan, "/tmp/example", recover_forward=True)
+        with patch.object(runner, "git", side_effect=fake_git):
+            bad = copy.deepcopy(plan); bad["release"]["desired_tag"] = "main"
+            with self.assertRaises(ValueError): runner.verify_release(bad, "/tmp/example", recover_forward=True)
+            same = copy.deepcopy(plan); same["release"]["desired_sha"] = same["cluster"]["expected_sha"]
+            with self.assertRaises(ValueError): runner.verify_release(same, "/tmp/example", recover_forward=True)
 
     def test_release_rejects_unrelated_changes_and_retagged_commit(self):
         c = config()
