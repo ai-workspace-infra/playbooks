@@ -27,7 +27,8 @@ def validate(config):
     if config.get("recover_forward", False) and (config.get("rollback", False)
             or config.get("recover_forward_ancestor_verified") is not True
             or not isinstance(config.get("recovery_reason"), str)
-            or not 1 <= len(config["recovery_reason"].strip()) <= 300
+            or not 1 <= len(config["recovery_reason"]) <= 300
+            or not config["recovery_reason"].strip()
             or any(c in config["recovery_reason"] for c in "\r\n")):
         raise ValueError("forward recovery requires controller-verified ancestry/reason and excludes rollback")
     if config.get("environment") != "prod" or config.get("mode") not in {"plan", "apply", "audit-report"}:
