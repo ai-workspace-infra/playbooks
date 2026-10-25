@@ -53,6 +53,7 @@ def rewrite(value, source, target):
         value = value.replace(source.rstrip('/') + '/', target.rstrip('/') + '/')
         if value.startswith('/grafana/'):
             value = value[len('/grafana'):]
+        value = value.replace('](/grafana/', '](/').replace('href="/grafana/', 'href="/')
         return value
     if isinstance(value, list):
         return [rewrite(x, source, target) for x in value]
@@ -160,7 +161,8 @@ def build(source, options):
         d = json.loads(re.sub(r'(?<!\$)\$(?=\{?__)', '$$', json.dumps(d)))
         datasources.append(d)
     ds_name = prefix + '-datasources'
-    resources[ds_name + '.yaml'] = cm(ds_name, {'datasources.yaml': yaml.safe_dump({'apiVersion': 1, 'datasources': datasources}, sort_keys=False)}, namespace)
+    deleted_ds = [{'name': d['name'], 'orgId': 1} for d in datasources]
+    resources[ds_name + '.yaml'] = cm(ds_name, {'datasources.yaml': yaml.safe_dump({'apiVersion': 1, 'deleteDatasources': deleted_ds, 'datasources': datasources}, sort_keys=False)}, namespace)
     apps = []
     for original in source.get('app_settings', []):
         app_id = original['id']
