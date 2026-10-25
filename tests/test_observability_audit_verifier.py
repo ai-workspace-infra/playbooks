@@ -28,9 +28,10 @@ class Response:
 
 
 class Fixture:
-    def __init__(self, write=False, missing_node=False, source_gap=False):
+    def __init__(self, write=False, missing_node=False, source_gap=False, query_error=False):
         self.calls = []
         self.write, self.missing_node, self.source_gap = write, missing_node, source_gap
+        self.query_error = query_error
     def open(self, request, timeout):
         self.calls.append(request)
         assert request.get_method() == "GET"
@@ -52,6 +53,8 @@ class Fixture:
                                                       for name in ["k8s_node_cpu_utilization_ratio", "k8s_node_memory_working_set_bytes", "container_memory_working_set_bytes"]]}})
         parameters = urllib.parse.parse_qs(urllib.parse.urlsplit(request.full_url).query)
         expr = parameters["query"][0]
+        if self.query_error:
+            return Response({"status": "error", "error": "fixture failure"})
         result = []
         if path.endswith("query_range"):
             end = float(parameters["end"][0])
@@ -60,7 +63,7 @@ class Fixture:
                 stamps = [stamp for i, stamp in enumerate(stamps) if i not in [10, 11, 12, 13, 14]]
             result = [{"metric": {"node": node}, "values": [[stamp, str(stamp)] for stamp in stamps]}
                       for node in ["node-a", "node-b"]]
-        elif "__nonexistent_obs_probe__" in expr or " > 1" in expr or 'job!="cadvisor"' in expr:
+        elif "__nonexistent_obs_probe__" in expr or "__invalid_env__" in expr or " > 1" in expr or 'job!="cadvisor"' in expr:
             result = []
         elif expr.startswith("kube_node_info{") or (expr.startswith("up{") and " == 1" in expr):
             nodes = ["node-a"] if self.missing_node and 'job="process-exporter"' in expr else ["node-a", "node-b"]
@@ -106,6 +109,11 @@ class AuditVerifierTests(unittest.TestCase):
         report = self.run_fixture(Fixture(source_gap=True))
         self.assertEqual(report["checks"]["continuity_cadvisor"]["status"], "FAIL")
         self.assertGreater(report["checks"]["continuity_cadvisor"]["max_source_sample_gap_seconds"], 180)
+
+    def test_http_200_query_errors_cannot_pass_empty_result_negative_checks(self):
+        report = self.run_fixture(Fixture(query_error=True))
+        for key in ["nonexistent_cluster", "nonexistent_environment", "duplicate_container_memory"]:
+            self.assertEqual(report["checks"][key]["status"], "FAIL")
 
 
 if __name__ == "__main__":
