@@ -3,6 +3,8 @@
   ansible.builtin.assert:
     that:
       - ansible_play_hosts_all | length == 1
+      - v5_acceptance_environment in ['sit', 'uat', 'prod']
+      - (cmdb_environment | default(verified_environment | default(''))) == v5_acceptance_environment
       - v5_acceptance_namespace | length > 0
       - v5_acceptance_database_pod | length > 0
       - v5_acceptance_database_user | length > 0
@@ -21,7 +23,7 @@
     cmd: files/observe.py
     executable: python3
   environment:
-    V5_ACCEPTANCE_CONFIG: "{{ {'namespace': v5_acceptance_namespace, 'pod': v5_acceptance_database_pod, 'db_user': v5_acceptance_database_user, 'db_name': v5_acceptance_database_name, 'machine_id': v5_acceptance_machine_id, 'schema': v5_acceptance_schema, 'expected_agents': v5_acceptance_expected_agents | int, 'gitops_sha': v5_acceptance_gitops_sha, 'source_name': v5_acceptance_source_name, 'source_namespace': v5_acceptance_source_namespace} | to_json }}"
+    V5_ACCEPTANCE_CONFIG: "{{ {'environment': v5_acceptance_environment, 'namespace': v5_acceptance_namespace, 'pod': v5_acceptance_database_pod, 'db_user': v5_acceptance_database_user, 'db_name': v5_acceptance_database_name, 'machine_id': v5_acceptance_machine_id, 'schema': v5_acceptance_schema, 'expected_agents': v5_acceptance_expected_agents | int, 'gitops_sha': v5_acceptance_gitops_sha, 'source_name': v5_acceptance_source_name, 'source_namespace': v5_acceptance_source_namespace} | to_json }}"
   register: v5_acceptance_observation
   changed_when: false
   failed_when: v5_acceptance_observation.rc != 0

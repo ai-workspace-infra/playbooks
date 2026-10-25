@@ -57,7 +57,8 @@ def assess_db(data, config):
         'V5-07': 'PARTIAL',
         'V5-08': 'PASS' if data['orphan_subscriptions'] == 0 else 'FAIL',
         'V5-10': 'PARTIAL' if data['positive_buckets_15m'] > 0 and data['bytes_15m'] > 0 else 'FAIL',
-        'V5-11': 'PASS' if data['fresh_agents'] == data['agent_count'] == config['expected_agents'] else 'FAIL',
+        # Population counts cannot establish exact declared Agent membership.
+        'V5-11': 'PARTIAL' if data['fresh_agents'] == data['agent_count'] == config['expected_agents'] else 'FAIL',
     }
 
 
@@ -85,7 +86,7 @@ def observe(config):
         checks['V5-13'] = {'status': 'FAIL', 'reason': 'Flux/ESO observation unavailable'}
     return {'schema_version': 'v5-readonly-observation/v1',
             'sampled_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            'machine_id': config['machine_id'], 'gitops_sha': config['gitops_sha'],
+            'environment': config['environment'], 'machine_id': config['machine_id'], 'gitops_sha': config['gitops_sha'],
             'checks': checks, 'result': 'FAIL'}
 
 

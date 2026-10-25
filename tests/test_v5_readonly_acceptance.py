@@ -16,7 +16,7 @@ def test_agents_require_full_expected_coverage():
     config = dict(schema='1', expected_agents=5)
     assert observe.assess_db(data, config)['V5-11'] == 'FAIL'
     data['fresh_agents'] = 5
-    assert observe.assess_db(data, config)['V5-11'] == 'PASS'
+    assert observe.assess_db(data, config)['V5-11'] == 'PARTIAL'
     data['agent_count'] = 6
     assert observe.assess_db(data, config)['V5-11'] == 'FAIL'
 
@@ -63,3 +63,9 @@ def test_eso_ready_uses_refresh_evidence_without_claiming_drift():
     assert not observe.ready(obj)
     obj['status']['refreshTime'] = '2026-10-25T09:00:00Z'
     assert observe.ready(obj)
+
+
+def test_environment_must_match_inventory_before_remote_execution():
+    tasks = yaml.safe_load((ROOT/'roles/v5_readonly_acceptance/tasks/main.yml').read_text())
+    rules = tasks[0]['ansible.builtin.assert']['that']
+    assert any('cmdb_environment' in rule and 'v5_acceptance_environment' in rule for rule in rules)
