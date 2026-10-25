@@ -119,6 +119,16 @@ def rewrite_queries(item, job):
     return item
 
 
+def node_p99_queries():
+    selector = '{job="node-exporter",' + SCOPE + '}'
+    idle = '{job="node-exporter",' + SCOPE + ',mode="idle"}'
+    cpu = '(100 * (1 - avg by(instance,cluster,environment)(rate(node_cpu_seconds_total' + idle + '[3m]))))'
+    memory = ('(100 * (1 - avg by(instance,cluster,environment)(node_memory_MemAvailable_bytes'
+              + selector + ' / node_memory_MemTotal_bytes' + selector + ')))')
+    return {'B': 'quantile_over_time(0.99,' + cpu + '[7d:5m])',
+            'C': 'quantile_over_time(0.99,' + memory + '[7d:5m])'}
+
+
 def adapt(model):
     uid = model['uid']
     _, job, base = HOSTS[uid]
@@ -141,6 +151,17 @@ def adapt(model):
         variable('cluster', 'label_values(' + base + '{job="' + job + '"},cluster)'),
         variable('environment', 'label_values(' + base + '{job="' + job + '",cluster=~"${cluster:regex}"},environment)'), *rest]
     for panel in walk_panels(result.get('panels', [])):
+        if uid == 'StarsL-JOB-node' and panel.get('id') == 200:
+            queries = node_p99_queries()
+            for target in panel.get('targets', []):
+                if target.get('refId') in queries:
+                    target['expr'] = queries[target['refId']]
+            panel['description'] = (
+                'P99 CPU/memory percentages are derived from raw node-exporter metrics, without recording rules. '
+                'CPU uses the idle-rate complement; memory uses 1 - MemAvailable/MemTotal. '
+                'The [7d:5m] subquery samples the available history within a seven-day window. '
+                'A newly collected node may have only minutes of history: this does not prove seven days of coverage. '
+                'Missing source metrics remain No data. Rows join by instance within the selected cluster/environment.')
         defaults = panel.get('fieldConfig', {}).get('defaults', {})
         if defaults.get('noValue') in (0, '0'):
             defaults['noValue'] = 'No data'

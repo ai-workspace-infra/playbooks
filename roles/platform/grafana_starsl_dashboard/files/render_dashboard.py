@@ -75,6 +75,15 @@ def variable(name, query, **extra):
             "includeAll": False, "multi": False, **extra}
 
 
+def untainted_node_count():
+    inventory = 'count by(cluster)(kube_node_info{' + SCOPE + '})'
+    tainted = ('count by(cluster)(count by(cluster,node)(kube_node_spec_taint{'
+               + SCOPE + ',key!~"node.kubernetes.io.*"}))')
+    # A zero baseline exists only where a real node inventory exists. Multiple
+    # taints on one node count once; no inventory still means No data.
+    return inventory + ' - (' + tainted + ' or on(cluster) (' + inventory + ' * 0))'
+
+
 def build(source):
     raw = Path(source).read_bytes()
     if hashlib.sha256(raw).hexdigest() != SOURCE_SHA256:
@@ -115,6 +124,29 @@ def build(source):
         defaults = panel.get("fieldConfig", {}).get("defaults", {})
         if "noValue" in defaults:
             defaults["noValue"] = "No data"
+        if panel.get("id") == 88:
+            for target in panel.get("targets", []):
+                if target.get("refId") == "B":
+                    target["expr"] = untainted_node_count()
+            panel["description"] = (
+                "Untainted-node count subtracts distinct nodes carrying non-system taints from the real node inventory. "
+                "Multiple taints on one node count once. No taints means all inventoried nodes are untainted; "
+                "missing node inventory stays No data. Taint-detail queries A/D stay empty when there are no matching taints.")
+        if panel.get("id") == 86:
+            panel["description"] = (
+                "Shows namespaces exceeding 0.5 CPU cores only. An empty result can mean none exceed the threshold; "
+                "confirm CPU collection/freshness separately. Empty is not a zero CPU measurement.")
+        if panel.get("id") == 85:
+            panel["description"] = (
+                "Shows namespaces whose working-set memory exceeds 1 GiB only. An empty result can mean none exceed "
+                "the threshold; confirm memory collection/freshness separately. Empty is not zero memory usage.")
+        if panel.get("id") in (47, 87):
+            refs = "J/S" if panel["id"] == 47 else "J/M"
+            panel["description"] = (
+                "Filesystem targets " + refs + " require per-application-container container_fs_usage_bytes / "
+                "container_fs_limit_bytes with pod/container labels. Current k3s/containerd telemetry does not provide "
+                "these selected series. These fields remain No data; node/root filesystem metrics do not substitute "
+                "for per-container usage or limits. No synthetic zero or additional collector permissions are used.")
         if panel.get("id") == 51:
             panel["description"] = (
                 "Only Pod/Service/workload metadata is collected. Secret/ConfigMap "

@@ -103,3 +103,14 @@ unsupported; do not create synthetic values.
 Rollback uses reviewed GitOps/Playbooks revert PRs to remove this Dashboard and
 its provider reference; retain the existing dashboards. No resource, database,
 credential, history, DNS or exporter rollback is part of this role.
+
+## Conditional panels
+
+Panel 88's untainted-node count subtracts distinct tainted nodes from actual
+inventory, using that inventory alone for the no-taint zero baseline. Multiple
+taints on one node count once; missing inventory stays absent. Taint details
+remain empty without matching taints. Namespace CPU >0.5 core and WSS >1 GiB
+panels intentionally show only threshold exceedances. Panels 47 J/S and 87 J/M
+retain real per-container filesystem queries and explain unavailable selected
+k3s/containerd series; root/node disk statistics and zero values do not replace
+missing container telemetry. No collector privileges change.

@@ -73,6 +73,28 @@ class StarslDashboardTest(unittest.TestCase):
                 for selector in re.finditer(r'container_network_[A-Za-z0-9_]+\{((?:\$\{[^}]+\}|[^{}])*)\}', expr):
                     self.assertNotIn('container!="POD"', selector.group(1))
 
+    def test_conditional_panels_keep_real_queries_and_explain_absence(self):
+        panels = {p['id']: p for p in module.panels(self.dashboard['panels'])}
+        count = next(t['expr'] for t in panels[88]['targets'] if t['refId'] == 'B')
+        self.assertEqual(count, module.untainted_node_count())
+        self.assertIn('count by(cluster,node)', count)
+        self.assertIn('or on(cluster)', count)
+        self.assertNotIn('vector(0)', count)
+        for ref in ('A', 'D'):
+            detail = next(t['expr'] for t in panels[88]['targets'] if t['refId'] == ref)
+            self.assertNotIn(' or ', detail)
+        self.assertIn('0.5 CPU', panels[86]['description'])
+        self.assertIn('1 GiB', panels[85]['description'])
+        self.assertTrue(panels[86]['targets'][0]['expr'].endswith('>0.5'))
+        self.assertTrue(panels[85]['targets'][0]['expr'].endswith('> 1*1024*1024*1024'))
+        for pid, refs in [(47, ('J', 'S')), (87, ('J', 'M'))]:
+            self.assertIn('k3s/containerd', panels[pid]['description'])
+            for ref in refs:
+                expr = next(t['expr'] for t in panels[pid]['targets'] if t['refId'] == ref)
+                self.assertIn('container_fs_', expr)
+                self.assertNotIn(' or ', expr)
+
+
     def test_legacy_output_matches_renderer(self):
         path = ROOT / "roles/docker/observability-server/files/starsl-k8s-dashboard.json"
         self.assertEqual(json.loads(path.read_text()), self.dashboard)

@@ -55,3 +55,9 @@ stats are conditional, not unconditional health. Container filesystem queries
 require compatible `id`/`device` labels. Partial process scrape errors and PSS
 visibility require explicit inspection. The current representative acceptance
 helper does not alone cover the full family/variable/target manifest.
+
+Node panel 200 derives P99 CPU/memory percentages from scoped raw metrics with
+`[7d:5m]` subqueries, preserving the instance join and requiring no recording
+rules. A seven-day window samples only available history; recent data does not
+prove seven-day continuity. The pinned disposable local VictoriaMetrics fixture
+verifies percentages and new-node behavior without production access.

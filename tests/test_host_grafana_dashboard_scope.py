@@ -121,6 +121,22 @@ class HostScope(unittest.TestCase):
         self.assertEqual(m.scope_query(result, 'node-exporter'), result)
 
 
+    def test_p99_raw_queries_do_not_require_recording_rules(self):
+        node = self.model('StarsL-JOB-node')
+        panel = next(p for p in m.walk_panels(node['panels']) if p['id'] == 200)
+        queries = {t['refId']: t['expr'] for t in panel['targets']}
+        for ref in ('B', 'C'):
+            self.assertEqual(queries[ref], m.node_p99_queries()[ref])
+            self.assertIn('[7d:5m]', queries[ref])
+            self.assertIn('instance,cluster,environment', queries[ref])
+            self.assertIn(m.SCOPE, queries[ref])
+        all_expr = ' '.join(t.get('expr', '') for p in m.walk_panels(node['panels']) for t in p.get('targets', []))
+        self.assertNotIn('cpu:', all_expr)
+        self.assertNotIn('mem:', all_expr)
+        self.assertIn('does not prove seven days', panel['description'])
+        self.assertEqual(panel['transformations'][0]['options']['byField'], 'instance')
+
+
     def test_manifest_all_targets_families_and_no_string_false_positive(self):
         models = [self.model(uid) for uid in m.HOSTS]
         models.append(json.loads((ROOT / 'roles/docker/observability-server/files/starsl-k8s-dashboard.json').read_text()))
