@@ -124,7 +124,7 @@ GET-only queries verify all original 17 Dashboard UIDs plus StarsL, its variable
 model, KSM inventory exactly against the externally expected node set, and
 node/process/kubelet/cAdvisor `up` coverage against that same external set,
 representative metrics and freshness, the absent-cluster negative case,
-duplicate/noncanonical container-memory series, process scrape errors, and
+duplicate/noncanonical working-set, CPU and RSS series, process scrape errors, and
 three original K3s overview queries. Signals and thirty-minute continuity bind
 KSM to `job="kube-state-metrics"`, Node to `job="node-exporter"`, Process to
 `job="process-exporter"`, and cAdvisor to `job="cadvisor"`. cAdvisor CPU/memory
@@ -133,6 +133,26 @@ with the same metric name cannot stand in for cAdvisor. Every expected node
 must have a qualifying range series, coverage and source-sample gap; missing
 nodes cannot disappear from a minimum over only returned series. Scrape `up`
 freshness is checked as well as its value.
+
+The VM active-target GET endpoint is reduced to counts, health, freshness and
+per-node coverage for the exact cluster/environment. URLs, discovered labels
+and raw error text never enter evidence. Duplicate same-node targets are
+reported even when the backend would merge identical series. Unavailable target-list capability is NOT_RUN, never healthy zero. An
+empty or incomplete scoped list is FAIL: the target deployment uses VM
+`-promscrape.config` as the canonical scraper for these five jobs. VM target
+metadata cannot establish completeness for an unrelated external scraper;
+such a deployment needs its own target evidence. `up` and source-series checks
+remain independently mandatory.
+
+Container duplicate/noncanonical checks use samples no older than 45 seconds,
+non-empty namespace/pod/container and exclude `POD`; they retain CPU's `cpu`
+dimension so legitimate per-CPU series do not count as duplicates. They inspect
+all jobs to detect cross-collector overlap. Noncanonical-job checks deliberately
+retain all label shapes, including old OTel series without raw cAdvisor labels. Network sandbox and host-total
+semantics are untouched. Each verified node must report positive process
+counts. Fresh process partial/procread errors are reported as NOT_RUN coverage
+limitations when nonzero or missing; expected nonroot restrictions are never
+relabeled as full-visibility PASS, and no extra host permissions are granted.
 
 PVC metrics remain explicitly NOT_RUN until actual volume-plugin applicability
 is established; missing metrics are never reported as healthy zero. New agent

@@ -111,6 +111,52 @@ def scan_alert_dependencies(get, permissions, grafana_version=""):
                        else "Viewer rule visibility/completeness not established; no administrator fallback")}
 
 
+def summarize_targets(code, payload, cluster, environment, expected_nodes, now=None):
+    """Reduce target metadata immediately; never retain URLs, labels or errors."""
+    now = time.time() if now is None else now
+    data = payload.get("data") if isinstance(payload, dict) else None
+    targets = data.get("activeTargets") if isinstance(data, dict) else None
+    if code != 200 or not isinstance(payload, dict) or payload.get("status") != "success" or not isinstance(targets, list):
+        return {"status": "NOT_RUN", "http_status": code,
+                "reason": "VM active-target capability unavailable or invalid; empty targets not assumed"}
+    jobs = ["node-exporter", "process-exporter", "kube-state-metrics", "kubelet", "cadvisor"]
+    scoped = [target for target in targets if isinstance(target, dict) and isinstance(target.get("labels"), dict)
+              and target["labels"].get("cluster") == cluster and target["labels"].get("environment") == environment
+              and target["labels"].get("job") in jobs]
+    malformed = sum(not isinstance(target, dict) or not isinstance(target.get("labels"), dict) for target in targets)
+    summaries = {}
+    for job in jobs:
+        selected = []
+        for target in scoped:
+            labels = target["labels"]
+            if labels.get("cluster") == cluster and labels.get("environment") == environment and labels.get("job") == job:
+                selected.append(target)
+        counts = {}
+        healthy = fresh = 0
+        for target in selected:
+            node = target["labels"].get("node", "")
+            counts[node] = counts.get(node, 0) + 1
+            healthy += target.get("health") == "up" and target.get("lastError", "") == ""
+            try:
+                stamp = datetime.datetime.fromisoformat(target["lastScrape"].replace("Z", "+00:00"))
+                age = now - stamp.timestamp()
+                fresh += 0 <= age <= 180
+            except (KeyError, TypeError, ValueError, AttributeError):
+                pass
+        expected_count = 1 if job == "kube-state-metrics" else len(expected_nodes)
+        nodes_ok = job == "kube-state-metrics" or set(counts) == expected_nodes
+        duplicates = sum(max(0, count - 1) for count in counts.values())
+        ok = len(selected) == expected_count and healthy == expected_count and fresh == expected_count and nodes_ok and not duplicates
+        summaries[job] = {"status": "PASS" if ok else "FAIL", "active_count": len(selected),
+                          "expected_count": expected_count, "healthy_count": healthy, "fresh_count": fresh,
+                          "duplicate_node_target_count": duplicates,
+                          "missing_node_count": 0 if job == "kube-state-metrics" else len(expected_nodes - set(counts)),
+                          "unexpected_node_count": 0 if job == "kube-state-metrics" else len(set(counts) - expected_nodes)}
+    return {"status": "PASS" if not malformed and all(v["status"] == "PASS" for v in summaries.values()) else "FAIL",
+            "http_status": code, "jobs": summaries, "malformed_target_count": malformed,
+            "scope": "Exact caller cluster/environment and externally verified node set; target content discarded"}
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *_args, **_kwargs):
         return None
@@ -219,7 +265,8 @@ def verify(args, token, expected_identity):
                "process_groups": ("namedprocess_namegroup_num_procs", "process-exporter"),
                "process_cpu": ("namedprocess_namegroup_cpu_seconds_total", "process-exporter"),
                "cadvisor_cpu": ("container_cpu_usage_seconds_total", "cadvisor"),
-               "cadvisor_memory": ("container_memory_working_set_bytes", "cadvisor")}
+               "cadvisor_memory": ("container_memory_working_set_bytes", "cadvisor"),
+               "cadvisor_rss": ("container_memory_rss", "cadvisor")}
     expected_nodes = set(getattr(args, "expected_node", []) or [])
     if not expected_nodes:
         checks["external_node_inventory"] = {"status": "NOT_RUN", "reason": "Separately verified expected-node input is required"}
@@ -241,6 +288,9 @@ def verify(args, token, expected_identity):
         if code == 200 and payload.get("status") != "success":
             return 0, {"error": "prometheus_query_not_successful"}
         return code, payload
+
+    code, payload = get(proxy + "targets?state=active")
+    checks["active_targets"] = summarize_targets(code, payload, args.cluster, args.environment, expected_nodes)
 
     code, payload = query(selector("kube_node_info", "kube-state-metrics"))
     result = payload.get("data", {}).get("result", [])
@@ -285,17 +335,43 @@ def verify(args, token, expected_identity):
     code, payload = query("kube_node_info{cluster=" + json.dumps(args.cluster) + ',environment="__invalid_env__"}')
     result = payload.get("data", {}).get("result", [])
     checks["nonexistent_environment"] = {"status": "PASS" if code == 200 and not result else "FAIL", "http_status": code}
-    code, payload = query("count by(node,namespace,pod,container)(container_memory_working_set_bytes{" + scope + ',container!=""}) > 1')
-    result = payload.get("data", {}).get("result", [])
-    checks["duplicate_container_memory"] = {"status": "PASS" if code == 200 and not result else "FAIL", "duplicate_count": len(result)}
-    code, payload = query('container_memory_working_set_bytes{' + scope + ',job!="cadvisor"}')
-    result = payload.get("data", {}).get("result", [])
-    checks["noncanonical_container_memory"] = {"status": "PASS" if code == 200 and not result else "FAIL",
-                                                "noncanonical_series_count": len(result)}
-    code, payload = query("max(" + selector("namedprocess_scrape_errors", "process-exporter") + ")")
-    result = payload.get("data", {}).get("result", [])
-    value = float(result[0]["value"][1]) if code == 200 and result else None
-    checks["process_scrape_errors"] = {"status": "PASS" if value == 0 else "FAIL", "value": value}
+    # A recent-sample predicate excludes old OTel samples still within VM lookback.
+    # CPU's cpu dimension is intentional: separate per-CPU series are not duplicates.
+    application = ',namespace!="",pod!="",container!="",container!="POD"'
+    for key, metric in [("memory", "container_memory_working_set_bytes"),
+                        ("cpu", "container_cpu_usage_seconds_total"), ("rss", "container_memory_rss")]:
+        raw = metric + "{" + scope + application + "}"
+        recent = raw + " and (time() - timestamp(" + raw + ") <= 45)"
+        grouping = "node,namespace,pod,container" + (",cpu" if key == "cpu" else "")
+        code, payload = query("count by(" + grouping + ")(" + recent + ") > 1")
+        rows = payload.get("data", {}).get("result", [])
+        checks["duplicate_container_" + key] = {"status": "PASS" if code == 200 and not rows else "FAIL",
+                                                "http_status": code, "duplicate_count": len(rows), "sample_max_age_seconds": 45}
+        noncanonical = metric + "{" + scope + ',job!="cadvisor"}'
+        code, payload = query(noncanonical + " and (time() - timestamp(" + noncanonical + ") <= 45)")
+        rows = payload.get("data", {}).get("result", [])
+        checks["noncanonical_container_" + key] = {"status": "PASS" if code == 200 and not rows else "FAIL",
+                                                   "http_status": code, "noncanonical_series_count": len(rows),
+                                                   "sample_max_age_seconds": 45}
+    for key, metric in [("process_scrape_errors", "namedprocess_scrape_errors"),
+                        ("process_partial_errors", "namedprocess_scrape_partial_errors"),
+                        ("process_procread_errors", "namedprocess_scrape_procread_errors"),
+                        ("process_positive_process_count", "namedprocess_namegroup_num_procs")]:
+        process = selector(metric, "process-exporter")
+        code, payload = query("sum by(node)(" + process + " and (time() - timestamp(" + process + ") <= 45))")
+        rows = payload.get("data", {}).get("result", [])
+        values = {row.get("metric", {}).get("node"): float(row["value"][1]) for row in rows} if code == 200 else {}
+        covered = set(values) == expected_nodes
+        positive = key == "process_positive_process_count"
+        valid = covered and all(value > 0 if positive else value == 0 for value in values.values())
+        partial = key in ["process_partial_errors", "process_procread_errors"]
+        checks[key] = {"status": "PASS" if valid else "NOT_RUN" if partial else "FAIL",
+                       "http_status": code, "reporting_node_count": len(values),
+                       "missing_node_count": len(expected_nodes - set(values)),
+                       "unexpected_node_count": len(set(values) - expected_nodes),
+                       "total": sum(values.values()) if values else None,
+                       "reason": ("Nonroot proc visibility limitation or missing evidence; full process coverage unverified"
+                                  if partial and not valid else "Per-node process evidence; no permission expansion")}
     code, overview = get("/api/dashboards/uid/web-saas-k3s-v5-overview")
     candidates = [target.get("expr") for panel in overview.get("dashboard", {}).get("panels", [])
                   for target in panel.get("targets", []) if target.get("expr")][:3]
