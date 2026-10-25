@@ -45,7 +45,8 @@ def recover_forward_requested(plan, recover_forward=False):
         raise ValueError("forward recovery requires matching explicit CLI option and boolean plan marker")
     if recover_forward and (plan.get("rollback", False)
             or not isinstance(plan.get("recovery_reason"), str)
-            or not 1 <= len(plan["recovery_reason"].strip()) <= 300
+            or not 1 <= len(plan["recovery_reason"]) <= 300
+            or not plan["recovery_reason"].strip()
             or any(c in plan["recovery_reason"] for c in "\r\n")):
         raise ValueError("forward recovery requires a bounded reason and excludes rollback")
     return recover_forward

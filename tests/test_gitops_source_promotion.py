@@ -226,7 +226,8 @@ class SourceOwnerTest(unittest.TestCase):
 
     def test_recover_forward_requires_attestation_reason_and_no_rollback(self):
         for values in ({"recover_forward_ancestor_verified": False}, {"recovery_reason": ""},
-                       {"recovery_reason": "line\nbreak"}, {"recover_forward": "true"},
+                       {"recovery_reason": "line\nbreak"}, {"recovery_reason": " " * 301 + "repair"},
+                       {"recovery_reason": "   "}, {"recover_forward": "true"},
                        {"rollback": True, "rollback_ancestor_verified": True, "rollback_reason": "previous"}):
             c, client = self.forward_recovery_case()
             c.update(values)
