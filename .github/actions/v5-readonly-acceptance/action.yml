@@ -1,0 +1,33 @@
+name: V5 SSH Playbook Role acceptance
+description: Run the same read-only owner Playbook and automatically produce Markdown JUnit and sanitized evidence.
+inputs:
+  plan:
+    description: Exact single-target nonsecret owner plan from verified migration context.
+    required: true
+  cmdb:
+    description: Authoritative CMDB artifact bound to the parent infrastructure run.
+    required: true
+  evidence-dir:
+    description: New controller evidence directory.
+    required: true
+  ssh-key-b64:
+    description: Runtime Vault SSH key; loaded into an ephemeral agent without a key file.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.14'
+    - name: Install verified isolated controller version
+      shell: bash
+      run: python3 -m pip install ansible-core==2.21.3
+    - name: Execute SSH Playbook Role owner adapter
+      shell: bash
+      env:
+        V5_OWNER_PLAN: ${{ inputs.plan }}
+        V5_CMDB_FILE: ${{ inputs.cmdb }}
+        V5_EVIDENCE_DIR: ${{ inputs.evidence-dir }}
+        V5_SSH_KEY_B64: ${{ inputs.ssh-key-b64 }}
+        V5_OWNER_SCRIPT: ${{ github.action_path }}/../../scripts/run-v5-acceptance.py
+      run: python3 "$V5_OWNER_SCRIPT"

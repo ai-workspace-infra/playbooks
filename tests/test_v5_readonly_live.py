@@ -31,6 +31,8 @@ def test_real_role_fails_closed(live_inputs, case):
     observation = evidence / (case + '.json')
     assert not observation.exists(), 'do not reuse a prior observation'
     variables['v5_acceptance_output'] = str(observation)
+    variables['v5_acceptance_report_dir'] = str(evidence/(case+'-report'))
+    variables['v5_acceptance_run_id'] += '-'+case
     if case == 'wrong-machine': variables['v5_acceptance_machine_id'] = '0'*32
     if case == 'wrong-environment': variables['v5_acceptance_environment'] = 'uat'
     if case == 'wrong-sha': variables['v5_acceptance_gitops_sha'] = '0'*40
@@ -42,14 +44,20 @@ def test_real_role_fails_closed(live_inputs, case):
     (evidence/(case+'.log')).write_text(result.stdout + result.stderr)
     assert result.returncode == 2, 'expected explicit gate failure, not transport/tool failure or false success'
     if case == 'wrong-environment':
-        assert not observation.exists(), 'environment mismatch must block before execution'
+        assert observation.exists(), 'rejected preflight still needs bounded failure evidence'
+        assert json.loads(observation.read_text())['checks'] == {}
+        assert (Path(variables['v5_acceptance_report_dir'])/'report.zh.md').is_file()
         assert 'Run read-only K3s and database observations over SSH' not in result.stdout
         return
     data = json.loads(observation.read_text())
+    report = Path(variables['v5_acceptance_report_dir'])
+    assert (report/'report.zh.md').is_file()
+    assert (report/'junit.xml').is_file()
+    assert json.loads((report/'evidence.json').read_text())['result'] == 'FAIL'
     assert data['result'] == 'FAIL'
     if case == 'wrong-machine':
         assert data['checks'] == {}
-        assert data['reason'] == 'invalid configuration or machine identity'
+        assert data.get('reason') in (None, 'invalid configuration or machine identity')
     elif case == 'wrong-sha':
         assert data['checks']['V5-13']['status'] == 'FAIL'
         assert data['checks']['V5-13']['observation']['source_revision'].split(':')[-1] != '0'*40

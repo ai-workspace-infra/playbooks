@@ -72,3 +72,33 @@ readiness PARTIAL, while the overall incomplete 23-suite acceptance stays FAIL.
 Four green pytest cases prove rejection/evidence behavior; they do not mean
 four green business suites or successful migration. Live validation does not
 replace UAT clean rebuild/idempotency/restore evidence.
+
+## Automatic human/AI report and existing data-orchestrator matrix
+
+Supply four additional nonsecret reporting variables: `v5_acceptance_run_id`,
+`v5_acceptance_owner_sha` (full commit), `v5_acceptance_host_id` (cloud instance
+ID), and an absolute **new empty** `v5_acceptance_report_dir`. The Role always
+writes `report.zh.md`, `evidence.json`, `junit.xml`, and `manifest.json` after
+scope/observation rejection as well as normal sampling. Invalid reporting
+identity or unusable output itself blocks before execution. Missing, PARTIAL,
+SKIPPED and NOT_RUN suites are JUnit failures, not passing skips. Projection is
+allowlisted; arbitrary raw fields/reasons/secret-like payloads are excluded.
+The report labels requested scope separately from verified scope. Failure at
+transport or preflight retains bounded evidence, then the final gate fails.
+
+The composite action `.github/actions/v5-readonly-acceptance` calls the same
+entry Playbook via the owner adapter. It checks actual owner checkout SHA,
+exact authoritative CMDB instance/environment, strict provided known_hosts,
+and uses an ephemeral SSH agent fed via stdin rather than writing the private
+key. It never provisions, migrates, switches writers or updates DNS.
+Controller runtime is pinned to Python 3.14 / ansible-core 2.21.3; Actions
+execution remains pending owner review, valid infrastructure artifact, Vault
+allowlist and UAT verification.
+
+The only consumer integration is Toolkit's existing
+`.github/workflows/environment-data-operations.yml`, optional
+`post_migration_v5` host matrix following a successful selected data operation.
+No new workflow is introduced. Do not infer that the new action is present in
+an older Playbooks SHA: the submitted plan must select the reviewed commit
+containing this owner implementation. The matrix may archive a failed report;
+that artifact upload never changes the failed acceptance into PASS.
