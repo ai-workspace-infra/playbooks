@@ -76,11 +76,31 @@ are management mutation targets.
 
 ## Audit phase and evidence
 
-The token's actual `/api/user` ID/org must match the separately verified Viewer
-service account and not be a Grafana administrator. Permissions are then read
+The token's actual `/api/user` login/name/org must match the separately verified
+Viewer service account and `isGrafanaAdmin` must be false. Legacy positive user
+IDs must match the service-account ID; the observed Grafana 13 DTO with `id: 0`
+is accepted only with exact `uid: service-account:<expected-id>`. A conflicting
+service-account UID is rejected even when a numeric ID matches. The verified
+management role remains Viewer; null role in the user DTO does not remove this
+requirement. Permissions are then read
 through `/api/access-control/user/permissions`; write/create/delete/admin
 actions block further queries. Missing permission introspection is NOT_RUN,
 not proof of isolation. No real production write/DELETE denial probe occurs.
+
+Within the same Viewer token lifecycle, GET requests inspect Grafana-managed
+rule configuration via `/api/ruler/grafana/api/v1/rules` and, if allowed,
+`/api/v1/provisioning/alert-rules`. Only rule UID, expression hashes and matched
+container metric/legacy resource-label names enter evidence. Rule/annotation
+text is not persisted. OTel-specific metric/label candidates block pending
+review; shared container metrics remain NOT_RUN until actual old/new metric-set
+comparison. No permissions or identities are expanded for a forbidden endpoint.
+
+A valid response alone does not establish full rule visibility. Complete
+Ruler scope requires all-folder rule/folder reads and all-datasource query
+permissions; provisioning completeness requires the dedicated provisioning
+read action. Unknown or partial visibility, unsupported schemas and forbidden
+reads remain NOT_RUN, never zero rules or proof of no dependency. This check is
+limited to Grafana-managed rules, not arbitrary external alerting systems.
 
 GET-only queries verify all original 17 Dashboard UIDs plus StarsL, its variable
 model, all actual KSM nodes against node/process/kubelet/cAdvisor `up` coverage,
@@ -104,6 +124,8 @@ uses fake HTTP/CLI responses only, covering creation/reuse/collision, finite
 TTL, timeout recovery, audit exceptions, token cleanup failure, preservation
 of other tokens, credential redaction, permission blocking, node coverage and
 source-sample gaps. Run the playbook syntax check before use.
+Additional tests cover the observed service-account DTO, mismatched identities,
+forbidden/partial/malformed rule reads, and expression redaction.
 
 Rollback of this owner is a focused PR revert. Its runtime cleanup is token
 revocation, not a service restart, account deletion, database/DNS change or

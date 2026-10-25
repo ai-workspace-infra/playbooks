@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Bounded GET-only StarsL/exporter checks, using an explicit Viewer identity."""
 import datetime
+import hashlib
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -15,6 +17,85 @@ EXPECTED_UIDS = {
     "xconnect-comprehensive", "xconnect-user-connection-diagnostics", "xhttp-edge-reliability",
     "web-saas-k3s-v5-overview", "StarsL_cn_K8S",
 }
+
+
+def scan_alert_dependencies(get, permissions):
+    """Read only rule configuration; never retain expression/annotation text."""
+    endpoints = [("ruler", "/api/ruler/grafana/api/v1/rules"),
+                 ("provisioning", "/api/v1/provisioning/alert-rules")]
+    sources, summaries = [], []
+    for source, path in endpoints:
+        code, payload = get(path)
+        parsed, rules = True, []
+        try:
+            if code != 200:
+                raise ValueError("unavailable")
+            if source == "provisioning":
+                if not isinstance(payload, list):
+                    raise ValueError("unexpected_schema")
+                rules = payload
+            else:
+                if not isinstance(payload, dict) or "error" in payload or "message" in payload:
+                    raise ValueError("unexpected_schema")
+                for groups in payload.values():
+                    if not isinstance(groups, list):
+                        raise ValueError("unexpected_groups")
+                    for group in groups:
+                        if not isinstance(group, dict) or not isinstance(group.get("rules"), list):
+                            raise ValueError("unexpected_rules")
+                        rules.extend(group["rules"])
+            for item in rules:
+                if not isinstance(item, dict):
+                    raise ValueError("unexpected_rule")
+                rule = item.get("grafana_alert", item)
+                uid = rule.get("uid")
+                if not isinstance(uid, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", uid):
+                    raise ValueError("missing_rule_uid")
+                expressions = []
+                if isinstance(item.get("expr"), str) and item["expr"].strip():
+                    expressions.append(item["expr"])
+                for entry in rule.get("data", []):
+                    model = entry.get("model", {})
+                    for key in ["expr", "expression", "query"]:
+                        value = model.get(key)
+                        if isinstance(value, str) and value.strip():
+                            expressions.append(value)
+                if not expressions:
+                    raise ValueError("rule_expression_unavailable")
+                joined = "\n".join(expressions)
+                metrics = sorted(set(re.findall(r"\bcontainer_[A-Za-z0-9_:]+", joined)))
+                labels = sorted(set(re.findall(r"\bk8s_(?:namespace_name|pod_name|container_name|node_name)\b", joined)))
+                if re.search(r'\bjob\s*=~?\s*"[^"\n]*otel[^"\n]*"', joined):
+                    labels.append("job_otel_selector")
+                possible_unique = [metric for metric in metrics if re.match(
+                    r"container_(?:cpu_(?:time|utilization)|filesystem_|memory_(?:available|rss_bytes|page_faults|major_page_faults))", metric)]
+                dynamic = bool(re.search(r'__name__\s*=~\s*"[^"\n]*container_', joined))
+                summaries.append({"source": source, "rule_uid": uid,
+                                  "expr_sha256": sorted({hashlib.sha256(expr.encode()).hexdigest() for expr in expressions}),
+                                  "metric_matches": metrics, "label_matches": labels,
+                                  "dependency_candidate": bool(possible_unique or dynamic or (metrics and labels)),
+                                  "shared_metric_review": bool(metrics and not possible_unique and not labels)})
+        except (ValueError, KeyError, TypeError, AttributeError):
+            parsed = False
+        sources.append({"source": source, "http_status": code, "parsed": parsed,
+                        "visible_rule_count": len(rules) if parsed else None})
+    def global_scope(action, allowed):
+        return any(scope in allowed for scope in permissions.get(action, []))
+    ruler_complete = (global_scope("alert.rules:read", {"*", "folders:*", "folders:uid:*"})
+                      and global_scope("folders:read", {"*", "folders:*", "folders:uid:*"})
+                      and global_scope("datasources:query", {"*", "datasources:*", "datasources:uid:*"}))
+    provisioning_complete = bool(permissions.get("alert.rules.provisioning:read") or permissions.get("alert.provisioning:read"))
+    complete = any(source["http_status"] == 200 and source["parsed"]
+                   and (ruler_complete if source["source"] == "ruler" else provisioning_complete)
+                   for source in sources)
+    dependencies = any(item["dependency_candidate"] for item in summaries)
+    shared_review = any(item["shared_metric_review"] for item in summaries)
+    return {"status": "FAIL" if dependencies else "PASS" if complete and not shared_review else "NOT_RUN",
+            "scope_completeness_verified": complete, "sources": sources, "rules": summaries,
+            "reason": ("OTel container metric/label dependency candidate requires review" if dependencies
+                       else "Shared container metrics require actual old/new metric-set comparison" if shared_review
+                       else "Full permitted rule scope scanned with no container dependency matches" if complete
+                       else "Viewer rule visibility/completeness not established; no administrator fallback")}
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -68,12 +149,26 @@ def verify(args, token, expected_identity):
         checks["live_queries"] = {"status": "NOT_RUN", "reason": "Do not substitute administrator credentials"}
         return save()
     code, user = get("/api/user")
-    viewer = (code == 200 and not user.get("isGrafanaAdmin", True)
-              and user.get("id") == expected_identity["id"]
-              and user.get("orgId") == expected_identity["orgId"]
+    expected_id = expected_identity["id"]
+    expected_uid = "service-account:" + str(expected_id)
+    user_uid = user.get("uid", "")
+    numeric_id_matches = type(user.get("id")) is int and user.get("id") == expected_id
+    service_account_uid_matches = (type(user.get("id")) is int and user.get("id") == 0
+                                   and user_uid == expected_uid)
+    conflicting_sa_uid = isinstance(user_uid, str) and user_uid.startswith("service-account:") and not service_account_uid_matches
+    login_matches = bool(expected_identity.get("login")) and user.get("login") == expected_identity["login"]
+    name_matches = bool(expected_identity.get("name")) and user.get("name") == expected_identity["name"]
+    org_matches = user.get("orgId") == expected_identity["orgId"]
+    viewer = (code == 200 and type(expected_id) is int and expected_id > 0
+              and user.get("isGrafanaAdmin") is False
+              and (numeric_id_matches or service_account_uid_matches) and not conflicting_sa_uid
+              and login_matches and name_matches and org_matches
               and expected_identity["role"] == "Viewer")
     checks["viewer_identity"] = {"status": "PASS" if viewer else "FAIL",
                                   "http_status": code, "service_account_id": user.get("id"),
+                                  "numeric_id_matches": numeric_id_matches,
+                                  "service_account_uid_matches": service_account_uid_matches,
+                                  "login_matches": login_matches, "name_matches": name_matches, "org_matches": org_matches,
                                   "reason": "Token identity matches the separately verified Viewer service account"}
     if not viewer:
         checks["live_queries"] = {"status": "NOT_RUN", "reason": "Strict Viewer role not verified"}
@@ -90,6 +185,7 @@ def verify(args, token, expected_identity):
         "reason": "Permission introspection only; no production write/denial operation attempted"}
     if forbidden or (code == 200 and not valid_permissions):
         return save()
+    checks["alert_rule_dependencies"] = scan_alert_dependencies(get, permissions if valid_permissions else {})
     code, search = get("/api/search?type=dash-db&limit=1000")
     uids = {item.get("uid") for item in search if item.get("type") == "dash-db"} if isinstance(search, list) else set()
     checks["dashboard_count"] = {"status": "PASS" if code == 200 and EXPECTED_UIDS <= uids else "FAIL",
