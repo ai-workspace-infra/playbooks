@@ -1,0 +1,29 @@
+---
+- name: Validate explicit controller-only render paths
+  ansible.builtin.assert:
+    that:
+      - host_dashboard_scope_playbooks_root is match('^/')
+      - host_dashboard_scope_gitops_root == '' or host_dashboard_scope_gitops_root is match('^/')
+      - host_dashboard_scope_manifest == '' or host_dashboard_scope_manifest is match('^/')
+    fail_msg: Use absolute local worktree and optional manifest output paths.
+
+- name: Plan or render scoped host Dashboards locally
+  ansible.builtin.command:
+    argv: >-
+      {{ [ansible_playbook_python, role_path ~ '/files/render_dashboards.py',
+          '--playbooks-root', host_dashboard_scope_playbooks_root]
+         + (['--gitops-root', host_dashboard_scope_gitops_root] if host_dashboard_scope_gitops_root else [])
+         + (['--manifest', host_dashboard_scope_manifest] if host_dashboard_scope_manifest else [])
+         + (['--apply'] if (host_dashboard_scope_apply | bool and not ansible_check_mode) else []) }}
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  register: host_dashboard_scope_render
+  changed_when: >-
+    (host_dashboard_scope_apply | bool and not ansible_check_mode)
+    and (host_dashboard_scope_render.stdout | from_json).changed_files | length > 0
+
+- name: Report local render plan
+  ansible.builtin.debug:
+    msg: "{{ host_dashboard_scope_render.stdout | from_json }}"
