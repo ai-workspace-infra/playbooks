@@ -141,7 +141,7 @@ def execute(manifest, args, get, clock=time.monotonic):
             if var.get('type') == 'datasource':
                 values[name] = args.datasource_uid
                 continue
-            if var.get('type') == 'custom' and name == 'interval' and var.get('query') == '3m':
+            if var.get('type') in ('custom', 'interval') and name == 'interval' and var.get('query') == '3m':
                 values[name] = '3m'
                 continue
             if var.get('type') != 'query':

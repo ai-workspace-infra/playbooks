@@ -118,6 +118,20 @@ class ViewerManifest(unittest.TestCase):
         with self.assertRaises(ValueError):
             m.expand('${cluster:raw}', {'cluster': value})
 
+    def test_actual_interval_type_and_query_result_variables(self):
+        for model, plan in zip(self.models.values(), self.plan['dashboards']):
+            model['templating']['list'].insert(0, {'name': 'interval', 'type': 'interval', 'query': '3m'})
+            query = 'query_result(count(node_uname_info{cluster="test.cluster",environment="uat"}))'
+            model['templating']['list'].append({'name': 'total', 'type': 'query', 'query': query})
+            plan['variables_in_order'].append({'name': 'total', 'query': query})
+            expr = 'rate(node_cpu_seconds_total{cluster=~"${cluster:regex}",environment=~"${environment:regex}"}[$interval])'
+            model['panels'][0]['targets'][0]['expr'] = expr
+            plan['targets'][0]['expr'] = expr
+        result = self.run_manifest()
+        self.assertEqual(result['status'], 'PASS')
+        self.assertEqual(result['query_count'], 12)
+
+
     def test_legacy_unscoped_query_and_dropped_metric_never_pass(self):
         for model, plan in zip(self.models.values(), self.plan['dashboards']):
             expr = 'sum(node_cpu_seconds_total{instance=~"$instance"})'
