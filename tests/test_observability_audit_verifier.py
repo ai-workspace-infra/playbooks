@@ -30,7 +30,8 @@ class Response:
 class Fixture:
     def __init__(self, write=False, missing_node=False, source_gap=False, query_error=False,
                  user_overrides=None, cadvisor_absent=False, missing_range_node=False,
-                 ksm_node_change=None):
+                 ksm_node_change=None, targets_mode=None, process_partial=False, process_zero=False,
+                 duplicate_metric=None):
         self.calls = []
         self.write, self.missing_node, self.source_gap = write, missing_node, source_gap
         self.query_error = query_error
@@ -38,6 +39,8 @@ class Fixture:
         self.cadvisor_absent = cadvisor_absent
         self.missing_range_node = missing_range_node
         self.ksm_node_change = ksm_node_change
+        self.targets_mode, self.process_partial, self.process_zero = targets_mode, process_partial, process_zero
+        self.duplicate_metric = duplicate_metric
     def open(self, request, timeout):
         self.calls.append(request)
         assert request.get_method() == "GET"
@@ -65,6 +68,25 @@ class Fixture:
         if path.endswith("/web-saas-k3s-v5-overview"):
             return Response({"dashboard": {"panels": [{"targets": [{"expr": name + '{cluster="$cluster",environment="$environment"}'}]}
                                                       for name in ["k8s_node_cpu_utilization_ratio", "k8s_node_memory_working_set_bytes", "container_memory_working_set_bytes"]]}})
+        if path.endswith("/targets"):
+            if self.targets_mode == "forbidden":
+                raise urllib.error.HTTPError(request.full_url, 403, "Forbidden", {}, None)
+            targets = []
+            for job in ["node-exporter", "process-exporter", "kube-state-metrics", "kubelet", "cadvisor"]:
+                for node in ([""] if job == "kube-state-metrics" else ["node-a", "node-b"]):
+                    targets.append({"labels": {"cluster": "cluster-fixture", "environment": "prod", "job": job, "node": node},
+                                    "health": "up", "lastError": "", "lastScrape": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                    "scrapeUrl": "https://sensitive-sentinel:credential@target/metrics",
+                                    "discoveredLabels": {"credential": "sensitive-sentinel"}})
+            if self.targets_mode == "duplicate":
+                targets.append(targets[0])
+            if self.targets_mode == "down":
+                targets[0]["health"], targets[0]["lastError"] = "down", "sensitive-sentinel"
+            if self.targets_mode == "stale":
+                targets[0]["lastScrape"] = "2020-01-01T00:00:00Z"
+            if self.targets_mode == "wrong_node":
+                targets[0]["labels"]["node"] = "unknown-node"
+            return Response({"status": "success", "data": {"activeTargets": [] if self.targets_mode == "empty" else targets}})
         parameters = urllib.parse.parse_qs(urllib.parse.urlsplit(request.full_url).query)
         expr = parameters["query"][0]
         if self.query_error:
@@ -80,6 +102,15 @@ class Fixture:
             nodes = ["node-a"] if self.missing_range_node and 'job="cadvisor"' in expr else ["node-a", "node-b"]
             result = [{"metric": {"node": node}, "values": [[stamp, str(stamp)] for stamp in stamps]}
                       for node in nodes]
+        elif expr.startswith("sum by(node)(namedprocess_"):
+            value = "3" if "num_procs" in expr else "0"
+            if self.process_partial and "partial_errors" in expr:
+                value = "15"
+            if self.process_zero and "num_procs" in expr:
+                value = "0"
+            result = [{"metric": {"node": node}, "value": [time.time(), value]} for node in ["node-a", "node-b"]]
+        elif self.duplicate_metric and self.duplicate_metric in expr and " > 1" in expr:
+            result = [{"metric": {"node": "node-a"}, "value": [time.time(), "2"]}]
         elif "__nonexistent_obs_probe__" in expr or "__invalid_env__" in expr or " > 1" in expr or 'job!="cadvisor"' in expr:
             result = []
         elif expr.startswith("kube_node_info{") or (expr.startswith("up{") and " == 1" in expr):
@@ -191,6 +222,40 @@ class AuditVerifierTests(unittest.TestCase):
         report = self.run_fixture(Fixture(), expected_nodes=[])
         self.assertEqual(report["checks"]["external_node_inventory"]["status"], "NOT_RUN")
         self.assertNotIn("continuity_cadvisor", report["checks"])
+
+    def test_active_targets_detect_duplicates_down_stale_and_wrong_nodes_without_retaining_content(self):
+        for mode in ["duplicate", "down", "stale", "wrong_node"]:
+            with self.subTest(mode=mode):
+                report = self.run_fixture(Fixture(targets_mode=mode))
+                self.assertEqual(report["checks"]["active_targets"]["status"], "FAIL")
+                self.assertNotIn("sensitive-sentinel", json.dumps(report))
+        self.assertEqual(self.run_fixture(Fixture())["checks"]["active_targets"]["status"], "PASS")
+
+    def test_unavailable_targets_is_not_zero_healthy_targets(self):
+        report = self.run_fixture(Fixture(targets_mode="forbidden"))
+        self.assertEqual(report["checks"]["active_targets"]["status"], "NOT_RUN")
+        report = self.run_fixture(Fixture(targets_mode="empty"))
+        self.assertEqual(report["checks"]["active_targets"]["status"], "FAIL")
+
+    def test_cpu_and_rss_duplicate_queries_preserve_cpu_dimension_and_recent_samples(self):
+        for metric, key in [("container_cpu_usage_seconds_total", "cpu"), ("container_memory_rss", "rss")]:
+            fixture = Fixture(duplicate_metric=metric)
+            report = self.run_fixture(fixture)
+            self.assertEqual(report["checks"]["duplicate_container_" + key]["status"], "FAIL")
+            expressions = [urllib.parse.parse_qs(urllib.parse.urlsplit(r.full_url).query)["query"][0]
+                           for r in fixture.calls if "/api/v1/query?" in r.full_url]
+            duplicate = next(expr for expr in expressions if metric in expr and " > 1" in expr)
+            self.assertIn("<= 45", duplicate)
+            self.assertIn('container!="POD"', duplicate)
+            self.assertIn("container,cpu)" if key == "cpu" else "pod,container)", duplicate)
+
+    def test_nonroot_partial_visibility_is_explicit_not_run_and_zero_processes_fail(self):
+        report = self.run_fixture(Fixture(process_partial=True))
+        self.assertEqual(report["checks"]["process_partial_errors"]["status"], "NOT_RUN")
+        self.assertEqual(report["checks"]["process_partial_errors"]["total"], 30)
+        self.assertEqual(report["checks"]["process_positive_process_count"]["status"], "PASS")
+        report = self.run_fixture(Fixture(process_zero=True))
+        self.assertEqual(report["checks"]["process_positive_process_count"]["status"], "FAIL")
 
 
 class AlertDependencyTests(unittest.TestCase):
