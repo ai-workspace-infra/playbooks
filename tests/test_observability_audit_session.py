@@ -157,6 +157,13 @@ class AuditSessionTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0], ["vault", "kv", "get", "-format=json", "kv/prod/services/observability"])
         self.assertTrue(run.call_args.kwargs["capture_output"])
 
+    def test_management_transport_rejects_telemetry_role_patch_and_sa_delete(self):
+        client = session.Grafana("https://grafana.example.test", "admin", "password-sentinel")
+        for method, path in [("GET", "/api/datasources"), ("PATCH", "/api/serviceaccounts/7"),
+                             ("DELETE", "/api/serviceaccounts/7"), ("POST", "/api/admin/users")]:
+            with self.assertRaisesRegex(session.SessionError, "management_path_not_allowed"):
+                client.request(method, path)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -31,7 +31,14 @@ class Grafana:
         self.opener = urllib.request.build_opener(NoRedirect())
 
     def request(self, method, path, payload=None):
-        if not path.startswith("/api/serviceaccounts") or ".." in path:
+        allowed = (
+            method == "GET" and (path.startswith("/api/serviceaccounts/search?")
+                                  or re.fullmatch(r"/api/serviceaccounts/[1-9][0-9]*(?:/tokens)?", path))
+            or method == "POST" and (path == "/api/serviceaccounts"
+                                     or re.fullmatch(r"/api/serviceaccounts/[1-9][0-9]*/tokens", path))
+            or method == "DELETE" and re.fullmatch(r"/api/serviceaccounts/[1-9][0-9]*/tokens/[1-9][0-9]*", path)
+        )
+        if not allowed or ".." in path:
             raise SessionError("management_path_not_allowed")
         data = json.dumps(payload).encode() if payload is not None else None
         request = urllib.request.Request(self.origin + path, data=data, method=method,
