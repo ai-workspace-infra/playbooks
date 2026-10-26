@@ -13,6 +13,7 @@ import subprocess
 import sys
 import urllib.request
 from urllib.parse import quote
+from platform_scope import preflight
 from contracts import ACCOUNTS_SHA, BILLING_SHA, SCHEMA_SHA, target, identity, verify_sources, grants
 
 ACCOUNTS_IMAGE = 'ghcr.io/ai-workspace-services/accounts@sha256:6edd156ce6974dfd0cd7486beebbb446091e4019eacf3c272e05aba4a609737d'
@@ -29,6 +30,10 @@ class Owner:
         self.r = request
         target(request['stage'], request['namespace'])
         self.ns = request['namespace']
+        config = {**request, 'environment':request['stage'], 'mode':'prepare', 'node_name':'dev-k3s-v5'}
+        preflight(config, self.k('get','nodes'), self.k('get','namespace','kube-system'),
+                  self.k('-n','flux-system','get','gitrepository','platform-config'),
+                  self.k('-n','flux-system','get','kustomization','platform-root'))
         for key in ('candidate_sha',):
             if not re.fullmatch('[0-9a-f]{40}', request[key]):
                 raise Blocked('invalid candidate')

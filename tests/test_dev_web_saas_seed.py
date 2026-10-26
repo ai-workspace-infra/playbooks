@@ -41,6 +41,8 @@ def test_owned_secret_reused_without_rotation_and_foreign_owner_refused(monkeypa
     import sys
     import base64
     monkeypatch.setitem(sys.modules, 'contracts', c)
+    import types
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None))
     spec = importlib.util.spec_from_file_location('seed_owner', P.parent / 'seed.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
