@@ -36,6 +36,13 @@ try:
     owner.raw=raw
     baseline=run([B/'psql','-XAtq','-d','account','-c','SHOW log_min_error_statement;'],env=env).stdout.strip()
     assert baseline=='error'
+    control_sentinel='synthetic_control_' + secrets.token_hex(24)
+    try:
+        owner.psql("CREATE ROLE conflict_probe LOGIN PASSWORD '"+control_sentinel+"';")
+    except subprocess.CalledProcessError:
+        pass
+    else:
+        raise AssertionError('default logging control conflict did not fail')
     sentinel='synthetic_' + secrets.token_hex(24)
     try:
         owner.psql("CREATE ROLE conflict_probe LOGIN PASSWORD '"+sentinel+"';",sensitive=True)
@@ -64,9 +71,10 @@ try:
     assert run([B/'psql','-XAtq','-d','account','-c','SHOW log_min_error_statement;'],env=env).stdout.strip()=='error'
     run([B/'pg_ctl','-D',root/'data','stop','-m','fast'])
     server_log=(root/'server.log').read_bytes()
+    assert control_sentinel.encode() in server_log
     assert sentinel.encode() not in server_log
     assert b'already exists' in server_log  # Confirm the intended SQL failure was logged.
-    print(json.dumps({'synthetic_role_conflict':'PASS','server_log_sentinel_absent':'PASS',
+    print(json.dumps({'default_error_statement_leak_control':'REPRODUCED','synthetic_role_conflict':'PASS','server_log_sentinel_absent':'PASS',
                       'management_session_panic':'PASS','detected_audit_hook_rejected_before_role_creation':'PASS','global_error_policy_unchanged':'PASS',
                       'runtime_dev':'NOT_RUN'}))
 finally:
