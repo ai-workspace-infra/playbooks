@@ -94,3 +94,15 @@ verified from OCI bytes/config/source labels in the parent acceptance evidence.
 Unauthenticated fixed-SHA raw GitHub GETs for both source repositories were checked
 HTTP200 with matching native/Billing SQL hashes before execution. Runtime fetch/hash
 checks precede role/schema/Secret writes; no GitHub token enters a namespace.
+
+The independent `xc_lane_audit` LOGIN role has only CONNECT, schema USAGE and
+SELECT on `dev_lane_schema_status` (version/dirty metadata). Its random DSN is in
+`web-saas-db-audit`, never business Pods. No users/password/MFA or business-table
+SELECT is granted. PUBLIC execution on public functions and future owner functions
+is revoked; only Accounts receives native invoker-function execution. Unexpected
+public SECURITY DEFINER functions block initialization pending review. Authenticated
+SCRAM audit probes require metadata reads and SQLSTATE42501 denial of business DML,
+schema-version mutation, DDL, TEMP, owner/business SET ROLE and sensitive user reads.
+The compatible receipt retains only the two business roles in database_roles and
+records audit_role plus separate audit allow/deny flags. Actual cross-namespace
+and K3s evidence remains required; local probes do not establish live acceptance.

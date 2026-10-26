@@ -14,7 +14,7 @@ import sys
 import urllib.request
 from urllib.parse import quote
 from platform_scope import preflight
-from contracts import ACCOUNTS_SHA, BILLING_SHA, SCHEMA_SHA, target, identity, verify_sources, grants
+from contracts import ACCOUNTS_SHA, BILLING_SHA, SCHEMA_SHA, target, identity, verify_sources, grants, audit_grants
 
 ACCOUNTS_IMAGE = 'ghcr.io/ai-workspace-services/accounts@sha256:6edd156ce6974dfd0cd7486beebbb446091e4019eacf3c272e05aba4a609737d'
 PG_AMD64_DIGEST = 'sha256:f326b029499b2f255f5341d0a06d710c4380e6683315c8ab367b25c7069bdfca'
@@ -157,9 +157,9 @@ class Owner:
         if any(compiled.get(key) != manifest.get(key) for key in ('format', 'migration_version', 'schema_sha256', 'business_table_count', 'business_tables')):
             raise Blocked('image compiled schema mismatch')
         existing = {s['metadata']['name'] for s in self.k('-n', self.ns, 'get', 'secrets')['items']}
-        if existing.intersection({'web-saas-db-ddl','web-saas-db-probe','web-saas-accounts-runtime','web-saas-billing-runtime','web-saas-console-runtime','web-saas-content-runtime'}):
+        if existing.intersection({'web-saas-db-ddl','web-saas-db-probe','web-saas-db-audit','web-saas-accounts-runtime','web-saas-billing-runtime','web-saas-console-runtime','web-saas-content-runtime'}):
             raise Blocked('existing seed state: review required, no implicit rotation')
-        passwords = {role: secrets.token_hex(32) for role in ('xc_schema_owner','xc_accounts_rw','xc_billing_rw')}
+        passwords = {role: secrets.token_hex(32) for role in ('xc_schema_owner','xc_accounts_rw','xc_billing_rw','xc_lane_audit')}
         host = f'web-saas-postgresql.{self.ns}.svc.cluster.local'
         def dsn(role):
             return f'postgresql://{role}:{quote(passwords[role], safe="")}@{host}:5432/account?sslmode=disable'
@@ -179,16 +179,22 @@ class Owner:
         actual = set(self.psql("SELECT tablename FROM pg_tables WHERE schemaname='public';").split())
         if actual != set(tables) | {'schema_migrations','cloud_vendor_costs'}:
             raise Blocked('unexpected initialized table set')
+        if self.psql("SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.prosecdef;").strip() != '0':
+            raise Blocked('unexpected SECURITY DEFINER function requires review')
+        self.psql('SET ROLE xc_schema_owner;\n' + audit_grants())
         # Probe via actual authenticated TCP identities. No administrator SET ROLE
         # substitutes for these connections. Every probe transaction rolls back.
         self.secret('web-saas-db-probe', {
             'ACCOUNTS_PASSWORD': passwords['xc_accounts_rw'],
-            'BILLING_PASSWORD': passwords['xc_billing_rw']})
+            'BILLING_PASSWORD': passwords['xc_billing_rw'],
+            'AUDIT_PASSWORD': passwords['xc_lane_audit']})
         for role, key, dml in (
             ('xc_accounts_rw', 'ACCOUNTS_PASSWORD',
              "BEGIN; INSERT INTO public.users(username,password,proxy_uuid) VALUES ('seed_probe','local_probe','00000000-0000-4000-8000-000000000001'); SELECT username FROM public.users WHERE username='seed_probe'; ROLLBACK;"),
             ('xc_billing_rw', 'BILLING_PASSWORD',
-             "BEGIN; INSERT INTO public.billing_source_sync_state(source_id) VALUES ('seed_probe'); UPDATE public.billing_source_sync_state SET last_error='' WHERE source_id='seed_probe'; SELECT source_id FROM public.billing_source_sync_state WHERE source_id='seed_probe'; ROLLBACK;")):
+             "BEGIN; INSERT INTO public.billing_source_sync_state(source_id) VALUES ('seed_probe'); UPDATE public.billing_source_sync_state SET last_error='' WHERE source_id='seed_probe'; SELECT source_id FROM public.billing_source_sync_state WHERE source_id='seed_probe'; ROLLBACK;"),
+            ('xc_lane_audit','AUDIT_PASSWORD',
+             'SELECT version, dirty FROM public.dev_lane_schema_status;')):
             probe_env = [{'name': 'PGPASSWORD', 'valueFrom': {'secretKeyRef': {
                 'name': 'web-saas-db-probe', 'key': key}}},
                 {'name':'PGHOST','value':host}, {'name':'PGPORT','value':'5432'},
@@ -197,8 +203,12 @@ class Owner:
             script = "set -eu\npsql -XAtq -v ON_ERROR_STOP=1 <<'SQL'\n" + dml + "\nSQL\n"
             rejects = ['CREATE TABLE public.__seed_probe(id int);',
                        'CREATE TEMP TABLE __seed_probe(id int);', 'SET ROLE xc_schema_owner;']
-            if role == 'xc_billing_rw':
+            if role in ('xc_billing_rw','xc_lane_audit'):
                 rejects.append('SELECT password FROM public.users LIMIT 1;')
+            if role == 'xc_lane_audit':
+                rejects.extend(["INSERT INTO public.billing_source_sync_state(source_id) VALUES (NULL);",
+                                'UPDATE public.schema_migrations SET dirty=true;',
+                                'SET ROLE xc_accounts_rw;'])
             for query in rejects:
                 script += "set +e\nresult=$(psql -XAtq -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -c '" + query + "' 2>&1)\nstatus=$?\nset -e\n[ \"$status\" -ne 0 ] || exit 42\nprintf '%s' \"$result\" | grep -q '42501' || exit 43\n"
             script += 'echo identity_probes_verified\n'
@@ -206,6 +216,7 @@ class Owner:
                               ['/bin/sh', '-c', script], probe_env)
             if not result.rstrip().endswith('identity_probes_verified'):
                 raise Blocked('identity probe result missing')
+        self.secret('web-saas-db-audit', {'DATABASE_URL':dsn('xc_lane_audit')})
         internal = secrets.token_hex(32)
         self.secret('web-saas-accounts-runtime', {
             'DATABASE_URL': dsn('xc_accounts_rw'),
@@ -228,7 +239,8 @@ class Owner:
                 'cluster_uid': self.r['cluster_uid'], 'namespace': self.ns,
                 'candidate_sha': self.r['candidate_sha'],
                 'database_roles': ['xc_accounts_rw','xc_billing_rw'],
-                'schema_initialized': True}
+                'schema_initialized': True, 'audit_role':'xc_lane_audit',
+                'audit_metadata_read_verified':True, 'audit_write_and_sensitive_read_denied':True}
 
 
 

@@ -60,3 +60,16 @@ GRANT SELECT ON public.schema_migrations TO xc_accounts_rw;
 GRANT SELECT, INSERT, UPDATE ON {billing_tables} TO xc_billing_rw;
 GRANT SELECT ON public.account_billing_profiles TO xc_billing_rw;
 '''
+
+
+def audit_grants():
+    """Only sanitized migration metadata, no business rows or write functions."""
+    return '''REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE xc_schema_owner IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE xc_schema_owner IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO xc_accounts_rw;
+CREATE VIEW public.dev_lane_schema_status AS SELECT version, dirty FROM public.schema_migrations;
+GRANT CONNECT ON DATABASE account TO xc_lane_audit;
+GRANT USAGE ON SCHEMA public TO xc_lane_audit;
+GRANT SELECT ON public.dev_lane_schema_status TO xc_lane_audit;
+'''

@@ -108,7 +108,7 @@ def test_complete_initialize_returns_receipt_after_all_probes(monkeypatch):
     receipt = owner.initialize()
     assert receipt['schema_version'] == 'dev-lane-seed/v1'
     assert receipt['candidate_sha'] == sha and receipt['result'] == 'verified'
-    assert jobs == ['manifest','native-init','probe-xc-accounts-rw','probe-xc-billing-rw']
+    assert jobs == ['manifest','native-init','probe-xc-accounts-rw','probe-xc-billing-rw','probe-xc-lane-audit']
     assert writes[-4:] == ['web-saas-accounts-runtime','web-saas-billing-runtime','web-saas-console-runtime','web-saas-content-runtime']
     # Unknown OCI runtime digests fail before any Secret or SQL write.
     original_k = owner.k
