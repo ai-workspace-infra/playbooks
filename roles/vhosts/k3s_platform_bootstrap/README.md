@@ -49,7 +49,10 @@ cleanup require a separate, explicitly scoped recovery action.
 Set `k3s_platform_git_commit` to a full 40-character commit SHA to render
 `GitRepository.spec.ref.commit`; a nonempty malformed SHA fails before changes.
 The existing branch setting remains supported for existing callers. Reconciliation
-now runs synchronously and the bounded verifier requires a single expected Ready
+now runs synchronously. The Dev wrapper explicitly enables
+`k3s_platform_strict_dev_receipt` (default false); existing generic callers do
+not inherit the single-node constraint. When enabled, the bounded verifier
+requires a single expected Ready
 control-plane node, a real kube-system UID, current observed generations,
 GitRepository and root Kustomization Ready, and matching source/applied revisions.
 With a commit input, both source spec and observed artifact must match that SHA.

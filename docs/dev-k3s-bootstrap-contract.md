@@ -2,7 +2,7 @@
 
 This owner reuses the existing single-node K3s/Flux role. The reusable workflow
 is callable only through its fixed reviewed SHA; it checks out producer source
-`6fa417300fceb2935d5ab9f02fab5bffd7e2294d`, which contains the adapter and role.
+`fe467b7462fb54870079ac2945d20b815fa6dc0d`, which contains the adapter and role.
 Retain that immutable source when retargeting the stacked PR. A later source
 change requires a new source pin and tests, not a mutable checkout.
 
