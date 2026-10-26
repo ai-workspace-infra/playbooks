@@ -76,6 +76,9 @@ def main():
     agent_env = None
     try:
         secret = request("https://vault.svc.plus/v1/" + VAULT_RECORD, {"X-Vault-Token": token})["data"]["data"]
+        if session.get("token_type") != "batch":
+            request("https://vault.svc.plus/v1/auth/token/revoke-self", {"X-Vault-Token": token}, b"{}")
+        token = None
         require(all(secret.get(k) for k in ("SSH_PRIVATE_KEY", "SSH_KNOWN_HOSTS", "SSH_USER")), "Dev SSH binding is incomplete")
         require(re.fullmatch(r"[a-z_][a-z0-9_-]*", secret["SSH_USER"]), "invalid management SSH user")
         with tempfile.TemporaryDirectory(prefix="dev-bootstrap-") as temporary:
@@ -114,13 +117,14 @@ def main():
             result.update(instance_id=a.instance_id, cmdb_sha256=a.cmdb_sha256, gitops_sha=a.gitops_sha,
                           playbooks_sha=run(["git", "rev-parse", "HEAD"], env).strip(),
                           run_id=os.environ.get("GITHUB_RUN_ID"), environment="dev")
-            a.receipt.parent.mkdir(parents=True, exist_ok=True)
-            a.receipt.write_text(json.dumps(result, sort_keys=True) + "\n")
+
     finally:
         if agent_env:
             subprocess.run(["ssh-agent", "-k"], env=agent_env, capture_output=True)
-        if session.get("token_type") != "batch":
+        if token and session.get("token_type") != "batch":
             request("https://vault.svc.plus/v1/auth/token/revoke-self", {"X-Vault-Token": token}, b"{}")
+    a.receipt.parent.mkdir(parents=True, exist_ok=True)
+    a.receipt.write_text(json.dumps(result, sort_keys=True) + "\n")
 
 
 if __name__ == "__main__":
