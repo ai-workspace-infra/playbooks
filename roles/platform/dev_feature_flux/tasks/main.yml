@@ -1,0 +1,52 @@
+- name: Require exact Dev lane and strict transport
+  ansible.builtin.assert:
+    that:
+      - ansible_play_hosts_all | length == 1
+      - lookup('ansible.builtin.config', 'HOST_KEY_CHECKING') | bool
+      - "'StrictHostKeyChecking=yes' in ansible_ssh_common_args"
+      - dev_feature_config.environment in ['sit', 'uat']
+      - dev_feature_config.mode == 'plan' or dev_feature_apply | bool
+      - dev_feature_report is match('^/')
+    fail_msg: Use the reviewed Dev feature adapter and exact lane scope.
+  delegate_to: localhost
+  become: false
+- name: Reconcile only the verified Dev namespace source
+  ansible.builtin.script:
+    cmd: files/reconcile.py
+    executable: python3
+  environment:
+    DEV_FEATURE_CONFIG: "{{ dev_feature_config | combine({'mode': 'plan'} if ansible_check_mode else {}) | to_json }}"
+  register: dev_feature_result
+  check_mode: false
+  changed_when: (dev_feature_result.stdout | from_json).changed | default(false) == true
+  failed_when: false
+- name: Preserve public owner receipt
+  ansible.builtin.copy:
+    content: "{{ dev_feature_result.stdout }}\n"
+    dest: "{{ dev_feature_report }}"
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+  check_mode: false
+- name: Require observed success rather than fixture acceptance
+  ansible.builtin.assert:
+    that:
+      - dev_feature_result.rc == 0
+      - (dev_feature_result.stdout | from_json).result in ['planned', 'prepared', 'submitted_pending_seed', 'verified']
+    fail_msg: Namespace source deployment did not verify; preserve its receipt.
+
+- name: Prepare registry credentials using the existing runtime secret owner
+  ansible.builtin.include_role:
+    name: vhosts/k3s_runtime_secret_sync
+  vars:
+    k3s_runtime_secret_sync_mode: dev-registry
+    k3s_runtime_secret_sync_apply: true
+  when: dev_feature_config.mode == 'prepare' and not ansible_check_mode
+- name: Add only public registry receipt after successful projection
+  ansible.builtin.copy:
+    content: "{{ (dev_feature_result.stdout | from_json) | combine({'registry': dev_registry_result.stdout | from_json}) | to_json }}\n"
+    dest: '{{ dev_feature_report }}'
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+  when: dev_feature_config.mode == 'prepare' and not ansible_check_mode
