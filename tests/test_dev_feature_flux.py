@@ -18,6 +18,12 @@ class Contracts(unittest.TestCase):
    target=release.setdefault(key,{})
    for field in path[:-1]:target=target.setdefault(field,{})
    target[path[-1]]='ghcr.io/'+repos[key]+'@sha256:'+str(i)*64
+  source_repos={'caddy':'ai-workspace-infra/artifacts','postgresql':'ai-workspace-services/postgresql','console':'ai-workspace-services/portal','accounts':'ai-workspace-services/accounts','billing':'ai-workspace-services/billing-service','content':'ai-workspace-services/content-service'}
+  for key,path in paths.items():
+   image=release[key]
+   for field in path:image=image[field]
+   release[key]['podAnnotations']={'release.svc.plus/source_repository':source_repos[key],'release.svc.plus/source_sha':'a'*40,'release.svc.plus/image_digest':image.split('@')[1],'release.svc.plus/build_run_id':'123'}
+   if key in ('accounts','billing','content'):release[key]['workload']['env']={'IMAGE':image}
   for name in sorted(C.CM):docs.append({'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':name,'namespace':ns},'data':{'release.yaml':yaml.safe_dump(release)} if name=='web-saas-fullstack-release' else {}})
   docs += [{'apiVersion':'source.toolkit.fluxcd.io/v1beta2','kind':'OCIRepository','metadata':{'name':'web-saas-fullstack-chart','namespace':ns},'spec':{'url':'oci://ghcr.io/ai-workspace-infra/distributed-web-saas-fullstack','ref':{'digest':R.CHART}}},{'apiVersion':'helm.toolkit.fluxcd.io/v2','kind':'HelmRelease','metadata':{'name':'distributed-web-saas-fullstack','namespace':ns},'spec':{'releaseName':'web-saas','targetNamespace':ns,'serviceAccountName':'lane-reconciler','chartRef':{'kind':'OCIRepository','name':'web-saas-fullstack-chart'},'valuesFrom':[{'kind':'ConfigMap','name':'web-saas-fullstack-values'}]}}]
   for name in ('web-saas-http',):
@@ -123,5 +129,27 @@ class RegistryProjectionTests(unittest.TestCase):
   for ns in ('production','default','flux-system'):
    with self.assertRaises(ValueError):module.build(ns,{'GHCR_USERNAME':'fixture','GHCR_TOKEN':'synthetic'})
   with self.assertRaises(ValueError):module.build('web-saas-uat',{})
+
+class CandidateEvolutionTests(unittest.TestCase):
+ def test_two_pr_heads_and_changed_images_use_same_owner_policy(self):
+  import run_dev_feature_flux as owner
+  for sha,pr in [('a'*40,605),('b'*40,606)]:
+   receipt={'schema_version':'dev-feature-candidate/v1','result':'verified','repository':'ai-workspace-infra/gitops','stage':'sit','candidate_head':sha,'candidate_pr':pr,'base_ref':'main','base_sha':'c'*40,'checks':'success','same_repository':True,'main_ancestry_verified':True,'source':{'workflow_ref':'ai-workspace-infra/platform-ops-toolkit/.github/workflows/dev-feature-deploy.yml@refs/heads/main','run_id':'123'}}
+   self.assertEqual(owner.validate_candidate_receipt(receipt,sha,'sit','123')['candidate_head'],sha)
+   with self.assertRaises(ValueError):owner.validate_candidate_receipt(receipt,'d'*40,'sit','123')
+   with self.assertRaises(ValueError):owner.validate_candidate_receipt(receipt,sha,'sit','different-run')
+  docs=Contracts().docs();first=C.validate_documents(docs,'sit')['images']['accounts']
+  release_doc=next(x for x in docs if x['metadata']['name']=='web-saas-fullstack-release')
+  release=yaml.safe_load(release_doc['data']['release.yaml'])
+  image='ghcr.io/ai-workspace-services/accounts@sha256:'+'f'*64
+  release['accounts']['workload']['image']=image;release['accounts']['workload']['env']['IMAGE']=image
+  release['accounts']['podAnnotations']['release.svc.plus/image_digest']='sha256:'+'f'*64
+  release['accounts']['podAnnotations']['release.svc.plus/source_sha']='e'*40
+  release['accounts']['podAnnotations']['release.svc.plus/build_run_id']='456'
+  release_doc['data']['release.yaml']=yaml.safe_dump(release)
+  self.assertNotEqual(first,C.validate_documents(docs,'sit')['images']['accounts'])
+  release['accounts']['podAnnotations']['release.svc.plus/image_digest']='sha256:'+'0'*64
+  release_doc['data']['release.yaml']=yaml.safe_dump(release)
+  with self.assertRaises(ValueError):C.validate_documents(docs,'sit')
 
 if __name__=='__main__':unittest.main()

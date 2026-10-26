@@ -21,6 +21,11 @@ def image_set(release):
   for key in path:value=value[key]
   require(isinstance(value,str) and IMAGE.fullmatch(value),'six-component immutable image digest required')
   require(value.startswith('ghcr.io/'+repos[name]+'@'),'component image repository mismatch')
+  annotations=release[name].get('podAnnotations',{})
+  source_repos={'caddy':'ai-workspace-infra/artifacts','postgresql':'ai-workspace-services/postgresql','console':'ai-workspace-services/portal','accounts':'ai-workspace-services/accounts','billing':'ai-workspace-services/billing-service','content':'ai-workspace-services/content-service'}
+  require(annotations.get('release.svc.plus/source_repository')==source_repos[name] and SCOPE.SHA.fullmatch(str(annotations.get('release.svc.plus/source_sha',''))),'component source annotation mismatch')
+  require(annotations.get('release.svc.plus/image_digest')==value.split('@',1)[1] and re.fullmatch(r'[0-9]+',str(annotations.get('release.svc.plus/build_run_id',''))),'image/build annotation mismatch')
+  if name in ('accounts','billing','content'):require(release[name]['workload'].get('env',{}).get('IMAGE')==value,'runtime image annotation must match component image')
   images[name]=value
  require(len(set(images.values()))==6,'six distinct component images required')
  return images
