@@ -91,7 +91,7 @@ class Contracts(unittest.TestCase):
     return base[2] if kind=='gitrepository' else base[3]
    def apply(self,docs):self.applied=docs
   client=Client();self.assertEqual(R.execute(c,client)['result'],'planned');self.assertFalse(client.applied)
-  c['mode']='prepare';self.assertEqual(R.execute(c,client)['result'],'prepared');self.assertEqual(len(client.applied),4)
+  c['mode']='prepare';self.assertEqual(R.execute(c,client)['result'],'prepared');self.assertEqual(len(client.applied),7)
  def test_namespace_takeover_and_prod_scope_rejected(self):
   c=self.config();c['environment']='prod'
   with self.assertRaises(ValueError):R.validate(c)
