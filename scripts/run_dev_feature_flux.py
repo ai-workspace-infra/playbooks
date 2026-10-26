@@ -19,7 +19,7 @@ def run(args,env=None,stdin=None,timeout=1200):
  return p.stdout
 
 def execute(a):
- require(a.stage in candidate.SCOPE.SCOPES and a.mode in ('plan','prepare','apply','enable-tls'),'explicit lane/mode required')
+ require(a.stage in candidate.SCOPE.SCOPES and a.mode in ('plan','prepare','submit','verify','enable-tls'),'explicit lane/mode required')
  if a.stage=='sit':require(a.gitops_sha==SIT_CANDIDATE,'SIT must use the reviewed fixed candidate; update owner review for a new candidate')
  require(candidate.SCOPE.SHA.fullmatch(a.gitops_sha) and candidate.SCOPE.SHA.fullmatch(a.platform_sha),'full GitOps SHA required')
  require(re.fullmatch(r'[0-9a-f]{64}',a.cmdb_sha256),'CMDB digest required')
@@ -42,7 +42,7 @@ def execute(a):
    proof.append({'host':host,'addresses':addresses,'http_status':status})
   config['dns_http_proof']=proof
  candidate.SCOPE.validate(config)
- if a.mode=='apply':
+ if a.mode=='verify':
   require(a.seed_receipt is not None and re.fullmatch(r'[0-9a-f]{64}',a.seed_sha256 or ''),'authenticated seed receipt artifact/digest required')
   require(hashlib.sha256(a.seed_receipt.read_bytes()).hexdigest()==a.seed_sha256,'seed receipt digest mismatch')
   config['seed_receipt']=json.loads(a.seed_receipt.read_text())
@@ -79,7 +79,7 @@ def execute(a):
    runtime=json.loads(report.read_text())
    runtime.update(instance_id=a.instance_id,cmdb_sha256=a.cmdb_sha256,candidate=observation,run_id=os.environ.get('GITHUB_RUN_ID'),run_attempt=os.environ.get('GITHUB_RUN_ATTEMPT'))
    a.receipt.parent.mkdir(parents=True,exist_ok=True);a.receipt.write_text(json.dumps(runtime,sort_keys=True)+'\n')
-   require(p.returncode==0 and runtime.get('result')=={'plan':'planned','prepare':'prepared','apply':'verified','enable-tls':'verified'}[a.mode],'namespace deployment did not verify')
+   require(p.returncode==0 and runtime.get('result')=={'plan':'planned','prepare':'prepared','submit':'submitted_pending_seed','verify':'verified','enable-tls':'verified'}[a.mode],'namespace deployment did not verify')
  finally:
   if agent:subprocess.run(['ssh-agent','-k'],env=agent,capture_output=True)
   if token and session.get('token_type')!='batch':request('https://vault.svc.plus/v1/auth/token/revoke-self',{'X-Vault-Token':token},b'{}')

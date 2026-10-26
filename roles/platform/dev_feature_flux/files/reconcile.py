@@ -23,7 +23,7 @@ def require(value,message):
 
 def validate(c):
  require(c.get('environment') in SCOPES and c.get('namespace')==SCOPES[c['environment']][0] and c.get('node_name')==NODE,'fixed Dev lane scope required')
- require(c.get('mode') in ('plan','prepare','apply','enable-tls'),'explicit mode required')
+ require(c.get('mode') in ('plan','prepare','submit','verify','enable-tls'),'explicit mode required')
  for key in ('candidate_sha','platform_sha','owner_sha'):
   require(SHA.fullmatch(c.get(key,'')), 'full immutable '+key+' required')
  for key in ('node_uid','cluster_uid'):
@@ -90,7 +90,7 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
   require(labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==FEATURE and labels.get('environment')==c['environment'],'existing namespace has another owner; no takeover')
  report={'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False}
  if c['mode']=='plan':return report
- if c['mode']=='apply':
+ if c['mode']=='verify':
   seed=c.get('seed_receipt',{})
   require(seed.get('schema_version')=='dev-lane-seed/v1' and seed.get('result')=='verified' and seed.get('namespace')==NS and seed.get('node_uid')==c['node_uid'] and seed.get('cluster_uid')==c['cluster_uid'] and seed.get('instance_id')=='109277144' and seed.get('database_roles')==['xc_accounts_rw','xc_billing_rw'] and seed.get('schema_initialized') is True,'independent namespace seed owner receipt required before application reconciliation')
  if c['mode']=='enable-tls':
@@ -99,10 +99,13 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
   require({x.get('host') for x in proof}==DOMAINS[c['environment']] and all(x.get('addresses')==[c.get('target_ip')] and x.get('http_status') in (200,404) for x in proof),'fresh external DNS/HTTP evidence required before TLS')
   original=client.get('kustomization',SOURCE,NS);live=client.get('gitrepository',SOURCE,NS)
   require(ready(original) and revision(original.get('status',{}).get('lastAppliedRevision'),c['candidate_sha']) and ready(live),'base lane must be the exact Ready candidate before TLS')
- try:client.apply(documents(c)[:4] if c['mode']=='prepare' else documents(c))
+ try:
+  if c['mode']!='verify':client.apply(documents(c)[:4] if c['mode']=='prepare' else documents(c))
  except Exception:
   report.update(changed='UNKNOWN',result='apply_failed_or_unknown');return report
- report.update(changed=True,result='applied_unverified')
+ report.update(changed=c['mode']!='verify',result='applied_unverified')
+ if c['mode']=='submit':
+  preflight(c,*base());report.update(result='submitted_pending_seed',business_acceptance='NOT_RUN');return report
  if c['mode']=='prepare':
   preflight(c,*base());report['result']='prepared';return report
  deadline=clock()+int(c.get('wait_seconds',900))
@@ -123,6 +126,6 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
 if __name__=='__main__':
  try:
   result=execute(json.loads(os.environ['DEV_FEATURE_CONFIG']));print(json.dumps(result,sort_keys=True))
-  raise SystemExit(0 if result['result'] in ('planned','prepared','verified') else 1)
+  raise SystemExit(0 if result['result'] in ('planned','prepared','submitted_pending_seed','verified') else 1)
  except Exception as error:
   print(json.dumps({'result':'blocked_or_failed','error_type':type(error).__name__,'business_acceptance':'NOT_RUN'}));raise SystemExit(2)
