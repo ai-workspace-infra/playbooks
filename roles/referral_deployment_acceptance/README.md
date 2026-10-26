@@ -90,7 +90,7 @@ includes persistent UAT.
 
 `files/live_registration.py` is a separate external HTTPS BFF runner. It first
 requires the current bound observation and health/image preflight, then reads
-an active campaign through Console, registers two isolated accounts through
+an active campaign through a separate unauthenticated Accounts-origin client, registers two isolated accounts through
 Console `/api/auth/register`, logs each in through `/api/auth/login`, and reads
 `/api/auth/referrals` through its independent in-memory cookie session. The
 invitee registration includes the owner's real referral code; an exact repeated
@@ -134,3 +134,11 @@ The full runner always exits 2 with overall BLOCKED. Sandbox delivery, payments,
 10%, +30 days/billing anchor, refund/dispute/replay, seven-day boundary and actual
 DB DDL-denial remain NOT_RUN. Offline fake transports only validate contracts;
 they are never public deployment proof. No runtime invocation was performed.
+
+Pinned source route evidence is recorded in tests/fixtures/referral_pinned_routes.json
+with source SHAs and route-file hashes. Portal 2a272f295235efdd39f469245ad74177d1a5ff5d
+does have a public campaign BFF route; the runner deliberately reads the Accounts
+public endpoint with an independent cookie jar. The offline transport contract
+rejects campaign calls on Console and BFF registration/login/overview calls on
+Accounts, so permissive fixtures cannot hide origin-routing regressions. This
+source contract is not deployed-route or artifact-source proof.

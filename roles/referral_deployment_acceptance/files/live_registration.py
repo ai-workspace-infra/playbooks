@@ -74,12 +74,15 @@ def execute(contract, observed, samples, factory=HTTPS, now=None, health_transpo
         health = preflight.assess(contract,observed,health_transport,now)
         require(all(health['checks'].get(key,{}).get('status') == 'PASS' for key in ('deployment_binding','accounts_ready','console_route','accounts_runtime_image')), 'fresh bound HTTPS preflight required')
         report.update({k:contract[k] for k in ('run_id','namespace','namespace_uid','candidate_fingerprint','gitops_sha')})
-        owner = factory(contract['origins']['console']);invitee = factory(contract['origins']['console'])
-        status, body = owner('/api/referrals/campaign')
+        # Public campaign is an Accounts route, not a Portal baseline BFF route.
+        # Use a fresh client with no Console session or cookies.
+        accounts = factory(contract['origins']['accounts'])
+        status, body = accounts('/api/referrals/campaign')
         campaign = body.get('campaign',{})
         require(status == 200 and campaign.get('active') is True and campaign.get('enabled') is True, 'active reviewed campaign required; runner never changes it')
         require(campaign.get('cashbackBps') == 1000 and campaign.get('annualBonusDays') == 30, 'campaign API contract mismatch')
         report['checks']['campaign_read'] = 'PASS'
+        owner = factory(contract['origins']['console']);invitee = factory(contract['origins']['console'])
         code = None
         for role, client in (('owner',owner),('invitee',invitee)):
             payload = dict(samples[role])

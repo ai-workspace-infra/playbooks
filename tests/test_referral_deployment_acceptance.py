@@ -97,10 +97,15 @@ class RegistrationContract(unittest.TestCase):
     def factory(self,calls,mfa=False):
         count=[0]
         def make(origin):
-            count[0]+=1;role=count[0];registrations=[0]
+            account = 'accounts-' in origin
+            if not account:count[0]+=1
+            role=0 if account else count[0];registrations=[0]
             def call(path,method='GET',payload=None):
                 calls.append((role,path))
-                if path=='/api/referrals/campaign':return 200,{'campaign':{'active':True,'enabled':True,'cashbackBps':1000,'annualBonusDays':30}}
+                if account:
+                    self.assertEqual((path,method,payload),('/api/referrals/campaign','GET',None))
+                    return 200,{'campaign':{'active':True,'enabled':True,'cashbackBps':1000,'annualBonusDays':30}}
+                self.assertIn(path,('/api/auth/register','/api/auth/login','/api/auth/referrals'))
                 if path=='/api/auth/register':
                     registrations[0]+=1
                     if registrations[0]>1:return 409,{'error':'email_already_exists'}
@@ -115,7 +120,7 @@ class RegistrationContract(unittest.TestCase):
         r=live.execute(c,o,self.samples(),self.factory(calls),NOW,self.health(c))
         self.assertEqual(r['result'],'BLOCKED');self.assertEqual(r['checks']['duplicate_registration_rejected'],'PASS')
         self.assertEqual(r['registration_attribution'],'BLOCKED');self.assertEqual(r['sandbox_acceptance'],'NOT_RUN')
-        self.assertNotIn('isolated-password',json.dumps(r));self.assertNotIn('123456',json.dumps(r));self.assertEqual(len(calls),8)
+        self.assertNotIn('isolated-password',json.dumps(r));self.assertNotIn('123456',json.dumps(r));self.assertEqual(len(calls),8);self.assertEqual(calls[0],(0,'/api/referrals/campaign'));self.assertTrue(all(role!=0 for role,path in calls[1:]))
     def test_wrong_namespace_uid_origin_or_runtime_stops_before_network(self):
         for key,value in [('namespace_uid','44444444-4444-4444-4444-444444444444'),('origins',{'accounts':'https://accounts.svc.plus','console':'https://console.svc.plus'})]:
             c,o=fixture();o[key]=value
@@ -129,3 +134,30 @@ class RegistrationContract(unittest.TestCase):
     def test_mfa_challenge_blocks_without_disabling_or_skipping(self):
         c,o=fixture();calls=[];r=live.execute(c,o,self.samples(),self.factory(calls,True),NOW,self.health(c))
         self.assertEqual(r['result'],'BLOCKED');self.assertNotIn('owner_bff_session',r['checks']);self.assertFalse(any(role==2 for role,path in calls))
+
+class PinnedRoutesContract(unittest.TestCase):
+    def test_actual_pinned_source_route_facts_and_owner_separation(self):
+        evidence=json.loads((ROOT/'tests/fixtures/referral_pinned_routes.json').read_text())
+        self.assertEqual(evidence['portal']['sha'],'2a272f295235efdd39f469245ad74177d1a5ff5d')
+        self.assertTrue(evidence['portal']['campaign_route_exists'])
+        self.assertIn('src/app/api/referrals/campaign/route.ts',evidence['portal']['route_file_sha256'])
+        self.assertEqual(evidence['accounts']['registered_route'],'r.GET("/api/referrals/campaign", h.publicReferralCampaign)')
+        c,o=fixture();calls=[];f=RegistrationContract()
+        def factory(origin):
+            # Match actual pinned route ownership, not a fake API accepting all paths.
+            if origin==c['origins']['accounts']:
+                def account(path,method='GET',payload=None):
+                    self.assertIn(path,evidence['runner_routes']['accounts']);calls.append(('accounts',path))
+                    return 200,{'campaign':{'active':True,'enabled':True,'cashbackBps':1000,'annualBonusDays':30}}
+                return account
+            self.assertEqual(origin,c['origins']['console'])
+            wrapped=console_factory(origin)
+            def console(path,method='GET',payload=None):
+                self.assertIn(path,evidence['runner_routes']['console']);calls.append(('console',path))
+                return wrapped(path,method,payload)
+            return console
+        console_factory=f.factory([])
+        r=live.execute(c,o,f.samples(),factory,NOW,f.health(c))
+        self.assertEqual(r['checks']['duplicate_registration_rejected'],'PASS')
+        self.assertEqual(calls[0],('accounts','/api/referrals/campaign'))
+        self.assertTrue(all(owner=='console' for owner,path in calls[1:]))
