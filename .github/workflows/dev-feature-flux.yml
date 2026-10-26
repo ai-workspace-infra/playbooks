@@ -37,6 +37,13 @@ on:
       cluster_uid:
         type: string
         required: true
+      prepare_artifact:
+        description: Same-run authenticated projection of successful prepare owner receipt
+        type: string
+        default: ''
+      prepare_sha256:
+        type: string
+        default: ''
       seed_artifact:
         description: Authenticated same-run B seed receipt required only for verify
         type: string
@@ -60,7 +67,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ai-workspace-infra/playbooks
-          ref: 1e33801f4966b3a5d716378f24cd862d8ee56dbc
+          ref: 8a56a8bc5bba080cfde1d781e8041db0c9fd119c
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
@@ -91,6 +98,11 @@ jobs:
         with:
           name: ${{ inputs.seed_artifact }}
           path: ${{ runner.temp }}/dev-feature-seed
+      - uses: actions/download-artifact@v4
+        if: inputs.mode == 'verify'
+        with:
+          name: ${{ inputs.prepare_artifact }}
+          path: ${{ runner.temp }}/dev-feature-prepare
       - name: Run the fixed trusted owner
         env:
           STAGE: ${{ inputs.stage }}
@@ -102,13 +114,14 @@ jobs:
           CMDB_SHA256: ${{ inputs.cmdb_sha256 }}
           NODE_UID: ${{ inputs.node_uid }}
           CLUSTER_UID: ${{ inputs.cluster_uid }}
+          PREPARE_SHA256: ${{ inputs.prepare_sha256 }}
           SEED_SHA256: ${{ inputs.seed_sha256 }}
         shell: bash
         run: |
           set -euo pipefail
           seed_args=()
           if [[ "$MODE" == verify ]]; then
-            seed_args=(--seed-receipt "$RUNNER_TEMP/dev-feature-seed/receipt.json" --seed-sha256 "$SEED_SHA256")
+            seed_args=(--seed-receipt "$RUNNER_TEMP/dev-feature-seed/receipt.json" --seed-sha256 "$SEED_SHA256" --prepare-receipt "$RUNNER_TEMP/dev-feature-prepare/receipt.json" --prepare-sha256 "$PREPARE_SHA256")
           fi
           "$RUNNER_TEMP/dev-feature-venv/bin/python" scripts/run_dev_feature_flux.py \
             --candidate-receipt "$RUNNER_TEMP/dev-feature-candidate/receipt.json" --candidate-sha256 "$CANDIDATE_RECEIPT_SHA256" \
