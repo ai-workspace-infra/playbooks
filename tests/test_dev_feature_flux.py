@@ -87,7 +87,7 @@ class Contracts(unittest.TestCase):
    def __init__(self):self.applied=[]
    def get(self,kind,name=None,namespace=None,optional=False):
     if kind=='nodes':return base[0]
-    if kind=='namespace':return base[1] if name=='kube-system' else None
+    if kind=='namespace':return base[1] if name=='kube-system' else ({'metadata':{'uid':'3'*36}} if self.applied else None)
     return base[2] if kind=='gitrepository' else base[3]
    def apply(self,docs):self.applied=docs
   client=Client();self.assertEqual(R.execute(c,client)['result'],'planned');self.assertFalse(client.applied)
@@ -108,7 +108,7 @@ class PhaseTests(unittest.TestCase):
    def __init__(self):self.applied=[]
    def get(self,kind,name=None,namespace=None,optional=False):
     if kind=='nodes':return base[0]
-    if kind=='namespace':return base[1] if name=='kube-system' else None
+    if kind=='namespace':return base[1] if name=='kube-system' else ({'metadata':{'uid':'3'*36}} if self.applied else None)
     return base[2] if kind=='gitrepository' else base[3]
    def apply(self,docs):self.applied.append(docs)
   c['mode']='submit';client=Client()
@@ -163,5 +163,19 @@ class PrivilegeScopeTests(unittest.TestCase):
  def test_post_renderer_cannot_mount_admin_secret_or_management_identity(self):
   for patch in [{'spec':{'template':{'spec':{'serviceAccountName':'lane-reconciler'}}}},[{'op':'add','path':'/spec/template/spec/automountServiceAccountToken','value':True}],{'spec':{'template':{'spec':{'volumes':[{'secret':{'secretName':'web-saas-db-admin'}}]}}}}]:
    with self.assertRaises(ValueError):C.validate_patch_scope(patch)
+
+
+class NamespaceIncarnationTests(unittest.TestCase):
+ def test_same_name_new_uid_rejects_old_verified_context(self):
+  c=Contracts().config();c.update(mode='verify',namespace_uid='3'*36);base=Contracts().baseline(c)
+  class Client:
+   def get(self,kind,name=None,namespace=None,optional=False):
+    if kind=='nodes':return base[0]
+    if kind=='namespace':
+     if name=='kube-system':return base[1]
+     return {'metadata':{'uid':'4'*36,'labels':{'app.kubernetes.io/managed-by':'dev-feature-flux-owner','release.svc.plus/feature':'xconnect-referral','environment':'sit'}}}
+    return base[2] if kind=='gitrepository' else base[3]
+   def apply(self,docs):raise AssertionError('stale namespace must fail before apply')
+  with self.assertRaises(ValueError):R.execute(c,Client())
 
 if __name__=='__main__':unittest.main()

@@ -80,7 +80,7 @@ def verify_runtime(c,pods):
  names={'accounts','billing','caddy','console','content','postgresql'}
  require(mapping.get('schema_version')=='dev-oci-platform/v1' and set(records)==names,'authenticated six-component OCI mapping required')
  binding=mapping.get('binding',{})
- for key in ('candidate_sha','namespace','node_uid','cluster_uid','manifest_sha256'):require(binding.get(key)==c[key],'runtime mapping target/candidate mismatch')
+ for key in ('candidate_sha','namespace','namespace_uid','node_uid','cluster_uid','manifest_sha256'):require(binding.get(key)==c[key],'runtime mapping target/candidate mismatch')
  selected=[]
  for pod in pods.get('items',[]):
   meta=pod.get('metadata',{});labels=meta.get('labels',{})
@@ -126,13 +126,16 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
  baseline=base();preflight(c,*baseline)
  existing=client.get('namespace',NS,optional=True)
  if existing:
+  require(not existing['metadata'].get('deletionTimestamp'),'namespace is terminating')
+  if c['mode']=='verify':require(existing['metadata'].get('uid')==c.get('namespace_uid'),'namespace incarnation differs from authenticated prepare')
   labels=existing['metadata'].get('labels',{})
   require(labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==FEATURE and labels.get('environment')==c['environment'],'existing namespace has another owner; no takeover')
- report={'mode':c['mode'],'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False,'audit_acceptance':'NOT_RUN','business_uid_acceptance':'NOT_RUN'}
+ if c['mode']=='verify':require(existing is not None and UUID.fullmatch(c.get('namespace_uid','')),'verified live namespace UID required')
+ report={'namespace_uid':existing['metadata'].get('uid') if existing else None,'mode':c['mode'],'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False,'audit_acceptance':'NOT_RUN','business_uid_acceptance':'NOT_RUN'}
  if c['mode']=='plan':return report
  if c['mode']=='verify':
   seed=c.get('seed_receipt',{})
-  require(seed.get('schema_version')=='dev-lane-seed/v1' and seed.get('result')=='verified' and seed.get('namespace')==NS and seed.get('candidate_sha')==c['candidate_sha'] and seed.get('node_uid')==c['node_uid'] and seed.get('cluster_uid')==c['cluster_uid'] and seed.get('instance_id')=='109277144' and seed.get('database_roles')==['xc_accounts_rw','xc_billing_rw'] and seed.get('schema_initialized') is True,'independent namespace seed owner receipt required before application reconciliation')
+  require(seed.get('schema_version')=='dev-lane-seed/v1' and seed.get('result')=='verified' and seed.get('namespace')==NS and seed.get('namespace_uid')==c.get('namespace_uid') and seed.get('candidate_sha')==c['candidate_sha'] and seed.get('node_uid')==c['node_uid'] and seed.get('cluster_uid')==c['cluster_uid'] and seed.get('instance_id')=='109277144' and seed.get('database_roles')==['xc_accounts_rw','xc_billing_rw'] and seed.get('schema_initialized') is True,'independent namespace seed owner receipt required before application reconciliation')
  if c['mode']=='enable-tls':
   require(existing is not None,'prepare the namespace first')
   proof=c.get('dns_http_proof',[])
@@ -147,7 +150,10 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
  if c['mode']=='submit':
   preflight(c,*base());report.update(result='submitted_pending_seed',business_acceptance='NOT_RUN');return report
  if c['mode']=='prepare':
-  preflight(c,*base());report['result']='prepared';return report
+  current=client.get('namespace',NS)
+  require(current and not current['metadata'].get('deletionTimestamp') and UUID.fullmatch(current['metadata'].get('uid','')),'live prepared namespace UID missing')
+  if existing:require(current['metadata']['uid']==existing['metadata']['uid'],'namespace changed during preparation')
+  preflight(c,*base());report.update(result='prepared',namespace_uid=current['metadata']['uid']);return report
  deadline=clock()+int(c.get('wait_seconds',900))
  while True:
   source=client.get('gitrepository',SOURCE,NS,optional=True)
@@ -156,7 +162,10 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
   if source and root and release and ready(source) and ready(root) and ready(release) and revision(source.get('status',{}).get('artifact',{}).get('revision'),c['candidate_sha']) and revision(root.get('status',{}).get('lastAppliedRevision'),c['candidate_sha']):
    require(source.get('spec',{}).get('ref')==({'branch':'main'} if c['environment']=='uat' else {'commit':c['candidate_sha']}),'candidate source drifted')
    preflight(c,*base())
-   if c['mode']=='verify':report['runtime_images']=verify_runtime(c,client.get('pods',namespace=NS))
+   if c['mode']=='verify':
+    current=client.get('namespace',NS)
+    require(current['metadata'].get('uid')==c['namespace_uid'] and not current['metadata'].get('deletionTimestamp'),'namespace changed during runtime verification')
+    report['runtime_images']=verify_runtime(c,client.get('pods',namespace=NS))
    report.update(result='verified',source_revision=source['status']['artifact']['revision'],applied_revision=root['status']['lastAppliedRevision'],helm_ready=True,tls_certificate_acceptance='NOT_RUN',watch_main=c['environment']=='uat',observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
    return report
   if clock()>=deadline:

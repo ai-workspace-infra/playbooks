@@ -16,6 +16,7 @@
   become: false
   environment:
     DEV_REGISTRY_NAMESPACE: '{{ dev_feature_config.namespace }}'
+    DEV_REGISTRY_CONTEXT: "{{ (lookup('ansible.builtin.env', 'DEV_REGISTRY_CONTEXT') | from_json) | combine({'namespace_uid': (dev_feature_result.stdout | from_json).namespace_uid}) | to_json }}"
   register: dev_registry_result
   changed_when: true
   no_log: true
