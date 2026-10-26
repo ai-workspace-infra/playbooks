@@ -39,7 +39,9 @@ rechecks live cluster/node UIDs, namespace stage and one observed lane GitReposi
 at that candidate (SIT commit; UAT main branch). No business credential is an input.
 There is no fallback into the old production native-init owner.
 
-Syntax check uses `ansible-playbook -i inventory/terraform_cmdb.py <entry> --syntax-check`.
+The entry playbook is `dev_web_saas_seed.yml`; it selects only the caller-projected
+CMDB target and repeats the instance binding. Syntax check uses
+`ansible-playbook -i inventory/terraform_cmdb.py dev_web_saas_seed.yml --syntax-check -e dev_web_saas_seed_target=all` (syntax only; not an execution selector).
 Unit checks: `python -m pytest tests/test_dev_web_saas_seed.py`.
 Opt-in real local PG17 check: set `PG17_BIN`, `SEED_MIGRATECTL` (built from the fixed
 Accounts source), `SEED_ACCOUNTS_SOURCE`, then run
