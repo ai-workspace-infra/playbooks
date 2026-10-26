@@ -10,6 +10,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+LANES = {'sit': ('feature-xconnect-referral-sit', 'accounts-xconnect-referral-sit.onwalk.net', 'xconnect-referral-sit.onwalk.net'),
+         'uat': ('web-saas-uat', 'accounts-web-saas-uat.onwalk.net', 'web-saas-uat.onwalk.net')}
+
 WORKLOADS = {'caddy', 'console', 'accounts', 'billing', 'content', 'postgresql'}
 
 BUSINESS_CASES = ('registration_attribution', 'mfa_if_enabled', 'campaign_rules',
@@ -36,6 +39,10 @@ def validate(contract, observed, now=None):
     require(contract.get('schema') == 'referral-deployment/v1', 'unsupported contract')
     require(contract.get('environment') == 'dev' and contract.get('stage') in ('sit', 'uat'), 'nonproduction stage required')
     require(contract.get('feature_id') == 'xconnect-referral', 'unexpected feature')
+    require(contract.get('cluster') == 'dev-k3s-v5', 'exact Dev cluster required')
+    require(contract.get('sit_namespace') == LANES['sit'][0] and contract.get('uat_namespace') == LANES['uat'][0], 'fixed isolated namespaces required')
+    for field in ('namespace_uid', 'node_uid', 'cluster_uid'):
+        require(re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', contract.get(field, '')) is not None, 'live namespace/node/cluster UID required')
     for field in ('sit_namespace', 'uat_namespace'):
         require(re.fullmatch(r'[a-z0-9][a-z0-9-]{0,62}', contract.get(field, '')) is not None, 'explicit namespaces required')
     require(contract['sit_namespace'] != contract['uat_namespace'], 'SIT and UAT must be distinct')
@@ -50,6 +57,7 @@ def validate(contract, observed, now=None):
         require(contract.get('merge_shas') == contract['source_shas'], 'UAT must bind each actual merged source')
     origins = contract.get('origins', {})
     require(isinstance(origins, dict) and set(origins) == {'accounts', 'console'}, 'accounts/console route origins required')
+    require(origins == dict(zip(('accounts', 'console'), ('https://'+host for host in LANES[contract['stage']][1:]))), 'fixed stage onwalk origins required')
     for value in origins.values():
         origin(value)
     images = contract.get('images', {})
@@ -60,7 +68,7 @@ def validate(contract, observed, now=None):
     # Keep OCI index digest and platform/runtime digest separate; never assume equality.
     require(observed.get('schema') == 'referral-deployment-observation/v1', 'owner deployment observation required')
     for field in ('environment', 'stage', 'feature_id', 'namespace', 'cluster', 'instance_id',
-                  'candidate_fingerprint', 'gitops_sha', 'origins'):
+                  'candidate_fingerprint', 'gitops_sha', 'origins', 'namespace_uid', 'node_uid', 'cluster_uid'):
         require(observed.get(field) == contract[field], 'observed deployment binding mismatch')
     sampled = dt.datetime.fromisoformat(observed['sampled_at'].replace('Z', '+00:00'))
     require(sampled.tzinfo is not None and 0 <= (now-sampled).total_seconds() <= 600, 'fresh deployment observation required')
@@ -68,7 +76,8 @@ def validate(contract, observed, now=None):
     pods = observed.get('workloads', {})
     require(isinstance(pods, dict) and set(pods) == set(images) and all(isinstance(value, dict) for value in pods.values()), 'all required workloads must be observed')
     for name in images:
-        require(pods[name].get('namespace') == contract['namespace'] and pods[name].get('ready') is True
+        require(pods[name].get('namespace') == contract['namespace'] and pods[name].get('namespace_uid') == contract['namespace_uid']
+                and isinstance(pods[name].get('pod_uid'), str) and bool(pods[name]['pod_uid']) and pods[name].get('ready') is True
                 and pods[name].get('image') == images[name] and pods[name].get('image_id') == runtime[name], 'runtime workload mismatch')
 
 

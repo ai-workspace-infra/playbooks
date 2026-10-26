@@ -85,3 +85,52 @@ unchanged content may reuse only still-applicable facts, not a prior namespace's
 runtime result. Full acceptance and authorization precede merging lane/business
 PRs; no merge or cleanup is performed by this role. Temporary SIT cleanup never
 includes persistent UAT.
+
+## Bounded live registration sub-runner
+
+`files/live_registration.py` is a separate external HTTPS BFF runner. It first
+requires the current bound observation and health/image preflight, then reads
+an active campaign through Console, registers two isolated accounts through
+Console `/api/auth/register`, logs each in through `/api/auth/login`, and reads
+`/api/auth/referrals` through its independent in-memory cookie session. The
+invitee registration includes the owner's real referral code; an exact repeated
+registration must return 409 `email_already_exists`. It never follows inviteUrl
+(the current Accounts response contains a separate marketing URL).
+
+Run on the controller with the same three arguments as accept.py. Runtime-only
+`DEV_REFERRAL_SAMPLES_JSON` is a map with exactly owner/invitee, each containing
+name/email/password/code. Names must be `referral-{run_id}-{role}`; mailbox local
+parts must equal that name under a dedicated `.onwalk.net` test mailbox domain.
+Run IDs are unique lowercase alphanumeric/hyphen 8–48 characters. Passwords are
+independent 16+ characters. Codes must be actual six-digit mailbox verification
+codes, supplied by the approved test mailbox owner. Do not use bootstrap root
+credentials, fake codes, disable MFA, or log this environment value. The runner
+does not send mail, read a mailbox, configure SMTP, read Stripe secrets, or call
+payment APIs. Sessions, cookies and passwords are memory-only; receipts contain
+only check states and hashed sample identifiers. Samples are retained; there is
+no destructive cleanup.
+
+Source review: Accounts cmd/accountsvc/main.go starts email verification enabled
+but disables it for absent/example/incomplete SMTP configuration. Portal
+src/app/api/auth/register/route.ts nevertheless always requires a code. Thus
+non-delivering SMTP does **not** establish an executable full BFF registration
+path. A real test mailbox/code owner is currently a blocker; no product change
+or invented verification code is included here. MFA challenges also block this
+sub-runner until the existing supported MFA adapter is supplied; no skip PASS.
+
+The updated contract fixes cluster dev-k3s-v5, exact two namespaces and flat
+onwalk origins. namespace_uid/node_uid/cluster_uid must be nonempty UUIDs and
+match the fresh trusted observation. Each of six workloads must include
+namespace_uid and pod_uid plus ready/image/image_id. UID integrity is checked
+before any request. The caller still authenticates the observation producer;
+file hash is not provenance. A namespace recreated during the run invalidates
+its evidence and requires a new observation and rerun.
+
+Successful registration is a partial check only: unpaid referral attribution
+is not exposed by Accounts overview, which lists rewards and paid-invite stats.
+A bound independent DB audit must establish the exact sample attribution and
+one-time binding. `registration_attribution` stays BLOCKED without that evidence.
+The full runner always exits 2 with overall BLOCKED. Sandbox delivery, payments,
+10%, +30 days/billing anchor, refund/dispute/replay, seven-day boundary and actual
+DB DDL-denial remain NOT_RUN. Offline fake transports only validate contracts;
+they are never public deployment proof. No runtime invocation was performed.
