@@ -9,6 +9,13 @@ on:
         description: plan, prepare, submit, verify, or enable-tls; submit is not acceptance
         type: string
         required: true
+      candidate_artifact:
+        description: Same-run protected Toolkit API-verified candidate receipt
+        type: string
+        required: true
+      candidate_sha256:
+        type: string
+        required: true
       cmdb_artifact:
         type: string
         required: true
@@ -53,7 +60,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ai-workspace-infra/playbooks
-          ref: 211ac797cc97f784d1e0081fbbd4d786c5522f6a
+          ref: 1e33801f4966b3a5d716378f24cd862d8ee56dbc
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
@@ -73,6 +80,10 @@ jobs:
           version: v1.37.1
       - uses: actions/download-artifact@v4
         with:
+          name: ${{ inputs.candidate_artifact }}
+          path: ${{ runner.temp }}/dev-feature-candidate
+      - uses: actions/download-artifact@v4
+        with:
           name: ${{ inputs.cmdb_artifact }}
           path: ${{ runner.temp }}/dev-feature-cmdb
       - uses: actions/download-artifact@v4
@@ -85,6 +96,7 @@ jobs:
           STAGE: ${{ inputs.stage }}
           MODE: ${{ inputs.mode }}
           INSTANCE_ID: ${{ inputs.instance_id }}
+          CANDIDATE_RECEIPT_SHA256: ${{ inputs.candidate_sha256 }}
           CANDIDATE_SHA: ${{ inputs.gitops_sha }}
           PLATFORM_SHA: ${{ inputs.platform_sha }}
           CMDB_SHA256: ${{ inputs.cmdb_sha256 }}
@@ -99,6 +111,7 @@ jobs:
             seed_args=(--seed-receipt "$RUNNER_TEMP/dev-feature-seed/receipt.json" --seed-sha256 "$SEED_SHA256")
           fi
           "$RUNNER_TEMP/dev-feature-venv/bin/python" scripts/run_dev_feature_flux.py \
+            --candidate-receipt "$RUNNER_TEMP/dev-feature-candidate/receipt.json" --candidate-sha256 "$CANDIDATE_RECEIPT_SHA256" \
             --stage "$STAGE" --mode "$MODE" --instance-id "$INSTANCE_ID" \
             --cmdb "$RUNNER_TEMP/dev-feature-cmdb/cmdb.json" --cmdb-sha256 "$CMDB_SHA256" \
             --gitops-root "$GITHUB_WORKSPACE/gitops-candidate" --gitops-sha "$CANDIDATE_SHA" \
