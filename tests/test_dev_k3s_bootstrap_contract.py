@@ -77,6 +77,34 @@ class Contract(unittest.TestCase):
         with self.assertRaises(ValueError):
             VERIFY.evaluate(*args, ADAPTER.TARGET, SHA)
 
+    def test_false_ready_missing_uid_and_wrong_node_fail(self):
+        for index in (2, 3):
+            args = self.resources()
+            args[index]["status"]["conditions"][0]["status"] = "False"
+            with self.assertRaises(ValueError):
+                VERIFY.evaluate(*args, ADAPTER.TARGET, SHA)
+        args = self.resources()
+        args[1]["metadata"].pop("uid")
+        with self.assertRaises(ValueError):
+            VERIFY.evaluate(*args, ADAPTER.TARGET, SHA)
+        with self.assertRaises(ValueError):
+            VERIFY.evaluate(*self.resources(), "other-node", SHA)
+
+    def test_reusable_wrapper_is_dev_only_and_immutable(self):
+        path = ROOT / ".github/workflows/dev-k3s-bootstrap.yml"
+        if not path.exists():
+            self.skipTest("wrapper is added after its immutable producer commit")
+        doc = yaml.safe_load(path.read_text())
+        trigger = doc.get("on", doc.get(True))
+        self.assertEqual(set(trigger), {"workflow_call"})
+        self.assertEqual(set(trigger["workflow_call"]["inputs"]), {"cmdb_artifact", "cmdb_sha256", "instance_id", "gitops_sha"})
+        job = doc["jobs"]["bootstrap"]
+        self.assertEqual(job["environment"], "dev")
+        checkout = job["steps"][0]["with"]
+        self.assertEqual(checkout["repository"], "ai-workspace-infra/playbooks")
+        self.assertRegex(checkout["ref"], r"^[0-9a-f]{40}$")
+        self.assertNotIn("secrets", trigger["workflow_call"])
+
     def test_source_commit_and_synchronous_role_are_present(self):
         tasks = (ROOT / "roles/vhosts/k3s_platform_bootstrap/tasks/main.yml").read_text()
         self.assertIsInstance(yaml.safe_load(tasks), list)
