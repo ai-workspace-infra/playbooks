@@ -29,14 +29,14 @@ def validate_candidate_receipt(receipt,sha,stage,run_id):
 
 def validate_prepare_receipt(receipt,config,observation):
  require(receipt.get('schema_version')=='dev-feature-flux/v1' and receipt.get('result')=='prepared' and receipt.get('mode')=='prepare','successful prepare producer required')
- for key in ('candidate_sha','namespace','node_uid','cluster_uid','manifest_sha256'):
+ for key in ('candidate_sha','namespace','namespace_uid','node_uid','cluster_uid','manifest_sha256'):
   require(receipt.get(key)==config[key],'prepare proof stale or wrong target: '+key)
  require(receipt.get('instance_id')=='109277144','prepare instance mismatch')
  registry=receipt.get('registry',{})
  require(registry.get('result')=='configured' and registry.get('namespace')==config['namespace'] and registry.get('source_path')=='kv/CICD/dev/ghcr' and registry.get('secret_name')=='web-saas-registry','fixed Dev registry prepare receipt required')
  mapping=registry.get('oci_mapping',{});binding=mapping.get('binding',{})
  require(mapping.get('schema_version')=='dev-oci-platform/v1' and binding.get('instance_id')=='109277144','OCI mapping producer required')
- for key in ('candidate_sha','namespace','node_uid','cluster_uid','manifest_sha256'):
+ for key in ('candidate_sha','namespace','namespace_uid','node_uid','cluster_uid','manifest_sha256'):
   require(binding.get(key)==config[key],'OCI mapping binding mismatch: '+key)
  require(binding.get('images')==observation['images'] and binding.get('sources')==observation['sources'],'candidate/image/source changed since prepare')
  source=binding.get('source',{})
@@ -80,7 +80,11 @@ def execute(a):
   config['seed_receipt']=json.loads(a.seed_receipt.read_text())
   require(a.prepare_receipt is not None and re.fullmatch(r'[0-9a-f]{64}',a.prepare_sha256 or ''),'authenticated prepare receipt artifact/digest required')
   require(hashlib.sha256(a.prepare_receipt.read_bytes()).hexdigest()==a.prepare_sha256,'prepare receipt digest mismatch')
-  config['runtime_mapping']=validate_prepare_receipt(json.loads(a.prepare_receipt.read_text()),config,observation)
+  prepare=json.loads(a.prepare_receipt.read_text())
+  require(candidate.SCOPE.UUID.fullmatch(prepare.get('namespace_uid','')),'prepare namespace incarnation missing')
+  config['namespace_uid']=prepare['namespace_uid']
+  require(config['seed_receipt'].get('namespace_uid')==config['namespace_uid'],'seed/prepare namespace incarnation differs')
+  config['runtime_mapping']=validate_prepare_receipt(prepare,config,observation)
  a.receipt.unlink(missing_ok=True)
  oidc=request(os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']+'&audience=vault',{'Authorization':'Bearer '+os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})['value']
  session=request('https://vault.svc.plus/v1/auth/jwt/login',{'Content-Type':'application/json'},json.dumps({'role':ROLE,'jwt':oidc}).encode())['auth']

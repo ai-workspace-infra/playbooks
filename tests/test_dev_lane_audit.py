@@ -51,9 +51,9 @@ class HTTPTests(unittest.TestCase):
 
 class ActualIdentityFlowTests(unittest.TestCase):
  def test_actual_auditor_requests_and_management_uid_probes_are_distinct(self):
-  ns='feature-xconnect-referral-sit';config={'environment':'sit','namespace':ns,'mode':'verify'}
+  ns='feature-xconnect-referral-sit';config={'environment':'sit','namespace':ns,'namespace_uid':'3'*36,'mode':'verify'}
   rows={name:{'pod':'web-saas-'+name,'pod_uid':'uid-'+name} for name in A.NAMES}
-  runtime={'result':'verified','runtime_images':rows};calls=[]
+  runtime={'result':'verified','namespace_uid':'3'*36,'runtime_images':rows};calls=[]
   class API:
    def request(self,path,method='GET',body=None,expected=200,content_type=None,read=True):
     calls.append((method,path,expected,read))
@@ -64,6 +64,7 @@ class ActualIdentityFlowTests(unittest.TestCase):
   commands=[]
   def run(args):
    commands.append(args);self.assertNotIn('--token',args)
+   if args[:2]==['get','namespace']:return '3'*36
    if args[0]=='get':return next(v['pod_uid'] for v in rows.values() if v['pod']==args[2])
    self.assertEqual(args[-2:],['/bin/cat','/proc/1/status'])
    return 'Pid:\t1\nUid:\t1000\t1000\t1000\t1000\n'

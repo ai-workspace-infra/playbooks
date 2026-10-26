@@ -59,6 +59,10 @@ def execute(config,runtime,api=None,run=command,now=None):
  require(config.get('environment') in SCOPES and config.get('namespace')==SCOPES[config['environment']] and config.get('mode')=='verify','fixed verified lane required')
  require(runtime.get('result')=='verified' and set(runtime.get('runtime_images',{}))==NAMES,'verified six-container runtime prerequisite required')
  namespace=config['namespace'];source=runtime['runtime_images']
+ require(runtime.get('namespace_uid')==config.get('namespace_uid') and re.fullmatch('[0-9a-f-]{36}',config.get('namespace_uid','')),'authenticated namespace UID required')
+ def namespace_current():
+  require(run(['get','namespace',namespace,'-o','jsonpath={.metadata.uid}'])==config['namespace_uid'],'namespace changed during audit')
+ namespace_current()
  if api is None:
   token=run(['create','token','lane-auditor','-n',namespace,'--duration=600s'])
   token_claims(token,namespace,now if now is not None else int(datetime.datetime.now(datetime.timezone.utc).timestamp()))
@@ -92,7 +96,8 @@ def execute(config,runtime,api=None,run=command,now=None):
   # No upgrade headers/streams are opened; unexpected exec permission fails
   # without executing a command. Patch is server dry-run; no writes persist.
   denied[key]=api.request(path,method,body,expected=403,content_type=ctype,read=False)['status']
- return {'audit_acceptance':'verified','business_uid_acceptance':'verified','audit':{'identity':username,'namespace':namespace,'allowed_status_reads':allowed,'denied':denied,'token_requested_seconds':600},'business_process_uid':uid_results,'k3s_runtime_rootless':'NOT_CLAIMED'}
+ namespace_current()
+ return {'namespace_uid':config['namespace_uid'],'audit_acceptance':'verified','business_uid_acceptance':'verified','audit':{'identity':username,'namespace':namespace,'allowed_status_reads':allowed,'denied':denied,'token_requested_seconds':600},'business_process_uid':uid_results,'k3s_runtime_rootless':'NOT_CLAIMED'}
 
 if __name__=='__main__':
  try:

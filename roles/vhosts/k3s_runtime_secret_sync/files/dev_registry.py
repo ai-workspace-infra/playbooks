@@ -19,7 +19,7 @@ SOURCES={'caddy':'ai-workspace-infra/artifacts','console':'ai-workspace-services
 def mapping(context,record,inspect=dev_oci.inspect):
  import re
  if context.get('namespace') not in ('feature-xconnect-referral-sit','web-saas-uat') or context.get('instance_id')!='109277144':raise ValueError('exact Dev target required')
- for key in ('node_uid','cluster_uid'):
+ for key in ('namespace_uid','node_uid','cluster_uid'):
   if not re.fullmatch('[0-9a-f-]{36}',context.get(key,'')):raise ValueError('runtime UID binding required')
  source_context=context.get('source',{})
  if source_context.get('repository')!='ai-workspace-infra/platform-ops-toolkit' or source_context.get('workflow_ref')!='ai-workspace-infra/platform-ops-toolkit/.github/workflows/dev-feature-deploy.yml@refs/heads/main' or not re.fullmatch('[0-9a-f]{40}',source_context.get('workflow_sha','')) or not re.fullmatch('[0-9a-f]{40}',source_context.get('owner_sha','')) or not re.fullmatch('[1-9][0-9]*',str(source_context.get('run_id',''))) or not re.fullmatch('[1-9][0-9]*',str(source_context.get('run_attempt',''))):raise ValueError('prepare GHA source binding required')
@@ -36,6 +36,26 @@ def mapping(context,record,inspect=dev_oci.inspect):
   result[component]={**value,'source_repository':source['repository'],'source_sha':source['source_sha'],'build_run_id':source['build_run_id']}
  return {'schema_version':'dev-oci-platform/v1','images':result,'binding':context}
 
+def remote_command(namespace,uid):
+ import shlex
+ script="""import json,subprocess,sys
+ns,uid=sys.argv[1:]
+k=['/usr/local/bin/k3s','kubectl','--kubeconfig=/etc/rancher/k3s/k3s.yaml','--request-timeout=20s']
+def current():
+ p=subprocess.run(k+['get','namespace',ns,'-o','json'],text=True,capture_output=True,timeout=30)
+ if p.returncode:raise SystemExit(2)
+ obj=json.loads(p.stdout)
+ if obj['metadata'].get('uid')!=uid or obj['metadata'].get('deletionTimestamp'):raise SystemExit(2)
+obj=json.load(sys.stdin)
+if obj.get('kind')!='Secret' or obj.get('type')!='kubernetes.io/dockerconfigjson' or obj['metadata'].get('namespace')!=ns or obj['metadata'].get('name')!='web-saas-registry' or set(obj.get('data',{}))!={'.dockerconfigjson'}:raise SystemExit(2)
+current()
+p=subprocess.run(k+['apply','--server-side','--field-manager=dev-runtime-secret-sync','-f','-','-o','name'],input=json.dumps(obj),text=True,capture_output=True,timeout=30)
+if p.returncode or p.stdout.strip()!='secret/web-saas-registry':raise SystemExit(2)
+current()
+print('secret/web-saas-registry')
+"""
+ return shlex.join(['python3','-c',script,namespace,uid])
+
 def main():
  ns=os.environ['DEV_REGISTRY_NAMESPACE'];host=os.environ['DEV_REGISTRY_HOST']
  import ipaddress
@@ -46,7 +66,8 @@ def main():
  context=json.loads(os.environ['DEV_REGISTRY_CONTEXT'])
  if context.get('namespace')!=ns:raise ValueError('registry namespace mismatch')
  platform_mapping=mapping(context,record['data'])
- args=['ssh','-F','/dev/null','-o','StrictHostKeyChecking=yes','-o','GlobalKnownHostsFile=/dev/null','-o','UpdateHostKeys=no','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','UserKnownHostsFile='+os.environ['DEV_REGISTRY_KNOWN_HOSTS'],'-i',os.environ['DEV_REGISTRY_PUBLIC_IDENTITY'],'root@'+host,'/usr/local/bin/k3s kubectl apply --server-side --field-manager=dev-runtime-secret-sync -f - -o name']
+ secret['metadata']['annotations']={'delivery.svc.plus/namespace-uid':context['namespace_uid']}
+ args=['ssh','-F','/dev/null','-o','StrictHostKeyChecking=yes','-o','GlobalKnownHostsFile=/dev/null','-o','UpdateHostKeys=no','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','UserKnownHostsFile='+os.environ['DEV_REGISTRY_KNOWN_HOSTS'],'-i',os.environ['DEV_REGISTRY_PUBLIC_IDENTITY'],'root@'+host,remote_command(ns,context['namespace_uid'])]
  p=subprocess.run(args,input=json.dumps(secret),text=True,capture_output=True,timeout=60)
  if p.returncode or p.stdout.strip()!='secret/web-saas-registry':raise RuntimeError('registry projection failed')
  print(json.dumps({'result':'configured','namespace':ns,'secret_name':'web-saas-registry','source_path':'kv/CICD/dev/ghcr','source_version':record['metadata']['version'],'oci_mapping':platform_mapping}))

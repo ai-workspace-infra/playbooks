@@ -58,7 +58,7 @@ class OCITests(unittest.TestCase):
 
 class RuntimeTests(unittest.TestCase):
  def fixture(self):
-  config={'namespace':'feature-xconnect-referral-sit','candidate_sha':'a'*40,'node_uid':'1'*36,'cluster_uid':'2'*36,'manifest_sha256':'b'*64}
+  config={'namespace':'feature-xconnect-referral-sit','namespace_uid':'3'*36,'candidate_sha':'a'*40,'node_uid':'1'*36,'cluster_uid':'2'*36,'manifest_sha256':'b'*64}
   context={**config,'instance_id':'109277144','source':{'repository':'ai-workspace-infra/platform-ops-toolkit','workflow_ref':'ai-workspace-infra/platform-ops-toolkit/.github/workflows/dev-feature-deploy.yml@refs/heads/main','workflow_sha':'c'*40,'owner_sha':'d'*40,'run_id':'123','run_attempt':'1'},'images':{},'sources':{}}
   for i,name in enumerate(G.IMAGES):
    context['images'][name]='ghcr.io/'+G.IMAGES[name]+'@sha256:'+str(i)*64
