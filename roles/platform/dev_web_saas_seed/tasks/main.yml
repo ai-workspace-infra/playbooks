@@ -43,3 +43,12 @@
 - name: Expose only sanitized seed result
   ansible.builtin.set_fact:
     dev_web_saas_seed_receipt: "{{ dev_web_saas_seed_result.stdout | from_json }}"
+
+- name: Write public receipt to the trusted caller evidence directory
+  ansible.builtin.copy:
+    content: "{{ dev_web_saas_seed_receipt | to_json }}\n"
+    dest: "{{ dev_web_saas_seed_report }}"
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+  when: dev_web_saas_seed_report is defined

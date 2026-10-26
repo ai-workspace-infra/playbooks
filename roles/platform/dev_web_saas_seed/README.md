@@ -74,3 +74,11 @@ Rollback: stop before app secret publication on any failure; retain the new
 namespace/PVC and diagnostic metadata for review. No DROP, reset, PVC deletion,
 production fallback, review/default-user seed, or automatic reinitialization.
 Stripe Sandbox absence blocks business acceptance independently of DB setup.
+
+Trusted wrapper integration should reuse the existing Dev Flux owner's authenticated
+CMDB/SSH transport rather than introduce another Vault identity. Set
+`dev_web_saas_seed_report` to the caller's temporary evidence path to collect the
+public receipt locally. Same-run artifact contract: `dev-lane-seed-<stage>-<run_id>-<attempt>`
+containing `receipt.json`; only initialize can emit `dev-lane-seed/v1 verified`.
+The seed-admin output is preparatory and cannot satisfy Flux verify. The caller
+must authenticate artifact producer/source/run/attempt before passing the receipt.
