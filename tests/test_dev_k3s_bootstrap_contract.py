@@ -105,6 +105,25 @@ class Contract(unittest.TestCase):
         self.assertRegex(checkout["ref"], r"^[0-9a-f]{40}$")
         self.assertNotIn("secrets", trigger["workflow_call"])
 
+    def test_root_and_unbounded_vault_sessions_are_rejected(self):
+        valid = {"client_token": "synthetic-unit-value", "token_type": "service", "lease_duration": 300, "policies": ["default", "dev-bootstrap"]}
+        self.assertEqual(ADAPTER.validate_session(valid), valid)
+        for field in ("policies", "token_policies", "identity_policies"):
+            session = {**valid, field: ["root"]}
+            with self.assertRaises(ValueError):
+                ADAPTER.validate_session(session)
+        for ttl in (0, -1, 1201):
+            with self.assertRaises(ValueError):
+                ADAPTER.validate_session({**valid, "lease_duration": ttl})
+
+    def test_single_node_receipt_is_opt_in_not_a_generic_role_change(self):
+        defaults = yaml.safe_load((ROOT / "roles/vhosts/k3s_platform_bootstrap/defaults/main.yml").read_text())
+        self.assertFalse(defaults["k3s_platform_strict_dev_receipt"])
+        tasks = yaml.safe_load((ROOT / "roles/vhosts/k3s_platform_bootstrap/tasks/main.yml").read_text())
+        observer = next(t for t in tasks if t["name"] == "Verify actual node cluster and observed Flux revision")
+        self.assertEqual(observer["when"], "k3s_platform_strict_dev_receipt | bool")
+        self.assertIn('"k3s_platform_strict_dev_receipt": True', (ROOT / "scripts/dev_k3s_bootstrap.py").read_text())
+
     def test_source_commit_and_synchronous_role_are_present(self):
         tasks = (ROOT / "roles/vhosts/k3s_platform_bootstrap/tasks/main.yml").read_text()
         self.assertIsInstance(yaml.safe_load(tasks), list)

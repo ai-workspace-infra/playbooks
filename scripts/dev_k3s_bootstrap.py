@@ -28,6 +28,16 @@ def request(url, headers=None, data=None):
         return json.load(response) if response.status != 204 else {}
 
 
+def validate_session(session):
+    require(isinstance(session, dict), "invalid Vault auth response")
+    require(0 < session.get("lease_duration", 0) <= 1200, "Vault session TTL is not bounded")
+    require(session.get("token_type") in {"service", "batch"} and session.get("client_token"), "invalid Vault token type")
+    for field in ("policies", "token_policies", "identity_policies"):
+        policies = session.get(field, [])
+        require(isinstance(policies, list) and "root" not in policies, "root Vault session is forbidden")
+    return session
+
+
 def validate_cmdb(data, instance_id):
     require(isinstance(data, dict) and set(data) == {TARGET}, "CMDB must contain exactly the Dev target")
     h = data[TARGET]
@@ -71,7 +81,7 @@ def main():
                    {"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})["value"]
     session = request("https://vault.svc.plus/v1/auth/jwt/login", {"Content-Type": "application/json"},
                       json.dumps({"role": ROLE, "jwt": oidc}).encode())["auth"]
-    require(0 < session.get("lease_duration", 0) <= 1200, "Vault session TTL is not bounded")
+    validate_session(session)
     token = session["client_token"]
     agent_env = None
     try:
@@ -98,7 +108,7 @@ def main():
             receipt = d / "receipt.json"
             variables = d / "inputs.json"
             variables.write_text(json.dumps({"k3s_platform_git_url": REPOSITORY, "k3s_platform_git_auth_mode": "public",
-                "k3s_platform_git_commit": a.gitops_sha, "k3s_platform_flux_root_path": "./environments/clusters/" + TARGET,
+                "k3s_platform_strict_dev_receipt": True, "k3s_platform_git_commit": a.gitops_sha, "k3s_platform_flux_root_path": "./environments/clusters/" + TARGET,
                 "k3s_platform_receipt_path": str(receipt)}))
             ssh_args = f"-o StrictHostKeyChecking=yes -o UserKnownHostsFile={known_hosts} -o PasswordAuthentication=no -o BatchMode=yes"
             env = {**agent_env, "AI_WORKSPACE_CMDB_JSON": str(narrow_cmdb), "ANSIBLE_HOST_KEY_CHECKING": "True",

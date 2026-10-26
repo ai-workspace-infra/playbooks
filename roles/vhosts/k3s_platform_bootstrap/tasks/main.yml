@@ -423,6 +423,7 @@
     owner: root
     group: root
     mode: "0700"
+  when: k3s_platform_strict_dev_receipt | bool
 
 - name: Reconcile root Flux source synchronously
   ansible.builtin.command:
@@ -473,6 +474,7 @@
     KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
   register: k3s_platform_verified_receipt
   changed_when: false
+  when: k3s_platform_strict_dev_receipt | bool
 
 - name: Save verified public bootstrap receipt on controller
   ansible.builtin.copy:
@@ -481,7 +483,9 @@
     mode: "0600"
   delegate_to: localhost
   become: false
-  when: k3s_platform_receipt_path | length > 0
+  when:
+    - k3s_platform_strict_dev_receipt | bool
+    - k3s_platform_receipt_path | length > 0
 
 - name: Remove temporary K3s and Flux bootstrap files
   ansible.builtin.file:
