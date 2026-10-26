@@ -43,3 +43,27 @@ k3s_platform_git_auth_mode: public
 This role does not remove K3s or its data directory. Reverting the GitOps
 source/path returns Flux to the previous declared root. K3s removal and data
 cleanup require a separate, explicitly scoped recovery action.
+
+## Immutable source and runtime receipt
+
+Set `k3s_platform_git_commit` to a full 40-character commit SHA to render
+`GitRepository.spec.ref.commit`; a nonempty malformed SHA fails before changes.
+The existing branch setting remains supported for existing callers. Reconciliation
+now runs synchronously. The Dev wrapper explicitly enables
+`k3s_platform_strict_dev_receipt` (default false); existing generic callers do
+not inherit the single-node constraint. When enabled, the bounded verifier
+requires a single expected Ready
+control-plane node, a real kube-system UID, current observed generations,
+GitRepository and root Kustomization Ready, and matching source/applied revisions.
+With a commit input, both source spec and observed artifact must match that SHA.
+`k3s_platform_ready_timeout` bounds observation (default 600 seconds, max 1200).
+`k3s_platform_receipt_path` optionally writes only the verified public receipt on
+the controller. Node hostname/UID, cluster UID, versions and actual revision are
+observations; a missing receipt is a failed bootstrap, never a fixture success.
+
+The Dev reusable adapter consumes a single current-run CMDB artifact and digest,
+requires the expected instance ID, narrows inventory connection variables, and
+loads only its fixed non-production SSH binding from Vault via caller OIDC.
+Trusted known_hosts are mandatory; private keys are loaded via stdin into an
+isolated ssh-agent and never written to a key file. This role still runs as a
+system administrator for bootstrap; that is not a business or audit identity.

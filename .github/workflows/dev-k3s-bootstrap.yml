@@ -1,0 +1,64 @@
+name: Dev K3s bootstrap owner
+on:
+  workflow_call:
+    inputs:
+      cmdb_artifact:
+        description: Current-run IaC single-target CMDB artifact name
+        required: true
+        type: string
+      cmdb_sha256:
+        required: true
+        type: string
+      instance_id:
+        required: true
+        type: string
+      gitops_sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+concurrency:
+  group: dev-k3s-bootstrap-single-target
+  cancel-in-progress: false
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 60
+    steps:
+      # This source commit contains the role, verifier and narrow adapter.
+      # Never default checkout to the caller repository or a mutable branch.
+      - uses: actions/checkout@v4
+        with:
+          repository: ai-workspace-infra/playbooks
+          ref: 4a5dbb8e1240a096e7818f1da6a925569a3da7ea
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: ./.github/actions/setup-node-stage-runner
+        with:
+          venv_path: ${{ runner.temp }}/dev-bootstrap-venv
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.cmdb_artifact }}
+          path: ${{ runner.temp }}/dev-bootstrap-cmdb
+      - name: Run bounded single-target bootstrap
+        env:
+          CMDB_FILE: ${{ runner.temp }}/dev-bootstrap-cmdb/cmdb.json
+          CMDB_SHA256: ${{ inputs.cmdb_sha256 }}
+          INSTANCE_ID: ${{ inputs.instance_id }}
+          GITOPS_SHA: ${{ inputs.gitops_sha }}
+          RECEIPT_FILE: ${{ runner.temp }}/dev-bootstrap-evidence/receipt.json
+        run: >-
+          ${{ runner.temp }}/dev-bootstrap-venv/bin/python scripts/dev_k3s_bootstrap.py
+          --cmdb "$CMDB_FILE" --cmdb-sha256 "$CMDB_SHA256"
+          --instance-id "$INSTANCE_ID" --gitops-sha "$GITOPS_SHA" --receipt "$RECEIPT_FILE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dev-k3s-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dev-bootstrap-evidence/receipt.json
+          if-no-files-found: error
+          retention-days: 7

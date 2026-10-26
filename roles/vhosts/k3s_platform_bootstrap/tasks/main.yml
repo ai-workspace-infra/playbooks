@@ -2,7 +2,8 @@
   ansible.builtin.assert:
     that:
       - k3s_platform_git_url | length > 0
-      - k3s_platform_git_branch | length > 0
+      - k3s_platform_git_commit | length > 0 or k3s_platform_git_branch | length > 0
+      - k3s_platform_git_commit | length == 0 or k3s_platform_git_commit is match("^[0-9a-f]{40}$")
       - k3s_platform_flux_root_path | length > 0
       - k3s_platform_git_auth_mode | default('public') | lower in ['public', 'ssh', 'https-basic', 'https-bearer', '']
     fail_msg: "k3s platform bootstrap requires git url, branch, root path, and a supported git auth mode."
@@ -390,7 +391,11 @@
       interval: 1m0s
       url: ${GIT_URL}
       ref:
+    {% if k3s_platform_git_commit | length > 0 %}
+        commit: {{ k3s_platform_git_commit }}
+    {% else %}
         branch: ${GIT_BRANCH}
+    {% endif %}
     ${SECRET_REF_BLOCK}
     ---
     apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -411,30 +416,80 @@
   args:
     executable: /bin/bash
 
-- name: Reconcile root Flux kustomization
-  ansible.builtin.shell: |
-    set -euo pipefail
-    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
-    flux reconcile source git "{{ k3s_platform_flux_source_name }}" \
-      --namespace "{{ k3s_platform_flux_namespace }}" \
-      --timeout=5m
-    flux reconcile kustomization platform-root \
-      --namespace "{{ k3s_platform_flux_namespace }}" \
-      --with-source \
-      --timeout=10m
-  args:
-    executable: /bin/bash
-  async: 1200
-  poll: 0
+- name: Install bounded bootstrap receipt verifier
+  ansible.builtin.copy:
+    src: verify_bootstrap.py
+    dest: "{{ k3s_platform_install_dir }}/verify_bootstrap.py"
+    owner: root
+    group: root
+    mode: "0700"
+  when: k3s_platform_strict_dev_receipt | bool
+
+- name: Reconcile root Flux source synchronously
+  ansible.builtin.command:
+    argv:
+      - flux
+      - reconcile
+      - source
+      - git
+      - "{{ k3s_platform_flux_source_name }}"
+      - --namespace
+      - "{{ k3s_platform_flux_namespace }}"
+      - --timeout=5m
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
   changed_when: true
 
-- name: Verify flux resources
-  ansible.builtin.shell: |
-    set -euo pipefail
-    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
-    kubectl -n "{{ k3s_platform_flux_namespace }}" get gitrepositories,kustomizations
-  args:
-    executable: /bin/bash
+- name: Reconcile root Flux kustomization synchronously
+  ansible.builtin.command:
+    argv:
+      - flux
+      - reconcile
+      - kustomization
+      - platform-root
+      - --namespace
+      - "{{ k3s_platform_flux_namespace }}"
+      - --with-source
+      - --timeout=10m
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  changed_when: true
+
+- name: Verify actual node cluster and observed Flux revision
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ k3s_platform_install_dir }}/verify_bootstrap.py"
+      - --node
+      - "{{ k3s_platform_node_name | default(inventory_hostname) }}"
+      - --namespace
+      - "{{ k3s_platform_flux_namespace }}"
+      - --source
+      - "{{ k3s_platform_flux_source_name }}"
+      - --commit
+      - "{{ k3s_platform_git_commit }}"
+      - --version
+      - "{{ k3s_platform_k3s_version }}"
+      - --architecture
+      - "{{ k3s_platform_expected_architecture }}"
+      - --timeout
+      - "{{ k3s_platform_ready_timeout | string }}"
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  register: k3s_platform_verified_receipt
+  changed_when: false
+  when: k3s_platform_strict_dev_receipt | bool
+
+- name: Save verified public bootstrap receipt on controller
+  ansible.builtin.copy:
+    content: "{{ k3s_platform_verified_receipt.stdout }}\n"
+    dest: "{{ k3s_platform_receipt_path }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  when:
+    - k3s_platform_strict_dev_receipt | bool
+    - k3s_platform_receipt_path | length > 0
 
 - name: Remove temporary K3s and Flux bootstrap files
   ansible.builtin.file:
