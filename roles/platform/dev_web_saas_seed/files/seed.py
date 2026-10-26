@@ -213,7 +213,7 @@ class Owner:
         final_source = self.k('-n', self.ns, 'get', 'gitrepository', source['metadata']['name'])
         if final_source.get('status', {}).get('artifact', {}).get('revision') != revision:
             raise Blocked('candidate changed during initialization')
-        return {'schema': 'dev-lane-seed/v1', 'result': 'verified',
+        return {'schema_version': 'dev-lane-seed/v1', 'result': 'verified',
                 'instance_id': self.r['instance_id'], 'node_uid': self.r['node_uid'],
                 'cluster_uid': self.r['cluster_uid'], 'namespace': self.ns,
                 'candidate_sha': self.r['candidate_sha'],
