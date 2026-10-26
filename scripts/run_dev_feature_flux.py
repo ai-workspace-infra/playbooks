@@ -8,6 +8,7 @@ from dev_k3s_bootstrap import request,validate_session,validate_cmdb
 ROOT=Path(__file__).resolve().parents[1]
 ROLE='github-actions-playbooks-dev-k3s-bootstrap'
 RECORD='kv/data/CICD/dev/k3s-bootstrap'
+SIT_CANDIDATE='4a7fb32a9f6ba541ba5649b43e37f5298fab30df'
 
 def require(value,message):
  if not value:raise ValueError(message)
@@ -19,6 +20,7 @@ def run(args,env=None,stdin=None,timeout=1200):
 
 def execute(a):
  require(a.stage in candidate.SCOPE.SCOPES and a.mode in ('plan','prepare','apply','enable-tls'),'explicit lane/mode required')
+ if a.stage=='sit':require(a.gitops_sha==SIT_CANDIDATE,'SIT must use the reviewed fixed candidate; update owner review for a new candidate')
  require(candidate.SCOPE.SHA.fullmatch(a.gitops_sha) and candidate.SCOPE.SHA.fullmatch(a.platform_sha),'full GitOps SHA required')
  require(re.fullmatch(r'[0-9a-f]{64}',a.cmdb_sha256),'CMDB digest required')
  require(hashlib.sha256(a.cmdb.read_bytes()).hexdigest()==a.cmdb_sha256,'CMDB checksum mismatch')
