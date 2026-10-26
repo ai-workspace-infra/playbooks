@@ -68,6 +68,39 @@ def documents(c):
   return [kustom]
  return [namespace,sa,role,binding,source,kustom]
 
+def verify_runtime(c,pods):
+ mapping=c.get('runtime_mapping',{});records=mapping.get('images',{})
+ names={'accounts','billing','caddy','console','content','postgresql'}
+ require(mapping.get('schema_version')=='dev-oci-platform/v1' and set(records)==names,'authenticated six-component OCI mapping required')
+ binding=mapping.get('binding',{})
+ for key in ('candidate_sha','namespace','node_uid','cluster_uid','manifest_sha256'):require(binding.get(key)==c[key],'runtime mapping target/candidate mismatch')
+ selected=[]
+ for pod in pods.get('items',[]):
+  meta=pod.get('metadata',{});labels=meta.get('labels',{})
+  if meta.get('deletionTimestamp'):continue
+  if labels.get('app.kubernetes.io/instance')!='web-saas':continue
+  require(labels.get('app.kubernetes.io/component') in names,'unexpected application component pod')
+  selected.append(pod)
+ require(len(selected)==6,'exactly six active component pods required')
+ result={}
+ for pod in selected:
+  meta=pod['metadata'];component=meta['labels']['app.kubernetes.io/component'];expected=records[component]
+  require(component not in result and meta.get('namespace')==c['namespace'],'duplicate or wrong namespace component')
+  spec=pod.get('spec',{});containers=spec.get('containers',[])
+  require(spec.get('nodeName')==NODE and not spec.get('initContainers') and not spec.get('ephemeralContainers') and len(containers)==1 and containers[0].get('name')==component and containers[0].get('image')==expected['image'],'runtime container spec differs from candidate')
+  annotations=meta.get('annotations',{})
+  require(annotations.get('release.svc.plus/source_repository')==expected['source_repository'] and annotations.get('release.svc.plus/source_sha')==expected['source_sha'] and annotations.get('release.svc.plus/image_digest')==expected['manifest_digest'] and str(annotations.get('release.svc.plus/build_run_id'))==str(expected['build_run_id']),'runtime release annotations mismatch')
+  status=pod.get('status',{});states=status.get('containerStatuses',[])
+  require(status.get('phase')=='Running' and any(x.get('type')=='Ready' and x.get('status')=='True' for x in status.get('conditions',[])) and len(states)==1 and states[0].get('name')==component and states[0].get('ready') is True and states[0].get('state',{}).get('running') is not None,'component not actually Running/Ready')
+  image_id=states[0].get('imageID','');value=image_id
+  for prefix in ('docker-pullable://','containerd://','docker://'):
+   if value.startswith(prefix):value=value[len(prefix):];break
+  if '@' in value:
+   repository,value=value.split('@',1);require(repository==expected['image'].split('@')[0],'runtime image repository mismatch')
+  require(value in (expected['manifest_digest'],expected['platform_manifest_digest']) and re.fullmatch(r'sha256:[0-9a-f]{64}',value),'runtime imageID is neither approved root nor verified amd64 child')
+  result[component]={'pod':meta['name'],'pod_uid':meta['uid'],'spec_image':containers[0]['image'],'image_id':image_id,'root_digest':expected['manifest_digest'],'platform_digest':expected['platform_manifest_digest'],'ready':True}
+ return result
+
 class Client:
  def call(self,args,stdin=None):
   p=subprocess.run(['/usr/local/bin/k3s','kubectl','--request-timeout=20s',*args],input=stdin,text=True,capture_output=True,timeout=30)
@@ -88,7 +121,7 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
  if existing:
   labels=existing['metadata'].get('labels',{})
   require(labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==FEATURE and labels.get('environment')==c['environment'],'existing namespace has another owner; no takeover')
- report={'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False}
+ report={'mode':c['mode'],'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False}
  if c['mode']=='plan':return report
  if c['mode']=='verify':
   seed=c.get('seed_receipt',{})
@@ -116,6 +149,7 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
   if source and root and release and ready(source) and ready(root) and ready(release) and revision(source.get('status',{}).get('artifact',{}).get('revision'),c['candidate_sha']) and revision(root.get('status',{}).get('lastAppliedRevision'),c['candidate_sha']):
    require(source.get('spec',{}).get('ref')==({'branch':'main'} if c['environment']=='uat' else {'commit':c['candidate_sha']}),'candidate source drifted')
    preflight(c,*base())
+   if c['mode']=='verify':report['runtime_images']=verify_runtime(c,client.get('pods',namespace=NS))
    report.update(result='verified',source_revision=source['status']['artifact']['revision'],applied_revision=root['status']['lastAppliedRevision'],helm_ready=True,tls_certificate_acceptance='NOT_RUN',watch_main=c['environment']=='uat',observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
    return report
   if clock()>=deadline:

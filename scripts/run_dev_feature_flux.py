@@ -27,6 +27,27 @@ def validate_candidate_receipt(receipt,sha,stage,run_id):
  require(receipt.get('checks')=='success' and receipt.get('same_repository') is True and receipt.get('main_ancestry_verified') is True,'control-plane gates not verified')
  return receipt
 
+def validate_prepare_receipt(receipt,config,observation):
+ require(receipt.get('schema_version')=='dev-feature-flux/v1' and receipt.get('result')=='prepared' and receipt.get('mode')=='prepare','successful prepare producer required')
+ for key in ('candidate_sha','namespace','node_uid','cluster_uid','manifest_sha256'):
+  require(receipt.get(key)==config[key],'prepare proof stale or wrong target: '+key)
+ require(receipt.get('instance_id')=='109277144','prepare instance mismatch')
+ registry=receipt.get('registry',{})
+ require(registry.get('result')=='configured' and registry.get('namespace')==config['namespace'] and registry.get('source_path')=='kv/CICD/dev/ghcr' and registry.get('secret_name')=='web-saas-registry','fixed Dev registry prepare receipt required')
+ mapping=registry.get('oci_mapping',{});binding=mapping.get('binding',{})
+ require(mapping.get('schema_version')=='dev-oci-platform/v1' and binding.get('instance_id')=='109277144','OCI mapping producer required')
+ for key in ('candidate_sha','namespace','node_uid','cluster_uid','manifest_sha256'):
+  require(binding.get(key)==config[key],'OCI mapping binding mismatch: '+key)
+ require(binding.get('images')==observation['images'] and binding.get('sources')==observation['sources'],'candidate/image/source changed since prepare')
+ source=binding.get('source',{})
+ require(source.get('repository')=='ai-workspace-infra/platform-ops-toolkit' and source.get('workflow_ref')=='ai-workspace-infra/platform-ops-toolkit/.github/workflows/dev-feature-deploy.yml@refs/heads/main' and candidate.SCOPE.SHA.fullmatch(source.get('workflow_sha','')) and source.get('owner_sha')==receipt.get('owner_sha') and str(source.get('run_id'))==str(receipt.get('run_id')) and str(source.get('run_attempt'))==str(receipt.get('run_attempt')),'prepare original GHA producer binding mismatch')
+ records=mapping.get('images',{});require(set(records)==set(observation['images']),'six OCI mappings required')
+ for name,image in observation['images'].items():
+  row=records[name];expected=observation['sources'][name]
+  require(row.get('image')==image and row.get('manifest_digest')==image.split('@')[1] and row.get('platform')=='linux/amd64' and re.fullmatch('sha256:[0-9a-f]{64}',row.get('platform_manifest_digest','')) and re.fullmatch('sha256:[0-9a-f]{64}',row.get('config_digest','')),'invalid OCI mapping')
+  require(row.get('source_repository')==expected['repository'] and row.get('source_sha')==expected['source_sha'] and str(row.get('build_run_id'))==expected['build_run_id'] and row.get('source_label_match') in (True,'UNKNOWN') and row.get('revision_label_match') in (True,'UNKNOWN'),'OCI mapping source mismatch')
+ return mapping
+
 def execute(a):
  require(a.stage in candidate.SCOPE.SCOPES and a.mode in ('plan','prepare','submit','verify','enable-tls'),'explicit lane/mode required')
  require(candidate.SCOPE.SHA.fullmatch(a.gitops_sha) and candidate.SCOPE.SHA.fullmatch(a.platform_sha),'full GitOps SHA required')
@@ -57,6 +78,9 @@ def execute(a):
   require(a.seed_receipt is not None and re.fullmatch(r'[0-9a-f]{64}',a.seed_sha256 or ''),'authenticated seed receipt artifact/digest required')
   require(hashlib.sha256(a.seed_receipt.read_bytes()).hexdigest()==a.seed_sha256,'seed receipt digest mismatch')
   config['seed_receipt']=json.loads(a.seed_receipt.read_text())
+  require(a.prepare_receipt is not None and re.fullmatch(r'[0-9a-f]{64}',a.prepare_sha256 or ''),'authenticated prepare receipt artifact/digest required')
+  require(hashlib.sha256(a.prepare_receipt.read_bytes()).hexdigest()==a.prepare_sha256,'prepare receipt digest mismatch')
+  config['runtime_mapping']=validate_prepare_receipt(json.loads(a.prepare_receipt.read_text()),config,observation)
  a.receipt.unlink(missing_ok=True)
  oidc=request(os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']+'&audience=vault',{'Authorization':'Bearer '+os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})['value']
  session=request('https://vault.svc.plus/v1/auth/jwt/login',{'Content-Type':'application/json'},json.dumps({'role':ROLE,'jwt':oidc}).encode())['auth']
@@ -81,13 +105,17 @@ def execute(a):
    report=d/'runtime.json'
    variables=d/'vars.json';variables.write_text(json.dumps({'dev_feature_target':'dev-k3s-v5','dev_feature_config':config,'dev_feature_apply':a.mode!='plan','dev_feature_report':str(report)}))
    env={**agent,'AI_WORKSPACE_CMDB_JSON':str(selected),'ANSIBLE_HOST_KEY_CHECKING':'True','ANSIBLE_SSH_ARGS':args,'ANSIBLE_ROLES_PATH':str(ROOT/'roles')}
-   if a.mode=='prepare':env.update(DEV_SYNC_VAULT_TOKEN=token,DEV_REGISTRY_HOST=ip,DEV_REGISTRY_KNOWN_HOSTS=str(known),DEV_REGISTRY_PUBLIC_IDENTITY=str(public))
+   if a.mode=='prepare':
+    context={k:config[k] for k in ('candidate_sha','namespace','node_uid','cluster_uid','manifest_sha256')}
+    context.update(instance_id=a.instance_id,images=observation['images'],sources=observation['sources'],source={'repository':os.environ.get('GITHUB_REPOSITORY'),'workflow_ref':os.environ.get('GITHUB_WORKFLOW_REF'),'workflow_sha':os.environ.get('GITHUB_SHA'),'owner_sha':owner_sha,'run_id':os.environ.get('GITHUB_RUN_ID'),'run_attempt':os.environ.get('GITHUB_RUN_ATTEMPT')})
+    env.update(DEV_SYNC_VAULT_TOKEN=token,DEV_REGISTRY_HOST=ip,DEV_REGISTRY_KNOWN_HOSTS=str(known),DEV_REGISTRY_PUBLIC_IDENTITY=str(public),DEV_REGISTRY_CONTEXT=json.dumps(context))
    inventory=str(ROOT/'inventory/terraform_cmdb.py')
    play=['ansible-playbook','-i',inventory,str(ROOT/'dev_feature_flux.yml'),'--limit','dev-k3s-v5','-e','@'+str(variables)]
    run([*play,'--syntax-check'],env)
    p=subprocess.run(play,env=env,text=True,capture_output=True,timeout=1200)
    require(report.is_file(),'no runtime owner receipt')
    runtime=json.loads(report.read_text())
+   if p.returncode!=0:runtime['result']='owner_failed'
    runtime.update(instance_id=a.instance_id,cmdb_sha256=a.cmdb_sha256,candidate=observation,candidate_control_plane=verified_candidate,candidate_receipt_sha256=a.candidate_sha256,run_id=os.environ.get('GITHUB_RUN_ID'),run_attempt=os.environ.get('GITHUB_RUN_ATTEMPT'))
    a.receipt.parent.mkdir(parents=True,exist_ok=True);a.receipt.write_text(json.dumps(runtime,sort_keys=True)+'\n')
    require(p.returncode==0 and runtime.get('result')=={'plan':'planned','prepare':'prepared','submit':'submitted_pending_seed','verify':'verified','enable-tls':'verified'}[a.mode],'namespace deployment did not verify')
@@ -99,7 +127,7 @@ def main():
  p=argparse.ArgumentParser()
  for name in ('stage','mode','instance-id','gitops-sha','platform-sha','cmdb-sha256','node-uid','cluster-uid','candidate-sha256'):p.add_argument('--'+name,required=True)
  for name in ('cmdb','gitops-root','receipt','candidate-receipt'):p.add_argument('--'+name,required=True,type=Path)
- p.add_argument('--seed-receipt',type=Path);p.add_argument('--seed-sha256')
+ p.add_argument('--seed-receipt',type=Path);p.add_argument('--seed-sha256');p.add_argument('--prepare-receipt',type=Path);p.add_argument('--prepare-sha256')
  execute(p.parse_args())
 if __name__=='__main__':
  try:main()

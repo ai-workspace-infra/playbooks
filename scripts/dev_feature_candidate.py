@@ -44,11 +44,12 @@ def validate_documents(documents,stage,tls=False):
   if kind=='ConfigMap':require(name in CM,'unexpected ConfigMap')
  if tls:
   require(set(by_kind)=={'Ingress'},'TLS subpath permits only its exact Ingress')
-  images={}
+  images={};sources={}
  else:
   require({d['metadata']['name'] for d in by_kind.get('ConfigMap',[])}==CM,'four fixed ConfigMaps required')
   release=yaml.safe_load(next(d for d in by_kind['ConfigMap'] if d['metadata']['name']=='web-saas-fullstack-release')['data']['release.yaml'])
   images=image_set(release)
+  sources={name:{'repository':release[name]['podAnnotations']['release.svc.plus/source_repository'],'source_sha':release[name]['podAnnotations']['release.svc.plus/source_sha'],'build_run_id':str(release[name]['podAnnotations']['release.svc.plus/build_run_id'])} for name in images}
   oci=by_kind.get('OCIRepository',[])
   require(len(oci)==1 and oci[0]['metadata']['name']=='web-saas-fullstack-chart','single fixed chart source required')
   require(oci[0]['spec'].get('url')=='oci://ghcr.io/ai-workspace-infra/distributed-web-saas-fullstack' and oci[0]['spec'].get('ref')=={'digest':SCOPE.CHART},'unreviewed chart source/digest rejected')
@@ -91,7 +92,7 @@ def validate_documents(documents,stage,tls=False):
   for entry in item['spec'].get('tls',[]):
    require(not entry.get('secretName') and set(entry.get('hosts',[]))<=SCOPE.DOMAINS[stage],'TLS secret dependency is not authorized')
  require(hosts==SCOPE.DOMAINS[stage],'incomplete lane host mapping')
- return {'namespace':ns,'images':images,'resource_count':len(documents),'chart_digest':SCOPE.CHART,'hosts':sorted(hosts)}
+ return {'namespace':ns,'images':images,'sources':sources,'resource_count':len(documents),'chart_digest':SCOPE.CHART,'hosts':sorted(hosts)}
 
 def validate_tree(root,sha,stage,tls=False):
  root=Path(root).resolve()
