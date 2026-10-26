@@ -27,7 +27,9 @@ def execute(a):
   run([*play,'--syntax-check'],env)
   result=subprocess.run(play,env=env,text=True,capture_output=True,timeout=1200)
   S.require(report.is_file(),'no platform owner runtime receipt')
-  runtime=json.loads(report.read_text());runtime.update(instance_id=a.instance_id,cmdb_sha256=a.cmdb_sha256,candidate=observation,candidate_control_plane=verified,candidate_receipt_sha256=a.candidate_sha256,run_id=os.environ.get('GITHUB_RUN_ID'),run_attempt=os.environ.get('GITHUB_RUN_ATTEMPT'))
+  runtime=json.loads(report.read_text())
+  if result.returncode!=0:runtime['result']='owner_failed'
+  runtime.update(instance_id=a.instance_id,cmdb_sha256=a.cmdb_sha256,candidate=observation,candidate_control_plane=verified,candidate_receipt_sha256=a.candidate_sha256,run_id=os.environ.get('GITHUB_RUN_ID'),run_attempt=os.environ.get('GITHUB_RUN_ATTEMPT'))
   a.receipt.parent.mkdir(parents=True,exist_ok=True);a.receipt.write_text(json.dumps(runtime,sort_keys=True)+'\n')
   S.require(result.returncode==0 and runtime.get('result')==('planned' if a.mode=='plan' else 'verified'),'platform reconciliation not verified')
 
