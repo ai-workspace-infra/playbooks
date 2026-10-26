@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""Trusted Dev SIT namespace owner; never promotes the platform root to a PR."""
+import datetime,json,os,re,subprocess,time
+
+NS='feature-xconnect-referral-sit'
+FEATURE='xconnect-referral'
+NODE='dev-k3s-v5'
+SOURCE='xconnect-referral-sit'
+PATH='./services/distributed-web-saas-fullstack/dev/sit-xconnect-referral'
+REPO='https://github.com/ai-workspace-infra/gitops.git'
+CHART='sha256:6336235445e389958660cc344eead488ad3a50cf67afb1301fd35f6793720f27'
+SCOPES={
+ 'sit':('feature-xconnect-referral-sit','xconnect-referral-sit','./services/distributed-web-saas-fullstack/dev/sit-xconnect-referral'),
+ 'uat':('web-saas-uat','web-saas-uat','./services/distributed-web-saas-fullstack/dev/uat')}
+DOMAINS={
+ 'sit':{'xconnect-referral-sit.onwalk.net','accounts-xconnect-referral-sit.onwalk.net','billing-xconnect-referral-sit.onwalk.net'},
+ 'uat':{'web-saas-uat.onwalk.net','accounts-web-saas-uat.onwalk.net','billing-web-saas-uat.onwalk.net'}}
+SHA=re.compile(r'^[0-9a-f]{40}$')
+UUID=re.compile(r'^[0-9a-f-]{36}$')
+
+def require(value,message):
+ if not value: raise ValueError(message)
+
+def validate(c):
+ require(c.get('environment') in SCOPES and c.get('namespace')==SCOPES[c['environment']][0] and c.get('node_name')==NODE,'fixed Dev lane scope required')
+ require(c.get('mode') in ('plan','prepare','apply','enable-tls'),'explicit mode required')
+ for key in ('candidate_sha','platform_sha','owner_sha'):
+  require(SHA.fullmatch(c.get(key,'')), 'full immutable '+key+' required')
+ for key in ('node_uid','cluster_uid'):
+  require(UUID.fullmatch(c.get(key,'')),'exact '+key+' required')
+ require(re.fullmatch(r'[0-9a-f]{64}',c.get('manifest_sha256','')),'validated candidate manifest digest required')
+ require(10<=int(c.get('wait_seconds',900))<=1800,'bounded wait required')
+
+def ready(obj):
+ return (obj.get('status',{}).get('observedGeneration')==obj.get('metadata',{}).get('generation') and
+         any(x.get('type')=='Ready' and x.get('status')=='True' for x in obj.get('status',{}).get('conditions',[])))
+
+def revision(value,sha):
+ return value in ('sha1:'+sha,'main@sha1:'+sha) or (isinstance(value,str) and value.endswith('@sha1:'+sha))
+
+def preflight(c,nodes,cluster,platform,root):
+ validate(c)
+ items=nodes.get('items',[])
+ require(len(items)==1 and items[0]['metadata']['name']==NODE and items[0]['metadata']['uid']==c['node_uid'],'actual Dev node identity mismatch')
+ require(cluster['metadata']['uid']==c['cluster_uid'],'actual cluster identity mismatch')
+ require(any(x.get('type')=='Ready' and x.get('status')=='True' for x in items[0].get('status',{}).get('conditions',[])),'Dev node not Ready')
+ require(platform.get('spec',{}).get('ref')=={'commit':c['platform_sha']} and ready(platform),'protected platform source mismatch')
+ require(revision(platform.get('status',{}).get('artifact',{}).get('revision'),c['platform_sha']),'protected source revision mismatch')
+ require(ready(root) and revision(root.get('status',{}).get('lastAppliedRevision'),c['platform_sha']),'protected platform root not Ready')
+
+def documents(c):
+ NS,SOURCE,PATH=SCOPES[c['environment']]
+ meta={'namespace':NS,'labels':{'app.kubernetes.io/managed-by':'dev-feature-flux-owner','environment':c['environment'],'release.svc.plus/feature':FEATURE,'feature_id':FEATURE}}
+ namespace={'apiVersion':'v1','kind':'Namespace','metadata':{'name':NS,'labels':{**meta['labels'],'pod-security.kubernetes.io/enforce':'restricted','pod-security.kubernetes.io/enforce-version':'v1.37'}}}
+ sa={'apiVersion':'v1','kind':'ServiceAccount','metadata':{**meta,'name':'lane-reconciler'},'automountServiceAccountToken':False}
+ rules=[{'apiGroups':[''],'resources':['configmaps','secrets','services'],'verbs':['get','list','watch','create','update','patch','delete']},
+        {'apiGroups':[''],'resources':['persistentvolumeclaims'],'verbs':['get','list','watch','create','update','patch']},
+        {'apiGroups':['apps'],'resources':['deployments','statefulsets','replicasets'],'verbs':['get','list','watch','create','update','patch','delete']},
+        {'apiGroups':['networking.k8s.io'],'resources':['ingresses','networkpolicies'],'verbs':['get','list','watch','create','update','patch','delete']},
+        {'apiGroups':['helm.toolkit.fluxcd.io'],'resources':['helmreleases'],'verbs':['get','list','watch','create','update','patch','delete']},
+        {'apiGroups':['source.toolkit.fluxcd.io'],'resources':['ocirepositories'],'verbs':['get','list','watch','create','update','patch','delete']}]
+ role={'apiVersion':'rbac.authorization.k8s.io/v1','kind':'Role','metadata':{**meta,'name':'lane-reconciler'},'rules':rules}
+ binding={'apiVersion':'rbac.authorization.k8s.io/v1','kind':'RoleBinding','metadata':{**meta,'name':'lane-reconciler'},'subjects':[{'kind':'ServiceAccount','name':'lane-reconciler','namespace':NS}],'roleRef':{'apiGroup':'rbac.authorization.k8s.io','kind':'Role','name':'lane-reconciler'}}
+ source={'apiVersion':'source.toolkit.fluxcd.io/v1','kind':'GitRepository','metadata':{**meta,'name':SOURCE},'spec':{'interval':'1m','url':REPO,'ref':({'branch':'main'} if c['environment']=='uat' else {'commit':c['candidate_sha']})}}
+ kustom={'apiVersion':'kustomize.toolkit.fluxcd.io/v1','kind':'Kustomization','metadata':{**meta,'name':SOURCE},'spec':{'interval':'1m','path':PATH,'prune':False,'wait':True,'timeout':'15m','serviceAccountName':'lane-reconciler','targetNamespace':NS,'sourceRef':{'kind':'GitRepository','name':SOURCE}}}
+ if c['mode']=='enable-tls':
+  kustom['metadata']['name']=SOURCE+'-tls';kustom['spec']['path']=PATH+'/tls'
+  return [kustom]
+ return [namespace,sa,role,binding,source,kustom]
+
+class Client:
+ def call(self,args,stdin=None):
+  p=subprocess.run(['/usr/local/bin/k3s','kubectl','--request-timeout=20s',*args],input=stdin,text=True,capture_output=True,timeout=30)
+  require(p.returncode==0,'selected Kubernetes operation failed; raw output suppressed')
+  return json.loads(p.stdout) if p.stdout.strip() else None
+ def get(self,kind,name=None,namespace=None,optional=False):
+  args=['get',kind]+([name] if name else [])+(['-n',namespace] if namespace else [])+(['--ignore-not-found'] if optional else [])+['-o','json']
+  return self.call(args)
+ def apply(self,docs):
+  return self.call(['apply','-f','-','-o','json'],json.dumps({'apiVersion':'v1','kind':'List','items':docs}))
+
+def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
+ validate(c);client=client or Client()
+ NS,SOURCE,PATH=SCOPES[c['environment']]
+ def base():return (client.get('nodes'),client.get('namespace','kube-system'),client.get('gitrepository','platform-config','flux-system'),client.get('kustomization','platform-root','flux-system'))
+ baseline=base();preflight(c,*baseline)
+ existing=client.get('namespace',NS,optional=True)
+ if existing:
+  labels=existing['metadata'].get('labels',{})
+  require(labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==FEATURE and labels.get('environment')==c['environment'],'existing namespace has another owner; no takeover')
+ report={'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False}
+ if c['mode']=='plan':return report
+ if c['mode']=='apply':
+  seed=c.get('seed_receipt',{})
+  require(seed.get('schema_version')=='dev-lane-seed/v1' and seed.get('result')=='verified' and seed.get('namespace')==NS and seed.get('node_uid')==c['node_uid'] and seed.get('cluster_uid')==c['cluster_uid'] and seed.get('instance_id')=='109277144' and seed.get('database_roles')==['xc_accounts_rw','xc_billing_rw'] and seed.get('schema_initialized') is True,'independent namespace seed owner receipt required before application reconciliation')
+ if c['mode']=='enable-tls':
+  require(existing is not None,'prepare the namespace first')
+  proof=c.get('dns_http_proof',[])
+  require({x.get('host') for x in proof}==DOMAINS[c['environment']] and all(x.get('addresses')==[c.get('target_ip')] and x.get('http_status') in (200,404) for x in proof),'fresh external DNS/HTTP evidence required before TLS')
+  original=client.get('kustomization',SOURCE,NS);live=client.get('gitrepository',SOURCE,NS)
+  require(ready(original) and revision(original.get('status',{}).get('lastAppliedRevision'),c['candidate_sha']) and ready(live),'base lane must be the exact Ready candidate before TLS')
+ try:client.apply(documents(c)[:4] if c['mode']=='prepare' else documents(c))
+ except Exception:
+  report.update(changed='UNKNOWN',result='apply_failed_or_unknown');return report
+ report.update(changed=True,result='applied_unverified')
+ if c['mode']=='prepare':
+  preflight(c,*base());report['result']='prepared';return report
+ deadline=clock()+int(c.get('wait_seconds',900))
+ while True:
+  source=client.get('gitrepository',SOURCE,NS,optional=True)
+  root=client.get('kustomization',SOURCE+('-tls' if c['mode']=='enable-tls' else ''),NS,optional=True)
+  release=client.get('helmrelease','distributed-web-saas-fullstack',NS,optional=True)
+  if source and root and release and ready(source) and ready(root) and ready(release) and revision(source.get('status',{}).get('artifact',{}).get('revision'),c['candidate_sha']) and revision(root.get('status',{}).get('lastAppliedRevision'),c['candidate_sha']):
+   require(source.get('spec',{}).get('ref')==({'branch':'main'} if c['environment']=='uat' else {'commit':c['candidate_sha']}),'candidate source drifted')
+   preflight(c,*base())
+   report.update(result='verified',source_revision=source['status']['artifact']['revision'],applied_revision=root['status']['lastAppliedRevision'],helm_ready=True,tls_certificate_acceptance='NOT_RUN',watch_main=c['environment']=='uat',observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+   return report
+  if clock()>=deadline:
+   report.update(result='not_ready',source_ready=bool(source and ready(source)),kustomization_ready=bool(root and ready(root)),helm_ready=bool(release and ready(release)))
+   return report
+  sleep(5)
+
+if __name__=='__main__':
+ try:
+  result=execute(json.loads(os.environ['DEV_FEATURE_CONFIG']));print(json.dumps(result,sort_keys=True))
+  raise SystemExit(0 if result['result'] in ('planned','prepared','verified') else 1)
+ except Exception as error:
+  print(json.dumps({'result':'blocked_or_failed','error_type':type(error).__name__,'business_acceptance':'NOT_RUN'}));raise SystemExit(2)
