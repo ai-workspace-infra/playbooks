@@ -92,7 +92,9 @@ def test_complete_initialize_returns_receipt_after_all_probes(monkeypatch):
     owner.raw = lambda *args,**kwargs: ''
     writes = []
     owner.secret = lambda name,fields: writes.append(name) or fields
-    def psql(query):
+    def psql(query, **kwargs):
+        if 'CREATE ROLE' in query:
+            assert kwargs.get('sensitive') is True
         if 'SHOW log_statement' in query: return 'none\n-1\n-1\n'
         if 'SELECT count(*)' in query: return '0\n'
         if 'SELECT tablename' in query: return '\n'.join(tables+['schema_migrations','cloud_vendor_costs'])

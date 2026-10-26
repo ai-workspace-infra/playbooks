@@ -83,11 +83,28 @@ class Owner:
             'type': 'Opaque', 'stringData': fields})
         return fields
 
-    def psql(self, sql):
-        # Fixed PG management Pod; stdin SQL never enters argv. Do not expose raw
-        # server diagnostics, which can quote statements containing credentials.
+    def psql(self, sql, sensitive=False):
+        # Only this management connection disables error-statement logging.
+        # Startup options take effect before parsing any password-bearing SQL;
+        # a preceding SET in the same SQL message would not protect parse errors.
+        command = []
+        if sensitive:
+            command = ['env', 'PGOPTIONS=-c log_min_error_statement=panic -c log_statement=none -c log_min_duration_statement=-1 -c log_min_duration_sample=-1']
+            sql = """DO $$ BEGIN
+IF current_setting('log_min_error_statement') <> 'panic'
+ OR current_setting('log_statement') <> 'none'
+ OR current_setting('log_min_duration_statement') <> '-1'
+ OR current_setting('log_min_duration_sample') <> '-1'
+ OR current_setting('shared_preload_libraries') <> ''
+ OR current_setting('session_preload_libraries') <> ''
+ OR current_setting('local_preload_libraries') <> ''
+ OR EXISTS (SELECT 1 FROM pg_extension WHERE extname IN ('pgaudit','pg_stat_statements'))
+ OR COALESCE(current_setting('pgaudit.log',true),'none') NOT IN ('none','')
+ THEN RAISE EXCEPTION 'credential SQL logging protection unavailable';
+END IF; END $$;
+""" + sql
         return self.raw('-n', self.ns, 'exec', '-i', 'web-saas-postgresql-0', '--',
-                        'psql', '-XAtq', '-U', 'lane_admin', '-d', 'account',
+                        *command, 'psql', '-XAtq', '-U', 'lane_admin', '-d', 'account',
                         '-v', 'ON_ERROR_STOP=1', data=sql)
 
     def job(self, purpose, image, command, env=None):
@@ -167,7 +184,7 @@ class Owner:
         # Credentials are random hex, identifiers fixed constants. Management SQL
         # remains stdin-only. Fresh DB owner changes before objects exist.
         self.psql(''.join(f"CREATE ROLE {r} LOGIN PASSWORD '{pw}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" for r,pw in passwords.items()) +
-                   'ALTER DATABASE account OWNER TO xc_schema_owner; ALTER SCHEMA public OWNER TO xc_schema_owner;')
+                   'ALTER DATABASE account OWNER TO xc_schema_owner; ALTER SCHEMA public OWNER TO xc_schema_owner;', sensitive=True)
         env = [{'name': 'NATIVE_TARGET_DSN', 'valueFrom': {'secretKeyRef': {
             'name': 'web-saas-db-ddl', 'key': 'NATIVE_TARGET_DSN'}}}]
         output = self.job('native-init', ACCOUNTS_IMAGE, ['/usr/local/bin/migratectl','init',

@@ -116,3 +116,15 @@ instance_id,node_uid,cluster_uid. Parent must review and authorize the exact new
 job_workflow_ref allowlist entry before any operational use; this PR does not
 change Vault roles/policies. The trusted Toolkit caller remains
 `dev-feature-deploy.yml` on protected main. Seed-admin is not a verified seed.
+
+
+Password-bearing CREATE ROLE SQL uses only a management connection with startup
+PGOPTIONS log_min_error_statement=panic and statement/duration logging disabled.
+Startup settings precede SQL parsing; a SET in the same message is insufficient.
+The connection verifies its effective settings and rejects preload libraries,
+pgaudit/pg_stat_statements or active audit hooks before psql sends credential SQL.
+Global business logging is unchanged; the existing global statement/duration
+preflight remains. `tests/dev_web_saas_seed_logging_pg_integration.py` (PG17_BIN)
+forces a role conflict with a synthetic random sentinel, checks the private server
+log without printing it, verifies the sentinel is absent and global ERROR policy
+unchanged, and checks an active audit-hook setting blocks before role creation.
