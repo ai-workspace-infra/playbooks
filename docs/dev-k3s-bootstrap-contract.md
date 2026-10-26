@@ -2,7 +2,7 @@
 
 This owner reuses the existing single-node K3s/Flux role. The reusable workflow
 is callable only through its fixed reviewed SHA; it checks out producer source
-`fe467b7462fb54870079ac2945d20b815fa6dc0d`, which contains the adapter and role.
+`4a5dbb8e1240a096e7818f1da6a925569a3da7ea`, which contains the adapter and role.
 Retain that immutable source when retargeting the stacked PR. A later source
 change requires a new source pin and tests, not a mutable checkout.
 
@@ -39,8 +39,11 @@ uploaded. Known hosts are mandatory; there is no keyscan/accept-new bypass.
 
 ## Acceptance and rollback
 
-The role synchronously reconciles Flux and requires an actual single Ready
-control-plane node, exact OS hostname, cluster/node UIDs, current observed
+The role synchronously reconciles Flux. Strict single-node runtime receipt
+validation is opt-in (default false) and explicitly enabled only by this Dev
+wrapper, preserving existing generic/HA callers. The Dev wrapper requires an actual single Ready
+control-plane node, exact OS hostname, declared K3s version, amd64 architecture,
+cluster/node UIDs, current observed
 resource generations, Ready source/root and exact applied Git commit. Its
 receipt contains selected public version/identity fields and fixed input/run
 hashes. Contract tests use synthetic objects only and are not runtime evidence.
@@ -50,3 +53,6 @@ This workflow configures the selected host and does not create, destroy, alter
 cloud resources/DNS or change Terraform state ownership. Bootstrap management
 access is not a business identity. Reverting the GitOps commit is a configuration
 rollback; node identity or data changes require their separately scoped recovery.
+
+Vault responses containing root in any effective policy list or TTL outside
+1..1200 seconds are rejected before host execution.
