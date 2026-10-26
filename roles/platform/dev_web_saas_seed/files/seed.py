@@ -17,6 +17,7 @@ from platform_scope import preflight
 from contracts import ACCOUNTS_SHA, BILLING_SHA, SCHEMA_SHA, target, identity, verify_sources, grants
 
 ACCOUNTS_IMAGE = 'ghcr.io/ai-workspace-services/accounts@sha256:6edd156ce6974dfd0cd7486beebbb446091e4019eacf3c272e05aba4a609737d'
+PG_AMD64_DIGEST = 'sha256:f326b029499b2f255f5341d0a06d710c4380e6683315c8ab367b25c7069bdfca'
 PG_IMAGE = 'ghcr.io/ai-workspace-services/postgresql@sha256:c6ee94d4c91054128823e816e936e03702eee80fdcc04d3271a7e68167974ad2'
 OWNER = 'dev-web-saas-seed-v1'
 
@@ -45,6 +46,8 @@ class Owner:
         if self.k('get', 'namespace', 'kube-system')['metadata']['uid'] != request['cluster_uid']:
             raise Blocked('cluster identity mismatch')
         nodes = self.k('get', 'nodes')['items']
+        if len(nodes) != 1 or nodes[0]['metadata'].get('labels', {}).get('kubernetes.io/arch') != 'amd64':
+            raise Blocked('reviewed amd64 runtime mapping required')
         if len(nodes) != 1 or nodes[0]['metadata']['uid'] != request['node_uid']:
             raise Blocked('single-node identity mismatch')
         ns = self.k('get', 'namespace', self.ns)
@@ -108,22 +111,24 @@ class Owner:
         sources = self.k('-n', self.ns, 'get', 'gitrepositories.source.toolkit.fluxcd.io')['items']
         if len(sources) != 1:
             raise Blocked('exactly one reviewed lane source required')
-        source = sources[0]
-        if source['spec'].get('url') != 'https://github.com/ai-workspace-infra/gitops.git':
+        source_record = sources[0]
+        if source_record['spec'].get('url') != 'https://github.com/ai-workspace-infra/gitops.git':
             raise Blocked('lane repository mismatch')
-        ref = source['spec'].get('ref', {})
+        ref = source_record['spec'].get('ref', {})
         if self.r['stage'] == 'sit' and ref.get('commit') != self.r['candidate_sha']:
             raise Blocked('SIT source candidate mismatch')
         if self.r['stage'] == 'uat' and (ref.get('branch') != 'main' or ref.get('commit')):
             raise Blocked('UAT must persistently watch main')
-        revision = source.get('status', {}).get('artifact', {}).get('revision', '')
+        revision = source_record.get('status', {}).get('artifact', {}).get('revision', '')
         if not revision.endswith(self.r['candidate_sha']):
             raise Blocked('observed source revision mismatch')
         self.raw('-n', self.ns, 'wait', '--for=condition=Ready',
                  'pod/web-saas-postgresql-0', '--timeout=300s')
         pg = self.k('-n', self.ns, 'get', 'pod', 'web-saas-postgresql-0')
         image_id = pg.get('status', {}).get('containerStatuses', [{}])[0].get('imageID', '')
-        if PG_IMAGE.split('@')[1] not in image_id:
+        if image_id not in ('docker-pullable://' + PG_IMAGE,
+                            'ghcr.io/ai-workspace-services/postgresql@' + PG_AMD64_DIGEST,
+                            'docker-pullable://ghcr.io/ai-workspace-services/postgresql@' + PG_AMD64_DIGEST):
             raise Blocked('PostgreSQL runtime imageID mismatch')
         if pg['spec']['containers'][0]['image'] != PG_IMAGE:
             raise Blocked('PostgreSQL image mismatch')
@@ -136,16 +141,16 @@ class Owner:
         # No application writers should exist before runtime secret publication.
         if self.psql("SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename <> 'lane_admin';").strip() != '0':
             raise Blocked('target writers not paused')
-        def source(repo, sha, path):
+        def fetch_source(repo, sha, path):
             url = f'https://raw.githubusercontent.com/ai-workspace-services/{repo}/{sha}/{path}'
             with urllib.request.urlopen(url, timeout=30) as response:
                 data = response.read(2_000_001)
             if len(data) > 2_000_000:
                 raise Blocked('source size limit')
             return data
-        manifest_bytes = source('accounts', ACCOUNTS_SHA, 'sql/init/accounts-native.manifest.json')
-        native = source('accounts', ACCOUNTS_SHA, 'sql/init/accounts-native.sql')
-        billing = source('billing-service', BILLING_SHA, 'sql/billing-service-schema.sql')
+        manifest_bytes = fetch_source('accounts', ACCOUNTS_SHA, 'sql/init/accounts-native.manifest.json')
+        native = fetch_source('accounts', ACCOUNTS_SHA, 'sql/init/accounts-native.sql')
+        billing = fetch_source('billing-service', BILLING_SHA, 'sql/billing-service-schema.sql')
         manifest = json.loads(manifest_bytes)
         tables = verify_sources(manifest, native, billing)
         compiled = json.loads(self.job('manifest', ACCOUNTS_IMAGE, ['/usr/local/bin/migratectl', 'native-schema']))
@@ -215,7 +220,7 @@ class Owner:
             'DATABASE_URL': dsn('xc_billing_rw'), 'INTERNAL_SERVICE_TOKEN': internal})
         for service in ('console', 'content'):
             self.secret('web-saas-' + service + '-runtime', {'INTERNAL_SERVICE_TOKEN':internal})
-        final_source = self.k('-n', self.ns, 'get', 'gitrepository', source['metadata']['name'])
+        final_source = self.k('-n', self.ns, 'get', 'gitrepository', source_record['metadata']['name'])
         if final_source.get('status', {}).get('artifact', {}).get('revision') != revision:
             raise Blocked('candidate changed during initialization')
         return {'schema_version': 'dev-lane-seed/v1', 'result': 'verified',

@@ -56,3 +56,67 @@ def test_owned_secret_reused_without_rotation_and_foreign_owner_refused(monkeypa
     existing['metadata']['labels'] = {}
     with pytest.raises(module.Blocked, match='unknown owner'):
         owner.secret('web-saas-db-admin', {'password': 'different-test-value'})
+
+
+def test_complete_initialize_returns_receipt_after_all_probes(monkeypatch):
+    import sys
+    import types
+    import json
+    monkeypatch.setitem(sys.modules, 'contracts', c)
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None))
+    spec = importlib.util.spec_from_file_location('seed_complete', P.parent / 'seed.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    sha = 'a' * 40
+    source = {'metadata': {'name': 'fixed-source'}, 'spec': {'url':'https://github.com/ai-workspace-infra/gitops.git', 'ref':{'commit':sha}}, 'status':{'artifact':{'revision':'sha1:'+sha}}}
+    tables = ['table_' + str(i) for i in range(77)]
+    manifest = {'format':1, 'migration_version':2026102501, 'schema_sha256':c.SCHEMA_SHA, 'business_table_count':77, 'business_tables':tables}
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self,*args): pass
+        def read(self,*args): return json.dumps(manifest).encode()
+    monkeypatch.setattr(module.urllib.request, 'urlopen', lambda *args,**kwargs: Response())
+    # Content checksums are exercised by the real PG integration sample. This test
+    # covers complete executor sequencing and receipt construction without K8s writes.
+    monkeypatch.setattr(module, 'verify_sources', lambda *args: tables)
+    owner = module.Owner.__new__(module.Owner)
+    owner.ns = c.STAGES['sit']
+    owner.r = {'candidate_sha':sha,'stage':'sit','instance_id':'test-instance','node_uid':'node','cluster_uid':'cluster'}
+    def k(*args):
+        if 'gitrepositories.source.toolkit.fluxcd.io' in args: return {'items':[source]}
+        if 'gitrepository' in args: return source
+        if 'secrets' in args: return {'items':[]}
+        if 'pod' in args: return {'spec':{'containers':[{'image':module.PG_IMAGE}]},'status':{'containerStatuses':[{'imageID':'ghcr.io/ai-workspace-services/postgresql@'+module.PG_AMD64_DIGEST}]}}
+        raise AssertionError(args)
+    owner.k = k
+    owner.raw = lambda *args,**kwargs: ''
+    writes = []
+    owner.secret = lambda name,fields: writes.append(name) or fields
+    def psql(query):
+        if 'SHOW log_statement' in query: return 'none\n-1\n-1\n'
+        if 'SELECT count(*)' in query: return '0\n'
+        if 'SELECT tablename' in query: return '\n'.join(tables+['schema_migrations','cloud_vendor_costs'])
+        return ''
+    owner.psql = psql
+    jobs = []
+    def job(purpose,*args):
+        jobs.append(purpose)
+        if purpose == 'manifest': return json.dumps(manifest)
+        if purpose.startswith('probe-'): return 'identity_probes_verified\n'
+        return '{}'
+    owner.job = job
+    receipt = owner.initialize()
+    assert receipt['schema_version'] == 'dev-lane-seed/v1'
+    assert receipt['candidate_sha'] == sha and receipt['result'] == 'verified'
+    assert jobs == ['manifest','native-init','probe-xc-accounts-rw','probe-xc-billing-rw']
+    assert writes[-4:] == ['web-saas-accounts-runtime','web-saas-billing-runtime','web-saas-console-runtime','web-saas-content-runtime']
+    # Unknown OCI runtime digests fail before any Secret or SQL write.
+    original_k = owner.k
+    def bad_image(*args):
+        result = original_k(*args)
+        if 'pod' in args: result['status']['containerStatuses'][0]['imageID'] = 'sha256:'+'b'*64
+        return result
+    owner.k = bad_image
+    owner.psql = lambda *args: pytest.fail('unverified image must fail before SQL')
+    with pytest.raises(module.Blocked, match='imageID'):
+        owner.initialize()

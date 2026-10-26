@@ -84,3 +84,13 @@ public receipt locally. Same-run artifact contract: `dev-lane-seed-<stage>-<run_
 containing `receipt.json`; only initialize can emit `dev-lane-seed/v1 verified`.
 The seed-admin output is preparatory and cannot satisfy Flux verify. The caller
 must authenticate artifact producer/source/run/attempt before passing the receipt.
+
+The PostgreSQL candidate is an OCI index. The reviewed linux/amd64 child digest
+is `sha256:f326b029499b2f255f5341d0a06d710c4380e6683315c8ab367b25c7069bdfca`
+under root `sha256:c6ee94d4c91054128823e816e936e03702eee80fdcc04d3271a7e68167974ad2`.
+The executor requires an amd64 node and accepts only that exact child runtime ID
+(or the exact root pullable ID), never arbitrary digest suffixes. The mapping was
+verified from OCI bytes/config/source labels in the parent acceptance evidence.
+Unauthenticated fixed-SHA raw GitHub GETs for both source repositories were checked
+HTTP200 with matching native/Billing SQL hashes before execution. Runtime fetch/hash
+checks precede role/schema/Secret writes; no GitHub token enters a namespace.
