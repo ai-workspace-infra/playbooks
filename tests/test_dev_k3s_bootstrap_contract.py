@@ -3,6 +3,7 @@ import copy
 import importlib.util
 from pathlib import Path
 import unittest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -78,6 +79,7 @@ class Contract(unittest.TestCase):
 
     def test_source_commit_and_synchronous_role_are_present(self):
         tasks = (ROOT / "roles/vhosts/k3s_platform_bootstrap/tasks/main.yml").read_text()
+        self.assertIsInstance(yaml.safe_load(tasks), list)
         self.assertIn("commit: {{ k3s_platform_git_commit }}", tasks)
         self.assertNotIn("poll: 0", tasks)
         self.assertIn("verify_bootstrap.py", tasks)
