@@ -37,7 +37,7 @@ def execute(a):
     config = {'phase':a.phase,'stage':a.stage,'namespace':observation['namespace'],
         'candidate_sha':a.gitops_sha,'platform_sha':a.platform_sha,'owner_sha':owner_sha,
         'manifest_sha256':observation['manifest_sha256'],'instance_id':a.instance_id,
-        'node_uid':a.node_uid,'cluster_uid':a.cluster_uid}
+        'node_uid':a.node_uid,'cluster_uid':a.cluster_uid,'namespace_uid':a.namespace_uid}
     # Reuse A's validator for UID/SHA/namespace constraints without changing A's
     # approval or namespace ownership behavior. Actual live scope is rechecked.
     candidate.SCOPE.validate({**config,'mode':'prepare','environment':a.stage,'node_name':'dev-k3s-v5'})
@@ -56,7 +56,7 @@ def execute(a):
         require(report.is_file(), 'no actual seed owner receipt')
         result = json.loads(report.read_text())
         expected = 'verified' if a.phase == 'initialize' else 'admin_secret_prepared'
-        require(result.get('result') == expected and result.get('namespace') == config['namespace'],
+        require(result.get('result') == expected and result.get('namespace') == config['namespace'] and result.get('namespace_uid') == a.namespace_uid,
                 'actual seed phase did not verify')
         if a.phase == 'initialize':
             require(result.get('schema_version') == 'dev-lane-seed/v1' and
@@ -74,7 +74,7 @@ def execute(a):
 def main():
     p=argparse.ArgumentParser()
     for key in ('phase','stage','instance-id','gitops-sha','platform-sha','cmdb-sha256',
-                'candidate-sha256','node-uid','cluster-uid'):
+                'candidate-sha256','node-uid','cluster-uid','namespace-uid'):
         p.add_argument('--'+key,required=True)
     for key in ('cmdb','candidate-receipt','gitops-root','receipt'):
         p.add_argument('--'+key,required=True,type=Path)

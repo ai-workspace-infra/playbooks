@@ -81,8 +81,9 @@ def test_complete_initialize_returns_receipt_after_all_probes(monkeypatch):
     monkeypatch.setattr(module, 'verify_sources', lambda *args: tables)
     owner = module.Owner.__new__(module.Owner)
     owner.ns = c.STAGES['sit']
-    owner.r = {'candidate_sha':sha,'stage':'sit','instance_id':'test-instance','node_uid':'node','cluster_uid':'cluster'}
+    owner.r = {'candidate_sha':sha,'stage':'sit','instance_id':'test-instance','node_uid':'node','cluster_uid':'cluster','namespace_uid':'namespace-original'}
     def k(*args):
+        if 'namespace' in args: return {'metadata':{'uid':'namespace-original','labels':{'environment':'sit'}}}
         if 'gitrepositories.source.toolkit.fluxcd.io' in args: return {'items':[source]}
         if 'gitrepository' in args: return source
         if 'secrets' in args: return {'items':[]}
@@ -112,6 +113,21 @@ def test_complete_initialize_returns_receipt_after_all_probes(monkeypatch):
     assert receipt['candidate_sha'] == sha and receipt['result'] == 'verified'
     assert jobs == ['manifest','native-init','probe-xc-accounts-rw','probe-xc-billing-rw','probe-xc-lane-audit']
     assert writes[-4:] == ['web-saas-accounts-runtime','web-saas-billing-runtime','web-saas-console-runtime','web-saas-content-runtime']
+    assert receipt['namespace_uid'] == 'namespace-original'
+    # Simulate deleting and recreating the same named namespace during init.
+    original_k = owner.k
+    namespace_reads = []
+    def recreated_during_init(*args):
+        result = original_k(*args)
+        if 'namespace' in args:
+            namespace_reads.append(True)
+            if len(namespace_reads) > 1:
+                result['metadata']['uid'] = 'namespace-recreated'
+        return result
+    owner.k = recreated_during_init
+    with pytest.raises(module.Blocked, match='namespace UID'):
+        owner.initialize()
+    owner.k = original_k
     # Unknown OCI runtime digests fail before any Secret or SQL write.
     original_k = owner.k
     def bad_image(*args):
@@ -138,3 +154,31 @@ def test_seed_adapter_rejects_unbound_artifact_before_transport(monkeypatch, tmp
         adapter.read_bound(artifact, 'a'*64)
     assert adapter.read_bound(artifact, hashlib.sha256(artifact.read_bytes()).hexdigest()) == {'untrusted':True}
     # Reading valid bytes alone does not authenticate them or grant execution.
+
+
+def test_seed_admin_refuses_stale_and_recreated_namespace(monkeypatch):
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, 'contracts', c)
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None))
+    spec = importlib.util.spec_from_file_location('seed_namespace', P.parent / 'seed.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    owner = module.Owner.__new__(module.Owner)
+    owner.ns = c.STAGES['sit']
+    owner.r = {'stage':'sit','namespace_uid':'original-uid'}
+    live = {'metadata':{'uid':'original-uid','labels':{'environment':'sit'}}}
+    owner.k = lambda *args: live
+    writes = []
+    def create_admin(name, fields):
+        writes.append(name)
+        # Same name, different live identity after a simulated delete/recreate.
+        live['metadata']['uid'] = 'recreated-uid'
+    owner.secret = create_admin
+    with pytest.raises(module.Blocked, match='namespace UID'):
+        owner.seed_admin()
+    assert writes == ['web-saas-db-admin']
+    writes.clear()
+    with pytest.raises(module.Blocked, match='namespace UID'):
+        owner.seed_admin()
+    assert writes == []  # Stale input is rejected before any second Secret write.

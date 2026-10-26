@@ -128,3 +128,12 @@ preflight remains. `tests/dev_web_saas_seed_logging_pg_integration.py` (PG17_BIN
 forces a role conflict with a synthetic random sentinel, checks the private server
 log without printing it, verifies the sentinel is absent and global ERROR policy
 unchanged, and checks an active audit-hook setting blocks before role creation.
+
+Namespace identity is part of the target: reusable input `namespace_uid` must come
+from the authenticated live prepare receipt. Both seed-admin and initialize check
+that exact UID/stage and reject terminating namespaces before work, then check the
+same UID again before emitting a receipt. Both receipts include namespace_uid;
+the CI adapter requires it to match the requested prepare identity. A same-named
+namespace deleted/recreated on the same node therefore cannot inherit old seed
+proof. Contract tests simulate recreation both during initialization and during
+admin Secret preparation, and reject a stale UID before any subsequent write.

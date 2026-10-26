@@ -38,7 +38,7 @@ class Owner:
         for key in ('candidate_sha',):
             if not re.fullmatch('[0-9a-f]{40}', request[key]):
                 raise Blocked('invalid candidate')
-        for key in ('instance_id', 'node_uid', 'cluster_uid'):
+        for key in ('instance_id', 'node_uid', 'cluster_uid', 'namespace_uid'):
             if not isinstance(request[key], str) or not request[key]:
                 raise Blocked('missing trusted target identity')
         # The parent caller must bind instance_id to CMDB before SSH. This checks
@@ -50,9 +50,23 @@ class Owner:
             raise Blocked('reviewed amd64 runtime mapping required')
         if len(nodes) != 1 or nodes[0]['metadata']['uid'] != request['node_uid']:
             raise Blocked('single-node identity mismatch')
+        self.check_namespace()
+
+    def check_namespace(self):
         ns = self.k('get', 'namespace', self.ns)
-        if ns['metadata'].get('labels', {}).get('environment') != request['stage']:
+        if ns['metadata'].get('uid') != self.r['namespace_uid']:
+            raise Blocked('namespace UID changed or stale target')
+        if ns['metadata'].get('deletionTimestamp'):
+            raise Blocked('namespace is terminating')
+        if ns['metadata'].get('labels', {}).get('environment') != self.r['stage']:
             raise Blocked('namespace stage mismatch')
+
+    def seed_admin(self):
+        self.check_namespace()
+        self.secret('web-saas-db-admin', {'password': secrets.token_hex(32)})
+        self.check_namespace()
+        return {'result':'admin_secret_prepared', 'namespace':self.ns,
+                'namespace_uid':self.r['namespace_uid']}
 
     def raw(self, *args, data=None):
         p = subprocess.run(['kubectl', *args], input=data, text=True,
@@ -125,6 +139,7 @@ END IF; END $$;
         return self.raw('-n', self.ns, 'logs', 'job/' + name)
 
     def initialize(self):
+        self.check_namespace()
         sources = self.k('-n', self.ns, 'get', 'gitrepositories.source.toolkit.fluxcd.io')['items']
         if len(sources) != 1:
             raise Blocked('exactly one reviewed lane source required')
@@ -251,9 +266,11 @@ END IF; END $$;
         final_source = self.k('-n', self.ns, 'get', 'gitrepository', source_record['metadata']['name'])
         if final_source.get('status', {}).get('artifact', {}).get('revision') != revision:
             raise Blocked('candidate changed during initialization')
+        self.check_namespace()
         return {'schema_version': 'dev-lane-seed/v1', 'result': 'verified',
                 'instance_id': self.r['instance_id'], 'node_uid': self.r['node_uid'],
                 'cluster_uid': self.r['cluster_uid'], 'namespace': self.ns,
+                'namespace_uid': self.r['namespace_uid'],
                 'candidate_sha': self.r['candidate_sha'],
                 'database_roles': ['xc_accounts_rw','xc_billing_rw'],
                 'schema_initialized': True, 'audit_role':'xc_lane_audit',
@@ -266,8 +283,7 @@ def main():
         request = json.load(sys.stdin)
         owner = Owner(request)
         if request['phase'] == 'seed-admin':
-            owner.secret('web-saas-db-admin', {'password': secrets.token_hex(32)})
-            result = {'result': 'admin_secret_prepared', 'namespace': owner.ns}
+            result = owner.seed_admin()
         elif request['phase'] == 'initialize':
             result = owner.initialize()
         else:
