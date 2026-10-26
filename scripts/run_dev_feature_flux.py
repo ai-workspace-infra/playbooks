@@ -3,7 +3,8 @@
 import argparse,datetime,hashlib,http.client,json,os,re,socket,subprocess,tempfile
 from pathlib import Path
 import dev_feature_candidate as candidate
-from dev_k3s_bootstrap import request,validate_session,validate_cmdb
+from dev_k3s_bootstrap import validate_cmdb
+from dev_ssh_binding import binding as dev_binding,run
 
 ROOT=Path(__file__).resolve().parents[1]
 ROLE='github-actions-playbooks-dev-k3s-bootstrap'
@@ -11,11 +12,6 @@ RECORD='kv/data/CICD/dev/k3s-bootstrap'
 
 def require(value,message):
  if not value:raise ValueError(message)
-
-def run(args,env=None,stdin=None,timeout=1200):
- p=subprocess.run(args,input=stdin,text=True,capture_output=True,env=env,timeout=timeout)
- require(p.returncode==0,'owner process failed: '+Path(args[0]).name)
- return p.stdout
 
 def validate_candidate_receipt(receipt,sha,stage,run_id):
  require(receipt.get('schema_version')=='dev-feature-candidate/v1' and receipt.get('result')=='verified','verified control-plane candidate receipt required')
@@ -58,42 +54,20 @@ def execute(a):
   require(hashlib.sha256(a.seed_receipt.read_bytes()).hexdigest()==a.seed_sha256,'seed receipt digest mismatch')
   config['seed_receipt']=json.loads(a.seed_receipt.read_text())
  a.receipt.unlink(missing_ok=True)
- oidc=request(os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']+'&audience=vault',{'Authorization':'Bearer '+os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})['value']
- session=request('https://vault.svc.plus/v1/auth/jwt/login',{'Content-Type':'application/json'},json.dumps({'role':ROLE,'jwt':oidc}).encode())['auth']
- validate_session(session);token=session['client_token'];agent=None
- try:
-  secret=request('https://vault.svc.plus/v1/'+RECORD,{'X-Vault-Token':token})['data']['data']
-  require(str(secret.get('INSTANCE_ID'))==a.instance_id,'Dev SSH binding instance mismatch')
-  require(secret.get('SSH_PRIVATE_KEY') and secret.get('SSH_KNOWN_HOSTS') and secret.get('SSH_PUBLIC_KEY') and secret.get('SSH_USER')=='root','fixed Dev management binding required')
-  output=run(['ssh-agent','-s'])
-  agent={**os.environ,**{k:re.search(rf'{k}=([^;]+);',output).group(1) for k in ('SSH_AUTH_SOCK','SSH_AGENT_PID')}}
-  run(['ssh-add','-'],agent,secret['SSH_PRIVATE_KEY']+'\n')
-  with tempfile.TemporaryDirectory(prefix='dev-feature-') as directory:
-   d=Path(directory)
-   known=d/'known_hosts';known.write_text(secret['SSH_KNOWN_HOSTS']);known.chmod(0o600)
-   ip=cmdb['dev-k3s-v5']['ip']
-   run(['ssh-keygen','-F',ip,'-f',str(known)])
-   public=d/'identity.pub';public.write_text(secret['SSH_PUBLIC_KEY']+'\n')
-   args=f'-F /dev/null -o StrictHostKeyChecking=yes -o UserKnownHostsFile={known} -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no -o IdentityFile={public} -o IdentitiesOnly=yes -o BatchMode=yes'
-   # This projection excludes arbitrary Ansible connection/interpreter overrides.
-   host=cmdb['dev-k3s-v5'];host['ansible_user']='root';host['host_vars']['ansible_ssh_common_args']=args
-   selected=d/'cmdb.json';selected.write_text(json.dumps(cmdb));selected.chmod(0o600)
-   report=d/'runtime.json'
-   variables=d/'vars.json';variables.write_text(json.dumps({'dev_feature_target':'dev-k3s-v5','dev_feature_config':config,'dev_feature_apply':a.mode!='plan','dev_feature_report':str(report)}))
-   env={**agent,'AI_WORKSPACE_CMDB_JSON':str(selected),'ANSIBLE_HOST_KEY_CHECKING':'True','ANSIBLE_SSH_ARGS':args,'ANSIBLE_ROLES_PATH':str(ROOT/'roles')}
-   if a.mode=='prepare':env.update(DEV_SYNC_VAULT_TOKEN=token,DEV_REGISTRY_HOST=ip,DEV_REGISTRY_KNOWN_HOSTS=str(known),DEV_REGISTRY_PUBLIC_IDENTITY=str(public))
-   inventory=str(ROOT/'inventory/terraform_cmdb.py')
-   play=['ansible-playbook','-i',inventory,str(ROOT/'dev_feature_flux.yml'),'--limit','dev-k3s-v5','-e','@'+str(variables)]
-   run([*play,'--syntax-check'],env)
-   p=subprocess.run(play,env=env,text=True,capture_output=True,timeout=1200)
-   require(report.is_file(),'no runtime owner receipt')
-   runtime=json.loads(report.read_text())
-   runtime.update(instance_id=a.instance_id,cmdb_sha256=a.cmdb_sha256,candidate=observation,candidate_control_plane=verified_candidate,candidate_receipt_sha256=a.candidate_sha256,run_id=os.environ.get('GITHUB_RUN_ID'),run_attempt=os.environ.get('GITHUB_RUN_ATTEMPT'))
-   a.receipt.parent.mkdir(parents=True,exist_ok=True);a.receipt.write_text(json.dumps(runtime,sort_keys=True)+'\n')
-   require(p.returncode==0 and runtime.get('result')=={'plan':'planned','prepare':'prepared','submit':'submitted_pending_seed','verify':'verified','enable-tls':'verified'}[a.mode],'namespace deployment did not verify')
- finally:
-  if agent:subprocess.run(['ssh-agent','-k'],env=agent,capture_output=True)
-  if token and session.get('token_type')!='batch':request('https://vault.svc.plus/v1/auth/token/revoke-self',{'X-Vault-Token':token},b'{}')
+ with dev_binding(cmdb,a.instance_id) as transport:
+  d=transport.directory;report=d/'runtime.json'
+  variables=d/'vars.json';variables.write_text(json.dumps({'dev_feature_target':'dev-k3s-v5','dev_feature_config':config,'dev_feature_apply':a.mode!='plan','dev_feature_report':str(report)}))
+  env={**transport.env,'ANSIBLE_ROLES_PATH':str(ROOT/'roles')}
+  if a.mode=='prepare':env.update(DEV_SYNC_VAULT_TOKEN=transport.token,DEV_REGISTRY_HOST=transport.host,DEV_REGISTRY_KNOWN_HOSTS=str(transport.known),DEV_REGISTRY_PUBLIC_IDENTITY=str(transport.public))
+  inventory=str(ROOT/'inventory/terraform_cmdb.py')
+  play=['ansible-playbook','-i',inventory,str(ROOT/'dev_feature_flux.yml'),'--limit','dev-k3s-v5','-e','@'+str(variables)]
+  run([*play,'--syntax-check'],env)
+  p=subprocess.run(play,env=env,text=True,capture_output=True,timeout=1200)
+  require(report.is_file(),'no runtime owner receipt')
+  runtime=json.loads(report.read_text())
+  runtime.update(instance_id=a.instance_id,cmdb_sha256=a.cmdb_sha256,candidate=observation,candidate_control_plane=verified_candidate,candidate_receipt_sha256=a.candidate_sha256,run_id=os.environ.get('GITHUB_RUN_ID'),run_attempt=os.environ.get('GITHUB_RUN_ATTEMPT'))
+  a.receipt.parent.mkdir(parents=True,exist_ok=True);a.receipt.write_text(json.dumps(runtime,sort_keys=True)+'\n')
+  require(p.returncode==0 and runtime.get('result')=={'plan':'planned','prepare':'prepared','submit':'submitted_pending_seed','verify':'verified','enable-tls':'verified'}[a.mode],'namespace deployment did not verify')
 
 def main():
  p=argparse.ArgumentParser()
