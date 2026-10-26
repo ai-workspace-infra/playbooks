@@ -120,3 +120,19 @@ def test_complete_initialize_returns_receipt_after_all_probes(monkeypatch):
     owner.psql = lambda *args: pytest.fail('unverified image must fail before SQL')
     with pytest.raises(module.Blocked, match='imageID'):
         owner.initialize()
+
+
+def test_seed_adapter_rejects_unbound_artifact_before_transport(monkeypatch, tmp_path):
+    import sys
+    import hashlib
+    monkeypatch.syspath_prepend(str(P.parents[4] / 'scripts'))
+    # Resolve from repository root explicitly; no operational entry is executed.
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.syspath_prepend(str(root / 'scripts'))
+    import run_dev_web_saas_seed as adapter
+    artifact = tmp_path / 'receipt.json'
+    artifact.write_text('{"untrusted":true}')
+    with pytest.raises(ValueError, match='checksum mismatch'):
+        adapter.read_bound(artifact, 'a'*64)
+    assert adapter.read_bound(artifact, hashlib.sha256(artifact.read_bytes()).hexdigest()) == {'untrusted':True}
+    # Reading valid bytes alone does not authenticate them or grant execution.
