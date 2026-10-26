@@ -15,7 +15,7 @@ manifests. Namespace Pod Security is restricted at v1.37. No role wildcard,
 clusterrole, exec/proxy/token-subresource, or role-binding permission is granted.
 
 Modes are explicit: plan (read-only Kubernetes observations), prepare (only
-namespace/limited identity), apply (HTTP candidate source), enable-tls (only the
+namespace/limited identity plus exact registry), submit (HTTP source, pending), verify (read-only seeded readiness), enable-tls (only the
 fixed TLS sub-Kustomization, after real DNS A/HTTP entrypoint checks). A prepare
 result is not deployment verification. Neither the owner nor tests fabricate
 application Secrets or TLS certificates. Pruning is disabled; cleanup needs its
@@ -42,7 +42,7 @@ production or shared application Secret values and adds no Vault permission.
 
 `prepare` creates only the fixed namespace/SA/Role/RoleBinding, then invokes the existing `vhosts/k3s_runtime_secret_sync` opt-in Dev registry mode. This reads only `kv/CICD/dev/ghcr` and writes only `web-saas-registry` in the selected fixed lane. The default KV field-sync mode remains unchanged. Secret values stay in controller memory and strict SSH stdin; no artifact contains them.
 
-`verify` requires a same-run authenticated `dev-lane-seed/v1` receipt artifact and digest from a separately reviewed seed producer. It must bind namespace, instance 109277144, node UID and cluster UID, result=verified, schema_initialized=true and database_roles=[xc_accounts_rw,xc_billing_rw]. This interface does not implement schema initialization or accept a caller boolean. The Toolkit caller must verify the artifact producer source/run before passing it. No seed producer exists in this PR: application apply remains blocked until that owner is implemented. In particular PG readiness/DDL/DB-role preparation must precede full HelmRelease readiness; business must not receive lane_admin.
+`verify` requires a same-run authenticated `dev-lane-seed/v1` receipt artifact and digest from a separately reviewed seed producer. It must bind candidate_sha, namespace, instance 109277144, node UID and cluster UID, result=verified, schema_initialized=true and database_roles=[xc_accounts_rw,xc_billing_rw]. This interface does not implement schema initialization or accept a caller boolean. The Toolkit caller must verify the artifact producer source/run before passing it. No seed producer exists in this PR: final runtime verification remains blocked until that owner is implemented. In particular PG readiness/DDL/DB-role preparation must precede full HelmRelease readiness; business must not receive lane_admin.
 
 SIT is fixed commit; UAT is the unique persistent branch-main source. UAT acceptance checks the sampled immutable current main revision and expires after main changes. TLS is a separate exact `/tls` path, enabled only after all three fixed onwalk.net hosts resolve uniquely to the Dev IP and HTTP port 80 responds without redirects. Traefik ACME `dev-http01` owns certificates; no namespace TLS Secret is copied. Platform Traefik resources require a separate reviewed infrastructure owner and are rejected by this feature renderer.
 

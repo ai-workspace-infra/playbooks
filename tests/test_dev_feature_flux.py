@@ -92,7 +92,23 @@ class Contracts(unittest.TestCase):
   c=self.config();c['namespace']='feature-other-sit'
   with self.assertRaises(ValueError):R.validate(c)
 
-if __name__=='__main__':unittest.main()
+
+class PhaseTests(Contracts):
+ def test_submit_is_pending_and_verify_requires_bound_seed(self):
+  c=self.config();base=self.baseline(c)
+  class Client:
+   def __init__(self):self.applied=[]
+   def get(self,kind,name=None,namespace=None,optional=False):
+    if kind=='nodes':return base[0]
+    if kind=='namespace':return base[1] if name=='kube-system' else None
+    return base[2] if kind=='gitrepository' else base[3]
+   def apply(self,docs):self.applied.append(docs)
+  c['mode']='submit';client=Client()
+  result=R.execute(c,client)
+  self.assertEqual(result['result'],'submitted_pending_seed');self.assertEqual(result['business_acceptance'],'NOT_RUN')
+  c['mode']='verify';client=Client()
+  with self.assertRaises(ValueError):R.execute(c,client)
+  self.assertEqual(client.applied,[])
 
 class RegistryProjectionTests(unittest.TestCase):
  def test_only_fixed_namespace_and_registry_secret(self):
@@ -105,3 +121,5 @@ class RegistryProjectionTests(unittest.TestCase):
   for ns in ('production','default','flux-system'):
    with self.assertRaises(ValueError):module.build(ns,{'GHCR_USERNAME':'fixture','GHCR_TOKEN':'synthetic'})
   with self.assertRaises(ValueError):module.build('web-saas-uat',{})
+
+if __name__=='__main__':unittest.main()
