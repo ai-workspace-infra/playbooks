@@ -93,7 +93,9 @@ class Contracts(unittest.TestCase):
   with self.assertRaises(ValueError):R.validate(c)
 
 
-class PhaseTests(Contracts):
+class PhaseTests(unittest.TestCase):
+ config=Contracts.config
+ baseline=Contracts.baseline
  def test_submit_is_pending_and_verify_requires_bound_seed(self):
   c=self.config();base=self.baseline(c)
   class Client:
