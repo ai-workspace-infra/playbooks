@@ -19,11 +19,16 @@ def ready(obj):
                 for c in status.get("conditions", [])))
 
 
-def evaluate(nodes, cluster, source, root, expected_node, commit):
+def evaluate(nodes, cluster, source, root, expected_node, commit, version="", architecture=""):
     items = nodes.get("items", [])
     if len(items) != 1 or items[0]["metadata"]["name"] != expected_node:
         raise ValueError("expected exactly the selected node")
     node = items[0]
+    info = node.get("status", {}).get("nodeInfo", {})
+    if version and info.get("kubeletVersion") != version:
+        raise ValueError("K3s runtime version differs from declared version")
+    if architecture and info.get("architecture") != architecture:
+        raise ValueError("runtime architecture differs from declared architecture")
     if not any(c.get("type") == "Ready" and c.get("status") == "True" for c in node.get("status", {}).get("conditions", [])):
         raise ValueError("node is not Ready")
     if "node-role.kubernetes.io/control-plane" not in node["metadata"].get("labels", {}):
@@ -61,6 +66,8 @@ def main():
     p.add_argument("--namespace", required=True)
     p.add_argument("--source", required=True)
     p.add_argument("--commit", default="")
+    p.add_argument("--version", required=True)
+    p.add_argument("--architecture", required=True)
     p.add_argument("--timeout", type=int, default=600)
     a = p.parse_args()
     if a.commit and not re.fullmatch(r"[0-9a-f]{40}", a.commit):
@@ -72,7 +79,7 @@ def main():
         try:
             receipt = evaluate(get("get", "nodes"), get("get", "namespace", "kube-system"),
                                get("-n", a.namespace, "get", "gitrepository", a.source),
-                               get("-n", a.namespace, "get", "kustomization", "platform-root"), a.node, a.commit)
+                               get("-n", a.namespace, "get", "kustomization", "platform-root"), a.node, a.commit, a.version, a.architecture)
             if socket.gethostname() != a.node:
                 raise ValueError("OS hostname does not match selected node")
             receipt.update(hostname=socket.gethostname(), architecture=platform.machine(),

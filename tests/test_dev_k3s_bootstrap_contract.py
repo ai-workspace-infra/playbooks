@@ -124,6 +124,14 @@ class Contract(unittest.TestCase):
         self.assertEqual(observer["when"], "k3s_platform_strict_dev_receipt | bool")
         self.assertIn('"k3s_platform_strict_dev_receipt": True', (ROOT / "scripts/dev_k3s_bootstrap.py").read_text())
 
+    def test_expected_runtime_k3s_version_and_architecture_are_required(self):
+        args = self.resources()
+        args[0]["items"][0]["status"]["nodeInfo"] = {"kubeletVersion": "v1.37.1+k3s1", "architecture": "amd64"}
+        self.assertEqual(VERIFY.evaluate(*args, ADAPTER.TARGET, SHA, "v1.37.1+k3s1", "amd64")["node_info"]["architecture"], "amd64")
+        for version, arch in (("v1.30.6+k3s1", "amd64"), ("v1.37.1+k3s1", "arm64")):
+            with self.assertRaises(ValueError):
+                VERIFY.evaluate(*args, ADAPTER.TARGET, SHA, version, arch)
+
     def test_source_commit_and_synchronous_role_are_present(self):
         tasks = (ROOT / "roles/vhosts/k3s_platform_bootstrap/tasks/main.yml").read_text()
         self.assertIsInstance(yaml.safe_load(tasks), list)

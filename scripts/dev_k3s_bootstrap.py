@@ -108,7 +108,7 @@ def main():
             receipt = d / "receipt.json"
             variables = d / "inputs.json"
             variables.write_text(json.dumps({"k3s_platform_git_url": REPOSITORY, "k3s_platform_git_auth_mode": "public",
-                "k3s_platform_strict_dev_receipt": True, "k3s_platform_git_commit": a.gitops_sha, "k3s_platform_flux_root_path": "./environments/clusters/" + TARGET,
+                "k3s_platform_strict_dev_receipt": True, "k3s_platform_expected_architecture": "amd64", "k3s_platform_git_commit": a.gitops_sha, "k3s_platform_flux_root_path": "./environments/clusters/" + TARGET,
                 "k3s_platform_receipt_path": str(receipt)}))
             ssh_args = f"-o StrictHostKeyChecking=yes -o UserKnownHostsFile={known_hosts} -o PasswordAuthentication=no -o BatchMode=yes"
             env = {**agent_env, "AI_WORKSPACE_CMDB_JSON": str(narrow_cmdb), "ANSIBLE_HOST_KEY_CHECKING": "True",
