@@ -34,6 +34,10 @@ on:
       node_uid:
         type: string
         required: true
+      namespace_uid:
+        description: Live UID from the authenticated prepare receipt
+        type: string
+        required: true
       cluster_uid:
         type: string
         required: true
@@ -53,7 +57,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ai-workspace-infra/playbooks
-          ref: 52bae554999efe6f8e9873ccc545aaa6a5da6d52
+          ref: a08e8a9e28deabcc81f296ee0cf16f18374c3c69
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
@@ -90,6 +94,7 @@ jobs:
           CMDB_SHA256: ${{ inputs.cmdb_sha256 }}
           NODE_UID: ${{ inputs.node_uid }}
           CLUSTER_UID: ${{ inputs.cluster_uid }}
+          NAMESPACE_UID: ${{ inputs.namespace_uid }}
         shell: bash
         run: |
           set -euo pipefail
@@ -98,7 +103,7 @@ jobs:
             --stage "$STAGE" --phase "$PHASE" --instance-id "$INSTANCE_ID" \
             --cmdb "$RUNNER_TEMP/dev-feature-cmdb/cmdb.json" --cmdb-sha256 "$CMDB_SHA256" \
             --gitops-root "$GITHUB_WORKSPACE/gitops-candidate" --gitops-sha "$CANDIDATE_SHA" \
-            --platform-sha "$PLATFORM_SHA" --node-uid "$NODE_UID" --cluster-uid "$CLUSTER_UID" \
+            --platform-sha "$PLATFORM_SHA" --node-uid "$NODE_UID" --cluster-uid "$CLUSTER_UID" --namespace-uid "$NAMESPACE_UID" \
             --receipt "$RUNNER_TEMP/dev-feature-evidence/receipt.json"
       - uses: actions/upload-artifact@v4
         if: always()
