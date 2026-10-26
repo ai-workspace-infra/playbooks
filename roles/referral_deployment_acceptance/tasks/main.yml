@@ -1,0 +1,36 @@
+---
+- name: Require explicit deployment evidence and controller output
+  ansible.builtin.assert:
+    that:
+      - referral_acceptance_contract is match('^/')
+      - referral_acceptance_observation is match('^/')
+      - referral_acceptance_observation_sha256 is match('^[a-f0-9]{64}$')
+      - referral_acceptance_output is match('^/')
+      - referral_acceptance_output not in [referral_acceptance_contract, referral_acceptance_observation]
+
+- name: Probe only the bound deployed HTTPS origins
+  ansible.builtin.command:
+    argv:
+      - '{{ ansible_playbook_python }}'
+      - '{{ role_path }}/files/accept.py'
+      - --contract
+      - '{{ referral_acceptance_contract }}'
+      - --observation
+      - '{{ referral_acceptance_observation }}'
+      - --observation-sha256
+      - '{{ referral_acceptance_observation_sha256 }}'
+  register: referral_acceptance_probe
+  failed_when: referral_acceptance_probe.rc not in [0, 2]
+  changed_when: false
+
+- name: Preserve the sanitized partial acceptance receipt
+  ansible.builtin.copy:
+    content: "{{ referral_acceptance_probe.stdout }}\n"
+    dest: '{{ referral_acceptance_output }}'
+    mode: '0600'
+
+- name: Block until complete deployed business acceptance exists
+  ansible.builtin.assert:
+    that:
+      - (referral_acceptance_probe.stdout | from_json).result == 'PASS'
+    fail_msg: Deployment preflight receipt saved; incomplete business cases are not acceptance PASS.
