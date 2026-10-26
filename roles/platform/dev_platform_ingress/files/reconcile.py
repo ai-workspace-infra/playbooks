@@ -57,8 +57,10 @@ def watch_rules():
          {'apiGroups':['extensions','networking.k8s.io'],'resources':['ingresses/status'],'verbs':['update']}]
 
 def documents(c):
- docs=[R.documents({**foundation(c),'environment':stage,'namespace':name})[0] for stage,(name,_,_) in R.SCOPES.items()]
+ lanes=[R.namespace_documents({**foundation(c),'environment':stage,'namespace':name}) for stage,(name,_,_) in R.SCOPES.items()]
+ docs=[lane[0] for lane in lanes]
  docs.append({'apiVersion':'v1','kind':'Namespace','metadata':{'name':NS,'labels':{'app.kubernetes.io/managed-by':OWNER,'environment':'dev','app.kubernetes.io/part-of':'dev-platform-ingress','pod-security.kubernetes.io/enforce':'privileged','pod-security.kubernetes.io/audit':'restricted','pod-security.kubernetes.io/warn':'restricted'},'annotations':{'security.svc.plus/exception':'Only reviewed hostPorts80/443; non-root/dropALL/no privileged/no hostNetwork; persistent platform scope.'}}})
+ docs.extend(doc for lane in lanes for doc in lane[1:])
  def meta(name,ns=NS):return {'name':name,'namespace':ns,'labels':{'app.kubernetes.io/managed-by':OWNER}}
  docs.append({'apiVersion':'v1','kind':'ServiceAccount','metadata':meta(SA),'automountServiceAccountToken':False})
  for ns in [NS,*WATCH]:

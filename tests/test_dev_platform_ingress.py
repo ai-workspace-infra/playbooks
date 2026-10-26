@@ -34,7 +34,7 @@ class Client:
   if kind=='ocirepository':return next(d for d in SOURCE if d['kind']=='OCIRepository')
   if kind=='configmap':return next(d for d in SOURCE if d['kind']=='ConfigMap')
   if kind=='pods':return {'items':[pod()] if namespace else []}
-  if kind in ('role','rolebinding'):return next(d for d in S.documents(c) if d['kind'].lower()==kind and d['metadata']['namespace']==namespace)
+  if kind in ('role','rolebinding'):return next(d for d in S.documents(c) if d['kind'].lower()==kind and d['metadata']['namespace']==namespace and d['metadata']['name']==name)
   raise AssertionError((kind,name,namespace))
  def apply(self,docs):self.applied.append(copy.deepcopy(docs))
 
@@ -59,10 +59,17 @@ class Platform(unittest.TestCase):
   for stage,(name,_,_) in R.SCOPES.items():
    expected=R.documents({**S.foundation(c),'environment':stage,'namespace':name})[0]
    self.assertEqual(next(d for d in docs if d['kind']=='Namespace' and d['metadata']['name']==name),expected)
+  for stage,(name,_,_) in R.SCOPES.items():
+   expected=R.namespace_documents({**S.foundation(c),'environment':stage,'namespace':name})
+   for identity in expected:self.assertIn(identity,docs)
+   auditor=next(d for d in expected if d['kind']=='Role' and d['metadata']['name']=='lane-auditor')
+   for rule in auditor['rules']:
+    self.assertFalse({'secrets','configmaps','pods/exec','pods/log','serviceaccounts/token'} & set(rule['resources']))
+    self.assertTrue(set(rule['verbs']) <= {'get','list','watch'})
   self.assertEqual(docs[-1]['spec']['patches'][0]['patch'].splitlines()[-1],'$patch: delete')
  def test_controller_rbac_covers_exact_rendered_watch_roles_without_cluster_escalation(self):
   docs=S.documents(config())
-  for role in [d for d in docs if d['kind']=='Role']:
+  for role in [d for d in docs if d['kind']=='Role' and d['metadata']['name']==S.SA]:
    ns=role['metadata']['namespace'];rules=role['rules']
    for r in rules:
     self.assertNotIn('*',r['apiGroups']+r['resources']+r['verbs']);self.assertFalse({'bind','escalate','impersonate'}&set(r['verbs']))

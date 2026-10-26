@@ -50,3 +50,30 @@
   delegate_to: localhost
   become: false
   when: dev_feature_config.mode == 'prepare' and not ansible_check_mode
+- name: Authenticate independent namespace auditor and observe business PID1 identities
+  ansible.builtin.script:
+    cmd: files/audit.py
+    executable: python3
+  environment:
+    DEV_FEATURE_AUDIT: "{{ {'config': dev_feature_config, 'runtime': dev_feature_result.stdout | from_json} | to_json }}"
+  register: dev_feature_audit
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: dev_feature_config.mode == 'verify' and not ansible_check_mode
+- name: Preserve only redacted audit and UID observations
+  ansible.builtin.copy:
+    content: "{{ (dev_feature_result.stdout | from_json) | combine(dev_feature_audit.stdout | from_json) | to_json }}\n"
+    dest: '{{ dev_feature_report }}'
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+  when: dev_feature_config.mode == 'verify' and not ansible_check_mode
+- name: Require actual independent identity checks to pass
+  ansible.builtin.assert:
+    that:
+      - dev_feature_audit.rc == 0
+      - (dev_feature_audit.stdout | from_json).audit_acceptance == 'verified'
+      - (dev_feature_audit.stdout | from_json).business_uid_acceptance == 'verified'
+    fail_msg: Actual namespace read-only identity or business UID did not verify.
+  when: dev_feature_config.mode == 'verify' and not ansible_check_mode

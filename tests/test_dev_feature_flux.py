@@ -24,8 +24,8 @@ class Contracts(unittest.TestCase):
    for field in path:image=image[field]
    release[key]['podAnnotations']={'release.svc.plus/source_repository':source_repos[key],'release.svc.plus/source_sha':'a'*40,'release.svc.plus/image_digest':image.split('@')[1],'release.svc.plus/build_run_id':'123'}
    if key in ('accounts','billing','content'):release[key]['workload']['env']={'IMAGE':image}
-  for name in sorted(C.CM):docs.append({'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':name,'namespace':ns},'data':{'release.yaml':yaml.safe_dump(release)} if name=='web-saas-fullstack-release' else {}})
-  docs += [{'apiVersion':'source.toolkit.fluxcd.io/v1beta2','kind':'OCIRepository','metadata':{'name':'web-saas-fullstack-chart','namespace':ns},'spec':{'url':'oci://ghcr.io/ai-workspace-infra/distributed-web-saas-fullstack','ref':{'digest':R.CHART}}},{'apiVersion':'helm.toolkit.fluxcd.io/v2','kind':'HelmRelease','metadata':{'name':'distributed-web-saas-fullstack','namespace':ns},'spec':{'releaseName':'web-saas','targetNamespace':ns,'serviceAccountName':'lane-reconciler','chartRef':{'kind':'OCIRepository','name':'web-saas-fullstack-chart'},'valuesFrom':[{'kind':'ConfigMap','name':'web-saas-fullstack-values'}]}}]
+  for name in sorted(C.CM):docs.append({'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':name,'namespace':ns},'data':{'release.yaml':yaml.safe_dump(release)} if name=='web-saas-fullstack-release' else {'values.yaml':'{}'} if name=='web-saas-fullstack-values' else {}})
+  docs += [{'apiVersion':'source.toolkit.fluxcd.io/v1beta2','kind':'OCIRepository','metadata':{'name':'web-saas-fullstack-chart','namespace':ns},'spec':{'url':'oci://ghcr.io/ai-workspace-infra/distributed-web-saas-fullstack','ref':{'digest':R.CHART}}},{'apiVersion':'helm.toolkit.fluxcd.io/v2','kind':'HelmRelease','metadata':{'name':'distributed-web-saas-fullstack','namespace':ns},'spec':{'releaseName':'web-saas','targetNamespace':ns,'serviceAccountName':'lane-reconciler','chartRef':{'kind':'OCIRepository','name':'web-saas-fullstack-chart'},'valuesFrom':[{'kind':'ConfigMap','name':'web-saas-fullstack-values','valuesKey':'values.yaml'},{'kind':'ConfigMap','name':'web-saas-fullstack-release','valuesKey':'release.yaml'}]}}]
   for name in ('web-saas-http',):
    docs.append({'apiVersion':'networking.k8s.io/v1','kind':'Ingress','metadata':{'name':name,'namespace':ns,'annotations':{'kubernetes.io/ingress.class':'dev-web-saas'}},'spec':{'rules':[{'host':h,'http':{'paths':[{'backend':{'service':{'name':'web-saas-caddy-ingress','port':{'number':80}}}}]}} for h in sorted(R.DOMAINS[stage])]}})
   return docs
@@ -91,7 +91,7 @@ class Contracts(unittest.TestCase):
     return base[2] if kind=='gitrepository' else base[3]
    def apply(self,docs):self.applied=docs
   client=Client();self.assertEqual(R.execute(c,client)['result'],'planned');self.assertFalse(client.applied)
-  c['mode']='prepare';self.assertEqual(R.execute(c,client)['result'],'prepared');self.assertEqual(len(client.applied),4)
+  c['mode']='prepare';self.assertEqual(R.execute(c,client)['result'],'prepared');self.assertEqual(len(client.applied),7)
  def test_namespace_takeover_and_prod_scope_rejected(self):
   c=self.config();c['environment']='prod'
   with self.assertRaises(ValueError):R.validate(c)
@@ -151,5 +151,17 @@ class CandidateEvolutionTests(unittest.TestCase):
   release['accounts']['podAnnotations']['release.svc.plus/image_digest']='sha256:'+'0'*64
   release_doc['data']['release.yaml']=yaml.safe_dump(release)
   with self.assertRaises(ValueError):C.validate_documents(docs,'sit')
+
+
+class PrivilegeScopeTests(unittest.TestCase):
+ def test_component_secrets_and_overlay_order_cannot_escalate(self):
+  C.validate_values({'accounts':{'workload':{'secretRefs':['web-saas-accounts-runtime']}},'postgresql':{'existingSecret':'web-saas-db-admin'},'global':{'imagePullSecrets':[{'name':'web-saas-registry'}]}})
+  for value in [{'accounts':{'workload':{'secretRefs':['web-saas-db-admin']}}},{'accounts':{'workload':{'secretKeyRef':{'name':'web-saas-registry'}}}},{'accounts':{'workload':{'serviceAccountName':'lane-reconciler'}}},{'extraObjects':[{'kind':'Secret'}]}]:
+   with self.assertRaises(ValueError):C.validate_values(value)
+  docs=Contracts().docs();hr=next(x for x in docs if x['kind']=='HelmRelease');hr['spec']['valuesFrom'].reverse()
+  with self.assertRaises(ValueError):C.validate_documents(docs,'sit')
+ def test_post_renderer_cannot_mount_admin_secret_or_management_identity(self):
+  for patch in [{'spec':{'template':{'spec':{'serviceAccountName':'lane-reconciler'}}}},[{'op':'add','path':'/spec/template/spec/automountServiceAccountToken','value':True}],{'spec':{'template':{'spec':{'volumes':[{'secret':{'secretName':'web-saas-db-admin'}}]}}}}]:
+   with self.assertRaises(ValueError):C.validate_patch_scope(patch)
 
 if __name__=='__main__':unittest.main()

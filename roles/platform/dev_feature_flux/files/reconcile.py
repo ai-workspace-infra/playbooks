@@ -61,12 +61,19 @@ def documents(c):
         {'apiGroups':['source.toolkit.fluxcd.io'],'resources':['ocirepositories'],'verbs':['get','list','watch','create','update','patch','delete']}]
  role={'apiVersion':'rbac.authorization.k8s.io/v1','kind':'Role','metadata':{**meta,'name':'lane-reconciler'},'rules':rules}
  binding={'apiVersion':'rbac.authorization.k8s.io/v1','kind':'RoleBinding','metadata':{**meta,'name':'lane-reconciler'},'subjects':[{'kind':'ServiceAccount','name':'lane-reconciler','namespace':NS}],'roleRef':{'apiGroup':'rbac.authorization.k8s.io','kind':'Role','name':'lane-reconciler'}}
+ auditor={'apiVersion':'v1','kind':'ServiceAccount','metadata':{**meta,'name':'lane-auditor'},'automountServiceAccountToken':False}
+ audit_role={'apiVersion':'rbac.authorization.k8s.io/v1','kind':'Role','metadata':{**meta,'name':'lane-auditor'},'rules':[{'apiGroups':[''],'resources':['pods','services'],'verbs':['get','list','watch']},{'apiGroups':['apps'],'resources':['deployments','statefulsets','replicasets'],'verbs':['get','list','watch']}]}
+ audit_binding={'apiVersion':'rbac.authorization.k8s.io/v1','kind':'RoleBinding','metadata':{**meta,'name':'lane-auditor'},'subjects':[{'kind':'ServiceAccount','name':'lane-auditor','namespace':NS}],'roleRef':{'apiGroup':'rbac.authorization.k8s.io','kind':'Role','name':'lane-auditor'}}
  source={'apiVersion':'source.toolkit.fluxcd.io/v1','kind':'GitRepository','metadata':{**meta,'name':SOURCE},'spec':{'interval':'1m','url':REPO,'ref':({'branch':'main'} if c['environment']=='uat' else {'commit':c['candidate_sha']})}}
  kustom={'apiVersion':'kustomize.toolkit.fluxcd.io/v1','kind':'Kustomization','metadata':{**meta,'name':SOURCE},'spec':{'interval':'1m','path':PATH,'prune':False,'wait':True,'timeout':'15m','serviceAccountName':'lane-reconciler','targetNamespace':NS,'sourceRef':{'kind':'GitRepository','name':SOURCE}}}
  if c['mode']=='enable-tls':
   kustom['metadata']['name']=SOURCE+'-tls';kustom['spec']['path']=PATH+'/tls'
   return [kustom]
- return [namespace,sa,role,binding,source,kustom]
+ return [namespace,sa,role,binding,auditor,audit_role,audit_binding,source,kustom]
+
+def namespace_documents(c):
+ """Trusted namespace identities shared by feature and independent ingress owner."""
+ return documents(dict(c,mode='prepare'))[:7]
 
 def verify_runtime(c,pods):
  mapping=c.get('runtime_mapping',{});records=mapping.get('images',{})
@@ -103,7 +110,7 @@ def verify_runtime(c,pods):
 
 class Client:
  def call(self,args,stdin=None):
-  p=subprocess.run(['/usr/local/bin/k3s','kubectl','--request-timeout=20s',*args],input=stdin,text=True,capture_output=True,timeout=30)
+  p=subprocess.run(['/usr/local/bin/k3s','kubectl','--kubeconfig=/etc/rancher/k3s/k3s.yaml','--request-timeout=20s',*args],input=stdin,text=True,capture_output=True,timeout=30)
   require(p.returncode==0,'selected Kubernetes operation failed; raw output suppressed')
   return json.loads(p.stdout) if p.stdout.strip() else None
  def get(self,kind,name=None,namespace=None,optional=False):
@@ -121,7 +128,7 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
  if existing:
   labels=existing['metadata'].get('labels',{})
   require(labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==FEATURE and labels.get('environment')==c['environment'],'existing namespace has another owner; no takeover')
- report={'mode':c['mode'],'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False}
+ report={'mode':c['mode'],'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False,'audit_acceptance':'NOT_RUN','business_uid_acceptance':'NOT_RUN'}
  if c['mode']=='plan':return report
  if c['mode']=='verify':
   seed=c.get('seed_receipt',{})
@@ -133,7 +140,7 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
   original=client.get('kustomization',SOURCE,NS);live=client.get('gitrepository',SOURCE,NS)
   require(ready(original) and revision(original.get('status',{}).get('lastAppliedRevision'),c['candidate_sha']) and ready(live),'base lane must be the exact Ready candidate before TLS')
  try:
-  if c['mode']!='verify':client.apply(documents(c)[:4] if c['mode']=='prepare' else documents(c))
+  if c['mode']!='verify':client.apply(namespace_documents(c) if c['mode']=='prepare' else documents(c))
  except Exception:
   report.update(changed='UNKNOWN',result='apply_failed_or_unknown');return report
  report.update(changed=c['mode']!='verify',result='applied_unverified')

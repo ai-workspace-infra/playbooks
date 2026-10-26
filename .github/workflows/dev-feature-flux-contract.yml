@@ -17,6 +17,7 @@ on:
       - 'scripts/run_dev_feature_flux.py'
       - 'tests/test_dev_feature_flux.py'
       - 'tests/test_dev_oci_runtime.py'
+      - 'tests/test_dev_lane_audit.py'
       - 'roles/vhosts/k3s_runtime_secret_sync/**'
       - '.github/workflows/dev-feature-flux*.yml'
 permissions:
@@ -34,5 +35,6 @@ jobs:
       - run: python -m unittest discover -s tests -p test_dev_platform_ingress.py
       - run: python -m unittest discover -s tests -p test_dev_ssh_binding.py
       - run: python -m unittest discover -s tests -p test_dev_oci_runtime.py
+      - run: python -m unittest discover -s tests -p test_dev_lane_audit.py
       - run: ansible-playbook -i 'localhost,' dev_feature_flux.yml --syntax-check -e dev_feature_target=localhost
       - run: ANSIBLE_ROLES_PATH=roles ansible-playbook -i tests/fixtures/dev_k3s_syntax.yml dev_platform_ingress.yml --syntax-check -e dev_platform_target=dev-k3s-v5
