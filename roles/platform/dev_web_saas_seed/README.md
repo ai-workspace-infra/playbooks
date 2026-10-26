@@ -80,7 +80,7 @@ Stripe Sandbox absence blocks business acceptance independently of DB setup.
 Trusted wrapper integration should reuse the existing Dev Flux owner's authenticated
 CMDB/SSH transport rather than introduce another Vault identity. Set
 `dev_web_saas_seed_report` to the caller's temporary evidence path to collect the
-public receipt locally. Same-run artifact contract: `dev-lane-seed-<stage>-<run_id>-<attempt>`
+public receipt locally. Same-run artifact contract: `dev-lane-seed-<stage>-<phase>-<run_id>-<attempt>`
 containing `receipt.json`; only initialize can emit `dev-lane-seed/v1 verified`.
 The seed-admin output is preparatory and cannot satisfy Flux verify. The caller
 must authenticate artifact producer/source/run/attempt before passing the receipt.
@@ -106,3 +106,13 @@ schema-version mutation, DDL, TEMP, owner/business SET ROLE and sensitive user r
 The compatible receipt retains only the two business roles in database_roles and
 records audit_role plus separate audit allow/deny flags. Actual cross-namespace
 and K3s evidence remains required; local probes do not establish live acceptance.
+
+
+Reusable CI entry: `.github/workflows/dev-web-saas-seed.yml` (workflow_call only),
+fixed owner checkout `6e75ab1a195c8b8c751897449c9dadfdf288b91d` including the shared
+strict SSH/session helper from C. Inputs are the same-run API-verified candidate
+artifact/checksum, CMDB artifact/checksum, stage/phase, GitOps/platform SHA,
+instance_id,node_uid,cluster_uid. Parent must review and authorize the exact new
+job_workflow_ref allowlist entry before any operational use; this PR does not
+change Vault roles/policies. The trusted Toolkit caller remains
+`dev-feature-deploy.yml` on protected main. Seed-admin is not a verified seed.
