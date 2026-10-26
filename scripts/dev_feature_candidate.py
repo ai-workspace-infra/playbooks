@@ -30,6 +30,34 @@ def image_set(release):
  require(len(set(images.values()))==6,'six distinct component images required')
  return images
 
+RUNTIME_SECRETS={'accounts':'web-saas-accounts-runtime','billing':'web-saas-billing-runtime','console':'web-saas-console-runtime','content':'web-saas-content-runtime','postgresql':'web-saas-db-admin'}
+FORBIDDEN_POD_OVERRIDES={'serviceAccountName','automountServiceAccountToken','serviceAccountToken','projected','csi','hostPath','hostNetwork','hostPID','hostIPC'}
+def validate_values(values):
+ require(isinstance(values,dict) and set(values)<={'global','edgeGateway','stunnelClient','stunnelServer','caddy','postgresql','console','accounts','billing','content'},'unsupported chart root extension')
+ def walk(value,path=()):
+  if isinstance(value,list):
+   for item in value:walk(item,path)
+  elif isinstance(value,dict):
+   component=path[0] if path else None
+   for key,child in value.items():
+    require(key not in FORBIDDEN_POD_OVERRIDES,'PR cannot override Pod management identity or privileged volume scope')
+    if key=='imagePullSecrets':require(path==('global',) and child==[{'name':'web-saas-registry'}],'only fixed registry pull credential allowed')
+    if key=='existingSecret':require(path==('postgresql',) and child=='web-saas-db-admin','only PostgreSQL may mount DB admin credential')
+    if key=='secretRefs':require(component in RUNTIME_SECRETS and child==[RUNTIME_SECRETS[component]],'component runtime secret reference mismatch')
+    if key in ('secretRef','secretKeyRef'):require(component in RUNTIME_SECRETS and isinstance(child,dict) and child.get('name')==RUNTIME_SECRETS[component],'component secret reference escaped')
+    if key=='secretName':require(component in RUNTIME_SECRETS and child==RUNTIME_SECRETS[component],'component secret volume escaped')
+    walk(child,(*path,key))
+ walk(values)
+
+def validate_patch_scope(value):
+ if isinstance(value,list):
+  for child in value:validate_patch_scope(child)
+ elif isinstance(value,dict):
+  forbidden=FORBIDDEN_POD_OVERRIDES|{'secret','secretName','secretRef','secretKeyRef','secretRefs','imagePullSecrets'}
+  require(not (set(value)&forbidden),'post-renderer cannot change identity or secret access')
+  require(not (set(str(value.get('path','')).split('/'))&forbidden),'JSON patch cannot change identity or secret access')
+  for child in value.values():validate_patch_scope(child)
+
 def validate_documents(documents,stage,tls=False):
  require(stage in SCOPE.SCOPES,'unsupported lane stage')
  ns=SCOPE.SCOPES[stage][0]
@@ -48,6 +76,9 @@ def validate_documents(documents,stage,tls=False):
  else:
   require({d['metadata']['name'] for d in by_kind.get('ConfigMap',[])}==CM,'four fixed ConfigMaps required')
   release=yaml.safe_load(next(d for d in by_kind['ConfigMap'] if d['metadata']['name']=='web-saas-fullstack-release')['data']['release.yaml'])
+  validate_values(release)
+  values=yaml.safe_load(next(d for d in by_kind['ConfigMap'] if d['metadata']['name']=='web-saas-fullstack-values')['data']['values.yaml'])
+  validate_values(values)
   images=image_set(release)
   sources={name:{'repository':release[name]['podAnnotations']['release.svc.plus/source_repository'],'source_sha':release[name]['podAnnotations']['release.svc.plus/source_sha'],'build_run_id':str(release[name]['podAnnotations']['release.svc.plus/build_run_id'])} for name in images}
   oci=by_kind.get('OCIRepository',[])
@@ -60,13 +91,14 @@ def validate_documents(documents,stage,tls=False):
   require(h.get('chartRef')=={'kind':'OCIRepository','name':'web-saas-fullstack-chart'},'unexpected chart reference')
   require(not h.get('values'),'unreviewed inline Helm values rejected')
   require(not h.get('chart') and not h.get('kubeConfig') and not h.get('storageNamespace'),'cross-cluster/namespace Helm overrides rejected')
-  require(all(v.get('kind')=='ConfigMap' and v.get('name') in CM for v in h.get('valuesFrom',[])),'unexpected values input or Secret valuesFrom')
+  require(h.get('valuesFrom')==[{'kind':'ConfigMap','name':'web-saas-fullstack-values','valuesKey':'values.yaml'},{'kind':'ConfigMap','name':'web-saas-fullstack-release','valuesKey':'release.yaml'}],'fixed values then immutable release overlay required')
   require(all(d.get('namespace',ns)==ns for d in h.get('dependsOn',[])),'cross-namespace dependency rejected')
   for renderer in h.get('postRenderers',[]):
    require(set(renderer)=={'kustomize'} and set(renderer['kustomize'])<={'patches'},'unsupported post-renderer')
    for patch in renderer['kustomize'].get('patches',[]):
     target=patch.get('target',{})
     parsed=yaml.safe_load(patch.get('patch',''))
+    validate_patch_scope(parsed)
     def no_image_override(value):
      if isinstance(value,dict):
       require('image' not in value and not str(value.get('path','')).endswith('/image'),'post-rendered images bypass immutable release')
