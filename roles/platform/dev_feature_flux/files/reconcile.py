@@ -114,7 +114,10 @@ class Client:
  def call(self,args,stdin=None):
   p=subprocess.run(['/usr/local/bin/k3s','kubectl','--kubeconfig=/etc/rancher/k3s/k3s.yaml','--request-timeout=20s',*args],input=stdin,text=True,capture_output=True,timeout=30)
   require(p.returncode==0,'selected Kubernetes operation failed; raw output suppressed')
-  return json.loads(p.stdout) if p.stdout.strip() else None
+  text=p.stdout.strip()
+  if not text:return None
+  try:return json.loads(text)
+  except Exception:return text
  def get(self,kind,name=None,namespace=None,optional=False):
   args=['get',kind]+([name] if name else [])+(['-n',namespace] if namespace else [])+(['--ignore-not-found'] if optional else [])+['-o','json']
   return self.call(args)
@@ -155,7 +158,7 @@ def rebuild_namespace(c,client,existing,sleep,clock):
   require(not claimed,'orphaned persistent volume still references the deleted SIT namespace')
  timeout=max(60,min(int(c.get('rebuild_wait_seconds',300)),600));deadline=clock()+timeout
  if existing and not existing['metadata'].get('deletionTimestamp'):
-  client.call(['delete','namespace',NS,'--wait=false',f'--preconditions=uid={old_uid}'])
+  client.call(['delete','namespace',NS,'--wait=false'])
  if existing:
   while True:
    current=client.get('namespace',NS,optional=True)
