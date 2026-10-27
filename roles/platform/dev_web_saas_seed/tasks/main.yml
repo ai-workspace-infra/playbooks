@@ -1,0 +1,64 @@
+---
+- name: Require trusted caller target and supported phase
+  ansible.builtin.assert:
+    that:
+      - dev_web_saas_seed_request is mapping
+      - dev_web_saas_seed_request.phase in ['seed-admin', 'initialize']
+      - dev_web_saas_seed_request.stage == 'sit'
+      - dev_web_saas_seed_request.namespace_uid is defined
+      - dev_web_saas_seed_request.namespace_uid | length > 0
+      - dev_web_saas_seed_request.instance_id | string == cmdb_instance_id | string
+      - dev_web_saas_seed_request.candidate_sha is match('^[0-9a-f]{40}$')
+    fail_msg: Dev seed requires trusted CMDB-bound caller request
+
+- name: Install reviewed Dev seed helper directory
+  ansible.builtin.file:
+    path: /opt/platform-ops/dev-web-saas-seed
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Install reviewed Dev seed implementation
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/opt/platform-ops/dev-web-saas-seed/{{ item }}"
+    owner: root
+    group: root
+    mode: '0600'
+  loop:
+    - seed.py
+    - contracts.py
+
+- name: Install the existing reviewed shared platform scope validator
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../dev_feature_flux/files/reconcile.py"
+    dest: /opt/platform-ops/dev-web-saas-seed/platform_scope.py
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Execute fixed Dev database initialization phase
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /opt/platform-ops/dev-web-saas-seed/seed.py
+    stdin: "{{ dev_web_saas_seed_request | to_json }}"
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: dev_web_saas_seed_result
+  changed_when: dev_web_saas_seed_request.phase == 'initialize'
+  no_log: true
+
+- name: Expose only sanitized seed result
+  ansible.builtin.set_fact:
+    dev_web_saas_seed_receipt: "{{ dev_web_saas_seed_result.stdout | from_json }}"
+
+- name: Write public receipt to the trusted caller evidence directory
+  ansible.builtin.copy:
+    content: "{{ dev_web_saas_seed_receipt | to_json }}\n"
+    dest: "{{ dev_web_saas_seed_report }}"
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+  when: dev_web_saas_seed_report is defined

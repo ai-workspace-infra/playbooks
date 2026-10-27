@@ -1,0 +1,17 @@
+---
+- name: Initialize only the trusted CMDB-selected Dev web-saas lane
+  hosts: "{{ dev_web_saas_seed_target }}"
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Require CMDB Dev environment and exact selected instance
+      ansible.builtin.assert:
+        that:
+          - dev_web_saas_seed_target is defined
+          - inventory_hostname == dev_web_saas_seed_target
+          - cmdb_instance_id is defined
+          - dev_web_saas_seed_request.instance_id | string == cmdb_instance_id | string
+        fail_msg: Trusted CMDB selector and seed target must match
+  roles:
+    - platform/dev_web_saas_seed
