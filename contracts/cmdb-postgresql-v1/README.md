@@ -31,7 +31,14 @@ are recorded.
 
 The migration is additive and has no destructive down migration. Schema changes
 must use a new numbered migration and be forward-compatible with the deployed
-writer and Grafana views.
+writer and Grafana views. `migrations/003_resource_key_and_reconciliation.sql`
+appends `resource_key` (`{provider}:{account_or_project}:{region}:{resource_id}`),
+`runtime_form` (`vm` | `k3s_node` | `serverless`), `environment`, `last_observed_at`,
+and `observation_status` (`active` | `unobserved` | `collection_failed` | `deleted`)
+to `v_resource_current` and `v_serverless_current`, filters `v_serverless_current`
+to `lifecycle = 'present'`, and adds `v_reconciliation_summary`. To roll back
+view definitions to `002` without losing table data, re-apply the view definitions
+from `001_initial_schema.sql` and `002_present_provider_summary.sql`.
 
 ## Current limitations
 
