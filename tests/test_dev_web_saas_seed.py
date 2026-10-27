@@ -129,6 +129,19 @@ def test_complete_initialize_returns_receipt_after_all_probes(monkeypatch):
     with pytest.raises(module.Blocked, match='namespace UID'):
         owner.initialize()
     owner.k = original_k
+    # Containerd runtime imageID directly matching PG_IMAGE is accepted.
+    original_k_containerd = owner.k
+    def containerd_image(*args):
+        result = original_k_containerd(*args)
+        if 'pod' in args:
+            result['status']['containerStatuses'][0]['imageID'] = module.PG_IMAGE
+        return result
+    owner.k = containerd_image
+    writes.clear()
+    jobs.clear()
+    receipt2 = owner.initialize()
+    assert receipt2['result'] == 'verified'
+    owner.k = original_k
     # Unknown OCI runtime digests fail before any Secret or SQL write.
     original_k = owner.k
     def bad_image(*args):

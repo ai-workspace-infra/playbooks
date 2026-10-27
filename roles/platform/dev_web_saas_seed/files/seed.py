@@ -156,7 +156,8 @@ END IF; END $$;
                  'pod/web-saas-postgresql-0', '--timeout=300s')
         pg = self.k('-n', self.ns, 'get', 'pod', 'web-saas-postgresql-0')
         image_id = pg.get('status', {}).get('containerStatuses', [{}])[0].get('imageID', '')
-        if image_id not in ('docker-pullable://' + PG_IMAGE,
+        if image_id not in (PG_IMAGE,
+                            'docker-pullable://' + PG_IMAGE,
                             'ghcr.io/ai-workspace-services/postgresql@' + PG_AMD64_DIGEST,
                             'docker-pullable://ghcr.io/ai-workspace-services/postgresql@' + PG_AMD64_DIGEST):
             raise Blocked('PostgreSQL runtime imageID mismatch')
