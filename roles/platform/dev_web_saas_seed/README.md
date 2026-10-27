@@ -43,6 +43,7 @@ The entry playbook is `dev_web_saas_seed.yml`; it selects only the caller-projec
 CMDB target and repeats the instance binding. Syntax check uses
 `ansible-playbook -i inventory/terraform_cmdb.py dev_web_saas_seed.yml --syntax-check -e dev_web_saas_seed_target=all` (syntax only; not an execution selector).
 Unit checks: `python -m pytest tests/test_dev_web_saas_seed.py`.
+Bounded failure-code checks: `python tests/test_dev_owner_failure_codes.py`.
 Opt-in real local PG17 check: set `PG17_BIN`, `SEED_MIGRATECTL` (built from the fixed
 Accounts source), `SEED_ACCOUNTS_SOURCE`, then run
 `python tests/dev_web_saas_seed_pg_integration.py`. It creates a private temporary

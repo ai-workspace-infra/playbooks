@@ -13,7 +13,7 @@ import subprocess
 import sys
 import urllib.request
 from urllib.parse import quote
-from platform_scope import preflight
+from platform_scope import preflight, failure_code
 from contracts import ACCOUNTS_SHA, BILLING_SHA, SCHEMA_SHA, target, identity, verify_sources, grants, audit_grants
 
 ACCOUNTS_IMAGE = 'ghcr.io/ai-workspace-services/accounts@sha256:6edd156ce6974dfd0cd7486beebbb446091e4019eacf3c272e05aba4a609737d'
@@ -278,6 +278,7 @@ END IF; END $$;
 
 
 def main():
+    request = {}
     try:
         request = json.load(sys.stdin)
         owner = Owner(request)
@@ -288,8 +289,11 @@ def main():
         else:
             raise Blocked('unsupported phase')
         print(json.dumps(result))
-    except Exception:
-        print(json.dumps({'result': 'BLOCKED', 'reason': 'seed owner failed; inspect sanitized phase evidence'}))
+    except Exception as error:
+        phase = request.get('phase') if isinstance(request, dict) else None
+        operation = phase if phase in ('seed-admin', 'initialize') else 'unknown'
+        print(json.dumps({'result': 'BLOCKED', 'failure_code': failure_code(operation, error),
+                          'reason': 'seed owner failed; inspect sanitized phase evidence'}))
         return 1
     return 0
 

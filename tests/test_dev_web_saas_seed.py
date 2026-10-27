@@ -2,6 +2,11 @@ import importlib.util
 from pathlib import Path
 import pytest
 
+SCOPE_PATH = Path(__file__).resolve().parents[1] / 'roles/platform/dev_feature_flux/files/reconcile.py'
+scope_spec = importlib.util.spec_from_file_location('failure_code_scope', SCOPE_PATH)
+scope = importlib.util.module_from_spec(scope_spec)
+scope_spec.loader.exec_module(scope)
+
 P = Path(__file__).resolve().parents[1] / 'roles/platform/dev_web_saas_seed/files/contracts.py'
 spec = importlib.util.spec_from_file_location('seed_contracts', P)
 c = importlib.util.module_from_spec(spec)
@@ -43,7 +48,7 @@ def test_owned_secret_reused_without_rotation_and_foreign_owner_refused(monkeypa
     import base64
     monkeypatch.setitem(sys.modules, 'contracts', c)
     import types
-    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None))
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None, failure_code=scope.failure_code))
     spec = importlib.util.spec_from_file_location('seed_owner', P.parent / 'seed.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -64,7 +69,7 @@ def test_complete_initialize_returns_receipt_after_all_probes(monkeypatch):
     import types
     import json
     monkeypatch.setitem(sys.modules, 'contracts', c)
-    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None))
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None, failure_code=scope.failure_code))
     spec = importlib.util.spec_from_file_location('seed_complete', P.parent / 'seed.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -174,7 +179,7 @@ def test_seed_admin_refuses_stale_and_recreated_namespace(monkeypatch):
     import sys
     import types
     monkeypatch.setitem(sys.modules, 'contracts', c)
-    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None))
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None, failure_code=scope.failure_code))
     spec = importlib.util.spec_from_file_location('seed_namespace', P.parent / 'seed.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
