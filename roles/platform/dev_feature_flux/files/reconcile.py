@@ -22,7 +22,6 @@ def require(value,message):
  if not value: raise ValueError(message)
 
 def validate(c):
- require(re.fullmatch(r'[1-9][0-9]*',str(c.get('instance_id',''))),'CMDB instance identity required')
  require(c.get('environment') in SCOPES and c.get('namespace')==SCOPES[c['environment']][0] and c.get('node_name')==NODE,'fixed Dev lane scope required')
  require(c.get('mode') in ('plan','prepare','submit','verify','enable-tls'),'explicit mode required')
  for key in ('candidate_sha','platform_sha','owner_sha'):
@@ -121,7 +120,7 @@ class Client:
   return self.call(['apply','-f','-','-o','json'],json.dumps({'apiVersion':'v1','kind':'List','items':docs}))
 
 def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
- validate(c);client=client or Client()
+ validate(c);require(re.fullmatch(r'[1-9][0-9]*',str(c.get('instance_id',''))),'CMDB instance identity required');client=client or Client()
  NS,SOURCE,PATH=SCOPES[c['environment']]
  def base():return (client.get('nodes'),client.get('namespace','kube-system'),client.get('gitrepository','platform-config','flux-system'),client.get('kustomization','platform-root','flux-system'))
  baseline=base();preflight(c,*baseline)
