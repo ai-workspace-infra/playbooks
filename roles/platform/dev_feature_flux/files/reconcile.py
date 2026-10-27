@@ -23,7 +23,9 @@ def require(value,message):
 
 def validate(c):
  require(c.get('environment') in SCOPES and c.get('namespace')==SCOPES[c['environment']][0] and c.get('node_name')==NODE,'fixed Dev lane scope required')
- require(c.get('mode') in ('plan','prepare','submit','verify','enable-tls'),'explicit mode required')
+ require(c.get('mode') in ('plan','prepare','rebuild','submit','verify','enable-tls'),'explicit mode required')
+ if c.get('mode')=='rebuild':
+  require(c.get('environment')=='sit' and UUID.fullmatch(c.get('namespace_uid','')),'SIT rebuild requires the authenticated current namespace UID')
  for key in ('candidate_sha','platform_sha','owner_sha'):
   require(SHA.fullmatch(c.get(key,'')), 'full immutable '+key+' required')
  for key in ('node_uid','cluster_uid'):
@@ -118,6 +120,66 @@ class Client:
   return self.call(args)
  def apply(self,docs):
   return self.call(['apply','-f','-','-o','json'],json.dumps({'apiVersion':'v1','kind':'List','items':docs}))
+ def create(self,doc):
+  return self.call(['create','-f','-','-o','json'],json.dumps(doc))
+
+def rebuild_namespace(c,client,existing,sleep,clock):
+ old_uid=c['namespace_uid']
+ require(c['environment']=='sit','only an isolated SIT lane may be rebuilt')
+ pv_names=[]
+ if existing:
+  require(existing['metadata'].get('uid')==old_uid,'SIT namespace incarnation changed before rebuild')
+  labels=existing['metadata'].get('labels',{})
+  require(labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==FEATURE and labels.get('feature_id')==FEATURE and labels.get('environment')=='sit','namespace ownership mismatch; refuse rebuild')
+  claims=client.get('persistentvolumeclaims',namespace=NS).get('items',[])
+  for claim in claims:
+   spec=claim.get('spec',{});volume=spec.get('volumeName')
+   if not volume:
+    require(claim.get('status',{}).get('phase') in ('Pending',None),'unbound claim has an unexpected phase')
+    continue
+   pv=client.get('persistentvolume',volume);pv_spec=pv.get('spec',{});claim_ref=pv_spec.get('claimRef',{})
+   require(claim_ref.get('namespace')==NS and claim_ref.get('name')==claim['metadata']['name'] and claim_ref.get('uid')==claim['metadata']['uid'],'persistent volume claim ownership mismatch')
+   require(pv_spec.get('storageClassName')=='local-path' and pv_spec.get('persistentVolumeReclaimPolicy')=='Delete','SIT rebuild cannot safely reclaim this persistent volume')
+   pv_names.append(volume)
+  claimed=[pv['metadata']['name'] for pv in client.get('persistentvolumes').get('items',[]) if pv.get('spec',{}).get('claimRef',{}).get('namespace')==NS]
+  unmatched=set(claimed)-set(pv_names)
+  if existing['metadata'].get('deletionTimestamp'):
+   for name in sorted(unmatched):
+    pv=client.get('persistentvolume',name);pv_spec=pv.get('spec',{})
+    require(pv_spec.get('storageClassName')=='local-path' and pv_spec.get('persistentVolumeReclaimPolicy')=='Delete','in-progress SIT deletion references a volume that cannot be safely reclaimed')
+    pv_names.append(name)
+  else:
+   require(not unmatched,'unmatched persistent volume references the SIT namespace')
+ else:
+  claimed=[pv['metadata']['name'] for pv in client.get('persistentvolumes').get('items',[]) if pv.get('spec',{}).get('claimRef',{}).get('namespace')==NS]
+  require(not claimed,'orphaned persistent volume still references the deleted SIT namespace')
+ timeout=max(60,min(int(c.get('rebuild_wait_seconds',300)),600));deadline=clock()+timeout
+ if existing and not existing['metadata'].get('deletionTimestamp'):
+  client.call(['delete','namespace',NS,'--wait=false',f'--preconditions=uid={old_uid}'])
+ if existing:
+  while True:
+   current=client.get('namespace',NS,optional=True)
+   if current is None:break
+   require(current['metadata'].get('uid')==old_uid,'namespace name was recreated by another actor during deletion')
+   if clock()>=deadline:raise ValueError('namespace deletion timed out; no force-finalizer removal')
+   sleep(5)
+ while pv_names:
+  remaining=[name for name in pv_names if client.get('persistentvolume',name,optional=True) is not None]
+  if not remaining:break
+  if clock()>=deadline:raise ValueError('SIT local-path volume reclamation timed out; namespace remains deleted and rebuild is blocked')
+  sleep(5)
+ claimed=[pv['metadata']['name'] for pv in client.get('persistentvolumes').get('items',[]) if pv.get('spec',{}).get('claimRef',{}).get('namespace')==NS]
+ require(not claimed,'orphaned persistent volume still references the deleted SIT namespace')
+ docs=namespace_documents(c)
+ require(client.get('namespace',NS,optional=True) is None,'namespace name was claimed during rebuild; refusing adoption')
+ client.create(docs[0])
+ client.apply(docs[1:])
+ current=client.get('namespace',NS)
+ new_uid=current.get('metadata',{}).get('uid','')
+ require(UUID.fullmatch(new_uid) and new_uid!=old_uid,'recreated SIT namespace UID did not change')
+ labels=current.get('metadata',{}).get('labels',{})
+ require(labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==FEATURE and labels.get('feature_id')==FEATURE and labels.get('environment')=='sit','recreated SIT namespace labels mismatch')
+ return {'namespace_uid':new_uid,'rebuild':{'previous_namespace_uid':old_uid,'old_local_path_pvs':pv_names,'namespace_deleted':True,'persistent_volumes_reclaimed':True}}
 
 def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
  validate(c);require(re.fullmatch(r'[1-9][0-9]*',str(c.get('instance_id',''))),'CMDB instance identity required');client=client or Client()
@@ -133,6 +195,11 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
  if c['mode']=='verify':require(existing is not None and UUID.fullmatch(c.get('namespace_uid','')),'verified live namespace UID required')
  report={'namespace_uid':existing['metadata'].get('uid') if existing else None,'mode':c['mode'],'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False,'audit_acceptance':'NOT_RUN','business_uid_acceptance':'NOT_RUN'}
  if c['mode']=='plan':return report
+ if c['mode']=='rebuild':
+  report.update(rebuild_namespace(c,client,existing,sleep,clock))
+  preflight(c,*base())
+  report.update(mode='rebuild',result='prepared',changed=True)
+  return report
  if c['mode']=='verify':
   seed=c.get('seed_receipt',{})
   require(seed.get('schema_version')=='dev-lane-seed/v1' and seed.get('result')=='verified' and seed.get('namespace')==NS and seed.get('namespace_uid')==c.get('namespace_uid') and seed.get('candidate_sha')==c['candidate_sha'] and seed.get('node_uid')==c['node_uid'] and seed.get('cluster_uid')==c['cluster_uid'] and seed.get('instance_id')==c['instance_id'] and seed.get('database_roles')==['xc_accounts_rw','xc_billing_rw'] and seed.get('schema_initialized') is True,'independent namespace seed owner receipt required before application reconciliation')

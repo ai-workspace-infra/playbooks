@@ -6,7 +6,7 @@ on:
         type: string
         required: true
       mode:
-        description: plan, prepare, submit, verify, or enable-tls; submit is not acceptance
+        description: plan, prepare, rebuild, submit, verify, or enable-tls; rebuild is SIT-only and requires a successful prior prepare receipt
         type: string
         required: true
       candidate_artifact:
@@ -94,15 +94,15 @@ jobs:
           name: ${{ inputs.cmdb_artifact }}
           path: ${{ runner.temp }}/dev-feature-cmdb
       - uses: actions/download-artifact@v4
+        if: inputs.mode == 'rebuild' || inputs.mode == 'verify'
+        with:
+          name: ${{ inputs.prepare_artifact }}
+          path: ${{ runner.temp }}/dev-feature-prepare
+      - uses: actions/download-artifact@v4
         if: inputs.mode == 'verify'
         with:
           name: ${{ inputs.seed_artifact }}
           path: ${{ runner.temp }}/dev-feature-seed
-      - uses: actions/download-artifact@v4
-        if: inputs.mode == 'verify'
-        with:
-          name: ${{ inputs.prepare_artifact }}
-          path: ${{ runner.temp }}/dev-feature-prepare
       - name: Run the fixed trusted owner
         env:
           STAGE: ${{ inputs.stage }}
@@ -120,6 +120,10 @@ jobs:
         run: |
           set -euo pipefail
           seed_args=()
+          prepare_args=()
+          if [[ "$MODE" == rebuild ]]; then
+            prepare_args=(--prepare-receipt "$RUNNER_TEMP/dev-feature-prepare/receipt.json" --prepare-sha256 "$PREPARE_SHA256")
+          fi
           if [[ "$MODE" == verify ]]; then
             seed_args=(--seed-receipt "$RUNNER_TEMP/dev-feature-seed/receipt.json" --seed-sha256 "$SEED_SHA256" --prepare-receipt "$RUNNER_TEMP/dev-feature-prepare/receipt.json" --prepare-sha256 "$PREPARE_SHA256")
           fi
@@ -129,7 +133,7 @@ jobs:
             --cmdb "$RUNNER_TEMP/dev-feature-cmdb/cmdb.json" --cmdb-sha256 "$CMDB_SHA256" \
             --gitops-root "$GITHUB_WORKSPACE/gitops-candidate" --gitops-sha "$CANDIDATE_SHA" \
             --platform-sha "$PLATFORM_SHA" --node-uid "$NODE_UID" --cluster-uid "$CLUSTER_UID" \
-            --receipt "$RUNNER_TEMP/dev-feature-evidence/receipt.json" "${seed_args[@]}"
+            --receipt "$RUNNER_TEMP/dev-feature-evidence/receipt.json" "${prepare_args[@]}" "${seed_args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

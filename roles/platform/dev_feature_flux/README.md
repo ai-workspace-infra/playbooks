@@ -15,11 +15,19 @@ manifests. Namespace Pod Security is restricted at v1.37. No role wildcard,
 clusterrole, exec/proxy/token-subresource, or role-binding permission is granted.
 
 Modes are explicit: plan (read-only Kubernetes observations), prepare (only
-namespace/limited identity plus exact registry), submit (HTTP source, pending), verify (read-only seeded readiness), enable-tls (only the
+namespace/limited identity plus exact registry), rebuild (SIT-only deletion and
+recreation bound to a successful prior prepare receipt), submit (HTTP source,
+pending), verify (read-only seeded readiness), enable-tls (only the
 fixed TLS sub-Kustomization, after real DNS A/HTTP entrypoint checks). A prepare
 result is not deployment verification. Neither the owner nor tests fabricate
-application Secrets or TLS certificates. Pruning is disabled; cleanup needs its
-own authorization and must preserve independent UAT/data.
+application Secrets or TLS certificates. GitOps pruning remains disabled. A
+rebuild checks the exact live Namespace UID and feature-owner labels, uses a UID
+precondition for deletion, waits without removing finalizers, and only recreates
+the fixed SIT Namespace after all bound `local-path` PVs with `Delete` policy
+are gone. Unknown, retained, or orphaned volumes stop the operation for review.
+The rebuilt Namespace receives a new UID; its old database and namespaced
+resources are intentionally discarded. This mode cannot target UAT or shared
+resources.
 
 SIT uses feature-xconnect-referral-sit and a fixed PR commit. UAT uses web-saas-uat
 and an independent branch-main Source, with initial exact-main candidate checks.
@@ -42,7 +50,7 @@ production or shared application Secret values and adds no Vault permission.
 
 `prepare` creates only the fixed namespace/SA/Role/RoleBinding, then invokes the existing `vhosts/k3s_runtime_secret_sync` opt-in Dev registry mode. This reads only `kv/CICD/dev/ghcr` and writes only `web-saas-registry` in the selected fixed lane. The default KV field-sync mode remains unchanged. Secret values stay in controller memory and strict SSH stdin; no artifact contains them.
 
-`verify` requires a same-run authenticated `dev-lane-seed/v1` receipt artifact and digest from a separately reviewed seed producer. It must bind candidate_sha, namespace, the current CMDB-selected instance, node UID and cluster UID, result=verified, schema_initialized=true and database_roles=[xc_accounts_rw,xc_billing_rw]. This interface does not implement schema initialization or accept a caller boolean. The Toolkit caller must verify the artifact producer source/run before passing it. No seed producer exists in this PR: final runtime verification remains blocked until that owner is implemented. In particular PG readiness/DDL/DB-role preparation must precede full HelmRelease readiness; business must not receive lane_admin.
+`verify` requires a same-run authenticated `dev-lane-seed/v1` receipt artifact and digest from the fixed database seed owner. It must bind candidate_sha, namespace, the current CMDB-selected instance, node UID and cluster UID, result=verified, schema_initialized=true and database_roles=[xc_accounts_rw,xc_billing_rw]. This interface does not implement schema initialization or accept a caller boolean. The Toolkit caller verifies the artifact producer source/run before passing it. PG readiness/DDL/DB-role preparation must precede full HelmRelease readiness; business must not receive lane_admin.
 
 SIT is fixed commit; UAT is the unique persistent branch-main source. UAT acceptance checks the sampled immutable current main revision and expires after main changes. TLS is a separate exact `/tls` path, enabled only after all three fixed onwalk.net hosts resolve uniquely to the Dev IP and HTTP port 80 responds without redirects. Traefik ACME `dev-http01` owns certificates; no namespace TLS Secret is copied. Platform Traefik resources require a separate reviewed infrastructure owner and are rejected by this feature renderer.
 

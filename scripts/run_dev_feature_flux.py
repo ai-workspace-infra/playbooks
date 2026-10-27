@@ -24,7 +24,7 @@ def validate_candidate_receipt(receipt,sha,stage,run_id):
  return receipt
 
 def validate_prepare_receipt(receipt,config,observation):
- require(receipt.get('schema_version')=='dev-feature-flux/v1' and receipt.get('result')=='prepared' and receipt.get('mode')=='prepare','successful prepare producer required')
+ require(receipt.get('schema_version')=='dev-feature-flux/v1' and receipt.get('result')=='prepared' and receipt.get('mode') in ('prepare','rebuild'),'successful prepare/rebuild producer required')
  for key in ('candidate_sha','namespace','namespace_uid','node_uid','cluster_uid','manifest_sha256'):
   require(receipt.get(key)==config[key],'prepare proof stale or wrong target: '+key)
  require(receipt.get('instance_id')==config['instance_id'],'prepare instance mismatch')
@@ -35,6 +35,9 @@ def validate_prepare_receipt(receipt,config,observation):
  for key in ('candidate_sha','namespace','namespace_uid','node_uid','cluster_uid','manifest_sha256'):
   require(binding.get(key)==config[key],'OCI mapping binding mismatch: '+key)
  require(binding.get('images')==observation['images'] and binding.get('sources')==observation['sources'],'candidate/image/source changed since prepare')
+ if receipt.get('mode')=='rebuild':
+  lifecycle=receipt.get('rebuild',{})
+  require(candidate.SCOPE.UUID.fullmatch(lifecycle.get('previous_namespace_uid','')) and lifecycle.get('previous_namespace_uid')!=receipt.get('namespace_uid') and lifecycle.get('namespace_deleted') is True and lifecycle.get('persistent_volumes_reclaimed') is True,'verified SIT namespace rebuild evidence required')
  source=binding.get('source',{})
  require(source.get('repository')=='ai-workspace-infra/platform-ops-toolkit' and source.get('workflow_ref')=='ai-workspace-infra/platform-ops-toolkit/.github/workflows/dev-feature-deploy.yml@refs/heads/main' and candidate.SCOPE.SHA.fullmatch(source.get('workflow_sha','')) and source.get('owner_sha')==receipt.get('owner_sha') and str(source.get('run_id'))==str(receipt.get('run_id')) and str(source.get('run_attempt'))==str(receipt.get('run_attempt')),'prepare original GHA producer binding mismatch')
  records=mapping.get('images',{});require(set(records)==set(observation['images']),'six OCI mappings required')
@@ -45,7 +48,8 @@ def validate_prepare_receipt(receipt,config,observation):
  return mapping
 
 def execute(a):
- require(a.stage in candidate.SCOPE.SCOPES and a.mode in ('plan','prepare','submit','verify','enable-tls'),'explicit lane/mode required')
+ require(a.stage in candidate.SCOPE.SCOPES and a.mode in ('plan','prepare','rebuild','submit','verify','enable-tls'),'explicit lane/mode required')
+ if a.mode=='rebuild':require(a.stage=='sit' and a.prepare_receipt is not None and re.fullmatch(r'[0-9a-f]{64}',a.prepare_sha256 or ''),'authenticated prior SIT prepare receipt required for rebuild')
  require(candidate.SCOPE.SHA.fullmatch(a.gitops_sha) and candidate.SCOPE.SHA.fullmatch(a.platform_sha),'full GitOps SHA required')
  require(re.fullmatch(r'[0-9a-f]{64}',a.cmdb_sha256),'CMDB digest required')
  require(hashlib.sha256(a.cmdb.read_bytes()).hexdigest()==a.cmdb_sha256,'CMDB checksum mismatch')
@@ -56,6 +60,12 @@ def execute(a):
  observation=candidate.validate_tree(a.gitops_root,a.gitops_sha,a.stage,a.mode=='enable-tls')
  owner_sha=run(['git','-C',str(ROOT),'rev-parse','HEAD']).strip()
  config={'instance_id':a.instance_id,'mode':a.mode,'environment':a.stage,'namespace':observation['namespace'],'node_name':'dev-k3s-v5','node_uid':a.node_uid,'cluster_uid':a.cluster_uid,'candidate_sha':a.gitops_sha,'platform_sha':a.platform_sha,'owner_sha':owner_sha,'manifest_sha256':observation['manifest_sha256'],'wait_seconds':900}
+ if a.mode=='rebuild':
+  require(hashlib.sha256(a.prepare_receipt.read_bytes()).hexdigest()==a.prepare_sha256,'prior prepare receipt checksum mismatch')
+  prior=json.loads(a.prepare_receipt.read_text())
+  config['namespace_uid']=prior.get('namespace_uid')
+  require(candidate.SCOPE.UUID.fullmatch(config['namespace_uid'] or ''),'prior SIT namespace UID missing')
+  validate_prepare_receipt(prior,config,observation)
  if a.mode=='enable-tls':
   config['target_ip']=cmdb['dev-k3s-v5']['ip'];proof=[]
   for host in sorted(candidate.SCOPE.DOMAINS[a.stage]):
@@ -86,7 +96,7 @@ def execute(a):
   d=transport.directory;report=d/'runtime.json'
   variables=d/'vars.json';variables.write_text(json.dumps({'dev_feature_target':'dev-k3s-v5','dev_feature_config':config,'dev_feature_apply':a.mode!='plan','dev_feature_report':str(report)}))
   env={**transport.env,'ANSIBLE_ROLES_PATH':str(ROOT/'roles')}
-  if a.mode=='prepare':
+  if a.mode in ('prepare','rebuild'):
    context={k:config[k] for k in ('candidate_sha','namespace','node_uid','cluster_uid','manifest_sha256')}
    context.update(instance_id=a.instance_id,images=observation['images'],sources=observation['sources'],source={'repository':os.environ.get('GITHUB_REPOSITORY'),'workflow_ref':os.environ.get('GITHUB_WORKFLOW_REF'),'workflow_sha':os.environ.get('GITHUB_SHA'),'owner_sha':owner_sha,'run_id':os.environ.get('GITHUB_RUN_ID'),'run_attempt':os.environ.get('GITHUB_RUN_ATTEMPT')})
    env.update(DEV_SYNC_VAULT_TOKEN=transport.token,DEV_REGISTRY_HOST=transport.host,DEV_REGISTRY_KNOWN_HOSTS=str(transport.known),DEV_REGISTRY_PUBLIC_IDENTITY=str(transport.public),DEV_REGISTRY_CONTEXT=json.dumps(context))
@@ -99,7 +109,7 @@ def execute(a):
   if p.returncode!=0:runtime['result']='owner_failed'
   runtime.update(instance_id=a.instance_id,cmdb_sha256=a.cmdb_sha256,candidate=observation,candidate_control_plane=verified_candidate,candidate_receipt_sha256=a.candidate_sha256,run_id=os.environ.get('GITHUB_RUN_ID'),run_attempt=os.environ.get('GITHUB_RUN_ATTEMPT'))
   a.receipt.parent.mkdir(parents=True,exist_ok=True);a.receipt.write_text(json.dumps(runtime,sort_keys=True)+'\n')
-  require(p.returncode==0 and runtime.get('result')=={'plan':'planned','prepare':'prepared','submit':'submitted_pending_seed','verify':'verified','enable-tls':'verified'}[a.mode],'namespace deployment did not verify')
+  require(p.returncode==0 and runtime.get('result')=={'plan':'planned','prepare':'prepared','rebuild':'prepared','submit':'submitted_pending_seed','verify':'verified','enable-tls':'verified'}[a.mode],'namespace deployment did not verify')
 
 def main():
  p=argparse.ArgumentParser()
