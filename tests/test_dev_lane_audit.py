@@ -1,6 +1,7 @@
 """Offline audit-identity/UID falsification; not a runtime acceptance receipt."""
 import base64,importlib.util,io,json,unittest,urllib.error
 from pathlib import Path
+from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 def load(name,path):
  s=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
@@ -30,6 +31,28 @@ class AuditPolicyTests(unittest.TestCase):
   with self.assertRaises(ValueError):A.process_uid(text.replace('Pid:\t1','Pid:\t20'))
 
 class HTTPTests(unittest.TestCase):
+ def test_ca_comes_only_from_fixed_kubeconfig_public_data(self):
+  ca='-----BEGIN CERTIFICATE-----\nsynthetic\n-----END CERTIFICATE-----\n'
+  with patch.object(A,'command',return_value=base64.b64encode(ca.encode()).decode()) as command, patch.object(A.ssl,'create_default_context') as context:
+   A.API('synthetic')
+  self.assertEqual(command.call_args.args[0],['config','view','--minify','--raw','-o','jsonpath={.clusters[0].cluster.certificate-authority-data}'])
+  context.assert_called_once_with(cadata=ca)
+  for encoded in ('','not-base64!', 'a'*32_001):
+   with patch.object(A,'command',return_value=encoded):
+    with self.assertRaises((ValueError, A.base64.binascii.Error)):A.API('synthetic')
+ def test_created_is_accepted_only_when_requested(self):
+  class Response:
+   status=201
+   def __enter__(self):return self
+   def __exit__(self,*args):pass
+   def read(self,*args):return b'{"status":{"userInfo":{"username":"synthetic"}}}'
+  class Opener:
+   def open(self,req,timeout):return Response()
+  api=object.__new__(A.API);api.token='synthetic';api.opener=Opener()
+  path='/apis/authentication.k8s.io/v1/selfsubjectreviews'
+  self.assertEqual(api.request(path,'POST',{},expected=201)['status']['userInfo']['username'],'synthetic')
+  with self.assertRaises(ValueError):api.request('/api/v1/namespaces/feature-xconnect-referral-sit/pods')
+  with self.assertRaises(ValueError):api.request('/api/v1/namespaces/feature-xconnect-referral-sit/secrets/x',expected=403,read=False)
  def test_wrong_secret_permission_never_reads_body(self):
   class Response:
    status=200
@@ -73,5 +96,6 @@ class ActualIdentityFlowTests(unittest.TestCase):
   self.assertEqual(result['k3s_runtime_rootless'],'NOT_CLAIMED')
   self.assertTrue(any(method=='PATCH' and 'dryRun=All' in path and expected==403 for method,path,expected,_ in calls))
   self.assertTrue(any('/exec?' in path and expected==403 and not read for _,path,expected,read in calls))
+  self.assertTrue(any(path.endswith('selfsubjectreviews') and expected==201 for _,path,expected,_ in calls))
   self.assertFalse(any('can-i' in args for args in commands))
 if __name__=='__main__':unittest.main()

@@ -27,7 +27,12 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 class API:
  def __init__(self,token):
-  context=ssl.create_default_context(cafile='/var/lib/rancher/k3s/server/tls/server-ca.crt')
+  # Ask the fixed management kubeconfig for only its public CA, not client keys.
+  # K3s data-dir may differ from its default; no host symlink is required.
+  encoded=command(['config','view','--minify','--raw','-o','jsonpath={.clusters[0].cluster.certificate-authority-data}'])
+  require(0<len(encoded)<=32_000,'bounded local API CA required')
+  ca=base64.b64decode(encoded,validate=True).decode('ascii')
+  context=ssl.create_default_context(cadata=ca)
   self.opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=context),NoRedirect())
   self.token=token
  def request(self,path,method='GET',body=None,expected=200,content_type='application/json',read=True):
@@ -67,7 +72,7 @@ def execute(config,runtime,api=None,run=command,now=None):
   token=run(['create','token','lane-auditor','-n',namespace,'--duration=600s'])
   token_claims(token,namespace,now if now is not None else int(datetime.datetime.now(datetime.timezone.utc).timestamp()))
   api=API(token)
- who=api.request('/apis/authentication.k8s.io/v1/selfsubjectreviews','POST',{'apiVersion':'authentication.k8s.io/v1','kind':'SelfSubjectReview'})
+ who=api.request('/apis/authentication.k8s.io/v1/selfsubjectreviews','POST',{'apiVersion':'authentication.k8s.io/v1','kind':'SelfSubjectReview'},expected=201)
  username=who.get('status',{}).get('userInfo',{}).get('username')
  require(username==f'system:serviceaccount:{namespace}:lane-auditor','actual API audit identity mismatch')
  prefix='/api/v1/namespaces/'+namespace
