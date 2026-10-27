@@ -10,9 +10,11 @@ PATH='./services/distributed-web-saas-fullstack/dev/sit-xconnect-referral'
 REPO='https://github.com/ai-workspace-infra/gitops.git'
 CHART='sha256:6336235445e389958660cc344eead488ad3a50cf67afb1301fd35f6793720f27'
 SCOPES={
- 'sit':('feature-xconnect-referral-sit','xconnect-referral-sit','./services/distributed-web-saas-fullstack/dev/sit-xconnect-referral')}
+ 'sit':('feature-xconnect-referral-sit','xconnect-referral-sit','./services/distributed-web-saas-fullstack/dev/sit-xconnect-referral'),
+ 'uat':('web-saas-uat','web-saas-uat','./services/distributed-web-saas-fullstack/dev/uat')}
 DOMAINS={
- 'sit':{'xconnect-referral-sit.onwalk.net','accounts-xconnect-referral-sit.onwalk.net','billing-xconnect-referral-sit.onwalk.net'}}
+ 'sit':{'xconnect-referral-sit.onwalk.net','accounts-xconnect-referral-sit.onwalk.net','billing-xconnect-referral-sit.onwalk.net'},
+ 'uat':{'web-saas-uat.onwalk.net','accounts-web-saas-uat.onwalk.net','billing-web-saas-uat.onwalk.net'}}
 SHA=re.compile(r'^[0-9a-f]{40}$')
 UUID=re.compile(r'^[0-9a-f-]{36}$')
 
@@ -21,7 +23,9 @@ def require(value,message):
 
 def validate(c):
  require(c.get('environment') in SCOPES and c.get('namespace')==SCOPES[c['environment']][0] and c.get('node_name')==NODE,'fixed Dev lane scope required')
- require(c.get('mode') in ('plan','prepare','submit','verify','enable-tls'),'explicit mode required')
+ require(c.get('mode') in ('plan','prepare','rebuild','submit','verify','enable-tls'),'explicit mode required')
+ if c.get('mode')=='rebuild':
+  require(c.get('environment')=='sit' and UUID.fullmatch(c.get('namespace_uid','')),'SIT rebuild requires the authenticated current namespace UID')
  for key in ('candidate_sha','platform_sha','owner_sha'):
   require(SHA.fullmatch(c.get(key,'')), 'full immutable '+key+' required')
  for key in ('node_uid','cluster_uid'):
@@ -59,38 +63,149 @@ def documents(c):
         {'apiGroups':['source.toolkit.fluxcd.io'],'resources':['ocirepositories'],'verbs':['get','list','watch','create','update','patch','delete']}]
  role={'apiVersion':'rbac.authorization.k8s.io/v1','kind':'Role','metadata':{**meta,'name':'lane-reconciler'},'rules':rules}
  binding={'apiVersion':'rbac.authorization.k8s.io/v1','kind':'RoleBinding','metadata':{**meta,'name':'lane-reconciler'},'subjects':[{'kind':'ServiceAccount','name':'lane-reconciler','namespace':NS}],'roleRef':{'apiGroup':'rbac.authorization.k8s.io','kind':'Role','name':'lane-reconciler'}}
- source={'apiVersion':'source.toolkit.fluxcd.io/v1','kind':'GitRepository','metadata':{**meta,'name':SOURCE},'spec':{'interval':'1m','url':REPO,'ref':{'commit':c['candidate_sha']}}}
+ auditor={'apiVersion':'v1','kind':'ServiceAccount','metadata':{**meta,'name':'lane-auditor'},'automountServiceAccountToken':False}
+ audit_role={'apiVersion':'rbac.authorization.k8s.io/v1','kind':'Role','metadata':{**meta,'name':'lane-auditor'},'rules':[{'apiGroups':[''],'resources':['pods','services'],'verbs':['get','list','watch']},{'apiGroups':['apps'],'resources':['deployments','statefulsets','replicasets'],'verbs':['get','list','watch']}]}
+ audit_binding={'apiVersion':'rbac.authorization.k8s.io/v1','kind':'RoleBinding','metadata':{**meta,'name':'lane-auditor'},'subjects':[{'kind':'ServiceAccount','name':'lane-auditor','namespace':NS}],'roleRef':{'apiGroup':'rbac.authorization.k8s.io','kind':'Role','name':'lane-auditor'}}
+ source={'apiVersion':'source.toolkit.fluxcd.io/v1','kind':'GitRepository','metadata':{**meta,'name':SOURCE},'spec':{'interval':'1m','url':REPO,'ref':({'branch':'main'} if c['environment']=='uat' else {'commit':c['candidate_sha']})}}
  kustom={'apiVersion':'kustomize.toolkit.fluxcd.io/v1','kind':'Kustomization','metadata':{**meta,'name':SOURCE},'spec':{'interval':'1m','path':PATH,'prune':False,'wait':True,'timeout':'15m','serviceAccountName':'lane-reconciler','targetNamespace':NS,'sourceRef':{'kind':'GitRepository','name':SOURCE}}}
  if c['mode']=='enable-tls':
   kustom['metadata']['name']=SOURCE+'-tls';kustom['spec']['path']=PATH+'/tls'
   return [kustom]
- return [namespace,sa,role,binding,source,kustom]
+ return [namespace,sa,role,binding,auditor,audit_role,audit_binding,source,kustom]
+
+def namespace_documents(c):
+ """Trusted namespace identities shared by feature and independent ingress owner."""
+ return documents(dict(c,mode='prepare'))[:7]
+
+def verify_runtime(c,pods):
+ mapping=c.get('runtime_mapping',{});records=mapping.get('images',{})
+ names={'accounts','billing','caddy','console','content','postgresql'}
+ require(mapping.get('schema_version')=='dev-oci-platform/v1' and set(records)==names,'authenticated six-component OCI mapping required')
+ binding=mapping.get('binding',{})
+ for key in ('candidate_sha','namespace','namespace_uid','node_uid','cluster_uid','manifest_sha256'):require(binding.get(key)==c[key],'runtime mapping target/candidate mismatch')
+ selected=[]
+ for pod in pods.get('items',[]):
+  meta=pod.get('metadata',{});labels=meta.get('labels',{})
+  if meta.get('deletionTimestamp'):continue
+  if labels.get('app.kubernetes.io/instance')!='web-saas':continue
+  require(labels.get('app.kubernetes.io/component') in names,'unexpected application component pod')
+  selected.append(pod)
+ require(len(selected)==6,'exactly six active component pods required')
+ result={}
+ for pod in selected:
+  meta=pod['metadata'];component=meta['labels']['app.kubernetes.io/component'];expected=records[component]
+  require(component not in result and meta.get('namespace')==c['namespace'],'duplicate or wrong namespace component')
+  spec=pod.get('spec',{});containers=spec.get('containers',[])
+  require(spec.get('nodeName')==NODE and not spec.get('initContainers') and not spec.get('ephemeralContainers') and len(containers)==1 and containers[0].get('name')==component and containers[0].get('image')==expected['image'],'runtime container spec differs from candidate')
+  annotations=meta.get('annotations',{})
+  require(annotations.get('release.svc.plus/source_repository')==expected['source_repository'] and annotations.get('release.svc.plus/source_sha')==expected['source_sha'] and annotations.get('release.svc.plus/image_digest')==expected['manifest_digest'] and str(annotations.get('release.svc.plus/build_run_id'))==str(expected['build_run_id']),'runtime release annotations mismatch')
+  status=pod.get('status',{});states=status.get('containerStatuses',[])
+  require(status.get('phase')=='Running' and any(x.get('type')=='Ready' and x.get('status')=='True' for x in status.get('conditions',[])) and len(states)==1 and states[0].get('name')==component and states[0].get('ready') is True and states[0].get('state',{}).get('running') is not None,'component not actually Running/Ready')
+  image_id=states[0].get('imageID','');value=image_id
+  for prefix in ('docker-pullable://','containerd://','docker://'):
+   if value.startswith(prefix):value=value[len(prefix):];break
+  if '@' in value:
+   repository,value=value.split('@',1);require(repository==expected['image'].split('@')[0],'runtime image repository mismatch')
+  require(value in (expected['manifest_digest'],expected['platform_manifest_digest']) and re.fullmatch(r'sha256:[0-9a-f]{64}',value),'runtime imageID is neither approved root nor verified amd64 child')
+  result[component]={'pod':meta['name'],'pod_uid':meta['uid'],'spec_image':containers[0]['image'],'image_id':image_id,'root_digest':expected['manifest_digest'],'platform_digest':expected['platform_manifest_digest'],'ready':True}
+ return result
 
 class Client:
  def call(self,args,stdin=None):
-  p=subprocess.run(['/usr/local/bin/k3s','kubectl','--request-timeout=20s',*args],input=stdin,text=True,capture_output=True,timeout=30)
+  p=subprocess.run(['/usr/local/bin/k3s','kubectl','--kubeconfig=/etc/rancher/k3s/k3s.yaml','--request-timeout=20s',*args],input=stdin,text=True,capture_output=True,timeout=30)
   require(p.returncode==0,'selected Kubernetes operation failed; raw output suppressed')
-  return json.loads(p.stdout) if p.stdout.strip() else None
+  text=p.stdout.strip()
+  if not text:return None
+  try:return json.loads(text)
+  except Exception:return text
  def get(self,kind,name=None,namespace=None,optional=False):
   args=['get',kind]+([name] if name else [])+(['-n',namespace] if namespace else [])+(['--ignore-not-found'] if optional else [])+['-o','json']
   return self.call(args)
  def apply(self,docs):
   return self.call(['apply','-f','-','-o','json'],json.dumps({'apiVersion':'v1','kind':'List','items':docs}))
+ def create(self,doc):
+  return self.call(['create','-f','-','-o','json'],json.dumps(doc))
+
+def rebuild_namespace(c,client,existing,sleep,clock):
+ old_uid=c['namespace_uid']
+ require(c['environment']=='sit','only an isolated SIT lane may be rebuilt')
+ pv_names=[]
+ if existing:
+  require(existing['metadata'].get('uid')==old_uid,'SIT namespace incarnation changed before rebuild')
+  labels=existing['metadata'].get('labels',{})
+  require(labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==FEATURE and labels.get('feature_id')==FEATURE and labels.get('environment')=='sit','namespace ownership mismatch; refuse rebuild')
+  claims=client.get('persistentvolumeclaims',namespace=NS).get('items',[])
+  for claim in claims:
+   spec=claim.get('spec',{});volume=spec.get('volumeName')
+   if not volume:
+    require(claim.get('status',{}).get('phase') in ('Pending',None),'unbound claim has an unexpected phase')
+    continue
+   pv=client.get('persistentvolume',volume);pv_spec=pv.get('spec',{});claim_ref=pv_spec.get('claimRef',{})
+   require(claim_ref.get('namespace')==NS and claim_ref.get('name')==claim['metadata']['name'] and claim_ref.get('uid')==claim['metadata']['uid'],'persistent volume claim ownership mismatch')
+   require(pv_spec.get('storageClassName')=='local-path' and pv_spec.get('persistentVolumeReclaimPolicy')=='Delete','SIT rebuild cannot safely reclaim this persistent volume')
+   pv_names.append(volume)
+  claimed=[pv['metadata']['name'] for pv in client.get('persistentvolumes').get('items',[]) if pv.get('spec',{}).get('claimRef',{}).get('namespace')==NS]
+  unmatched=set(claimed)-set(pv_names)
+  if existing['metadata'].get('deletionTimestamp'):
+   for name in sorted(unmatched):
+    pv=client.get('persistentvolume',name);pv_spec=pv.get('spec',{})
+    require(pv_spec.get('storageClassName')=='local-path' and pv_spec.get('persistentVolumeReclaimPolicy')=='Delete','in-progress SIT deletion references a volume that cannot be safely reclaimed')
+    pv_names.append(name)
+  else:
+   require(not unmatched,'unmatched persistent volume references the SIT namespace')
+ else:
+  claimed=[pv['metadata']['name'] for pv in client.get('persistentvolumes').get('items',[]) if pv.get('spec',{}).get('claimRef',{}).get('namespace')==NS]
+  require(not claimed,'orphaned persistent volume still references the deleted SIT namespace')
+ timeout=max(60,min(int(c.get('rebuild_wait_seconds',300)),600));deadline=clock()+timeout
+ if existing and not existing['metadata'].get('deletionTimestamp'):
+  client.call(['delete','namespace',NS,'--wait=false'])
+ if existing:
+  while True:
+   current=client.get('namespace',NS,optional=True)
+   if current is None:break
+   require(current['metadata'].get('uid')==old_uid,'namespace name was recreated by another actor during deletion')
+   if clock()>=deadline:raise ValueError('namespace deletion timed out; no force-finalizer removal')
+   sleep(5)
+ while pv_names:
+  remaining=[name for name in pv_names if client.get('persistentvolume',name,optional=True) is not None]
+  if not remaining:break
+  if clock()>=deadline:raise ValueError('SIT local-path volume reclamation timed out; namespace remains deleted and rebuild is blocked')
+  sleep(5)
+ claimed=[pv['metadata']['name'] for pv in client.get('persistentvolumes').get('items',[]) if pv.get('spec',{}).get('claimRef',{}).get('namespace')==NS]
+ require(not claimed,'orphaned persistent volume still references the deleted SIT namespace')
+ docs=namespace_documents(c)
+ require(client.get('namespace',NS,optional=True) is None,'namespace name was claimed during rebuild; refusing adoption')
+ client.create(docs[0])
+ client.apply(docs[1:])
+ current=client.get('namespace',NS)
+ new_uid=current.get('metadata',{}).get('uid','')
+ require(UUID.fullmatch(new_uid) and new_uid!=old_uid,'recreated SIT namespace UID did not change')
+ labels=current.get('metadata',{}).get('labels',{})
+ require(labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==FEATURE and labels.get('feature_id')==FEATURE and labels.get('environment')=='sit','recreated SIT namespace labels mismatch')
+ return {'namespace_uid':new_uid,'rebuild':{'previous_namespace_uid':old_uid,'old_local_path_pvs':pv_names,'namespace_deleted':True,'persistent_volumes_reclaimed':True}}
 
 def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
- validate(c);client=client or Client()
+ validate(c);require(re.fullmatch(r'[1-9][0-9]*',str(c.get('instance_id',''))),'CMDB instance identity required');client=client or Client()
  NS,SOURCE,PATH=SCOPES[c['environment']]
  def base():return (client.get('nodes'),client.get('namespace','kube-system'),client.get('gitrepository','platform-config','flux-system'),client.get('kustomization','platform-root','flux-system'))
  baseline=base();preflight(c,*baseline)
  existing=client.get('namespace',NS,optional=True)
  if existing:
+  require(not existing['metadata'].get('deletionTimestamp'),'namespace is terminating')
+  if c['mode']=='verify':require(existing['metadata'].get('uid')==c.get('namespace_uid'),'namespace incarnation differs from authenticated prepare')
   labels=existing['metadata'].get('labels',{})
   require(labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==FEATURE and labels.get('environment')==c['environment'],'existing namespace has another owner; no takeover')
- report={'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False}
+ if c['mode']=='verify':require(existing is not None and UUID.fullmatch(c.get('namespace_uid','')),'verified live namespace UID required')
+ report={'namespace_uid':existing['metadata'].get('uid') if existing else None,'mode':c['mode'],'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False,'audit_acceptance':'NOT_RUN','business_uid_acceptance':'NOT_RUN'}
  if c['mode']=='plan':return report
+ if c['mode']=='rebuild':
+  report.update(rebuild_namespace(c,client,existing,sleep,clock))
+  preflight(c,*base())
+  report.update(mode='rebuild',result='prepared',changed=True)
+  return report
  if c['mode']=='verify':
   seed=c.get('seed_receipt',{})
-  require(seed.get('schema_version')=='dev-lane-seed/v1' and seed.get('result')=='verified' and seed.get('namespace')==NS and seed.get('candidate_sha')==c['candidate_sha'] and seed.get('node_uid')==c['node_uid'] and seed.get('cluster_uid')==c['cluster_uid'] and seed.get('instance_id')=='109277144' and seed.get('database_roles')==['xc_accounts_rw','xc_billing_rw'] and seed.get('schema_initialized') is True,'independent namespace seed owner receipt required before application reconciliation')
+  require(seed.get('schema_version')=='dev-lane-seed/v1' and seed.get('result')=='verified' and seed.get('namespace')==NS and seed.get('namespace_uid')==c.get('namespace_uid') and seed.get('candidate_sha')==c['candidate_sha'] and seed.get('node_uid')==c['node_uid'] and seed.get('cluster_uid')==c['cluster_uid'] and seed.get('instance_id')==c['instance_id'] and seed.get('database_roles')==['xc_accounts_rw','xc_billing_rw'] and seed.get('schema_initialized') is True,'independent namespace seed owner receipt required before application reconciliation')
  if c['mode']=='enable-tls':
   require(existing is not None,'prepare the namespace first')
   proof=c.get('dns_http_proof',[])
@@ -98,23 +213,30 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
   original=client.get('kustomization',SOURCE,NS);live=client.get('gitrepository',SOURCE,NS)
   require(ready(original) and revision(original.get('status',{}).get('lastAppliedRevision'),c['candidate_sha']) and ready(live),'base lane must be the exact Ready candidate before TLS')
  try:
-  if c['mode']!='verify':client.apply(documents(c)[:4] if c['mode']=='prepare' else documents(c))
+  if c['mode']!='verify':client.apply(namespace_documents(c) if c['mode']=='prepare' else documents(c))
  except Exception:
   report.update(changed='UNKNOWN',result='apply_failed_or_unknown');return report
  report.update(changed=c['mode']!='verify',result='applied_unverified')
  if c['mode']=='submit':
   preflight(c,*base());report.update(result='submitted_pending_seed',business_acceptance='NOT_RUN');return report
  if c['mode']=='prepare':
-  preflight(c,*base());report['result']='prepared';return report
+  current=client.get('namespace',NS)
+  require(current and not current['metadata'].get('deletionTimestamp') and UUID.fullmatch(current['metadata'].get('uid','')),'live prepared namespace UID missing')
+  if existing:require(current['metadata']['uid']==existing['metadata']['uid'],'namespace changed during preparation')
+  preflight(c,*base());report.update(result='prepared',namespace_uid=current['metadata']['uid']);return report
  deadline=clock()+int(c.get('wait_seconds',900))
  while True:
   source=client.get('gitrepository',SOURCE,NS,optional=True)
   root=client.get('kustomization',SOURCE+('-tls' if c['mode']=='enable-tls' else ''),NS,optional=True)
   release=client.get('helmrelease','distributed-web-saas-fullstack',NS,optional=True)
   if source and root and release and ready(source) and ready(root) and ready(release) and revision(source.get('status',{}).get('artifact',{}).get('revision'),c['candidate_sha']) and revision(root.get('status',{}).get('lastAppliedRevision'),c['candidate_sha']):
-   require(source.get('spec',{}).get('ref')=={'commit':c['candidate_sha']},'candidate source drifted')
+   require(source.get('spec',{}).get('ref')==({'branch':'main'} if c['environment']=='uat' else {'commit':c['candidate_sha']}),'candidate source drifted')
    preflight(c,*base())
-   report.update(result='verified',source_revision=source['status']['artifact']['revision'],applied_revision=root['status']['lastAppliedRevision'],helm_ready=True,tls_certificate_acceptance='NOT_RUN',watch_main=False,observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+   if c['mode']=='verify':
+    current=client.get('namespace',NS)
+    require(current['metadata'].get('uid')==c['namespace_uid'] and not current['metadata'].get('deletionTimestamp'),'namespace changed during runtime verification')
+    report['runtime_images']=verify_runtime(c,client.get('pods',namespace=NS))
+   report.update(result='verified',source_revision=source['status']['artifact']['revision'],applied_revision=root['status']['lastAppliedRevision'],helm_ready=True,tls_certificate_acceptance='NOT_RUN',watch_main=c['environment']=='uat',observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
    return report
   if clock()>=deadline:
    report.update(result='not_ready',source_ready=bool(source and ready(source)),kustomization_ready=bool(root and ready(root)),helm_ready=bool(release and ready(release)))

@@ -9,7 +9,7 @@ R=C.SCOPE
 
 class Contracts(unittest.TestCase):
  def config(self):
-  return {'environment':'sit','namespace':R.SCOPES['sit'][0],'node_name':R.NODE,'mode':'plan','candidate_sha':'a'*40,'platform_sha':'b'*40,'owner_sha':'c'*40,'node_uid':'1'*8+'-'+'1'*4+'-'+'1'*4+'-'+'1'*4+'-'+'1'*12,'cluster_uid':'2'*8+'-'+'2'*4+'-'+'2'*4+'-'+'2'*4+'-'+'2'*12,'manifest_sha256':'d'*64,'wait_seconds':10}
+  return {'instance_id':'109324752','environment':'sit','namespace':R.SCOPES['sit'][0],'node_name':R.NODE,'mode':'plan','candidate_sha':'a'*40,'platform_sha':'b'*40,'owner_sha':'c'*40,'node_uid':'1'*8+'-'+'1'*4+'-'+'1'*4+'-'+'1'*4+'-'+'1'*12,'cluster_uid':'2'*8+'-'+'2'*4+'-'+'2'*4+'-'+'2'*4+'-'+'2'*12,'manifest_sha256':'d'*64,'wait_seconds':10}
  def docs(self,stage='sit'):
   ns=R.SCOPES[stage][0];docs=[]
   repos={'caddy':'ai-workspace-infra/caddy-cloudflare','postgresql':'ai-workspace-services/postgresql','console':'ai-workspace-services/console','accounts':'ai-workspace-services/accounts','billing':'ai-workspace-services/billing-service','content':'ai-workspace-services/docs'}
@@ -24,8 +24,8 @@ class Contracts(unittest.TestCase):
    for field in path:image=image[field]
    release[key]['podAnnotations']={'release.svc.plus/source_repository':source_repos[key],'release.svc.plus/source_sha':'a'*40,'release.svc.plus/image_digest':image.split('@')[1],'release.svc.plus/build_run_id':'123'}
    if key in ('accounts','billing','content'):release[key]['workload']['env']={'IMAGE':image}
-  for name in sorted(C.CM):docs.append({'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':name,'namespace':ns},'data':{'release.yaml':yaml.safe_dump(release)} if name=='web-saas-fullstack-release' else {}})
-  docs += [{'apiVersion':'source.toolkit.fluxcd.io/v1beta2','kind':'OCIRepository','metadata':{'name':'web-saas-fullstack-chart','namespace':ns},'spec':{'url':'oci://ghcr.io/ai-workspace-infra/distributed-web-saas-fullstack','ref':{'digest':R.CHART}}},{'apiVersion':'helm.toolkit.fluxcd.io/v2','kind':'HelmRelease','metadata':{'name':'distributed-web-saas-fullstack','namespace':ns},'spec':{'releaseName':'web-saas','targetNamespace':ns,'serviceAccountName':'lane-reconciler','chartRef':{'kind':'OCIRepository','name':'web-saas-fullstack-chart'},'valuesFrom':[{'kind':'ConfigMap','name':'web-saas-fullstack-values'}]}}]
+  for name in sorted(C.CM):docs.append({'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':name,'namespace':ns},'data':{'release.yaml':yaml.safe_dump(release)} if name=='web-saas-fullstack-release' else {'values.yaml':'{}'} if name=='web-saas-fullstack-values' else {}})
+  docs += [{'apiVersion':'source.toolkit.fluxcd.io/v1beta2','kind':'OCIRepository','metadata':{'name':'web-saas-fullstack-chart','namespace':ns},'spec':{'url':'oci://ghcr.io/ai-workspace-infra/distributed-web-saas-fullstack','ref':{'digest':R.CHART}}},{'apiVersion':'helm.toolkit.fluxcd.io/v2','kind':'HelmRelease','metadata':{'name':'distributed-web-saas-fullstack','namespace':ns},'spec':{'releaseName':'web-saas','targetNamespace':ns,'serviceAccountName':'lane-reconciler','chartRef':{'kind':'OCIRepository','name':'web-saas-fullstack-chart'},'valuesFrom':[{'kind':'ConfigMap','name':'web-saas-fullstack-values','valuesKey':'values.yaml'},{'kind':'ConfigMap','name':'web-saas-fullstack-release','valuesKey':'release.yaml'}]}}]
   for name in ('web-saas-http',):
    docs.append({'apiVersion':'networking.k8s.io/v1','kind':'Ingress','metadata':{'name':name,'namespace':ns,'annotations':{'kubernetes.io/ingress.class':'dev-web-saas'}},'spec':{'rules':[{'host':h,'http':{'paths':[{'backend':{'service':{'name':'web-saas-caddy-ingress','port':{'number':80}}}}]}} for h in sorted(R.DOMAINS[stage])]}})
   return docs
@@ -38,7 +38,7 @@ class Contracts(unittest.TestCase):
   root={'metadata':meta,'status':{**status,'lastAppliedRevision':'sha1:'+c['platform_sha']}}
   return nodes,cluster,source,root
  def test_exact_stage_host_chart_and_images(self):
-  for stage in ('sit',):
+  for stage in ('sit','uat'):
    observed=C.validate_documents(self.docs(stage),stage)
    self.assertEqual(set(observed['hosts']),R.DOMAINS[stage]);self.assertEqual(len(observed['images']),6)
  def test_tls_subpath_requires_only_its_fixed_resolver_and_onwalk_hosts(self):
@@ -47,10 +47,11 @@ class Contracts(unittest.TestCase):
   self.assertEqual(C.validate_documents([doc],'sit',True)['images'],{})
   doc['spec']['tls']=[{'secretName':'prod-certificate','hosts':list(R.DOMAINS['sit'])}]
   with self.assertRaises(ValueError):C.validate_documents([doc],'sit',True)
- def test_uat_stage_rejected_on_dev_k3s(self):
+ def test_uat_source_watches_main_without_switching_platform_root(self):
   c=self.config();c.update(environment='uat',namespace='web-saas-uat')
-  with self.assertRaises(ValueError):R.validate(c)
-  with self.assertRaises(ValueError):C.validate_documents([], 'uat')
+  docs=R.documents(c)
+  self.assertEqual(docs[-2]['spec']['ref'],{'branch':'main'})
+  self.assertEqual(docs[-1]['spec']['targetNamespace'],'web-saas-uat')
  def test_cluster_secret_rbac_and_other_namespace_rejected(self):
   for kind in ('Secret','Namespace','ClusterRole','RoleBinding','Kustomization','GitRepository'):
    docs=self.docs()+[{'kind':kind,'metadata':{'name':'forbidden','namespace':R.SCOPES['sit'][0]}}]
@@ -86,11 +87,11 @@ class Contracts(unittest.TestCase):
    def __init__(self):self.applied=[]
    def get(self,kind,name=None,namespace=None,optional=False):
     if kind=='nodes':return base[0]
-    if kind=='namespace':return base[1] if name=='kube-system' else None
+    if kind=='namespace':return base[1] if name=='kube-system' else ({'metadata':{'uid':'3'*36}} if self.applied else None)
     return base[2] if kind=='gitrepository' else base[3]
    def apply(self,docs):self.applied=docs
   client=Client();self.assertEqual(R.execute(c,client)['result'],'planned');self.assertFalse(client.applied)
-  c['mode']='prepare';self.assertEqual(R.execute(c,client)['result'],'prepared');self.assertEqual(len(client.applied),4)
+  c['mode']='prepare';self.assertEqual(R.execute(c,client)['result'],'prepared');self.assertEqual(len(client.applied),7)
  def test_namespace_takeover_and_prod_scope_rejected(self):
   c=self.config();c['environment']='prod'
   with self.assertRaises(ValueError):R.validate(c)
@@ -107,7 +108,7 @@ class PhaseTests(unittest.TestCase):
    def __init__(self):self.applied=[]
    def get(self,kind,name=None,namespace=None,optional=False):
     if kind=='nodes':return base[0]
-    if kind=='namespace':return base[1] if name=='kube-system' else None
+    if kind=='namespace':return base[1] if name=='kube-system' else ({'metadata':{'uid':'3'*36}} if self.applied else None)
     return base[2] if kind=='gitrepository' else base[3]
    def apply(self,docs):self.applied.append(docs)
   c['mode']='submit';client=Client()
@@ -150,5 +151,68 @@ class CandidateEvolutionTests(unittest.TestCase):
   release['accounts']['podAnnotations']['release.svc.plus/image_digest']='sha256:'+'0'*64
   release_doc['data']['release.yaml']=yaml.safe_dump(release)
   with self.assertRaises(ValueError):C.validate_documents(docs,'sit')
+
+
+class PrivilegeScopeTests(unittest.TestCase):
+ def test_component_secrets_and_overlay_order_cannot_escalate(self):
+  C.validate_values({'accounts':{'workload':{'secretRefs':['web-saas-accounts-runtime']}},'postgresql':{'existingSecret':'web-saas-db-admin'},'global':{'imagePullSecrets':[{'name':'web-saas-registry'}]}})
+  for value in [{'accounts':{'workload':{'secretRefs':['web-saas-db-admin']}}},{'accounts':{'workload':{'secretKeyRef':{'name':'web-saas-registry'}}}},{'accounts':{'workload':{'serviceAccountName':'lane-reconciler'}}},{'extraObjects':[{'kind':'Secret'}]}]:
+   with self.assertRaises(ValueError):C.validate_values(value)
+  docs=Contracts().docs();hr=next(x for x in docs if x['kind']=='HelmRelease');hr['spec']['valuesFrom'].reverse()
+  with self.assertRaises(ValueError):C.validate_documents(docs,'sit')
+ def test_post_renderer_cannot_mount_admin_secret_or_management_identity(self):
+  for patch in [{'spec':{'template':{'spec':{'serviceAccountName':'lane-reconciler'}}}},[{'op':'add','path':'/spec/template/spec/automountServiceAccountToken','value':True}],{'spec':{'template':{'spec':{'volumes':[{'secret':{'secretName':'web-saas-db-admin'}}]}}}}]:
+   with self.assertRaises(ValueError):C.validate_patch_scope(patch)
+
+
+class NamespaceIncarnationTests(unittest.TestCase):
+ def test_same_name_new_uid_rejects_old_verified_context(self):
+  c=Contracts().config();c.update(mode='verify',namespace_uid='3'*36);base=Contracts().baseline(c)
+  class Client:
+   def get(self,kind,name=None,namespace=None,optional=False):
+    if kind=='nodes':return base[0]
+    if kind=='namespace':
+     if name=='kube-system':return base[1]
+     return {'metadata':{'uid':'4'*36,'labels':{'app.kubernetes.io/managed-by':'dev-feature-flux-owner','release.svc.plus/feature':'xconnect-referral','environment':'sit'}}}
+    return base[2] if kind=='gitrepository' else base[3]
+   def apply(self,docs):raise AssertionError('stale namespace must fail before apply')
+  with self.assertRaises(ValueError):R.execute(c,Client())
+
+
+class RebuildNamespaceTests(unittest.TestCase):
+ def test_rebuild_calls_delete_without_preconditions_and_handles_text_output(self):
+  import subprocess
+  from unittest.mock import patch
+  real_client=R.Client()
+  with patch.object(subprocess,'run') as mock_run:
+   mock_run.return_value=type('Process',(),{'returncode':0,'stdout':'namespace "feature-xconnect-referral-sit" deleted\n','stderr':''})()
+   res=real_client.call(['delete','namespace','feature-xconnect-referral-sit','--wait=false'])
+   self.assertEqual(res,'namespace "feature-xconnect-referral-sit" deleted')
+  deleted_calls=[]
+  class MockClient:
+   def call(self,args,stdin=None):
+    if args[:2]==['delete','namespace']:
+     deleted_calls.append(args)
+     return 'namespace "feature-xconnect-referral-sit" deleted'
+    return None
+   def get(self,kind,name=None,namespace=None,optional=False):
+    if kind=='persistentvolumeclaims':return {'items':[]}
+    if kind=='persistentvolumes':return {'items':[]}
+    if kind=='namespace':
+     if not deleted_calls:
+      return {'metadata':{'uid':'3'*36,'labels':{'app.kubernetes.io/managed-by':'dev-feature-flux-owner','release.svc.plus/feature':'xconnect-referral','feature_id':'xconnect-referral','environment':'sit'}}}
+     if len(deleted_calls)==1:
+      return None
+     return {'metadata':{'uid':'5'*36,'labels':{'app.kubernetes.io/managed-by':'dev-feature-flux-owner','release.svc.plus/feature':'xconnect-referral','feature_id':'xconnect-referral','environment':'sit'}}}
+    return None
+   def create(self,doc):
+    deleted_calls.append(['created'])
+    return {'metadata':{'uid':'5'*36}}
+   def apply(self,docs):return None
+  c=Contracts().config();c.update(mode='rebuild',namespace_uid='3'*36)
+  existing={'metadata':{'uid':'3'*36,'labels':{'app.kubernetes.io/managed-by':'dev-feature-flux-owner','release.svc.plus/feature':'xconnect-referral','feature_id':'xconnect-referral','environment':'sit'}}}
+  res=R.rebuild_namespace(c,MockClient(),existing,sleep=lambda s:None,clock=lambda:0)
+  self.assertEqual(res['namespace_uid'],'5'*36)
+  self.assertEqual(deleted_calls[0],['delete','namespace','feature-xconnect-referral-sit','--wait=false'])
 
 if __name__=='__main__':unittest.main()

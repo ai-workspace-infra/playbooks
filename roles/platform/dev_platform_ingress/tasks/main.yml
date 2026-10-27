@@ -1,0 +1,56 @@
+---
+- name: Require exact Dev platform caller and strict transport
+  ansible.builtin.assert:
+    that:
+      - ansible_play_hosts_all == ['dev-k3s-v5']
+      - lookup('ansible.builtin.config', 'HOST_KEY_CHECKING') | bool
+      - "'StrictHostKeyChecking=yes' in ansible_ssh_common_args"
+      - dev_platform_config.environment == 'dev'
+      - dev_platform_config.namespace == 'platform-ingress'
+      - dev_platform_config.mode in ['plan', 'reconcile', 'verify']
+      - dev_platform_report is match('^/')
+  delegate_to: localhost
+  become: false
+- name: Use private temporary owner module directory
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: dev-platform-owner-
+  register: dev_platform_modules
+  check_mode: false
+- block:
+    - name: Reuse the reviewed existing Dev foundation scope module
+      ansible.builtin.copy:
+        src: '{{ role_path }}/../dev_feature_flux/files/reconcile.py'
+        dest: '{{ dev_platform_modules.path }}/feature_scope.py'
+        mode: '0600'
+      check_mode: false
+    - name: Reconcile only reviewed shared ingress
+      ansible.builtin.script:
+        cmd: files/reconcile.py
+        executable: python3
+      environment:
+        DEV_PLATFORM_SCOPE_PATH: '{{ dev_platform_modules.path }}/feature_scope.py'
+        DEV_PLATFORM_CONFIG: "{{ dev_platform_config | combine({'mode': 'plan'} if ansible_check_mode else {}) | to_json }}"
+      register: dev_platform_result
+      check_mode: false
+      changed_when: (dev_platform_result.stdout | from_json).changed | default(false) == true
+      failed_when: false
+    - name: Preserve public ingress owner receipt
+      ansible.builtin.copy:
+        content: "{{ dev_platform_result.stdout }}\n"
+        dest: '{{ dev_platform_report }}'
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+      check_mode: false
+    - name: Require actual observed result
+      ansible.builtin.assert:
+        that:
+          - dev_platform_result.rc == 0
+          - (dev_platform_result.stdout | from_json).result in ['planned', 'verified']
+  always:
+    - name: Remove only this private temporary module directory
+      ansible.builtin.file:
+        path: '{{ dev_platform_modules.path }}'
+        state: absent
+      check_mode: false
