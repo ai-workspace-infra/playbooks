@@ -41,7 +41,7 @@
   vars:
     k3s_runtime_secret_sync_mode: dev-registry
     k3s_runtime_secret_sync_apply: true
-  when: dev_feature_config.mode == 'prepare' and not ansible_check_mode
+  when: dev_feature_config.mode in ['prepare', 'rebuild'] and not ansible_check_mode
 - name: Add only public registry receipt after successful projection
   ansible.builtin.copy:
     content: "{{ (dev_feature_result.stdout | from_json) | combine({'registry': dev_registry_result.stdout | from_json}) | to_json }}\n"
@@ -49,7 +49,7 @@
     mode: '0600'
   delegate_to: localhost
   become: false
-  when: dev_feature_config.mode == 'prepare' and not ansible_check_mode
+  when: dev_feature_config.mode in ['prepare', 'rebuild'] and not ansible_check_mode
 - name: Authenticate independent namespace auditor and observe business PID1 identities
   ansible.builtin.script:
     cmd: files/audit.py
