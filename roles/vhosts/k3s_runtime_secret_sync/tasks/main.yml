@@ -1,4 +1,10 @@
 ---
+- name: Require a supported explicit sync mode
+  ansible.builtin.assert:
+    that: k3s_runtime_secret_sync_mode in ['kv-fields', 'dev-registry']
+- name: Run opt-in Dev registry projection
+  ansible.builtin.include_tasks: dev_registry.yml
+  when: k3s_runtime_secret_sync_mode == 'dev-registry'
 - name: Validate explicit reconciliation scope
   ansible.builtin.assert:
     that:
@@ -7,10 +13,12 @@
       - k3s_runtime_secret_sync_items | length > 0
       - k3s_runtime_secret_sync_token | length > 0
     fail_msg: Explicit HTTPS Vault address, runtime identity, items and apply approval are required.
+  when: k3s_runtime_secret_sync_mode == 'kv-fields'
   no_log: true
 
 - name: Reconcile only selected Vault fields
   ansible.builtin.include_tasks: item.yml
+  when: k3s_runtime_secret_sync_mode == 'kv-fields'
   loop: '{{ k3s_runtime_secret_sync_items }}'
   loop_control:
     loop_var: sync_item

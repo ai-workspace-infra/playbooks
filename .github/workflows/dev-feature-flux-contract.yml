@@ -1,0 +1,40 @@
+name: Dev feature namespace owner contracts
+on:
+  pull_request:
+    paths:
+      - 'dev_feature_flux.yml'
+      - 'dev_platform_ingress.yml'
+      - 'roles/platform/dev_platform_ingress/**'
+      - 'scripts/dev_ssh_binding.py'
+      - 'scripts/dev_platform_candidate.py'
+      - 'scripts/run_dev_platform_ingress.py'
+      - 'tests/test_dev_platform_ingress.py'
+      - 'tests/test_dev_ssh_binding.py'
+      - 'tests/fixtures/dev_platform_ingress*'
+      - '.github/workflows/dev-platform-ingress.yml'
+      - 'roles/platform/dev_feature_flux/**'
+      - 'scripts/dev_feature_candidate.py'
+      - 'scripts/run_dev_feature_flux.py'
+      - 'tests/test_dev_feature_flux.py'
+      - 'tests/test_dev_oci_runtime.py'
+      - 'tests/test_dev_lane_audit.py'
+      - 'roles/vhosts/k3s_runtime_secret_sync/**'
+      - '.github/workflows/dev-feature-flux*.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ansible-core==2.17.14 PyYAML==6.0.3
+      - run: python -m unittest discover -s tests -p test_dev_feature_flux.py
+      - run: python -m unittest discover -s tests -p test_dev_platform_ingress.py
+      - run: python -m unittest discover -s tests -p test_dev_ssh_binding.py
+      - run: python -m unittest discover -s tests -p test_dev_oci_runtime.py
+      - run: python -m unittest discover -s tests -p test_dev_lane_audit.py
+      - run: ansible-playbook -i 'localhost,' dev_feature_flux.yml --syntax-check -e dev_feature_target=localhost
+      - run: ANSIBLE_ROLES_PATH=roles ansible-playbook -i tests/fixtures/dev_k3s_syntax.yml dev_platform_ingress.yml --syntax-check -e dev_platform_target=dev-k3s-v5

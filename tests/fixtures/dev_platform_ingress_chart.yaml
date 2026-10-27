@@ -1,0 +1,427 @@
+---
+# Source: traefik/templates/rbac/serviceaccount.yaml
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: dev-ingress-traefik
+  namespace: platform-ingress
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: dev-ingress-platform-ingress
+    helm.sh/chart: traefik-42.1.3
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+automountServiceAccountToken: false
+---
+# Source: traefik/templates/pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dev-ingress-traefik
+  namespace: platform-ingress
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: dev-ingress-platform-ingress
+    helm.sh/chart: traefik-42.1.3
+    app.kubernetes.io/managed-by: Helm
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: "1Gi"
+  storageClassName: "local-path"
+---
+# Source: traefik/templates/rbac/role.yaml
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: dev-ingress-traefik
+  namespace: feature-xconnect-referral-sit
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: dev-ingress-platform-ingress
+    helm.sh/chart: traefik-42.1.3
+    app.kubernetes.io/managed-by: Helm
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    verbs:
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+  # Required while https://github.com/traefik/traefik/issues/7097#issuecomment-1983581843
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - extensions
+      - networking.k8s.io
+    resources:
+      - ingresses
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - extensions
+      - networking.k8s.io
+    resources:
+      - ingresses/status
+    verbs:
+      - update
+
+---
+# Source: traefik/templates/rbac/role.yaml
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: dev-ingress-traefik
+  namespace: platform-ingress
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: dev-ingress-platform-ingress
+    helm.sh/chart: traefik-42.1.3
+    app.kubernetes.io/managed-by: Helm
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    verbs:
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+  # Required while https://github.com/traefik/traefik/issues/7097#issuecomment-1983581843
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - extensions
+      - networking.k8s.io
+    resources:
+      - ingresses
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - extensions
+      - networking.k8s.io
+    resources:
+      - ingresses/status
+    verbs:
+      - update
+
+---
+# Source: traefik/templates/rbac/role.yaml
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: dev-ingress-traefik
+  namespace: web-saas-uat
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: dev-ingress-platform-ingress
+    helm.sh/chart: traefik-42.1.3
+    app.kubernetes.io/managed-by: Helm
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    verbs:
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+  # Required while https://github.com/traefik/traefik/issues/7097#issuecomment-1983581843
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - extensions
+      - networking.k8s.io
+    resources:
+      - ingresses
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - extensions
+      - networking.k8s.io
+    resources:
+      - ingresses/status
+    verbs:
+      - update
+---
+# Source: traefik/templates/rbac/rolebinding.yaml
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: dev-ingress-traefik
+  namespace: feature-xconnect-referral-sit
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: dev-ingress-platform-ingress
+    helm.sh/chart: traefik-42.1.3
+    app.kubernetes.io/managed-by: Helm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dev-ingress-traefik
+subjects:
+  - kind: ServiceAccount
+    name: dev-ingress-traefik
+    namespace: platform-ingress
+
+---
+# Source: traefik/templates/rbac/rolebinding.yaml
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: dev-ingress-traefik
+  namespace: platform-ingress
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: dev-ingress-platform-ingress
+    helm.sh/chart: traefik-42.1.3
+    app.kubernetes.io/managed-by: Helm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dev-ingress-traefik
+subjects:
+  - kind: ServiceAccount
+    name: dev-ingress-traefik
+    namespace: platform-ingress
+
+---
+# Source: traefik/templates/rbac/rolebinding.yaml
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: dev-ingress-traefik
+  namespace: web-saas-uat
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: dev-ingress-platform-ingress
+    helm.sh/chart: traefik-42.1.3
+    app.kubernetes.io/managed-by: Helm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dev-ingress-traefik
+subjects:
+  - kind: ServiceAccount
+    name: dev-ingress-traefik
+    namespace: platform-ingress
+---
+# Source: traefik/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dev-ingress-traefik
+  namespace: platform-ingress
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: dev-ingress-platform-ingress
+    helm.sh/chart: traefik-42.1.3
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+      app.kubernetes.io/instance: dev-ingress-platform-ingress
+  strategy:
+    type: Recreate
+  minReadySeconds: 0
+  
+  template: 
+    metadata:
+      annotations:
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9100"
+        prometheus.io/scrape: "true"
+      labels:
+        app.kubernetes.io/instance: dev-ingress-platform-ingress
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: traefik
+        helm.sh/chart: traefik-42.1.3
+    spec:
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - --entryPoints.metrics.address=:9100/tcp
+        - --entryPoints.traefik.address=:8080/tcp
+        - --entryPoints.web.address=:8000/tcp
+        - --entryPoints.websecure.address=:8443/tcp
+        - --api.dashboard=false
+        - --ping=true
+        - --metrics.prometheus=true
+        - --metrics.prometheus.entrypoint=metrics
+        - --providers.kubernetesingress
+        - --providers.kubernetesingress.allowEmptyServices=false
+        - --providers.kubernetesingress.ingressClass=dev-web-saas
+        - --providers.kubernetesingress.disableClusterScopeResources=true
+        - --providers.kubernetesingress.namespaces=feature-xconnect-referral-sit,web-saas-uat
+        - --entryPoints.websecure.http.tls=true
+        - --log.level=INFO
+        - --certificatesresolvers.dev-http01.acme.httpChallenge.entryPoint=web
+        - --certificatesresolvers.dev-http01.acme.storage=/data/acme.json
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: USER
+          value: traefik
+        - name: GOMAXPROCS
+          valueFrom:
+            resourceFieldRef:
+              divisor: "1"
+              resource: limits.cpu
+        - name: GOMEMLIMIT
+          value: 230MiB
+        image: docker.io/library/traefik@sha256:1336e85aaed293bd63d005086e0dd013b04078b26aaeb1c18b26a2f928af7e65
+        imagePullPolicy: IfNotPresent
+        lifecycle: null
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /ping
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 2
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 2
+        name: dev-ingress-traefik
+        ports:
+        - containerPort: 9100
+          name: metrics
+          protocol: TCP
+        - containerPort: 8080
+          name: traefik
+          protocol: TCP
+        - containerPort: 8000
+          hostPort: 80
+          name: web
+          protocol: TCP
+        - containerPort: 8443
+          hostPort: 443
+          name: websecure
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 1
+          httpGet:
+            path: /ping
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 2
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 2
+        resources:
+          limits:
+            cpu: 300m
+            memory: 256Mi
+          requests:
+            cpu: 25m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /data
+          name: data
+        - mountPath: /tmp
+          name: tmp
+      hostNetwork: false
+      nodeSelector:
+        kubernetes.io/hostname: dev-k3s-v5
+      securityContext:
+        fsGroup: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: dev-ingress-traefik
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: dev-ingress-traefik
+      - emptyDir: {}
+        name: tmp

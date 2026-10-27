@@ -1,0 +1,105 @@
+name: Dev fixed shared platform ingress owner
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: plan, reconcile, or verify; TLS and business acceptance are separate
+        type: string
+        required: true
+      candidate_artifact:
+        description: Same-run protected Toolkit API-verified candidate receipt
+        type: string
+        required: true
+      candidate_sha256:
+        type: string
+        required: true
+      cmdb_artifact:
+        type: string
+        required: true
+      cmdb_sha256:
+        type: string
+        required: true
+      instance_id:
+        type: string
+        required: true
+      gitops_sha:
+        type: string
+        required: true
+      platform_sha:
+        type: string
+        required: true
+      node_uid:
+        type: string
+        required: true
+      cluster_uid:
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+concurrency:
+  group: dev-fixed-platform-ingress-owner
+  cancel-in-progress: false
+jobs:
+  lane:
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ai-workspace-infra/playbooks
+          ref: f34fb3e987bffc6057c27ffd25f0adaa83f9c64d
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ai-workspace-infra/gitops
+          ref: ${{ inputs.gitops_sha }}
+          path: gitops-candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: ./.github/actions/setup-node-stage-runner
+        with:
+          venv_path: ${{ runner.temp }}/dev-feature-venv
+      - uses: azure/setup-kubectl@c0c8b32d33a5244f1e5947304550403b63930415
+        with:
+          version: v1.37.1
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.candidate_artifact }}
+          path: ${{ runner.temp }}/dev-feature-candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.cmdb_artifact }}
+          path: ${{ runner.temp }}/dev-feature-cmdb
+      - name: Run the fixed trusted owner
+        env:
+          MODE: ${{ inputs.mode }}
+          INSTANCE_ID: ${{ inputs.instance_id }}
+          CANDIDATE_RECEIPT_SHA256: ${{ inputs.candidate_sha256 }}
+          CANDIDATE_SHA: ${{ inputs.gitops_sha }}
+          PLATFORM_SHA: ${{ inputs.platform_sha }}
+          CMDB_SHA256: ${{ inputs.cmdb_sha256 }}
+          NODE_UID: ${{ inputs.node_uid }}
+          CLUSTER_UID: ${{ inputs.cluster_uid }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/dev-feature-venv/bin/python" scripts/run_dev_platform_ingress.py \
+            --candidate-receipt "$RUNNER_TEMP/dev-feature-candidate/receipt.json" --candidate-sha256 "$CANDIDATE_RECEIPT_SHA256" \
+            --mode "$MODE" --instance-id "$INSTANCE_ID" \
+            --cmdb "$RUNNER_TEMP/dev-feature-cmdb/cmdb.json" --cmdb-sha256 "$CMDB_SHA256" \
+            --gitops-root "$GITHUB_WORKSPACE/gitops-candidate" --gitops-sha "$CANDIDATE_SHA" \
+            --platform-sha "$PLATFORM_SHA" --node-uid "$NODE_UID" --cluster-uid "$CLUSTER_UID" \
+            --receipt "$RUNNER_TEMP/dev-feature-evidence/receipt.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dev-platform-ingress-${{ inputs.mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dev-feature-evidence/receipt.json
+          if-no-files-found: error
+          retention-days: 7

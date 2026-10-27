@@ -1,0 +1,139 @@
+name: Dev fixed feature Flux owner
+on:
+  workflow_call:
+    inputs:
+      stage:
+        type: string
+        required: true
+      mode:
+        description: plan, prepare, submit, verify, or enable-tls; submit is not acceptance
+        type: string
+        required: true
+      candidate_artifact:
+        description: Same-run protected Toolkit API-verified candidate receipt
+        type: string
+        required: true
+      candidate_sha256:
+        type: string
+        required: true
+      cmdb_artifact:
+        type: string
+        required: true
+      cmdb_sha256:
+        type: string
+        required: true
+      instance_id:
+        type: string
+        required: true
+      gitops_sha:
+        type: string
+        required: true
+      platform_sha:
+        type: string
+        required: true
+      node_uid:
+        type: string
+        required: true
+      cluster_uid:
+        type: string
+        required: true
+      prepare_artifact:
+        description: Same-run authenticated projection of successful prepare owner receipt
+        type: string
+        default: ''
+      prepare_sha256:
+        type: string
+        default: ''
+      seed_artifact:
+        description: Authenticated same-run B seed receipt required only for verify
+        type: string
+        default: ''
+      seed_sha256:
+        type: string
+        default: ''
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+concurrency:
+  group: dev-fixed-feature-owner
+  cancel-in-progress: false
+jobs:
+  lane:
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ai-workspace-infra/playbooks
+          ref: 9bce8a35494972ff822d6226168ac5f1ca270185
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ai-workspace-infra/gitops
+          ref: ${{ inputs.gitops_sha }}
+          path: gitops-candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: ./.github/actions/setup-node-stage-runner
+        with:
+          venv_path: ${{ runner.temp }}/dev-feature-venv
+      - uses: azure/setup-kubectl@c0c8b32d33a5244f1e5947304550403b63930415
+        with:
+          version: v1.37.1
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.candidate_artifact }}
+          path: ${{ runner.temp }}/dev-feature-candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.cmdb_artifact }}
+          path: ${{ runner.temp }}/dev-feature-cmdb
+      - uses: actions/download-artifact@v4
+        if: inputs.mode == 'verify'
+        with:
+          name: ${{ inputs.seed_artifact }}
+          path: ${{ runner.temp }}/dev-feature-seed
+      - uses: actions/download-artifact@v4
+        if: inputs.mode == 'verify'
+        with:
+          name: ${{ inputs.prepare_artifact }}
+          path: ${{ runner.temp }}/dev-feature-prepare
+      - name: Run the fixed trusted owner
+        env:
+          STAGE: ${{ inputs.stage }}
+          MODE: ${{ inputs.mode }}
+          INSTANCE_ID: ${{ inputs.instance_id }}
+          CANDIDATE_RECEIPT_SHA256: ${{ inputs.candidate_sha256 }}
+          CANDIDATE_SHA: ${{ inputs.gitops_sha }}
+          PLATFORM_SHA: ${{ inputs.platform_sha }}
+          CMDB_SHA256: ${{ inputs.cmdb_sha256 }}
+          NODE_UID: ${{ inputs.node_uid }}
+          CLUSTER_UID: ${{ inputs.cluster_uid }}
+          PREPARE_SHA256: ${{ inputs.prepare_sha256 }}
+          SEED_SHA256: ${{ inputs.seed_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          seed_args=()
+          if [[ "$MODE" == verify ]]; then
+            seed_args=(--seed-receipt "$RUNNER_TEMP/dev-feature-seed/receipt.json" --seed-sha256 "$SEED_SHA256" --prepare-receipt "$RUNNER_TEMP/dev-feature-prepare/receipt.json" --prepare-sha256 "$PREPARE_SHA256")
+          fi
+          "$RUNNER_TEMP/dev-feature-venv/bin/python" scripts/run_dev_feature_flux.py \
+            --candidate-receipt "$RUNNER_TEMP/dev-feature-candidate/receipt.json" --candidate-sha256 "$CANDIDATE_RECEIPT_SHA256" \
+            --stage "$STAGE" --mode "$MODE" --instance-id "$INSTANCE_ID" \
+            --cmdb "$RUNNER_TEMP/dev-feature-cmdb/cmdb.json" --cmdb-sha256 "$CMDB_SHA256" \
+            --gitops-root "$GITHUB_WORKSPACE/gitops-candidate" --gitops-sha "$CANDIDATE_SHA" \
+            --platform-sha "$PLATFORM_SHA" --node-uid "$NODE_UID" --cluster-uid "$CLUSTER_UID" \
+            --receipt "$RUNNER_TEMP/dev-feature-evidence/receipt.json" "${seed_args[@]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dev-feature-${{ inputs.stage }}-${{ inputs.mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dev-feature-evidence/receipt.json
+          if-no-files-found: error
+          retention-days: 7
