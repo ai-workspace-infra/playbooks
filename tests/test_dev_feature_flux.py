@@ -9,7 +9,7 @@ R=C.SCOPE
 
 class Contracts(unittest.TestCase):
  def config(self):
-  return {'environment':'sit','namespace':R.SCOPES['sit'][0],'node_name':R.NODE,'mode':'plan','candidate_sha':'a'*40,'platform_sha':'b'*40,'owner_sha':'c'*40,'node_uid':'1'*8+'-'+'1'*4+'-'+'1'*4+'-'+'1'*4+'-'+'1'*12,'cluster_uid':'2'*8+'-'+'2'*4+'-'+'2'*4+'-'+'2'*4+'-'+'2'*12,'manifest_sha256':'d'*64,'wait_seconds':10}
+  return {'instance_id':'109324752','environment':'sit','namespace':R.SCOPES['sit'][0],'node_name':R.NODE,'mode':'plan','candidate_sha':'a'*40,'platform_sha':'b'*40,'owner_sha':'c'*40,'node_uid':'1'*8+'-'+'1'*4+'-'+'1'*4+'-'+'1'*4+'-'+'1'*12,'cluster_uid':'2'*8+'-'+'2'*4+'-'+'2'*4+'-'+'2'*4+'-'+'2'*12,'manifest_sha256':'d'*64,'wait_seconds':10}
  def docs(self,stage='sit'):
   ns=R.SCOPES[stage][0];docs=[]
   repos={'caddy':'ai-workspace-infra/caddy-cloudflare','postgresql':'ai-workspace-services/postgresql','console':'ai-workspace-services/console','accounts':'ai-workspace-services/accounts','billing':'ai-workspace-services/billing-service','content':'ai-workspace-services/docs'}

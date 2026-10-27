@@ -18,7 +18,7 @@ IMAGES={'caddy':'ai-workspace-infra/caddy-cloudflare','console':'ai-workspace-se
 SOURCES={'caddy':'ai-workspace-infra/artifacts','console':'ai-workspace-services/portal','accounts':'ai-workspace-services/accounts','billing':'ai-workspace-services/billing-service','content':'ai-workspace-services/content-service','postgresql':'ai-workspace-services/postgresql'}
 def mapping(context,record,inspect=dev_oci.inspect):
  import re
- if context.get('namespace') not in ('feature-xconnect-referral-sit','web-saas-uat') or context.get('instance_id')!='109277144':raise ValueError('exact Dev target required')
+ if context.get('namespace') not in ('feature-xconnect-referral-sit','web-saas-uat') or not re.fullmatch('[1-9][0-9]*',str(context.get('instance_id',''))):raise ValueError('exact Dev target required')
  for key in ('namespace_uid','node_uid','cluster_uid'):
   if not re.fullmatch('[0-9a-f-]{36}',context.get(key,'')):raise ValueError('runtime UID binding required')
  source_context=context.get('source',{})

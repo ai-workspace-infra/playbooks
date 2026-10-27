@@ -27,11 +27,11 @@ def validate_prepare_receipt(receipt,config,observation):
  require(receipt.get('schema_version')=='dev-feature-flux/v1' and receipt.get('result')=='prepared' and receipt.get('mode')=='prepare','successful prepare producer required')
  for key in ('candidate_sha','namespace','namespace_uid','node_uid','cluster_uid','manifest_sha256'):
   require(receipt.get(key)==config[key],'prepare proof stale or wrong target: '+key)
- require(receipt.get('instance_id')=='109277144','prepare instance mismatch')
+ require(receipt.get('instance_id')==config['instance_id'],'prepare instance mismatch')
  registry=receipt.get('registry',{})
  require(registry.get('result')=='configured' and registry.get('namespace')==config['namespace'] and registry.get('source_path')=='kv/CICD/dev/ghcr' and registry.get('secret_name')=='web-saas-registry','fixed Dev registry prepare receipt required')
  mapping=registry.get('oci_mapping',{});binding=mapping.get('binding',{})
- require(mapping.get('schema_version')=='dev-oci-platform/v1' and binding.get('instance_id')=='109277144','OCI mapping producer required')
+ require(mapping.get('schema_version')=='dev-oci-platform/v1' and binding.get('instance_id')==config['instance_id'],'OCI mapping producer required')
  for key in ('candidate_sha','namespace','namespace_uid','node_uid','cluster_uid','manifest_sha256'):
   require(binding.get(key)==config[key],'OCI mapping binding mismatch: '+key)
  require(binding.get('images')==observation['images'] and binding.get('sources')==observation['sources'],'candidate/image/source changed since prepare')
@@ -55,7 +55,7 @@ def execute(a):
  cmdb=validate_cmdb(json.loads(a.cmdb.read_text()),a.instance_id)
  observation=candidate.validate_tree(a.gitops_root,a.gitops_sha,a.stage,a.mode=='enable-tls')
  owner_sha=run(['git','-C',str(ROOT),'rev-parse','HEAD']).strip()
- config={'mode':a.mode,'environment':a.stage,'namespace':observation['namespace'],'node_name':'dev-k3s-v5','node_uid':a.node_uid,'cluster_uid':a.cluster_uid,'candidate_sha':a.gitops_sha,'platform_sha':a.platform_sha,'owner_sha':owner_sha,'manifest_sha256':observation['manifest_sha256'],'wait_seconds':900}
+ config={'instance_id':a.instance_id,'mode':a.mode,'environment':a.stage,'namespace':observation['namespace'],'node_name':'dev-k3s-v5','node_uid':a.node_uid,'cluster_uid':a.cluster_uid,'candidate_sha':a.gitops_sha,'platform_sha':a.platform_sha,'owner_sha':owner_sha,'manifest_sha256':observation['manifest_sha256'],'wait_seconds':900}
  if a.mode=='enable-tls':
   config['target_ip']=cmdb['dev-k3s-v5']['ip'];proof=[]
   for host in sorted(candidate.SCOPE.DOMAINS[a.stage]):
