@@ -32,6 +32,18 @@ def canonical_container_selector(match):
     return metric + '{job="cadvisor",' + labels + '}'
 
 
+
+def active_pod_selector(metric, labels):
+    """Only nonterminal Pods reserve node capacity; match immutable Pod UID."""
+    if re.search(r'\bjob\s*(?:=|!)', labels):
+        raise ValueError("Pinned resource selector unexpectedly has a job matcher")
+    selected = metric + '{job="kube-state-metrics",' + labels + '}'
+    active = ('max by(cluster,environment,namespace,pod,uid)('
+              'kube_pod_status_phase{job="kube-state-metrics",' + SCOPE
+              + ',phase=~"Pending|Running|Unknown"} == 1)')
+    return '(' + selected + ' and on(cluster,environment,namespace,pod,uid) ' + active + ')'
+
+
 def rewrite(value):
     if isinstance(value, dict):
         return {k: rewrite(v) for k, v in value.items()}
@@ -44,6 +56,12 @@ def rewrite(value):
                    r'kube_pod_container_resource_limits{\1,resource="cpu",unit="core"}', value)
     value = re.sub(r"container_spec_memory_limit_bytes\{([^}]*)\}",
                    r'kube_pod_container_resource_limits{\1,resource="memory",unit="byte"}', value)
+    value = re.sub(r"\b(kube_pod_container_resource_(?:requests|limits))\{([^{}]*)\}",
+                   lambda m: active_pod_selector(*m.groups()), value)
+    if re.match(r'\s*count\s*\(', value):
+        value = re.sub(r'\bkube_pod_info\{([^{}]*)\}',
+                       lambda m: active_pod_selector('kube_pod_info',
+                           re.sub(r'created_by_kind!~"<none>\|Job",?', '', m.group(1)).strip(',')), value)
     # Apply to the pinned source before Grafana formatter braces are introduced.
     # KSM resource-limit replacements above are not cAdvisor metrics.
     value = re.sub(r"\b(container_[A-Za-z0-9_:]+)\{([^{}]*)\}",
@@ -124,6 +142,11 @@ def build(source):
         defaults = panel.get("fieldConfig", {}).get("defaults", {})
         if "noValue" in defaults:
             defaults["noValue"] = "No data"
+        if panel.get("id") == 52:
+            panel["description"] = ("Resource and Pod-count totals include bound Pending/Running/Unknown Pods, "
+                "including active Jobs. Completed/failed operational Pods are excluded by current Pod UID. "
+                "Requests are scheduling reservations; limits are burst allowances, not actual usage. "
+                "Containers without limits are not a healthy zero or a whole-node memory guarantee.")
         if panel.get("id") == 88:
             for target in panel.get("targets", []):
                 if target.get("refId") == "B":
