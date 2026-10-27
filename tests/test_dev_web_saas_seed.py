@@ -15,7 +15,8 @@ def test_dev_scope_and_independent_routing():
         c.target('prod', 'web-saas-uat')
     with pytest.raises(ValueError):
         c.target('sit', 'web-saas-uat')
-    assert c.identity(c.STAGES['sit'], 'xc_accounts_rw') != c.identity(c.STAGES['uat'], 'xc_accounts_rw')
+    with pytest.raises(ValueError):
+        c.target('uat', 'web-saas-uat')
     assert c.identity(c.STAGES['sit'], 'xc_accounts_rw') != c.identity(c.STAGES['sit'], 'xc_billing_rw')
 
 

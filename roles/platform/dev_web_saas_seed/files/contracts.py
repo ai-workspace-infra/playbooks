@@ -9,7 +9,7 @@ BILLING_SHA = '77557d796a66dcd3373d7731125890bd91ebc5d3'
 BILLING_SQL_SHA = '7faf46295b419102e4bbcb8cef67db14ba3beef1d46ee945fd4acfb86541c39b'
 BILLING_WRITES = ('traffic_stat_checkpoints', 'traffic_minute_buckets', 'billing_ledger',
                   'account_quota_states', 'billing_source_sync_state', 'cloud_vendor_costs')
-STAGES = {'sit': 'feature-xconnect-referral-sit', 'uat': 'web-saas-uat'}
+STAGES = {'sit': 'feature-xconnect-referral-sit'}
 
 
 def target(stage, namespace):

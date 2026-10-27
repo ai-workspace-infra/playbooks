@@ -10,11 +10,9 @@ PATH='./services/distributed-web-saas-fullstack/dev/sit-xconnect-referral'
 REPO='https://github.com/ai-workspace-infra/gitops.git'
 CHART='sha256:6336235445e389958660cc344eead488ad3a50cf67afb1301fd35f6793720f27'
 SCOPES={
- 'sit':('feature-xconnect-referral-sit','xconnect-referral-sit','./services/distributed-web-saas-fullstack/dev/sit-xconnect-referral'),
- 'uat':('web-saas-uat','web-saas-uat','./services/distributed-web-saas-fullstack/dev/uat')}
+ 'sit':('feature-xconnect-referral-sit','xconnect-referral-sit','./services/distributed-web-saas-fullstack/dev/sit-xconnect-referral')}
 DOMAINS={
- 'sit':{'xconnect-referral-sit.onwalk.net','accounts-xconnect-referral-sit.onwalk.net','billing-xconnect-referral-sit.onwalk.net'},
- 'uat':{'web-saas-uat.onwalk.net','accounts-web-saas-uat.onwalk.net','billing-web-saas-uat.onwalk.net'}}
+ 'sit':{'xconnect-referral-sit.onwalk.net','accounts-xconnect-referral-sit.onwalk.net','billing-xconnect-referral-sit.onwalk.net'}}
 SHA=re.compile(r'^[0-9a-f]{40}$')
 UUID=re.compile(r'^[0-9a-f-]{36}$')
 
@@ -61,7 +59,7 @@ def documents(c):
         {'apiGroups':['source.toolkit.fluxcd.io'],'resources':['ocirepositories'],'verbs':['get','list','watch','create','update','patch','delete']}]
  role={'apiVersion':'rbac.authorization.k8s.io/v1','kind':'Role','metadata':{**meta,'name':'lane-reconciler'},'rules':rules}
  binding={'apiVersion':'rbac.authorization.k8s.io/v1','kind':'RoleBinding','metadata':{**meta,'name':'lane-reconciler'},'subjects':[{'kind':'ServiceAccount','name':'lane-reconciler','namespace':NS}],'roleRef':{'apiGroup':'rbac.authorization.k8s.io','kind':'Role','name':'lane-reconciler'}}
- source={'apiVersion':'source.toolkit.fluxcd.io/v1','kind':'GitRepository','metadata':{**meta,'name':SOURCE},'spec':{'interval':'1m','url':REPO,'ref':({'branch':'main'} if c['environment']=='uat' else {'commit':c['candidate_sha']})}}
+ source={'apiVersion':'source.toolkit.fluxcd.io/v1','kind':'GitRepository','metadata':{**meta,'name':SOURCE},'spec':{'interval':'1m','url':REPO,'ref':{'commit':c['candidate_sha']}}}
  kustom={'apiVersion':'kustomize.toolkit.fluxcd.io/v1','kind':'Kustomization','metadata':{**meta,'name':SOURCE},'spec':{'interval':'1m','path':PATH,'prune':False,'wait':True,'timeout':'15m','serviceAccountName':'lane-reconciler','targetNamespace':NS,'sourceRef':{'kind':'GitRepository','name':SOURCE}}}
  if c['mode']=='enable-tls':
   kustom['metadata']['name']=SOURCE+'-tls';kustom['spec']['path']=PATH+'/tls'
@@ -114,9 +112,9 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
   root=client.get('kustomization',SOURCE+('-tls' if c['mode']=='enable-tls' else ''),NS,optional=True)
   release=client.get('helmrelease','distributed-web-saas-fullstack',NS,optional=True)
   if source and root and release and ready(source) and ready(root) and ready(release) and revision(source.get('status',{}).get('artifact',{}).get('revision'),c['candidate_sha']) and revision(root.get('status',{}).get('lastAppliedRevision'),c['candidate_sha']):
-   require(source.get('spec',{}).get('ref')==({'branch':'main'} if c['environment']=='uat' else {'commit':c['candidate_sha']}),'candidate source drifted')
+   require(source.get('spec',{}).get('ref')=={'commit':c['candidate_sha']},'candidate source drifted')
    preflight(c,*base())
-   report.update(result='verified',source_revision=source['status']['artifact']['revision'],applied_revision=root['status']['lastAppliedRevision'],helm_ready=True,tls_certificate_acceptance='NOT_RUN',watch_main=c['environment']=='uat',observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+   report.update(result='verified',source_revision=source['status']['artifact']['revision'],applied_revision=root['status']['lastAppliedRevision'],helm_ready=True,tls_certificate_acceptance='NOT_RUN',watch_main=False,observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
    return report
   if clock()>=deadline:
    report.update(result='not_ready',source_ready=bool(source and ready(source)),kustomization_ready=bool(root and ready(root)),helm_ready=bool(release and ready(release)))

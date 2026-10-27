@@ -149,8 +149,6 @@ END IF; END $$;
         ref = source_record['spec'].get('ref', {})
         if self.r['stage'] == 'sit' and ref.get('commit') != self.r['candidate_sha']:
             raise Blocked('SIT source candidate mismatch')
-        if self.r['stage'] == 'uat' and (ref.get('branch') != 'main' or ref.get('commit')):
-            raise Blocked('UAT must persistently watch main')
         revision = source_record.get('status', {}).get('artifact', {}).get('revision', '')
         if not revision.endswith(self.r['candidate_sha']):
             raise Blocked('observed source revision mismatch')

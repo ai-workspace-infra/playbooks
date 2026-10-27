@@ -97,8 +97,6 @@ def validate_tree(root,sha,stage,tls=False):
  root=Path(root).resolve()
  actual=subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip()
  require(actual==sha and SCOPE.SHA.fullmatch(sha),'checkout must equal reviewed full candidate SHA')
- if stage=='uat':
-  require(subprocess.check_output(['git','-C',str(root),'rev-parse','origin/main'],text=True).strip()==sha,'UAT candidate must be the current main commit')
  prefix=root/'services/distributed-web-saas-fullstack'
  source=root/(SCOPE.SCOPES[stage][2].removeprefix('./')+('/tls' if tls else ''))
  require(source.is_dir(),'fixed lane directory missing')

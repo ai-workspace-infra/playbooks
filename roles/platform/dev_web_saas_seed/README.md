@@ -1,6 +1,6 @@
 # Dev web-saas native initialization owner
 
-Scope: new SIT/UAT namespaces only, each with its own PostgreSQL instance and
+Scope: new SIT namespaces only, each with its own PostgreSQL instance and
 `account` database. Accounts and Billing use separate DML identities in that same
 namespace database: Billing's reviewed schema references Accounts `public.users`.
 This is cross-namespace data/identity isolation, not absolute table isolation
@@ -12,7 +12,7 @@ Accounts source `8d1b09a6f2022af221b2a817d516952af41ced0e`, native SQL SHA256
 `e223518d156308c1cb2ea6919cfdccf1c0cacc03b55f9b41824ef29e4f632b13`, migration
 version `2026102501`, 77 business tables. The actual fixed image's
 `/usr/local/bin/migratectl native-schema` must match the reviewed manifest before
-`init --environment sit|uat --dsn-env NATIVE_TARGET_DSN --schema-sha256 <hash>
+`init --environment sit --dsn-env NATIVE_TARGET_DSN --schema-sha256 <hash>
 --writers-paused --dry-run=false` is allowed. Unknown/nonempty targets are refused;
 this owner never clears a database or rewrites migration versions.
 

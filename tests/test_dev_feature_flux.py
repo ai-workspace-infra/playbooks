@@ -38,7 +38,7 @@ class Contracts(unittest.TestCase):
   root={'metadata':meta,'status':{**status,'lastAppliedRevision':'sha1:'+c['platform_sha']}}
   return nodes,cluster,source,root
  def test_exact_stage_host_chart_and_images(self):
-  for stage in ('sit','uat'):
+  for stage in ('sit',):
    observed=C.validate_documents(self.docs(stage),stage)
    self.assertEqual(set(observed['hosts']),R.DOMAINS[stage]);self.assertEqual(len(observed['images']),6)
  def test_tls_subpath_requires_only_its_fixed_resolver_and_onwalk_hosts(self):
@@ -47,11 +47,10 @@ class Contracts(unittest.TestCase):
   self.assertEqual(C.validate_documents([doc],'sit',True)['images'],{})
   doc['spec']['tls']=[{'secretName':'prod-certificate','hosts':list(R.DOMAINS['sit'])}]
   with self.assertRaises(ValueError):C.validate_documents([doc],'sit',True)
- def test_uat_source_watches_main_without_switching_platform_root(self):
+ def test_uat_stage_rejected_on_dev_k3s(self):
   c=self.config();c.update(environment='uat',namespace='web-saas-uat')
-  docs=R.documents(c)
-  self.assertEqual(docs[-2]['spec']['ref'],{'branch':'main'})
-  self.assertEqual(docs[-1]['spec']['targetNamespace'],'web-saas-uat')
+  with self.assertRaises(ValueError):R.validate(c)
+  with self.assertRaises(ValueError):C.validate_documents([], 'uat')
  def test_cluster_secret_rbac_and_other_namespace_rejected(self):
   for kind in ('Secret','Namespace','ClusterRole','RoleBinding','Kustomization','GitRepository'):
    docs=self.docs()+[{'kind':kind,'metadata':{'name':'forbidden','namespace':R.SCOPES['sit'][0]}}]
