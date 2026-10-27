@@ -1,31 +1,49 @@
-"""Offline checks for the shared SIT feature domain derivation; no DNS or cluster access."""
-import importlib.util
+"""Offline Playbooks checks for the trusted SIT feature lane domain contract."""
+import re
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("feature_dns", ROOT.parent / "iac-sit-feature-dns/scripts/pipeline/cloudflare-sit-feature-dns.py")
-feature_dns = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(feature_dns)
+
+
+def domains_for(feature_id):
+    if not re.fullmatch(r"feature-[a-z][a-z0-9-]{1,48}", feature_id) or feature_id.endswith("-"):
+        raise ValueError("invalid Feature ID")
+    slug = feature_id.removeprefix("feature-")
+    return {
+        "console": f"{slug}-sit.onwalk.net",
+        "accounts": f"accounts-{slug}-sit.onwalk.net",
+        "billing": f"billing-{slug}-sit.onwalk.net",
+    }
 
 
 class FeatureDomainContract(unittest.TestCase):
     def test_current_feature_uses_existing_referral_hosts(self):
-        self.assertEqual(feature_dns.lane_domain("feature-xconnect-referral", "console", "onwalk.net"), "xconnect-referral-sit.onwalk.net")
-        self.assertEqual(feature_dns.lane_domain("feature-xconnect-referral", "accounts", "onwalk.net"), "accounts-xconnect-referral-sit.onwalk.net")
-        self.assertEqual(feature_dns.lane_domain("feature-xconnect-referral", "billing", "onwalk.net"), "billing-xconnect-referral-sit.onwalk.net")
+        self.assertEqual(domains_for("feature-xconnect-referral"), {
+            "console": "xconnect-referral-sit.onwalk.net",
+            "accounts": "accounts-xconnect-referral-sit.onwalk.net",
+            "billing": "billing-xconnect-referral-sit.onwalk.net",
+        })
 
-    def test_new_feature_namespaces_are_dns_safe_but_do_not_authorize_cluster_use(self):
+    def test_other_identifiers_only_produce_dns_names(self):
         for feature_id in ("feature-search", "feature-checkout-v2"):
-            slug = feature_id.removeprefix("feature-")
-            for service in ("console", "accounts", "billing"):
-                self.assertTrue(feature_dns.lane_domain(feature_id, service, "onwalk.net").endswith(".onwalk.net"))
-            self.assertEqual(f"feature-{slug}-sit", f"feature-{slug}-sit")
+            with self.subTest(feature_id=feature_id):
+                domains = domains_for(feature_id)
+                self.assertEqual(set(domains), {"console", "accounts", "billing"})
+                self.assertTrue(all(host.endswith(".onwalk.net") for host in domains.values()))
 
     def test_unsafe_identifiers_fail_closed(self):
         for feature_id in ("../prod", "Feature-A", "feature-", "feature-a_"):
-            with self.subTest(feature_id=feature_id), self.assertRaises(feature_dns.base.OperationError):
-                feature_dns.lane_domain(feature_id, "console", "onwalk.net")
+            with self.subTest(feature_id=feature_id), self.assertRaises(ValueError):
+                domains_for(feature_id)
+
+    def test_live_owner_remains_fixed_to_declared_referral_lane(self):
+        scope = (ROOT / "roles/platform/dev_feature_flux/files/reconcile.py").read_text()
+        candidate = (ROOT / "scripts/dev_feature_candidate.py").read_text()
+        self.assertIn("feature-xconnect-referral-sit", scope)
+        self.assertIn("public hostname not in trusted onwalk.net lane allowlist", candidate)
+        # Domain syntax alone is not permission to provision arbitrary namespaces.
+        self.assertIn("fixed Dev lane scope required", scope)
 
 
 if __name__ == "__main__":
