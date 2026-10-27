@@ -178,4 +178,41 @@ class NamespaceIncarnationTests(unittest.TestCase):
    def apply(self,docs):raise AssertionError('stale namespace must fail before apply')
   with self.assertRaises(ValueError):R.execute(c,Client())
 
+
+class RebuildNamespaceTests(unittest.TestCase):
+ def test_rebuild_calls_delete_without_preconditions_and_handles_text_output(self):
+  import subprocess
+  from unittest.mock import patch
+  real_client=R.Client()
+  with patch.object(subprocess,'run') as mock_run:
+   mock_run.return_value=type('Process',(),{'returncode':0,'stdout':'namespace "feature-xconnect-referral-sit" deleted\n','stderr':''})()
+   res=real_client.call(['delete','namespace','feature-xconnect-referral-sit','--wait=false'])
+   self.assertEqual(res,'namespace "feature-xconnect-referral-sit" deleted')
+  deleted_calls=[]
+  class MockClient:
+   def call(self,args,stdin=None):
+    if args[:2]==['delete','namespace']:
+     deleted_calls.append(args)
+     return 'namespace "feature-xconnect-referral-sit" deleted'
+    return None
+   def get(self,kind,name=None,namespace=None,optional=False):
+    if kind=='persistentvolumeclaims':return {'items':[]}
+    if kind=='persistentvolumes':return {'items':[]}
+    if kind=='namespace':
+     if not deleted_calls:
+      return {'metadata':{'uid':'3'*36,'labels':{'app.kubernetes.io/managed-by':'dev-feature-flux-owner','release.svc.plus/feature':'xconnect-referral','feature_id':'xconnect-referral','environment':'sit'}}}
+     if len(deleted_calls)==1:
+      return None
+     return {'metadata':{'uid':'5'*36,'labels':{'app.kubernetes.io/managed-by':'dev-feature-flux-owner','release.svc.plus/feature':'xconnect-referral','feature_id':'xconnect-referral','environment':'sit'}}}
+    return None
+   def create(self,doc):
+    deleted_calls.append(['created'])
+    return {'metadata':{'uid':'5'*36}}
+   def apply(self,docs):return None
+  c=Contracts().config();c.update(mode='rebuild',namespace_uid='3'*36)
+  existing={'metadata':{'uid':'3'*36,'labels':{'app.kubernetes.io/managed-by':'dev-feature-flux-owner','release.svc.plus/feature':'xconnect-referral','feature_id':'xconnect-referral','environment':'sit'}}}
+  res=R.rebuild_namespace(c,MockClient(),existing,sleep=lambda s:None,clock=lambda:0)
+  self.assertEqual(res['namespace_uid'],'5'*36)
+  self.assertEqual(deleted_calls[0],['delete','namespace','feature-xconnect-referral-sit','--wait=false'])
+
 if __name__=='__main__':unittest.main()
