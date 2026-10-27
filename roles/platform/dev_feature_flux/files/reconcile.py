@@ -18,6 +18,47 @@ DOMAINS={
 SHA=re.compile(r'^[0-9a-f]{40}$')
 UUID=re.compile(r'^[0-9a-f-]{36}$')
 
+# Only stable, reviewed categories cross the owner boundary. Never put exception
+# text, Kubernetes stderr, request data, or secret values in a receipt.
+FAILURE_CODE_BY_REASON={
+ ('rebuild','SIT namespace incarnation changed before rebuild'):'sit_rebuild_namespace_uid_mismatch',
+ ('rebuild','namespace ownership mismatch; refuse rebuild'):'sit_rebuild_namespace_ownership_mismatch',
+ ('rebuild','persistent volume claim ownership mismatch'):'sit_rebuild_pv_claim_mismatch',
+ ('rebuild','SIT rebuild cannot safely reclaim this persistent volume'):'sit_rebuild_pv_policy_rejected',
+ ('rebuild','in-progress SIT deletion references a volume that cannot be safely reclaimed'):'sit_rebuild_pv_policy_rejected',
+ ('rebuild','unmatched persistent volume references the SIT namespace'):'sit_rebuild_orphaned_pv',
+ ('rebuild','orphaned persistent volume still references the deleted SIT namespace'):'sit_rebuild_orphaned_pv',
+ ('rebuild','namespace deletion timed out; no force-finalizer removal'):'sit_rebuild_namespace_delete_timeout',
+ ('rebuild','SIT local-path volume reclamation timed out; namespace remains deleted and rebuild is blocked'):'sit_rebuild_pv_reclaim_timeout',
+ ('rebuild','namespace name was recreated by another actor during deletion'):'sit_rebuild_namespace_recreated_concurrently',
+ ('rebuild','namespace name was claimed during rebuild; refusing adoption'):'sit_rebuild_namespace_claimed',
+ ('rebuild','recreated SIT namespace UID did not change'):'sit_rebuild_namespace_uid_invalid',
+ ('rebuild','recreated SIT namespace labels mismatch'):'sit_rebuild_namespace_owner_mismatch',
+ ('rebuild','selected Kubernetes operation failed; raw output suppressed'):'sit_rebuild_kubernetes_operation_failed',
+ ('seed-admin','namespace UID changed or stale target'):'sit_seed_namespace_uid_mismatch',
+ ('seed-admin','namespace is terminating'):'sit_seed_namespace_terminating',
+ ('seed-admin','namespace stage mismatch'):'sit_seed_namespace_stage_mismatch',
+ ('seed-admin','cluster identity mismatch'):'sit_seed_cluster_identity_mismatch',
+ ('seed-admin','single-node identity mismatch'):'sit_seed_node_identity_mismatch',
+ ('seed-admin','Dev seed requires trusted CMDB-bound caller request'):'sit_seed_caller_contract_invalid',
+ ('seed-admin','Kubernetes operation failed (sensitive output suppressed)'):'sit_seed_kubernetes_operation_failed',
+ ('initialize','namespace UID changed or stale target'):'sit_seed_namespace_uid_mismatch',
+ ('initialize','namespace is terminating'):'sit_seed_namespace_terminating',
+ ('initialize','namespace stage mismatch'):'sit_seed_namespace_stage_mismatch',
+ ('initialize','cluster identity mismatch'):'sit_seed_cluster_identity_mismatch',
+ ('initialize','single-node identity mismatch'):'sit_seed_node_identity_mismatch',
+ ('initialize','Dev seed requires trusted CMDB-bound caller request'):'sit_seed_caller_contract_invalid',
+ ('initialize','Kubernetes operation failed (sensitive output suppressed)'):'sit_seed_kubernetes_operation_failed',
+}
+
+def failure_code(operation,error):
+ if isinstance(error,subprocess.TimeoutExpired):return 'owner_timeout'
+ if isinstance(error,KeyError):return 'owner_input_missing'
+ if isinstance(error,(ValueError,RuntimeError)) or type(error).__name__=='Blocked':
+  reason=error.args[0] if error.args and isinstance(error.args[0],str) else None
+  return FAILURE_CODE_BY_REASON.get((operation,reason),'owner_rejected_or_internal_error')
+ return 'owner_internal_error'
+
 def require(value,message):
  if not value: raise ValueError(message)
 
@@ -248,4 +289,7 @@ if __name__=='__main__':
   result=execute(json.loads(os.environ['DEV_FEATURE_CONFIG']));print(json.dumps(result,sort_keys=True))
   raise SystemExit(0 if result['result'] in ('planned','prepared','submitted_pending_seed','verified') else 1)
  except Exception as error:
-  print(json.dumps({'result':'blocked_or_failed','error_type':type(error).__name__,'business_acceptance':'NOT_RUN'}));raise SystemExit(2)
+  config={}
+  try:config=json.loads(os.environ.get('DEV_FEATURE_CONFIG','{}'))
+  except Exception:pass
+  print(json.dumps({'result':'blocked_or_failed','error_type':type(error).__name__,'failure_code':failure_code(config.get('mode','unknown'),error),'business_acceptance':'NOT_RUN'}));raise SystemExit(2)

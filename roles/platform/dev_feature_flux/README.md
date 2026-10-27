@@ -29,6 +29,12 @@ The rebuilt Namespace receives a new UID; its old database and namespaced
 resources are intentionally discarded. This mode cannot target UAT or shared
 resources.
 
+Failure receipts include a bounded `failure_code` for known rebuild and seed
+owner guards (for example `sit_rebuild_pv_policy_rejected` or
+`sit_seed_namespace_uid_mismatch`). Unknown failures use a generic code. Raw
+exception text, Kubernetes stderr, request contents and secret values are never
+copied into the receipt.
+
 SIT uses feature-xconnect-referral-sit and a fixed PR commit. UAT uses web-saas-uat
 and an independent branch-main Source, with initial exact-main candidate checks.
 Later reviewed GitOps main updates reconcile automatically in UAT; a prior
