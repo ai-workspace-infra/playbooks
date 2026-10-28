@@ -48,7 +48,9 @@ class StarslDashboardTest(unittest.TestCase):
             defaults = panel.get("fieldConfig", {}).get("defaults", {})
             self.assertNotEqual(defaults.get("noValue"), "0")
         names = [v["name"] for v in self.dashboard["templating"]["list"]]
-        self.assertEqual(names[:3], ["DS_METRICS", "cluster", "environment"])
+        self.assertEqual(names[:3], ["DS_METRICS", "environment", "cluster"])
+        self.assertEqual(self.dashboard["templating"]["list"][1]["current"], {})
+        self.assertEqual(self.dashboard["templating"]["list"][2]["current"], {})
         self.assertEqual(self.dashboard["uid"], "StarsL_cn_K8S")
 
     def test_cadvisor_metric_owner_and_application_sandbox_scope(self):

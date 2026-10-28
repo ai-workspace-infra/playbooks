@@ -131,8 +131,8 @@ def build(source):
         {"name": "DS_METRICS", "label": "Metrics", "type": "datasource",
          "query": "prometheus", "refresh": 1,
          "current": {"text": "VictoriaMetrics", "value": "victoriametrics"}, "options": []},
-        variable("cluster", "label_values(kube_node_info,cluster)"),
-        variable("environment", 'label_values(kube_node_info{cluster=~"${cluster:regex}"},environment)'),
+        variable("environment", "label_values(kube_node_info,environment)"),
+        variable("cluster", 'label_values(kube_node_info{environment=~"${environment:regex}"},cluster)'),
         *variables,
     ]
     for panel in panels(dashboard["panels"]):
