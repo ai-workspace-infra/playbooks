@@ -19,7 +19,8 @@ class Contracts(unittest.TestCase):
   import run_dev_feature_flux as owner
   lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'e'*64}
   connection=Mock();connection.getresponse.return_value.status=200
-  with patch.object(owner.socket,'gethostbyname_ex',return_value=('',[],['8.8.8.8'])), patch.object(owner.http.client,'HTTPSConnection',return_value=connection):
+  record=(owner.socket.AF_INET,owner.socket.SOCK_STREAM,6,'',('8.8.8.8',443))
+  with patch.object(owner.socket,'getaddrinfo',return_value=[record]), patch.object(owner.http.client,'HTTPSConnection',return_value=connection):
    result=owner.probe_tagged_public_https(lane,'8.8.8.8');self.assertEqual(len(result),3)
    self.assertEqual(connection.request.call_count,3)
    with patch.object(owner.socket,'create_connection') as connect:
@@ -27,8 +28,10 @@ class Contracts(unittest.TestCase):
     connect.assert_called_once_with(('8.8.8.8',443),10,None)
    connection.getresponse.return_value.status=302
    with self.assertRaisesRegex(ValueError,'readiness failed'):owner.probe_tagged_public_https(lane,'8.8.8.8')
-  with patch.object(owner.socket,'gethostbyname_ex',return_value=('',[],['8.8.4.4'])):
-   with self.assertRaisesRegex(ValueError,'DNS target differs'):owner.probe_tagged_public_https(lane,'8.8.8.8')
+  with patch.object(owner.socket,'getaddrinfo',return_value=[(owner.socket.AF_INET,owner.socket.SOCK_STREAM,6,'',('8.8.4.4',443))]):
+   with self.assertRaisesRegex(ValueError,'selected IPv4'):owner.probe_tagged_public_https(lane,'8.8.8.8')
+  with patch.object(owner.socket,'getaddrinfo',return_value=[record,(owner.socket.AF_INET6,owner.socket.SOCK_STREAM,6,'',('2001:4860:4860::8888',443,0,0))]):
+   with self.assertRaisesRegex(ValueError,'selected IPv4'):owner.probe_tagged_public_https(lane,'8.8.8.8')
   with patch.object(owner,'probe_tagged_public_https',return_value=[{'status':200}]), patch.object(owner,'probe_tagged_content_chain',return_value={'status':200}):
    result=owner.finish_tagged_runtime({'result':'runtime_ready'},lane,'8.8.8.8')
    self.assertEqual((result['result'],result['tls_certificate_acceptance'],result['business_acceptance']),('runtime_verified','PASS','NOT_RUN'))
@@ -40,7 +43,7 @@ class Contracts(unittest.TestCase):
    self.assertEqual((result['result'],result['tls_certificate_acceptance'],result['business_acceptance']),('content_chain_failed','PASS','NOT_RUN'))
   response=Mock(status=200);response.read.return_value=b'[]'
   connection=Mock();connection.getresponse.return_value=response
-  with patch.object(owner.socket,'gethostbyname_ex',return_value=('',[],['8.8.8.8'])), patch.object(owner.http.client,'HTTPSConnection',return_value=connection):
+  with patch.object(owner.socket,'getaddrinfo',return_value=[record]), patch.object(owner.http.client,'HTTPSConnection',return_value=connection):
    evidence=owner.probe_tagged_content_chain(lane,'8.8.8.8');self.assertEqual(evidence['status'],200);self.assertIs(evidence['fresh_backend_verified'],True)
    connection.request.assert_called_once_with('GET','/api/docs/search?query=sit-probe-'+'e'*16,headers={'Cache-Control':'no-store'})
    response.read.return_value=b'{"error":"fallback"}'

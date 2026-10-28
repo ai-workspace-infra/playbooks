@@ -13,6 +13,13 @@ RECORD='kv/data/CICD/dev/k3s-bootstrap'
 def require(value,message):
  if not value:raise ValueError(message)
 
+def tagged_dns_addresses(host,target_ip):
+ records=socket.getaddrinfo(host,443,socket.AF_UNSPEC,socket.SOCK_STREAM)
+ ipv4=sorted({row[4][0] for row in records if row[0]==socket.AF_INET})
+ ipv6={row[4][0] for row in records if row[0]==socket.AF_INET6}
+ require(ipv4==[target_ip] and not ipv6,'tagged DNS must resolve only to the selected IPv4 target')
+ return ipv4
+
 def probe_tagged_public_https(lane,target_ip):
  """Observe TLS and three public service endpoints; not business acceptance."""
  _,_,_,_,hosts,_=candidate.SCOPE.scope({'environment':'sit','tagged_lane':lane})
@@ -21,7 +28,7 @@ def probe_tagged_public_https(lane,target_ip):
  require(set(paths)==hosts,'public health hosts differ from candidate')
  results=[]
  for host,path in paths.items():
-  require(sorted(set(socket.gethostbyname_ex(host)[2]))==[target_ip],'public health DNS target differs')
+  tagged_dns_addresses(host,target_ip)
   connection=http.client.HTTPSConnection(host,timeout=10)
   # Keep the verified address fixed across DNS check and TLS connection while
   # HTTPSConnection still validates the original hostname and certificate.
@@ -38,7 +45,8 @@ def probe_tagged_content_chain(lane,target_ip):
  """Check an uncached search proxied from the console to content-service."""
  _,_,_,_,hosts,_=candidate.SCOPE.scope({'environment':'sit','tagged_lane':lane})
  host=lane['feature_tag']+'-sit.onwalk.net'
- require(host in hosts and sorted(set(socket.gethostbyname_ex(host)[2]))==[target_ip],'content chain DNS target differs')
+ require(host in hosts,'content chain host differs')
+ tagged_dns_addresses(host,target_ip)
  connection=http.client.HTTPSConnection(host,timeout=10)
  connection._create_connection=lambda address,timeout=None,source_address=None:socket.create_connection((target_ip,address[1]),timeout,source_address)
  try:
@@ -138,7 +146,7 @@ def execute(a):
  if a.mode=='enable-tls' or (projection is not None and a.mode=='submit'):
   config['target_ip']=cmdb['dev-k3s-v5']['ip'];proof=[]
   for host in observation['hosts']:
-   addresses=sorted(set(socket.gethostbyname_ex(host)[2]))
+   addresses=tagged_dns_addresses(host,config['target_ip']) if projection is not None else sorted(set(socket.gethostbyname_ex(host)[2]))
    require(addresses==[config['target_ip']],'DNS does not point uniquely to this Dev instance')
    connection=http.client.HTTPConnection(host,80,timeout=10)
    try:
