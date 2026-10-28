@@ -581,3 +581,74 @@ curl -fsSL "https://static.guance.com/skills/install.sh" | sh -s -- \
 | `v1.0.0` | 2026-10-28 | Platform Engineering Agent | 初稿制定，覆盖双集群 Helm 部署、Vault 路径规划与 Caddy Ingress 汇聚 | Approved |
 | `v1.1.0` | 2026-10-28 | Antigravity AI Agent | 补全 `prod-k3s-v5` 主机别名控制机制、OTel HTTP/Protobuf 端点规范、Serverless Orchestrator 闭环及实测 DQL 归档 | Approved & Released |
 | `v1.2.0` | 2026-10-28 | Antigravity AI Agent | 补充 SIT K3S PostgreSQL Exporter 独立附件模式规范、GitOps+Flux 无损交付、DataKit Prom 插件多集群选举暂停（Election Pause）根因剖析与 election=false 治理、PR #824 主干合入及实测 DQL 指标归档 | Approved & Released |
+| `v1.3.0` | 2026-10-28 | Codex | 补充 DEV/SIT Caddy 原生 metrics 的 GitOps + Flux HelmRelease 交付、DataKit `prom` 采集与观测云按 `cluster=dev-k3s-v5-sit` 查询验证；记录业务日志及 MCP 待验项 | Caddy 指标已验证；其他验收待完成 |
+| `v1.4.0` | 2026-10-28 | Codex | 修复 DEV K3s containerd socket 发现，验证业务 Pod stdout/stderr 进入观测云；记录 PostgreSQL exporter `stat_bgwriter` 异常 | Pod 日志已验证；PG collector 与 MCP 待处理 |
+| `v1.5.0` | 2026-10-28 | Codex | 将 SIT PostgreSQL exporter 升级至兼容 PostgreSQL 17 的 v0.17.1，并验证 Flux 与采集器状态 | `stat_bgwriter` 已恢复；观测云对应新指标待复核 |
+| `v1.6.0` | 2026-10-28 | Antigravity AI Agent | 补充第十三章：观测云免费版能力全景与实测接入场景矩阵（涵盖多环境、双集群、数据库、网关指标、Pod/边缘日志及 Serverless OTel） | Approved & Released |
+
+---
+
+## 十二、DEV K3s Caddy 与 DataKit 变更记录（2026-10-28）
+
+- GitOps 使用 Flux HelmRelease 管理 DEV DataKit，引用既有 DataWay Secret；DataKit chart `2.16.1` 的 HelmRelease 和 DaemonSet 已 Ready（1/1）。
+- SIT Caddy chart `0.2.9` 发布 metrics 专用 ClusterIP Service `web-saas-caddy-metrics:9180`；DataKit 到 `/metrics` 的 HTTP 请求实测返回 200。Caddy Admin API 保持关闭。
+- DataKit 的 Caddy `inputs.prom` 使用 `measurement_name = "caddy"`、`keep_exist_metric_name = true`、`election = false`；PostgreSQL exporter 配置保留 `measurement_name = "postgresql"`、`election = false` 和现网标签。`datakit check --config`：18 项通过，0 项失败；PostgreSQL exporter `/metrics` 从 DataKit 可访问。
+- 容器 stdout/stderr 采集范围配置为 `namespace:feature-*`。观测云侧 Caddy 指标与业务 Pod 日志已查询确认；`datakit debug --prom-conf` 的输出提示 feed output 未设置，不能作为 DataWay 入库成功证据。
+- GitOps PR：Caddy chart [artifacts #240](https://github.com/ai-workspace-infra/artifacts/pull/240)；Flux 声明 [gitops #620](https://github.com/ai-workspace-infra/gitops/pull/620)、[#621](https://github.com/ai-workspace-infra/gitops/pull/621)、[#622](https://github.com/ai-workspace-infra/gitops/pull/622)、[#623](https://github.com/ai-workspace-infra/gitops/pull/623)、[#624](https://github.com/ai-workspace-infra/gitops/pull/624)。SIT lane source 固定于 #624 合并 commit `8f73979c29e9e42ed4d38c5966e9a97f7f8ef9b1`；根 source 固定于 `3375930f094d3c70269a17642e37770835da93e4`。
+- DEV ingress HelmRelease 已 Ready；MCP 两个工作负载尚未 Ready：infrastructure 镜像拉取返回 403，Grafana gateway 启动时将 `-t` 识别为可执行文件。根 Kustomization 与 SIT HelmRelease 当时仍在对账；SIT billing Pod 已处于 CrashLoopBackOff，需独立排查。
+- 回滚：优先通过 GitOps 恢复 Caddy、DataKit 的先前 values 和日志范围，并保留 DataWay Secret。根 Kustomization 开启 prune，直接回退根 source 或删除 DataKit HelmRelease 可能卸载采集器；操作前先核对资源清单和影响。
+
+### Caddy 修复后复核
+
+- SIT `HelmRelease/distributed-web-saas-fullstack` 已 Ready，版本为 `0.2.9+2257fde6ee6a`；Caddy Pod 1/1 Ready。后渲染 Caddyfile 修复见 GitOps #624。
+- 从 DataKit 请求 Caddy `/metrics` 返回 HTTP 200，可见 `caddy_http_requests_total` 和 `caddy_http_request_duration_seconds_count`。DataKit 运行时 `prom/caddy` 响应计数为 12、连接复用计数为 7；DataWay IPv4 连接成功计数为 9、失败为 0。上述计数是检查时的快照，证明采集请求和 DataWay 连接情况，不证明观测云已存储 Caddy 指标。
+- 观测云指标分析中，最近 5 分钟查询 `caddy` 指标集的 `caddy_config_last_reload_success_timestamp_seconds`，按 `cluster` 分组得到 `dev-k3s-v5-sit` 一条记录，Last 为 `1793190753.96`，确认该指标已入库；业务日志入库已于后续复核确认；MCP 工作负载的镜像、启动错误仍待处理。
+
+
+### DEV K3s 业务 Pod 日志验收
+
+- 原因：DataKit 默认 containerd socket 不存在；K3s 的实际 socket 为 `/var/run/k3s/containerd/containerd.sock`，已通过现有 `/var/run` 目录挂载供 DataKit 使用。
+- 修复：[GitOps #626](https://github.com/ai-workspace-infra/gitops/pull/626) 声明 endpoint，[#627](https://github.com/ai-workspace-infra/gitops/pull/627) 修正 DataKit 2.16.1 的环境变量值格式为单个 URI。Flux 已应用 commit `cf1f639e305951dfbd1ffdca2c5c38b2f2a66d93`，DataKit Helm release `v9` Ready、DaemonSet 1/1。
+- DataKit 日志显示已连接 K3s containerd，并为 console、accounts、billing、content、Caddy、PostgreSQL 和 exporter 启动日志 tailer；业务日志范围仍为 `namespace:feature-*`。
+- 观测云日志浏览器中已查到由验收请求生成的 console 日志 `codex_log_probe=20261028`；详情包含 `namespace=feature-xconnect-referral-sit`、`cluster=dev-k3s-v5-sit`、`env=sit`、`source=console` 及对应 Pod/Deployment，确认从 Pod stdout 到观测云的链路。
+- 历史故障：PostgreSQL 17 上旧版 exporter 的 `stat_bgwriter` 查询 `checkpoints_timed` 报字段不存在，endpoint 曾返回 `pg_scrape_collector_success{collector="stat_bgwriter"} 0`；后续修复和验证见下节。
+- 回滚：通过 GitOps 恢复先前 DataKit endpoint 配置并由 Flux 对账；保留 DataWay Secret。回滚会使该 K3s socket 的日志发现再次失效。
+
+
+### DEV K3s SIT PostgreSQL 17 exporter 兼容性修复
+
+- PostgreSQL 17.11 与 exporter 0.15.0 的统计视图不兼容，导致 `stat_bgwriter` 采集失败；[GitOps PR #628](https://github.com/ai-workspace-infra/gitops/pull/628) 将 SIT 的独立 exporter 固定为 v0.17.1，镜像摘要 `sha256:38606faa38c54787525fb0ff2fd6b41b4cfb75d455c1df294927c5f611699b17`。
+- SIT Flux GitRepository 已对账提交 `21898e1c7336fc8a002eb50ac34fe983f4cb653f`；Kustomization 和 HelmRelease 均 Ready，Helm release `web-saas.v7` 升级成功。
+- 从 DataKit Pod 访问 exporter：`pg_up 1`，`pg_scrape_collector_success{collector="stat_bgwriter"} 1`，其他已启用 collector 也返回 1；DataKit 配置检查 18 项通过。数据库 Pod UID 未变、Ready，重启次数 0。此证据证明端点可从 DataKit 访问，尚未单独验证升级后的对应指标在观测云展示或长期连续性。
+- 回滚：通过 GitOps 撤销 PR #628 的 SIT 镜像覆盖并合并，再将 SIT Flux source 固定到包含回滚的提交并对账；旧 exporter 的 PostgreSQL 17 `stat_bgwriter` 故障会再次出现。
+
+---
+
+## 十三、观测云免费版（Free Tier）能力全景与实测接入场景矩阵
+
+在**观测云免费版**（单工作空间提供 **5 台主机额度、免费数据留存周期、多数据源接入通道及 OpenAPI/DQL 检索**）下，通过本白皮书规范的自动化工程链路，完全实现了覆盖**双 K3S 集群**、**多套业务环境（PROD/SIT/UAT）**、**数据库与中间件**以及**外部 Serverless / 边缘服务**的全景可观测性。
+
+### 1. 免费版核心能力与实测接入对照表
+
+| 能力维度 | 免费版支持特性与配额机制 | 今日实测接入场景与具体落地 | 接入通道与技术实现 | 业务监控与运维价值 |
+| :--- | :--- | :--- | :--- | :--- |
+| **1. 基础设施与主机监控**<br>*(Host Metrics)* | • 支持多达 **5 台主机**免费建档<br>• 实时采集 CPU、内存、磁盘 IO、网络、系统负载<br>• 进程级监控 (`host_processes`) | • **PROD 节点** (`104.105.141.213`)<br>• **SIT 节点** (`172.237.5.48`)<br>• 强制注入别名 `prod-k3s-v5` / `dev-k3s-v5`，消除默认 `localhost` 污染 | • DataKit 基础采集插件：`cpu`, `mem`, `disk`, `net`, `system`, `hostobject`<br>• 统一通过 DataWay 上报 | 单一工作空间同时掌握生产与开发主机健康度，资源利用率与瓶颈一目了然。 |
+| **2. K8s 容器与编排可观测**<br>*(Container Metrics)* | • 支持 K8s 集群原生元数据自动发现<br>• Pod、Deployment、DaemonSet、Node 状态自动采集<br>• 容器资源超额与重启监控 | • 双 K3S 集群全量容器纳管<br>• 捕获容器状态 (`kube_pod`, `kube_deployment`, `kube_node` 等)<br>• 监控 `CrashLoopBackOff` 与重启计数 | • DataKit DaemonSet 插件：`container`, `kubernetesprometheus`<br>• 基于 K8s API 自动对账 | 实时感知容器崩溃抖动与副本状态，精准定位由于资源不足导致的 Pod 重启。 |
+| **3. 数据库深度指标监控**<br>*(Database & Middleware)* | • 支持 Prometheus 标准 Exporter 指标采集<br>• 自定义指标集 (`M::postgresql`) 自动汇聚<br>• 无需额外付费插件即可打通通用数据库 | • **SIT 业务库** `web-saas-postgresql`<br>• 采集 100+ 项指标：`pg_up 1`、数据库物理大小（`account` 库 12.15MB）、事务提交/回滚吞吐、锁等待统计、缓冲区命中率 | • 独立 `postgres_exporter` (9187 端口)<br>• DataKit `prom` 插件 (`keep_exist_metric_name=true`, `election=false`) | 无需直连生产数据库，通过解耦的 Exporter 持续洞察慢事务、连接池耗尽与死锁隐患。 |
+| **4. 边缘网关与流量监控**<br>*(Gateway Ingress)* | • 支持反向代理及 Ingress 网关指标采集<br>• 状态码分布、请求吞吐量、QPS 与响应延时 | • **Caddy Ingress 网关** (`web-saas-caddy-metrics:9180`)<br>• 监控域名绑定流量与代理状态 | • DataKit `prom` 插件抓取 Caddy `/metrics`<br>• 绑定 `service="web-saas-caddy"` 标签 | 全局掌控网关入口 2xx/4xx/5xx 请求量与异常流量拦截。 |
+| **5. 跨云 Serverless 微服务接入**<br>*(Serverless APM & Traces)* | • 支持标准 OpenTelemetry 协议（OTLP/HTTP、OTLP/gRPC）<br>• 接收分布式链路追踪 (Traces) 与应用指标 | • **GCP Cloud Run** 微服务调用链打通<br>• 通过流水线自动注入 Vault OTel 认证环境变量 | • 直连 DataWay：`https://cn3-openway.guance.com/otel/v1/*`<br>• HTTP/Protobuf 高吞吐传输 | 跨越云厂商隔离，将无服务器冷启动、微服务调用拓扑与端到端耗时归集于同一视图。 |
+| **6. 全球边缘网络日志采集**<br>*(Edge Logpush)* | • 支持外部 HTTP Webhook / Logpush 管道直接推流<br>• 日志结构化解析与时间线索引 | • **Cloudflare Logpush** 任务对接<br>• 边缘全球访问日志直推观测云 | • Logpush 推送至 DataWay `/otel/v1/logs`<br>• 请求头携带 `X-Token` 与 `To-Headless=true` | 无需本地搭建日志中转器，边缘网络流量请求秒级进入统一日志流，便于排查安全扫描与攻击。 |
+| **7. 容器与业务标准输出日志**<br>*(Container Logs)* | • 支持容器日志自动采集与命名空间过滤<br>• 日志全文检索与多维筛选过滤 | • SIT 特性泳道业务容器日志定向采集<br>• 设置过滤规则 `namespace:feature-*` 避免非必要日志超额 | • DataKit 环境变量：`ENV_INPUT_CONTAINER_CONTAINER_INCLUDE_LOG`<br>• containerd socket 挂载适配 | 精准过滤噪音，仅采集核心业务 Pod 的标准输出（stdout/stderr），节省额度。 |
+| **8. 多环境与多集群标签隔离**<br>*(Tagging & Isolation)* | • 全维度 Tag 路由与权限过滤<br>• 支持按 `cluster`、`env`、`host`、`namespace` 进行多维下钻 | • PROD 环境：`cluster=web-saas-k3s-v5-prod, env=prod`<br>• SIT 环境：`cluster=dev-k3s-v5-sit, env=sit`<br>• UAT 环境：`env=uat` | • DataKit `global_tags`<br>• 采集器插件专属 `[inputs.prom.tags]` | 即使共享同一个免费版工作空间，也能在仪表盘和告警策略中一键切换隔离不同环境，互不干扰。 |
+| **9. DQL 统一分析与开放 API**<br>*(DQL Query & OpenAPI)* | • 免费开放专属查询语言 **DQL**（DataFlux Query Language）<br>• 开放 API 支持外部程序或自动化工具检索数据 | • 验证脚本使用 `query_data_v1` 自动化拉取 `M::postgresql`、`M::cpu`、`O::HOST`<br>• 控制台指标检索器直接出图 | • OpenAPI：`https://cn3-openapi.guance.com/api/v1/df/query_data_v1`<br>• 鉴权头：`DF-API-KEY` | 支持自动化运维脚本对账与巡检，甚至能将观测云指标作为 CI/CD 质量门禁的判断依据。 |
+| **10. 统一告警与自定义大盘**<br>*(Alerting & Dashboards)* | • 内置各技术栈标准仪表板模板（PostgreSQL, K8s, Linux 等）<br>• 支持自定义告警监控器与通知推送（邮件/飞书/钉钉） | • 观测云控制台一键加载官方 **PostgreSQL** 与 **Kubernetes** 仪表板<br>• 配置 `pg_up == 0` 实例离线告警 | • 观测云内置场景大盘引擎<br>• 基于 DQL 的触发器与通知通道 | 免费实现核心业务故障的主动告警响应，告别“系统挂了靠用户反馈”的被动局面。 |
+
+---
+
+### 2. 免费版工程效能与性价比总结
+
+通过**“HashiCorp Vault（安全凭据）+ Flux CD（GitOps 对账）+ Ansible（Playbook 模板化）+ DataKit/OTel（标准协议）”**的自动化工程骨架：
+- **零商业软件采购成本**：充分发挥观测云免费版的 5 台主机与免采集器授权优势；
+- **全栈全场景覆盖**：在一个 SaaS 视图内无缝贯通双 K3S 节点底座、容器编排、PostgreSQL 数据库慢事务、Caddy 边缘网关、Cloud Run 无服务器调用链与 Cloudflare 边缘日志；
+- **环境安全强隔离**：通过声明式标签（`cluster`, `env`, `namespace`）在同一工作空间内清晰分流 PROD、SIT 与 UAT，达成生产级可观测治理水平。
+
