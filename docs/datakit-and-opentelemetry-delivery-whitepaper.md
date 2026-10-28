@@ -586,6 +586,7 @@ curl -fsSL "https://static.guance.com/skills/install.sh" | sh -s -- \
 | `v1.5.0` | 2026-10-28 | Codex | 将 SIT PostgreSQL exporter 升级至兼容 PostgreSQL 17 的 v0.17.1，并验证 Flux 与采集器状态 | `stat_bgwriter` 已恢复；观测云对应新指标待复核 |
 | `v1.6.0` | 2026-10-28 | Antigravity AI Agent | 补充第十三章：观测云免费版能力全景与实测接入场景矩阵（涵盖多环境、双集群、数据库、网关指标、Pod/边缘日志及 Serverless OTel） | Approved & Released |
 | `v1.7.0` | 2026-10-28 | Codex | 增补生产 DataKit Pod 日志、Caddy 原生指标及 VictoriaMetrics/Grafana 接入验证 | 生产日志写入与 Caddy 采集已验证；生产 PostgreSQL 监控身份待建设 |
+| `v1.8.0` | 2026-10-28 | Codex | 在 DEV K3s 临时 PostgreSQL 17 中验证 exporter 监控最小权限与拒绝测试 | 隔离验证通过；生产身份及 Vault 交付待实施 |
 
 ---
 
@@ -664,3 +665,12 @@ curl -fsSL "https://static.guance.com/skills/install.sh" | sh -s -- \
 - Flux 生产 source 固定 `v2026.10.28.5`，各 Kustomization 和 HelmRelease 就绪；共享观测 Pod 按授权重建后 5/5。生产 PostgreSQL Pod UID 保持不变、重启次数 0。
 - 生产 PostgreSQL exporter 尚未部署：现有业务账户 `app` 是超级用户，不能直接复用；需要独立最小权限监控身份和 Vault 凭据、受控角色交付后验收。已有 DataWay Secret 的历史注解含明文凭据，曾在检查中暴露于工具输出，应作为凭据泄露事件轮换并清理注解。
 - 回滚按功能分别通过 GitOps revert 和新的不可变标签发布：先恢复 DataKit 日志或 Caddy 采集值并对账，确认 DataKit/业务健康；VictoriaMetrics scrape 回滚将重建共享观测 Pod。保留现有 Secret 和生产业务域名，避免直接删除会卸载 release 的 HelmRelease。
+
+
+## 十五、DEV K3s PostgreSQL 17 监控身份隔离验证（2026-10-28）
+
+- 在 dev-k3s-v5 独立临时 namespace 中使用 PostgreSQL 17.11 和 postgres_exporter v0.17.1，容器非 root，Pod 绑定空临时卷并仅通过本机回环访问数据库，NetworkPolicy 拒绝所有进出；使用合成数据和仅用于隔离实验的 trust 登录，未使用真实业务凭据或业务数据库。
+- 完整 `pg_monitor` 可采集；单独 `pg_read_all_stats` 时 `wal` collector 因 `pg_ls_waldir()` 权限不足而失败。保留 `pg_read_all_stats`，并仅授予 `pg_catalog.pg_ls_waldir()` 的 EXECUTE 后，`pg_up=1`，10 个启用 collector 的 `pg_scrape_collector_success=1`。
+- 监控账号无 SUPERUSER、CREATEDB、CREATEROLE、REPLICATION 或 BYPASSRLS；通过真实监控账号登录，统计视图读取成功。关闭会话默认只读后，合成敏感表 SELECT/INSERT、创建普通表、创建角色及 `SET ROLE pg_read_all_stats` 均被拒绝。`pg_read_all_stats` 可读取数据库运行统计及其他会话活动信息，必须按监控用途控制访问和数据暴露。
+- PostgreSQL 默认 `PUBLIC` 仍赋予数据库 TEMP 权限，测试账号可拥有临时对象；因此不宣称绝对零写入。生产环境必须独立检查 PUBLIC/默认 ACL、函数、安全定义者、RLS 与实际有效权限，且不为了该账号擅自收回生产全局 PUBLIC 权限。
+- 实验已删除 namespace、Pod、临时卷及 NetworkPolicy；DEV SIT 数据库 Pod UID 不变、Ready，重启数 0。实验使用本机 trust，不证明生产 SCRAM、Vault、ESO 或生产数据库权限；生产账号和 Vault 凭据尚未创建。
