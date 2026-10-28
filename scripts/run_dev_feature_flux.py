@@ -35,19 +35,20 @@ def probe_tagged_public_https(lane,target_ip):
  return results
 
 def probe_tagged_content_chain(lane,target_ip):
- """Check catalog response; Next.js may serve cached upstream data."""
+ """Check an uncached search proxied from the console to content-service."""
  _,_,_,_,hosts,_=candidate.SCOPE.scope({'environment':'sit','tagged_lane':lane})
  host=lane['feature_tag']+'-sit.onwalk.net'
  require(host in hosts and sorted(set(socket.gethostbyname_ex(host)[2]))==[target_ip],'content chain DNS target differs')
  connection=http.client.HTTPSConnection(host,timeout=10)
  connection._create_connection=lambda address,timeout=None,source_address=None:socket.create_connection((target_ip,address[1]),timeout,source_address)
  try:
-  connection.request('GET','/api/docs/catalog')
+  path='/api/docs/search?query=sit-probe-'+lane['candidate_sha256'][:16]
+  connection.request('GET',path,headers={'Cache-Control':'no-store'})
   response=connection.getresponse();require(response.status==200,'content chain request failed')
   raw=response.read(262145);require(len(raw)<=262144,'content chain response too large')
   body=json.loads(raw)
-  require(isinstance(body,dict) and isinstance(body.get('home'),dict) and isinstance(body.get('collections'),list),'content chain response invalid')
-  return {'path':'/api/docs/catalog','status':200,'collection_count':len(body['collections']),'fresh_backend_verified':False}
+  require(isinstance(body,list),'content chain response invalid')
+  return {'path':'/api/docs/search','status':200,'fresh_backend_verified':True}
  finally:connection.close()
 
 def finish_tagged_runtime(runtime,lane,target_ip):

@@ -38,10 +38,11 @@ class Contracts(unittest.TestCase):
   with patch.object(owner,'probe_tagged_public_https',return_value=[]),patch.object(owner,'probe_tagged_content_chain',side_effect=ValueError('failed')):
    result=owner.finish_tagged_runtime({'result':'runtime_ready'},lane,'8.8.8.8')
    self.assertEqual((result['result'],result['tls_certificate_acceptance'],result['business_acceptance']),('content_chain_failed','PASS','NOT_RUN'))
-  response=Mock(status=200);response.read.return_value=b'{"home":{},"collections":[]}'
+  response=Mock(status=200);response.read.return_value=b'[]'
   connection=Mock();connection.getresponse.return_value=response
   with patch.object(owner.socket,'gethostbyname_ex',return_value=('',[],['8.8.8.8'])), patch.object(owner.http.client,'HTTPSConnection',return_value=connection):
-   evidence=owner.probe_tagged_content_chain(lane,'8.8.8.8');self.assertEqual(evidence['status'],200);self.assertIs(evidence['fresh_backend_verified'],False)
+   evidence=owner.probe_tagged_content_chain(lane,'8.8.8.8');self.assertEqual(evidence['status'],200);self.assertIs(evidence['fresh_backend_verified'],True)
+   connection.request.assert_called_once_with('GET','/api/docs/search?query=sit-probe-'+'e'*16,headers={'Cache-Control':'no-store'})
    response.read.return_value=b'{"error":"fallback"}'
    with self.assertRaisesRegex(ValueError,'response invalid'):owner.probe_tagged_content_chain(lane,'8.8.8.8')
  def config(self):
