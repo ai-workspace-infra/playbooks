@@ -91,6 +91,9 @@ def validate_documents(documents,stage,tls=False,candidate=None):
   require(isinstance(name,str) and re.fullmatch(r'[a-z0-9][a-z0-9.-]*',name),'invalid resource name')
   require((kind,name) not in keys,'duplicate resource');keys.add((kind,name));by_kind.setdefault(kind,[]).append(doc)
   if kind=='ConfigMap':require(name in CM,'unexpected ConfigMap')
+ if candidate is not None:
+  isolation={'apiVersion':'networking.k8s.io/v1','kind':'NetworkPolicy','metadata':{'name':'lane-isolation','namespace':ns},'spec':{'podSelector':{},'policyTypes':['Ingress','Egress'],'ingress':[{'from':[{'podSelector':{}}]}],'egress':[{'to':[{'podSelector':{}}]},{'to':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'kube-system'}},'podSelector':{'matchLabels':{'k8s-app':'kube-dns'}}}],'ports':[{'protocol':'UDP','port':53},{'protocol':'TCP','port':53}]}]}}
+  require(by_kind.get('NetworkPolicy',[])==[isolation],'tagged lane requires only the reviewed isolation policy; external egress needs a reviewed contract')
  if tls:
   require(set(by_kind)=={'Ingress'},'TLS subpath permits only its exact Ingress')
   images={};sources={}

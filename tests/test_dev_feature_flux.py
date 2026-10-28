@@ -136,6 +136,7 @@ class Contracts(unittest.TestCase):
   ns,_,_,_,hosts,_=R.scope({'environment':'sit','tagged_lane':lane})
   candidate={'tagged_lane':lane,'chart_digest':'sha256:'+'f'*64,
              'components':{name:{'image':image,**old['sources'][name]} for name,image in old['images'].items()}}
+  docs.insert(0,{'apiVersion':'networking.k8s.io/v1','kind':'NetworkPolicy','metadata':{'name':'lane-isolation','namespace':ns},'spec':{'podSelector':{},'policyTypes':['Ingress','Egress'],'ingress':[{'from':[{'podSelector':{}}]}],'egress':[{'to':[{'podSelector':{}}]},{'to':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'kube-system'}},'podSelector':{'matchLabels':{'k8s-app':'kube-dns'}}}],'ports':[{'protocol':'UDP','port':53},{'protocol':'TCP','port':53}]}]}})
   for doc in docs:doc['metadata']['namespace']=ns
   next(x for x in docs if x['kind']=='HelmRelease')['spec']['targetNamespace']=ns
   next(x for x in docs if x['kind']=='OCIRepository')['spec']['ref']={'digest':candidate['chart_digest']}
@@ -148,6 +149,10 @@ class Contracts(unittest.TestCase):
   for rule,host in zip(ingress['spec']['rules'],sorted(hosts)):rule['host']=host
   result=C.validate_documents(docs,'sit',candidate=candidate)
   self.assertEqual(result['namespace'],ns);self.assertEqual(set(result['hosts']),hosts)
+  bad=copy.deepcopy(docs);bad[0]['spec']['ingress']=[{}]
+  with self.assertRaisesRegex(ValueError,'reviewed isolation'):C.validate_documents(bad,'sit',candidate=candidate)
+  bad=copy.deepcopy(docs);bad.append({'apiVersion':'networking.k8s.io/v1','kind':'NetworkPolicy','metadata':{'name':'allow-everything','namespace':ns},'spec':{'podSelector':{},'ingress':[{}]}})
+  with self.assertRaisesRegex(ValueError,'reviewed isolation'):C.validate_documents(bad,'sit',candidate=candidate)
   for old,new in (('web-saas-console:80','external.example:80'),(lane['feature_tag']+'-sit.onwalk.net','other-sit.onwalk.net')):
    bad=copy.deepcopy(docs);patch=next(x for x in bad if x['kind']=='HelmRelease')['spec']['postRenderers'][0]['kustomize']['patches'][0]
    patch['patch']=patch['patch'].replace(old,new)
