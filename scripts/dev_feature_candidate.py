@@ -137,6 +137,9 @@ def validate_documents(documents,stage,tls=False,candidate=None):
    account_doc=next(d for d in by_kind['ConfigMap'] if d['metadata']['name']=='web-saas-accounts-template')
    account=yaml.safe_load(account_doc.get('data',{}).get('account.yaml',''))
    require(isinstance(account,dict) and isinstance(account.get('store'),dict) and account['store'].get('driver')=='postgres' and account['store'].get('dsn')=='postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable','tagged Accounts template database binding differs')
+   host=candidate['tagged_lane']['feature_tag']+'-sit.onwalk.net'
+   server=account.get('server',{});oauth=account.get('auth',{}).get('oauth',{});agent=account.get('agent',{})
+   require(isinstance(server,dict) and server.get('publicUrl')=='https://accounts-'+host and set(server.get('allowedOrigins',[]))=={'https://'+host,'https://accounts-'+host,'https://billing-'+host} and isinstance(oauth,dict) and oauth.get('frontendUrl')=='https://'+host and all(oauth.get(provider,{}).get('redirectUrl')=='https://accounts-'+host+'/api/auth/'+provider+'/callback' for provider in ('github','google')) and isinstance(agent,dict) and agent.get('controllerUrl')=='http://web-saas-accounts.'+ns+'.svc.cluster.local','tagged Accounts template escaped candidate lane')
    account_env=dict(values.get('accounts',{}).get('workload',{}).get('env',{}))
    account_env.update(release.get('accounts',{}).get('workload',{}).get('env',{}))
    require(all(key in account_env for key in ('DB_HOST','DB_PORT','DB_NAME','POSTGRES_USER')),'tagged Accounts database identity must be explicit')
