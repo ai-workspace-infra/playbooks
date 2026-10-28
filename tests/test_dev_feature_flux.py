@@ -29,12 +29,21 @@ class Contracts(unittest.TestCase):
    with self.assertRaisesRegex(ValueError,'readiness failed'):owner.probe_tagged_public_https(lane,'8.8.8.8')
   with patch.object(owner.socket,'gethostbyname_ex',return_value=('',[],['8.8.4.4'])):
    with self.assertRaisesRegex(ValueError,'DNS target differs'):owner.probe_tagged_public_https(lane,'8.8.8.8')
-  with patch.object(owner,'probe_tagged_public_https',return_value=[{'status':200}]):
+  with patch.object(owner,'probe_tagged_public_https',return_value=[{'status':200}]), patch.object(owner,'probe_tagged_content_chain',return_value={'status':200}):
    result=owner.finish_tagged_runtime({'result':'runtime_ready'},lane,'8.8.8.8')
    self.assertEqual((result['result'],result['tls_certificate_acceptance'],result['business_acceptance']),('runtime_verified','PASS','NOT_RUN'))
   with patch.object(owner,'probe_tagged_public_https',side_effect=ValueError('failed')):
    result=owner.finish_tagged_runtime({'result':'runtime_ready'},lane,'8.8.8.8')
    self.assertEqual((result['result'],result['tls_certificate_acceptance'],result['business_acceptance']),('public_https_failed','FAIL','NOT_RUN'))
+  with patch.object(owner,'probe_tagged_public_https',return_value=[]),patch.object(owner,'probe_tagged_content_chain',side_effect=ValueError('failed')):
+   result=owner.finish_tagged_runtime({'result':'runtime_ready'},lane,'8.8.8.8')
+   self.assertEqual((result['result'],result['tls_certificate_acceptance'],result['business_acceptance']),('content_chain_failed','PASS','NOT_RUN'))
+  response=Mock(status=200);response.read.return_value=b'{"home":{},"collections":[]}'
+  connection=Mock();connection.getresponse.return_value=response
+  with patch.object(owner.socket,'gethostbyname_ex',return_value=('',[],['8.8.8.8'])), patch.object(owner.http.client,'HTTPSConnection',return_value=connection):
+   self.assertEqual(owner.probe_tagged_content_chain(lane,'8.8.8.8')['status'],200)
+   response.read.return_value=b'{"error":"fallback"}'
+   with self.assertRaisesRegex(ValueError,'response invalid'):owner.probe_tagged_content_chain(lane,'8.8.8.8')
  def config(self):
   return {'instance_id':'109324752','environment':'sit','namespace':R.SCOPES['sit'][0],'node_name':R.NODE,'mode':'plan','candidate_sha':'a'*40,'platform_sha':'b'*40,'owner_sha':'c'*40,'node_uid':'1'*8+'-'+'1'*4+'-'+'1'*4+'-'+'1'*4+'-'+'1'*12,'cluster_uid':'2'*8+'-'+'2'*4+'-'+'2'*4+'-'+'2'*4+'-'+'2'*12,'manifest_sha256':'d'*64,'wait_seconds':10}
  def docs(self,stage='sit'):

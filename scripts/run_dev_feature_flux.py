@@ -34,13 +34,35 @@ def probe_tagged_public_https(lane,target_ip):
   finally:connection.close()
  return results
 
+def probe_tagged_content_chain(lane,target_ip):
+ """Check the public console's read-only content-service catalog path."""
+ _,_,_,_,hosts,_=candidate.SCOPE.scope({'environment':'sit','tagged_lane':lane})
+ host=lane['feature_tag']+'-sit.onwalk.net'
+ require(host in hosts and sorted(set(socket.gethostbyname_ex(host)[2]))==[target_ip],'content chain DNS target differs')
+ connection=http.client.HTTPSConnection(host,timeout=10)
+ connection._create_connection=lambda address,timeout=None,source_address=None:socket.create_connection((target_ip,address[1]),timeout,source_address)
+ try:
+  connection.request('GET','/api/docs/catalog')
+  response=connection.getresponse();require(response.status==200,'content chain request failed')
+  raw=response.read(262145);require(len(raw)<=262144,'content chain response too large')
+  body=json.loads(raw)
+  require(isinstance(body,dict) and isinstance(body.get('home'),dict) and isinstance(body.get('collections'),list),'content chain response invalid')
+  return {'path':'/api/docs/catalog','status':200,'collection_count':len(body['collections'])}
+ finally:connection.close()
+
 def finish_tagged_runtime(runtime,lane,target_ip):
  if runtime.get('result')!='runtime_ready':return runtime
  try:
   runtime['public_https']=probe_tagged_public_https(lane,target_ip)
-  runtime.update(result='runtime_verified',tls_certificate_acceptance='PASS',business_acceptance='NOT_RUN')
  except (OSError,ValueError,http.client.HTTPException):
   runtime.update(result='public_https_failed',tls_certificate_acceptance='FAIL',business_acceptance='NOT_RUN')
+  return runtime
+ runtime['tls_certificate_acceptance']='PASS'
+ try:
+  runtime['content_chain']=probe_tagged_content_chain(lane,target_ip)
+  runtime.update(result='runtime_verified',business_acceptance='NOT_RUN')
+ except (OSError,ValueError,http.client.HTTPException):
+  runtime.update(result='content_chain_failed',business_acceptance='NOT_RUN')
  return runtime
 
 def validate_candidate_receipt(receipt,sha,stage,run_id):
