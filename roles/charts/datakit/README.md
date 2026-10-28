@@ -9,7 +9,8 @@ Manage the DataKit Helm release in a Kubernetes DEV/SIT/UAT cluster. This role e
 - `datakit_business_log_namespace_selector`: defaults to `namespace:feature-*` for the current DEV feature lanes.
 - `datakit_caddy_metrics_url`: defaults to the current SIT Caddy metrics Service URL on port `9180`.
 - `datakit_postgresql_metrics_url`: defaults to the current SIT PostgreSQL exporter Service URL on port `9187`; retained from the existing live DataKit configuration.
-- `datakit_dataway_url` or Vault credentials and `datakit_vault_path`: required to configure the DataWay secret. Secret values are hidden from task output.
+- `datakit_dataway_secret_name`: defaults to `datakit-dataway-secret`.
+- `datakit_manage_dataway_secret`: defaults to `false` and reuses the existing Secret without reading its value. Set `true` only when intentionally creating/updating it, with a DataWay URL or Vault credentials and `VAULT_ADDR` provided at runtime. Secret values are hidden from task output.
 - Helm chart, release, namespace, version, and resource budget variables are in `defaults/main.yml`.
 
 ## Target and dependencies
@@ -27,4 +28,4 @@ Use the same CMDB inventory for a reviewed DEV/SIT/UAT deployment. The role asse
 
 ## Rollback
 
-Re-run the role with the prior reviewed values and chart version to restore the previous Helm revision. To stop only Caddy metric collection, remove the Caddy `dkconfig` entry and retain the PostgreSQL exporter entry. To restore the prior broad container log behavior, set `datakit_business_log_namespace_selector` to the previously approved selector. Rollback and deployment must use the same non-production cluster target.
+Re-run the role with the prior reviewed values and chart version to restore the previous Helm revision. To stop only Caddy metric collection, remove the Caddy `dkconfig` entry and retain the PostgreSQL exporter entry. To restore the prior broad container log behavior, set `datakit_business_log_namespace_selector` to the previously approved selector. Rollback and deployment must use the same non-production cluster target. Secret management remains disabled unless explicitly requested; when enabled, it requires runtime Vault or DataWay credentials.
