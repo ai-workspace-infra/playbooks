@@ -9,6 +9,12 @@ import dev_feature_candidate as C
 R=C.SCOPE
 
 class Contracts(unittest.TestCase):
+ def test_content_and_billing_need_real_readiness_probe(self):
+  for component in ('content','billing'):
+   R.verify_tagged_readiness_probe(component,{'readinessProbe':{'httpGet':{'path':'/readyz','port':8080}}})
+   for probe in ({}, {'httpGet':{'path':'/healthz','port':8080}}, {'httpGet':{'path':'/readyz','port':8080,'host':'external.example'}}):
+    with self.subTest(component=component,probe=probe),self.assertRaisesRegex(ValueError,'readiness probe'):
+     R.verify_tagged_readiness_probe(component,{'readinessProbe':probe})
  def test_tagged_public_probes_require_exact_dns_and_https_200(self):
   import run_dev_feature_flux as owner
   lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'e'*64}

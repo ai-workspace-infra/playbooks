@@ -142,6 +142,11 @@ def namespace_documents(c):
  """Trusted namespace identities shared by feature and independent ingress owner."""
  return documents(dict(c,mode='prepare'))[:7]
 
+def verify_tagged_readiness_probe(component,container):
+ if component in ('billing','content'):
+  probe=container.get('readinessProbe',{}).get('httpGet',{})
+  require(probe.get('path')=='/readyz' and probe.get('port')==8080 and probe.get('scheme','HTTP')=='HTTP' and not probe.get('host'),'tagged service readiness probe differs from reviewed contract')
+
 def verify_runtime(c,pods):
  mapping=c.get('runtime_mapping',{});records=mapping.get('images',{})
  names={'accounts','billing','caddy','console','content','postgresql'}
@@ -162,6 +167,7 @@ def verify_runtime(c,pods):
   require(component not in result and meta.get('namespace')==c['namespace'],'duplicate or wrong namespace component')
   spec=pod.get('spec',{});containers=spec.get('containers',[])
   require(spec.get('nodeName')==NODE and not spec.get('initContainers') and not spec.get('ephemeralContainers') and len(containers)==1 and containers[0].get('name')==component and containers[0].get('image')==expected['image'],'runtime container spec differs from candidate')
+  if c.get('tagged_lane') is not None:verify_tagged_readiness_probe(component,containers[0])
   annotations=meta.get('annotations',{})
   require(annotations.get('release.svc.plus/source_repository')==expected['source_repository'] and annotations.get('release.svc.plus/source_sha')==expected['source_sha'] and annotations.get('release.svc.plus/image_digest')==expected['manifest_digest'] and str(annotations.get('release.svc.plus/build_run_id'))==str(expected['build_run_id']),'runtime release annotations mismatch')
   status=pod.get('status',{});states=status.get('containerStatuses',[])
