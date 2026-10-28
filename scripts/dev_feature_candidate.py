@@ -140,7 +140,7 @@ def validate_documents(documents,stage,tls=False,candidate=None):
   require(not h.get('chart') and not h.get('kubeConfig') and not h.get('storageNamespace'),'cross-cluster/namespace Helm overrides rejected')
   require(h.get('valuesFrom')==[{'kind':'ConfigMap','name':'web-saas-fullstack-values','valuesKey':'values.yaml'},{'kind':'ConfigMap','name':'web-saas-fullstack-release','valuesKey':'release.yaml'}],'fixed values then immutable release overlay required')
   require(all(d.get('namespace',ns)==ns for d in h.get('dependsOn',[])),'cross-namespace dependency rejected')
-  caddy_patches=0;ingress_patches=0
+  caddy_patches=0;ingress_patches=0;metrics_patches=0
   for renderer in h.get('postRenderers',[]):
    require(set(renderer)=={'kustomize'} and set(renderer['kustomize'])<={'patches'},'unsupported post-renderer')
    for patch in renderer['kustomize'].get('patches',[]):
@@ -148,7 +148,7 @@ def validate_documents(documents,stage,tls=False,candidate=None):
     parsed=yaml.safe_load(patch.get('patch',''))
     validate_patch_scope(parsed)
     if candidate is not None:
-     allowed_targets={'Deployment':{'web-saas-caddy','web-saas-console','web-saas-accounts','web-saas-billing','web-saas-content'},'StatefulSet':{'web-saas-postgresql'},'ConfigMap':{'web-saas-caddy-config'},'NetworkPolicy':{'web-saas-caddy'}}
+     allowed_targets={'Deployment':{'web-saas-caddy','web-saas-console','web-saas-accounts','web-saas-billing','web-saas-content'},'StatefulSet':{'web-saas-postgresql'},'ConfigMap':{'web-saas-caddy-config'},'NetworkPolicy':{'web-saas-caddy','web-saas-postgresql-exporter'}}
      require(set(target)=={'kind','name'} and target.get('name') in allowed_targets.get(target.get('kind'),set()),'tagged post-renderer target must be an exact lane resource')
      if target=={'kind':'Deployment','name':'web-saas-caddy'}:
       hardened={'apiVersion':'apps/v1','kind':'Deployment','metadata':{'name':'web-saas-caddy'},'spec':{'template':{'spec':{'securityContext':{'seccompProfile':{'type':'RuntimeDefault'}},'containers':[{'name':'caddy','securityContext':{'allowPrivilegeEscalation':False,'capabilities':{'drop':['ALL']}}}]}}}}
@@ -157,6 +157,10 @@ def validate_documents(documents,stage,tls=False,candidate=None):
       expected_ingress=[{'op':'replace','path':'/spec/ingress','value':[{'from':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'platform-ingress'}},'podSelector':{'matchLabels':{'app.kubernetes.io/name':'caddy-ingress-controller'}}},{'podSelector':{}}],'ports':[{'protocol':'TCP','port':8080}]}]}]
       require(parsed==expected_ingress,'tagged Caddy ingress policy must restrict access to lane and controller')
       ingress_patches+=1
+     if target=={'kind':'NetworkPolicy','name':'web-saas-postgresql-exporter'}:
+      expected_metrics=[{'op':'replace','path':'/spec/ingress','value':[{'from':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'datakit'}},'podSelector':{'matchLabels':{'app':'datakit'}}}],'ports':[{'protocol':'TCP','port':9187}]}]}]
+      require(parsed==expected_metrics,'tagged PostgreSQL metrics policy must restrict access to the declared agent')
+      metrics_patches+=1
     if candidate is not None and target.get('kind')=='ConfigMap':
      expected={'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'web-saas-caddy-config'},'data':{'Caddyfile':tagged_caddyfile(candidate['tagged_lane']['feature_tag'])}}
      require(target=={'kind':'ConfigMap','name':'web-saas-caddy-config'} and parsed==expected,'tagged Caddy configuration differs from candidate routes')
@@ -171,6 +175,12 @@ def validate_documents(documents,stage,tls=False,candidate=None):
     require(target.get('kind') in {'Deployment','StatefulSet','Job','Service','ConfigMap','NetworkPolicy'} and str(target.get('name','')).startswith('web-saas-'),'post-renderer escaped workload allowlist')
   if candidate is not None:require(caddy_patches==1,'exactly one candidate-bound Caddy configuration required')
   if candidate is not None:require(ingress_patches==1,'exactly one restricted Caddy ingress policy patch required')
+  if candidate is not None:
+   metrics_enabled=release.get('postgresql',{}).get('metrics',{}).get('enabled',values.get('postgresql',{}).get('metrics',{}).get('enabled',False))
+   require(type(metrics_enabled) is bool and metrics_patches==(1 if metrics_enabled else 0),'PostgreSQL metrics must have exactly one scoped agent policy when enabled')
+   for data in (values,release):
+    metrics=data.get('postgresql',{}).get('metrics',{})
+    require(not metrics or (metrics.get('port',9187)==9187 and 'image' not in metrics),'tagged PostgreSQL exporter uses the fixed chart image and metrics port')
  ingresses=by_kind.get('Ingress',[])
  require({i['metadata']['name'] for i in ingresses}==({'web-saas-https'} if tls else {'web-saas-http'}),'fixed phase-specific Ingress required')
  hosts=set()
