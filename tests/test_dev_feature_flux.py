@@ -41,7 +41,7 @@ class Contracts(unittest.TestCase):
   response=Mock(status=200);response.read.return_value=b'{"home":{},"collections":[]}'
   connection=Mock();connection.getresponse.return_value=response
   with patch.object(owner.socket,'gethostbyname_ex',return_value=('',[],['8.8.8.8'])), patch.object(owner.http.client,'HTTPSConnection',return_value=connection):
-   self.assertEqual(owner.probe_tagged_content_chain(lane,'8.8.8.8')['status'],200)
+   evidence=owner.probe_tagged_content_chain(lane,'8.8.8.8');self.assertEqual(evidence['status'],200);self.assertIs(evidence['fresh_backend_verified'],False)
    response.read.return_value=b'{"error":"fallback"}'
    with self.assertRaisesRegex(ValueError,'response invalid'):owner.probe_tagged_content_chain(lane,'8.8.8.8')
  def config(self):

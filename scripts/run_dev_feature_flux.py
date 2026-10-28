@@ -35,7 +35,7 @@ def probe_tagged_public_https(lane,target_ip):
  return results
 
 def probe_tagged_content_chain(lane,target_ip):
- """Check the public console's read-only content-service catalog path."""
+ """Check catalog response; Next.js may serve cached upstream data."""
  _,_,_,_,hosts,_=candidate.SCOPE.scope({'environment':'sit','tagged_lane':lane})
  host=lane['feature_tag']+'-sit.onwalk.net'
  require(host in hosts and sorted(set(socket.gethostbyname_ex(host)[2]))==[target_ip],'content chain DNS target differs')
@@ -47,7 +47,7 @@ def probe_tagged_content_chain(lane,target_ip):
   raw=response.read(262145);require(len(raw)<=262144,'content chain response too large')
   body=json.loads(raw)
   require(isinstance(body,dict) and isinstance(body.get('home'),dict) and isinstance(body.get('collections'),list),'content chain response invalid')
-  return {'path':'/api/docs/catalog','status':200,'collection_count':len(body['collections'])}
+  return {'path':'/api/docs/catalog','status':200,'collection_count':len(body['collections']),'fresh_backend_verified':False}
  finally:connection.close()
 
 def finish_tagged_runtime(runtime,lane,target_ip):
