@@ -45,6 +45,10 @@ class Contracts(unittest.TestCase):
    connection.request.assert_called_once_with('GET','/api/docs/search?query=sit-probe-'+'e'*16,headers={'Cache-Control':'no-store'})
    response.read.return_value=b'{"error":"fallback"}'
    with self.assertRaisesRegex(ValueError,'response invalid'):owner.probe_tagged_content_chain(lane,'8.8.8.8')
+   response.read.return_value=b' '*262145
+   with self.assertRaisesRegex(ValueError,'too large'):owner.probe_tagged_content_chain(lane,'8.8.8.8')
+   response.status=502
+   with self.assertRaisesRegex(ValueError,'request failed'):owner.probe_tagged_content_chain(lane,'8.8.8.8')
  def config(self):
   return {'instance_id':'109324752','environment':'sit','namespace':R.SCOPES['sit'][0],'node_name':R.NODE,'mode':'plan','candidate_sha':'a'*40,'platform_sha':'b'*40,'owner_sha':'c'*40,'node_uid':'1'*8+'-'+'1'*4+'-'+'1'*4+'-'+'1'*4+'-'+'1'*12,'cluster_uid':'2'*8+'-'+'2'*4+'-'+'2'*4+'-'+'2'*4+'-'+'2'*12,'manifest_sha256':'d'*64,'wait_seconds':10}
  def docs(self,stage='sit'):
