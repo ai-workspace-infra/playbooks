@@ -185,7 +185,7 @@ class Contracts(unittest.TestCase):
   lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'e'*64}
   ns,_,_,_,hosts,_=R.scope({'environment':'sit','tagged_lane':lane})
   candidate={'tagged_lane':lane,'chart_digest':'sha256:'+'f'*64,'knowledge':{'repository':'ai-workspace-services/knowledge','sha':'a'*40},
-             'components':{name:{'image':image,**old['sources'][name]} for name,image in old['images'].items()}}
+             'components':{name:{'image':image,'source_repository':old['sources'][name]['repository'],'source_sha':old['sources'][name]['source_sha'],'build_run_id':old['sources'][name]['build_run_id']} for name,image in old['images'].items()}}
   docs.insert(0,{'apiVersion':'networking.k8s.io/v1','kind':'NetworkPolicy','metadata':{'name':'lane-isolation','namespace':ns},'spec':{'podSelector':{},'policyTypes':['Ingress','Egress'],'ingress':[{'from':[{'podSelector':{}}]}],'egress':[{'to':[{'podSelector':{}}]},{'to':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'kube-system'}},'podSelector':{'matchLabels':{'k8s-app':'kube-dns'}}}],'ports':[{'protocol':'UDP','port':53},{'protocol':'TCP','port':53}]}]}})
   ranges=json.loads((ROOT/'scripts/github_git_cidrs.json').read_text())['git']
   docs.insert(1,{'apiVersion':'networking.k8s.io/v1','kind':'NetworkPolicy','metadata':{'name':'content-github-egress','namespace':ns},'spec':{'podSelector':{'matchLabels':{'websaas.io/workload':'content'}},'policyTypes':['Egress'],'egress':[{'to':[{'ipBlock':{'cidr':cidr}} for cidr in ranges],'ports':[{'protocol':'TCP','port':443}]}]}})

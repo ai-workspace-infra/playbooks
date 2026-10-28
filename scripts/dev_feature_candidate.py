@@ -149,7 +149,7 @@ def validate_documents(documents,stage,tls=False,candidate=None):
   images=image_set(release)
   sources={name:{'repository':release[name]['podAnnotations']['release.svc.plus/source_repository'],'source_sha':release[name]['podAnnotations']['release.svc.plus/source_sha'],'build_run_id':str(release[name]['podAnnotations']['release.svc.plus/build_run_id'])} for name in images}
   if candidate is not None:
-   observed={name:{'image':images[name],**sources[name]} for name in images}
+   observed={name:{'image':images[name],'source_repository':sources[name]['repository'],'source_sha':sources[name]['source_sha'],'build_run_id':sources[name]['build_run_id']} for name in images}
    require(observed==candidate['components'],'rendered images or sources differ from authenticated candidate')
   oci=by_kind.get('OCIRepository',[])
   require(len(oci)==1 and oci[0]['metadata']['name']=='web-saas-fullstack-chart','single fixed chart source required')
