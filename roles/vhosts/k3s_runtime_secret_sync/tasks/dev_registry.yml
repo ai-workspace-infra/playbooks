@@ -4,7 +4,10 @@
     that:
       - k3s_runtime_secret_sync_apply | bool
       - k3s_runtime_secret_sync_items | length == 0
-      - dev_feature_config.namespace in ['feature-xconnect-referral-sit', 'web-saas-uat']
+      - >-
+        dev_feature_config.namespace in ['feature-xconnect-referral-sit', 'web-saas-uat'] or
+        (dev_feature_config.environment == 'sit' and dev_feature_config.tagged_lane is defined and
+         dev_feature_config.namespace == ('feature-' ~ dev_feature_config.tagged_lane.feature_id ~ '-sit'))
       - dev_feature_config.mode == 'prepare'
   no_log: true
 - name: Project only the approved Dev GHCR record over strict SSH stdin

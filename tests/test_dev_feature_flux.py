@@ -184,6 +184,25 @@ class RegistryProjectionTests(unittest.TestCase):
   with self.assertRaises(ValueError):module.build('web-saas-uat',{})
 
 class CandidateEvolutionTests(unittest.TestCase):
+ def test_tagged_receipt_requires_same_main_caller_run_attempt_and_fingerprint(self):
+  from unittest.mock import patch
+  import run_dev_feature_flux as owner
+  repo='ai-workspace-infra/Platform-Orchestrator';sha='a'*40
+  lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'d'*64}
+  projection={'tagged_lane':lane,'chart_digest':'sha256:'+'e'*64,'components':{name:{} for name in ('caddy','postgresql','console','accounts','billing','content')}}
+  source={'repository':repo,'workflow_ref':repo+'/.github/workflows/feature-lane-deploy.yml@refs/heads/main','run_id':'123','run_attempt':'2','workflow_sha':'f'*40}
+  receipt={'schema_version':'dev-feature-candidate/v2','result':'verified','repository':'ai-workspace-infra/gitops','stage':'sit','candidate_head':sha,'candidate_sha256':'d'*64,'projection':projection,'source':source}
+  env={'GITHUB_REPOSITORY':repo,'GITHUB_RUN_ATTEMPT':'2','GITHUB_SHA':'f'*40,'GITHUB_WORKFLOW_REF':source['workflow_ref']}
+  with patch.dict('os.environ',env,clear=False):
+   self.assertEqual(owner.validate_candidate_receipt(receipt,sha,'sit','123')['candidate_sha256'],'d'*64)
+   for key,value in [('run_id','124'),('run_attempt','1'),('workflow_sha','b'*40),('workflow_ref',repo+'/.github/workflows/other.yml@refs/heads/main')]:
+    bad=copy.deepcopy(receipt);bad['source'][key]=value
+    with self.subTest(key=key),self.assertRaises(ValueError):owner.validate_candidate_receipt(bad,sha,'sit','123')
+   bad=copy.deepcopy(receipt);bad['candidate_sha256']='c'*64
+   with self.assertRaisesRegex(ValueError,'fingerprint mismatch'):owner.validate_candidate_receipt(bad,sha,'sit','123')
+   with patch.dict('os.environ',{'GITHUB_WORKFLOW_REF':repo+'/.github/workflows/other.yml@refs/heads/main'}):
+    with self.assertRaisesRegex(ValueError,'protected tagged caller'):owner.validate_candidate_receipt(receipt,sha,'sit','123')
+
  def test_two_pr_heads_and_changed_images_use_same_owner_policy(self):
   import run_dev_feature_flux as owner
   for sha,pr in [('a'*40,605),('b'*40,606)]:
