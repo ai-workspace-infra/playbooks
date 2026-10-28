@@ -98,6 +98,36 @@ class Contracts(unittest.TestCase):
   c=self.config();c['namespace']='feature-other-sit'
   with self.assertRaises(ValueError):R.validate(c)
 
+ def test_tagged_feature_uses_its_own_namespace_path_and_owner(self):
+  c=self.config();c['namespace']='feature-sit-test-1483-sit'
+  c['tagged_lane']={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'e'*64}
+  R.validate(c);ns,source,path,feature,domains,tag=R.scope(c)
+  self.assertEqual((ns,source,feature,tag),('feature-sit-test-1483-sit','feature-sit-test-1483-sit','sit-test-1483','smoke-sit-test-1483'))
+  self.assertEqual(path,'./services/distributed-web-saas-fullstack/dev/feature-lanes/sit-test-1483')
+  self.assertEqual(domains,{'smoke-sit-test-1483-sit.onwalk.net','accounts-smoke-sit-test-1483-sit.onwalk.net','billing-smoke-sit-test-1483-sit.onwalk.net'})
+  docs=R.documents(c)
+  self.assertEqual(docs[0]['metadata']['name'],ns)
+  self.assertEqual(docs[0]['metadata']['labels']['release.svc.plus/feature-tag'],tag)
+  self.assertTrue(all(x['metadata'].get('namespace')==ns for x in docs[1:]))
+  self.assertEqual(docs[-1]['spec']['path'],path)
+  self.assertEqual(docs[-2]['spec']['ref'],{'commit':c['candidate_sha']})
+  self.assertFalse(any(x['kind'] in ('ClusterRole','ClusterRoleBinding','Secret') for x in docs))
+  for change in ({'feature_tag':'smoke-other-1483'}, {'feature_id':'../prod'}, {'candidate_sha256':'latest'}):
+   bad=copy.deepcopy(c);bad['tagged_lane'].update(change)
+   with self.subTest(change=change),self.assertRaises(ValueError):R.validate(bad)
+  bad=copy.deepcopy(c);bad['mode']='rebuild';bad['namespace_uid']='1'*8+'-'+'1'*4+'-'+'1'*4+'-'+'1'*4+'-'+'1'*12
+  with self.assertRaisesRegex(ValueError,'rebuild is not authorized'):R.validate(bad)
+  bad=copy.deepcopy(c);bad['namespace']='feature-another-sit'
+  with self.assertRaises(ValueError):R.validate(bad)
+  base=self.baseline(c)
+  class Occupied:
+   def get(self,kind,name=None,namespace=None,optional=False):
+    if kind=='nodes':return base[0]
+    if kind=='namespace' and name=='kube-system':return base[1]
+    if kind=='namespace':return {'metadata':{'labels':{'app.kubernetes.io/managed-by':'dev-feature-flux-owner','environment':'sit','release.svc.plus/feature':'sit-test-1483','feature_id':'sit-test-1483','release.svc.plus/feature-tag':'other-sit-test-1483'}}}
+    return base[2] if kind=='gitrepository' else base[3]
+  with self.assertRaisesRegex(ValueError,'no takeover'):R.execute(c,Occupied())
+
 
 class PhaseTests(unittest.TestCase):
  config=Contracts.config
