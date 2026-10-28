@@ -216,6 +216,8 @@
         name: vhosts/postgres_exporter
       tags:
         - postgres_exporter
+      when:
+        - (observability_deployment_mode | default('ansible')) != 'fluxcd'
 
     - name: Include vector-agent role
       ansible.builtin.import_role:

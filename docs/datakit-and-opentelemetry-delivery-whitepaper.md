@@ -413,6 +413,13 @@ flowchart LR
 
 ### 2. GitOps + Flux HelmRelease 交付链路
 
+For Kubernetes-hosted PostgreSQL in `dev-k3s-v5` (SIT) and `prod-k3s-v5`
+(PROD), the deployment mode is FluxCD-owned: PostgreSQL exporter and its
+DataKit scrape configuration are declared in GitOps and reconciled with the
+cluster. `deploy_observability_agent.yml` must not install a second host-level
+exporter when `observability_deployment_mode=fluxcd`; host/systemd exporter
+collection remains available for non-Kubernetes hosts only.
+
 遵循不可变交付与 GitOps 自动化流水线，监控采集器以完整 OCI Chart 发布并对账：
 1. **OCI Chart 打包与安全发布** (`ai-workspace-infra/artifacts`):
    - 发布不可变 Helm Chart: `ghcr.io/ai-workspace-infra/distributed-web-saas-fullstack:0.2.8`
