@@ -191,7 +191,7 @@ def validate_documents(documents,stage,tls=False,candidate=None):
   if candidate is not None:require(ingress_patches==1,'exactly one restricted Caddy ingress policy patch required')
   if candidate is not None:
    metrics_enabled=release.get('postgresql',{}).get('metrics',{}).get('enabled',values.get('postgresql',{}).get('metrics',{}).get('enabled',False))
-   require(type(metrics_enabled) is bool and metrics_patches==(1 if metrics_enabled else 0),'PostgreSQL metrics must have exactly one scoped agent policy when enabled')
+   require(metrics_enabled is False and metrics_patches==0,'tagged PostgreSQL exporter requires an independently verified read-only database identity')
    for data in (values,release):
     metrics=data.get('postgresql',{}).get('metrics',{})
     require(not metrics or (metrics.get('port',9187)==9187 and 'image' not in metrics),'tagged PostgreSQL exporter uses the fixed chart image and metrics port')

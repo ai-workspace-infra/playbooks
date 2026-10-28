@@ -179,10 +179,10 @@ class Contracts(unittest.TestCase):
   bad=copy.deepcopy(candidate);bad['knowledge']['sha']='b'*40
   with self.assertRaisesRegex(ValueError,'knowledge source differs'):C.validate_documents(docs,'sit',candidate=bad)
   metrics_docs=copy.deepcopy(docs);cm=next(x for x in metrics_docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values');values=yaml.safe_load(cm['data']['values.yaml']);values['postgresql']['metrics']={'enabled':True};cm['data']['values.yaml']=yaml.safe_dump(values)
-  with self.assertRaisesRegex(ValueError,'scoped agent policy'):C.validate_documents(metrics_docs,'sit',candidate=candidate)
+  with self.assertRaisesRegex(ValueError,'read-only database identity'):C.validate_documents(metrics_docs,'sit',candidate=candidate)
   metrics_patch=[{'op':'replace','path':'/spec/ingress','value':[{'from':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'datakit'}},'podSelector':{'matchLabels':{'app':'datakit'}}}],'ports':[{'protocol':'TCP','port':9187}]}]}]
   patches=next(x for x in metrics_docs if x['kind']=='HelmRelease')['spec']['postRenderers'][0]['kustomize']['patches'];patches.append({'target':{'kind':'NetworkPolicy','name':'web-saas-postgresql-exporter'},'patch':yaml.safe_dump(metrics_patch)})
-  C.validate_documents(metrics_docs,'sit',candidate=candidate)
+  with self.assertRaisesRegex(ValueError,'read-only database identity'):C.validate_documents(metrics_docs,'sit',candidate=candidate)
   patches[-1]['patch']='- op: replace\n  path: /spec/ingress\n  value: [{}]'
   with self.assertRaisesRegex(ValueError,'declared agent'):C.validate_documents(metrics_docs,'sit',candidate=candidate)
   bad=copy.deepcopy(docs);bad[0]['spec']['ingress']=[{}]
