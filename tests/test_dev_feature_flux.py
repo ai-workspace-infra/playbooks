@@ -117,6 +117,8 @@ class Contracts(unittest.TestCase):
    with self.subTest(change=change),self.assertRaises(ValueError):R.validate(bad)
   bad=copy.deepcopy(c);bad['mode']='rebuild';bad['namespace_uid']='1'*8+'-'+'1'*4+'-'+'1'*4+'-'+'1'*4+'-'+'1'*12
   with self.assertRaisesRegex(ValueError,'rebuild is not authorized'):R.validate(bad)
+  bad=copy.deepcopy(c);bad['mode']='enable-tls'
+  with self.assertRaisesRegex(ValueError,'no separate TLS'):R.validate(bad)
   bad=copy.deepcopy(c);bad['namespace']='feature-another-sit'
   with self.assertRaises(ValueError):R.validate(bad)
   base=self.baseline(c)
@@ -138,6 +140,7 @@ class Contracts(unittest.TestCase):
   next(x for x in docs if x['kind']=='HelmRelease')['spec']['targetNamespace']=ns
   next(x for x in docs if x['kind']=='OCIRepository')['spec']['ref']={'digest':candidate['chart_digest']}
   ingress=next(x for x in docs if x['kind']=='Ingress')
+  ingress['metadata']['annotations']={};ingress['spec']['ingressClassName']='caddy'
   for rule,host in zip(ingress['spec']['rules'],sorted(hosts)):rule['host']=host
   result=C.validate_documents(docs,'sit',candidate=candidate)
   self.assertEqual(result['namespace'],ns);self.assertEqual(set(result['hosts']),hosts)
@@ -149,6 +152,9 @@ class Contracts(unittest.TestCase):
   with self.assertRaisesRegex(ValueError,'chart source/digest'):C.validate_documents(docs,'sit',candidate=bad)
   bad=copy.deepcopy(docs);bad[-1]['spec']['rules'][0]['host']='other-sit.onwalk.net'
   with self.assertRaises(ValueError):C.validate_documents(bad,'sit',candidate=candidate)
+  bad=copy.deepcopy(docs);bad[-1]['spec']['ingressClassName']='traefik'
+  with self.assertRaisesRegex(ValueError,'reviewed Caddy ingress'):C.validate_documents(bad,'sit',candidate=candidate)
+  with self.assertRaisesRegex(ValueError,'no separate TLS'):C.validate_documents(docs,'sit',True,candidate)
   with self.assertRaises(ValueError):C.validate_documents(docs,'uat',candidate=candidate)
 
 
@@ -189,6 +195,32 @@ class PhaseTests(unittest.TestCase):
   client=Client()
   with self.assertRaisesRegex(ValueError,'tagged seed receipt differs'):R.execute(c,client)
   self.assertEqual(client.applied,[])
+
+ def test_tagged_caddy_submit_requires_dns_before_any_apply(self):
+  c=self.config();c.update(namespace='feature-sit-test-1483-sit',mode='submit',
+      tagged_lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'e'*64})
+  base=self.baseline(c)
+  class Client:
+   def __init__(self):self.applied=[]
+   def get(self,kind,name=None,namespace=None,optional=False):
+    if kind=='nodes':return base[0]
+    if kind=='namespace':return base[1] if name=='kube-system' else None
+    return base[2] if kind=='gitrepository' else base[3]
+   def apply(self,docs):self.applied.append(docs)
+  client=Client()
+  with self.assertRaisesRegex(ValueError,'public Dev ingress address'):R.execute(c,client)
+  c['target_ip']='172.237.5.48'
+  with self.assertRaisesRegex(ValueError,'DNS/HTTP evidence'):R.execute(c,client)
+  self.assertEqual(client.applied,[])
+  hosts=R.scope(c)[4]
+  c['dns_http_proof']=[{'host':host,'addresses':[c['target_ip']],'http_status':308,
+                         'redirect_location':'https://'+host+'/.well-known/acme-challenge/owner-preflight'} for host in hosts]
+  c['dns_http_proof'][0]['redirect_location']='https://untrusted.invalid/'
+  with self.assertRaisesRegex(ValueError,'DNS/HTTP evidence'):R.execute(c,client)
+  self.assertEqual(client.applied,[])
+  c['dns_http_proof'][0]['redirect_location']='https://'+c['dns_http_proof'][0]['host']+'/.well-known/acme-challenge/owner-preflight'
+  self.assertEqual(R.execute(c,client)['result'],'submitted_pending_seed')
+  self.assertTrue(client.applied)
 
 class RegistryProjectionTests(unittest.TestCase):
  def test_only_fixed_namespace_and_registry_secret(self):

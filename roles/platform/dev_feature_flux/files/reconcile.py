@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Trusted Dev SIT namespace owner; never promotes the platform root to a PR."""
-import datetime,json,os,re,subprocess,time
+import datetime,ipaddress,json,os,re,subprocess,time
 
 NS='feature-xconnect-referral-sit'
 FEATURE='xconnect-referral'
@@ -85,6 +85,7 @@ def validate(c):
  ns,_,_,_,_,tag=scope(c)
  require(c.get('namespace')==ns and c.get('node_name')==NODE,'fixed Dev lane scope required')
  require(c.get('mode') in ('plan','prepare','rebuild','submit','verify','enable-tls'),'explicit mode required')
+ if tag is not None:require(c.get('mode')!='enable-tls','tagged Caddy lane has no separate TLS ingress phase')
  if c.get('mode')=='rebuild':
   require(tag is None,'tagged lane rebuild is not authorized by this owner')
   require(c.get('environment')=='sit' and UUID.fullmatch(c.get('namespace_uid','')),'SIT rebuild requires the authenticated current namespace UID')
@@ -274,6 +275,12 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
   require(seed.get('schema_version')=='dev-lane-seed/v1' and seed.get('result')=='verified' and seed.get('namespace')==NS and seed.get('namespace_uid')==c.get('namespace_uid') and seed.get('candidate_sha')==c['candidate_sha'] and seed.get('node_uid')==c['node_uid'] and seed.get('cluster_uid')==c['cluster_uid'] and seed.get('instance_id')==c['instance_id'] and seed.get('database_roles')==['xc_accounts_rw','xc_billing_rw'] and seed.get('schema_initialized') is True,'independent namespace seed owner receipt required before application reconciliation')
   if tag is not None:
    require(seed.get('feature_id')==feature and seed.get('feature_tag')==tag and seed.get('candidate_sha256')==c['tagged_lane']['candidate_sha256'],'tagged seed receipt differs from candidate')
+ if tag is not None and c['mode']=='submit':
+  proof=c.get('dns_http_proof',[])
+  try:target=ipaddress.IPv4Address(c.get('target_ip',''))
+  except (ipaddress.AddressValueError,TypeError):raise ValueError('valid public Dev ingress address required') from None
+  require(target.is_global,'valid public Dev ingress address required')
+  require({x.get('host') for x in proof}==domains and all(x.get('addresses')==[c.get('target_ip')] and x.get('http_status') in (200,404,308) and (x.get('http_status')!=308 or x.get('redirect_location')=='https://'+x['host']+'/.well-known/acme-challenge/owner-preflight') for x in proof),'fresh tagged DNS/HTTP evidence required before Caddy ingress')
  if c['mode']=='enable-tls':
   require(existing is not None,'prepare the namespace first')
   proof=c.get('dns_http_proof',[])

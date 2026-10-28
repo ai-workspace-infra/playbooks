@@ -82,7 +82,7 @@ def execute(a):
   config['namespace_uid']=prior.get('namespace_uid')
   require(candidate.SCOPE.UUID.fullmatch(config['namespace_uid'] or ''),'prior SIT namespace UID missing')
   validate_prepare_receipt(prior,config,observation)
- if a.mode=='enable-tls':
+ if a.mode=='enable-tls' or (projection is not None and a.mode=='submit'):
   config['target_ip']=cmdb['dev-k3s-v5']['ip'];proof=[]
   for host in observation['hosts']:
    addresses=sorted(set(socket.gethostbyname_ex(host)[2]))
@@ -90,10 +90,12 @@ def execute(a):
    connection=http.client.HTTPConnection(host,80,timeout=10)
    try:
     connection.request('GET','/.well-known/acme-challenge/owner-preflight')
-    status=connection.getresponse().status
+    response=connection.getresponse();status=response.status;location=response.getheader('Location')
+    if status==308:
+     require(location=='https://'+host+'/.well-known/acme-challenge/owner-preflight','HTTP redirect leaves the selected lane host')
    finally:connection.close()
-   require(status in (200,404),'HTTP challenge entrypoint not reachable without redirect')
-   proof.append({'host':host,'addresses':addresses,'http_status':status})
+   require(status in ((200,404,308) if projection is not None else (200,404)),'HTTP challenge entrypoint not reachable')
+   proof.append({'host':host,'addresses':addresses,'http_status':status,'redirect_location':location if status==308 else None})
   config['dns_http_proof']=proof
  candidate.SCOPE.validate(config)
  if a.mode=='verify':

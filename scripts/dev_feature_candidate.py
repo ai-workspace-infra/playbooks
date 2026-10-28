@@ -71,6 +71,7 @@ def candidate_scope(stage,candidate):
 
 def validate_documents(documents,stage,tls=False,candidate=None):
  require(stage in SCOPE.SCOPES,'unsupported lane stage')
+ if candidate is not None:require(not tls,'tagged Caddy lane has no separate TLS ingress phase')
  ns,_,allowed_hosts,chart=candidate_scope(stage,candidate)
  keys=set();by_kind={}
  for doc in documents:
@@ -126,10 +127,13 @@ def validate_documents(documents,stage,tls=False,candidate=None):
  hosts=set()
  for item in ingresses:
   annotations=item['metadata'].get('annotations',{})
-  require(set(annotations)<= {'kubernetes.io/ingress.class','traefik.ingress.kubernetes.io/router.entrypoints','traefik.ingress.kubernetes.io/router.tls','traefik.ingress.kubernetes.io/router.tls.certresolver'},'unreviewed ingress annotation')
-  require(annotations.get('kubernetes.io/ingress.class')=='dev-web-saas' and not item['spec'].get('ingressClassName'),'fixed isolated Traefik annotation required')
-  if tls:require(annotations.get('traefik.ingress.kubernetes.io/router.tls.certresolver')=='dev-http01','fixed TLS resolver required')
-  else:require(not annotations.get('traefik.ingress.kubernetes.io/router.tls.certresolver'),'ACME must not be enabled before DNS proof')
+  if candidate is not None:
+   require(not annotations and item['spec'].get('ingressClassName')=='caddy' and not item['spec'].get('tls'),'tagged lane requires reviewed Caddy ingress without external TLS secrets')
+  else:
+   require(set(annotations)<= {'kubernetes.io/ingress.class','traefik.ingress.kubernetes.io/router.entrypoints','traefik.ingress.kubernetes.io/router.tls','traefik.ingress.kubernetes.io/router.tls.certresolver'},'unreviewed ingress annotation')
+   require(annotations.get('kubernetes.io/ingress.class')=='dev-web-saas' and not item['spec'].get('ingressClassName'),'fixed isolated Traefik annotation required')
+   if tls:require(annotations.get('traefik.ingress.kubernetes.io/router.tls.certresolver')=='dev-http01','fixed TLS resolver required')
+   else:require(not annotations.get('traefik.ingress.kubernetes.io/router.tls.certresolver'),'ACME must not be enabled before DNS proof')
   for rule in item['spec'].get('rules',[]):
    require(rule.get('host') in allowed_hosts,'public hostname not in trusted onwalk.net lane allowlist')
    hosts.add(rule['host'])
