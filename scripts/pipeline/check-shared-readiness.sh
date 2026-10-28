@@ -47,10 +47,25 @@ jq -e '.database == "ok"' <<<"${observability_body}" >/dev/null || {
   exit 1
 }
 
-iam_body="$(probe_json iam "${iam_endpoint}/.well-known/openid-configuration")" || exit 1
-jq -e --arg issuer "${expected_iam_issuer}" '.issuer == $issuer' <<<"${iam_body}" >/dev/null || {
-  echo "::error::Shared IAM discovery issuer does not match ${expected_iam_issuer}." >&2
-  exit 1
-}
+iam_mode="${SHARED_IAM_READINESS_MODE:-required}"
+case "$iam_mode" in
+  required)
+    iam_body="$(probe_json iam "${iam_endpoint}/.well-known/openid-configuration")" || exit 1
+    jq -e --arg issuer "${expected_iam_issuer}" '.issuer == $issuer' <<<"${iam_body}" >/dev/null || {
+      echo "::error::Shared IAM discovery issuer does not match ${expected_iam_issuer}." >&2
+      exit 1
+    }
+    
+    ;;
+  offline)
+    [[ "${SHARED_IAM_OFFLINE_REASON:-}" == "temporarily-offline" ]] || {
+      echo '::error::Offline IAM requires the explicit temporary-offline reason.' >&2
+      exit 2
+    }
+    echo '::warning::IAM readiness SKIPPED: temporarily offline; endpoint configuration retained.'
+    echo 'IAM readiness: SKIPPED (temporarily offline; configuration retained).' >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+    ;;
+  *) echo '::error::Invalid IAM readiness mode.' >&2; exit 2 ;;
+esac
 
-echo 'Shared readiness passed: Vault → Observability → IAM (read-only).'
+echo 'Shared Vault and Observability readiness passed; IAM mode:' "$iam_mode"
