@@ -257,7 +257,6 @@ def rebuild_namespace(c,client,existing,sleep,clock):
 
 def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
  validate(c);require(re.fullmatch(r'[1-9][0-9]*',str(c.get('instance_id',''))),'CMDB instance identity required')
- require(not (c.get('tagged_lane') is not None and c.get('mode')=='verify'),'tagged acceptance requires implemented TLS and service health evidence')
  client=client or Client()
  NS,SOURCE,PATH,feature,domains,tag=scope(c)
  def base():return (client.get('nodes'),client.get('namespace','kube-system'),client.get('gitrepository','platform-config','flux-system'),client.get('kustomization','platform-root','flux-system'))
@@ -319,7 +318,7 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
     current=client.get('namespace',NS)
     require(current['metadata'].get('uid')==c['namespace_uid'] and not current['metadata'].get('deletionTimestamp'),'namespace changed during runtime verification')
     report['runtime_images']=verify_runtime(c,client.get('pods',namespace=NS))
-   report.update(result='verified',source_revision=source['status']['artifact']['revision'],applied_revision=root['status']['lastAppliedRevision'],helm_ready=True,tls_certificate_acceptance='NOT_RUN',watch_main=c['environment']=='uat',observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+   report.update(result=('runtime_ready' if tag is not None and c['mode']=='verify' else 'verified'),source_revision=source['status']['artifact']['revision'],applied_revision=root['status']['lastAppliedRevision'],helm_ready=True,tls_certificate_acceptance='NOT_RUN',business_acceptance='NOT_RUN',watch_main=c['environment']=='uat',observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
    return report
   if clock()>=deadline:
    report.update(result='not_ready',source_ready=bool(source and ready(source)),kustomization_ready=bool(root and ready(root)),helm_ready=bool(release and ready(release)))

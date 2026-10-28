@@ -34,6 +34,15 @@ def probe_tagged_public_https(lane,target_ip):
   finally:connection.close()
  return results
 
+def finish_tagged_runtime(runtime,lane,target_ip):
+ if runtime.get('result')!='runtime_ready':return runtime
+ try:
+  runtime['public_https']=probe_tagged_public_https(lane,target_ip)
+  runtime.update(result='runtime_verified',tls_certificate_acceptance='PASS',business_acceptance='NOT_RUN')
+ except (OSError,ValueError,http.client.HTTPException):
+  runtime.update(result='public_https_failed',tls_certificate_acceptance='FAIL',business_acceptance='NOT_RUN')
+ return runtime
+
 def validate_candidate_receipt(receipt,sha,stage,run_id):
  if receipt.get('schema_version')=='dev-feature-candidate/v2':
   require(receipt.get('result')=='verified' and receipt.get('repository')=='ai-workspace-infra/gitops' and receipt.get('stage')=='sit' and stage=='sit' and receipt.get('candidate_head')==sha,'verified tagged SIT candidate required')
@@ -150,9 +159,12 @@ def execute(a):
   require(report.is_file(),'no runtime owner receipt')
   runtime=json.loads(report.read_text())
   if p.returncode!=0:runtime['result']='owner_failed'
+  if projection is not None and a.mode=='verify' and runtime.get('result')=='runtime_ready':
+   finish_tagged_runtime(runtime,projection['tagged_lane'],cmdb['dev-k3s-v5']['ip'])
   runtime.update(instance_id=a.instance_id,cmdb_sha256=a.cmdb_sha256,candidate=observation,candidate_control_plane=verified_candidate,candidate_receipt_sha256=a.candidate_sha256,run_id=os.environ.get('GITHUB_RUN_ID'),run_attempt=os.environ.get('GITHUB_RUN_ATTEMPT'))
   a.receipt.parent.mkdir(parents=True,exist_ok=True);a.receipt.write_text(json.dumps(runtime,sort_keys=True)+'\n')
-  require(p.returncode==0 and runtime.get('result')=={'plan':'planned','prepare':'prepared','rebuild':'prepared','submit':'submitted_pending_seed','verify':'verified','enable-tls':'verified'}[a.mode],'namespace deployment did not verify')
+  expected={'plan':'planned','prepare':'prepared','rebuild':'prepared','submit':'submitted_pending_seed','verify':('runtime_verified' if projection is not None else 'verified'),'enable-tls':'verified'}[a.mode]
+  require(p.returncode==0 and runtime.get('result')==expected,'namespace deployment did not verify')
 
 def main():
  p=argparse.ArgumentParser()
