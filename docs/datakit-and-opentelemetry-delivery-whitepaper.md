@@ -106,7 +106,7 @@ flowchart TD
 > [!CAUTION] 鉴权 Token 格式规则
 > 观测云公网 DataWay 网关鉴权对 Token 格式有严格校验：
 > 1. 以 `cn3.` 或 `cn6.` 开头的字符串为 OpenAPI / Agent 管理 API Key，直接传入 DataWay 会被拒绝，抛出 `403 Forbidden: {"error_code":"kodo.invalidClientToken"}`。
-> 2. DataKit 上报与 DataWay 直连必须使用工作空间正式 Client Token（如 `tkn_fffcb87e09694507b31c98b17405cc11`）。
+> 2. DataKit 上报与 DataWay 直连必须使用工作空间正式 Client Token（如 `<DATAWAY_TOKEN>`）。
 > 3. OpenTelemetry 协议上报必须通过 HTTP 请求头携带 `X-Token=<OTEL_TOKEN>` 及 `To-Headless=true`。
 
 ### 2. ExternalSecrets Operator (ESO) 绑定规范
