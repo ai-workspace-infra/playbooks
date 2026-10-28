@@ -124,6 +124,12 @@ def validate_documents(documents,stage,tls=False,candidate=None):
     target=patch.get('target',{})
     parsed=yaml.safe_load(patch.get('patch',''))
     validate_patch_scope(parsed)
+    if candidate is not None:
+     allowed_targets={'Deployment':{'web-saas-caddy','web-saas-console','web-saas-accounts','web-saas-billing','web-saas-content'},'StatefulSet':{'web-saas-postgresql'},'ConfigMap':{'web-saas-caddy-config'},'NetworkPolicy':{'web-saas-caddy'}}
+     require(set(target)=={'kind','name'} and target.get('name') in allowed_targets.get(target.get('kind'),set()),'tagged post-renderer target must be an exact lane resource')
+     if target=={'kind':'Deployment','name':'web-saas-caddy'}:
+      hardened={'apiVersion':'apps/v1','kind':'Deployment','metadata':{'name':'web-saas-caddy'},'spec':{'template':{'spec':{'securityContext':{'seccompProfile':{'type':'RuntimeDefault'}},'containers':[{'name':'caddy','securityContext':{'allowPrivilegeEscalation':False,'capabilities':{'drop':['ALL']}}}]}}}}
+      require(parsed==hardened,'tagged Caddy workload permits only the reviewed hardening patch')
     if candidate is not None and target.get('kind')=='ConfigMap':
      expected={'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'web-saas-caddy-config'},'data':{'Caddyfile':tagged_caddyfile(candidate['tagged_lane']['feature_tag'])}}
      require(target=={'kind':'ConfigMap','name':'web-saas-caddy-config'} and parsed==expected,'tagged Caddy configuration differs from candidate routes')

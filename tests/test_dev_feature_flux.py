@@ -152,6 +152,11 @@ class Contracts(unittest.TestCase):
    with self.subTest(old=old),self.assertRaisesRegex(ValueError,'candidate routes'):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(docs);next(x for x in bad if x['kind']=='HelmRelease')['spec']['postRenderers']=[]
   with self.assertRaisesRegex(ValueError,'exactly one'):C.validate_documents(bad,'sit',candidate=candidate)
+  bad=copy.deepcopy(docs);patches=next(x for x in bad if x['kind']=='HelmRelease')['spec']['postRenderers'][0]['kustomize']['patches']
+  patches.append({'target':{'kind':'Deployment','name':'web-saas-.*'},'patch':'{}'})
+  with self.assertRaisesRegex(ValueError,'exact lane resource'):C.validate_documents(bad,'sit',candidate=candidate)
+  patches[-1]={'target':{'kind':'Deployment','name':'web-saas-caddy'},'patch':'- op: replace\n  path: /spec/template/spec/containers\n  value: []'}
+  with self.assertRaisesRegex(ValueError,'reviewed hardening'):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(docs);bad[0]['metadata']['namespace']='production'
   with self.assertRaises(ValueError):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(candidate);bad['components']['accounts']['image']='ghcr.io/ai-workspace-services/accounts@sha256:'+'b'*64
