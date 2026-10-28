@@ -1,0 +1,16 @@
+---
+- name: 前置检查与命名空间就绪
+  ansible.builtin.include_tasks: prereqs.yml
+  run_once: true
+
+- name: Vault 凭据拉取与 Secret 注入
+  ansible.builtin.include_tasks: secrets.yml
+  run_once: true
+
+- name: Helm 仓库拉取与 Chart 发布
+  ansible.builtin.include_tasks: helm.yml
+  run_once: true
+
+- name: DaemonSet 就绪状态与 Service 端口验证
+  ansible.builtin.include_tasks: verify.yml
+  run_once: true

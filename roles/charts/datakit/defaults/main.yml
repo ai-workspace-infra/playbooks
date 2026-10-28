@@ -1,0 +1,49 @@
+---
+# datakit Helm role defaults
+
+datakit_helm_repo_url: "https://pubrepo.guance.com/chartrepo/datakit"
+datakit_helm_repo_name: "datakit"
+datakit_chart_name: "datakit/datakit"
+datakit_chart_version: "2.16.1"
+
+datakit_release_name: "datakit"
+datakit_namespace: "datakit"
+
+# Vault 凭据配置
+datakit_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+datakit_vault_jwt_token: "{{ lookup('ansible.builtin.env', 'VAULT_JWT_TOKEN') | default('', true) }}"
+datakit_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
+datakit_vault_path: "datakit/shared/dataway"
+
+# DataWay 回退配置 (如果从 Vault 读取)
+datakit_dataway_url: "{{ lookup('ansible.builtin.env', 'DATAKIT_DATAWAY_URL') | default('', true) }}"
+
+# DataKit 默认配置
+datakit_global_tags: "cluster={{ k8s_cluster_name | default('default') }},env={{ target_env | default('') }}"
+datakit_default_inputs: "statsd,dk,cpu,disk,diskio,mem,swap,system,hostobject,net,host_processes,container,kubernetesprometheus,opentelemetry,prom"
+datakit_log_level: "info"
+
+# Restrict stdout/stderr collection to DEV/SIT business namespaces. Adjust only
+# through an explicit non-production inventory variable when the lane changes.
+datakit_business_log_namespace_selector: "namespace:feature-*"
+datakit_caddy_metrics_namespace: "feature-xconnect-referral-sit"
+datakit_caddy_metrics_service: "web-saas-caddy-metrics"
+datakit_caddy_metrics_port: 9180
+datakit_caddy_metrics_url: "http://{{ datakit_caddy_metrics_service }}.{{ datakit_caddy_metrics_namespace }}:{{ datakit_caddy_metrics_port }}/metrics"
+
+# Existing DEV/SIT PostgreSQL exporter scrape is retained alongside Caddy.
+datakit_postgresql_metrics_namespace: "feature-xconnect-referral-sit"
+datakit_postgresql_metrics_service: "web-saas-postgresql-exporter"
+datakit_postgresql_metrics_port: 9187
+datakit_postgresql_metrics_url: "http://{{ datakit_postgresql_metrics_service }}.{{ datakit_postgresql_metrics_namespace }}:{{ datakit_postgresql_metrics_port }}/metrics"
+
+# OpenTelemetry 采集模块配置
+datakit_enable_opentelemetry: true
+datakit_otel_grpc_addr: "0.0.0.0:4317"
+datakit_otel_http_enable: true
+
+# 资源预算限制 (严控在 4GB Linode 节点预算内)
+datakit_requests_cpu: "100m"
+datakit_requests_memory: "128Mi"
+datakit_limits_cpu: "500m"
+datakit_limits_memory: "512Mi"

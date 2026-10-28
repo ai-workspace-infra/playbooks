@@ -1,0 +1,23 @@
+---
+- name: 包含 Helm 仓库与发布
+  kubernetes.core.helm_repository:
+    name: "{{ datakit_helm_repo_name }}"
+    repo_url: "{{ datakit_helm_repo_url }}"
+
+- name: 渲染 values 文件到临时路径
+  ansible.builtin.template:
+    src: values.yaml.j2
+    dest: "/tmp/datakit-values-{{ datakit_release_name }}.yaml"
+    mode: "0600"
+
+- name: 安装或升级 DataKit Helm 发布
+  kubernetes.core.helm:
+    name: "{{ datakit_release_name }}"
+    chart_ref: "{{ datakit_chart_name }}"
+    chart_version: "{{ datakit_chart_version | default(omit, true) }}"
+    release_namespace: "{{ datakit_namespace }}"
+    create_namespace: true
+    values_files:
+      - "/tmp/datakit-values-{{ datakit_release_name }}.yaml"
+    wait: true
+    timeout: "300s"
