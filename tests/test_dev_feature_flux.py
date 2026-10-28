@@ -166,6 +166,8 @@ class Contracts(unittest.TestCase):
   caddy_patch={'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'web-saas-caddy-config'},'data':{'Caddyfile':C.tagged_caddyfile(lane['feature_tag'])}}
   ingress_patch=[{'op':'replace','path':'/spec/ingress','value':[{'from':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'platform-ingress'}},'podSelector':{'matchLabels':{'app.kubernetes.io/name':'caddy-ingress-controller'}}},{'podSelector':{}}],'ports':[{'protocol':'TCP','port':8080}]}]}]
   tagged_values={name:{'enabled':True} for name in ('caddy','postgresql','console','accounts','billing','content')};tagged_values['caddy']['httpOnly']=True;tagged_values['content']['workload']={'env':{'KNOWLEDGE_REPO_URL':'https://github.com/ai-workspace-services/knowledge.git','KNOWLEDGE_REPO_REF':'a'*40}}
+  tagged_values['accounts']['workload']={'env':{'DB_HOST':'web-saas-postgresql.'+ns+'.svc.cluster.local','DB_PORT':'5432','DB_NAME':'account','POSTGRES_USER':'xc_accounts_rw'}}
+  next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-accounts-template')['data']['account.yaml']=yaml.safe_dump({'store':{'driver':'postgres','dsn':'postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable'}})
   next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values')['data']['values.yaml']=yaml.safe_dump(tagged_values)
   next(x for x in docs if x['kind']=='HelmRelease')['spec']['postRenderers']=[{'kustomize':{'patches':[{'target':{'kind':'ConfigMap','name':'web-saas-caddy-config'},'patch':yaml.safe_dump(caddy_patch)},{'target':{'kind':'NetworkPolicy','name':'web-saas-caddy'},'patch':yaml.safe_dump(ingress_patch)}]}}]
   ingress=next(x for x in docs if x['kind']=='Ingress')
@@ -173,6 +175,8 @@ class Contracts(unittest.TestCase):
   for rule,host in zip(ingress['spec']['rules'],sorted(hosts)):rule['host']=host
   result=C.validate_documents(docs,'sit',candidate=candidate)
   self.assertEqual(result['namespace'],ns);self.assertEqual(set(result['hosts']),hosts)
+  bad=copy.deepcopy(docs);next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-accounts-template')['data']['account.yaml']='store:\n  driver: postgres\n  dsn: postgres://admin:secret@production/db\n'
+  with self.assertRaisesRegex(ValueError,'template database binding'):C.validate_documents(bad,'sit',candidate=candidate)
   for change in ({'accounts':{'enabled':False}},{'edgeGateway':{'enabled':True}},{'caddy':{'enabled':True,'httpOnly':True,'service':{'type':'NodePort'}}}):
    bad=copy.deepcopy(docs);cm=next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values');values=yaml.safe_load(cm['data']['values.yaml']);values.update(change);cm['data']['values.yaml']=yaml.safe_dump(values)
    with self.subTest(change=change),self.assertRaises(ValueError):C.validate_documents(bad,'sit',candidate=candidate)
