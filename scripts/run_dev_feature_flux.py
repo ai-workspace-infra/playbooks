@@ -13,6 +13,24 @@ RECORD='kv/data/CICD/dev/k3s-bootstrap'
 def require(value,message):
  if not value:raise ValueError(message)
 
+def probe_tagged_public_https(lane,target_ip):
+ """Observe TLS and three public service endpoints; not business acceptance."""
+ _,_,_,_,hosts,_=candidate.SCOPE.scope({'environment':'sit','tagged_lane':lane})
+ tag=lane['feature_tag'];root=tag+'-sit.onwalk.net'
+ paths={root:'/', 'accounts-'+root:'/readyz', 'billing-'+root:'/readyz'}
+ require(set(paths)==hosts,'public health hosts differ from candidate')
+ results=[]
+ for host,path in paths.items():
+  require(sorted(set(socket.gethostbyname_ex(host)[2]))==[target_ip],'public health DNS target differs')
+  connection=http.client.HTTPSConnection(host,timeout=10)
+  try:
+   connection.request('GET',path)
+   response=connection.getresponse()
+   require(response.status==200,'public TLS or service readiness failed')
+   results.append({'host':host,'path':path,'status':response.status})
+  finally:connection.close()
+ return results
+
 def validate_candidate_receipt(receipt,sha,stage,run_id):
  if receipt.get('schema_version')=='dev-feature-candidate/v2':
   require(receipt.get('result')=='verified' and receipt.get('repository')=='ai-workspace-infra/gitops' and receipt.get('stage')=='sit' and stage=='sit' and receipt.get('candidate_head')==sha,'verified tagged SIT candidate required')

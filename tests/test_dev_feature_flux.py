@@ -1,5 +1,6 @@
 """Offline scope and state-machine tests; never runtime acceptance."""
 import copy,hashlib,importlib.util,json,sys,unittest
+from unittest.mock import patch,Mock
 from pathlib import Path
 import yaml
 ROOT=Path(__file__).resolve().parents[1]
@@ -8,6 +9,17 @@ import dev_feature_candidate as C
 R=C.SCOPE
 
 class Contracts(unittest.TestCase):
+ def test_tagged_public_probes_require_exact_dns_and_https_200(self):
+  import run_dev_feature_flux as owner
+  lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'e'*64}
+  connection=Mock();connection.getresponse.return_value.status=200
+  with patch.object(owner.socket,'gethostbyname_ex',return_value=('',[],['8.8.8.8'])), patch.object(owner.http.client,'HTTPSConnection',return_value=connection):
+   result=owner.probe_tagged_public_https(lane,'8.8.8.8');self.assertEqual(len(result),3)
+   self.assertEqual(connection.request.call_count,3)
+   connection.getresponse.return_value.status=302
+   with self.assertRaisesRegex(ValueError,'readiness failed'):owner.probe_tagged_public_https(lane,'8.8.8.8')
+  with patch.object(owner.socket,'gethostbyname_ex',return_value=('',[],['8.8.4.4'])):
+   with self.assertRaisesRegex(ValueError,'DNS target differs'):owner.probe_tagged_public_https(lane,'8.8.8.8')
  def config(self):
   return {'instance_id':'109324752','environment':'sit','namespace':R.SCOPES['sit'][0],'node_name':R.NODE,'mode':'plan','candidate_sha':'a'*40,'platform_sha':'b'*40,'owner_sha':'c'*40,'node_uid':'1'*8+'-'+'1'*4+'-'+'1'*4+'-'+'1'*4+'-'+'1'*12,'cluster_uid':'2'*8+'-'+'2'*4+'-'+'2'*4+'-'+'2'*4+'-'+'2'*12,'manifest_sha256':'d'*64,'wait_seconds':10}
  def docs(self,stage='sit'):
