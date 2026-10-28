@@ -140,7 +140,9 @@ class Contracts(unittest.TestCase):
   next(x for x in docs if x['kind']=='HelmRelease')['spec']['targetNamespace']=ns
   next(x for x in docs if x['kind']=='OCIRepository')['spec']['ref']={'digest':candidate['chart_digest']}
   caddy_patch={'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'web-saas-caddy-config'},'data':{'Caddyfile':C.tagged_caddyfile(lane['feature_tag'])}}
-  next(x for x in docs if x['kind']=='HelmRelease')['spec']['postRenderers']=[{'kustomize':{'patches':[{'target':{'kind':'ConfigMap','name':'web-saas-caddy-config'},'patch':yaml.safe_dump(caddy_patch)}]}}]
+  ingress_patch=[{'op':'replace','path':'/spec/ingress','value':[{'from':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'platform-ingress'}},'podSelector':{'matchLabels':{'app.kubernetes.io/name':'caddy-ingress-controller'}}},{'podSelector':{}}],'ports':[{'protocol':'TCP','port':8080}]}]}]
+  next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values')['data']['values.yaml']=yaml.safe_dump({'caddy':{'httpOnly':True}})
+  next(x for x in docs if x['kind']=='HelmRelease')['spec']['postRenderers']=[{'kustomize':{'patches':[{'target':{'kind':'ConfigMap','name':'web-saas-caddy-config'},'patch':yaml.safe_dump(caddy_patch)},{'target':{'kind':'NetworkPolicy','name':'web-saas-caddy'},'patch':yaml.safe_dump(ingress_patch)}]}}]
   ingress=next(x for x in docs if x['kind']=='Ingress')
   ingress['metadata']['annotations']={};ingress['spec']['ingressClassName']='caddy'
   for rule,host in zip(ingress['spec']['rules'],sorted(hosts)):rule['host']=host
@@ -157,6 +159,10 @@ class Contracts(unittest.TestCase):
   with self.assertRaisesRegex(ValueError,'exact lane resource'):C.validate_documents(bad,'sit',candidate=candidate)
   patches[-1]={'target':{'kind':'Deployment','name':'web-saas-caddy'},'patch':'- op: replace\n  path: /spec/template/spec/containers\n  value: []'}
   with self.assertRaisesRegex(ValueError,'reviewed hardening'):C.validate_documents(bad,'sit',candidate=candidate)
+  bad=copy.deepcopy(docs);patches=next(x for x in bad if x['kind']=='HelmRelease')['spec']['postRenderers'][0]['kustomize']['patches'];patches[1]['patch']='- op: replace\n  path: /spec/ingress\n  value: [{}]'
+  with self.assertRaisesRegex(ValueError,'restrict access'):C.validate_documents(bad,'sit',candidate=candidate)
+  bad=copy.deepcopy(docs);next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values')['data']['values.yaml']='caddy:\n  httpOnly: false\n'
+  with self.assertRaisesRegex(ValueError,'port 80'):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(docs);bad[0]['metadata']['namespace']='production'
   with self.assertRaises(ValueError):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(candidate);bad['components']['accounts']['image']='ghcr.io/ai-workspace-services/accounts@sha256:'+'b'*64

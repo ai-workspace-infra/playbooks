@@ -100,6 +100,8 @@ def validate_documents(documents,stage,tls=False,candidate=None):
   validate_values(release)
   values=yaml.safe_load(next(d for d in by_kind['ConfigMap'] if d['metadata']['name']=='web-saas-fullstack-values')['data']['values.yaml'])
   validate_values(values)
+  if candidate is not None:
+   require(release.get('caddy',{}).get('httpOnly',values.get('caddy',{}).get('httpOnly')) is True,'tagged Caddy must expose HTTP on port 80 behind the ingress controller')
   images=image_set(release)
   sources={name:{'repository':release[name]['podAnnotations']['release.svc.plus/source_repository'],'source_sha':release[name]['podAnnotations']['release.svc.plus/source_sha'],'build_run_id':str(release[name]['podAnnotations']['release.svc.plus/build_run_id'])} for name in images}
   if candidate is not None:
@@ -117,7 +119,7 @@ def validate_documents(documents,stage,tls=False,candidate=None):
   require(not h.get('chart') and not h.get('kubeConfig') and not h.get('storageNamespace'),'cross-cluster/namespace Helm overrides rejected')
   require(h.get('valuesFrom')==[{'kind':'ConfigMap','name':'web-saas-fullstack-values','valuesKey':'values.yaml'},{'kind':'ConfigMap','name':'web-saas-fullstack-release','valuesKey':'release.yaml'}],'fixed values then immutable release overlay required')
   require(all(d.get('namespace',ns)==ns for d in h.get('dependsOn',[])),'cross-namespace dependency rejected')
-  caddy_patches=0
+  caddy_patches=0;ingress_patches=0
   for renderer in h.get('postRenderers',[]):
    require(set(renderer)=={'kustomize'} and set(renderer['kustomize'])<={'patches'},'unsupported post-renderer')
    for patch in renderer['kustomize'].get('patches',[]):
@@ -130,6 +132,10 @@ def validate_documents(documents,stage,tls=False,candidate=None):
      if target=={'kind':'Deployment','name':'web-saas-caddy'}:
       hardened={'apiVersion':'apps/v1','kind':'Deployment','metadata':{'name':'web-saas-caddy'},'spec':{'template':{'spec':{'securityContext':{'seccompProfile':{'type':'RuntimeDefault'}},'containers':[{'name':'caddy','securityContext':{'allowPrivilegeEscalation':False,'capabilities':{'drop':['ALL']}}}]}}}}
       require(parsed==hardened,'tagged Caddy workload permits only the reviewed hardening patch')
+     if target=={'kind':'NetworkPolicy','name':'web-saas-caddy'}:
+      expected_ingress=[{'op':'replace','path':'/spec/ingress','value':[{'from':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'platform-ingress'}},'podSelector':{'matchLabels':{'app.kubernetes.io/name':'caddy-ingress-controller'}}},{'podSelector':{}}],'ports':[{'protocol':'TCP','port':8080}]}]}]
+      require(parsed==expected_ingress,'tagged Caddy ingress policy must restrict access to lane and controller')
+      ingress_patches+=1
     if candidate is not None and target.get('kind')=='ConfigMap':
      expected={'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'web-saas-caddy-config'},'data':{'Caddyfile':tagged_caddyfile(candidate['tagged_lane']['feature_tag'])}}
      require(target=={'kind':'ConfigMap','name':'web-saas-caddy-config'} and parsed==expected,'tagged Caddy configuration differs from candidate routes')
@@ -143,6 +149,7 @@ def validate_documents(documents,stage,tls=False,candidate=None):
     no_image_override(parsed)
     require(target.get('kind') in {'Deployment','StatefulSet','Job','Service','ConfigMap','NetworkPolicy'} and str(target.get('name','')).startswith('web-saas-'),'post-renderer escaped workload allowlist')
   if candidate is not None:require(caddy_patches==1,'exactly one candidate-bound Caddy configuration required')
+  if candidate is not None:require(ingress_patches==1,'exactly one restricted Caddy ingress policy patch required')
  ingresses=by_kind.get('Ingress',[])
  require({i['metadata']['name'] for i in ingresses}==({'web-saas-https'} if tls else {'web-saas-http'}),'fixed phase-specific Ingress required')
  hosts=set()
