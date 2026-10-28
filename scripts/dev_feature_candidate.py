@@ -126,6 +126,11 @@ def validate_documents(documents,stage,tls=False,candidate=None):
   values=yaml.safe_load(next(d for d in by_kind['ConfigMap'] if d['metadata']['name']=='web-saas-fullstack-values')['data']['values.yaml'])
   validate_values(values)
   if candidate is not None:
+   for component in ('caddy','postgresql','console','accounts','billing','content'):
+    require(release.get(component,{}).get('enabled',values.get(component,{}).get('enabled',False)) is True,'all six tagged lane components must be enabled')
+   for component in ('edgeGateway','stunnelClient','stunnelServer'):
+    require(release.get(component,{}).get('enabled',values.get(component,{}).get('enabled',False)) is False,'unreviewed tagged lane workload is forbidden')
+   require(release.get('caddy',{}).get('service',{}).get('type',values.get('caddy',{}).get('service',{}).get('type','ClusterIP'))=='ClusterIP','tagged Caddy must remain an internal service')
    require(release.get('caddy',{}).get('httpOnly',values.get('caddy',{}).get('httpOnly')) is True,'tagged Caddy must expose HTTP on port 80 behind the ingress controller')
    validate_tagged_endpoints(values,ns,candidate['tagged_lane']['feature_tag'])
    validate_tagged_endpoints(release,ns,candidate['tagged_lane']['feature_tag'])

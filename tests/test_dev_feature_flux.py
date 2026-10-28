@@ -144,16 +144,20 @@ class Contracts(unittest.TestCase):
   next(x for x in docs if x['kind']=='OCIRepository')['spec']['ref']={'digest':candidate['chart_digest']}
   caddy_patch={'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'web-saas-caddy-config'},'data':{'Caddyfile':C.tagged_caddyfile(lane['feature_tag'])}}
   ingress_patch=[{'op':'replace','path':'/spec/ingress','value':[{'from':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'platform-ingress'}},'podSelector':{'matchLabels':{'app.kubernetes.io/name':'caddy-ingress-controller'}}},{'podSelector':{}}],'ports':[{'protocol':'TCP','port':8080}]}]}]
-  next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values')['data']['values.yaml']=yaml.safe_dump({'caddy':{'httpOnly':True},'content':{'workload':{'env':{'KNOWLEDGE_REPO_URL':'https://github.com/ai-workspace-services/knowledge.git','KNOWLEDGE_REPO_REF':'a'*40}}}})
+  tagged_values={name:{'enabled':True} for name in ('caddy','postgresql','console','accounts','billing','content')};tagged_values['caddy']['httpOnly']=True;tagged_values['content']['workload']={'env':{'KNOWLEDGE_REPO_URL':'https://github.com/ai-workspace-services/knowledge.git','KNOWLEDGE_REPO_REF':'a'*40}}
+  next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values')['data']['values.yaml']=yaml.safe_dump(tagged_values)
   next(x for x in docs if x['kind']=='HelmRelease')['spec']['postRenderers']=[{'kustomize':{'patches':[{'target':{'kind':'ConfigMap','name':'web-saas-caddy-config'},'patch':yaml.safe_dump(caddy_patch)},{'target':{'kind':'NetworkPolicy','name':'web-saas-caddy'},'patch':yaml.safe_dump(ingress_patch)}]}}]
   ingress=next(x for x in docs if x['kind']=='Ingress')
   ingress['metadata']['annotations']={};ingress['spec']['ingressClassName']='caddy'
   for rule,host in zip(ingress['spec']['rules'],sorted(hosts)):rule['host']=host
   result=C.validate_documents(docs,'sit',candidate=candidate)
   self.assertEqual(result['namespace'],ns);self.assertEqual(set(result['hosts']),hosts)
+  for change in ({'accounts':{'enabled':False}},{'edgeGateway':{'enabled':True}},{'caddy':{'enabled':True,'httpOnly':True,'service':{'type':'NodePort'}}}):
+   bad=copy.deepcopy(docs);cm=next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values');values=yaml.safe_load(cm['data']['values.yaml']);values.update(change);cm['data']['values.yaml']=yaml.safe_dump(values)
+   with self.subTest(change=change),self.assertRaises(ValueError):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(candidate);bad['knowledge']['sha']='b'*40
   with self.assertRaisesRegex(ValueError,'knowledge source differs'):C.validate_documents(docs,'sit',candidate=bad)
-  metrics_docs=copy.deepcopy(docs);cm=next(x for x in metrics_docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values');values=yaml.safe_load(cm['data']['values.yaml']);values['postgresql']={'metrics':{'enabled':True}};cm['data']['values.yaml']=yaml.safe_dump(values)
+  metrics_docs=copy.deepcopy(docs);cm=next(x for x in metrics_docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values');values=yaml.safe_load(cm['data']['values.yaml']);values['postgresql']['metrics']={'enabled':True};cm['data']['values.yaml']=yaml.safe_dump(values)
   with self.assertRaisesRegex(ValueError,'scoped agent policy'):C.validate_documents(metrics_docs,'sit',candidate=candidate)
   metrics_patch=[{'op':'replace','path':'/spec/ingress','value':[{'from':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'datakit'}},'podSelector':{'matchLabels':{'app':'datakit'}}}],'ports':[{'protocol':'TCP','port':9187}]}]}]
   patches=next(x for x in metrics_docs if x['kind']=='HelmRelease')['spec']['postRenderers'][0]['kustomize']['patches'];patches.append({'target':{'kind':'NetworkPolicy','name':'web-saas-postgresql-exporter'},'patch':yaml.safe_dump(metrics_patch)})
@@ -179,14 +183,14 @@ class Contracts(unittest.TestCase):
   with self.assertRaisesRegex(ValueError,'reviewed hardening'):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(docs);patches=next(x for x in bad if x['kind']=='HelmRelease')['spec']['postRenderers'][0]['kustomize']['patches'];patches[1]['patch']='- op: replace\n  path: /spec/ingress\n  value: [{}]'
   with self.assertRaisesRegex(ValueError,'restrict access'):C.validate_documents(bad,'sit',candidate=candidate)
-  bad=copy.deepcopy(docs);next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values')['data']['values.yaml']='caddy:\n  httpOnly: false\n'
+  bad=copy.deepcopy(docs);cm=next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values');values=yaml.safe_load(cm['data']['values.yaml']);values['caddy']['httpOnly']=False;cm['data']['values.yaml']=yaml.safe_dump(values)
   with self.assertRaisesRegex(ValueError,'port 80'):C.validate_documents(bad,'sit',candidate=candidate)
   for component,env in (('accounts',{'DB_HOST':'production-db.svc.cluster.local'}),('console',{'DOCS_SERVICE_URL':'https://docs.svc.plus'})):
    bad=copy.deepcopy(docs);cm=next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values')
-   values=yaml.safe_load(cm['data']['values.yaml']);values[component]={'singleContainer' if component=='console' else 'workload':{'env':env}};cm['data']['values.yaml']=yaml.safe_dump(values)
+   values=yaml.safe_load(cm['data']['values.yaml']);values[component]['singleContainer' if component=='console' else 'workload']={'env':env};cm['data']['values.yaml']=yaml.safe_dump(values)
    with self.subTest(component=component),self.assertRaisesRegex(ValueError,'endpoint escaped'):C.validate_documents(bad,'sit',candidate=candidate)
   for component,env in (('content',{'KNOWLEDGE_REPO_REF':'main'}),('content',{'KNOWLEDGE_REPO_URL':'https://example.com/knowledge.git'}),('console',{'BRIDGE_SERVER_URL':'https://bridge.svc.plus'})):
-   bad=copy.deepcopy(docs);cm=next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values');values=yaml.safe_load(cm['data']['values.yaml']);values[component]={'singleContainer' if component=='console' else 'workload':{'env':env}};cm['data']['values.yaml']=yaml.safe_dump(values)
+   bad=copy.deepcopy(docs);cm=next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values');values=yaml.safe_load(cm['data']['values.yaml']);values[component]['singleContainer' if component=='console' else 'workload']={'env':env};cm['data']['values.yaml']=yaml.safe_dump(values)
    with self.subTest(env=env),self.assertRaises(ValueError):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(docs);bad[0]['metadata']['namespace']='production'
   with self.assertRaises(ValueError):C.validate_documents(bad,'sit',candidate=candidate)
