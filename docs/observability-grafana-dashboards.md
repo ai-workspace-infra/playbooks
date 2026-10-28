@@ -17,6 +17,7 @@ copies by hand.
 | `agent-ai-application-observability-dashboard.json` | `agent-ai-observability` | Agent / AI Application Observability |
 | `ai-aggregator-overview.json` | `ai-aggregator-overview` | AI Aggregator Overview |
 | `blackbox-exporter-dashboard.json` | `blackbox-exporter-overview` | Blackbox Exporter & SSL Probe Overview |
+| `caddy-dashboard.json` | `fed94ifiv8h6oc` | Caddy |
 | `dashboard.json` | `begqoward2epsf` | Xray Dashboard |
 | `homepage-navigation.json` | `homepage-navigation` | 平台导航与总览 (Navigation Homepage) |
 | `k6-performance-capacity-dashboard.json` | `k6-performance-capacity-overview` | k6 Performance & Capacity Stress Test Dashboard |
@@ -49,3 +50,5 @@ Process Exporter dashboard used older datasource UIDs. The checked-in files are
 the canonical versions and should be deployed as-is. The standalone migration
 workflow verifies these UIDs/titles after deployment; it does not copy these
 runtime drifted files back into Git.
+
+The Caddy dashboard uses the `VictoriaMetrics` Prometheus-compatible datasource by default. It requires Caddy native metrics to be scraped and delivered to that VictoriaMetrics instance with `job` and `instance` labels. DataKit delivery to Guance alone does not populate this datasource.
