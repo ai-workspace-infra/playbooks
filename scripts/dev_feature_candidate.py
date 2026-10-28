@@ -105,7 +105,11 @@ def validate_documents(documents,stage,tls=False,candidate=None):
   if kind=='ConfigMap':require(name in CM,'unexpected ConfigMap')
  if candidate is not None:
   isolation={'apiVersion':'networking.k8s.io/v1','kind':'NetworkPolicy','metadata':{'name':'lane-isolation','namespace':ns},'spec':{'podSelector':{},'policyTypes':['Ingress','Egress'],'ingress':[{'from':[{'podSelector':{}}]}],'egress':[{'to':[{'podSelector':{}}]},{'to':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'kube-system'}},'podSelector':{'matchLabels':{'k8s-app':'kube-dns'}}}],'ports':[{'protocol':'UDP','port':53},{'protocol':'TCP','port':53}]}]}}
-  require(by_kind.get('NetworkPolicy',[])==[isolation],'tagged lane requires only the reviewed isolation policy; external egress needs a reviewed contract')
+  policies=by_kind.get('NetworkPolicy',[])
+  require(isolation in policies and len(policies)==2,'tagged lane requires reviewed isolation and GitHub egress policies')
+  ranges=json.loads((ROOT/'scripts/github_git_cidrs.json').read_text())['git']
+  github={'apiVersion':'networking.k8s.io/v1','kind':'NetworkPolicy','metadata':{'name':'content-github-egress','namespace':ns},'spec':{'podSelector':{'matchLabels':{'websaas.io/workload':'content'}},'policyTypes':['Egress'],'egress':[{'to':[{'ipBlock':{'cidr':cidr}} for cidr in ranges],'ports':[{'protocol':'TCP','port':443}]}]}}
+  require(github in policies,'tagged content egress must match reviewed GitHub Git ranges and port')
  if tls:
   require(set(by_kind)=={'Ingress'},'TLS subpath permits only its exact Ingress')
   images={};sources={}
