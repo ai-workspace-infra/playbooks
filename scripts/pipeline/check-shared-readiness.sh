@@ -41,7 +41,7 @@ jq -e '(.initialized == true) and (.sealed == false)' <<<"${vault_body}" >/dev/n
   exit 1
 }
 
-observability_body="$(probe_json observability "${observability_endpoint}/grafana/api/health")" || exit 1
+observability_body="$(probe_json observability "${observability_endpoint}/api/health")" || exit 1
 jq -e '.database == "ok"' <<<"${observability_body}" >/dev/null || {
   echo '::error::Shared Observability Grafana database is not ready.' >&2
   exit 1
