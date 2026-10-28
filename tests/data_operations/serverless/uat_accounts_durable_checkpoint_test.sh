@@ -117,13 +117,19 @@ if set(workflow_on) != {'workflow_call'}:
     raise SystemExit('Serverless database operations must remain workflow_call only.')
 jobs = workflow['jobs']
 operation = jobs['database_operation']
-steps = operation['steps']
+caller_steps = operation['steps']
+if caller_steps[1].get('uses') != './playbooks-owner/.github/actions/serverless-database-operation':
+    raise SystemExit('The owner workflow must call the checked-out owner action.')
+action = yaml.safe_load((Path(sys.argv[1]).parent.parent / 'actions/serverless-database-operation/action.yml').read_text())
+steps = action['runs']['steps']
 checkpoint = next(step for step in steps if step.get('name') == 'Create release checkpoint')
 if checkpoint['env'].get('REQUIRE_DURABLE_CHECKPOINT') != "${{ fromJSON(inputs.config_json).require_durable_checkpoint == true && 'true' || 'false' }}":
     raise SystemExit('Checkpoint operation must honor the caller durable-checkpoint config.')
 uploads = [step for step in steps if step.get('uses', '').startswith('actions/upload-artifact')]
-if len(uploads) != 1 or uploads[0]['with'].get('path') != '${{ runner.temp }}/uat-schema-repair-report.json':
-    raise SystemExit('Only aggregate schema repair evidence may be uploaded; never upload checkpoint payload bytes.')
+allowed_paths = {'${{ runner.temp }}/uat-schema-repair-report.json',
+                 '${{ runner.temp }}/serverless-database-operation-receipt.json'}
+if {step['with'].get('path') for step in uploads} != allowed_paths:
+    raise SystemExit('Only the aggregate repair report and sanitized operation receipt may be uploaded.')
 receipt = next(step for step in steps if step.get('name') == 'Verify trusted source run and sanitized isolated restore receipt')
 vault = next(step for step in steps if step.get('name') == 'Load database credentials from Vault with GitHub OIDC')
 if steps.index(receipt) > steps.index(vault):
@@ -152,7 +158,7 @@ if migration['env'].get('RELEASE_CHECKPOINT_VERIFIED') != "${{ steps.checkpoint_
 download = next(step for step in steps if step.get('name') == 'Download sanitized trusted checkpoint receipt')
 if download['with'].get('run-id') != '${{ fromJSON(inputs.config_json).checkpoint_run_id }}':
     raise SystemExit('Baseline/migration must retrieve the receipt from checkpoint_run_id.')
-if operation.get('outputs', {}).get('data_run_id') != '${{ github.run_id }}':
+if operation.get('outputs', {}).get('data_run_id') != '${{ steps.serverless_database.outputs.data_run_id }}':
     raise SystemExit('The reusable workflow must publish data_run_id as a locator only.')
 PY
 
