@@ -1,0 +1,17 @@
+---
+- name: 确保部署根目录存在
+  ansible.builtin.file:
+    path: "{{ obs_agent_deploy_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 确保 Docker 命名持久化卷已创建
+  community.docker.docker_volume:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - "{{ obs_agent_volume_work }}"
+    - "{{ obs_agent_volume_profile_cache }}"
+    - "{{ obs_agent_volume_owl }}"

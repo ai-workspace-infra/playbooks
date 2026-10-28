@@ -1,0 +1,41 @@
+---
+image:
+  repository: "{{ obs_agent_image_repo }}"
+  tag: "{{ obs_agent_image_tag }}"
+
+secret:
+  existingSecret: "{{ obs_agent_secret_name }}"
+
+{% if obs_agent_beak_ws_url | default('') | length > 0 %}
+config:
+  BEAK_WS_URL: "{{ obs_agent_beak_ws_url }}"
+{% endif %}
+
+automountServiceAccountToken: false
+
+securityContext:
+  runAsUser: 10001
+  runAsGroup: 10001
+  allowPrivilegeEscalation: false
+  seccompProfile:
+    type: RuntimeDefault
+  capabilities:
+    drop:
+      - ALL
+
+persistence:
+  work:
+    size: "{{ obs_agent_work_pvc_size }}"
+{% if obs_agent_storage_class | default('') | length > 0 %}
+    storageClass: "{{ obs_agent_storage_class }}"
+{% endif %}
+  profileCache:
+    size: "{{ obs_agent_profile_cache_pvc_size }}"
+{% if obs_agent_storage_class | default('') | length > 0 %}
+    storageClass: "{{ obs_agent_storage_class }}"
+{% endif %}
+  owl:
+    size: "{{ obs_agent_owl_pvc_size }}"
+{% if obs_agent_storage_class | default('') | length > 0 %}
+    storageClass: "{{ obs_agent_storage_class }}"
+{% endif %}

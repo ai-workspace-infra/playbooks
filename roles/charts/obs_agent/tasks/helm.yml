@@ -1,0 +1,15 @@
+---
+- name: 添加或更新观测云 Helm 仓库
+  kubernetes.core.helm_repository:
+    name: "{{ obs_agent_helm_repo_name }}"
+    repo_url: "{{ obs_agent_helm_repo_url }}"
+
+- name: 部署或升级 obs-agent Helm Release
+  kubernetes.core.helm:
+    name: "{{ obs_agent_release_name }}"
+    chart_ref: "{{ obs_agent_chart_name }}"
+    release_namespace: "{{ obs_agent_namespace }}"
+    chart_version: "{{ obs_agent_chart_version if (obs_agent_chart_version | length > 0) else omit }}"
+    values: "{{ lookup('ansible.builtin.template', 'values.yaml.j2') | from_yaml }}"
+    wait: true
+    timeout: 300s
