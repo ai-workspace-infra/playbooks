@@ -427,45 +427,99 @@ flowchart LR
 
 ### 3. DataKit Prom 插件配置与持久化
 
-通过 DataKit 内建的 `prom` 采集插件对接 Exporter 暴露的 `/metrics` 端点：
-1. **DataKit Helm `dkconfig` 配置**:
+通过 DataKit 内建的 `prom` 采集插件对接 Exporter 暴露的 `/metrics` 端点。在部署与调优过程中，平台针对多集群选举隔离与指标集规范进行了深度工程治理：
+
+#### (1) 多集群默认选举暂停排查与根本原因 (Election Pause Root Cause)
+* **故障现象**：
+  初始配置后，Exporter 端点与网络连通均正常，但观测云控制台始终无法检索到 `postgresql` 指标集；在 DataKit 监控指标中，`datakit_input_prom_collect_points` 未产生 `source="postgresql"` 抓取点。
+* **日志诊断**：
+  检索 `/var/log/datakit/log` 发现关键日志：
+  ```text
+  INFO inputs inputs/inputs.go:57 find election inputs prom
+  INFO dk-election election/leader_election.go:498 pause 4 inputs...
+  INFO dk-election election/election.go:95 election provider=dataway namespace="default" id="dev-k3s-v5"
+  ```
+* **根本机制分析（结合 DataKit 官方文档）**：
+  依据 [DataKit 官方文档 DaemonSet 部署规范与选举机制](https://docs.guance.com/datakit/datakit-daemonset-deploy/#using-k8-env)，`inputs.prom` 采集插件默认开启 Leader 选举（`election = true`）。
+  由于 PROD 与 SIT 集群共用同一个观测云工作空间（统一通过 Vault 共享相同的 DataWay 凭据），且均采用默认的选举命名空间（`ENV_NAMESPACE="default"`），多集群 DataKit 实例向同一 DataWay 发起 Leader 竞选。PROD 节点获得了 Leader 租约，而 SIT 节点（`dev-k3s-v5`）未获得租约，导致其所有选举类输入插件（包括 `prom`）被 DataKit 核心引擎**完全挂起暂停（`pause 4 inputs...`）**。
+
+#### (2) 关键配置修复与主干固化
+针对上述问题，实施针对性架构修复：
+1. **显式声明 `election = false`**：
+   对于绑定在本地 Kubernetes 集群生命周期、仅对集群内部 Service（如 `web-saas-postgresql-exporter.feature-xconnect-referral-sit`）可见的采集器，必须显式声明 `election = false`。确保 SIT 本地 DataKit 必定独立抓取本地的 Exporter，杜绝跨集群 Leader 选举抢占导致的指标中断。
+2. **显式指定 `measurement_name = "postgresql"` 与 `keep_exist_metric_name = true`**：
+   - 默认模式下 DataKit Prom 插件会按照下划线将指标名切分，导致指标分散落入 `pg`、`postgres` 等不同集合；
+   - 显式声明 `measurement_name = "postgresql"` 与 `keep_exist_metric_name = true`，使所有指标统一归集在观测云标准指标集 `postgresql` 下，并 100% 完整保留 Prometheus 原生指标名（`pg_up`、`pg_database_size_bytes`、`pg_stat_database_xact_commit` 等）。
+3. **标准配置模板**：
    在 DataKit Helm Release 中配置 `dkconfig` 挂载 `/usr/local/datakit/conf.d/prom/postgresql-exporter.conf`：
    ```toml
    [[inputs.prom]]
      urls = ["http://web-saas-postgresql-exporter.feature-xconnect-referral-sit:9187/metrics"]
      source = "postgresql"
      interval = "15s"
+     measurement_name = "postgresql"
+     keep_exist_metric_name = true
+     election = false
      [inputs.prom.tags]
        cluster = "dev-k3s-v5-sit"
        env = "sit"
        db_instance = "web-saas-postgresql"
        host = "dev-k3s-v5"
    ```
-2. **启用默认采集模块**:
+4. **启用默认采集模块**：
    在 `default_enabled_inputs` 中追加 `prom` 插件。
-3. **Ansible Playbook 角色固化**:
-   在 `playbooks/roles/charts/datakit` 中将 `postgresql_metrics_url` 及 `dkconfig` 模板参数化，确保日常运维与 Ansible 对账执行时配置幂等不被冲掉。
+5. **Ansible Playbook 角色主干合入**：
+   相关配置已在 `playbooks/roles/charts/datakit` 中完成模板固化，并通过 [PR #824](https://github.com/ai-workspace-infra/playbooks/pull/824)（`fix(datakit): explicitly disable election for local prom exporter inputs`）全绿合入 `main`。
 
 ### 4. 采集指标与实测验证
 
-通过集群内端点探测及 DataKit 本地调试指令完成双重验证：
-1. **Exporter 指标探测实测**:
-   ```bash
-   curl -s http://10.42.0.48:9187/metrics | grep pg_
-   ```
-   核心指标输出：
-   - `pg_up 1`：PostgreSQL 连通性探针（1 表示成功连通业务数据库 `account`）。
-   - `pg_database_size_bytes{datname="account"}`：数据库物理存储占用。
-   - `pg_stat_database_xact_commit` / `pg_stat_database_xact_rollback`：每秒提交/回滚事务吞吐。
-   - `pg_stat_database_blks_read` / `pg_stat_database_blks_hit`：共享缓冲区命中率（实测高达 99.8%）。
-   - `pg_locks_count`：表级/行级加锁统计。
-   - `pg_stat_database_deadlocks`：死锁发生计数。
-   - `pg_wal_segments` / `pg_wal_size_bytes`：预写日志 WAL 数量与体积。
-2. **DataKit 抓取与上报管道实测**:
-   运行 `datakit debug --prom-conf` 确认：
-   - Exporter 指标全量抓取成功（生成 100+ 项指标，归属于 `source="postgresql"`）。
-   - 数据成功进入内部处理管道（`io feed prom.postgresql on metric`）。
-   - 随 DataKit 内部定时 Flush 周期持续上报至观测云 DataWay。
+通过集群内端点探测、DataKit 本地调试指令及观测云 OpenAPI DQL 完成全链路三重验证：
+
+#### (1) Exporter 指标探测实测
+```bash
+curl -s http://10.42.0.48:9187/metrics | grep pg_
+```
+核心指标输出：
+- `pg_up 1`：PostgreSQL 连通性探针（1 表示成功连通业务数据库 `account`）。
+- `pg_database_size_bytes{datname="account"}`：数据库物理存储占用。
+- `pg_stat_database_xact_commit` / `pg_stat_database_xact_rollback`：每秒提交/回滚事务吞吐。
+- `pg_stat_database_blks_read` / `pg_stat_database_blks_hit`：共享缓冲区命中率（实测高达 99.8%）。
+- `pg_locks_count`：表级/行级加锁统计。
+- `pg_stat_database_deadlocks`：死锁发生计数。
+- `pg_wal_segments` / `pg_wal_size_bytes`：预写日志 WAL 数量与体积。
+
+#### (2) DataKit 抓取管道实测
+配置 `election = false` 生效后，DataKit 抓取指标立竿见影：
+```bash
+# 检查本地抓取统计 (http://127.0.0.1:9529/metrics)
+datakit_input_prom_collect_points{mode="stream",source="postgresql",quantile="0.5"} 2737
+datakit_input_prom_collect_points_sum{mode="stream",source="postgresql"} 8211
+```
+确认每 15s 稳定抓取 2,700+ 数据点，数据全部进入 `io feed prom.postgresql on metric` 并持续上报至 DataWay。
+
+#### (3) 观测云 OpenAPI DQL 验证记录
+通过观测云 OpenAPI (`https://cn3-openapi.guance.com/api/v1/df/query_data_v1`) 直接检索工作空间数据，验证指标集 `postgresql` 已 100% 成功建档与持续刷新：
+
+* **实例健康探针 (`M::postgresql:(pg_up) { host = "dev-k3s-v5" }`)**:
+  ```json
+  {
+    "name": "postgresql",
+    "tags": {
+      "host": "dev-k3s-v5",
+      "cluster": "dev-k3s-v5-sit",
+      "db_instance": "web-saas-postgresql",
+      "instance": "web-saas-postgresql-exporter.feature-xconnect-referral-sit:9187"
+    },
+    "values": [[1793190065125, 1]]
+  }
+  ```
+* **数据库存储容量 (`M::postgresql:(pg_database_size_bytes) by datname`)**:
+  - `account` 业务库：`12,154,547` 字节 (**12.15 MB**)
+  - `postgres` 系统库：`7,657,139` 字节 (**7.66 MB**)
+  - `template0` / `template1`：约 7.5 MB
+* **事务与锁吞吐 (`M::postgresql:(pg_stat_database_xact_commit, pg_locks_count) { datname = "account" }`)**:
+  - `pg_stat_database_xact_commit`: `50,992` -> `51,021` -> `51,058` -> `51,086` -> `51,117`（每 15s 均匀递增）。
+  - `pg_locks_count`: `accesssharelock` 读锁计数为 1，排他锁为 0。
 
 ---
 
@@ -526,4 +580,4 @@ curl -fsSL "https://static.guance.com/skills/install.sh" | sh -s -- \
 | :--- | :--- | :--- | :--- | :--- |
 | `v1.0.0` | 2026-10-28 | Platform Engineering Agent | 初稿制定，覆盖双集群 Helm 部署、Vault 路径规划与 Caddy Ingress 汇聚 | Approved |
 | `v1.1.0` | 2026-10-28 | Antigravity AI Agent | 补全 `prod-k3s-v5` 主机别名控制机制、OTel HTTP/Protobuf 端点规范、Serverless Orchestrator 闭环及实测 DQL 归档 | Approved & Released |
-| `v1.2.0` | 2026-10-28 | Antigravity AI Agent | 补充 SIT K3S PostgreSQL Exporter 独立附件模式规范、GitOps+Flux 无损交付、DataKit Prom 插件配置及实测指标归档 | Approved & Released |
+| `v1.2.0` | 2026-10-28 | Antigravity AI Agent | 补充 SIT K3S PostgreSQL Exporter 独立附件模式规范、GitOps+Flux 无损交付、DataKit Prom 插件多集群选举暂停（Election Pause）根因剖析与 election=false 治理、PR #824 主干合入及实测 DQL 指标归档 | Approved & Released |
