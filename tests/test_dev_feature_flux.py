@@ -206,7 +206,7 @@ class Contracts(unittest.TestCase):
   with self.assertRaisesRegex(ValueError,'restrict access'):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(docs);cm=next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values');values=yaml.safe_load(cm['data']['values.yaml']);values['caddy']['httpOnly']=False;cm['data']['values.yaml']=yaml.safe_dump(values)
   with self.assertRaisesRegex(ValueError,'port 80'):C.validate_documents(bad,'sit',candidate=candidate)
-  for component,env in (('accounts',{'DB_HOST':'production-db.svc.cluster.local'}),('console',{'DOCS_SERVICE_URL':'https://docs.svc.plus'})):
+  for component,env in (('accounts',{'DB_HOST':'production-db.svc.cluster.local'}),('accounts',{'POSTGRES_USER':'lane_admin'}),('console',{'DOCS_SERVICE_URL':'https://docs.svc.plus'})):
    bad=copy.deepcopy(docs);cm=next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values')
    values=yaml.safe_load(cm['data']['values.yaml']);values[component]['singleContainer' if component=='console' else 'workload']={'env':env};cm['data']['values.yaml']=yaml.safe_dump(values)
    with self.subTest(component=component),self.assertRaisesRegex(ValueError,'endpoint escaped'):C.validate_documents(bad,'sit',candidate=candidate)

@@ -70,7 +70,7 @@ def tagged_caddyfile(tag):
 def validate_tagged_endpoints(values,namespace,tag):
  host=tag+'-sit.onwalk.net'
  service=lambda name:'http://web-saas-'+name+'.'+namespace+'.svc.cluster.local'
- expected={'accounts':{'DB_HOST':'web-saas-postgresql.'+namespace+'.svc.cluster.local','OAUTH_FRONTEND_URL':'https://'+host,'OAUTH_GITHUB_REDIRECT_URL':'https://accounts-'+host+'/api/auth/github/callback','OAUTH_GOOGLE_REDIRECT_URL':'https://accounts-'+host+'/api/auth/google/callback'},
+ expected={'accounts':{'DB_HOST':'web-saas-postgresql.'+namespace+'.svc.cluster.local','DB_PORT':'5432','DB_NAME':'account','POSTGRES_USER':'xc_accounts_rw','OAUTH_FRONTEND_URL':'https://'+host,'OAUTH_GITHUB_REDIRECT_URL':'https://accounts-'+host+'/api/auth/github/callback','OAUTH_GOOGLE_REDIRECT_URL':'https://accounts-'+host+'/api/auth/google/callback'},
            'console':{'ACCOUNT_SERVICE_URL':service('accounts'),'SERVER_SERVICE_URL':service('accounts'),'SERVER_SERVICE_INTERNAL_URL':service('accounts'),'DOCS_SERVICE_URL':service('content'),'DOCS_SERVICE_INTERNAL_URL':service('content'),'BILLING_SERVICE_URL':service('billing'),'NEXT_PUBLIC_ACCOUNT_SERVICE_URL':'https://accounts-'+host,'RUNTIME_AUTH_URL':'https://accounts-'+host,'APP_BASE_URL':'https://'+host,'NEXT_PUBLIC_APP_BASE_URL':'https://'+host,'NEXT_PUBLIC_SITE_URL':'https://'+host}}
  for component,mapping in expected.items():
   settings=values.get(component,{})
