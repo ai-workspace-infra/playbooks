@@ -134,7 +134,7 @@ class Contracts(unittest.TestCase):
   docs=self.docs();old=C.validate_documents(docs,'sit')
   lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'e'*64}
   ns,_,_,_,hosts,_=R.scope({'environment':'sit','tagged_lane':lane})
-  candidate={'tagged_lane':lane,'chart_digest':'sha256:'+'f'*64,
+  candidate={'tagged_lane':lane,'chart_digest':'sha256:'+'f'*64,'knowledge':{'repository':'ai-workspace-services/knowledge','sha':'a'*40},
              'components':{name:{'image':image,**old['sources'][name]} for name,image in old['images'].items()}}
   docs.insert(0,{'apiVersion':'networking.k8s.io/v1','kind':'NetworkPolicy','metadata':{'name':'lane-isolation','namespace':ns},'spec':{'podSelector':{},'policyTypes':['Ingress','Egress'],'ingress':[{'from':[{'podSelector':{}}]}],'egress':[{'to':[{'podSelector':{}}]},{'to':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'kube-system'}},'podSelector':{'matchLabels':{'k8s-app':'kube-dns'}}}],'ports':[{'protocol':'UDP','port':53},{'protocol':'TCP','port':53}]}]}})
   ranges=json.loads((ROOT/'scripts/github_git_cidrs.json').read_text())['git']
@@ -144,13 +144,15 @@ class Contracts(unittest.TestCase):
   next(x for x in docs if x['kind']=='OCIRepository')['spec']['ref']={'digest':candidate['chart_digest']}
   caddy_patch={'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'web-saas-caddy-config'},'data':{'Caddyfile':C.tagged_caddyfile(lane['feature_tag'])}}
   ingress_patch=[{'op':'replace','path':'/spec/ingress','value':[{'from':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'platform-ingress'}},'podSelector':{'matchLabels':{'app.kubernetes.io/name':'caddy-ingress-controller'}}},{'podSelector':{}}],'ports':[{'protocol':'TCP','port':8080}]}]}]
-  next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values')['data']['values.yaml']=yaml.safe_dump({'caddy':{'httpOnly':True}})
+  next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values')['data']['values.yaml']=yaml.safe_dump({'caddy':{'httpOnly':True},'content':{'workload':{'env':{'KNOWLEDGE_REPO_URL':'https://github.com/ai-workspace-services/knowledge.git','KNOWLEDGE_REPO_REF':'a'*40}}}})
   next(x for x in docs if x['kind']=='HelmRelease')['spec']['postRenderers']=[{'kustomize':{'patches':[{'target':{'kind':'ConfigMap','name':'web-saas-caddy-config'},'patch':yaml.safe_dump(caddy_patch)},{'target':{'kind':'NetworkPolicy','name':'web-saas-caddy'},'patch':yaml.safe_dump(ingress_patch)}]}}]
   ingress=next(x for x in docs if x['kind']=='Ingress')
   ingress['metadata']['annotations']={};ingress['spec']['ingressClassName']='caddy'
   for rule,host in zip(ingress['spec']['rules'],sorted(hosts)):rule['host']=host
   result=C.validate_documents(docs,'sit',candidate=candidate)
   self.assertEqual(result['namespace'],ns);self.assertEqual(set(result['hosts']),hosts)
+  bad=copy.deepcopy(candidate);bad['knowledge']['sha']='b'*40
+  with self.assertRaisesRegex(ValueError,'knowledge source differs'):C.validate_documents(docs,'sit',candidate=bad)
   metrics_docs=copy.deepcopy(docs);cm=next(x for x in metrics_docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values');values=yaml.safe_load(cm['data']['values.yaml']);values['postgresql']={'metrics':{'enabled':True}};cm['data']['values.yaml']=yaml.safe_dump(values)
   with self.assertRaisesRegex(ValueError,'scoped agent policy'):C.validate_documents(metrics_docs,'sit',candidate=candidate)
   metrics_patch=[{'op':'replace','path':'/spec/ingress','value':[{'from':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'datakit'}},'podSelector':{'matchLabels':{'app':'datakit'}}}],'ports':[{'protocol':'TCP','port':9187}]}]}]
@@ -294,7 +296,7 @@ class CandidateEvolutionTests(unittest.TestCase):
   import run_dev_feature_flux as owner
   repo='ai-workspace-infra/Platform-Orchestrator';sha='a'*40
   lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'d'*64}
-  projection={'tagged_lane':lane,'chart_digest':'sha256:'+'e'*64,'components':{name:{} for name in ('caddy','postgresql','console','accounts','billing','content')}}
+  projection={'tagged_lane':lane,'chart_digest':'sha256:'+'e'*64,'knowledge':{'repository':'ai-workspace-services/knowledge','sha':'a'*40},'components':{name:{} for name in ('caddy','postgresql','console','accounts','billing','content')}}
   source={'repository':repo,'workflow_ref':repo+'/.github/workflows/feature-lane-deploy.yml@refs/heads/main','run_id':'123','run_attempt':'2','workflow_sha':'f'*40}
   receipt={'schema_version':'dev-feature-candidate/v2','result':'verified','repository':'ai-workspace-infra/gitops','stage':'sit','candidate_head':sha,'candidate_sha256':'d'*64,'projection':projection,'source':source}
   env={'GITHUB_REPOSITORY':repo,'GITHUB_RUN_ATTEMPT':'2','GITHUB_SHA':'f'*40,'GITHUB_WORKFLOW_REF':source['workflow_ref']}

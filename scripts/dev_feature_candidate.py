@@ -88,11 +88,12 @@ def candidate_scope(stage,candidate):
  if candidate is None:
   require(stage in SCOPE.SCOPES,'unsupported lane stage')
   return SCOPE.SCOPES[stage][0],SCOPE.SCOPES[stage][2],SCOPE.DOMAINS[stage],SCOPE.CHART
- require(stage=='sit' and isinstance(candidate,dict) and set(candidate)=={'tagged_lane','chart_digest','components'},'authenticated tagged candidate projection required')
+ require(stage=='sit' and isinstance(candidate,dict) and set(candidate)=={'tagged_lane','chart_digest','components','knowledge'},'authenticated tagged candidate projection required')
  ns,_,path,_,hosts,_=SCOPE.scope({'environment':stage,'tagged_lane':candidate['tagged_lane']})
  chart=candidate['chart_digest']
  require(isinstance(chart,str) and re.fullmatch(r'sha256:[0-9a-f]{64}',chart),'fixed candidate chart digest required')
  require(isinstance(candidate['components'],dict) and set(candidate['components'])=={'caddy','postgresql','console','accounts','billing','content'},'six candidate components required')
+ require(isinstance(candidate['knowledge'],dict) and set(candidate['knowledge'])=={'repository','sha'} and candidate['knowledge']['repository']=='ai-workspace-services/knowledge' and SCOPE.SHA.fullmatch(str(candidate['knowledge']['sha'])),'fixed candidate knowledge source required')
  return ns,path,hosts,chart
 
 def validate_documents(documents,stage,tls=False,candidate=None):
@@ -128,6 +129,9 @@ def validate_documents(documents,stage,tls=False,candidate=None):
    require(release.get('caddy',{}).get('httpOnly',values.get('caddy',{}).get('httpOnly')) is True,'tagged Caddy must expose HTTP on port 80 behind the ingress controller')
    validate_tagged_endpoints(values,ns,candidate['tagged_lane']['feature_tag'])
    validate_tagged_endpoints(release,ns,candidate['tagged_lane']['feature_tag'])
+   value_env=values.get('content',{}).get('workload',{}).get('env',{})
+   release_env=release.get('content',{}).get('workload',{}).get('env',{})
+   require(release_env.get('KNOWLEDGE_REPO_URL',value_env.get('KNOWLEDGE_REPO_URL'))=='https://github.com/'+candidate['knowledge']['repository']+'.git' and release_env.get('KNOWLEDGE_REPO_REF',value_env.get('KNOWLEDGE_REPO_REF'))==candidate['knowledge']['sha'],'runtime knowledge source differs from authenticated candidate')
   images=image_set(release)
   sources={name:{'repository':release[name]['podAnnotations']['release.svc.plus/source_repository'],'source_sha':release[name]['podAnnotations']['release.svc.plus/source_sha'],'build_run_id':str(release[name]['podAnnotations']['release.svc.plus/build_run_id'])} for name in images}
   if candidate is not None:
