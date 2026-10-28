@@ -35,6 +35,9 @@ class Contracts(unittest.TestCase):
    with self.assertRaisesRegex(ValueError,'selected IPv4'):owner.probe_tagged_public_https(lane,'8.8.8.8')
   with patch.object(owner.socket,'getaddrinfo',return_value=[record,(owner.socket.AF_INET6,owner.socket.SOCK_STREAM,6,'',('2001:4860:4860::8888',443,0,0))]):
    with self.assertRaisesRegex(ValueError,'selected IPv4'):owner.probe_tagged_public_https(lane,'8.8.8.8')
+  with patch.object(owner.socket,'getaddrinfo') as resolve:
+   with self.assertRaisesRegex(ValueError,'public IPv4'):owner.probe_tagged_public_https(lane,'127.0.0.1')
+   resolve.assert_not_called()
   with patch.object(owner,'probe_tagged_public_https',return_value=[{'status':200}]), patch.object(owner,'probe_tagged_content_chain',return_value={'status':200}):
    result=owner.finish_tagged_runtime({'result':'runtime_ready'},lane,'8.8.8.8')
    self.assertEqual((result['result'],result['tls_certificate_acceptance'],result['business_acceptance']),('runtime_verified','PASS','NOT_RUN'))

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Dev feature CI owner adapter using the existing Dev SSH record, never PR code."""
-import argparse,datetime,hashlib,http.client,json,os,re,socket,subprocess,tempfile
+import argparse,datetime,hashlib,http.client,ipaddress,json,os,re,socket,subprocess,tempfile
 from pathlib import Path
 import dev_feature_candidate as candidate
 from dev_k3s_bootstrap import validate_cmdb
@@ -14,6 +14,7 @@ def require(value,message):
  if not value:raise ValueError(message)
 
 def tagged_dns_addresses(host,target_ip):
+ require(ipaddress.IPv4Address(target_ip).is_global,'tagged DNS target must be a public IPv4 address')
  records=socket.getaddrinfo(host,443,socket.AF_UNSPEC,socket.SOCK_STREAM)
  ipv4=sorted({row[4][0] for row in records if row[0]==socket.AF_INET})
  ipv6={row[4][0] for row in records if row[0]==socket.AF_INET6}
