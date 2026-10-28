@@ -585,6 +585,7 @@ curl -fsSL "https://static.guance.com/skills/install.sh" | sh -s -- \
 | `v1.4.0` | 2026-10-28 | Codex | 修复 DEV K3s containerd socket 发现，验证业务 Pod stdout/stderr 进入观测云；记录 PostgreSQL exporter `stat_bgwriter` 异常 | Pod 日志已验证；PG collector 与 MCP 待处理 |
 | `v1.5.0` | 2026-10-28 | Codex | 将 SIT PostgreSQL exporter 升级至兼容 PostgreSQL 17 的 v0.17.1，并验证 Flux 与采集器状态 | `stat_bgwriter` 已恢复；观测云对应新指标待复核 |
 | `v1.6.0` | 2026-10-28 | Antigravity AI Agent | 补充第十三章：观测云免费版能力全景与实测接入场景矩阵（涵盖多环境、双集群、数据库、网关指标、Pod/边缘日志及 Serverless OTel） | Approved & Released |
+| `v1.7.0` | 2026-10-28 | Codex | 增补生产 DataKit Pod 日志、Caddy 原生指标及 VictoriaMetrics/Grafana 接入验证 | 生产日志写入与 Caddy 采集已验证；生产 PostgreSQL 监控身份待建设 |
 
 ---
 
@@ -652,3 +653,14 @@ curl -fsSL "https://static.guance.com/skills/install.sh" | sh -s -- \
 - **全栈全场景覆盖**：在一个 SaaS 视图内无缝贯通双 K3S 节点底座、容器编排、PostgreSQL 数据库慢事务、Caddy 边缘网关、Cloud Run 无服务器调用链与 Cloudflare 边缘日志；
 - **环境安全强隔离**：通过声明式标签（`cluster`, `env`, `namespace`）在同一工作空间内清晰分流 PROD、SIT 与 UAT，达成生产级可观测治理水平。
 
+
+
+## 十四、PROD K3s 日志与 Caddy 指标交付（2026-10-28）
+
+- GitOps + Flux 接管现有 DataKit 2.16.1 Helm release，保留既有 DataWay Secret 引用、资源配额与 OTel 配置；限定 K3s containerd 日志采集范围为 `namespace:web-saas-k3s-v5`。[GitOps #631](https://github.com/ai-workspace-infra/gitops/pull/631)、[#632](https://github.com/ai-workspace-infra/gitops/pull/632)。
+- DataKit 已为生产 accounts、billing、Caddy 等容器启动日志 tailer，DataWay `/v1/write/logging` 的 `status=OK` 计数有增长；尚未在观测云界面逐条核验生产日志。
+- 不升级现有业务 chart 0.2.5，Flux post-render 保持原生产 Caddy 路由、域名和 TLS 内容，仅增加原生 metrics；Admin API 保持关闭，9180 使用 ClusterIP 和 NetworkPolicy。DataKit `prom/caddy` 使用 `election=false`。[GitOps #633](https://github.com/ai-workspace-infra/gitops/pull/633)、[#634](https://github.com/ai-workspace-infra/gitops/pull/634)。
+- 共享 VictoriaMetrics 增加 Caddy 抓取，目标 `health=up`、一次采集 595 个样本，查询 `up{job="caddy"}=1` 与 `caddy_http_requests_total` 均有生产样本。[GitOps #635](https://github.com/ai-workspace-infra/gitops/pull/635)、[#636](https://github.com/ai-workspace-infra/gitops/pull/636)。Caddy dashboard UID `fed94ifiv8h6oc` 已由 Grafana 文件 provisioning 加载，Grafana resource 存储包含该 UID；尚未从登录的 Grafana 界面验证全部面板。
+- Flux 生产 source 固定 `v2026.10.28.5`，各 Kustomization 和 HelmRelease 就绪；共享观测 Pod 按授权重建后 5/5。生产 PostgreSQL Pod UID 保持不变、重启次数 0。
+- 生产 PostgreSQL exporter 尚未部署：现有业务账户 `app` 是超级用户，不能直接复用；需要独立最小权限监控身份和 Vault 凭据、受控角色交付后验收。已有 DataWay Secret 的历史注解含明文凭据，曾在检查中暴露于工具输出，应作为凭据泄露事件轮换并清理注解。
+- 回滚按功能分别通过 GitOps revert 和新的不可变标签发布：先恢复 DataKit 日志或 Caddy 采集值并对账，确认 DataKit/业务健康；VictoriaMetrics scrape 回滚将重建共享观测 Pod。保留现有 Secret 和生产业务域名，避免直接删除会卸载 release 的 HelmRelease。
