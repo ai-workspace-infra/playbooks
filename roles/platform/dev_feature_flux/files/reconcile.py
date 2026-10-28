@@ -145,7 +145,7 @@ def namespace_documents(c):
 def verify_tagged_readiness_probe(component,container):
  if component in ('billing','content'):
   probe=container.get('readinessProbe',{}).get('httpGet',{})
-  require(probe.get('path')=='/readyz' and probe.get('port')==8080 and probe.get('scheme','HTTP')=='HTTP' and not probe.get('host'),'tagged service readiness probe differs from reviewed contract')
+  require(set(probe)<={'path','port','scheme'} and probe.get('path')=='/readyz' and probe.get('port')==8080 and probe.get('scheme','HTTP')=='HTTP','tagged service readiness probe differs from reviewed contract')
 
 def verify_runtime(c,pods):
  mapping=c.get('runtime_mapping',{});records=mapping.get('images',{})
