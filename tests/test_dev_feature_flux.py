@@ -196,6 +196,7 @@ class Contracts(unittest.TestCase):
   ingress_patch=[{'op':'replace','path':'/spec/ingress','value':[{'from':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'platform-ingress'}},'podSelector':{'matchLabels':{'app.kubernetes.io/name':'caddy-ingress-controller'}}},{'podSelector':{}}],'ports':[{'protocol':'TCP','port':8080}]}]}]
   tagged_values={name:{'enabled':True} for name in ('caddy','postgresql','console','accounts','billing','content')};tagged_values['caddy']['httpOnly']=True;tagged_values['content']['workload']={'env':{'KNOWLEDGE_REPO_URL':'https://github.com/ai-workspace-services/knowledge.git','KNOWLEDGE_REPO_REF':'a'*40}}
   tagged_values['accounts']['workload']={'env':{'DB_HOST':'web-saas-postgresql.'+ns+'.svc.cluster.local','DB_PORT':'5432','DB_NAME':'account','POSTGRES_USER':'xc_accounts_rw','DATABASE_BACKGROUND_WRITERS':'false','STRIPE_MODE':'test'}}
+  next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-console-nginx')['data']={'nginx.conf':(ROOT/'roles/platform/dev_feature_flux/files/tagged-console-nginx.conf').read_text()}
   hostname=lane['feature_tag']+'-sit.onwalk.net';account={'store':{'driver':'postgres','dsn':'postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable'},'server':{'publicUrl':'https://accounts-'+hostname,'allowedOrigins':['https://'+hostname,'https://accounts-'+hostname,'https://billing-'+hostname]},'auth':{'oauth':{'frontendUrl':'https://'+hostname,**{provider:{'redirectUrl':'https://accounts-'+hostname+'/api/auth/'+provider+'/callback'} for provider in ('github','google')}}},'agent':{'controllerUrl':'http://web-saas-accounts.'+ns+'.svc.cluster.local'}}
   next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-accounts-template')['data']['account.yaml']=yaml.safe_dump(account)
   next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values')['data']['values.yaml']=yaml.safe_dump(tagged_values)
@@ -205,6 +206,8 @@ class Contracts(unittest.TestCase):
   for rule,host in zip(ingress['spec']['rules'],sorted(hosts)):rule['host']=host
   result=C.validate_documents(docs,'sit',candidate=candidate)
   self.assertEqual(result['namespace'],ns);self.assertEqual(set(result['hosts']),hosts)
+  bad=copy.deepcopy(docs);next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-console-nginx')['data']['nginx.conf']+='\ninclude /etc/secret;\n'
+  with self.assertRaisesRegex(ValueError,'Nginx configuration'):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(docs);next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-accounts-template')['data']['account.yaml']='store:\n  driver: postgres\n  dsn: postgres://admin:secret@production/db\n'
   with self.assertRaisesRegex(ValueError,'template database binding'):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(docs);cm=next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-accounts-template');modified=yaml.safe_load(cm['data']['account.yaml']);modified['server']['publicUrl']='https://accounts.svc.plus';cm['data']['account.yaml']=yaml.safe_dump(modified)

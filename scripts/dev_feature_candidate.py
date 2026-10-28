@@ -135,6 +135,9 @@ def validate_documents(documents,stage,tls=False,candidate=None):
    validate_tagged_endpoints(values,ns,candidate['tagged_lane']['feature_tag'])
    validate_tagged_endpoints(release,ns,candidate['tagged_lane']['feature_tag'])
    account_doc=next(d for d in by_kind['ConfigMap'] if d['metadata']['name']=='web-saas-accounts-template')
+   nginx_doc=next(d for d in by_kind['ConfigMap'] if d['metadata']['name']=='web-saas-console-nginx')
+   trusted_nginx=(ROOT/'roles/platform/dev_feature_flux/files/tagged-console-nginx.conf').read_text()
+   require(nginx_doc.get('data')=={'nginx.conf':trusted_nginx},'tagged console Nginx configuration differs from reviewed owner')
    account=yaml.safe_load(account_doc.get('data',{}).get('account.yaml',''))
    require(isinstance(account,dict) and isinstance(account.get('store'),dict) and account['store'].get('driver')=='postgres' and account['store'].get('dsn')=='postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable','tagged Accounts template database binding differs')
    host=candidate['tagged_lane']['feature_tag']+'-sit.onwalk.net'
