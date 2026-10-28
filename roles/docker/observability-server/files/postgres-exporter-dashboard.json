@@ -2,6 +2,51 @@
   "annotations": {
     "list": [
       {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+        "definition": "label_values(pg_stat_database_numbackends, environment)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Environment",
+        "name": "environment",
+        "options": [],
+        "query": { "query": "label_values(pg_stat_database_numbackends, environment)", "refId": "StandardVariableQuery" },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+        "definition": "label_values(pg_stat_database_numbackends{environment=~\"$environment\"}, cluster)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Cluster",
+        "name": "cluster",
+        "options": [],
+        "query": { "query": "label_values(pg_stat_database_numbackends{environment=~\"$environment\"}, cluster)", "refId": "StandardVariableQuery" },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
+        "definition": "label_values(pg_stat_database_numbackends{environment=~\"$environment\", cluster=~\"$cluster\"}, service)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Service",
+        "name": "service",
+        "options": [],
+        "query": { "query": "label_values(pg_stat_database_numbackends{environment=~\"$environment\", cluster=~\"$cluster\"}, service)", "refId": "StandardVariableQuery" },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
         "builtIn": 1,
         "datasource": {
           "type": "grafana",
@@ -55,14 +100,14 @@
           "type": "prometheus",
           "uid": "$DS_METRICS"
         },
-        "definition": "label_values(pg_stat_database_numbackends, instance)",
+        "definition": "label_values(pg_stat_database_numbackends{environment=~\"$environment\", cluster=~\"$cluster\", service=~\"$service\"}, instance)",
         "hide": 0,
         "includeAll": true,
         "label": "Instance",
         "name": "instance",
         "options": [],
         "query": {
-          "query": "label_values(pg_stat_database_numbackends, instance)",
+          "query": "label_values(pg_stat_database_numbackends{environment=~\"$environment\", cluster=~\"$cluster\", service=~\"$service\"}, instance)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
@@ -80,14 +125,14 @@
           "type": "prometheus",
           "uid": "$DS_METRICS"
         },
-        "definition": "label_values(pg_stat_database_numbackends, datname)",
+        "definition": "label_values(pg_stat_database_numbackends{environment=~\"$environment\", cluster=~\"$cluster\", service=~\"$service\", instance=~\"$instance\"}, datname)",
         "hide": 0,
         "includeAll": true,
         "label": "Database",
         "name": "datname",
         "options": [],
         "query": {
-          "query": "label_values(pg_stat_database_numbackends, datname)",
+          "query": "label_values(pg_stat_database_numbackends{environment=~\"$environment\", cluster=~\"$cluster\", service=~\"$service\", instance=~\"$instance\"}, datname)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
@@ -129,7 +174,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "sum(pg_stat_database_numbackends{instance=~\"$instance\", datname=~\"$datname\"})",
+          "expr": "sum(pg_stat_database_numbackends{environment=~\"$environment\", cluster=~\"$cluster\", service=~\"$service\", instance=~\"$instance\", datname=~\"$datname\"})",
           "legendFormat": "Connections",
           "refId": "A"
         }
@@ -159,7 +204,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "sum(rate(pg_stat_database_blks_hit{instance=~\"$instance\", datname=~\"$datname\"}[5m])) / (sum(rate(pg_stat_database_blks_hit{instance=~\"$instance\", datname=~\"$datname\"}[5m])) + sum(rate(pg_stat_database_blks_read{instance=~\"$instance\", datname=~\"$datname\"}[5m]))) * 100",
+          "expr": "sum(rate(pg_stat_database_blks_hit{environment=~\"$environment\", cluster=~\"$cluster\", service=~\"$service\", instance=~\"$instance\", datname=~\"$datname\"}[5m])) / (sum(rate(pg_stat_database_blks_hit{environment=~\"$environment\", cluster=~\"$cluster\", service=~\"$service\", instance=~\"$instance\", datname=~\"$datname\"}[5m])) + sum(rate(pg_stat_database_blks_read{environment=~\"$environment\", cluster=~\"$cluster\", service=~\"$service\", instance=~\"$instance\", datname=~\"$datname\"}[5m]))) * 100",
           "legendFormat": "Hit Ratio",
           "refId": "A"
         }
@@ -181,7 +226,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "sum(rate(pg_stat_database_xact_commit{instance=~\"$instance\", datname=~\"$datname\"}[5m]))",
+          "expr": "sum(rate(pg_stat_database_xact_commit{environment=~\"$environment\", cluster=~\"$cluster\", service=~\"$service\", instance=~\"$instance\", datname=~\"$datname\"}[5m]))",
           "legendFormat": "Commits/s",
           "refId": "A"
         }
@@ -210,7 +255,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "sum(rate(pg_stat_database_xact_rollback{instance=~\"$instance\", datname=~\"$datname\"}[5m]))",
+          "expr": "sum(rate(pg_stat_database_xact_rollback{environment=~\"$environment\", cluster=~\"$cluster\", service=~\"$service\", instance=~\"$instance\", datname=~\"$datname\"}[5m]))",
           "legendFormat": "Rollbacks/s",
           "refId": "A"
         }
@@ -238,7 +283,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "pg_stat_database_numbackends{instance=~\"$instance\", datname=~\"$datname\"}",
+          "expr": "pg_stat_database_numbackends{environment=~\"$environment\", cluster=~\"$cluster\", service=~\"$service\", instance=~\"$instance\", datname=~\"$datname\"}",
           "legendFormat": "{{datname}} ({{instance}})",
           "refId": "A"
         }
@@ -259,7 +304,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$DS_METRICS" },
-          "expr": "pg_database_size_bytes{instance=~\"$instance\", datname=~\"$datname\"}",
+          "expr": "pg_database_size_bytes{environment=~\"$environment\", cluster=~\"$cluster\", service=~\"$service\", instance=~\"$instance\", datname=~\"$datname\"}",
           "legendFormat": "{{datname}} ({{instance}})",
           "refId": "A"
         }
