@@ -58,6 +58,15 @@ def validate_patch_scope(value):
   require(not (set(str(value.get('path','')).split('/'))&forbidden),'JSON patch cannot change identity or secret access')
   for child in value.values():validate_patch_scope(child)
 
+def tagged_caddyfile(tag):
+ host=tag+'-sit.onwalk.net'
+ return ('{\n  admin off\n  auto_https off\n  http_port 8080\n  metrics\n'
+         '  servers {\n    trusted_proxies static private_ranges\n  }\n}\n'
+         ':9180 {\n  metrics\n}\n:8080 {\n  respond /healthz "ok" 200\n'
+         '  respond "not found" 404\n}\n'+''.join(
+          f'http://{prefix}{host}:8080 {{\n  reverse_proxy web-saas-{service}:80\n}}\n'
+          for prefix,service in (('', 'console'),('accounts-', 'accounts'),('billing-', 'billing'))))
+
 def candidate_scope(stage,candidate):
  if candidate is None:
   require(stage in SCOPE.SCOPES,'unsupported lane stage')
@@ -108,12 +117,17 @@ def validate_documents(documents,stage,tls=False,candidate=None):
   require(not h.get('chart') and not h.get('kubeConfig') and not h.get('storageNamespace'),'cross-cluster/namespace Helm overrides rejected')
   require(h.get('valuesFrom')==[{'kind':'ConfigMap','name':'web-saas-fullstack-values','valuesKey':'values.yaml'},{'kind':'ConfigMap','name':'web-saas-fullstack-release','valuesKey':'release.yaml'}],'fixed values then immutable release overlay required')
   require(all(d.get('namespace',ns)==ns for d in h.get('dependsOn',[])),'cross-namespace dependency rejected')
+  caddy_patches=0
   for renderer in h.get('postRenderers',[]):
    require(set(renderer)=={'kustomize'} and set(renderer['kustomize'])<={'patches'},'unsupported post-renderer')
    for patch in renderer['kustomize'].get('patches',[]):
     target=patch.get('target',{})
     parsed=yaml.safe_load(patch.get('patch',''))
     validate_patch_scope(parsed)
+    if candidate is not None and target.get('kind')=='ConfigMap':
+     expected={'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'web-saas-caddy-config'},'data':{'Caddyfile':tagged_caddyfile(candidate['tagged_lane']['feature_tag'])}}
+     require(target=={'kind':'ConfigMap','name':'web-saas-caddy-config'} and parsed==expected,'tagged Caddy configuration differs from candidate routes')
+     caddy_patches+=1
     def no_image_override(value):
      if isinstance(value,dict):
       require('image' not in value and not str(value.get('path','')).endswith('/image'),'post-rendered images bypass immutable release')
@@ -122,6 +136,7 @@ def validate_documents(documents,stage,tls=False,candidate=None):
       for child in value:no_image_override(child)
     no_image_override(parsed)
     require(target.get('kind') in {'Deployment','StatefulSet','Job','Service','ConfigMap','NetworkPolicy'} and str(target.get('name','')).startswith('web-saas-'),'post-renderer escaped workload allowlist')
+  if candidate is not None:require(caddy_patches==1,'exactly one candidate-bound Caddy configuration required')
  ingresses=by_kind.get('Ingress',[])
  require({i['metadata']['name'] for i in ingresses}==({'web-saas-https'} if tls else {'web-saas-http'}),'fixed phase-specific Ingress required')
  hosts=set()

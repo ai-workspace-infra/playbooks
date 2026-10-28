@@ -139,11 +139,19 @@ class Contracts(unittest.TestCase):
   for doc in docs:doc['metadata']['namespace']=ns
   next(x for x in docs if x['kind']=='HelmRelease')['spec']['targetNamespace']=ns
   next(x for x in docs if x['kind']=='OCIRepository')['spec']['ref']={'digest':candidate['chart_digest']}
+  caddy_patch={'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'web-saas-caddy-config'},'data':{'Caddyfile':C.tagged_caddyfile(lane['feature_tag'])}}
+  next(x for x in docs if x['kind']=='HelmRelease')['spec']['postRenderers']=[{'kustomize':{'patches':[{'target':{'kind':'ConfigMap','name':'web-saas-caddy-config'},'patch':yaml.safe_dump(caddy_patch)}]}}]
   ingress=next(x for x in docs if x['kind']=='Ingress')
   ingress['metadata']['annotations']={};ingress['spec']['ingressClassName']='caddy'
   for rule,host in zip(ingress['spec']['rules'],sorted(hosts)):rule['host']=host
   result=C.validate_documents(docs,'sit',candidate=candidate)
   self.assertEqual(result['namespace'],ns);self.assertEqual(set(result['hosts']),hosts)
+  for old,new in (('web-saas-console:80','external.example:80'),(lane['feature_tag']+'-sit.onwalk.net','other-sit.onwalk.net')):
+   bad=copy.deepcopy(docs);patch=next(x for x in bad if x['kind']=='HelmRelease')['spec']['postRenderers'][0]['kustomize']['patches'][0]
+   patch['patch']=patch['patch'].replace(old,new)
+   with self.subTest(old=old),self.assertRaisesRegex(ValueError,'candidate routes'):C.validate_documents(bad,'sit',candidate=candidate)
+  bad=copy.deepcopy(docs);next(x for x in bad if x['kind']=='HelmRelease')['spec']['postRenderers']=[]
+  with self.assertRaisesRegex(ValueError,'exactly one'):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(docs);bad[0]['metadata']['namespace']='production'
   with self.assertRaises(ValueError):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(candidate);bad['components']['accounts']['image']='ghcr.io/ai-workspace-services/accounts@sha256:'+'b'*64
