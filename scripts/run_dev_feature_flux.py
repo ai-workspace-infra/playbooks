@@ -100,6 +100,9 @@ def execute(a):
   require(a.seed_receipt is not None and re.fullmatch(r'[0-9a-f]{64}',a.seed_sha256 or ''),'authenticated seed receipt artifact/digest required')
   require(hashlib.sha256(a.seed_receipt.read_bytes()).hexdigest()==a.seed_sha256,'seed receipt digest mismatch')
   config['seed_receipt']=json.loads(a.seed_receipt.read_text())
+  if projection is not None:
+   lane=projection['tagged_lane'];seed=config['seed_receipt']
+   require(seed.get('feature_id')==lane['feature_id'] and seed.get('feature_tag')==lane['feature_tag'] and seed.get('candidate_sha256')==lane['candidate_sha256'],'tagged seed receipt differs from candidate')
   require(a.prepare_receipt is not None and re.fullmatch(r'[0-9a-f]{64}',a.prepare_sha256 or ''),'authenticated prepare receipt artifact/digest required')
   require(hashlib.sha256(a.prepare_receipt.read_bytes()).hexdigest()==a.prepare_sha256,'prepare receipt digest mismatch')
   prepare=json.loads(a.prepare_receipt.read_text())

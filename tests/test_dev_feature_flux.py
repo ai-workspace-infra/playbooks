@@ -171,6 +171,25 @@ class PhaseTests(unittest.TestCase):
   with self.assertRaises(ValueError):R.execute(c,client)
   self.assertEqual(client.applied,[])
 
+ def test_tagged_verify_rejects_unbound_seed_before_apply(self):
+  c=self.config();c.update(namespace='feature-sit-test-1483-sit',mode='verify',namespace_uid='3'*36,
+      tagged_lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'e'*64})
+  c['seed_receipt']={'schema_version':'dev-lane-seed/v1','result':'verified','namespace':c['namespace'],'namespace_uid':c['namespace_uid'],
+     'candidate_sha':c['candidate_sha'],'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'instance_id':c['instance_id'],
+     'database_roles':['xc_accounts_rw','xc_billing_rw'],'schema_initialized':True}
+  base=self.baseline(c)
+  class Client:
+   def __init__(self):self.applied=[]
+   def get(self,kind,name=None,namespace=None,optional=False):
+    if kind=='nodes':return base[0]
+    if kind=='namespace' and name=='kube-system':return base[1]
+    if kind=='namespace':return {'metadata':{'uid':c['namespace_uid'],'labels':{'app.kubernetes.io/managed-by':'dev-feature-flux-owner','environment':'sit','release.svc.plus/feature':'sit-test-1483','feature_id':'sit-test-1483','release.svc.plus/feature-tag':'smoke-sit-test-1483'}}}
+    return base[2] if kind=='gitrepository' else base[3]
+   def apply(self,docs):self.applied.append(docs)
+  client=Client()
+  with self.assertRaisesRegex(ValueError,'tagged seed receipt differs'):R.execute(c,client)
+  self.assertEqual(client.applied,[])
+
 class RegistryProjectionTests(unittest.TestCase):
  def test_only_fixed_namespace_and_registry_secret(self):
   import importlib.util
@@ -184,6 +203,18 @@ class RegistryProjectionTests(unittest.TestCase):
   with self.assertRaises(ValueError):module.build('web-saas-uat',{})
 
 class CandidateEvolutionTests(unittest.TestCase):
+ def test_referral_seed_owner_rejects_tagged_receipt_before_target_or_transport(self):
+  from types import SimpleNamespace
+  from unittest.mock import patch
+  import run_dev_web_saas_seed as seed
+  args=SimpleNamespace(phase='seed-admin',cmdb=None,cmdb_sha256='a'*64,instance_id='1',
+                       candidate_receipt=None,candidate_sha256='b'*64,gitops_sha='c'*40,stage='sit')
+  with patch.object(seed,'read_bound',return_value={}),patch.object(seed,'validate_cmdb',return_value={}), \
+       patch.object(seed,'validate_candidate_receipt',return_value={'schema_version':'dev-feature-candidate/v2'}), \
+       patch.object(seed.candidate,'validate_tree') as render,patch.object(seed,'binding') as transport:
+   with self.assertRaisesRegex(ValueError,'database seed owner is not implemented'):seed.execute(args)
+   render.assert_not_called();transport.assert_not_called()
+
  def test_tagged_receipt_requires_same_main_caller_run_attempt_and_fingerprint(self):
   from unittest.mock import patch
   import run_dev_feature_flux as owner
