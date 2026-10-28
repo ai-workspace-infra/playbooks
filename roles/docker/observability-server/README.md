@@ -114,8 +114,10 @@ deployment still fails closed until the token is present.
 observability_mcp_grafana_enabled: false
 observability_mcp_grafana_image: "grafana/mcp-grafana:latest"
 observability_mcp_grafana_port: 8000
-observability_mcp_grafana_transport: "streamable-http"
+observability_mcp_grafana_transport: "sse"
+observability_mcp_grafana_base_path: "/mcp/v1/grafana"
 observability_mcp_grafana_disable_write: true
+observability_mcp_grafana_disable_admin: true
 observability_mcp_grafana_url: "http://grafana:3000"
 observability_mcp_grafana_service_account_token: ""
 observability_mcp_grafana_allowed_hosts: "observability.svc.plus,127.0.0.1,127.0.0.1:8000,localhost,localhost:8000"
