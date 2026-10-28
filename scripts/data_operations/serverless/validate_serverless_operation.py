@@ -12,6 +12,24 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def validate_nonsecret_config(value):
+    """Keep direct owner callers subject to the same non-secret input boundary."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            require(isinstance(key, str), "config keys must be strings")
+            require(not re.search(r"(?i)(password|passphrase|private_?key|access_?token|bearer_?token|api_?key|secret_?key|credentials|command|script|sql|_dsn|_pass)$", key),
+                    "credentials, SQL and commands are not workflow inputs")
+            require(key not in {"dsn", "source_dsn", "target_dsn", "token", "secret"},
+                    "credentials must be resolved through Vault")
+            validate_nonsecret_config(item)
+    elif isinstance(value, list):
+        for item in value:
+            validate_nonsecret_config(item)
+    elif isinstance(value, str):
+        require(not re.search(r"(?i)(postgres(?:ql)?://|-----BEGIN .*PRIVATE KEY|\bbearer\s+\S+)", value),
+                "connection strings and private keys are prohibited")
+
+
 def main():
     environment = os.environ.get("REQUESTED_ENVIRONMENT", "")
     operation = os.environ.get("REQUESTED_OPERATION", "")
@@ -29,6 +47,10 @@ def main():
     require(bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", correlation)),
             "correlation_id must contain only letters, digits, dot, underscore, or hyphen")
     require(isinstance(config, dict), "config_json must be a JSON object")
+    validate_nonsecret_config(config)
+    vault_path = config.get("supabase_vault_path", "")
+    require(isinstance(vault_path, str) and vault_path in {"", f"kv/data/{environment}/serverless/supabase"},
+            "Supabase Vault path must match the selected environment")
 
     if operation in {"baseline", "migrate"}:
         require(environment == "uat", f"{operation} is UAT-only")
