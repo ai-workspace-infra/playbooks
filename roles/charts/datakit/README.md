@@ -29,3 +29,11 @@ Use the same CMDB inventory for a reviewed DEV/SIT/UAT deployment. The role asse
 ## Rollback
 
 Re-run the role with the prior reviewed values and chart version to restore the previous Helm revision. To stop only Caddy metric collection, remove the Caddy `dkconfig` entry and retain the PostgreSQL exporter entry. To restore the prior broad container log behavior, set `datakit_business_log_namespace_selector` to the previously approved selector. Rollback and deployment must use the same non-production cluster target. Secret management remains disabled unless explicitly requested; when enabled, it requires runtime Vault or DataWay credentials.
+
+## Production ownership
+
+The production DataKit release is managed by Flux HelmRelease from the GitOps
+`services/platform-observability/prod-datakit` values. Do not run this DEV/SIT/UAT
+role against production or use its feature-lane defaults there; adjust production
+inputs through the reviewed GitOps source and verify Flux reconciliation instead.
+Production reuses its existing DataWay Secret and does not store the value in Git.
