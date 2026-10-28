@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / 'scripts/pipeline/check-shared-readiness.sh'
 
 class SharedReadiness(unittest.TestCase):
-    def run_probe(self, obs_status='200', obs_body='{"database":"ok"}'):
+    def run_probe(self, obs_status='200', obs_body='{"database":"ok"}', mode='required', reason=''):
         with tempfile.TemporaryDirectory() as directory:
             curl = Path(directory) / 'curl'
             curl.write_text('''#!/usr/bin/env python3
@@ -24,11 +24,18 @@ open(out,'w').write(body)
 print(status,end='')
 ''')
             curl.chmod(0o755)
-            env={**os.environ, 'PATH':directory+os.pathsep+os.environ['PATH'],
+            env={**os.environ, 'SHARED_IAM_READINESS_MODE': mode, 'SHARED_IAM_OFFLINE_REASON': reason, 'PATH':directory+os.pathsep+os.environ['PATH'],
                  'SHARED_VAULT_ENDPOINT':'https://vault.example', 'SHARED_OBSERVABILITY_ENDPOINT':'https://obs.example',
                  'SHARED_IAM_ENDPOINT':'https://iam.example', 'SHARED_IAM_ISSUER':'https://iam.example',
                  'TEST_STATUS':obs_status, 'TEST_BODY':obs_body}
             return subprocess.run(['bash',str(SCRIPT)],env=env,capture_output=True,text=True)
+    def test_explicit_offline_is_visible_and_requires_reason(self):
+        result = self.run_probe(mode='offline', reason='temporarily-offline')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('SKIPPED', result.stdout)
+        self.assertNotEqual(self.run_probe(mode='offline').returncode, 0)
+        self.assertNotEqual(self.run_probe(mode='invalid').returncode, 0)
+
     def test_current_endpoint_healthy(self):
         result=self.run_probe()
         self.assertEqual(result.returncode,0,result.stderr)

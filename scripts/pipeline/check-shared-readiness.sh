@@ -55,7 +55,7 @@ case "$iam_mode" in
       echo "::error::Shared IAM discovery issuer does not match ${expected_iam_issuer}." >&2
       exit 1
     }
-    
+
     ;;
   offline)
     [[ "${SHARED_IAM_OFFLINE_REASON:-}" == "temporarily-offline" ]] || {
