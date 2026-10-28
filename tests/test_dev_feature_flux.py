@@ -26,6 +26,9 @@ class Contracts(unittest.TestCase):
    with patch.object(owner.socket,'create_connection') as connect:
     connection._create_connection(('other.example',443),10,None)
     connect.assert_called_once_with(('8.8.8.8',443),10,None)
+   with patch.object(owner.socket,'create_connection') as connect:
+    owner.pin_connection(connection,'8.8.8.8')._create_connection(('other.example',80),10,None)
+    connect.assert_called_once_with(('8.8.8.8',80),10,None)
    connection.getresponse.return_value.status=302
    with self.assertRaisesRegex(ValueError,'readiness failed'):owner.probe_tagged_public_https(lane,'8.8.8.8')
   with patch.object(owner.socket,'getaddrinfo',return_value=[(owner.socket.AF_INET,owner.socket.SOCK_STREAM,6,'',('8.8.4.4',443))]):

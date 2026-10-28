@@ -20,6 +20,10 @@ def tagged_dns_addresses(host,target_ip):
  require(ipv4==[target_ip] and not ipv6,'tagged DNS must resolve only to the selected IPv4 target')
  return ipv4
 
+def pin_connection(connection,target_ip):
+ connection._create_connection=lambda address,timeout=None,source_address=None:socket.create_connection((target_ip,address[1]),timeout,source_address)
+ return connection
+
 def probe_tagged_public_https(lane,target_ip):
  """Observe TLS and three public service endpoints; not business acceptance."""
  _,_,_,_,hosts,_=candidate.SCOPE.scope({'environment':'sit','tagged_lane':lane})
@@ -32,7 +36,7 @@ def probe_tagged_public_https(lane,target_ip):
   connection=http.client.HTTPSConnection(host,timeout=10)
   # Keep the verified address fixed across DNS check and TLS connection while
   # HTTPSConnection still validates the original hostname and certificate.
-  connection._create_connection=lambda address,timeout=None,source_address=None:socket.create_connection((target_ip,address[1]),timeout,source_address)
+  pin_connection(connection,target_ip)
   try:
    connection.request('GET',path)
    response=connection.getresponse()
@@ -48,7 +52,7 @@ def probe_tagged_content_chain(lane,target_ip):
  require(host in hosts,'content chain host differs')
  tagged_dns_addresses(host,target_ip)
  connection=http.client.HTTPSConnection(host,timeout=10)
- connection._create_connection=lambda address,timeout=None,source_address=None:socket.create_connection((target_ip,address[1]),timeout,source_address)
+ pin_connection(connection,target_ip)
  try:
   path='/api/docs/search?query=sit-probe-'+lane['candidate_sha256'][:16]
   connection.request('GET',path,headers={'Cache-Control':'no-store'})
@@ -149,6 +153,8 @@ def execute(a):
    addresses=tagged_dns_addresses(host,config['target_ip']) if projection is not None else sorted(set(socket.gethostbyname_ex(host)[2]))
    require(addresses==[config['target_ip']],'DNS does not point uniquely to this Dev instance')
    connection=http.client.HTTPConnection(host,80,timeout=10)
+   if projection is not None:
+    pin_connection(connection,config['target_ip'])
    try:
     connection.request('GET','/.well-known/acme-challenge/owner-preflight')
     response=connection.getresponse();status=response.status;location=response.getheader('Location')
