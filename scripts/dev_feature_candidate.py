@@ -70,7 +70,7 @@ def tagged_caddyfile(tag):
 def validate_tagged_endpoints(values,namespace,tag):
  host=tag+'-sit.onwalk.net'
  service=lambda name:'http://web-saas-'+name+'.'+namespace+'.svc.cluster.local'
- expected={'accounts':{'DB_HOST':'web-saas-postgresql.'+namespace+'.svc.cluster.local','DB_PORT':'5432','DB_NAME':'account','POSTGRES_USER':'xc_accounts_rw','OAUTH_FRONTEND_URL':'https://'+host,'OAUTH_GITHUB_REDIRECT_URL':'https://accounts-'+host+'/api/auth/github/callback','OAUTH_GOOGLE_REDIRECT_URL':'https://accounts-'+host+'/api/auth/google/callback'},
+ expected={'accounts':{'DB_HOST':'web-saas-postgresql.'+namespace+'.svc.cluster.local','DB_PORT':'5432','DB_NAME':'account','POSTGRES_USER':'xc_accounts_rw','DATABASE_BACKGROUND_WRITERS':'false','STRIPE_MODE':'test','OAUTH_FRONTEND_URL':'https://'+host,'OAUTH_GITHUB_REDIRECT_URL':'https://accounts-'+host+'/api/auth/github/callback','OAUTH_GOOGLE_REDIRECT_URL':'https://accounts-'+host+'/api/auth/google/callback'},
            'console':{'ACCOUNT_SERVICE_URL':service('accounts'),'SERVER_SERVICE_URL':service('accounts'),'SERVER_SERVICE_INTERNAL_URL':service('accounts'),'DOCS_SERVICE_URL':service('content'),'DOCS_SERVICE_INTERNAL_URL':service('content'),'BILLING_SERVICE_URL':service('billing'),'NEXT_PUBLIC_ACCOUNT_SERVICE_URL':'https://accounts-'+host,'RUNTIME_AUTH_URL':'https://accounts-'+host,'APP_BASE_URL':'https://'+host,'NEXT_PUBLIC_APP_BASE_URL':'https://'+host,'NEXT_PUBLIC_SITE_URL':'https://'+host}}
  for component,mapping in expected.items():
   settings=values.get(component,{})
@@ -142,7 +142,7 @@ def validate_documents(documents,stage,tls=False,candidate=None):
    require(isinstance(server,dict) and server.get('publicUrl')=='https://accounts-'+host and set(server.get('allowedOrigins',[]))=={'https://'+host,'https://accounts-'+host,'https://billing-'+host} and isinstance(oauth,dict) and oauth.get('frontendUrl')=='https://'+host and all(oauth.get(provider,{}).get('redirectUrl')=='https://accounts-'+host+'/api/auth/'+provider+'/callback' for provider in ('github','google')) and isinstance(agent,dict) and agent.get('controllerUrl')=='http://web-saas-accounts.'+ns+'.svc.cluster.local','tagged Accounts template escaped candidate lane')
    account_env=dict(values.get('accounts',{}).get('workload',{}).get('env',{}))
    account_env.update(release.get('accounts',{}).get('workload',{}).get('env',{}))
-   require(all(key in account_env for key in ('DB_HOST','DB_PORT','DB_NAME','POSTGRES_USER')),'tagged Accounts database identity must be explicit')
+   require(all(key in account_env for key in ('DB_HOST','DB_PORT','DB_NAME','POSTGRES_USER','DATABASE_BACKGROUND_WRITERS','STRIPE_MODE')),'tagged Accounts database identity and external effect settings must be explicit')
    value_env=values.get('content',{}).get('workload',{}).get('env',{})
    release_env=release.get('content',{}).get('workload',{}).get('env',{})
    require(release_env.get('KNOWLEDGE_REPO_URL',value_env.get('KNOWLEDGE_REPO_URL'))=='https://github.com/'+candidate['knowledge']['repository']+'.git' and release_env.get('KNOWLEDGE_REPO_REF',value_env.get('KNOWLEDGE_REPO_REF'))==candidate['knowledge']['sha'],'runtime knowledge source differs from authenticated candidate')
