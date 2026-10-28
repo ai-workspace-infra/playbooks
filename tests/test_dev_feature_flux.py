@@ -241,7 +241,7 @@ class PhaseTests(unittest.TestCase):
     return base[2] if kind=='gitrepository' else base[3]
    def apply(self,docs):self.applied.append(docs)
   client=Client()
-  with self.assertRaisesRegex(ValueError,'tagged seed receipt differs'):R.execute(c,client)
+  with self.assertRaisesRegex(ValueError,'TLS and service health evidence'):R.execute(c,client)
   self.assertEqual(client.applied,[])
 
  def test_tagged_caddy_submit_requires_dns_before_any_apply(self):

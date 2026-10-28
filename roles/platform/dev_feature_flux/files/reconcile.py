@@ -250,7 +250,9 @@ def rebuild_namespace(c,client,existing,sleep,clock):
  return {'namespace_uid':new_uid,'rebuild':{'previous_namespace_uid':old_uid,'old_local_path_pvs':pv_names,'namespace_deleted':True,'persistent_volumes_reclaimed':True}}
 
 def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
- validate(c);require(re.fullmatch(r'[1-9][0-9]*',str(c.get('instance_id',''))),'CMDB instance identity required');client=client or Client()
+ validate(c);require(re.fullmatch(r'[1-9][0-9]*',str(c.get('instance_id',''))),'CMDB instance identity required')
+ require(not (c.get('tagged_lane') is not None and c.get('mode')=='verify'),'tagged acceptance requires implemented TLS and service health evidence')
+ client=client or Client()
  NS,SOURCE,PATH,feature,domains,tag=scope(c)
  def base():return (client.get('nodes'),client.get('namespace','kube-system'),client.get('gitrepository','platform-config','flux-system'),client.get('kustomization','platform-root','flux-system'))
  baseline=base();preflight(c,*baseline)
