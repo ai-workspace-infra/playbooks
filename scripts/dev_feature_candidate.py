@@ -78,6 +78,11 @@ def validate_tagged_endpoints(values,namespace,tag):
   require(isinstance(env,dict),'tagged service environment must be a mapping')
   for key,required in mapping.items():
    if key in env:require(env[key]==required,'tagged service endpoint escaped candidate lane')
+ console=values.get('console',{}).get('singleContainer',{}).get('env',{})
+ if 'BRIDGE_SERVER_URL' in console:require(console['BRIDGE_SERVER_URL']=='http://bridge-disabled.invalid','tagged lane cannot use a shared bridge')
+ content=values.get('content',{}).get('workload',{}).get('env',{})
+ if 'KNOWLEDGE_REPO_URL' in content:require(content['KNOWLEDGE_REPO_URL']=='https://github.com/ai-workspace-services/knowledge.git','tagged knowledge repository differs from the reviewed source')
+ if 'KNOWLEDGE_REPO_REF' in content:require(SCOPE.SHA.fullmatch(str(content['KNOWLEDGE_REPO_REF'])),'tagged knowledge revision must be a full commit SHA')
 
 def candidate_scope(stage,candidate):
  if candidate is None:

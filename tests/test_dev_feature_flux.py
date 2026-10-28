@@ -183,6 +183,9 @@ class Contracts(unittest.TestCase):
    bad=copy.deepcopy(docs);cm=next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values')
    values=yaml.safe_load(cm['data']['values.yaml']);values[component]={'singleContainer' if component=='console' else 'workload':{'env':env}};cm['data']['values.yaml']=yaml.safe_dump(values)
    with self.subTest(component=component),self.assertRaisesRegex(ValueError,'endpoint escaped'):C.validate_documents(bad,'sit',candidate=candidate)
+  for component,env in (('content',{'KNOWLEDGE_REPO_REF':'main'}),('content',{'KNOWLEDGE_REPO_URL':'https://example.com/knowledge.git'}),('console',{'BRIDGE_SERVER_URL':'https://bridge.svc.plus'})):
+   bad=copy.deepcopy(docs);cm=next(x for x in bad if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values');values=yaml.safe_load(cm['data']['values.yaml']);values[component]={'singleContainer' if component=='console' else 'workload':{'env':env}};cm['data']['values.yaml']=yaml.safe_dump(values)
+   with self.subTest(env=env),self.assertRaises(ValueError):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(docs);bad[0]['metadata']['namespace']='production'
   with self.assertRaises(ValueError):C.validate_documents(bad,'sit',candidate=candidate)
   bad=copy.deepcopy(candidate);bad['components']['accounts']['image']='ghcr.io/ai-workspace-services/accounts@sha256:'+'b'*64
