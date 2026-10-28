@@ -23,6 +23,9 @@ def probe_tagged_public_https(lane,target_ip):
  for host,path in paths.items():
   require(sorted(set(socket.gethostbyname_ex(host)[2]))==[target_ip],'public health DNS target differs')
   connection=http.client.HTTPSConnection(host,timeout=10)
+  # Keep the verified address fixed across DNS check and TLS connection while
+  # HTTPSConnection still validates the original hostname and certificate.
+  connection._create_connection=lambda address,timeout=None,source_address=None:socket.create_connection((target_ip,address[1]),timeout,source_address)
   try:
    connection.request('GET',path)
    response=connection.getresponse()

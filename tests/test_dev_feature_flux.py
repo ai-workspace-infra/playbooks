@@ -16,6 +16,9 @@ class Contracts(unittest.TestCase):
   with patch.object(owner.socket,'gethostbyname_ex',return_value=('',[],['8.8.8.8'])), patch.object(owner.http.client,'HTTPSConnection',return_value=connection):
    result=owner.probe_tagged_public_https(lane,'8.8.8.8');self.assertEqual(len(result),3)
    self.assertEqual(connection.request.call_count,3)
+   with patch.object(owner.socket,'create_connection') as connect:
+    connection._create_connection(('other.example',443),10,None)
+    connect.assert_called_once_with(('8.8.8.8',443),10,None)
    connection.getresponse.return_value.status=302
    with self.assertRaisesRegex(ValueError,'readiness failed'):owner.probe_tagged_public_https(lane,'8.8.8.8')
   with patch.object(owner.socket,'gethostbyname_ex',return_value=('',[],['8.8.4.4'])):
