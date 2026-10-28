@@ -1,0 +1,19 @@
+---
+- name: 限定 DataKit 交付到 DEV/SIT/UAT
+  ansible.builtin.assert:
+    that:
+      - target_env is defined
+      - target_env | default('') | lower in ['dev', 'sit', 'uat']
+    fail_msg: "DataKit 仅允许交付到 DEV/SIT/UAT；PROD 不在本变更范围内。"
+
+- name: 确保目标 Kubernetes 命名空间存在
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ datakit_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: platform-observability
+          managed-by: ansible-gitops

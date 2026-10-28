@@ -1,0 +1,59 @@
+workload:
+  kind: DaemonSet
+
+datakit:
+  dataway_secret_enabled: true
+  dataway_secret_create: false
+  dataway_secret_name: "datakit-dataway-secret"
+  dataway_secret_key: "ENV_DATAWAY"
+  global_tags: "{{ datakit_global_tags }}"
+  default_enabled_inputs: "{{ datakit_default_inputs }}"
+  log: "{{ datakit_log_level }}"
+
+extraEnvs:
+{% if datakit_enable_opentelemetry %}
+  - name: "ENV_INPUT_OTEL_GRPC"
+    value: '{"addr": "{{ datakit_otel_grpc_addr }}", "max_payload": 16777216}'
+  - name: "ENV_INPUT_OTEL_HTTP"
+    value: '{"enable": true, "http_status_ok": 200, "trace_api": "/otel/v1/traces", "metric_api": "/otel/v1/metrics", "logs_api": "/otel/v1/logs"}'
+  - name: "ENV_INPUT_OTEL_CUSTOMER_TAGS_ALL"
+    value: "true"
+  - name: "ENV_INPUT_OTEL_METRIC_ENABLE_AGGREGATE"
+    value: "true"
+{% endif %}
+  - name: "ENV_INPUT_CONTAINER_CONTAINER_INCLUDE_LOG"
+    value: "{{ datakit_business_log_namespace_selector }}"
+
+dkconfig:
+  - name: "caddy-metrics.conf"
+    path: "/usr/local/datakit/conf.d/prom/caddy-metrics.conf"
+    value: |
+      [[inputs.prom]]
+        urls = ["{{ datakit_caddy_metrics_url }}"]
+        source = "caddy"
+        interval = "30s"
+        measurement_name = "caddy"
+        keep_exist_metric_name = true
+        [inputs.prom.tags]
+          cluster = "{{ k8s_cluster_name | default('default') }}"
+          env = "{{ target_env }}"
+          service = "web-saas-caddy"
+  - name: "postgresql-exporter.conf"
+    path: "/usr/local/datakit/conf.d/prom/postgresql-exporter.conf"
+    value: |
+      [[inputs.prom]]
+        urls = ["{{ datakit_postgresql_metrics_url }}"]
+        source = "postgresql"
+        interval = "15s"
+        [inputs.prom.tags]
+          cluster = "{{ k8s_cluster_name | default('default') }}"
+          env = "{{ target_env }}"
+          db_instance = "web-saas-postgresql"
+
+resources:
+  requests:
+    cpu: "{{ datakit_requests_cpu }}"
+    memory: "{{ datakit_requests_memory }}"
+  limits:
+    cpu: "{{ datakit_limits_cpu }}"
+    memory: "{{ datakit_limits_memory }}"

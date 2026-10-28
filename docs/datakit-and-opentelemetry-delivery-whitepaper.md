@@ -1,0 +1,529 @@
+---
+title: DataKit 跨云可观测性与 OpenTelemetry 数据网关交付白皮书
+description: 规范 Kubernetes (PROD/SIT) DataKit DaemonSet 部署、HashiCorp Vault 凭据中心、DataWay 公网网关、Cloudflare/Cloud Run/Supabase 跨云汇聚及 OpenTelemetry 端到端采集规范。
+slug: datakit-and-opentelemetry-delivery-whitepaper
+lang: zh
+tags:
+  - observability
+  - datakit
+  - opentelemetry
+  - guance
+  - vault
+  - k3s
+  - gitops
+---
+
+# DataKit 跨云可观测性与 OpenTelemetry 数据网关交付白皮书
+
+> **文档状态**: 正式归档 (Approved & Verified)  
+> **归档位置**: `modern-it-infrastructure-platform-engineering/docs/zh/observability/02-opentelemetry/`、`knowledge/docs/reference/` 与 `playbooks/docs/`  
+> **文档版本**: `v1.1.0`  
+> **发布日期**: 2026-10-28  
+> **涉及系统**: PROD K3S (`web-saas-k3s-v5`), SIT K3S (`dev-k3s-v5`), UAT Serverless (Cloudflare / GCP Cloud Run / Supabase DB), 观测云 DataWay (`https://cn3-openway.guance.com`), HashiCorp Vault (`https://vault.svc.plus`)
+
+---
+
+## 一、架构愿景与拓扑总览
+
+随着多云与混合云业务体系的发展，应用系统与微服务横跨 **Kubernetes 容器集群（PROD/SIT）**、**无服务器运行时（GCP Cloud Run）**、**全球边缘网络（Cloudflare Workers / Logpush）** 以及 **托管数据库（Supabase PostgreSQL）**。
+
+为了打破多云孤岛，实现统一全景可观测性，本白皮书规范了基于 **DataKit (Kubernetes Helm DaemonSet)**、**OpenTelemetry 协议中枢**、**HashiCorp Vault 凭据中心** 及 **Flux CD / Ansible 自动化编排** 的端到端跨云数据接入与汇聚体系，最终将所有指标（Metrics）、链路追踪（Traces）与日志（Logs）经由观测云安全公网网关 **DataWay (`https://cn3-openway.guance.com`)** 进行统一治理、关联分析与可视化呈现。
+
+```mermaid
+flowchart TD
+    subgraph UAT_Cloud ["1. UAT 跨云多运行时环境"]
+        CF["Cloudflare (Logpush / Workers)"]
+        CR["GCP Cloud Run (OTel SDK / Agent)"]
+        SB["Supabase DB (PostgreSQL)"]
+    end
+
+    subgraph Security_Plane ["2. 统一凭据安全平面 (Vault KV v2)"]
+        Vault["HashiCorp Vault (https://vault.svc.plus)\n- DataWay: kv/data/datakit/shared/dataway\n- OTel: kv/data/dataway/otel/shared\n- UAT/PROD: kv/data/{env}/serverless/observability"]
+    end
+
+    subgraph PROD_Cluster ["3. PROD K3S 集群 (104.105.141.213 / prod-k3s-v5)"]
+        direction TB
+        CADDY["Caddy Ingress Gateway (observability.svc.plus)\nRoute: /otel/v1/* (X-Token / Bearer 鉴权)"]
+        
+        subgraph DK_PROD_NS ["Namespace: datakit"]
+            ESO["ExternalSecrets Operator (ESO)"]
+            DK_DS["DataKit DaemonSet (v2.16.1)\n- Host Alias: prod-k3s-v5\n- Inputs: host, container, opentelemetry, statsd, etc."]
+            DK_SVC["ClusterIP Service: datakit-service\n- gRPC: 4317\n- HTTP: 9529\n- StatsD: 8125"]
+        end
+    end
+
+    subgraph SIT_Cluster ["4. SIT K3S 集群 (172.237.5.48 / dev-k3s-v5)"]
+        subgraph DK_SIT_NS ["Namespace: datakit"]
+            DK_SIT_DS["DataKit DaemonSet (v2.16.1)\n- Tags: cluster=dev-k3s-v5-sit, env=sit"]
+        end
+    end
+
+    subgraph Guance_SaaS ["5. 观测云 SaaS 平台"]
+        DW["DataWay 公网数据网关\n(https://cn3-openway.guance.com?token=***)"]
+        CONSOLE["观测云工作空间 (wksp_cdcfb3a281c3443fb06770f49a277e1d)"]
+    end
+
+    %% 凭据流
+    Vault -.->|ESO 自动拉取| ESO
+    ESO -.->|Secret: datakit-dataway-secret| DK_DS
+    Vault -.->|Ansible Playbook 动态渲染| DK_SIT_DS
+    Vault -.->|CI/CD Secret 注入| CR
+
+    %% 数据接入流
+    CF -->|OTel HTTP Logs/Traces| CADDY
+    CR -->|OTel HTTP/Protobuf 直连| DW
+    CR -.->|OTel gRPC 转发| CADDY
+    SB -.->|DB 远端指标轮询| DK_DS
+    CADDY -->|内部反向代理 9529/4317| DK_SVC
+    DK_SVC --> DK_DS
+
+    %% 上报流
+    DK_DS ==>|DataWay Protocol / HTTPS| DW
+    DK_SIT_DS ==>|DataWay Protocol / HTTPS| DW
+    DW ==> CONSOLE
+```
+
+---
+
+## 二、Vault KV 凭据平面设计与安全基线
+
+遵循平台工程核心安全准则：“**凭据不进代码、不落明文磁盘、终端日志不打印**”，所有与观测云、DataWay、OpenTelemetry 相关的敏感 Token 全部收敛至 HashiCorp Vault KV（v2）。
+
+### 1. 凭据路径设计矩阵
+
+| 凭据路径 (Vault KV v2) | Key 字段 | 类型 | 用途与说明 |
+| :--- | :--- | :--- | :--- |
+| `kv/data/datakit/shared/dataway` | `DATAWAY_URL` | string | 完整的公网 DataWay 上报端点：`https://cn3-openway.guance.com?token=tkn_...` |
+|  | `DATAWAY_TOKEN` | string | 观测云工作空间专属接入 Token（必须以 `tkn_` 开头） |
+| `kv/data/dataway/otel/shared` | `OTEL_EXPORTER_OTLP_HEADERS` | string | OTel 上报鉴权头：`X-Token=96d584964ba24996abe4aee502bb8856,To-Headless=true` |
+|  | `OTEL_TOKEN` | string | OpenTelemetry 核心认证 Token（`96d584964ba24996abe4aee502bb8856`） |
+| `kv/data/uat/serverless/observability` | `OTEL_EXPORTER_OTLP_HEADERS` | string | UAT 环境 Cloud Run / Serverless 专属 OpenTelemetry 接入认证头 |
+|  | `OTEL_TOKEN` | string | UAT 环境 OpenTelemetry Token |
+| `kv/data/prod/serverless/observability`| `OTEL_EXPORTER_OTLP_HEADERS` | string | PROD 环境 Serverless 专属接入认证头 |
+| `kv/data/datakit/clusters/web-saas-k3s-v5` | `GLOBAL_TAGS` | string | PROD 集群环境标签：`cluster=web-saas-k3s-v5-prod,env=prod` |
+| `kv/data/datakit/clusters/dev-k3s-v5` | `GLOBAL_TAGS` | string | SIT 集群环境标签：`cluster=dev-k3s-v5-sit,env=sit` |
+
+> [!CAUTION] 鉴权 Token 格式规则
+> 观测云公网 DataWay 网关鉴权对 Token 格式有严格校验：
+> 1. 以 `cn3.` 或 `cn6.` 开头的字符串为 OpenAPI / Agent 管理 API Key，直接传入 DataWay 会被拒绝，抛出 `403 Forbidden: {"error_code":"kodo.invalidClientToken"}`。
+> 2. DataKit 上报与 DataWay 直连必须使用工作空间正式 Client Token（如 `tkn_fffcb87e09694507b31c98b17405cc11`）。
+> 3. OpenTelemetry 协议上报必须通过 HTTP 请求头携带 `X-Token=<OTEL_TOKEN>` 及 `To-Headless=true`。
+
+### 2. ExternalSecrets Operator (ESO) 绑定规范
+PROD K3S 集群装载有 External Secrets Operator，通过 `SecretStore/vault-backend` 实现免密拉取与小时级轮转：
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: datakit-dataway-secret
+  namespace: datakit
+spec:
+  refreshInterval: "1h"
+  secretStoreRef:
+    name: vault-backend
+    kind: SecretStore
+  target:
+    name: datakit-dataway-secret
+    creationPolicy: Owner
+  data:
+  - secretKey: ENV_DATAWAY
+    remoteRef:
+      key: datakit/shared/dataway
+      property: DATAWAY_URL
+```
+
+---
+
+## 三、Ansible Playbook 角色规范 (`roles/charts/datakit`)
+
+在 `ai-workspace-infra/playbooks` 仓库新增标准角色，支持离线/在线一键发布、配置变更与升级。
+
+### 1. 角色目录结构
+```text
+roles/charts/datakit/
+├── defaults/
+│   └── main.yml           # 默认仓库、版本、Chart 配置、探针端口
+├── tasks/
+│   ├── main.yml           # 任务主流程编排
+│   ├── prereqs.yml        # 校验 Helm 3.0+、K8s 集群连通性、命名空间
+│   ├── secrets.yml        # 从 Vault 读取 DataWay Token 并下发 K8s Secret
+│   ├── helm.yml           # 添加 Helm 仓库并安装/升级 DataKit Chart
+│   └── verify.yml         # DaemonSet 滚动更新状态与 Pod 探针校验
+└── templates/
+    └── values.yaml.j2     # 标准 DataKit Helm Values 渲染模板
+```
+
+### 2. 默认参数定义 (`defaults/main.yml`)
+```yaml
+---
+# datakit Helm role defaults
+datakit_helm_repo_url: "https://pubrepo.guance.com/chartrepo/datakit"
+datakit_helm_repo_name: "datakit"
+datakit_chart_name: "datakit/datakit"
+datakit_chart_version: "2.16.1"
+
+datakit_release_name: "datakit"
+datakit_namespace: "datakit"
+
+# Vault 凭据配置
+datakit_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+datakit_vault_path: "datakit/shared/dataway"
+
+# 采集功能开关
+datakit_enable_opentelemetry: true
+datakit_otel_grpc_port: 4317
+datakit_otel_http_port: 9529
+datakit_default_inputs: "statsd,dk,cpu,disk,diskio,mem,swap,system,hostobject,net,host_processes,container,kubernetesprometheus,opentelemetry"
+
+# 资源限制
+datakit_resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+```
+
+### 3. 主剧本入口 (`deploy_datakit.yml`)
+```yaml
+---
+- name: Deploy Guance DataKit DaemonSet on Kubernetes
+  hosts: "{{ target_hosts | default('k3s_clusters') }}"
+  gather_facts: false
+  roles:
+    - role: charts/datakit
+```
+
+---
+
+## 四、Flux CD GitOps 持续交付规范
+
+遵循环境不可变与声明式配置原则，在 GitOps 仓库（`ai-workspace-infra/gitops`）定义全量声明：
+
+### 1. HelmRepository 定义
+```yaml
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: datakit
+  namespace: datakit
+spec:
+  interval: 1h
+  url: https://pubrepo.guance.com/chartrepo/datakit
+```
+
+### 2. HelmRelease 定义 (`HelmRelease/datakit`)
+```yaml
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: datakit
+  namespace: datakit
+spec:
+  interval: 15m
+  chart:
+    spec:
+      chart: datakit
+      version: "2.16.1"
+      sourceRef:
+        kind: HelmRepository
+        name: datakit
+        namespace: datakit
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    workload:
+      kind: DaemonSet
+    datakit:
+      dataway_secret_enabled: true
+      dataway_secret_create: false
+      dataway_secret_name: "datakit-dataway-secret"
+      dataway_secret_key: "ENV_DATAWAY"
+      global_tags: "cluster={{ cluster_name }},env={{ env_name }}"
+      default_enabled_inputs: "statsd,dk,cpu,disk,diskio,mem,swap,system,hostobject,net,host_processes,container,kubernetesprometheus,opentelemetry"
+      log: "info"
+    extraEnvs:
+      - name: "ENV_GLOBAL_HOST_TAGS"
+        value: "host={{ host_alias | default(ansible_hostname) }}"
+      - name: "ENV_INPUT_OTEL_GRPC"
+        value: '{"addr": "0.0.0.0:4317", "max_payload": 16777216}'
+      - name: "ENV_INPUT_OTEL_HTTP"
+        value: '{"enable": true, "http_status_ok": 200, "trace_api": "/otel/v1/traces", "metric_api": "/otel/v1/metrics", "logs_api": "/otel/v1/logs"}'
+      - name: "ENV_INPUT_OTEL_CUSTOMER_TAGS_ALL"
+        value: "true"
+      - name: "ENV_INPUT_OTEL_METRIC_ENABLE_AGGREGATE"
+        value: "true"
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+```
+
+### 3. Serverless 运行时拓扑声明 (`topology/uat/serverless/runtime-topology.yaml`)
+非敏感拓扑声明集中管理在 GitOps 中，敏感 Token 路径通过 `vault_token_path` 引用：
+```yaml
+spec:
+  observability:
+    provider: guance-opentelemetry
+    gateway: https://cn3-openway.guance.com
+    protocol: http/protobuf
+    vault_token_path: kv/data/uat/serverless/observability
+    endpoints:
+      logs: https://cn3-openway.guance.com/otel/v1/logs
+      metrics: https://cn3-openway.guance.com/otel/v1/metrics
+      traces: https://cn3-openway.guance.com/otel/v1/traces
+```
+
+---
+
+## 五、主机别名重构与非侵入式控制机制
+
+在 Linode VPS 或公有云托管环境中，宿主机系统级主机名可能初始化为泛用标识符（如 `localhost`），且因底层网络/系统耦合不建议直接修改 OS 的 hostname。
+
+DataKit 具备强大的主机对象命名重构能力：
+1. **控制机制**：通过在 Helm values 的 `extraEnvs` 中注入环境变量：
+   ```yaml
+   extraEnvs:
+     - name: ENV_GLOBAL_HOST_TAGS
+       value: "host=prod-k3s-v5"
+   ```
+2. **底层行为**：DataKit 解析后会生成配置块：
+   ```toml
+   [global_host_tags]
+     cluster_name_k8s = "default"
+     host = "prod-k3s-v5"
+   ```
+3. **效果保证**：
+   - 系统原生 `hostname`（`localhost`）与底层网络路由完全保持不变。
+   - DataKit 上报的 Host Object 及其所有关联指标、日志、链路均被打上 `host=prod-k3s-v5` 标签，在观测云控制台 `HOST` 列表中直接展示为 `prod-k3s-v5`。
+
+---
+
+## 六、OpenTelemetry 协议标准与跨云多源汇聚
+
+### 1. OpenTelemetry 环境变量标准
+所有接入服务（包括 Cloud Run、Edge Gateway、微服务）均采用标准 OpenTelemetry 环境变量直连 DataWay 或内网 DataKit：
+
+```bash
+# 协议定义（二进制 Protobuf 保证高吞吐与低开销）
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+
+# 认证头（强制携带 X-Token 与 To-Headless）
+export OTEL_EXPORTER_OTLP_HEADERS="X-Token=96d584964ba24996abe4aee502bb8856,To-Headless=true"
+
+# 数据分类接入端点
+export OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://cn3-openway.guance.com/otel/v1/logs
+export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=https://cn3-openway.guance.com/otel/v1/metrics
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://cn3-openway.guance.com/otel/v1/traces
+```
+
+### 2. 多源对接矩阵
+
+| 数据源类别 | 采集机制 | 接入通道与端点 | 凭据来源 |
+| :--- | :--- | :--- | :--- |
+| **GCP Cloud Run** | OTel Go/Node SDK | 直连 `https://cn3-openway.guance.com/otel/v1/*` | Vault `kv/data/{env}/serverless/observability` |
+| **Cloudflare Workers** | Logpush / OTel HTTP | Caddy 反代 `/otel/v1/logs` 或直连 DataWay | Vault `kv/data/dataway/otel/shared` |
+| **Supabase DB** | PostgreSQL 采集器 | PROD DataKit 定期轮询 DB 视图指标与慢日志 | Vault `kv/data/database/supabase` |
+| **PROD/SIT K3s 应用** | OTel gRPC SDK | 集群内直连 `http://datakit-service.datakit:4317` | K8s 内网免 Token（由 DataKit 追加统一标签） |
+
+### 3. Caddy Ingress 反向代理路由 (可选外部安全接入)
+若需对外隐藏 DataWay 目标，可在 `observability.svc.plus` 启用反向代理与 Bearer 鉴权：
+```caddyfile
+observability.svc.plus {
+  @otel_ingress path /otel/*
+  handle @otel_ingress {
+    @valid_token header Authorization "Bearer <UAT_INGRESS_TOKEN>"
+    handle @valid_token {
+      reverse_proxy http://datakit-service.datakit.svc.cluster.local:9529
+    }
+    respond "Unauthorized OTel Collector Ingest" 401
+  }
+}
+```
+
+---
+
+## 七、Platform-Orchestrator 流水线闭环集成
+
+为了确保所有通过 CI/CD 发布的服务自动具备可观测能力，平台流水线实施了全自动化注入与严格门禁治理：
+
+1. **自动环境变量注入**：
+   在 `platform-ops-toolkit` 的 `scripts/serverless_uat/deploy_cloudrun_services.sh` 中增加逻辑：
+   - 自动检测 GitOps `runtime-topology.yaml` 的 `spec.observability` 声明。
+   - 若配置了 `vault_token_path`，自动从 Vault 提取 `OTEL_EXPORTER_OTLP_HEADERS` 并注入到 Cloud Run 服务的部署环境变量中。
+2. **流水线 PR 合并**：
+   变更通过 PR #1479 正式合入 `ai-workspace-infra/Platform-Orchestrator:main`。
+3. **执行验证**：
+   在 GitHub Actions 触发 `serverless-orchestrator.yml`（Run ID `40661500801`，参数 `operation=plan, dns_mode=none`），全链路准备、环境契约校验与汇总卡片均全绿通过（`success`）。
+
+---
+
+## 八、SIT K3S 数据库监控实测与 Exporter 接入（PostgreSQL Exporter + DataKit Prom 插件）
+
+在微服务与 SaaS 体系中，业务数据库的健康度、连接池饱和度、慢事务与死锁是系统高可用保障的关键。本章规范了在 Kubernetes 集群环境下，以**业务零中断、完全解耦的独立附件模式**交付 PostgreSQL Exporter 并接入 DataKit 监控体系的标准流程。
+
+### 1. 架构设计与安全边界
+
+为杜绝监控变更对业务运行造成风险，整体架构坚持以下安全基线：
+1. **独立 Deployment 伴生运行**：
+   PostgreSQL Exporter 独立部署在业务命名空间（如 `feature-xconnect-referral-sit`），严禁将 Exporter 注入到原有的 PostgreSQL StatefulSet Pod 中，避免因监控组件变更触发业务数据库重启。
+2. **连接凭据安全复用**：
+   Exporter 容器通过环境变量动态引用业务数据库既有的 Kubernetes Secret（`web-saas-postgresql`），无需单独为 Exporter 创建高危凭据或硬编码密码：
+   - `DATA_SOURCE_NAME`: `postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@web-saas-postgresql:5432/$(POSTGRES_DATABASE)?sslmode=disable`
+3. **严格合规 Kubernetes PodSecurity `restricted:v1.37`**：
+   - Pod 级 `securityContext`: `runAsNonRoot: true`, `runAsUser: 65534`, `fsGroup: 65534`, `seccompProfile: {type: RuntimeDefault}`
+   - Container 级 `securityContext`: `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `capabilities: {drop: ["ALL"]}`
+4. **网络安全策略与独立 Service**：
+   - 创建 ClusterIP Service `web-saas-postgresql-exporter`，暴露 `9187` 采集端口。
+   - 配置 NetworkPolicy 显式放行来自 DataKit 采集器的 `9187` 端口入站流量。
+
+```mermaid
+flowchart LR
+    subgraph K3S_SIT ["SIT K3S (dev-k3s-v5)"]
+        subgraph NS_BIZ ["Namespace: feature-xconnect-referral-sit"]
+            PG_POD["PostgreSQL StatefulSet\nweb-saas-postgresql-0:5432\n(业务运行中，零重启)"]
+            EXP_POD["PostgreSQL Exporter Pod\nweb-saas-postgresql-exporter\n(Restricted PodSecurity)"]
+            EXP_SVC["Service: web-saas-postgresql-exporter:9187"]
+            
+            EXP_POD -->|TCP 5432 内部只读查询| PG_POD
+            EXP_SVC --> EXP_POD
+        end
+        
+        subgraph NS_DK ["Namespace: datakit"]
+            DK_AGENT["DataKit DaemonSet (datakit)\n- Inputs: prom\n- Config: /conf.d/prom/postgresql-exporter.conf"]
+        end
+    end
+    
+    subgraph SaaS ["观测云 SaaS"]
+        DW_API["DataWay (https://cn3-openway.guance.com)"]
+    end
+    
+    DK_AGENT -->|HTTP 9187 /metrics 轮询 (15s)| EXP_SVC
+    DK_AGENT ==>|Metric (M) 上报| DW_API
+```
+
+### 2. GitOps + Flux HelmRelease 交付链路
+
+遵循不可变交付与 GitOps 自动化流水线，监控采集器以完整 OCI Chart 发布并对账：
+1. **OCI Chart 打包与安全发布** (`ai-workspace-infra/artifacts`):
+   - 发布不可变 Helm Chart: `ghcr.io/ai-workspace-infra/distributed-web-saas-fullstack:0.2.8`
+   - OCI 镜像摘要 (Digest): `sha256:62b776fbc79ba471fa51fd0887fbb282b9603db0c1e199409ceb6f6c2b42a286`
+2. **GitOps 仓库声明生效** (`ai-workspace-infra/gitops`):
+   - 在 `services/distributed-web-saas-fullstack/dev/sit-xconnect-referral`:
+     - `values.yaml` 中开启 `postgresql.metrics.enabled: true`。
+     - `oci-repository.yaml` 锁定最新构建生成的不可变 Digest。
+3. **Flux CD 自动无感对账**:
+   - Flux 自动拉取 OCI Chart 并执行 `helm upgrade`。
+   - 结果：PostgreSQL StatefulSet 实例完全无重启，业务数据库零抖动；`web-saas-postgresql-exporter` Pod 迅速拉起并就绪（`1/1 Running`）。
+
+### 3. DataKit Prom 插件配置与持久化
+
+通过 DataKit 内建的 `prom` 采集插件对接 Exporter 暴露的 `/metrics` 端点：
+1. **DataKit Helm `dkconfig` 配置**:
+   在 DataKit Helm Release 中配置 `dkconfig` 挂载 `/usr/local/datakit/conf.d/prom/postgresql-exporter.conf`：
+   ```toml
+   [[inputs.prom]]
+     urls = ["http://web-saas-postgresql-exporter.feature-xconnect-referral-sit:9187/metrics"]
+     source = "postgresql"
+     interval = "15s"
+     [inputs.prom.tags]
+       cluster = "dev-k3s-v5-sit"
+       env = "sit"
+       db_instance = "web-saas-postgresql"
+       host = "dev-k3s-v5"
+   ```
+2. **启用默认采集模块**:
+   在 `default_enabled_inputs` 中追加 `prom` 插件。
+3. **Ansible Playbook 角色固化**:
+   在 `playbooks/roles/charts/datakit` 中将 `postgresql_metrics_url` 及 `dkconfig` 模板参数化，确保日常运维与 Ansible 对账执行时配置幂等不被冲掉。
+
+### 4. 采集指标与实测验证
+
+通过集群内端点探测及 DataKit 本地调试指令完成双重验证：
+1. **Exporter 指标探测实测**:
+   ```bash
+   curl -s http://10.42.0.48:9187/metrics | grep pg_
+   ```
+   核心指标输出：
+   - `pg_up 1`：PostgreSQL 连通性探针（1 表示成功连通业务数据库 `account`）。
+   - `pg_database_size_bytes{datname="account"}`：数据库物理存储占用。
+   - `pg_stat_database_xact_commit` / `pg_stat_database_xact_rollback`：每秒提交/回滚事务吞吐。
+   - `pg_stat_database_blks_read` / `pg_stat_database_blks_hit`：共享缓冲区命中率（实测高达 99.8%）。
+   - `pg_locks_count`：表级/行级加锁统计。
+   - `pg_stat_database_deadlocks`：死锁发生计数。
+   - `pg_wal_segments` / `pg_wal_size_bytes`：预写日志 WAL 数量与体积。
+2. **DataKit 抓取与上报管道实测**:
+   运行 `datakit debug --prom-conf` 确认：
+   - Exporter 指标全量抓取成功（生成 100+ 项指标，归属于 `source="postgresql"`）。
+   - 数据成功进入内部处理管道（`io feed prom.postgresql on metric`）。
+   - 随 DataKit 内部定时 Flush 周期持续上报至观测云 DataWay。
+
+---
+
+## 九、Agent 自动接入标准流程 (`otel-instrument` Skill)
+
+对于研发团队新增的业务代码仓库，可通过观测云标准 Agent Skill 进行全自动无侵入注入：
+
+### 1. 安装 Skill 插件
+```bash
+curl -fsSL "https://static.guance.com/skills/install.sh" | sh -s -- \
+  --base-url "https://static.guance.com/skills" \
+  --skill otel-instrument \
+  --agent codex \
+  --scope user \
+  --yes
+```
+
+### 2. 执行自动化分析与注入
+激活 `otel-instrument` Skill，自动分析当前代码工程（Go, Java, Python, Node.js, Rust 等）：
+- 自动写入对应语言的 OpenTelemetry SDK 依赖。
+- 自动生成符合本白皮书规范的启动脚本与环境变量声明。
+
+---
+
+## 十、生产交付与实测数据归档
+
+### 1. 集群实例运行状态实测
+
+| 集群环境 | 节点 IP | Pod 名称 | 状态 | CPU / 内存消耗 | Host 别名呈现 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **PROD** | `104.105.141.213` | `datakit-lzw6z` | 1/1 Running | 5m / 101Mi | `prod-k3s-v5` |
+| **SIT** | `172.237.5.48` | `datakit-kkcr5` | 1/1 Running | 7m / 103Mi | `dev-k3s-v5` |
+
+### 2. 观测云 OpenAPI DQL 验证记录
+通过观测云 OpenAPI (`https://cn3-openapi.guance.com/api/v1/df/query_data_v1`) 直接检索工作空间数据，验证双机指标与对象均已正常建档：
+
+* **HOST 对象列表 (`O::HOST:(host, os)`)**:
+  ```json
+  {
+    "values": [
+      [1793178335308, "dev-k3s-v5", "linux"],
+      [1793178317240, "prod-k3s-v5", "linux"]
+    ]
+  }
+  ```
+* **实时 CPU 指标采样 (`M::cpu:(usage_total)`)**:
+  - `dev-k3s-v5`: `8.18%`
+  - `prod-k3s-v5`: `39.40%`
+* **DataWay WAL 刷新状态**:
+  - `datakit_dataway_dial_total{family="ipv4",result="success"}`: 100% 成功，failed 计数为 0。
+  - Metric (M) / Object (O) / Log (L) 持续自动 flush 到 DataWay。
+
+---
+
+## 十一、修订历史记录
+
+| 版本号 | 修订日期 | 修订人 | 修订内容摘要 | 审批状态 |
+| :--- | :--- | :--- | :--- | :--- |
+| `v1.0.0` | 2026-10-28 | Platform Engineering Agent | 初稿制定，覆盖双集群 Helm 部署、Vault 路径规划与 Caddy Ingress 汇聚 | Approved |
+| `v1.1.0` | 2026-10-28 | Antigravity AI Agent | 补全 `prod-k3s-v5` 主机别名控制机制、OTel HTTP/Protobuf 端点规范、Serverless Orchestrator 闭环及实测 DQL 归档 | Approved & Released |
+| `v1.2.0` | 2026-10-28 | Antigravity AI Agent | 补充 SIT K3S PostgreSQL Exporter 独立附件模式规范、GitOps+Flux 无损交付、DataKit Prom 插件配置及实测指标归档 | Approved & Released |

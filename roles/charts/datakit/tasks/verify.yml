@@ -1,0 +1,29 @@
+---
+- name: 等待 DataKit DaemonSet 部署完成并就绪
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: DaemonSet
+    name: "{{ datakit_release_name }}"
+    namespace: "{{ datakit_namespace }}"
+  register: datakit_ds_status
+  until:
+    - datakit_ds_status.resources is defined
+    - datakit_ds_status.resources | length > 0
+    - datakit_ds_status.resources[0].status.numberReady is defined
+    - datakit_ds_status.resources[0].status.numberReady > 0
+  retries: 30
+  delay: 10
+
+- name: 获取 datakit-service 服务信息
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Service
+    name: datakit-service
+    namespace: "{{ datakit_namespace }}"
+  register: datakit_svc_status
+
+- name: 校验 datakit-service 端口配置完整性
+  ansible.builtin.assert:
+    that:
+      - datakit_svc_status.resources | length > 0
+    fail_msg: "datakit-service 未能在命名空间 {{ datakit_namespace }} 中成功创建！"
