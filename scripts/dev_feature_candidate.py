@@ -67,6 +67,18 @@ def tagged_caddyfile(tag):
           f'http://{prefix}{host}:8080 {{\n  reverse_proxy web-saas-{service}:80\n}}\n'
           for prefix,service in (('', 'console'),('accounts-', 'accounts'),('billing-', 'billing'))))
 
+def validate_tagged_endpoints(values,namespace,tag):
+ host=tag+'-sit.onwalk.net'
+ service=lambda name:'http://web-saas-'+name+'.'+namespace+'.svc.cluster.local'
+ expected={'accounts':{'DB_HOST':'web-saas-postgresql.'+namespace+'.svc.cluster.local','OAUTH_FRONTEND_URL':'https://'+host,'OAUTH_GITHUB_REDIRECT_URL':'https://accounts-'+host+'/api/auth/github/callback','OAUTH_GOOGLE_REDIRECT_URL':'https://accounts-'+host+'/api/auth/google/callback'},
+           'console':{'ACCOUNT_SERVICE_URL':service('accounts'),'SERVER_SERVICE_URL':service('accounts'),'SERVER_SERVICE_INTERNAL_URL':service('accounts'),'DOCS_SERVICE_URL':service('content'),'DOCS_SERVICE_INTERNAL_URL':service('content'),'BILLING_SERVICE_URL':service('billing'),'NEXT_PUBLIC_ACCOUNT_SERVICE_URL':'https://accounts-'+host,'RUNTIME_AUTH_URL':'https://accounts-'+host,'APP_BASE_URL':'https://'+host,'NEXT_PUBLIC_APP_BASE_URL':'https://'+host,'NEXT_PUBLIC_SITE_URL':'https://'+host}}
+ for component,mapping in expected.items():
+  settings=values.get(component,{})
+  env=settings.get('singleContainer' if component=='console' else 'workload',{}).get('env',{})
+  require(isinstance(env,dict),'tagged service environment must be a mapping')
+  for key,required in mapping.items():
+   if key in env:require(env[key]==required,'tagged service endpoint escaped candidate lane')
+
 def candidate_scope(stage,candidate):
  if candidate is None:
   require(stage in SCOPE.SCOPES,'unsupported lane stage')
@@ -105,6 +117,8 @@ def validate_documents(documents,stage,tls=False,candidate=None):
   validate_values(values)
   if candidate is not None:
    require(release.get('caddy',{}).get('httpOnly',values.get('caddy',{}).get('httpOnly')) is True,'tagged Caddy must expose HTTP on port 80 behind the ingress controller')
+   validate_tagged_endpoints(values,ns,candidate['tagged_lane']['feature_tag'])
+   validate_tagged_endpoints(release,ns,candidate['tagged_lane']['feature_tag'])
   images=image_set(release)
   sources={name:{'repository':release[name]['podAnnotations']['release.svc.plus/source_repository'],'source_sha':release[name]['podAnnotations']['release.svc.plus/source_sha'],'build_run_id':str(release[name]['podAnnotations']['release.svc.plus/build_run_id'])} for name in images}
   if candidate is not None:
