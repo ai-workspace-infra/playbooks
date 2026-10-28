@@ -34,6 +34,7 @@ dkconfig:
         interval = "30s"
         measurement_name = "caddy"
         keep_exist_metric_name = true
+        election = false
         [inputs.prom.tags]
           cluster = "{{ k8s_cluster_name | default('default') }}"
           env = "{{ target_env }}"
@@ -45,6 +46,9 @@ dkconfig:
         urls = ["{{ datakit_postgresql_metrics_url }}"]
         source = "postgresql"
         interval = "15s"
+        measurement_name = "postgresql"
+        keep_exist_metric_name = true
+        election = false
         [inputs.prom.tags]
           cluster = "{{ k8s_cluster_name | default('default') }}"
           env = "{{ target_env }}"
