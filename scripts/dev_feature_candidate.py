@@ -58,9 +58,20 @@ def validate_patch_scope(value):
   require(not (set(str(value.get('path','')).split('/'))&forbidden),'JSON patch cannot change identity or secret access')
   for child in value.values():validate_patch_scope(child)
 
-def validate_documents(documents,stage,tls=False):
+def candidate_scope(stage,candidate):
+ if candidate is None:
+  require(stage in SCOPE.SCOPES,'unsupported lane stage')
+  return SCOPE.SCOPES[stage][0],SCOPE.SCOPES[stage][2],SCOPE.DOMAINS[stage],SCOPE.CHART
+ require(stage=='sit' and isinstance(candidate,dict) and set(candidate)=={'tagged_lane','chart_digest','components'},'authenticated tagged candidate projection required')
+ ns,_,path,_,hosts,_=SCOPE.scope({'environment':stage,'tagged_lane':candidate['tagged_lane']})
+ chart=candidate['chart_digest']
+ require(isinstance(chart,str) and re.fullmatch(r'sha256:[0-9a-f]{64}',chart),'fixed candidate chart digest required')
+ require(isinstance(candidate['components'],dict) and set(candidate['components'])=={'caddy','postgresql','console','accounts','billing','content'},'six candidate components required')
+ return ns,path,hosts,chart
+
+def validate_documents(documents,stage,tls=False,candidate=None):
  require(stage in SCOPE.SCOPES,'unsupported lane stage')
- ns=SCOPE.SCOPES[stage][0]
+ ns,_,allowed_hosts,chart=candidate_scope(stage,candidate)
  keys=set();by_kind={}
  for doc in documents:
   require(isinstance(doc,dict),'invalid rendered document')
@@ -81,9 +92,12 @@ def validate_documents(documents,stage,tls=False):
   validate_values(values)
   images=image_set(release)
   sources={name:{'repository':release[name]['podAnnotations']['release.svc.plus/source_repository'],'source_sha':release[name]['podAnnotations']['release.svc.plus/source_sha'],'build_run_id':str(release[name]['podAnnotations']['release.svc.plus/build_run_id'])} for name in images}
+  if candidate is not None:
+   observed={name:{'image':images[name],**sources[name]} for name in images}
+   require(observed==candidate['components'],'rendered images or sources differ from authenticated candidate')
   oci=by_kind.get('OCIRepository',[])
   require(len(oci)==1 and oci[0]['metadata']['name']=='web-saas-fullstack-chart','single fixed chart source required')
-  require(oci[0]['spec'].get('url')=='oci://ghcr.io/ai-workspace-infra/distributed-web-saas-fullstack' and oci[0]['spec'].get('ref')=={'digest':SCOPE.CHART},'unreviewed chart source/digest rejected')
+  require(oci[0]['spec'].get('url')=='oci://ghcr.io/ai-workspace-infra/distributed-web-saas-fullstack' and oci[0]['spec'].get('ref')=={'digest':chart},'unreviewed chart source/digest rejected')
   hr=by_kind.get('HelmRelease',[])
   require(len(hr)==1 and hr[0]['metadata']['name']=='distributed-web-saas-fullstack','single fixed HelmRelease required')
   h=hr[0]['spec']
@@ -117,24 +131,25 @@ def validate_documents(documents,stage,tls=False):
   if tls:require(annotations.get('traefik.ingress.kubernetes.io/router.tls.certresolver')=='dev-http01','fixed TLS resolver required')
   else:require(not annotations.get('traefik.ingress.kubernetes.io/router.tls.certresolver'),'ACME must not be enabled before DNS proof')
   for rule in item['spec'].get('rules',[]):
-   require(rule.get('host') in SCOPE.DOMAINS[stage],'public hostname not in trusted onwalk.net lane allowlist')
+   require(rule.get('host') in allowed_hosts,'public hostname not in trusted onwalk.net lane allowlist')
    hosts.add(rule['host'])
    for path in rule.get('http',{}).get('paths',[]):
     require(path.get('backend',{}).get('service')=={'name':'web-saas-caddy-ingress','port':{'number':80}},'unexpected ingress backend')
   for entry in item['spec'].get('tls',[]):
-   require(not entry.get('secretName') and set(entry.get('hosts',[]))<=SCOPE.DOMAINS[stage],'TLS secret dependency is not authorized')
- require(hosts==SCOPE.DOMAINS[stage],'incomplete lane host mapping')
- return {'namespace':ns,'images':images,'sources':sources,'resource_count':len(documents),'chart_digest':SCOPE.CHART,'hosts':sorted(hosts)}
+   require(not entry.get('secretName') and set(entry.get('hosts',[]))<=allowed_hosts,'TLS secret dependency is not authorized')
+ require(hosts==allowed_hosts,'incomplete lane host mapping')
+ return {'namespace':ns,'images':images,'sources':sources,'resource_count':len(documents),'chart_digest':chart,'hosts':sorted(hosts)}
 
-def validate_tree(root,sha,stage,tls=False):
+def validate_tree(root,sha,stage,tls=False,candidate=None):
  root=Path(root).resolve()
  actual=subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip()
  require(actual==sha and SCOPE.SHA.fullmatch(sha),'checkout must equal reviewed full candidate SHA')
  if stage=='uat':
   require(subprocess.check_output(['git','-C',str(root),'rev-parse','origin/main'],text=True).strip()==sha,'UAT candidate must be the current main commit')
  prefix=root/'services/distributed-web-saas-fullstack'
- source=root/(SCOPE.SCOPES[stage][2].removeprefix('./')+('/tls' if tls else ''))
- require(source.is_dir(),'fixed lane directory missing')
+ _,lane_path,_,_=candidate_scope(stage,candidate)
+ source=root/(lane_path.removeprefix('./')+('/tls' if tls else ''))
+ require(source.is_dir() and source.resolve().is_relative_to(prefix.resolve()),'fixed lane directory missing or escaped')
  # Reject executable generators, remote bases and local file escapes before build.
  pending=[source];seen=set()
  while pending:
@@ -157,6 +172,6 @@ def validate_tree(root,sha,stage,tls=False):
  result=subprocess.run(['kubectl','kustomize',str(source),'--load-restrictor=LoadRestrictionsRootOnly'],capture_output=True,text=True,timeout=60)
  require(result.returncode==0,'candidate Kustomize build failed; raw output suppressed')
  docs=[d for d in yaml.safe_load_all(result.stdout) if d]
- observation=validate_documents(docs,stage,tls)
+ observation=validate_documents(docs,stage,tls,candidate)
  observation['manifest_sha256']=hashlib.sha256(json.dumps(docs,sort_keys=True).encode()).hexdigest()
  return observation

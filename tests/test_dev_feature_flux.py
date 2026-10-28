@@ -128,6 +128,29 @@ class Contracts(unittest.TestCase):
     return base[2] if kind=='gitrepository' else base[3]
   with self.assertRaisesRegex(ValueError,'no takeover'):R.execute(c,Occupied())
 
+ def test_tagged_rendered_manifests_match_candidate_and_cannot_escape(self):
+  docs=self.docs();old=C.validate_documents(docs,'sit')
+  lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'e'*64}
+  ns,_,_,_,hosts,_=R.scope({'environment':'sit','tagged_lane':lane})
+  candidate={'tagged_lane':lane,'chart_digest':'sha256:'+'f'*64,
+             'components':{name:{'image':image,**old['sources'][name]} for name,image in old['images'].items()}}
+  for doc in docs:doc['metadata']['namespace']=ns
+  next(x for x in docs if x['kind']=='HelmRelease')['spec']['targetNamespace']=ns
+  next(x for x in docs if x['kind']=='OCIRepository')['spec']['ref']={'digest':candidate['chart_digest']}
+  ingress=next(x for x in docs if x['kind']=='Ingress')
+  for rule,host in zip(ingress['spec']['rules'],sorted(hosts)):rule['host']=host
+  result=C.validate_documents(docs,'sit',candidate=candidate)
+  self.assertEqual(result['namespace'],ns);self.assertEqual(set(result['hosts']),hosts)
+  bad=copy.deepcopy(docs);bad[0]['metadata']['namespace']='production'
+  with self.assertRaises(ValueError):C.validate_documents(bad,'sit',candidate=candidate)
+  bad=copy.deepcopy(candidate);bad['components']['accounts']['image']='ghcr.io/ai-workspace-services/accounts@sha256:'+'b'*64
+  with self.assertRaisesRegex(ValueError,'differ from authenticated candidate'):C.validate_documents(docs,'sit',candidate=bad)
+  bad=copy.deepcopy(candidate);bad['chart_digest']='sha256:'+'a'*64
+  with self.assertRaisesRegex(ValueError,'chart source/digest'):C.validate_documents(docs,'sit',candidate=bad)
+  bad=copy.deepcopy(docs);bad[-1]['spec']['rules'][0]['host']='other-sit.onwalk.net'
+  with self.assertRaises(ValueError):C.validate_documents(bad,'sit',candidate=candidate)
+  with self.assertRaises(ValueError):C.validate_documents(docs,'uat',candidate=candidate)
+
 
 class PhaseTests(unittest.TestCase):
  config=Contracts.config
