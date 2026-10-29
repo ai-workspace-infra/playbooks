@@ -27,6 +27,19 @@ def read_bound(path, digest):
     return json.loads(data)
 
 
+def require_same_run_prepare(prior, env):
+    source = prior.get('registry', {}).get('oci_mapping', {}).get('binding', {}).get('source', {})
+    repo, workflow_sha = env.get('GITHUB_REPOSITORY'), env.get('GITHUB_SHA')
+    run_id, attempt = env.get('GITHUB_RUN_ID'), env.get('GITHUB_RUN_ATTEMPT')
+    require(repo in ('ai-workspace-infra/platform-ops-toolkit', 'ai-workspace-infra/Platform-Orchestrator') and
+            re.fullmatch(r'[0-9a-f]{40}', workflow_sha or '') and
+            re.fullmatch(r'[1-9][0-9]*', run_id or '') and re.fullmatch(r'[1-9][0-9]*', attempt or '') and
+            source.get('repository') == repo and source.get('workflow_ref') == repo + '/.github/workflows/feature-lane-deploy.yml@refs/heads/main' and
+            source.get('workflow_sha') == workflow_sha and str(source.get('run_id')) == run_id and
+            str(source.get('run_attempt')) == attempt and str(prior.get('run_id')) == run_id and
+            str(prior.get('run_attempt')) == attempt, 'same-run tagged prepare producer required')
+
+
 def execute(a):
     require(a.phase in ('seed-admin', 'initialize'), 'explicit seed phase required')
     cmdb = validate_cmdb(read_bound(a.cmdb, a.cmdb_sha256), a.instance_id)
@@ -39,6 +52,7 @@ def execute(a):
         validate_receipt_inputs(control, a.namespace_uid)
         require(a.prepare_receipt is not None, 'authenticated prepare receipt required')
         prior = read_bound(a.prepare_receipt, a.prepare_sha256)
+        require_same_run_prepare(prior, os.environ)
         projection = control['projection']
         observation = candidate.validate_tree(a.gitops_root, a.gitops_sha, a.stage, False, projection)
         owner_sha = run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).strip()
