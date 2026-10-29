@@ -32,6 +32,13 @@ class CandidateTests(unittest.TestCase):
         facts = clean['hosts']['prod-k3s-v6']
         self.assertNotIn('ansible_connection', facts['host_vars'])
         self.assertEqual(202, facts['host_vars']['web_saas_data_expected_volume_id'])
+    def test_common_only_phase_cannot_enable_storage_or_cluster(self):
+        _, clean = adapter.prepare(self.live,self.decl,'a'*40,Path('/source'),Path('/receipt'),phase='common')
+        vars_ = clean['hosts']['prod-k3s-v6']['host_vars']
+        self.assertEqual('common',vars_['prod_k3s_bootstrap_phase'])
+        self.assertFalse(vars_['web_saas_data_allow_initialize'])
+        self.assertEqual('inspect',vars_['web_saas_data_action'])
+        with self.assertRaises(ValueError):adapter.prepare(self.live,self.decl,'a'*40,Path('/source'),Path('/receipt'),phase='other')
     def test_reject_wrong_disk_owner(self):
         self.live['prod-k3s-v6']['data_volume']['linode_id']=999
         with self.assertRaisesRegex(ValueError,'another instance'): self.prepare()

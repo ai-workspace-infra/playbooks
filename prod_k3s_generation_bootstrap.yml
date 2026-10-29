@@ -6,6 +6,7 @@
     - name: Require the explicit source and target generation boundary
       ansible.builtin.assert:
         that:
+          - prod_k3s_bootstrap_phase in ['common', 'cluster']
           - target_generation == 'prod-v6'
           - k3s_platform_flux_bootstrap_mode == 'declarative_paused'
           - k3s_platform_node_name == 'prod-k3s-v6'
@@ -20,6 +21,18 @@
         name: [python3-yaml, util-linux, e2fsprogs]
         state: present
         update_cache: true
+      when: prod_k3s_bootstrap_phase == 'cluster'
   roles:
-    - web_saas_data_volume
-    - vhosts/k3s_platform_bootstrap
+    - role: web_saas_data_volume
+      when: prod_k3s_bootstrap_phase == 'cluster'
+    - role: vhosts/k3s_platform_bootstrap
+      when: prod_k3s_bootstrap_phase == 'cluster'
+  post_tasks:
+    - name: Save common-only verified receipt after infrastructure preparation
+      ansible.builtin.copy:
+        content: "{{ common_node_bootstrap_evidence | combine({'gitops_sha': k3s_platform_git_commit, 'phase': 'common'}) | to_json }}\n"
+        dest: '{{ k3s_platform_receipt_path }}'
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+      when: prod_k3s_bootstrap_phase == 'common'
