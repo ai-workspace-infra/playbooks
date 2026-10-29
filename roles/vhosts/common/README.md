@@ -41,3 +41,9 @@ The V6 entry invokes this profile automatically after IaC, before the data-volum
 and cluster roles. Its final receipt must include `COMMON_NODE_VERIFIED`.
 The full legacy common baseline remains an explicit separate caller choice;
 this profile does not change firewall rules, credentials or business services.
+
+The owner action supports `phase=common` for infrastructure-only creation. It
+runs this common profile and emits its bound receipt, while disk initialization
+is disabled and storage/K3s roles are skipped. `phase=cluster` continues those
+roles only after the same common checks. V6 callers must select common after
+an IaC apply; plan remains read-only without host preparation.

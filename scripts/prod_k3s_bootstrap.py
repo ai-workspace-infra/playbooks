@@ -21,7 +21,8 @@ def require(ok, reason):
         raise ValueError(reason)
 
 
-def prepare(cmdb, declaration, gitops_sha, checkout, receipt):
+def prepare(cmdb, declaration, gitops_sha, checkout, receipt, phase="cluster"):
+    require(phase in {'common', 'cluster'}, 'Unsupported bootstrap phase')
     g = declaration['global']
     require((g['environment'], g['provider'], g['account'], g['workspace']) ==
             ('prod', 'akamai-cloud', 'manbuzhe2026', 'prod-k3s-v6'), 'Wrong declaration scope')
@@ -53,11 +54,11 @@ def prepare(cmdb, declaration, gitops_sha, checkout, receipt):
     # Only reviewed bootstrap variables enter the dynamic inventory; CMDB extras
     # cannot replace connection plugins, commands, role variables, or topology.
     vars_ = {k: v for k, v in declared.items() if k.startswith('k3s_platform_')}
-    vars_.update(target_generation=declared['target_generation'],
+    vars_.update(prod_k3s_bootstrap_phase=phase, target_generation=declared['target_generation'],
                  k3s_platform_git_commit=gitops_sha, k3s_platform_gitops_checkout_path=str(checkout),
                  k3s_platform_receipt_path=str(receipt), k3s_platform_git_auth_mode='public',
                  web_saas_data_environment='prod', web_saas_data_target_host=name,
-                 web_saas_data_action='prepare_empty', web_saas_data_allow_initialize=True,
+                 web_saas_data_action='prepare_empty' if phase == 'cluster' else 'inspect', web_saas_data_allow_initialize=phase == 'cluster',
                  web_saas_data_allow_generation_host=True,
                  web_saas_data_expected_volume_id=volume['volume_id'],
                  web_saas_data_device_path=device, web_saas_data_filesystem_label=host['volume']['label'])
@@ -77,6 +78,7 @@ def main():
     p = argparse.ArgumentParser()
     for key in ('cmdb', 'cmdb-sha256', 'gitops', 'gitops-sha', 'known-hosts', 'receipt'):
         p.add_argument('--' + key, required=True)
+    p.add_argument('--phase', choices=('common', 'cluster'), default='cluster')
     a = p.parse_args()
     checkout = Path(a.gitops).resolve()
     require(re.fullmatch(r'[0-9a-f]{40}', a.gitops_sha), 'Full GitOps SHA required')
@@ -84,7 +86,7 @@ def main():
     require(not subprocess.check_output(['git', '-C', str(checkout), 'status', '--porcelain'], text=True).strip(), 'Dirty GitOps checkout')
     raw = Path(a.cmdb).read_bytes()
     require(hashlib.sha256(raw).hexdigest() == a.cmdb_sha256, 'CMDB checksum mismatch')
-    name, clean = prepare(json.loads(raw), yaml.safe_load((checkout / RESOURCE).read_text()), a.gitops_sha, checkout, Path(a.receipt).resolve())
+    name, clean = prepare(json.loads(raw), yaml.safe_load((checkout / RESOURCE).read_text()), a.gitops_sha, checkout, Path(a.receipt).resolve(), phase=a.phase)
     known = Path(a.known_hosts).resolve()
     require(known.is_file() and known.stat().st_size > 0, 'Provider-attested known_hosts required')
     # Render/validate the complete paused graph before SSH or disk changes.
@@ -121,9 +123,16 @@ def main():
         finally:
             execute(['ssh-agent', '-k'], env, stdout=subprocess.DEVNULL)
     receipt = json.loads(Path(a.receipt).read_text())
-    require(receipt.get('result') == 'PAUSED_BOOTSTRAP_VERIFIED' and receipt.get('gitops_sha') == a.gitops_sha, 'Missing verified paused receipt')
+    require(receipt.get('gitops_sha') == a.gitops_sha, 'Receipt source binding mismatch')
+    common = receipt if a.phase == 'common' else receipt.get('common', {})
+    require(common.get('result') == 'COMMON_NODE_VERIFIED', 'Vhost common identity checks not verified')
+    require(common.get('node') == name and str(common.get('cmdb_instance_id')) == str(clean['hosts'][name]['instance_id']), 'Common receipt node binding differs')
+    if a.phase == 'common':
+        require(receipt.get('result') == 'COMMON_NODE_VERIFIED', 'Missing common-only receipt')
+        print('COMMON_NODE_VERIFIED; host identity preparation complete')
+        return
+    require(receipt.get('result') == 'PAUSED_BOOTSTRAP_VERIFIED', 'Missing verified paused receipt')
     require(receipt.get('counts') == {'GitRepository': 6, 'Kustomization': 6, 'HelmRelease': 7}, 'Unexpected V6 release graph')
-    require(receipt.get('common', {}).get('result') == 'COMMON_NODE_VERIFIED', 'Vhost common identity checks not verified')
     require(receipt.get('audit', {}).get('result') == 'AUDIT_ALLOW_DENY_VERIFIED', 'Independent audit identity not verified')
     print('PAUSED_BOOTSTRAP_VERIFIED; no business reconciliation or writer transfer performed')
 

@@ -26,7 +26,9 @@ class CommonNodeTests(unittest.TestCase):
         j=next(i for i,t in enumerate(tasks) if t.get('name')=='Install empty-disk and observation prerequisites')
         self.assertLess(i,j)
         self.assertEqual('node_bootstrap.yml',tasks[i]['ansible.builtin.include_role']['tasks_from'])
-        self.assertEqual('web_saas_data_volume',play['roles'][0])
+        self.assertEqual('web_saas_data_volume',play['roles'][0]['role'])
+        self.assertTrue(all(role['when'] == "prod_k3s_bootstrap_phase == 'cluster'" for role in play['roles']))
+        self.assertEqual("prod_k3s_bootstrap_phase == 'common'",play['post_tasks'][0]['when'])
     def test_guard_executes_before_hostname_and_does_not_rebind_volumes(self):
         tasks=yaml.safe_load((ROOT/'roles/vhosts/common/tasks/node_bootstrap.yml').read_text())
         guard=next(i for i,t in enumerate(tasks) if t.get('name')=='Common | verify existing node and persistent-volume affinity before hostname changes')
