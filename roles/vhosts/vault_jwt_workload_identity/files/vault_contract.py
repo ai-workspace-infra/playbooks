@@ -9,9 +9,10 @@ import re
 
 
 class VaultError(Exception):
-    def __init__(self, message='Vault operation failed', stage='vault'):
+    def __init__(self, message='Vault operation failed', stage='vault', diagnostic=None):
         super().__init__(message)
         self.stage = stage
+        self.diagnostic = diagnostic
 
 
 @dataclass(frozen=True)
@@ -101,12 +102,16 @@ def provision(client, spec, issuer, public_keys):
     policy_path = 'sys/policies/acl/' + spec.policy
     mount_path = spec.mount + '/'
     try:
-        mounts = expect(client.request('GET', 'sys/auth'), {200})
-    except VaultError as exc:
+        status, mounts = client.request('GET', 'sys/auth')
+    except VaultError:
         raise VaultError('auth mount state could not be read', 'mount') from None
+    if status != 200:
+        raise VaultError('auth mount state could not be read', 'mount',
+                         {'operation': 'auth_mount_list', 'http_status': status})
     existing_mount = mounts.get('data', {}).get(mount_path)
     if existing_mount is not None and existing_mount.get('type') != 'jwt':
-        raise VaultError('auth mount exists with an unexpected type', 'mount')
+        raise VaultError('auth mount exists with an unexpected type', 'mount',
+                         {'operation': 'auth_mount_inspect', 'reason': 'unexpected_mount_type'})
     try:
         status, policy = client.request('GET', policy_path)
     except VaultError:
@@ -160,9 +165,12 @@ def provision(client, spec, issuer, public_keys):
             raise VaultError('reader policy creation failed', 'policy') from None
     if existing_mount is None:
         try:
-            expect(client.request('POST', 'sys/auth/' + spec.mount, {'type': 'jwt'}), {200, 204})
+            status, _ = client.request('POST', 'sys/auth/' + spec.mount, {'type': 'jwt'})
         except VaultError:
             raise VaultError('dedicated JWT mount creation failed', 'mount') from None
+        if status not in {200, 204}:
+            raise VaultError('dedicated JWT mount creation failed', 'mount',
+                             {'operation': 'auth_mount_create', 'http_status': status})
     if config_missing:
         try:
             expect(client.request('POST', config_path, expected_config), {200, 204})

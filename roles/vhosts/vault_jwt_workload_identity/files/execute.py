@@ -73,7 +73,9 @@ def execute(config, env=None, collector=cluster_identity.collect, remote_type=re
             vault_contract.provision(admin,spec,data['issuer'],data['public_keys'])
         except vault_contract.VaultError as exc:
             stage = 'vault_' + exc.stage if exc.stage in {'policy','mount','config','role'} else 'vault_provision'
-            raise RuntimeError('stage=' + stage) from None
+            error = RuntimeError('stage=' + stage)
+            error.safe_diagnostic = exc.diagnostic
+            raise error from None
         result={'result':'VAULT_WORKLOAD_IDENTITY_CONFIGURED'}
     else:
         try:
@@ -108,7 +110,20 @@ def main():
             stage = 'stage=unexpected'
         failure_path = os.environ.get('WORKLOAD_IDENTITY_FAILURE')
         if failure_path:
-            Path(failure_path).write_text(json.dumps({'result':'FAILED','stage':stage.removeprefix('stage=')})+'\n')
+            record = {'result':'FAILED','stage':stage.removeprefix('stage=')}
+            diagnostic = getattr(exc, 'safe_diagnostic', None)
+            if isinstance(diagnostic, dict):
+                allowed = {'auth_mount_list', 'auth_mount_inspect', 'auth_mount_create'}
+                operation = diagnostic.get('operation')
+                if operation in allowed:
+                    safe = {'operation': operation}
+                    if type(diagnostic.get('http_status')) is int and 100 <= diagnostic['http_status'] <= 599:
+                        safe['http_status'] = diagnostic['http_status']
+                    if diagnostic.get('reason') == 'unexpected_mount_type':
+                        safe['reason'] = 'unexpected_mount_type'
+                    if len(safe) > 1:
+                        record['diagnostic'] = safe
+            Path(failure_path).write_text(json.dumps(record,sort_keys=True)+'\n')
         print('workload_identity_failure ' + stage, file=sys.stderr)
         raise SystemExit('Vault workload identity operation failed') from None
     except (KeyError,TypeError,ValueError,OSError,cluster_identity.ClusterError,vault_contract.VaultError):

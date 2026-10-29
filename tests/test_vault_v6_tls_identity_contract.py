@@ -19,13 +19,15 @@ def jwt(subject=SPEC.subject,audience=SPEC.audience):
 class Fake:
     def __init__(self):
         self.calls=[];self.mounts={};self.policies={};self.configs={};self.roles={};self.scoped_policies=[SPEC.policy];self.denied_status=403;self.bad_login_status=400
+        self.mount_list_status=200;self.mount_create_status=204
     def request(self,method,path,body=None,read_json=True):
         self.calls.append((method,path,body,read_json))
-        if path=='sys/auth' and method=='GET':return 200,{'data':self.mounts}
+        if path=='sys/auth' and method=='GET':return self.mount_list_status,{'data':self.mounts}
         if path.startswith('sys/policies/acl/'):
             if method=='GET':return (404,None) if path not in self.policies else (200,{'data':{'policy':self.policies[path]}})
             if method=='PUT':self.policies[path]=body['policy'];return 204,None
         if path.startswith('sys/auth/') and method=='POST':
+            if self.mount_create_status not in {200,204}:return self.mount_create_status,None
             mount=path.removeprefix('sys/auth/')+'/'
             self.mounts[mount]={'type':'jwt'};self.configs[mount]={'bound_issuer':'','jwt_validation_pubkeys':[]};return 204,None
         if path.startswith('auth/') and path.endswith('/config'):
@@ -57,6 +59,15 @@ class Contract(unittest.TestCase):
             else:c.policies['sys/policies/acl/'+SPEC.policy]='path "wrong" {}'
             with self.assertRaises(v.VaultError):v.provision(c,SPEC,ISSUER,['key'])
             self.assertFalse(any(method!='GET' for method,_,_,_ in c.calls))
+
+    def test_mount_diagnostics_keep_only_operation_and_http_status(self):
+        c=Fake();c.mount_list_status=403
+        with self.assertRaises(v.VaultError) as caught:v.provision(c,SPEC,ISSUER,['key'])
+        self.assertEqual(caught.exception.stage,'mount')
+        self.assertEqual(caught.exception.diagnostic,{'operation':'auth_mount_list','http_status':403})
+        c=Fake();c.mount_create_status=403
+        with self.assertRaises(v.VaultError) as caught:v.provision(c,SPEC,ISSUER,['key'])
+        self.assertEqual(caught.exception.diagnostic,{'operation':'auth_mount_create','http_status':403})
 
     def test_allowed_and_denied_without_reading_secret(self):
         c=Fake();result=v.verify(lambda token:c,SPEC,ISSUER,jwt(),jwt(audience=SPEC.denied_audience),jwt(subject=SPEC.probe_subject))
