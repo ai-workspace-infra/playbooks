@@ -5,6 +5,7 @@
       - k3s_platform_git_commit | length > 0 or k3s_platform_git_branch | length > 0
       - k3s_platform_git_commit | length == 0 or k3s_platform_git_commit is match("^[0-9a-f]{40}$")
       - k3s_platform_flux_root_path | length > 0
+      - not (k3s_platform_require_data_mount | bool) or (common_node_bootstrap_evidence | default({})).get('result') == 'COMMON_NODE_VERIFIED'
       - k3s_platform_flux_bootstrap_mode in ['generated', 'declarative_paused']
       - k3s_platform_git_auth_mode | default('public') | lower in ['public', 'ssh', 'https-basic', 'https-bearer', '']
     fail_msg: "k3s platform bootstrap requires git url, branch, root path, and a supported git auth mode."
