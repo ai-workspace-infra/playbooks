@@ -107,7 +107,7 @@ def live_graph(run, expected, require_full=True):
         raise ClusterError('live V6 Flux graph could not be read', 'live_graph_read') from None
     except (KeyError, TypeError, ValueError):
         raise ClusterError('live V6 Flux graph could not be read', 'live_graph_read') from None
-    required = expected.keys() if require_full else BASE_ACTIVE
+    required = set(expected) if require_full else BASE_ACTIVE
     if not required.issubset(observed.keys()):
         raise ClusterError('live V6 Flux object identities differ from the reviewed graph', 'live_graph_mismatch')
     active = {key for key, doc in observed.items() if doc.get('spec', {}).get('suspend') is False}
