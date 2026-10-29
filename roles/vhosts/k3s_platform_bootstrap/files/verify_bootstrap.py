@@ -65,6 +65,7 @@ def main():
     p.add_argument("--node", required=True)
     p.add_argument("--namespace", required=True)
     p.add_argument("--source", required=True)
+    p.add_argument("--root-name", default="platform-root")
     p.add_argument("--commit", default="")
     p.add_argument("--version", required=True)
     p.add_argument("--architecture", required=True)
@@ -79,7 +80,7 @@ def main():
         try:
             receipt = evaluate(get("get", "nodes"), get("get", "namespace", "kube-system"),
                                get("-n", a.namespace, "get", "gitrepository", a.source),
-                               get("-n", a.namespace, "get", "kustomization", "platform-root"), a.node, a.commit, a.version, a.architecture)
+                               get("-n", a.namespace, "get", "kustomization", a.root_name), a.node, a.commit, a.version, a.architecture)
             if socket.gethostname() != a.node:
                 raise ValueError("OS hostname does not match selected node")
             receipt.update(hostname=socket.gethostname(), architecture=platform.machine(),

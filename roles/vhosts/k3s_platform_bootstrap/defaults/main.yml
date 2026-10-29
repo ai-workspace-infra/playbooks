@@ -24,6 +24,11 @@ k3s_platform_deployment_mode: k3s_platform
 
 k3s_platform_flux_namespace: "flux-system"
 k3s_platform_flux_source_name: "platform-config"
+k3s_platform_flux_root_name: "platform-root"
+# Existing callers retain generated/reconciled bootstrap. Staged callers load only
+# validated paused declarations from an immutable controller-side checkout.
+k3s_platform_flux_bootstrap_mode: generated
+k3s_platform_gitops_checkout_path: ""
 k3s_platform_flux_root_path: "{{ lookup('env', 'K3S_PLATFORM_FLUX_ROOT_PATH') | default('./environments/clusters/prod', true) }}"
 k3s_platform_git_url: "{{ lookup('env', 'GITOPS_REPO') | default('https://github.com/x-evor/gitops.git', true) }}"
 k3s_platform_git_branch: "main"

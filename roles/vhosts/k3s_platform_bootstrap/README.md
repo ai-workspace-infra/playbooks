@@ -15,6 +15,9 @@ Bootstraps a single-node K3s control plane and connects Flux to a GitOps root.
 | `k3s_platform_git_url` | Environment override or repository default | GitOps source URL. |
 | `k3s_platform_git_branch` | `main` | GitOps branch to reconcile. |
 | `k3s_platform_flux_root_path` | Environment override or production root | Kustomization root in GitOps. |
+| `k3s_platform_flux_root_name` | `platform-root` | Explicit root name for generated bootstrap and runtime verification. |
+| `k3s_platform_flux_bootstrap_mode` | `generated` | `generated` preserves existing callers; `declarative_paused` stages the unified GitOps graph without reconcile. |
+| `k3s_platform_gitops_checkout_path` | empty | Clean controller-side GitOps checkout at `k3s_platform_git_commit` for paused mode. |
 
 The role runs as a host administrator on the explicitly selected `k3s` group. It
 does not create cloud resources or DNS records. Secret Git credentials must be
@@ -42,7 +45,34 @@ k3s_platform_git_auth_mode: public
 
 This role does not remove K3s or its data directory. Reverting the GitOps
 source/path returns Flux to the previous declared root. K3s removal and data
-cleanup require a separate, explicitly scoped recovery action.
+cleanup require a separate, explicitly scoped recovery action. Reverting an artifact
+does not reverse schema or data changes; stateful generation upgrades require a new
+cluster and independent storage under the applicable upgrade policy.
+
+## Unified paused declaration bootstrap
+
+Use `declarative_paused` for an initial staged generation. The controller requires
+Python with PyYAML and `kubectl kustomize`, a clean checkout at the exact full
+`k3s_platform_git_commit`, and fetched stable tags used by its source declarations.
+The declared root directory must include its own root Flux Kustomization, bootstrap
+GitRepository, independent per-unit GitRepositories, namespaces and child Flux
+Kustomizations. Each child path owns its chart sources and suspended HelmReleases.
+
+Before host changes, the helper builds and validates the root and all child paths.
+All initial Git source pins must resolve to the reviewed bootstrap commit; all
+GitRepositories, Flux Kustomizations and HelmReleases must be explicitly suspended.
+It rejects branch refs, missing/dirty checkouts, sources shared across child units,
+path escapes, unknown resources, conflicting duplicates and unsuspended releases.
+Each unit can use its own chart/digest pin. After bootstrap, its Git configuration
+pin and reconciliation state can advance separately through GitOps review.
+
+The role loads those exact objects and skips generated root/source creation and
+both reconcile commands. It refuses existing active Flux resources and never
+marks paused resources Ready. The Dev Ready-receipt option is incompatible with
+this mode. Normal release updates, including independently advancing unit tags,
+do not rerun initial bootstrap; update the authoritative GitOps graph instead.
+Do not apply an old paused checkout over an active generation. Authentication
+remains runtime-managed; the bundle accepts no Kubernetes Secrets or Jobs.
 
 ## Immutable source and runtime receipt
 
