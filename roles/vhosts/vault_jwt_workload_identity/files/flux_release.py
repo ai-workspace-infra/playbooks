@@ -99,7 +99,7 @@ def graph(checkout, tag, stage):
     return source, root, keyed, active
 
 
-def live_graph(run, expected):
+def live_graph(run, expected, require_full=True):
     try:
         actual = json.loads(run('get', 'gitrepositories,kustomizations,helmreleases', '-A', '-o', 'json'))['items']
         observed = {ident(d): d for d in actual if ident(d) in expected}
@@ -107,7 +107,8 @@ def live_graph(run, expected):
         raise ClusterError('live V6 Flux graph could not be read', 'live_graph_read') from None
     except (KeyError, TypeError, ValueError):
         raise ClusterError('live V6 Flux graph could not be read', 'live_graph_read') from None
-    if observed.keys() != expected.keys():
+    required = expected.keys() if require_full else BASE_ACTIVE
+    if not required.issubset(observed.keys()):
         raise ClusterError('live V6 Flux object identities differ from the reviewed graph', 'live_graph_mismatch')
     active = {key for key, doc in observed.items() if doc.get('spec', {}).get('suspend') is False}
     return observed, active
@@ -143,7 +144,7 @@ def release(config, runner, cluster):
     checkout = Path(config['gitops_checkout']).resolve()
     tag = config['gitops_tag']
     source, root, expected, active = graph(checkout, tag, stage)
-    observed, current = live_graph(runner, expected)
+    observed, current = live_graph(runner, expected, require_full=stage != 'root')
     prior = {'root': set(), 'eso': STAGE_ACTIVE['root'],
              'identity': STAGE_ACTIVE['eso']}[stage]
     if current != prior:
