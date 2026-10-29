@@ -14,6 +14,11 @@ class CommonNodeTests(unittest.TestCase):
         self.assertEqual(1,m.verify([self.node(),self.pv()],'prod-k3s-v6')['persistent_volumes_checked'])
         with self.assertRaisesRegex(ValueError,'node identity'):m.verify([self.node('localhost')],'prod-k3s-v6')
         with self.assertRaisesRegex(ValueError,'PV affinity'):m.verify([self.node(),self.pv('old-node')],'prod-k3s-v6')
+    def test_active_flux_is_rejected_before_any_hostname_change(self):
+        active={'kind':'HelmRelease','metadata':{'name':'fixture'},'spec':{'suspend':False}}
+        with self.assertRaisesRegex(ValueError,'Active Flux'):m.verify([self.node(),active],'prod-k3s-v6')
+        active['spec']['suspend']=True
+        self.assertEqual(1,m.verify([self.node(),active],'prod-k3s-v6')['paused_flux_checked'])
     def test_common_precedes_disk_and_cluster_roles(self):
         play=yaml.safe_load((ROOT/'prod_k3s_generation_bootstrap.yml').read_text())[0]
         tasks=play['pre_tasks']
