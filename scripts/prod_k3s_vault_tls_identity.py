@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Controlled V6 TLS-reader identity owner. The caller supplies verified evidence."""
 import argparse
-import functools
 import hashlib
 import json
 import os
@@ -14,8 +13,10 @@ import yaml
 import prod_k3s_bootstrap as bootstrap
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'roles/vhosts/vault_v6_tls_identity/files'))
+sys.path.insert(0, str(ROOT / 'roles/vhosts/vault_jwt_workload_identity/files'))
+sys.path.insert(0, str(ROOT / 'scripts/v6_vault_tls_identity'))
 import cluster_identity
+import execute as workload_owner
 import identity_execution
 import remote_kubectl
 import vault_contract
@@ -72,15 +73,21 @@ def main():
                           bootstrap_raw, a.bootstrap_sha256, a.bootstrap_gitops_sha)
     require(bool(child_env.get('SSH_AUTH_SOCK')), 'isolated SSH agent required')
     require(os.environ.get('VAULT_ADDR') == 'https://vault.svc.plus', 'explicit production Vault endpoint required')
-    ssh = remote_kubectl.RemoteKubectl(host, a.known_hosts, env=child_env)
-    collector = functools.partial(cluster_identity.collect, run=ssh)
+    bootstrap_evidence = identity_execution.receipt_contract(bootstrap_raw, a.bootstrap_sha256, a.bootstrap_gitops_sha)
     # Reserve an exclusive private receipt before any Vault write. An empty
     # receipt after failure never constitutes success evidence.
     fd = os.open(a.receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-        result = identity_execution.execute(a.mode, bootstrap_raw, a.bootstrap_sha256, a.bootstrap_gitops_sha,
-                                            client_factory(os.environ.get('VAULT_TOKEN')), collector)
-        # No tokens, credentials, signing keys or secret contents are included.
+        from dataclasses import asdict
+        config = {'mode': a.mode, 'runtime': 'k3s', 'host': host, 'ssh_user': 'root',
+                  'known_hosts': a.known_hosts, 'cluster_uid': bootstrap_evidence['cluster_uid'],
+                  'node_uid': bootstrap_evidence['node_uid'], 'node_name': identity_execution.NODE,
+                  'expected_version': bootstrap_evidence['version'], 'vault_address': 'https://vault.svc.plus',
+                  'admin_policy': 'github-actions-platform-ops-toolkit-prod-k3s-v6-vault-tls-admin',
+                  'identity': asdict(identity_execution.IDENTITY)}
+        result = workload_owner.execute(config)
+        result['bootstrap_gitops_sha'] = a.bootstrap_gitops_sha
+        result['bootstrap_receipt_sha256'] = a.bootstrap_sha256
         result['gitops_sha'] = a.gitops_sha
         json.dump(result, stream, sort_keys=True)
         stream.write('\n')

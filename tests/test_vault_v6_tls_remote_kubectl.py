@@ -6,17 +6,19 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-DIR = Path(__file__).resolve().parents[1] / 'roles/vhosts/vault_v6_tls_identity/files'
+DIR = Path(__file__).resolve().parents[1] / 'roles/vhosts/vault_jwt_workload_identity/files'
 sys.path.insert(0, str(DIR))
 spec = importlib.util.spec_from_file_location('remote_kubectl', DIR / 'remote_kubectl.py')
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+from vault_contract import IdentitySpec
+IDENTITY=IdentitySpec('jwt-test','reader','reader','test-ns','tls-reader','aud-test','aud-denied','probe','kv/data/test/cert','kv/data/test/denied')
 
 
 class RemoteTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.known = Path(self.tmp.name) / 'known_hosts'; self.known.write_text('known host key\n')
-        self.remote = m.RemoteKubectl('192.0.2.1', self.known)
+        self.remote = m.RemoteKubectl('192.0.2.1', self.known, IDENTITY, 'k3s', 'root')
 
     def test_allowed_command_uses_attested_host_and_no_agent_forwarding(self):
         with patch.object(m.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'safe-result\n', '')) as run:
@@ -40,8 +42,8 @@ class RemoteTests(unittest.TestCase):
 
     def test_invalid_address_or_missing_attestation_rejected(self):
         for host in ['example.org', '0.0.0.0', '192.0.2.1;echo bad']:
-            with self.subTest(host=host), self.assertRaises(m.ClusterError): m.RemoteKubectl(host, self.known)
-        with self.assertRaises(m.ClusterError): m.RemoteKubectl('192.0.2.1', self.known.parent / 'missing')
+            with self.subTest(host=host), self.assertRaises(m.ClusterError): m.RemoteKubectl(host, self.known, IDENTITY, 'k3s', 'root')
+        with self.assertRaises(m.ClusterError): m.RemoteKubectl('192.0.2.1', self.known.parent / 'missing', IDENTITY, 'k3s', 'root')
 
 
 if __name__ == '__main__': unittest.main()

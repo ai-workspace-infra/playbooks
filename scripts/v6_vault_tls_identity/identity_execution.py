@@ -13,6 +13,11 @@ import vault_contract
 
 NODE = 'prod-k3s-v6'
 VERSION = 'v1.37.1+k3s1'
+IDENTITY = vault_contract.IdentitySpec(
+    mount='jwt-prod-k3s-v6', role='prod-k3s-v6-vault-tls-reader', policy='prod-k3s-v6-vault-tls-reader',
+    namespace='vault-prod', service_account='vault-tls-reader', audience='vault-prod-k3s-v6-eso',
+    denied_audience='vault-prod-k3s-v6-denied-probe', probe_service_account='default',
+    allowed_path='kv/data/CICD/domains/svc.plus', denied_path='kv/data/CICD/domains/v6-authorization-denied-probe')
 
 
 class IdentityError(Exception):
@@ -38,23 +43,3 @@ def receipt_contract(raw, checksum, bootstrap_sha):
     except (KeyError, TypeError, ValueError):
         raise IdentityError('invalid bootstrap receipt') from None
     return data
-
-
-def execute(mode, raw, checksum, bootstrap_sha, client_factory, collect=cluster_identity.collect):
-    """Configure or verify using only identity material collected in this process."""
-    if mode not in ('configure', 'verify'):
-        raise IdentityError('unsupported mode')
-    receipt = receipt_contract(raw, checksum, bootstrap_sha)
-    material = collect(receipt['cluster_uid'], receipt['node_uid'], receipt['version'])
-    if mode == 'configure':
-        admin = client_factory(True)
-        vault_contract.provision(admin, material['issuer'], material['public_keys'])
-        result = {'result': 'VAULT_TLS_IDENTITY_CONFIGURED'}
-    else:
-        result = vault_contract.verify(lambda token: client_factory(False, token), material['issuer'],
-                                       material['good_jwt'], material['wrong_audience_jwt'],
-                                       material['wrong_service_account_jwt'])
-    # No JWT, Vault token, secret value or full discovery document enters evidence.
-    result.update({'node': NODE, 'cluster_uid': receipt['cluster_uid'], 'node_uid': receipt['node_uid'],
-                   'bootstrap_gitops_sha': bootstrap_sha, 'bootstrap_receipt_sha256': checksum})
-    return result

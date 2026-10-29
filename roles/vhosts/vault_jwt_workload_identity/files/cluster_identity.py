@@ -10,11 +10,7 @@ import subprocess
 
 from signing_keys import discovery_contract
 
-NODE = 'prod-k3s-v6'
-NAMESPACE = 'vault-prod'
-SA = 'vault-tls-reader'
-AUDIENCE = 'vault-prod-k3s-v6-eso'
-DENIED_AUDIENCE = 'vault-prod-k3s-v6-denied-probe'
+
 
 
 class ClusterError(Exception):
@@ -33,37 +29,42 @@ def command(*args):
     return result.stdout.strip()
 
 
-def collect(cluster_uid, node_uid, expected_version, run=command):
+def collect(cluster_uid, node_uid, expected_version, node_name, identity, run=command):
     """Return discovery and three TokenRequest values after target verification."""
     if not all(isinstance(x, str) and re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', x)
                for x in (cluster_uid, node_uid)):
         raise ClusterError('trusted cluster and node UIDs are required')
-    if expected_version != 'v1.37.1+k3s1':
-        raise ClusterError('unexpected K3s version')
+    if not isinstance(expected_version,str) or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+[+A-Za-z0-9.-]*',expected_version):
+        raise ClusterError('explicit Kubernetes version required')
+    if not isinstance(node_name,str) or not re.fullmatch(r'[a-z0-9][a-z0-9.-]*',node_name):
+        raise ClusterError('invalid expected node name')
     try:
         ns = json.loads(run('get', 'namespace', 'kube-system', '-o', 'json'))
         nodes = json.loads(run('get', 'nodes', '-o', 'json'))['items']
-        if ns['metadata']['uid'] != cluster_uid or len(nodes) != 1:
+        if ns['metadata']['uid'] != cluster_uid:
             raise ClusterError('cluster identity differs from receipt')
-        node = nodes[0]
-        if (node['metadata']['name'] != NODE or node['metadata']['uid'] != node_uid
+        selected = [node for node in nodes if node.get('metadata', {}).get('name') == node_name]
+        if len(selected) != 1:
+            raise ClusterError('expected node not uniquely present')
+        node = selected[0]
+        if (node['metadata']['name'] != node_name or node['metadata']['uid'] != node_uid
                 or node['status']['nodeInfo']['kubeletVersion'] != expected_version
                 or not any(x['type'] == 'Ready' and x['status'] == 'True' for x in node['status']['conditions'])):
             raise ClusterError('node identity or readiness differs from receipt')
-        for name in (SA, 'default'):
-            account = json.loads(run('get', 'serviceaccount', name, '-n', NAMESPACE, '-o', 'json'))
-            if account['metadata']['name'] != name or account['metadata']['namespace'] != NAMESPACE:
+        for name in (identity.service_account, identity.probe_service_account):
+            account = json.loads(run('get', 'serviceaccount', name, '-n', identity.namespace, '-o', 'json'))
+            if account['metadata']['name'] != name or account['metadata']['namespace'] != identity.namespace:
                 raise ClusterError('service account identity differs')
         issuer, pems = discovery_contract(run('get', '--raw', '/.well-known/openid-configuration'),
                                            run('get', '--raw', '/openid/v1/jwks'))
         def token(name, audience):
-            value = run('create', 'token', name, '-n', NAMESPACE, '--audience', audience, '--duration', '600s')
+            value = run('create', 'token', name, '-n', identity.namespace, '--audience', audience, '--duration', '600s')
             if not value or value.count('.') != 2 or any(c.isspace() for c in value):
                 raise ClusterError('invalid service account TokenRequest result')
             return value
         return {'issuer': issuer, 'public_keys': pems,
-                'good_jwt': token(SA, AUDIENCE),
-                'wrong_audience_jwt': token(SA, DENIED_AUDIENCE),
-                'wrong_service_account_jwt': token('default', AUDIENCE)}
+                'good_jwt': token(identity.service_account, identity.audience),
+                'wrong_audience_jwt': token(identity.service_account, identity.denied_audience),
+                'wrong_service_account_jwt': token(identity.probe_service_account, identity.audience)}
     except (KeyError, TypeError, json.JSONDecodeError, ValueError):
         raise ClusterError('cluster identity discovery failed') from None

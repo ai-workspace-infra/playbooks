@@ -5,13 +5,15 @@ from pathlib import Path
 import sys
 import unittest
 
-DIR = Path(__file__).resolve().parents[1] / 'roles/vhosts/vault_v6_tls_identity/files'
+DIR = Path(__file__).resolve().parents[1] / 'roles/vhosts/vault_jwt_workload_identity/files'
 sys.path.insert(0, str(DIR))
 spec = importlib.util.spec_from_file_location('cluster_identity', DIR / 'cluster_identity.py')
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 CLUSTER = '12345678-1234-1234-1234-123456789abc'
 NODE = 'abcdef01-1234-1234-1234-123456789abc'
+from vault_contract import IdentitySpec
+IDENTITY=IdentitySpec('jwt-test','reader','reader','vault-prod','vault-tls-reader','aud-test','aud-denied','default','kv/data/test/cert','kv/data/test/denied')
 
 
 def b64(b): return base64.urlsafe_b64encode(b).decode().rstrip('=')
@@ -29,7 +31,7 @@ class CollectorTests(unittest.TestCase):
         if args[:3] == ('get', 'namespace', 'kube-system'):
             return json.dumps({'metadata': {'uid': self.cluster}})
         if args[:2] == ('get', 'nodes'):
-            return json.dumps({'items': [{'metadata': {'name': m.NODE, 'uid': self.node},
+            return json.dumps({'items': [{'metadata': {'name': 'node-example', 'uid': self.node},
                 'status': {'nodeInfo': {'kubeletVersion': 'v1.37.1+k3s1'},
                            'conditions': [{'type': 'Ready', 'status': 'True' if self.ready else 'False'}]}}]})
         if args[:2] == ('get', 'serviceaccount'):
@@ -41,7 +43,7 @@ class CollectorTests(unittest.TestCase):
         raise AssertionError(args)
 
     def test_collects_only_after_receipt_bound_target_check(self):
-        result = m.collect(CLUSTER, NODE, 'v1.37.1+k3s1', self.run_kubectl)
+        result = m.collect(CLUSTER, NODE, 'v1.37.1+k3s1', 'node-example', IDENTITY, self.run_kubectl)
         self.assertEqual(result['issuer'], 'https://issuer.example')
         self.assertEqual(len(result['public_keys']), 1)
         tokens = [args for args in self.calls if args[:2] == ('create', 'token')]
@@ -52,11 +54,11 @@ class CollectorTests(unittest.TestCase):
     def test_mismatch_or_unready_never_requests_token(self):
         for attr, value in [('cluster', NODE), ('node', CLUSTER), ('ready', False)]:
             self.setUp(); setattr(self, attr, value)
-            with self.assertRaises(m.ClusterError): m.collect(CLUSTER, NODE, 'v1.37.1+k3s1', self.run_kubectl)
+            with self.assertRaises(m.ClusterError): m.collect(CLUSTER, NODE, 'v1.37.1+k3s1', 'node-example', IDENTITY, self.run_kubectl)
             self.assertFalse(any(args[:2] == ('create', 'token') for args in self.calls))
 
     def test_bad_receipt_uid_fails_before_cluster_call(self):
-        with self.assertRaises(m.ClusterError): m.collect('bad', NODE, 'v1.37.1+k3s1', self.run_kubectl)
+        with self.assertRaises(m.ClusterError): m.collect('bad', NODE, 'v1.37.1+k3s1', 'node-example', IDENTITY, self.run_kubectl)
         self.assertEqual(self.calls, [])
 
 

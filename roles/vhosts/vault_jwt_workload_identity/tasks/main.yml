@@ -1,0 +1,40 @@
+---
+- name: Validate verified workload identity inputs
+  ansible.builtin.assert:
+    that:
+      - vault_jwt_workload_identity_mode in ['configure', 'verify']
+      - vault_jwt_workload_identity_runtime in ['k3s', 'kubernetes']
+      - vault_jwt_workload_identity_config is mapping
+      - vault_jwt_workload_identity_config.identity is mapping
+      - vault_jwt_workload_identity_config.host | length > 0
+      - vault_jwt_workload_identity_config.ssh_user | length > 0
+      - vault_jwt_workload_identity_config.known_hosts | length > 0
+      - vault_jwt_workload_identity_config.cluster_uid | length > 0
+      - vault_jwt_workload_identity_config.node_uid | length > 0
+      - vault_jwt_workload_identity_config.node_name | length > 0
+      - vault_jwt_workload_identity_config.expected_version | length > 0
+      - vault_jwt_workload_identity_config.vault_address | length > 0
+      - vault_jwt_workload_identity_mode != 'configure' or vault_jwt_workload_identity_config.admin_policy | length > 0
+    fail_msg: Verified workload identity inputs are required.
+  no_log: true
+
+- name: Configure or verify workload identity on the controller
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/files/execute.py"
+    stdin: "{{ vault_jwt_workload_identity_config | combine({'mode': vault_jwt_workload_identity_mode, 'runtime': vault_jwt_workload_identity_runtime}) | to_json }}"
+    stdin_add_newline: false
+  environment:
+    VAULT_TOKEN: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+    SSH_AUTH_SOCK: "{{ lookup('ansible.builtin.env', 'SSH_AUTH_SOCK') }}"
+  delegate_to: localhost
+  become: false
+  register: vault_jwt_workload_identity_execution
+  changed_when: vault_jwt_workload_identity_mode == 'configure'
+  no_log: true
+
+- name: Record redacted workload identity result
+  ansible.builtin.set_fact:
+    vault_jwt_workload_identity_result: "{{ vault_jwt_workload_identity_execution.stdout | from_json }}"
+  no_log: true

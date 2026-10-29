@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import unittest
 
-PATH = Path(__file__).resolve().parents[1] / 'roles/vhosts/vault_v6_tls_identity/files/signing_keys.py'
+PATH = Path(__file__).resolve().parents[1] / 'roles/vhosts/vault_jwt_workload_identity/files/signing_keys.py'
 spec = importlib.util.spec_from_file_location('signing_keys', PATH)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
