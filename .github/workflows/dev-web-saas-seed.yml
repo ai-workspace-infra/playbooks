@@ -60,6 +60,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   lane:
+    if: inputs.phase != 'identity-probe'
     runs-on: ubuntu-latest
     environment: dev
     timeout-minutes: 30
@@ -134,3 +135,20 @@ jobs:
           path: ${{ runner.temp }}/dev-feature-evidence/receipt.json
           if-no-files-found: error
           retention-days: 7
+  identity-probe:
+    if: inputs.phase == 'identity-probe'
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ai-workspace-infra/playbooks
+          ref: ${{ job.workflow_sha }}
+          persist-credentials: false
+      - name: Verify seed identity access boundaries
+        env:
+          INPUT_STAGE: ${{ inputs.stage }}
+        run: |
+          test "$INPUT_STAGE" = sit
+          python3 scripts/probe_feature_seed_vault.py
