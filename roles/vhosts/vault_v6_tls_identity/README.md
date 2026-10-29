@@ -49,3 +49,12 @@ successful protected run and establish that the checksum is trusted, rather than
 accepting both data and digest from an arbitrary dispatch input. It exposes no
 standalone CLI or credential source. The original V6 paused-bootstrap receipt is
 compatible with this contract; no live identity operation is implied.
+
+`files/remote_kubectl.py` adapts the collector to the node through SSH without
+opening the Kubernetes API publicly or copying kubeconfig to the runner. It only
+permits the nine fixed discovery, identity and TokenRequest commands, enforces
+strict host-key checking, disables forwarding and captures output without logging.
+The authenticated SSH agent, exact CMDB-derived node address and independently
+attested `known_hosts` file must be supplied by a reviewed caller. Vault admin
+credentials are used by the controller process and are not sent to the node.
+This adapter remains unconnected to an execution entrypoint.
