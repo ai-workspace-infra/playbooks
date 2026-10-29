@@ -30,6 +30,33 @@ def verify_sources(manifest, native_sql, billing_sql):
     return tables
 
 
+def verify_tagged_sources(manifest_bytes, native_sql, billing_sql, image_manifest_bytes, inputs):
+    """Verify exact candidate-bound source and compiled schema before any SQL.
+
+    The caller must authenticate the candidate receipt and its baseline inputs.
+    """
+    if not isinstance(inputs, dict) or inputs.get('schema') != 'sit-data-input/v1':
+        raise ValueError('verified baseline inputs required')
+    values = ((manifest_bytes, 'accounts_manifest_sha256'), (native_sql, 'accounts_native_sha256'),
+              (billing_sql, 'billing_schema_sha256'), (image_manifest_bytes, 'image_manifest_sha256'))
+    if any(not isinstance(raw, bytes) or not raw or len(raw) > 2_000_000 or
+           hashlib.sha256(raw).hexdigest() != inputs.get(key) for raw, key in values):
+        raise ValueError('candidate source or image manifest differs from baseline')
+    manifest, image = json.loads(manifest_bytes), json.loads(image_manifest_bytes)
+    fields = ('format', 'migration_version', 'schema_sha256', 'business_table_count', 'business_tables')
+    if not isinstance(manifest, dict) or not isinstance(image, dict) or any(manifest.get(k) != image.get(k) for k in fields):
+        raise ValueError('compiled and source schema differ')
+    tables = manifest.get('business_tables')
+    count, version = inputs.get('business_table_count'), inputs.get('migration_version')
+    if (type(count) is not int or not 1 <= count <= 10000 or type(version) is not int or version <= 0 or
+        type(manifest.get('format')) is not int or manifest['format'] != 1 or
+        manifest.get('migration_version') != version or manifest.get('schema_sha256') != inputs.get('accounts_native_sha256') or
+        manifest.get('business_table_count') != count or not isinstance(tables, list) or len(tables) != count or
+        any(not isinstance(t, str) or not re.fullmatch(r'[a-z][a-z0-9_]*', t) for t in tables) or len(set(tables)) != count):
+        raise ValueError('invalid candidate native schema')
+    return tables
+
+
 def identity(namespace, role):
     if namespace not in STAGES.values() or role not in ('xc_accounts_rw', 'xc_billing_rw'):
         raise ValueError('unsupported runtime identity')
@@ -38,13 +65,15 @@ def identity(namespace, role):
     return hashlib.sha256(json.dumps(value, separators=(',', ':')).encode()).hexdigest()
 
 
-def grants(tables):
+def grants(tables, expected_count=77):
     """Run as the DDL owner after native init + exact Billing bootstrap SQL.
 
     No ownership transfer, role creation/passwords, defaults for future unknown objects,
     or schema_migrations DML. Role creation is a separate management operation.
     """
-    if len(tables) != 77 or any(not re.fullmatch(r'[a-z][a-z0-9_]*', t) for t in tables):
+    if (type(expected_count) is not int or not 1 <= expected_count <= 10000 or
+            len(tables) != expected_count or len(set(tables)) != len(tables) or
+            any(not isinstance(t, str) or not re.fullmatch(r'[a-z][a-z0-9_]*', t) for t in tables)):
         raise ValueError('unverified table list')
     account_tables = ', '.join('public.' + t for t in tables)
     billing_tables = ', '.join('public.' + t for t in BILLING_WRITES)
