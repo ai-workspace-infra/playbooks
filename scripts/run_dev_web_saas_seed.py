@@ -59,6 +59,7 @@ def execute(a):
                 'tagged seed is authorized only for the reviewed rehearsal')
         observation = candidate.validate_tree(a.gitops_root, a.gitops_sha, a.stage, False, projection)
         owner_sha = run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).strip()
+        require(prior.get('owner_sha') == owner_sha, 'prepare and seed owner revisions must match')
         config = {'instance_id': a.instance_id, 'namespace': observation['namespace'],
                   'node_uid': a.node_uid, 'cluster_uid': a.cluster_uid, 'namespace_uid': a.namespace_uid,
                   'candidate_sha': a.gitops_sha, 'platform_sha': a.platform_sha,

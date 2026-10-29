@@ -223,7 +223,7 @@ def test_tagged_seed_adapter_passes_verified_mapping_to_owner(monkeypatch, tmp_p
                            stage='sit', namespace_uid='2'*36, prepare_receipt=tmp_path/'prepare', prepare_sha256='3'*64,
                            gitops_root=tmp_path, platform_sha='4'*40, node_uid='5'*36, cluster_uid='6'*36,
                            receipt=tmp_path/'output'/'receipt.json')
-    monkeypatch.setattr(adapter, 'read_bound', lambda *a: {})
+    monkeypatch.setattr(adapter, 'read_bound', lambda path, digest: {'owner_sha':'7'*40} if path == args.prepare_receipt else {})
     monkeypatch.setattr(adapter, 'validate_cmdb', lambda *a: {})
     monkeypatch.setattr(adapter, 'validate_candidate_receipt', lambda *a: control)
     monkeypatch.setattr(adapter, 'validate_receipt_inputs', lambda *a: None)
