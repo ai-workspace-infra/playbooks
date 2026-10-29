@@ -370,7 +370,7 @@ END IF; END $$;
                 script += "set +e\nresult=$(psql -XAtq -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -c '" + query + "' 2>&1)\nstatus=$?\nset -e\n[ \"$status\" -ne 0 ] || exit 42\nprintf '%s' \"$result\" | grep -q '42501' || exit 43\n"
             script += 'echo identity_probes_verified\n'
             result = self.job('probe-' + role.replace('_','-'), pg_image,
-                              ['/bin/sh', '-c', script], probe_env)
+                              ['/bin/sh', '-c', script], probe_env, wait_postgres=pg_image)
             if not result.rstrip().endswith('identity_probes_verified'):
                 raise Blocked('identity probe result missing')
         self.secret('web-saas-db-audit', {'DATABASE_URL':dsn('xc_lane_audit')})
