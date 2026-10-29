@@ -96,23 +96,34 @@ def candidate_scope(stage,candidate):
  require(isinstance(candidate['knowledge'],dict) and set(candidate['knowledge'])=={'repository','sha'} and candidate['knowledge']['repository']=='ai-workspace-services/knowledge' and SCOPE.SHA.fullmatch(str(candidate['knowledge']['sha'])),'fixed candidate knowledge source required')
  return ns,path,hosts,chart
 
+def validate_sit_mail_sink(documents):
+ expected=list(yaml.safe_load_all((ROOT/'roles/platform/dev_feature_flux/files/sit-mail-sink.yaml').read_text()))
+ actual=[doc for doc in documents if (doc.get('kind'),doc.get('metadata',{}).get('name')) in {('Deployment','web-saas-sit-mail-sink'),('Service','web-saas-sit-mail-sink'),('NetworkPolicy','sit-mail-sink-isolation')}]
+ require(len(actual)==3 and all(doc in actual for doc in expected),'SIT mail sink differs from reviewed non-forwarding contract')
+
 def validate_documents(documents,stage,tls=False,candidate=None):
  require(stage in SCOPE.SCOPES,'unsupported lane stage')
  if candidate is not None:require(not tls,'tagged Caddy lane has no separate TLS ingress phase')
  ns,_,allowed_hosts,chart=candidate_scope(stage,candidate)
+ mail_sink = candidate is not None and candidate['tagged_lane'].get('feature_id') == 'sit-test-1483' and candidate['tagged_lane'].get('feature_tag') == 'mail-sit-test-1483'
  keys=set();by_kind={}
  for doc in documents:
   require(isinstance(doc,dict),'invalid rendered document')
   kind=doc.get('kind');meta=doc.get('metadata',{});name=meta.get('name')
-  require(kind in {'ConfigMap','OCIRepository','HelmRelease','NetworkPolicy','Ingress'},'cluster/secret/RBAC/nested source resources are forbidden')
+  allowed_kinds={'ConfigMap','OCIRepository','HelmRelease','NetworkPolicy','Ingress'} | ({'Deployment','Service'} if mail_sink else set())
+  require(kind in allowed_kinds,'cluster/secret/RBAC/nested source resources are forbidden')
   require(meta.get('namespace')==ns,'resource escaped selected namespace')
   require(isinstance(name,str) and re.fullmatch(r'[a-z0-9][a-z0-9.-]*',name),'invalid resource name')
   require((kind,name) not in keys,'duplicate resource');keys.add((kind,name));by_kind.setdefault(kind,[]).append(doc)
   if kind=='ConfigMap':require(name in CM,'unexpected ConfigMap')
  if candidate is not None:
   isolation={'apiVersion':'networking.k8s.io/v1','kind':'NetworkPolicy','metadata':{'name':'lane-isolation','namespace':ns},'spec':{'podSelector':{},'policyTypes':['Ingress','Egress'],'ingress':[{'from':[{'podSelector':{}}]}],'egress':[{'to':[{'podSelector':{}}]},{'to':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'kube-system'}},'podSelector':{'matchLabels':{'k8s-app':'kube-dns'}}}],'ports':[{'protocol':'UDP','port':53},{'protocol':'TCP','port':53}]}]}}
+  if mail_sink:
+   isolation['spec']['podSelector']={'matchExpressions':[{'key':'websaas.io/workload','operator':'NotIn','values':['sit-mail-sink']}]}
+   validate_sit_mail_sink(documents)
+   require(len(by_kind.get('Deployment',[]))==1 and len(by_kind.get('Service',[]))==1,'unexpected supporting workload')
   policies=by_kind.get('NetworkPolicy',[])
-  require(isolation in policies and len(policies)==2,'tagged lane requires reviewed isolation and GitHub egress policies')
+  require(isolation in policies and len(policies)==(3 if mail_sink else 2),'tagged lane requires reviewed isolation and GitHub egress policies')
   ranges=json.loads((ROOT/'scripts/github_git_cidrs.json').read_text())['git']
   github={'apiVersion':'networking.k8s.io/v1','kind':'NetworkPolicy','metadata':{'name':'content-github-egress','namespace':ns},'spec':{'podSelector':{'matchLabels':{'websaas.io/workload':'content'}},'policyTypes':['Egress'],'egress':[{'to':[{'ipBlock':{'cidr':cidr}} for cidr in ranges],'ports':[{'protocol':'TCP','port':443}]}]}}
   require(github in policies,'tagged content egress must match reviewed GitHub Git ranges and port')
@@ -139,12 +150,15 @@ def validate_documents(documents,stage,tls=False,candidate=None):
    trusted_nginx=(ROOT/'roles/platform/dev_feature_flux/files/tagged-console-nginx.conf').read_text()
    require(nginx_doc.get('data')=={'nginx.conf':trusted_nginx},'tagged console Nginx configuration differs from reviewed owner')
    account=yaml.safe_load(account_doc.get('data',{}).get('account.yaml',''))
+   if mail_sink:
+    require(account.get('smtp')=={'host':'web-saas-sit-mail-sink','port':1025,'username':'','password':'','from':'sit-test-1483@invalid.example','timeout':'10s','tls':{'mode':'none','insecureSkipVerify':False}},'SIT Accounts SMTP must use the isolated test sink')
    require(isinstance(account,dict) and isinstance(account.get('store'),dict) and account['store'].get('driver')=='postgres' and account['store'].get('dsn')=='postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable','tagged Accounts template database binding differs')
    host=candidate['tagged_lane']['feature_tag']+'-sit.onwalk.net'
    server=account.get('server',{});oauth=account.get('auth',{}).get('oauth',{});agent=account.get('agent',{})
    require(isinstance(server,dict) and server.get('publicUrl')=='https://accounts-'+host and set(server.get('allowedOrigins',[]))=={'https://'+host,'https://accounts-'+host,'https://billing-'+host} and isinstance(oauth,dict) and oauth.get('frontendUrl')=='https://'+host and all(oauth.get(provider,{}).get('redirectUrl')=='https://accounts-'+host+'/api/auth/'+provider+'/callback' for provider in ('github','google')) and isinstance(agent,dict) and agent.get('controllerUrl')=='http://web-saas-accounts.'+ns+'.svc.cluster.local','tagged Accounts template escaped candidate lane')
    account_env=dict(values.get('accounts',{}).get('workload',{}).get('env',{}))
    account_env.update(release.get('accounts',{}).get('workload',{}).get('env',{}))
+   if mail_sink:require(all(account_env.get(k)==v for k,v in {'SMTP_HOST':'web-saas-sit-mail-sink','SMTP_PORT':'1025','SMTP_TLS_MODE':'none'}.items()),'SIT SMTP environment differs from isolated test sink')
    require(all(key in account_env for key in ('DB_HOST','DB_PORT','DB_NAME','POSTGRES_USER','DATABASE_BACKGROUND_WRITERS','STRIPE_MODE')),'tagged Accounts database identity and external effect settings must be explicit')
    value_env=values.get('content',{}).get('workload',{}).get('env',{})
    release_env=release.get('content',{}).get('workload',{}).get('env',{})
