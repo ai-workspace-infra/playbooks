@@ -362,7 +362,7 @@ class CandidateEvolutionTests(unittest.TestCase):
   lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'d'*64}
   projection={'tagged_lane':lane,'chart_digest':'sha256:'+'e'*64,'knowledge':{'repository':'ai-workspace-services/knowledge','sha':'a'*40},'components':{name:{} for name in ('caddy','postgresql','console','accounts','billing','content')}}
   source={'repository':repo,'workflow_ref':repo+'/.github/workflows/feature-lane-deploy.yml@refs/heads/main','run_id':'123','run_attempt':'2','workflow_sha':'f'*40}
-  receipt={'schema_version':'dev-feature-candidate/v2','result':'verified','repository':'ai-workspace-infra/gitops','stage':'sit','candidate_head':sha,'candidate_sha256':'d'*64,'projection':projection,'source':source}
+  receipt={'schema_version':'dev-feature-candidate/v2','result':'verified','repository':'ai-workspace-infra/gitops','stage':'sit','candidate_head':sha,'candidate_sha256':'d'*64,'projection':projection,'source':source,'data_baseline_sha256':'b'*64}
   env={'GITHUB_REPOSITORY':repo,'GITHUB_RUN_ATTEMPT':'2','GITHUB_SHA':'f'*40,'GITHUB_WORKFLOW_REF':source['workflow_ref']}
   with patch.dict('os.environ',env,clear=False):
    self.assertEqual(owner.validate_candidate_receipt(receipt,sha,'sit','123')['candidate_sha256'],'d'*64)
@@ -373,6 +373,14 @@ class CandidateEvolutionTests(unittest.TestCase):
    with self.assertRaisesRegex(ValueError,'fingerprint mismatch'):owner.validate_candidate_receipt(bad,sha,'sit','123')
    with patch.dict('os.environ',{'GITHUB_WORKFLOW_REF':repo+'/.github/workflows/other.yml@refs/heads/main'}):
     with self.assertRaisesRegex(ValueError,'protected tagged caller'):owner.validate_candidate_receipt(receipt,sha,'sit','123')
+
+ def test_tagged_seed_baseline_must_match_verified_candidate(self):
+  import run_dev_feature_flux as owner
+  receipt={'data_baseline_sha256':'a'*64}
+  owner.validate_tagged_seed_baseline({'data_baseline_sha256':'a'*64},receipt)
+  for value in ('b'*64,None):
+   with self.subTest(value=value),self.assertRaisesRegex(ValueError,'baseline differs'):
+    owner.validate_tagged_seed_baseline({'data_baseline_sha256':value},receipt)
 
  def test_two_pr_heads_and_changed_images_use_same_owner_policy(self):
   import run_dev_feature_flux as owner

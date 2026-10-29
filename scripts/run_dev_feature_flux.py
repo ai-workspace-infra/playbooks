@@ -85,6 +85,7 @@ def validate_candidate_receipt(receipt,sha,stage,run_id):
   source=receipt.get('source',{})
   repo=source.get('repository')
   require(repo in ('ai-workspace-infra/platform-ops-toolkit','ai-workspace-infra/Platform-Orchestrator') and repo==os.environ.get('GITHUB_REPOSITORY') and source.get('workflow_ref')==repo+'/.github/workflows/feature-lane-deploy.yml@refs/heads/main' and source['workflow_ref']==os.environ.get('GITHUB_WORKFLOW_REF') and str(source.get('run_id'))==str(run_id) and run_id is not None and re.fullmatch(r'[1-9][0-9]*',str(source.get('run_attempt',''))) and str(source['run_attempt'])==os.environ.get('GITHUB_RUN_ATTEMPT') and candidate.SCOPE.SHA.fullmatch(source.get('workflow_sha','')) and source['workflow_sha']==os.environ.get('GITHUB_SHA'),'same-run protected tagged caller required')
+  require(re.fullmatch(r'[0-9a-f]{64}',str(receipt.get('data_baseline_sha256',''))),'verified data baseline digest required')
   projection=receipt.get('projection')
   require(isinstance(projection,dict) and isinstance(projection.get('tagged_lane'),dict) and receipt.get('candidate_sha256')==projection['tagged_lane'].get('candidate_sha256'),'tagged candidate fingerprint mismatch')
   candidate.candidate_scope(stage,projection)
@@ -97,6 +98,11 @@ def validate_candidate_receipt(receipt,sha,stage,run_id):
  require(source.get('workflow_ref')=='ai-workspace-infra/platform-ops-toolkit/.github/workflows/dev-feature-deploy.yml@refs/heads/main' and str(source.get('run_id'))==str(run_id) and run_id is not None,'same-run protected control-plane receipt required')
  require(receipt.get('checks')=='success' and receipt.get('same_repository') is True and receipt.get('main_ancestry_verified') is True,'control-plane gates not verified')
  return receipt
+
+def validate_tagged_seed_baseline(seed, candidate_receipt):
+ require(seed.get('data_baseline_sha256') == candidate_receipt.get('data_baseline_sha256') and
+         re.fullmatch(r'[0-9a-f]{64}', str(candidate_receipt.get('data_baseline_sha256', ''))),
+         'seed data baseline differs from verified candidate')
 
 def validate_prepare_receipt(receipt,config,observation):
  require(receipt.get('schema_version')=='dev-feature-flux/v1' and receipt.get('result')=='prepared' and receipt.get('mode') in ('prepare','rebuild'),'successful prepare/rebuild producer required')
@@ -173,6 +179,7 @@ def execute(a):
   if projection is not None:
    lane=projection['tagged_lane'];seed=config['seed_receipt']
    require(seed.get('feature_id')==lane['feature_id'] and seed.get('feature_tag')==lane['feature_tag'] and seed.get('candidate_sha256')==lane['candidate_sha256'],'tagged seed receipt differs from candidate')
+   validate_tagged_seed_baseline(seed,verified_candidate)
   require(a.prepare_receipt is not None and re.fullmatch(r'[0-9a-f]{64}',a.prepare_sha256 or ''),'authenticated prepare receipt artifact/digest required')
   require(hashlib.sha256(a.prepare_receipt.read_bytes()).hexdigest()==a.prepare_sha256,'prepare receipt digest mismatch')
   prepare=json.loads(a.prepare_receipt.read_text())
