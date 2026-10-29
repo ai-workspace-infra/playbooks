@@ -28,6 +28,10 @@
       loop: "{{ (v6_existing_flux.stdout | from_json)['items'] if v6_existing_k3s.stat.exists else [] }}"
       loop_control:
         label: "{{ item.kind }}/{{ item.metadata.name }}"
+    - name: Run vhost common identity and PV checks before storage
+      ansible.builtin.include_role:
+        name: vhosts/common
+        tasks_from: node_bootstrap.yml
     - name: Install empty-disk and observation prerequisites
       ansible.builtin.apt:
         name: [python3-yaml, util-linux, e2fsprogs]
