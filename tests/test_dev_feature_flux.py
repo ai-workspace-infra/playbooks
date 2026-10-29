@@ -517,3 +517,21 @@ class RebuildNamespaceTests(unittest.TestCase):
   self.assertEqual(deleted_calls[0],['delete','namespace','feature-xconnect-referral-sit','--wait=false'])
 
 if __name__=='__main__':unittest.main()
+
+class RefreezeHandoffTests(unittest.TestCase):
+ def setUp(self):
+  self.c={'mode':'prepare','environment':'sit','candidate_sha':'ce60e1d926a154652b91766ffc819811030f7c66','tagged_lane':{'feature_id':'sit-test-1483','feature_tag':'retry-sit-test-1483','candidate_sha256':'b78506e1bfab9bb2643b8c1561f235927745ab7e651f374c876453af7d3ad143'}}
+  self.ns={'metadata':{'name':'feature-sit-test-1483-sit','uid':'b3d9b516-eb7c-4e7d-ba81-470b4d4cacc6','resourceVersion':'123','labels':{'app.kubernetes.io/managed-by':'dev-feature-flux-owner','environment':'sit','release.svc.plus/feature':'sit-test-1483','feature_id':'sit-test-1483','release.svc.plus/feature-tag':'smoke-sit-test-1483'}}}
+  self.source={'spec':{'ref':{'commit':'8cae3959b4539257db39579dc9c7c173989d277f'}}};self.jobs={'items':[{'status':{'succeeded':1}}]}
+ def test_handoff_rejects_drift_and_active_jobs(self):
+  self.assertTrue(R.reviewed_refreeze_handoff(self.c,self.ns,self.source,self.jobs))
+  for item,key,value in ((self.c,'candidate_sha','f'*40),(self.ns['metadata'],'uid','other'),(self.ns['metadata']['labels'],'release.svc.plus/feature-tag','other'),(self.source['spec']['ref'],'commit','f'*40)):
+   old=item[key];item[key]=value
+   self.assertFalse(R.reviewed_refreeze_handoff(self.c,self.ns,self.source,self.jobs));item[key]=old
+  self.jobs['items'][0]['status']['active']=1
+  self.assertFalse(R.reviewed_refreeze_handoff(self.c,self.ns,self.source,self.jobs))
+ def test_patch_checks_uid_resource_version_and_old_label(self):
+  client=Mock();R.handoff_namespace(client,'feature-sit-test-1483-sit',self.ns,'retry-sit-test-1483')
+  args=client.call.call_args.args[0];ops=json.loads(args[args.index('-p')+1])
+  self.assertEqual([x['op'] for x in ops],['test','test','test','replace'])
+  self.assertEqual(ops[0]['value'],self.ns['metadata']['uid']);self.assertEqual(ops[1]['value'],'123')
