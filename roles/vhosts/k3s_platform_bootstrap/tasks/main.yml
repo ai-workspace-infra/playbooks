@@ -5,6 +5,7 @@
       - k3s_platform_git_commit | length > 0 or k3s_platform_git_branch | length > 0
       - k3s_platform_git_commit | length == 0 or k3s_platform_git_commit is match("^[0-9a-f]{40}$")
       - k3s_platform_flux_root_path | length > 0
+      - not (k3s_platform_require_data_mount | bool) or (common_node_bootstrap_evidence | default({})).get('result') == 'COMMON_NODE_VERIFIED'
       - k3s_platform_flux_bootstrap_mode in ['generated', 'declarative_paused']
       - k3s_platform_git_auth_mode | default('public') | lower in ['public', 'ssh', 'https-basic', 'https-bearer', '']
     fail_msg: "k3s platform bootstrap requires git url, branch, root path, and a supported git auth mode."
@@ -120,10 +121,12 @@
     owner: root
     group: root
     mode: "0644"
+  when: not (k3s_platform_require_data_mount | bool)
 
 - name: Set host hostname to the configured K3s node identity
   ansible.builtin.hostname:
     name: "{{ k3s_platform_node_name }}"
+  when: not (k3s_platform_require_data_mount | bool)
 
 - name: Remove explicitly retired hostnames from local hosts entries
   ansible.builtin.lineinfile:
@@ -131,6 +134,7 @@
     regexp: "(^|\\s){{ item | regex_escape }}(\\s|$)"
     state: absent
   loop: "{{ k3s_platform_retired_hostnames }}"
+  when: not (k3s_platform_require_data_mount | bool)
 
 - name: Set local loopback mapping for the configured K3s node identity
   ansible.builtin.lineinfile:
@@ -138,6 +142,7 @@
     regexp: '^127\.0\.1\.1\s+'
     line: "127.0.1.1 {{ k3s_platform_node_name }} {{ k3s_platform_node_name }}.svc.plus"
     state: present
+  when: not (k3s_platform_require_data_mount | bool)
 
 - name: Ensure k3s config directory exists
   ansible.builtin.file:
@@ -531,7 +536,7 @@
       changed_when: false
     - name: Retain public paused bootstrap evidence on controller
       ansible.builtin.copy:
-        content: "{{ (k3s_platform_paused_receipt.stdout | from_json) | combine({'audit': (k3s_platform_audit_evidence.stdout | default('{}') | from_json)}) | to_json }}\n"
+        content: "{{ (k3s_platform_paused_receipt.stdout | from_json) | combine({'audit': (k3s_platform_audit_evidence.stdout | default('{}') | from_json), 'common': (common_node_bootstrap_evidence | default({}))}) | to_json }}\n"
         dest: "{{ k3s_platform_receipt_path }}"
         mode: '0600'
       delegate_to: localhost

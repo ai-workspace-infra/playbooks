@@ -103,7 +103,7 @@ def main():
         cmdb.chmod(0o600)
         env.update(AI_WORKSPACE_CMDB_JSON=str(cmdb), ANSIBLE_ROLES_PATH=str(ROOT / 'roles'),
                    ANSIBLE_HOST_KEY_CHECKING='True', ANSIBLE_CONFIG=str(ROOT / 'ansible.cfg'),
-                   ANSIBLE_SSH_ARGS='-o StrictHostKeyChecking=yes -o UserKnownHostsFile=' + shlex.quote(str(known)) + ' -o BatchMode=yes -o PasswordAuthentication=no')
+                   ANSIBLE_SSH_ARGS='-o ControlMaster=auto -o ControlPersist=60s -o StrictHostKeyChecking=yes -o UserKnownHostsFile=' + shlex.quote(str(known)) + ' -o BatchMode=yes -o PasswordAuthentication=no')
         agent = subprocess.check_output(['ssh-agent', '-s'], text=True, env=env)
         for field in ('SSH_AUTH_SOCK', 'SSH_AGENT_PID'):
             env[field] = re.search(field + r'=([^;]+);', agent).group(1)
@@ -123,6 +123,7 @@ def main():
     receipt = json.loads(Path(a.receipt).read_text())
     require(receipt.get('result') == 'PAUSED_BOOTSTRAP_VERIFIED' and receipt.get('gitops_sha') == a.gitops_sha, 'Missing verified paused receipt')
     require(receipt.get('counts') == {'GitRepository': 6, 'Kustomization': 6, 'HelmRelease': 7}, 'Unexpected V6 release graph')
+    require(receipt.get('common', {}).get('result') == 'COMMON_NODE_VERIFIED', 'Vhost common identity checks not verified')
     require(receipt.get('audit', {}).get('result') == 'AUDIT_ALLOW_DENY_VERIFIED', 'Independent audit identity not verified')
     print('PAUSED_BOOTSTRAP_VERIFIED; no business reconciliation or writer transfer performed')
 

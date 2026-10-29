@@ -1,0 +1,90 @@
+- name: Common | bind canonical node identity before storage
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname == common_node_name
+      - cmdb_name == common_node_name
+      - cmdb_instance_id | string is match('^[1-9][0-9]*$')
+      - common_node_name | length <= 253
+      - common_node_name is match('^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$')
+    fail_msg: Common bootstrap must use the IaC logical node identity, never a business DNS alias
+
+- name: Common | create bounded validation directory
+  ansible.builtin.file:
+    path: /usr/local/libexec/vhosts-common
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Common | install existing-cluster identity guard
+  ansible.builtin.copy:
+    src: k3s_node_guard.py
+    dest: /usr/local/libexec/vhosts-common/k3s_node_guard.py
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Common | verify existing node and persistent-volume affinity before hostname changes
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/vhosts-common/k3s_node_guard.py, --node, '{{ common_node_name }}']
+  register: common_existing_node_guard
+  changed_when: false
+
+- name: Common | preserve the declared hostname across cloud-init boots
+  ansible.builtin.file:
+    path: /etc/cloud/cloud.cfg.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Common | persist cloud-init hostname ownership
+  ansible.builtin.copy:
+    dest: /etc/cloud/cloud.cfg.d/99-k3s-platform-hostname.cfg
+    owner: root
+    group: root
+    mode: '0644'
+    content: "preserve_hostname: true\n"
+
+- name: Common | synchronize running and persistent hostname
+  ansible.builtin.hostname:
+    name: '{{ common_node_name }}'
+
+- name: Common | persist the exact canonical hostname
+  ansible.builtin.copy:
+    dest: /etc/hostname
+    owner: root
+    group: root
+    mode: '0644'
+    content: "{{ common_node_name }}\n"
+
+- name: Common | resolve the canonical node locally without replacing other hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\s+'
+    line: '127.0.1.1 {{ common_node_name }}'
+
+- name: Common | read actual hostname and local resolution
+  ansible.builtin.command:
+    argv: '{{ item }}'
+  loop:
+    - [hostname]
+    - [cat, /etc/hostname]
+    - [getent, hosts, '{{ common_node_name }}']
+  register: common_verified_identity
+  changed_when: false
+
+- name: Common | require identity consistency before data-disk or K3s roles
+  ansible.builtin.assert:
+    that:
+      - common_verified_identity.results[0].stdout | trim == common_node_name
+      - common_verified_identity.results[1].stdout | trim == common_node_name
+      - common_node_name in common_verified_identity.results[2].stdout.split()
+
+- name: Common | retain verified node bootstrap evidence
+  ansible.builtin.set_fact:
+    common_node_bootstrap_evidence:
+      result: COMMON_NODE_VERIFIED
+      node: '{{ common_node_name }}'
+      cmdb_instance_id: '{{ cmdb_instance_id | string }}'
+      existing_state: '{{ common_existing_node_guard.stdout | from_json }}'

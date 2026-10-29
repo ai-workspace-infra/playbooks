@@ -11,23 +11,10 @@
           - k3s_platform_node_name == 'prod-k3s-v6'
           - k3s_platform_write_kubeconfig_mode == '0600'
           - k3s_platform_local_storage_path == '/data/k3s/storage'
-    - name: Detect a previously installed candidate before host changes
-      ansible.builtin.stat:
-        path: /usr/local/bin/k3s
-      register: v6_existing_k3s
-    - name: Inspect any existing release graph before host changes
-      ansible.builtin.command:
-        argv: [/usr/local/bin/k3s, kubectl, get, 'gitrepositories.source.toolkit.fluxcd.io,kustomizations.kustomize.toolkit.fluxcd.io,helmreleases.helm.toolkit.fluxcd.io', -A, -o, json]
-      register: v6_existing_flux
-      changed_when: false
-      when: v6_existing_k3s.stat.exists
-    - name: Refuse an active generation before changing configuration
-      ansible.builtin.assert:
-        that:
-          - item.spec.suspend | default(false) | bool
-      loop: "{{ (v6_existing_flux.stdout | from_json)['items'] if v6_existing_k3s.stat.exists else [] }}"
-      loop_control:
-        label: "{{ item.kind }}/{{ item.metadata.name }}"
+    - name: Run vhost common identity and PV checks before storage
+      ansible.builtin.include_role:
+        name: vhosts/common
+        tasks_from: node_bootstrap.yml
     - name: Install empty-disk and observation prerequisites
       ansible.builtin.apt:
         name: [python3-yaml, util-linux, e2fsprogs]
