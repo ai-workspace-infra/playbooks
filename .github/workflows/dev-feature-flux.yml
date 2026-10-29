@@ -22,6 +22,10 @@ on:
       cmdb_sha256:
         type: string
         required: true
+      target_artifact:
+        description: Same-run read-only provider target observation for tagged lanes
+        type: string
+        default: ''
       instance_id:
         type: string
         required: true
@@ -94,6 +98,11 @@ jobs:
           name: ${{ inputs.cmdb_artifact }}
           path: ${{ runner.temp }}/dev-feature-cmdb
       - uses: actions/download-artifact@v4
+        if: inputs.target_artifact != ''
+        with:
+          name: ${{ inputs.target_artifact }}
+          path: ${{ runner.temp }}/dev-feature-target
+      - uses: actions/download-artifact@v4
         if: inputs.mode == 'rebuild' || inputs.mode == 'verify'
         with:
           name: ${{ inputs.prepare_artifact }}
@@ -116,11 +125,17 @@ jobs:
           CLUSTER_UID: ${{ inputs.cluster_uid }}
           PREPARE_SHA256: ${{ inputs.prepare_sha256 }}
           SEED_SHA256: ${{ inputs.seed_sha256 }}
+          TARGET_ARTIFACT: ${{ inputs.target_artifact }}
         shell: bash
         run: |
           set -euo pipefail
           seed_args=()
           prepare_args=()
+          target_args=()
+          if [[ -n "$TARGET_ARTIFACT" ]]; then
+            [[ "$TARGET_ARTIFACT" == "feature-sit-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ]]
+            target_args=(--target-observation "$RUNNER_TEMP/dev-feature-target/feature-target-observation.json")
+          fi
           if [[ "$MODE" == rebuild ]]; then
             prepare_args=(--prepare-receipt "$RUNNER_TEMP/dev-feature-prepare/receipt.json" --prepare-sha256 "$PREPARE_SHA256")
           fi
@@ -133,7 +148,7 @@ jobs:
             --cmdb "$RUNNER_TEMP/dev-feature-cmdb/cmdb.json" --cmdb-sha256 "$CMDB_SHA256" \
             --gitops-root "$GITHUB_WORKSPACE/gitops-candidate" --gitops-sha "$CANDIDATE_SHA" \
             --platform-sha "$PLATFORM_SHA" --node-uid "$NODE_UID" --cluster-uid "$CLUSTER_UID" \
-            --receipt "$RUNNER_TEMP/dev-feature-evidence/receipt.json" "${prepare_args[@]}" "${seed_args[@]}"
+            --receipt "$RUNNER_TEMP/dev-feature-evidence/receipt.json" "${prepare_args[@]}" "${seed_args[@]}" "${target_args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

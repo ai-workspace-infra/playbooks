@@ -9,6 +9,14 @@ import dev_feature_candidate as C
 R=C.SCOPE
 
 class Contracts(unittest.TestCase):
+ def test_tagged_provider_observation_requires_current_exact_target(self):
+  import datetime,run_dev_feature_flux as owner
+  now=datetime.datetime.now(datetime.timezone.utc)
+  row={'schema':'dev-sit-provider-observation/v1','result':'MATCH','instance_id':'123','node':'dev-k3s-v5','ip':'8.8.8.8','cmdb_sha256':'a'*64,'candidate_sha256':'b'*64,'observed_at':now.isoformat()}
+  owner.validate_target_observation(row,'123','8.8.8.8','a'*64,'b'*64,now)
+  for change in ({'candidate_sha256':'c'*64},{'ip':'1.1.1.1'},{'observed_at':(now-datetime.timedelta(minutes=21)).isoformat()},{'observed_at':(now+datetime.timedelta(seconds=1)).isoformat()}):
+   with self.subTest(change=change),self.assertRaises(ValueError):
+    owner.validate_target_observation({**row,**change},'123','8.8.8.8','a'*64,'b'*64,now)
  def test_content_and_billing_need_real_readiness_probe(self):
   for component in ('content','billing'):
    R.verify_tagged_readiness_probe(component,{'readinessProbe':{'httpGet':{'path':'/readyz','port':8080}}})

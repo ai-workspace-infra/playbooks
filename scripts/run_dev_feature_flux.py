@@ -13,6 +13,15 @@ RECORD='kv/data/CICD/dev/k3s-bootstrap'
 def require(value,message):
  if not value:raise ValueError(message)
 
+def validate_target_observation(observation, instance_id, ip, cmdb_sha256, candidate_sha256, now):
+ require(isinstance(observation,dict) and observation.get('schema')=='dev-sit-provider-observation/v1' and observation.get('result')=='MATCH' and
+         observation.get('instance_id')==instance_id and observation.get('node')=='dev-k3s-v5' and observation.get('ip')==ip and
+         observation.get('cmdb_sha256')==cmdb_sha256 and observation.get('candidate_sha256')==candidate_sha256,
+         'provider observation differs from verified target and candidate')
+ timestamp=datetime.datetime.fromisoformat(observation.get('observed_at',''))
+ require(timestamp.tzinfo is not None and datetime.timedelta(0)<=now-timestamp<=datetime.timedelta(minutes=20),
+         'provider observation expired or from the future')
+
 def tagged_dns_addresses(host,target_ip):
  require(ipaddress.IPv4Address(target_ip).is_global,'tagged DNS target must be a public IPv4 address')
  records=socket.getaddrinfo(host,443,socket.AF_UNSPEC,socket.SOCK_STREAM)
@@ -144,6 +153,9 @@ def execute(a):
  verified_candidate=validate_candidate_receipt(json.loads(a.candidate_receipt.read_text()),a.gitops_sha,a.stage,os.environ.get('GITHUB_RUN_ID'))
  cmdb=validate_cmdb(json.loads(a.cmdb.read_text()),a.instance_id)
  projection=verified_candidate.get('projection') if verified_candidate.get('schema_version')=='dev-feature-candidate/v2' else None
+ if projection is not None:
+  require(a.target_observation is not None,'same-run provider observation required for tagged lane')
+  validate_target_observation(json.loads(a.target_observation.read_text()),a.instance_id,cmdb['dev-k3s-v5']['ip'],a.cmdb_sha256,a.candidate_sha256,datetime.datetime.now(datetime.timezone.utc))
  observation=candidate.validate_tree(a.gitops_root,a.gitops_sha,a.stage,a.mode=='enable-tls',projection)
  owner_sha=run(['git','-C',str(ROOT),'rev-parse','HEAD']).strip()
  config={'instance_id':a.instance_id,'mode':a.mode,'environment':a.stage,'namespace':observation['namespace'],'node_name':'dev-k3s-v5','node_uid':a.node_uid,'cluster_uid':a.cluster_uid,'candidate_sha':a.gitops_sha,'platform_sha':a.platform_sha,'owner_sha':owner_sha,'manifest_sha256':observation['manifest_sha256'],'wait_seconds':900}
@@ -218,6 +230,7 @@ def main():
  for name in ('stage','mode','instance-id','gitops-sha','platform-sha','cmdb-sha256','node-uid','cluster-uid','candidate-sha256'):p.add_argument('--'+name,required=True)
  for name in ('cmdb','gitops-root','receipt','candidate-receipt'):p.add_argument('--'+name,required=True,type=Path)
  p.add_argument('--seed-receipt',type=Path);p.add_argument('--seed-sha256');p.add_argument('--prepare-receipt',type=Path);p.add_argument('--prepare-sha256')
+ p.add_argument('--target-observation',type=Path)
  execute(p.parse_args())
 if __name__=='__main__':
  try:main()
