@@ -92,6 +92,7 @@ class Owner:
 
     def seed_admin(self):
         self.check_namespace()
+        self.tagged_inputs()
         self.secret('web-saas-db-admin', {'password': secrets.token_hex(32)})
         self.check_namespace()
         return {'result':'admin_secret_prepared', 'namespace':self.ns,

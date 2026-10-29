@@ -89,6 +89,9 @@ def test_tagged_owner_rejects_baseline_and_oci_changes_before_database_operation
     inputs['schema'] = 'sit-data-input/v1'
     pg['platform_manifest_digest'] = 'sha256:invalid'
     with pytest.raises(module.Blocked, match='PostgreSQL OCI'): owner.tagged_inputs()
+    owner.check_namespace = lambda: None
+    owner.secret = lambda *args: pytest.fail('invalid OCI identity must fail before secret write')
+    with pytest.raises(module.Blocked, match='PostgreSQL OCI'): owner.seed_admin()
 
 
 def test_complete_initialize_returns_receipt_after_all_probes(monkeypatch):
