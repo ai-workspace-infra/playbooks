@@ -56,3 +56,21 @@ def validate(receipt, baseline, namespace_uid):
     return {'feature_id': feature, 'feature_tag': tag, 'namespace': baseline['namespace'],
             'namespace_uid': namespace_uid, 'candidate_sha256': fingerprint,
             'data_baseline_sha256': digest}
+
+
+def validate_receipt_inputs(receipt, namespace_uid):
+    """Check inputs projected by the authenticated same-run candidate receipt.
+
+    The adapter must first authenticate receipt provenance with
+    ``validate_candidate_receipt``. This helper cannot authenticate a receipt.
+    """
+    if not isinstance(receipt, dict) or not isinstance(receipt.get('projection'), dict):
+        raise ValueError('candidate receipt required')
+    lane = receipt['projection'].get('tagged_lane')
+    if not isinstance(lane, dict) or not isinstance(lane.get('feature_id'), str):
+        raise ValueError('candidate lane required')
+    baseline = {'schema': 'sit-data-baseline/v1', 'result': 'verified', 'database_status': 'NOT_RUN',
+                'feature_id': lane['feature_id'], 'namespace': 'feature-' + lane['feature_id'] + '-sit',
+                'data_baseline_sha256': receipt.get('data_baseline_sha256'),
+                'inputs': receipt.get('data_baseline_inputs')}
+    return validate(receipt, baseline, namespace_uid)

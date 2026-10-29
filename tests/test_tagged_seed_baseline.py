@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from tagged_seed_baseline import validate
+from tagged_seed_baseline import validate, validate_receipt_inputs
 
 
 class TaggedSeedBaselineTest(unittest.TestCase):
@@ -29,6 +29,10 @@ class TaggedSeedBaselineTest(unittest.TestCase):
 
     def test_matching_candidate_and_baseline(self):
         self.assertEqual(validate(self.receipt, self.baseline, self.uid)['namespace_uid'], self.uid)
+        self.receipt['data_baseline_inputs'] = self.inputs
+        self.assertEqual(validate_receipt_inputs(self.receipt, self.uid)['data_baseline_sha256'], self.baseline['data_baseline_sha256'])
+        self.receipt['data_baseline_inputs']['billing_sha'] = 'e'*40
+        with self.assertRaises(ValueError): validate_receipt_inputs(self.receipt, self.uid)
 
     def test_rejects_cross_lane_stale_or_changed_inputs(self):
         for kind in ('namespace', 'source', 'digest', 'tag', 'uid', 'repository', 'count'):

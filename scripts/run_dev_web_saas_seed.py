@@ -10,6 +10,7 @@ import dev_feature_candidate as candidate
 from dev_k3s_bootstrap import validate_cmdb
 from dev_ssh_binding import binding, run
 from run_dev_feature_flux import validate_candidate_receipt
+from tagged_seed_baseline import validate_receipt_inputs
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -31,6 +32,11 @@ def execute(a):
     cmdb = validate_cmdb(read_bound(a.cmdb, a.cmdb_sha256), a.instance_id)
     control = validate_candidate_receipt(read_bound(a.candidate_receipt, a.candidate_sha256),
         a.gitops_sha, a.stage, os.environ.get('GITHUB_RUN_ID'))
+    if control.get('schema_version') == 'dev-feature-candidate/v2':
+        # Candidate provenance has already been checked above. Bind the exact
+        # projected baseline and namespace incarnation before considering a
+        # future tagged execution path. This check alone grants no authority.
+        validate_receipt_inputs(control, a.namespace_uid)
     # This owner still binds its database, images and schema to the referral
     # lane. Never let a tagged receipt fall through to that fixed target.
     require(control.get('schema_version') == 'dev-feature-candidate/v1',
