@@ -1,12 +1,7 @@
-- name: Create independent locked system audit identity
-  ansible.builtin.user:
-    name: cluster-audit
-    system: true
-    create_home: false
-    password_lock: true
-    shell: /usr/sbin/nologin
-    groups: ''
-    append: false
+- name: Reuse the common independent system audit identity
+  ansible.builtin.include_role:
+    name: vhosts/common
+    tasks_from: audit_user.yml
 
 - name: Declare status-only cluster audit access
   ansible.builtin.copy:
