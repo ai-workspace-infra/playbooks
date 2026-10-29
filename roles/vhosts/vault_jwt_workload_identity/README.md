@@ -25,11 +25,14 @@ selects `k3s` or `kubernetes`; default is `k3s`. Pass an isolated SSH agent and,
 for configure only, a short-lived token with exactly the named admin policy.
 
 The role verifies the live cluster/node identifiers before obtaining short-lived
-TokenRequests, binds issuer and published signing keys, and rejects existing
-mounts or policies instead of overwriting them. Verify mode confirms the exact
-record is readable and that the denied path, wrong audience and wrong service
-account are refused. Secrets and token values stay in memory; task output is
-suppressed and the result fact contains only redacted status and cluster IDs.
+TokenRequests, binds issuer and published signing keys, and accepts existing
+identity resources only when their type and reviewed fields match exactly.
+Missing resources may be created after all existing state has been inspected;
+unreviewed values stop the operation before writes. Verify mode confirms the
+exact record is readable and that the denied path, wrong audience and wrong
+service account are refused. Secrets and token values stay in memory; task
+output is suppressed and the result fact contains only redacted status and
+cluster IDs.
 
 The caller owns staged rollout, access to the authenticated Vault endpoint,
 artifact and key attestation, revocation/rollback, and interpretation of a
@@ -37,8 +40,8 @@ partial configure failure. Flux release modes do not change DNS, database
 state, business writers, or service HelmReleases outside the explicitly allowed
 V6 gate set.
 
-If configuration stops after the reader policy is written but before the JWT
-mount is created, a retry may continue only when the existing policy text exactly
-matches the reviewed contract and the mount is still absent. Any existing mount
-is treated as ambiguous partial state and blocks further writes until separately
-inspected; the role never overwrites its config or role to recover automatically.
+Configuration is resumable after partial failure: a retry reads the dedicated
+mount, reader policy, auth config and role first; it creates only missing items
+and leaves exact matching items untouched. Any type or content mismatch blocks
+before writes. The admin token therefore requires read on only this mount's
+config and role plus its existing exact mount and policy scope.
