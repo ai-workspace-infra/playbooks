@@ -19,10 +19,11 @@ def jwt(subject=SPEC.subject,audience=SPEC.audience):
 class Fake:
     def __init__(self):
         self.calls=[];self.mounts={};self.policies={};self.configs={};self.roles={};self.scoped_policies=[SPEC.policy];self.denied_status=403;self.bad_login_status=400
-        self.mount_list_status=200;self.mount_create_status=204
+        self.mount_list_status=200;self.mount_create_status=204;self.capabilities=['create','update','sudo']
     def request(self,method,path,body=None,read_json=True):
         self.calls.append((method,path,body,read_json))
         if path=='sys/auth' and method=='GET':return self.mount_list_status,{'data':self.mounts}
+        if path=='sys/capabilities-self' and method=='POST':return 200,{'capabilities':self.capabilities}
         if path.startswith('sys/policies/acl/'):
             if method=='GET':return (404,None) if path not in self.policies else (200,{'data':{'policy':self.policies[path]}})
             if method=='PUT':self.policies[path]=body['policy'];return 204,None
@@ -49,8 +50,8 @@ class Contract(unittest.TestCase):
     def test_provision_dedicated_mount_with_exact_boundary(self):
         c=Fake();v.provision(c,SPEC,ISSUER,['public-key'])
         writes=[(method,path,body) for method,path,body,_ in c.calls if method!='GET']
-        self.assertEqual([x[1] for x in writes],['sys/policies/acl/'+SPEC.policy,'sys/auth/'+SPEC.mount,'auth/'+SPEC.mount+'/config','auth/'+SPEC.mount+'/role/'+SPEC.role])
-        self.assertEqual(writes[-1][2],SPEC.role_config);self.assertEqual(writes[0][2]['policy'],SPEC.policy_hcl)
+        self.assertEqual([x[1] for x in writes],['sys/capabilities-self','sys/policies/acl/'+SPEC.policy,'sys/auth/'+SPEC.mount,'auth/'+SPEC.mount+'/config','auth/'+SPEC.mount+'/role/'+SPEC.role])
+        self.assertEqual(writes[-1][2],SPEC.role_config);self.assertEqual(writes[1][2]['policy'],SPEC.policy_hcl)
 
     def test_existing_state_causes_no_write(self):
         for kind in ('mount','policy'):
@@ -58,7 +59,8 @@ class Contract(unittest.TestCase):
             if kind=='mount':c.mounts[SPEC.mount+'/']={'type':'kv'}
             else:c.policies['sys/policies/acl/'+SPEC.policy]='path "wrong" {}'
             with self.assertRaises(v.VaultError):v.provision(c,SPEC,ISSUER,['key'])
-            self.assertFalse(any(method!='GET' for method,_,_,_ in c.calls))
+            self.assertFalse(any(path.startswith(('sys/auth/','sys/policies/acl/','auth/')) and method in {'PUT','POST'}
+                                 for method,path,_,_ in c.calls))
 
     def test_mount_diagnostics_keep_only_operation_and_http_status(self):
         c=Fake();c.mount_list_status=403
@@ -101,6 +103,6 @@ class Contract(unittest.TestCase):
         c=Fake();c.policies['sys/policies/acl/'+SPEC.policy]=SPEC.policy_hcl
         v.provision(c,SPEC,ISSUER,['public-key'])
         self.assertEqual([x[1] for x in c.calls if x[0]!='GET'],[
-            'sys/auth/'+SPEC.mount,'auth/'+SPEC.mount+'/config','auth/'+SPEC.mount+'/role/'+SPEC.role])
+            'sys/capabilities-self','sys/auth/'+SPEC.mount,'auth/'+SPEC.mount+'/config','auth/'+SPEC.mount+'/role/'+SPEC.role])
 
 if __name__=='__main__':unittest.main()
