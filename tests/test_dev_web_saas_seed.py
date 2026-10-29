@@ -138,7 +138,7 @@ def test_complete_initialize_returns_receipt_after_all_probes(monkeypatch):
         return ''
     owner.psql = psql
     jobs = []
-    def job(purpose,*args):
+    def job(purpose,*args,**kwargs):
         jobs.append(purpose)
         if purpose == 'manifest': return json.dumps(manifest)
         if purpose.startswith('probe-'): return 'identity_probes_verified\n'
@@ -307,3 +307,61 @@ def test_tagged_seed_preflight_uses_independent_web_saas_ingress(monkeypatch):
     assert ('-n', 'flux-system', 'get', 'kustomization', 'platform-ingress-dev') in seen
     assert ('-n', 'flux-system', 'get', 'kustomization', 'platform-root') not in seen
     assert len(calls) == 1
+
+
+def test_partial_seed_recovery_requires_terminal_jobs_bound_roles_and_owner(monkeypatch):
+    import sys, types
+    monkeypatch.setitem(sys.modules, 'contracts', c)
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None, failure_code=scope.failure_code))
+    spec = importlib.util.spec_from_file_location('recovery_seed_owner', P.parent / 'seed.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    owner = module.Owner.__new__(module.Owner)
+    owner.ns = 'feature-sit-test-1483-sit'
+    owner.check_namespace = lambda: None
+    owner.k = lambda *args: {'items': []}
+    host = 'web-saas-postgresql.feature-sit-test-1483-sit.svc.cluster.local'
+    owner.secret = lambda name, fields: {'NATIVE_TARGET_DSN': 'postgresql://xc_schema_owner:' + 'a'*64 + '@' + host + ':5432/account?sslmode=disable'}
+    roles = ['xc_schema_owner', 'xc_accounts_rw', 'xc_billing_rw', 'xc_lane_audit']
+    def psql(query):
+        if 'FROM pg_class c' in query: return '0\n0\n0'
+        if 'SELECT rolname' in query: return '\n'.join(roles)
+        if 'pg_auth_members' in query: return '0'
+        if 'pg_database' in query or 'pg_namespace' in query: return 'xc_schema_owner'
+        raise AssertionError(query)
+    owner.psql = psql
+    assert owner.validate_empty_recovery(host, {role: '' for role in roles}) == 'a'*64
+    owner.k = lambda *args: {'items': [{'status': {'active': 1}}]}
+    with pytest.raises(module.Blocked, match='active jobs'):
+        owner.validate_empty_recovery(host, {role: '' for role in roles})
+    owner.k = lambda *args: {'items': []}
+    owner.psql = lambda query: '1\n0\n0' if 'FROM pg_class c' in query else psql(query)
+    with pytest.raises(module.Blocked, match='schema objects'):
+        owner.validate_empty_recovery(host, {role: '' for role in roles})
+    owner.psql = lambda query: '1' if 'pg_auth_members' in query else psql(query)
+    with pytest.raises(module.Blocked, match='memberships'):
+        owner.validate_empty_recovery(host, {role: '' for role in roles})
+    owner.psql = psql
+    owner.secret = lambda name, fields: {'NATIVE_TARGET_DSN': 'postgresql://xc_schema_owner:' + 'a'*64 + '@other.example:5432/account?sslmode=disable'}
+    with pytest.raises(module.Blocked, match='credential contract'):
+        owner.validate_empty_recovery(host, {role: '' for role in roles})
+
+
+def test_native_init_waits_for_postgres_from_same_pod_network(monkeypatch):
+    import sys, types
+    monkeypatch.setitem(sys.modules, 'contracts', c)
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None, failure_code=scope.failure_code))
+    spec = importlib.util.spec_from_file_location('wait_seed_owner', P.parent / 'seed.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    owner = module.Owner.__new__(module.Owner)
+    owner.ns = 'feature-sit-test-1483-sit'
+    captured = []
+    owner.apply = captured.append
+    owner.raw = lambda *args, **kwargs: '{}'
+    owner.job('native-init', 'accounts-image', ['migratectl'], wait_postgres='pinned-postgres-image')
+    pod = captured[0]['spec']['template']['spec']
+    assert pod['initContainers'][0]['image'] == 'pinned-postgres-image'
+    assert 'pg_isready' in pod['initContainers'][0]['command'][2]
+    assert pod['initContainers'][0]['env'][0]['value'] == 'web-saas-postgresql.feature-sit-test-1483-sit.svc.cluster.local'
+    assert pod['automountServiceAccountToken'] is False
