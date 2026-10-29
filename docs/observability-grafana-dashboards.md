@@ -83,25 +83,39 @@ permissions, and actual ingestion; the dashboard alone does not enable it or
 prove live data. Upstream documents PostgreSQL 17 in its CI matrix. Validate
 actual series and panel results for each deployed version before acceptance.
 
-### Online query verification status
+### Production query evidence (user-reported)
 
-User-provided observation: PostgreSQL 17.11 with postgres_exporter 0.17.1 has data for `buffers_alloc` and `buffers_clean`, and lacks the three legacy checkpoint/backend/backend_fsync series. This is metric-level evidence, not execution of the adapted PromQL. No online query endpoint or scoped access was supplied in this task; each expression below remains unverified online. `No data` is not zero.
+The user reports executing all 16 adapted PromQL expressions read-only against
+production: each returned HTTP success. PostgreSQL version was 17.11 and
+postgres_exporter version was 0.17.1. The supplied selection was
+`environment=prod`, `cluster=prod-k3s-v5`, `service=postgresql`,
+`instance=prod-postgres-exporter.web-saas-k3s-v5.svc:9187`, `datname=account`,
+and rate range `5m`. Execution timestamp, datasource identity, raw responses and
+query-engine request IDs were not supplied; this is reported evidence, not an
+independently reproduced receipt.
 
-| Panel | Ref | Online result |
-| --- | --- | --- |
-| TPS | A | Not executed |
-| Rows | A | Not executed |
-| Rows | B | Not executed |
-| Rows | C | Not executed |
-| Rows | D | Not executed |
-| Rows | E | Not executed |
-| Buffers (instance-wide) | A | Not executed |
-| Buffers (instance-wide) | B | Not executed |
-| Buffers (instance-wide) | C | Not executed |
-| Buffers (instance-wide) | D | Not executed |
-| Buffers (instance-wide) | E | Not executed |
-| Buffers (instance-wide) | F | Not executed |
-| Conflicts/Deadlocks | A | Not executed |
-| Conflicts/Deadlocks | B | Not executed |
-| Cache hit ratio | A | Not executed |
-| Number of active connections | A | Not executed |
+| Panel | Ref | HTTP | Series result |
+| --- | --- | --- | --- |
+| TPS | A | success | Present |
+| Rows | A | success | Present |
+| Rows | B | success | Present |
+| Rows | C | success | Present |
+| Rows | D | success | Present |
+| Rows | E | success | Present |
+| Buffers (instance-wide) | A | success | Present |
+| Buffers (instance-wide) | B | success | Absent |
+| Buffers (instance-wide) | C | success | Absent |
+| Buffers (instance-wide) | D | success | Present |
+| Buffers (instance-wide) | E | success | Absent |
+| Buffers (instance-wide) | F | success | Absent |
+| Conflicts/Deadlocks | A | success | Present |
+| Conflicts/Deadlocks | B | success | Present |
+| Cache hit ratio | A | success | Present |
+| Number of active connections | A | success | Present |
+
+B/C/E are legacy bgwriter fields unavailable in PostgreSQL 17; F is the
+checkpointer series, which the user reports was not collected. An empty result
+is not zero and HTTP success does not imply a series exists. Buffer metrics
+are instance-wide, regardless of the database selection. These observations
+apply only to the stated target, selection and window; they do not establish
+other databases, instances, times, Grafana rendering or deployment acceptance.
