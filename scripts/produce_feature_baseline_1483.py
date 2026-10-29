@@ -26,13 +26,21 @@ PR_ACCOUNTS = {'repo': 'ai-workspace-services/accounts', 'sha': '0bf29d88b3e8fc3
                'base': '38c3a3c2e19b7d177e6cb5e019a49c1b35027e95', 'pr': 280,
                'run': 40836607277, 'artifact': 12880199249, 'build_run': 40835969395,
                'image': 'ghcr.io/ai-workspace-services/accounts@sha256:cf8e14f91c42aa4741013876de7e1a36d5f5c7c65323dbf3db39f0cb58f22a12',
-               'prefix': 'accounts-pr-image-evidence'}
+               'prefix': 'accounts-pr-image-evidence', 'filename': 'accounts-pr-image-evidence.json',
+               'workflow': '.github/workflows/accounts-pr-image-evidence.yml'}
 PHASE = 'context'
 
 BILLING = {'repo': 'ai-workspace-services/billing-service', 'sha': '86b0560e616fa85eb9abcef49c0ca52f6bb99a9b',
            'run': 40729119885, 'artifact': 12835035241,
            'image': 'ghcr.io/ai-workspace-services/billing-service@sha256:66a7e12274a42c929277b68fbee58ff5e4277b21e37d4f8e937ed38b9ac474e4',
            'prefix': 'billing-main-image'}
+
+PR_BILLING = {'repo': 'ai-workspace-services/billing-service', 'sha': '67abf1e64276904374b63ecca837eef07ddb1f9d',
+              'base': '4d34c7f36a1d71f29ca31389b250d821b36857ce', 'pr': 57,
+              'run': 40844072417, 'artifact': 12883574130, 'build_run': 40843516350,
+              'image': 'ghcr.io/ai-workspace-services/billing-service@sha256:5905930286f384acf5b9c4a5e458d81c06646fe833bb840e009c4fb9198a9453',
+              'prefix': 'billing-pr-image-evidence', 'filename': 'billing-pr-image-evidence.json',
+              'workflow': '.github/workflows/billing-pr-image-evidence.yml'}
 
 
 def api(path, *, binary=False):
@@ -106,7 +114,7 @@ def check_pr(row):
 def check_pr_build(row):
     repo, rid, aid = row['repo'], row['run'], row['artifact']
     run = api(f'repos/{repo}/actions/runs/{rid}')
-    if (run.get('id') != rid or run.get('path', '').split('@')[0] != '.github/workflows/accounts-pr-image-evidence.yml' or
+    if (run.get('id') != rid or run.get('path', '').split('@')[0] != row['workflow'] or
         run.get('event') != 'workflow_dispatch' or run.get('head_branch') != 'main' or run.get('head_sha') != row['base'] or
         run.get('run_attempt') != 1 or run.get('status') != 'completed' or run.get('conclusion') != 'success' or
         run.get('repository', {}).get('full_name') != repo or run.get('head_repository', {}).get('full_name') != repo):
@@ -121,7 +129,7 @@ def check_pr_build(row):
         raise ValueError('PR evidence artifact digest mismatch')
     with zipfile.ZipFile(io.BytesIO(archive)) as zipped:
         entries = zipped.infolist()
-        if len(entries) != 1 or entries[0].filename != 'accounts-pr-image-evidence.json' or entries[0].file_size > 100_000:
+        if len(entries) != 1 or entries[0].filename != row['filename'] or entries[0].file_size > 100_000:
             raise ValueError('unexpected PR evidence archive')
         proof = json.loads(zipped.read(entries[0]))
     if (proof.get('schema') != 1 or proof.get('evidence_kind') != 'github-pr-run-and-registry' or
@@ -139,29 +147,36 @@ def check_pr_build(row):
 
 
 def produce(image_manifest_bytes, profile='main'):
-    if profile not in ('main', 'pr-1483'):
+    if profile not in ('main', 'pr-1483', 'pr-both-1483'):
         raise ValueError('unknown baseline profile')
-    accounts = PR_ACCOUNTS if profile == 'pr-1483' else ACCOUNTS
-    if profile == 'pr-1483':
+    accounts = PR_ACCOUNTS if profile in ('pr-1483', 'pr-both-1483') else ACCOUNTS
+    if profile in ('pr-1483', 'pr-both-1483'):
         check_pr(accounts); check_pr_build(accounts)
     else:
         check_main(accounts); check_build(accounts)
-    check_main(BILLING); check_build(BILLING)
+    billing = PR_BILLING if profile == 'pr-both-1483' else BILLING
+    if profile == 'pr-both-1483':
+        check_pr(billing); check_pr_build(billing)
+    else:
+        check_main(billing); check_build(billing)
     manifest = source(accounts, 'sql/init/accounts-native.manifest.json')
     native = source(accounts, 'sql/init/accounts-native.sql')
-    billing = source(BILLING, 'sql/billing-service-schema.sql')
-    result = inspect(manifest, native, billing, image_manifest_bytes, accounts_sha=accounts['sha'],
-                     billing_sha=BILLING['sha'], accounts_image=accounts['image'])
-    if profile == 'pr-1483':
+    billing_schema = source(billing, 'sql/billing-service-schema.sql')
+    result = inspect(manifest, native, billing_schema, image_manifest_bytes, accounts_sha=accounts['sha'],
+                     billing_sha=billing['sha'], accounts_image=accounts['image'])
+    if profile in ('pr-1483', 'pr-both-1483'):
         check_pr(accounts)
     else:
         check_main(accounts)
-    check_main(BILLING)
+    if profile == 'pr-both-1483':
+        check_pr(billing)
+    else:
+        check_main(billing)
     return {'schema': 'sit-data-baseline/v1', 'result': 'verified', 'feature_id': 'sit-test-1483',
             'namespace': 'feature-sit-test-1483-sit', 'data_baseline_sha256': result['data_baseline_sha256'],
             'inputs': result['inputs'], 'database_status': 'NOT_RUN',
             'source_builds': [{'repository': row['repo'], 'sha': row['sha'], 'run_id': row['run'],
-                               'artifact_id': row['artifact']} for row in (accounts, BILLING)]}
+                               'artifact_id': row['artifact']} for row in (accounts, billing)]}
 
 
 def validate_registry_credential(username, token):
@@ -184,9 +199,9 @@ def main():
         os.environ.get('GITHUB_WORKFLOW_REF') != 'ai-workspace-infra/playbooks/.github/workflows/feature-baseline-1483.yml@refs/heads/main'):
         raise ValueError('protected Main workflow required')
     profile = os.environ.get('BASELINE_PROFILE', 'main')
-    if profile not in ('main', 'pr-1483'):
+    if profile not in ('main', 'pr-1483', 'pr-both-1483'):
         raise ValueError('unknown baseline profile')
-    accounts = PR_ACCOUNTS if profile == 'pr-1483' else ACCOUNTS
+    accounts = PR_ACCOUNTS if profile in ('pr-1483', 'pr-both-1483') else ACCOUNTS
     PHASE = 'isolated-image'
     validate_registry_credential(os.environ.get('FEATURE_GHCR_USERNAME', ''), os.environ.get('FEATURE_GHCR_TOKEN', ''))
     with tempfile.TemporaryDirectory(prefix='baseline-docker-') as directory:
