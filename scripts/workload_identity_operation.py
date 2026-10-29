@@ -87,6 +87,8 @@ def main():
                      'release_root_ready','release_external-secrets_ready','release_identity_service_accounts',
                      'release_source_revision','release_root_revision','release_live_gate_mismatch',
                      'release_vault_config_source_ready','release_identity_ready',
+                     'release_source_apply','release_root_apply','release_revision_validation',
+                     'release_post_reconcile_graph',
                      'input_validation'}
             if failure.get('result')=='FAILED' and failure.get('stage') in allowed:
                 stage=failure['stage']
@@ -110,6 +112,8 @@ if __name__=='__main__':
                 'release_config_source_ready','release_root_ready','release_external-secrets_ready',
                 'release_identity_service_accounts','release_source_revision','release_root_revision',
                 'release_live_gate_mismatch','release_vault_config_source_ready','release_identity_ready',
+                'release_source_apply','release_root_apply','release_revision_validation',
+                'release_post_reconcile_graph',
                 'input_validation'}
         stage=message.rsplit('stage=',1)[-1]
         if stage not in stages: stage='input_validation'
