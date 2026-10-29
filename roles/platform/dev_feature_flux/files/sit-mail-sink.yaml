@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-saas-sit-mail-sink
+  namespace: feature-sit-test-1483-sit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      websaas.io/workload: sit-mail-sink
+  template:
+    metadata:
+      labels:
+        websaas.io/workload: sit-mail-sink
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: mail-sink
+        image: ghcr.io/axllent/mailpit@sha256:0790692be935ea4420d085694f7985b1f692ca6a8771ab0e0bd8ba75ac180498
+        args:
+        - --listen
+        - 127.0.0.1:8025
+        - --smtp
+        - 0.0.0.0:1025
+        - --disable-version-check
+        - --max
+        - '50'
+        - --max-message-size
+        - '1'
+        ports:
+        - name: smtp
+          containerPort: 1025
+          protocol: TCP
+        readinessProbe:
+          tcpSocket:
+            port: smtp
+        livenessProbe:
+          tcpSocket:
+            port: smtp
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        volumeMounts:
+        - name: scratch
+          mountPath: /tmp
+      volumes:
+      - name: scratch
+        emptyDir:
+          medium: Memory
+          sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-saas-sit-mail-sink
+  namespace: feature-sit-test-1483-sit
+spec:
+  type: ClusterIP
+  selector:
+    websaas.io/workload: sit-mail-sink
+  ports:
+  - name: smtp
+    port: 1025
+    targetPort: smtp
+    protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sit-mail-sink-isolation
+  namespace: feature-sit-test-1483-sit
+spec:
+  podSelector:
+    matchLabels:
+      websaas.io/workload: sit-mail-sink
+  policyTypes: [Ingress, Egress]
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          websaas.io/workload: accounts
+    ports:
+    - protocol: TCP
+      port: 1025
+  egress: []

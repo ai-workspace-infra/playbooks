@@ -535,3 +535,15 @@ class RefreezeHandoffTests(unittest.TestCase):
   args=client.call.call_args.args[0];ops=json.loads(args[args.index('-p')+1])
   self.assertEqual([x['op'] for x in ops],['test','test','test','replace'])
   self.assertEqual(ops[0]['value'],self.ns['metadata']['uid']);self.assertEqual(ops[1]['value'],'123')
+
+class IsolatedMailSinkTests(unittest.TestCase):
+ def test_reviewed_sink_only_accepts_exact_image_scope_and_egress(self):
+  docs=list(yaml.safe_load_all((ROOT/'roles/platform/dev_feature_flux/files/sit-mail-sink.yaml').read_text()))
+  C.validate_sit_mail_sink(docs)
+  for index,mutate in ((0,lambda x:x['spec']['template']['spec']['containers'][0].update(image='ghcr.io/other:latest')),
+                       (0,lambda x:x['spec']['template']['spec'].update(hostNetwork=True)),
+                       (1,lambda x:x['spec'].update(type='LoadBalancer')),
+                       (2,lambda x:x['spec'].update(egress=[{}]))):
+   bad=copy.deepcopy(docs);mutate(bad[index])
+   with self.subTest(index=index),self.assertRaisesRegex(ValueError,'non-forwarding contract'):C.validate_sit_mail_sink(bad)
+  with self.assertRaises(ValueError):C.validate_sit_mail_sink(docs[:2])
