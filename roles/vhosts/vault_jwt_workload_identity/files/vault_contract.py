@@ -9,7 +9,9 @@ import re
 
 
 class VaultError(Exception):
-    pass
+    def __init__(self, message='Vault operation failed', stage='vault'):
+        super().__init__(message)
+        self.stage = stage
 
 
 @dataclass(frozen=True)
@@ -93,16 +95,47 @@ def expect(result, codes):
 
 
 def provision(client, spec, issuer, public_keys):
-    """Create only an absent dedicated mount and policy; never overwrite drift."""
-    if not isinstance(issuer,str) or not issuer or not public_keys: raise VaultError('verified issuer and keys required')
-    mounts = expect(client.request('GET','sys/auth'), {200})
-    if spec.mount+'/' in mounts.get('data', {}): raise VaultError('mount exists; review before changes')
-    status, _ = client.request('GET','sys/policies/acl/'+spec.policy)
-    if status != 404: raise VaultError('policy exists or is not readable')
-    expect(client.request('PUT','sys/policies/acl/'+spec.policy,{'policy':spec.policy_hcl}),{200,204})
-    expect(client.request('POST','sys/auth/'+spec.mount,{'type':'jwt'}),{200,204})
-    expect(client.request('POST','auth/'+spec.mount+'/config',{'bound_issuer':issuer,'jwt_validation_pubkeys':public_keys}),{200,204})
-    expect(client.request('POST','auth/'+spec.mount+'/role/'+spec.role,spec.role_config),{200,204})
+    """Create an absent mount and exact policy, rejecting ambiguous partial state."""
+    if not isinstance(issuer, str) or not issuer or not public_keys:
+        raise VaultError('verified issuer and keys required', 'config')
+    policy_path = 'sys/policies/acl/' + spec.policy
+    mount_path = spec.mount + '/'
+    try:
+        mounts = expect(client.request('GET', 'sys/auth'), {200})
+    except VaultError as exc:
+        raise VaultError('auth mount state could not be read', 'mount') from None
+    if mount_path in mounts.get('data', {}):
+        raise VaultError('auth mount already exists; do not overwrite unverified state', 'mount')
+    try:
+        status, policy = client.request('GET', policy_path)
+    except VaultError:
+        raise VaultError('reader policy state could not be read', 'policy') from None
+    if status == 200:
+        if (policy or {}).get('data', {}).get('policy') != spec.policy_hcl:
+            raise VaultError('reader policy exists with unreviewed content', 'policy')
+        create_policy = False
+    elif status == 404:
+        create_policy = True
+    else:
+        raise VaultError('reader policy cannot be safely inspected', 'policy')
+    if create_policy:
+        try:
+            expect(client.request('PUT', policy_path, {'policy': spec.policy_hcl}), {200, 204})
+        except VaultError:
+            raise VaultError('reader policy creation failed', 'policy') from None
+    try:
+        expect(client.request('POST', 'sys/auth/' + spec.mount, {'type': 'jwt'}), {200, 204})
+    except VaultError:
+        raise VaultError('dedicated JWT mount creation failed', 'mount') from None
+    try:
+        expect(client.request('POST', 'auth/' + spec.mount + '/config',
+                              {'bound_issuer': issuer, 'jwt_validation_pubkeys': public_keys}), {200, 204})
+    except VaultError:
+        raise VaultError('dedicated JWT config creation failed', 'config') from None
+    try:
+        expect(client.request('POST', 'auth/' + spec.mount + '/role/' + spec.role, spec.role_config), {200, 204})
+    except VaultError:
+        raise VaultError('dedicated JWT role creation failed', 'role') from None
 
 
 def _claims(jwt):

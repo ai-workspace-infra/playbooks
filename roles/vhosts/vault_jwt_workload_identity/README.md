@@ -36,3 +36,9 @@ artifact and key attestation, revocation/rollback, and interpretation of a
 partial configure failure. Flux release modes do not change DNS, database
 state, business writers, or service HelmReleases outside the explicitly allowed
 V6 gate set.
+
+If configuration stops after the reader policy is written but before the JWT
+mount is created, a retry may continue only when the existing policy text exactly
+matches the reviewed contract and the mount is still absent. Any existing mount
+is treated as ambiguous partial state and blocks further writes until separately
+inspected; the role never overwrites its config or role to recover automatically.

@@ -71,8 +71,9 @@ def execute(config, env=None, collector=cluster_identity.collect, remote_type=re
             raise RuntimeError('stage=administrator_scope') from None
         try:
             vault_contract.provision(admin,spec,data['issuer'],data['public_keys'])
-        except vault_contract.VaultError:
-            raise RuntimeError('stage=vault_provision') from None
+        except vault_contract.VaultError as exc:
+            stage = 'vault_' + exc.stage if exc.stage in {'policy','mount','config','role'} else 'vault_provision'
+            raise RuntimeError('stage=' + stage) from None
         result={'result':'VAULT_WORKLOAD_IDENTITY_CONFIGURED'}
     else:
         try:
@@ -94,6 +95,7 @@ def main():
                   'stage=cluster_node_receipt_match','stage=cluster_service_accounts_read',
                   'stage=cluster_oidc_discovery','stage=cluster_token_requests','stage=cluster_identity_mismatch',
                   'stage=administrator_scope','stage=workload_login_and_path_checks','stage=vault_provision',
+                  'stage=vault_policy','stage=vault_mount','stage=vault_config','stage=vault_role',
                   'stage=release_cluster_identity','stage=release_namespace_read','stage=release_nodes_read',
                   'stage=release_node_receipt_match','stage=release_declaration','stage=release_live_graph_read',
                   'stage=release_live_graph_mismatch','stage=release_live_gate_order','stage=release_config_source_ready',
