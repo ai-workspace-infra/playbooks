@@ -26,7 +26,17 @@ def validate(receipt, baseline, namespace_uid):
         not isinstance(namespace_uid, str) or not re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', namespace_uid)):
         raise ValueError('invalid candidate lane identity')
     inputs = baseline.get('inputs')
-    if not isinstance(inputs, dict) or inputs.get('schema') != 'sit-data-input/v1':
+    keys = {'schema', 'accounts_sha', 'billing_sha', 'accounts_image', 'accounts_manifest_sha256',
+            'accounts_native_sha256', 'billing_schema_sha256', 'image_manifest_sha256',
+            'migration_version', 'business_table_count'}
+    if (not isinstance(inputs, dict) or set(inputs) != keys or inputs.get('schema') != 'sit-data-input/v1' or
+        any(not isinstance(inputs.get(k), str) or not re.fullmatch(r'[0-9a-f]{40}', inputs[k]) for k in ('accounts_sha', 'billing_sha')) or
+        any(not isinstance(inputs.get(k), str) or not re.fullmatch(r'[0-9a-f]{64}', inputs[k]) for k in
+            ('accounts_manifest_sha256', 'accounts_native_sha256', 'billing_schema_sha256', 'image_manifest_sha256')) or
+        not isinstance(inputs.get('accounts_image'), str) or
+        not re.fullmatch(r'ghcr\.io/ai-workspace-services/accounts@sha256:[0-9a-f]{64}', inputs['accounts_image']) or
+        type(inputs.get('migration_version')) is not int or inputs['migration_version'] <= 0 or
+        type(inputs.get('business_table_count')) is not int or inputs['business_table_count'] <= 0):
         raise ValueError('missing baseline inputs')
     digest = hashlib.sha256(json.dumps(inputs, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     if (baseline.get('schema') != 'sit-data-baseline/v1' or baseline.get('result') != 'verified' or
@@ -37,7 +47,9 @@ def validate(receipt, baseline, namespace_uid):
     components = projection.get('components', {})
     if not isinstance(components, dict) or not isinstance(components.get('accounts'), dict) or not isinstance(components.get('billing'), dict):
         raise ValueError('missing source components')
-    if (inputs.get('accounts_image') != components['accounts'].get('image') or
+    if (components['accounts'].get('source_repository') != 'ai-workspace-services/accounts' or
+        components['billing'].get('source_repository') != 'ai-workspace-services/billing-service' or
+        inputs.get('accounts_image') != components['accounts'].get('image') or
         inputs.get('accounts_sha') != components['accounts'].get('source_sha') or
         inputs.get('billing_sha') != components['billing'].get('source_sha')):
         raise ValueError('baseline sources differ from candidate components')
