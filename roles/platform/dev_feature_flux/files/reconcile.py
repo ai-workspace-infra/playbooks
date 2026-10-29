@@ -59,6 +59,9 @@ PREFLIGHT_FAILURE_CODE_BY_REASON={
  'protected platform source mismatch':'dev_platform_source_mismatch_or_not_ready',
  'protected source revision mismatch':'dev_platform_source_revision_mismatch',
  'protected platform root not Ready':'dev_platform_root_not_ready_or_revision_mismatch',
+ 'Dev ingress source not Ready or identity mismatch':'dev_ingress_source_not_ready_or_identity_mismatch',
+ 'Dev ingress source revision invalid':'dev_ingress_source_revision_invalid',
+ 'Dev ingress not Ready or revision mismatch':'dev_ingress_not_ready_or_revision_mismatch',
 }
 
 def failure_code(operation,error):
@@ -125,6 +128,12 @@ def preflight(c,nodes,cluster,platform,root):
  require(len(items)==1 and items[0]['metadata']['name']==NODE and items[0]['metadata']['uid']==c['node_uid'],'actual Dev node identity mismatch')
  require(cluster['metadata']['uid']==c['cluster_uid'],'actual cluster identity mismatch')
  require(any(x.get('type')=='Ready' and x.get('status')=='True' for x in items[0].get('status',{}).get('conditions',[])),'Dev node not Ready')
+ if c.get('tagged_lane') is not None:
+  require(platform.get('metadata',{}).get('name')=='platform-config-dev' and platform.get('metadata',{}).get('namespace')=='flux-system' and platform.get('spec',{}).get('url')==REPO and platform.get('spec',{}).get('ref')=={'branch':'main'} and ready(platform),'Dev ingress source not Ready or identity mismatch')
+  rev=platform.get('status',{}).get('artifact',{}).get('revision','')
+  require(isinstance(rev,str) and re.fullmatch(r'main@sha1:[0-9a-f]{40}',rev),'Dev ingress source revision invalid')
+  require(root.get('metadata',{}).get('name')=='platform-ingress-dev' and root.get('metadata',{}).get('namespace')=='flux-system' and root.get('spec',{}).get('path')=='./services/platform-ingress/dev' and root.get('spec',{}).get('sourceRef')=={'kind':'GitRepository','name':'platform-config-dev'} and ready(root) and root.get('status',{}).get('lastAppliedRevision')==rev,'Dev ingress not Ready or revision mismatch')
+  return
  require(platform.get('spec',{}).get('ref')=={'commit':c['platform_sha']} and ready(platform),'protected platform source mismatch')
  require(revision(platform.get('status',{}).get('artifact',{}).get('revision'),c['platform_sha']),'protected source revision mismatch')
  require(ready(root) and revision(root.get('status',{}).get('lastAppliedRevision'),c['platform_sha']),'protected platform root not Ready')
@@ -275,7 +284,9 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
  validate(c);require(re.fullmatch(r'[1-9][0-9]*',str(c.get('instance_id',''))),'CMDB instance identity required')
  client=client or Client()
  NS,SOURCE,PATH,feature,domains,tag=scope(c)
- def base():return (client.get('nodes'),client.get('namespace','kube-system'),client.get('gitrepository','platform-config','flux-system'),client.get('kustomization','platform-root','flux-system'))
+ def base():
+  source,root=('platform-config-dev','platform-ingress-dev') if tag is not None else ('platform-config','platform-root')
+  return (client.get('nodes'),client.get('namespace','kube-system'),client.get('gitrepository',source,'flux-system'),client.get('kustomization',root,'flux-system'))
  baseline=base();preflight(c,*baseline)
  existing=client.get('namespace',NS,optional=True)
  if existing:
@@ -286,7 +297,7 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
  if c['mode']=='verify':require(existing is not None and UUID.fullmatch(c.get('namespace_uid','')),'verified live namespace UID required')
  report={'namespace_uid':existing['metadata'].get('uid') if existing else None,'mode':c['mode'],'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False,'audit_acceptance':'NOT_RUN','business_uid_acceptance':'NOT_RUN'}
  if tag is not None:
-  report.update(feature_id=feature,feature_tag=tag,candidate_sha256=c['tagged_lane']['candidate_sha256'],lane_path=PATH)
+  report.update(feature_id=feature,feature_tag=tag,candidate_sha256=c['tagged_lane']['candidate_sha256'],lane_path=PATH,ingress_revision=baseline[3]['status']['lastAppliedRevision'])
  if c['mode']=='plan':return report
  if c['mode']=='rebuild':
   report.update(rebuild_namespace(c,client,existing,sleep,clock))

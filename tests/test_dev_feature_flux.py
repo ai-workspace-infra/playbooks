@@ -117,6 +117,9 @@ class Contracts(unittest.TestCase):
   meta={'generation':1};status={'observedGeneration':1,'conditions':condition,'artifact':{'revision':'sha1:'+c['platform_sha']}}
   source={'metadata':meta,'spec':{'ref':{'commit':c['platform_sha']}},'status':status}
   root={'metadata':meta,'status':{**status,'lastAppliedRevision':'sha1:'+c['platform_sha']}}
+  if c.get('tagged_lane') is not None:
+   source={'metadata':{'name':'platform-config-dev','namespace':'flux-system',**meta},'spec':{'url':R.REPO,'ref':{'branch':'main'}},'status':{**status,'artifact':{'revision':'main@sha1:'+'f'*40}}}
+   root={'metadata':{'name':'platform-ingress-dev','namespace':'flux-system',**meta},'spec':{'path':'./services/platform-ingress/dev','sourceRef':{'kind':'GitRepository','name':'platform-config-dev'}},'status':{**status,'lastAppliedRevision':'main@sha1:'+'f'*40}}
   return nodes,cluster,source,root
  def test_exact_stage_host_chart_and_images(self):
   for stage in ('sit','uat'):
@@ -162,6 +165,15 @@ class Contracts(unittest.TestCase):
   with self.assertRaises(ValueError):R.preflight(c,*base)
   base=self.baseline(c);base[2]['spec']['ref']={'branch':'main'}
   with self.assertRaises(ValueError):R.preflight(c,*base)
+ def test_tagged_lane_checks_ingress_independently_of_shared_mcp_root(self):
+  c=self.config();c.update(namespace='feature-sit-test-1483-sit',tagged_lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'e'*64})
+  base=self.baseline(c);R.preflight(c,*base)
+  for index,change in ((2,lambda x:x['spec'].update(ref={'branch':'other'})),(2,lambda x:x['status']['artifact'].update(revision='main@sha1:'+'e'*40)),(3,lambda x:x['status'].update(conditions=[{'type':'Ready','status':'False'}])),(3,lambda x:x['spec'].update(path='./services/platform-mcp/dev-k3s-v5'))):
+   altered=copy.deepcopy(base);change(altered[index])
+   with self.subTest(index=index),self.assertRaises(ValueError):R.preflight(c,*altered)
+  altered=copy.deepcopy(base);altered[1]['metadata']['uid']='wrong'
+  with self.assertRaises(ValueError):R.preflight(c,*altered)
+
  def test_plan_is_read_only_and_prepare_does_not_deploy_candidate(self):
   c=self.config();base=self.baseline(c)
   class Client:

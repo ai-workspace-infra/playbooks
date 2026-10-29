@@ -32,9 +32,10 @@ class Owner:
         target(request['stage'], request['namespace'], request.get('tagged_lane'))
         self.ns = request['namespace']
         config = {**request, 'environment':request['stage'], 'mode':'prepare', 'node_name':'dev-k3s-v5'}
+        source, root = ('platform-config-dev', 'platform-ingress-dev') if request.get('tagged_lane') is not None else ('platform-config', 'platform-root')
         preflight(config, self.k('get','nodes'), self.k('get','namespace','kube-system'),
-                  self.k('-n','flux-system','get','gitrepository','platform-config'),
-                  self.k('-n','flux-system','get','kustomization','platform-root'))
+                  self.k('-n','flux-system','get','gitrepository',source),
+                  self.k('-n','flux-system','get','kustomization',root))
         for key in ('candidate_sha',):
             if not re.fullmatch('[0-9a-f]{40}', request[key]):
                 raise Blocked('invalid candidate')
