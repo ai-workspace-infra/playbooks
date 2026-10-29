@@ -132,7 +132,7 @@ def main():
         print('COMMON_NODE_VERIFIED; host identity preparation complete')
         return
     require(receipt.get('result') == 'PAUSED_BOOTSTRAP_VERIFIED', 'Missing verified paused receipt')
-    require(receipt.get('counts') == {'GitRepository': 6, 'Kustomization': 6, 'HelmRelease': 7}, 'Unexpected V6 release graph')
+    require(receipt.get('counts') == {'GitRepository': 6, 'Kustomization': 9, 'HelmRelease': 8}, 'Unexpected V6 release graph')
     require(receipt.get('audit', {}).get('result') == 'AUDIT_ALLOW_DENY_VERIFIED', 'Independent audit identity not verified')
     print('PAUSED_BOOTSTRAP_VERIFIED; no business reconciliation or writer transfer performed')
 

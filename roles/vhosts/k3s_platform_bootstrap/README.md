@@ -125,3 +125,18 @@ Secrets, pod execution, proxy or write permissions. Live tests use the Unix user
 and a bounded in-memory ServiceAccount token to prove status reads and denied
 secret/proxy/writes (namespace write probe is server-side dry run). Business
 identities remain separate and must be qualified before releases are resumed.
+
+### V6 ESO and TLS prerequisites
+
+For `prod-k3s-v6`, the paused bundle includes the ESO HelmRelease and all nine
+Flux Kustomizations. The `vault-tls-identity` and `vault-tls-bootstrap` paths
+are rendered and their exact object identities checked, but their ServiceAccount,
+RBAC, SecretStore and ExternalSecret are deliberately not applied by initial
+bootstrap. Their own paused Flux Kustomizations control when they are applied;
+ESO CRDs may not yet be installed. The business units retain distinct sources.
+
+This validation describes a fresh paused bootstrap, not an authorization to rerun
+it on an already initialized cluster or to replace its live Flux graph. A separate
+reviewed transition must reconcile an existing graph while preserving its state.
+Identity-object readiness does not prove Vault allow/deny authorization; that is a
+separate evidence gate before certificate synchronization.

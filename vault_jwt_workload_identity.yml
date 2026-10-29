@@ -1,0 +1,18 @@
+---
+- name: Execute a verified Vault workload identity operation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    vault_jwt_workload_identity_config: "{{ lookup('ansible.builtin.env', 'WORKLOAD_IDENTITY_CONFIG') | from_json }}"
+    vault_jwt_workload_identity_mode: "{{ vault_jwt_workload_identity_config.mode }}"
+    vault_jwt_workload_identity_runtime: "{{ vault_jwt_workload_identity_config.runtime }}"
+  roles:
+    - role: vhosts/vault_jwt_workload_identity
+  post_tasks:
+    - name: Save redacted identity result
+      ansible.builtin.copy:
+        content: "{{ vault_jwt_workload_identity_result | to_json }}\n"
+        dest: "{{ lookup('ansible.builtin.env', 'WORKLOAD_IDENTITY_RESULT') }}"
+        mode: '0600'
+      no_log: true
