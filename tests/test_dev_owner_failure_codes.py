@@ -23,6 +23,17 @@ class OwnerFailureCodeTests(unittest.TestCase):
     self.assertEqual(OWNER.failure_code('initialize', blocked('Kubernetes operation failed (sensitive output suppressed)')), 'sit_seed_kubernetes_operation_failed')
 
 
+ def test_preflight_failure_codes_distinguish_platform_drift_and_root_health(self):
+    expected = {
+       'protected platform source mismatch': 'dev_platform_source_mismatch_or_not_ready',
+       'protected source revision mismatch': 'dev_platform_source_revision_mismatch',
+       'protected platform root not Ready': 'dev_platform_root_not_ready_or_revision_mismatch',
+    }
+    for mode in ('plan', 'prepare', 'submit', 'verify'):
+       for reason, code in expected.items():
+          with self.subTest(mode=mode, reason=reason):
+             self.assertEqual(OWNER.failure_code(mode, ValueError(reason)), code)
+
  def test_unknown_failures_never_copy_exception_text_into_receipt_code(self):
     marker = 'private-error-with-secret-like-value'
     code = OWNER.failure_code('rebuild', RuntimeError(marker))
