@@ -226,9 +226,9 @@ def reviewed_refreeze_handoff(c, existing, source, jobs):
  """Allow only the approved 1483 successor to reuse its existing Namespace."""
  lane=c.get('tagged_lane') or {}; meta=existing.get('metadata', {}); labels=meta.get('labels', {})
  return (c.get('mode')=='prepare' and c.get('environment')=='sit' and
-         c.get('candidate_sha')=='ce60e1d926a154652b91766ffc819811030f7c66' and
-         lane=={'feature_id':'sit-test-1483','feature_tag':'retry-sit-test-1483',
-                'candidate_sha256':'b78506e1bfab9bb2643b8c1561f235927745ab7e651f374c876453af7d3ad143'} and
+         c.get('candidate_sha')=='ca22f0506cd77827e04c81d4f99af859ecdf2c0c' and
+         lane=={'feature_id':'sit-test-1483','feature_tag':'verified-sit-test-1483',
+                'candidate_sha256':'57b7c8027888196b8f84b33f7b4d0ad96b0c801d31f5a60cc7f8f04b80d1be8e'} and
          meta.get('name')=='feature-sit-test-1483-sit' and
          meta.get('uid')=='b3d9b516-eb7c-4e7d-ba81-470b4d4cacc6' and
          isinstance(meta.get('resourceVersion'),str) and bool(meta['resourceVersion']) and
