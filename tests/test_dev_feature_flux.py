@@ -285,6 +285,13 @@ class PhaseTests(unittest.TestCase):
   with self.assertRaises(ValueError):R.execute(c,client)
   self.assertEqual(client.applied,[])
 
+ def test_owner_rejects_wrong_seed_data_baseline(self):
+  config={'data_baseline_sha256':'a'*64}
+  R.verify_seed_baseline({'data_baseline_sha256':'a'*64},config)
+  for value in ('b'*64,None):
+   with self.subTest(value=value),self.assertRaisesRegex(ValueError,'baseline differs'):
+    R.verify_seed_baseline({'data_baseline_sha256':value},config)
+
  def test_tagged_verify_rejects_unbound_seed_before_apply(self):
   c=self.config();c.update(namespace='feature-sit-test-1483-sit',mode='verify',namespace_uid='3'*36,
       tagged_lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'e'*64})

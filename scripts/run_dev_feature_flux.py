@@ -147,7 +147,9 @@ def execute(a):
  observation=candidate.validate_tree(a.gitops_root,a.gitops_sha,a.stage,a.mode=='enable-tls',projection)
  owner_sha=run(['git','-C',str(ROOT),'rev-parse','HEAD']).strip()
  config={'instance_id':a.instance_id,'mode':a.mode,'environment':a.stage,'namespace':observation['namespace'],'node_name':'dev-k3s-v5','node_uid':a.node_uid,'cluster_uid':a.cluster_uid,'candidate_sha':a.gitops_sha,'platform_sha':a.platform_sha,'owner_sha':owner_sha,'manifest_sha256':observation['manifest_sha256'],'wait_seconds':900}
- if projection is not None:config['tagged_lane']=projection['tagged_lane']
+ if projection is not None:
+  config['tagged_lane']=projection['tagged_lane']
+  config['data_baseline_sha256']=verified_candidate['data_baseline_sha256']
  if a.mode=='rebuild':
   require(hashlib.sha256(a.prepare_receipt.read_bytes()).hexdigest()==a.prepare_sha256,'prior prepare receipt checksum mismatch')
   prior=json.loads(a.prepare_receipt.read_text())

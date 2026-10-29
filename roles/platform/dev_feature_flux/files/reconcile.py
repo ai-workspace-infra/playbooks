@@ -62,6 +62,12 @@ def failure_code(operation,error):
 def require(value,message):
  if not value: raise ValueError(message)
 
+def verify_seed_baseline(seed, config):
+ digest=config.get('data_baseline_sha256')
+ require(isinstance(digest,str) and re.fullmatch(r'[0-9a-f]{64}',digest) and
+         seed.get('data_baseline_sha256')==digest,
+         'seed data baseline differs from verified candidate')
+
 def scope(c):
  """Derive the only allowed target from a caller-authenticated tagged lane."""
  lane=c.get('tagged_lane')
@@ -282,6 +288,7 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
   require(seed.get('schema_version')=='dev-lane-seed/v1' and seed.get('result')=='verified' and seed.get('namespace')==NS and seed.get('namespace_uid')==c.get('namespace_uid') and seed.get('candidate_sha')==c['candidate_sha'] and seed.get('node_uid')==c['node_uid'] and seed.get('cluster_uid')==c['cluster_uid'] and seed.get('instance_id')==c['instance_id'] and seed.get('database_roles')==['xc_accounts_rw','xc_billing_rw'] and seed.get('schema_initialized') is True,'independent namespace seed owner receipt required before application reconciliation')
   if tag is not None:
    require(seed.get('feature_id')==feature and seed.get('feature_tag')==tag and seed.get('candidate_sha256')==c['tagged_lane']['candidate_sha256'],'tagged seed receipt differs from candidate')
+   verify_seed_baseline(seed,c)
  if tag is not None and c['mode']=='submit':
   proof=c.get('dns_http_proof',[])
   try:target=ipaddress.IPv4Address(c.get('target_ip',''))
