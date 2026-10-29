@@ -22,7 +22,7 @@ PG_IMAGE = 'ghcr.io/ai-workspace-services/postgresql@sha256:c6ee94d4c91054128823
 OWNER = 'dev-web-saas-seed-v1'
 # Explicit user authorization applies only to the frozen rehearsal candidate.
 SIT_RLS_CANDIDATE = 'c470c495623f45ae0f98bf641bcdd49a42d4459c9c3eec0460ea03980b9d8b23'
-SIT_RETRY_CANDIDATE = 'b78506e1bfab9bb2643b8c1561f235927745ab7e651f374c876453af7d3ad143'
+SIT_RETRY_CANDIDATE = '57b7c8027888196b8f84b33f7b4d0ad96b0c801d31f5a60cc7f8f04b80d1be8e'
 SIT_RETRY_NAMESPACE_UID = 'b3d9b516-eb7c-4e7d-ba81-470b4d4cacc6'
 SIT_ORIGINAL_IMAGE = 'ghcr.io/ai-workspace-services/accounts@sha256:2938c97dc975c82cfdf2b9874b574e2aaa6357b4bb83a5a97f5b703448041434'
 SIT_RETRY_IMAGE = 'ghcr.io/ai-workspace-services/accounts@sha256:cf8e14f91c42aa4741013876de7e1a36d5f5c7c65323dbf3db39f0cb58f22a12'
@@ -34,12 +34,12 @@ def authorized_sit_lane(request):
     binding = (lane.get('feature_tag'), lane.get('candidate_sha256'))
     return lane.get('feature_id') == 'sit-test-1483' and binding in (
         ('smoke-sit-test-1483', SIT_RLS_CANDIDATE),
-        ('retry-sit-test-1483', SIT_RETRY_CANDIDATE))
+        ('verified-sit-test-1483', SIT_RETRY_CANDIDATE))
 
 
 def authorized_refreeze(request, namespace, inputs, image, schema_sha):
     return (namespace == 'feature-sit-test-1483-sit' and request.get('namespace_uid') == SIT_RETRY_NAMESPACE_UID and
-            request.get('candidate_sha') == 'ce60e1d926a154652b91766ffc819811030f7c66' and
+            request.get('candidate_sha') == 'ca22f0506cd77827e04c81d4f99af859ecdf2c0c' and
             (request.get('tagged_lane') or {}).get('candidate_sha256') == SIT_RETRY_CANDIDATE and
             authorized_sit_lane(request) and image == SIT_RETRY_IMAGE and schema_sha == SIT_NATIVE_SHA and
             inputs.get('accounts_native_sha256') == SIT_NATIVE_SHA and
@@ -315,7 +315,7 @@ END IF; END $$;
     def ensure_authorized_rehearsal_rls(self):
         lane = self.r.get('tagged_lane') or {}
         if (self.ns != 'feature-sit-test-1483-sit' or not authorized_sit_lane(self.r) or
-            (lane.get('feature_tag') == 'retry-sit-test-1483' and self.r.get('namespace_uid') != SIT_RETRY_NAMESPACE_UID)):
+            (lane.get('feature_tag') == 'verified-sit-test-1483' and self.r.get('namespace_uid') != SIT_RETRY_NAMESPACE_UID)):
             raise Blocked('RLS policy authorization is outside this fixed rehearsal')
         actual = set(self.psql("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND c.relrowsecurity;").split())
         if actual != set(SIT_RLS_TABLES):
