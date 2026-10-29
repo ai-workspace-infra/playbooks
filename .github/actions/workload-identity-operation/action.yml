@@ -1,12 +1,13 @@
 name: Vault workload identity owner
-description: Configure or verify a workload identity using reviewed evidence and scoped identities.
+description: Configure or verify a workload identity, or release a reviewed V6 Flux stage.
 inputs:
-  mode: {required: true, description: configure or verify}
+  mode: {required: true, description: configure, verify, release-root, release-eso, or release-identity}
   operation-path: {required: true, description: Reviewed identity operation declaration path}
   cmdb: {required: true, description: Verified IaC CMDB file}
   cmdb-sha256: {required: true, description: CMDB checksum from verified receipt}
   gitops: {required: true, description: Reviewed immutable GitOps checkout}
   gitops-sha: {required: true, description: Reviewed GitOps commit}
+  gitops-tag: {required: true, description: Reviewed immutable GitOps tag}
   bootstrap-receipt: {required: true, description: Verified bootstrap receipt}
   known-hosts: {required: true, description: Provider-attested SSH host keys}
   receipt: {required: true, description: Output path for redacted evidence}
@@ -31,6 +32,7 @@ runs:
         WORKLOAD_CMDB_SHA256: ${{ inputs.cmdb-sha256 }}
         WORKLOAD_GITOPS: ${{ inputs.gitops }}
         WORKLOAD_GITOPS_SHA: ${{ inputs.gitops-sha }}
+        WORKLOAD_GITOPS_TAG: ${{ inputs.gitops-tag }}
         WORKLOAD_BOOTSTRAP_RECEIPT: ${{ inputs.bootstrap-receipt }}
         WORKLOAD_KNOWN_HOSTS: ${{ inputs.known-hosts }}
         WORKLOAD_RECEIPT: ${{ inputs.receipt }}
@@ -43,7 +45,7 @@ runs:
         unset SSH_PRIVATE_KEY
         python3 "${GITHUB_ACTION_PATH}/../../../scripts/workload_identity_operation.py" \
           --mode "$WORKLOAD_MODE" --operation-path "$WORKLOAD_OPERATION_PATH" --cmdb "$WORKLOAD_CMDB" --cmdb-sha256 "$WORKLOAD_CMDB_SHA256" \
-          --gitops "$WORKLOAD_GITOPS" --gitops-sha "$WORKLOAD_GITOPS_SHA" \
+          --gitops "$WORKLOAD_GITOPS" --gitops-sha "$WORKLOAD_GITOPS_SHA" --gitops-tag "$WORKLOAD_GITOPS_TAG" \
           --bootstrap-receipt "$WORKLOAD_BOOTSTRAP_RECEIPT" \
           --known-hosts "$WORKLOAD_KNOWN_HOSTS" \
           --receipt "$WORKLOAD_RECEIPT"

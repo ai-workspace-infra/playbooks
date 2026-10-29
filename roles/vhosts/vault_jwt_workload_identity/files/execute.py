@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import cluster_identity
+import flux_release
 import remote_kubectl
 import vault_contract
 
@@ -18,7 +19,7 @@ def execute(config, env=None, collector=cluster_identity.collect, remote_type=re
             client_type=vault_contract.Client):
     env = os.environ if env is None else env
     spec = vault_contract.IdentitySpec(**config['identity'])
-    if config['mode'] not in ('configure', 'verify'):
+    if config['mode'] not in ('configure', 'verify', 'release-root', 'release-eso', 'release-identity'):
         raise ValueError('unsupported operation')
     child_env = {k: env[k] for k in ('PATH','HOME','LANG','LC_ALL','TMPDIR','SSH_AUTH_SOCK') if k in env}
     if not child_env.get('SSH_AUTH_SOCK'):
@@ -26,6 +27,11 @@ def execute(config, env=None, collector=cluster_identity.collect, remote_type=re
     stage = 'cluster_identity'
     try:
         runner = remote_type(config['host'], config['known_hosts'], spec, config['runtime'], config['ssh_user'], env=child_env)
+        if config['mode'].startswith('release-'):
+            stage = 'release_cluster_identity'
+            cluster = cluster_identity.verify_cluster_target(config['cluster_uid'], config['node_uid'],
+                                                              config['expected_version'], config['node_name'], run=runner)
+            return flux_release.release(config, runner, cluster)
         data = collector(config['cluster_uid'], config['node_uid'], config['expected_version'],
                          config['node_name'], spec, run=runner)
         if config['mode'] == 'configure':
@@ -35,7 +41,18 @@ def execute(config, env=None, collector=cluster_identity.collect, remote_type=re
     except cluster_identity.ClusterError as exc:
         allowed = {'namespace_read','nodes_read','node_receipt_match','service_accounts_read',
                    'oidc_discovery','token_requests','cluster_identity_mismatch'}
-        stage = 'cluster_' + exc.stage if exc.stage in allowed else 'cluster_identity'
+        release_stages = {'release_cluster_identity','namespace_read','nodes_read','node_receipt_match'}
+        release_codes = {'release_declaration','live_graph_read','live_graph_mismatch','live_gate_order',
+                         'config_source_ready','root_ready','external-secrets_ready',
+                         'identity_service_accounts','release_source_revision','release_root_revision',
+                         'live_gate_mismatch','vault_config_source_ready','identity_ready'}
+        if config['mode'].startswith('release-'):
+            if exc.stage in release_codes:
+                stage = exc.stage if exc.stage.startswith('release_') else 'release_' + exc.stage
+            else:
+                stage = 'release_' + exc.stage if exc.stage in release_stages else 'release_cluster_identity'
+        else:
+            stage = 'cluster_' + exc.stage if exc.stage in allowed else 'cluster_identity'
         raise RuntimeError('stage=' + stage) from None
     except (KeyError, TypeError, ValueError, OSError, vault_contract.VaultError):
         raise RuntimeError('stage=' + stage) from None
@@ -74,7 +91,13 @@ def main():
         stages = {'stage=cluster_identity','stage=cluster_namespace_read','stage=cluster_nodes_read',
                   'stage=cluster_node_receipt_match','stage=cluster_service_accounts_read',
                   'stage=cluster_oidc_discovery','stage=cluster_token_requests','stage=cluster_identity_mismatch',
-                  'stage=administrator_scope','stage=workload_login_and_path_checks','stage=vault_provision'}
+                  'stage=administrator_scope','stage=workload_login_and_path_checks','stage=vault_provision',
+                  'stage=release_cluster_identity','stage=release_namespace_read','stage=release_nodes_read',
+                  'stage=release_node_receipt_match','stage=release_declaration','stage=release_live_graph_read',
+                  'stage=release_live_graph_mismatch','stage=release_live_gate_order','stage=release_config_source_ready',
+                  'stage=release_root_ready','stage=release_external-secrets_ready','stage=release_identity_service_accounts',
+                  'stage=release_source_revision','stage=release_root_revision','stage=release_live_gate_mismatch',
+                  'stage=release_vault_config_source_ready','stage=release_identity_ready'}
         if stage not in stages:
             stage = 'stage=unexpected'
         failure_path = os.environ.get('WORKLOAD_IDENTITY_FAILURE')

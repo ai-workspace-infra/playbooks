@@ -81,3 +81,36 @@ def collect(cluster_uid, node_uid, expected_version, node_name, identity, run=co
         raise
     except (KeyError, TypeError, json.JSONDecodeError, ValueError):
         raise ClusterError(stage, stage) from None
+
+
+def verify_cluster_target(cluster_uid, node_uid, expected_version, node_name, run):
+    """Verify only the bootstrap-bound cluster and node before staged Flux work."""
+    if not all(isinstance(x, str) and re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', x)
+               for x in (cluster_uid, node_uid)):
+        raise ClusterError('trusted cluster and node UIDs are required')
+    if not isinstance(expected_version, str) or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+[+A-Za-z0-9.-]*', expected_version):
+        raise ClusterError('explicit Kubernetes version required')
+    if not isinstance(node_name, str) or not re.fullmatch(r'[a-z0-9][a-z0-9.-]*', node_name):
+        raise ClusterError('invalid expected node name')
+    stage = 'namespace_read'
+    try:
+        ns = json.loads(run('get', 'namespace', 'kube-system', '-o', 'json'))
+        stage = 'nodes_read'
+        nodes = json.loads(run('get', 'nodes', '-o', 'json'))['items']
+        if ns['metadata']['uid'] != cluster_uid:
+            raise ClusterError('cluster identity differs from receipt', 'cluster_identity_mismatch')
+        selected = [node for node in nodes if node.get('metadata', {}).get('name') == node_name]
+        if len(selected) != 1:
+            raise ClusterError('expected node not uniquely present', 'node_receipt_match')
+        node = selected[0]
+        if (node['metadata']['uid'] != node_uid
+                or node['status']['nodeInfo']['kubeletVersion'] != expected_version
+                or not any(x['type'] == 'Ready' and x['status'] == 'True' for x in node['status']['conditions'])):
+            raise ClusterError('node identity or readiness differs from receipt', 'node_receipt_match')
+        return {'cluster_uid': cluster_uid, 'node_uid': node_uid, 'node_name': node_name}
+    except ClusterError as exc:
+        if exc.stage == 'cluster_identity':
+            raise ClusterError(stage, stage) from None
+        raise
+    except (KeyError, TypeError, json.JSONDecodeError, ValueError):
+        raise ClusterError(stage, stage) from None
