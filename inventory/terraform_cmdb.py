@@ -330,6 +330,8 @@ def build_inventory(cmdb):
             hostvars["ansible_ssh_private_key_file"] = host["ssh_private_key_file"]
         # CMDB 其余字段一并暴露给 playbook 使用
         hostvars.update(host_vars)
+        if isinstance(host.get("data_volume"), dict):
+            hostvars["data_volume"] = host["data_volume"]
         inv["_meta"]["hostvars"][name] = hostvars
 
         for group in host.get("groups", []) or ["ungrouped"]:
