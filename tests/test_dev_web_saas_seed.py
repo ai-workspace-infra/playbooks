@@ -324,6 +324,7 @@ def test_partial_seed_recovery_requires_terminal_jobs_bound_roles_and_owner(monk
     owner.secret = lambda name, fields: {'NATIVE_TARGET_DSN': 'postgresql://xc_schema_owner:' + 'a'*64 + '@' + host + ':5432/account?sslmode=disable'}
     roles = ['xc_schema_owner', 'xc_accounts_rw', 'xc_billing_rw', 'xc_lane_audit']
     def psql(query):
+        if 'FROM pg_class c' in query: return '0\n0\n0'
         if 'SELECT rolname' in query: return '\n'.join(roles)
         if 'pg_auth_members' in query: return '0'
         if 'pg_database' in query or 'pg_namespace' in query: return 'xc_schema_owner'
@@ -334,6 +335,9 @@ def test_partial_seed_recovery_requires_terminal_jobs_bound_roles_and_owner(monk
     with pytest.raises(module.Blocked, match='active jobs'):
         owner.validate_empty_recovery(host, {role: '' for role in roles})
     owner.k = lambda *args: {'items': []}
+    owner.psql = lambda query: '1\n0\n0' if 'FROM pg_class c' in query else psql(query)
+    with pytest.raises(module.Blocked, match='schema objects'):
+        owner.validate_empty_recovery(host, {role: '' for role in roles})
     owner.psql = lambda query: '1' if 'pg_auth_members' in query else psql(query)
     with pytest.raises(module.Blocked, match='memberships'):
         owner.validate_empty_recovery(host, {role: '' for role in roles})

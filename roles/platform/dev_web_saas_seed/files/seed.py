@@ -182,6 +182,9 @@ END IF; END $$;
         jobs = self.k('-n', self.ns, 'get', 'jobs')['items']
         if any(job.get('status', {}).get('active', 0) for job in jobs):
             raise Blocked('active jobs prevent partial seed recovery')
+        empty = self.psql("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND c.relkind IN ('r','p','v','m','S','f'); SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%'; SELECT count(*) FROM pg_namespace WHERE nspname NOT IN ('pg_catalog','information_schema','public') AND nspname NOT LIKE 'pg_toast%' AND nspname NOT LIKE 'pg_temp_%';").split()
+        if empty != ['0','0','0']:
+            raise Blocked('partial seed contains schema objects or extra schemas')
         roles = set(self.psql("SELECT rolname FROM pg_roles WHERE rolname IN ('xc_schema_owner','xc_accounts_rw','xc_billing_rw','xc_lane_audit') AND rolcanlogin AND NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls);").split())
         if roles != set(passwords):
             raise Blocked('partial seed role identities require review')
