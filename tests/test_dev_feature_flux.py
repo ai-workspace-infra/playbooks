@@ -381,16 +381,16 @@ class RegistryProjectionTests(unittest.TestCase):
   with self.assertRaises(ValueError):module.build('web-saas-uat',{})
 
 class CandidateEvolutionTests(unittest.TestCase):
- def test_referral_seed_owner_rejects_tagged_receipt_before_target_or_transport(self):
+ def test_seed_owner_rejects_incomplete_tagged_receipt_before_target_or_transport(self):
   from types import SimpleNamespace
   from unittest.mock import patch
   import run_dev_web_saas_seed as seed
   args=SimpleNamespace(phase='seed-admin',cmdb=None,cmdb_sha256='a'*64,instance_id='1',
-                       candidate_receipt=None,candidate_sha256='b'*64,gitops_sha='c'*40,stage='sit')
+                       candidate_receipt=None,candidate_sha256='b'*64,gitops_sha='c'*40,stage='sit',namespace_uid='d'*36)
   with patch.object(seed,'read_bound',return_value={}),patch.object(seed,'validate_cmdb',return_value={}), \
        patch.object(seed,'validate_candidate_receipt',return_value={'schema_version':'dev-feature-candidate/v2'}), \
        patch.object(seed.candidate,'validate_tree') as render,patch.object(seed,'binding') as transport:
-   with self.assertRaisesRegex(ValueError,'database seed owner is not implemented'):seed.execute(args)
+   with self.assertRaisesRegex(ValueError,'candidate receipt required'):seed.execute(args)
    render.assert_not_called();transport.assert_not_called()
 
  def test_tagged_receipt_requires_same_main_caller_run_attempt_and_fingerprint(self):
