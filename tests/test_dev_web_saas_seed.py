@@ -600,3 +600,19 @@ def test_rehearsal_rls_is_scoped_and_verified(monkeypatch):
     state['policies'] = 1
     with pytest.raises(module.Blocked, match='requires review'):
         owner.ensure_authorized_rehearsal_rls()
+
+
+def test_refreeze_authorization_requires_exact_namespace_candidate_and_identical_schema(monkeypatch):
+    import sys, types
+    monkeypatch.setitem(sys.modules, 'contracts', c)
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None, failure_code=scope.failure_code))
+    spec = importlib.util.spec_from_file_location('refreeze_owner', P.parent / 'seed.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    request={'namespace_uid':module.SIT_RETRY_NAMESPACE_UID,'candidate_sha':'ce60e1d926a154652b91766ffc819811030f7c66','tagged_lane':{'feature_id':'sit-test-1483','feature_tag':'retry-sit-test-1483','candidate_sha256':module.SIT_RETRY_CANDIDATE}}
+    inputs={'accounts_native_sha256':module.SIT_NATIVE_SHA,'accounts_manifest_sha256':'843145bb7341baba1a9b41146b09913eec83c172724dd011b2997b6d894f93ff','migration_version':2026102801,'business_table_count':78}
+    assert module.authorized_refreeze(request,'feature-sit-test-1483-sit',inputs,module.SIT_RETRY_IMAGE,module.SIT_NATIVE_SHA)
+    for obj,key,value in ((request,'namespace_uid','other'),(request,'candidate_sha','f'*40),(request['tagged_lane'],'candidate_sha256','a'*64),(inputs,'accounts_native_sha256','b'*64),(inputs,'business_table_count',77)):
+        old=obj[key];obj[key]=value
+        assert not module.authorized_refreeze(request,'feature-sit-test-1483-sit',inputs,module.SIT_RETRY_IMAGE,module.SIT_NATIVE_SHA)
+        obj[key]=old
+    assert not module.authorized_refreeze(request,'other',inputs,module.SIT_RETRY_IMAGE,module.SIT_NATIVE_SHA)

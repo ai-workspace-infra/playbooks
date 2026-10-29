@@ -22,6 +22,29 @@ PG_IMAGE = 'ghcr.io/ai-workspace-services/postgresql@sha256:c6ee94d4c91054128823
 OWNER = 'dev-web-saas-seed-v1'
 # Explicit user authorization applies only to the frozen rehearsal candidate.
 SIT_RLS_CANDIDATE = 'c470c495623f45ae0f98bf641bcdd49a42d4459c9c3eec0460ea03980b9d8b23'
+SIT_RETRY_CANDIDATE = 'b78506e1bfab9bb2643b8c1561f235927745ab7e651f374c876453af7d3ad143'
+SIT_RETRY_NAMESPACE_UID = 'b3d9b516-eb7c-4e7d-ba81-470b4d4cacc6'
+SIT_ORIGINAL_IMAGE = 'ghcr.io/ai-workspace-services/accounts@sha256:2938c97dc975c82cfdf2b9874b574e2aaa6357b4bb83a5a97f5b703448041434'
+SIT_RETRY_IMAGE = 'ghcr.io/ai-workspace-services/accounts@sha256:cf8e14f91c42aa4741013876de7e1a36d5f5c7c65323dbf3db39f0cb58f22a12'
+SIT_NATIVE_SHA = '80ca865a9b93f1e63ca4c4c76e7a08e69458245ec63f1bba5667e28c4409a619'
+
+
+def authorized_sit_lane(request):
+    lane = request.get('tagged_lane') or {}
+    binding = (lane.get('feature_tag'), lane.get('candidate_sha256'))
+    return lane.get('feature_id') == 'sit-test-1483' and binding in (
+        ('smoke-sit-test-1483', SIT_RLS_CANDIDATE),
+        ('retry-sit-test-1483', SIT_RETRY_CANDIDATE))
+
+
+def authorized_refreeze(request, namespace, inputs, image, schema_sha):
+    return (namespace == 'feature-sit-test-1483-sit' and request.get('namespace_uid') == SIT_RETRY_NAMESPACE_UID and
+            request.get('candidate_sha') == 'ce60e1d926a154652b91766ffc819811030f7c66' and
+            (request.get('tagged_lane') or {}).get('candidate_sha256') == SIT_RETRY_CANDIDATE and
+            authorized_sit_lane(request) and image == SIT_RETRY_IMAGE and schema_sha == SIT_NATIVE_SHA and
+            inputs.get('accounts_native_sha256') == SIT_NATIVE_SHA and
+            inputs.get('accounts_manifest_sha256') == '843145bb7341baba1a9b41146b09913eec83c172724dd011b2997b6d894f93ff' and
+            inputs.get('migration_version') == 2026102801 and inputs.get('business_table_count') == 78)
 SIT_RLS_TABLES = ('account_lifecycle_events','finance_invoices','finance_operation_events',
                   'finance_operations','finance_payments','finance_refunds','mfa_recovery_codes',
                   'mfa_reset_requests','network_team_members','network_teams','overlay_config_acks',
@@ -215,23 +238,27 @@ END IF; END $$;
         jobs = self.k('-n', self.ns, 'get', 'jobs')['items']
         if any(j.get('status', {}).get('active', 0) for j in jobs):
             raise Blocked('active jobs prevent native continuation')
+        refrozen = authorized_refreeze(self.r, self.ns, inputs, accounts_image, schema_sha) if seeded else False
+        job_image = SIT_ORIGINAL_IMAGE if refrozen else accounts_image
         expected_cmd = ['/usr/local/bin/migratectl','init','--environment','sit','--dsn-env','NATIVE_TARGET_DSN','--schema-sha256',schema_sha,'--writers-paused','--dry-run=false']
         expected_env = [{'name':'NATIVE_TARGET_DSN','valueFrom':{'secretKeyRef':{'name':'web-saas-db-ddl','key':'NATIVE_TARGET_DSN'}}}]
         found = []
         for job in jobs:
             meta = job.get('metadata', {}); status = job.get('status', {})
             containers = job.get('spec', {}).get('template', {}).get('spec', {}).get('containers', [])
-            if (meta.get('namespace') == self.ns and meta.get('name','').startswith('dev-seed-native-init-') and meta.get('labels',{}).get('seed-owner') == OWNER and status.get('succeeded') == 1 and any(x.get('type') == 'Complete' and x.get('status') == 'True' for x in status.get('conditions',[])) and len(containers) == 1 and containers[0].get('image') == accounts_image and containers[0].get('command') == expected_cmd and containers[0].get('env') == expected_env and re.fullmatch(r'[0-9a-f-]{36}',meta.get('uid',''))):
+            if (meta.get('namespace') == self.ns and meta.get('name','').startswith('dev-seed-native-init-') and meta.get('labels',{}).get('seed-owner') == OWNER and status.get('succeeded') == 1 and any(x.get('type') == 'Complete' and x.get('status') == 'True' for x in status.get('conditions',[])) and len(containers) == 1 and containers[0].get('image') == job_image and containers[0].get('command') == expected_cmd and containers[0].get('env') == expected_env and re.fullmatch(r'[0-9a-f-]{36}',meta.get('uid',''))):
                 found.append(job)
         if len(found) != 1:
             raise Blocked('unique authenticated native initialization job required')
         job = found[0]; name = job['metadata']['name']; uid = job['metadata']['uid']
+        if refrozen and uid != 'd58db015-abc6-4cea-b240-2a055b3b14e8':
+            raise Blocked('prior native job UID changed')
         pods = self.k('-n', self.ns, 'get', 'pods', '-l', 'job-name='+name)['items']
         if len(pods) != 1:
             raise Blocked('native initialization pod identity mismatch')
         pod = pods[0]; statuses = pod.get('status', {}).get('containerStatuses', [])
         mapped = self.r['runtime_mapping']['images']['accounts']; image_id = statuses[0].get('imageID','') if len(statuses) == 1 else ''
-        allowed = {accounts_image, 'docker-pullable://' + accounts_image, accounts_image.split('@')[0] + '@' + mapped['platform_manifest_digest'], 'docker-pullable://' + accounts_image.split('@')[0] + '@' + mapped['platform_manifest_digest']}
+        allowed = ({job_image, 'docker-pullable://' + job_image} if refrozen else {accounts_image, 'docker-pullable://' + accounts_image, accounts_image.split('@')[0] + '@' + mapped['platform_manifest_digest'], 'docker-pullable://' + accounts_image.split('@')[0] + '@' + mapped['platform_manifest_digest']})
         if (pod.get('status', {}).get('phase') != 'Succeeded' or not any(ref.get('uid') == uid and ref.get('controller') is True for ref in pod.get('metadata',{}).get('ownerReferences',[])) or len(statuses) != 1 or statuses[0].get('state',{}).get('terminated',{}).get('exitCode') != 0 or image_id not in allowed):
             raise Blocked('native initialization runtime evidence mismatch')
         actual = set(self.psql("SELECT tablename FROM pg_tables WHERE schemaname='public';").split())
@@ -254,7 +281,7 @@ END IF; END $$;
         # substitutes for these connections. Every probe transaction rolls back.
         for role, key, dml in (
             ('xc_accounts_rw', 'ACCOUNTS_PASSWORD',
-             "BEGIN; INSERT INTO public.users(username,password,proxy_uuid) VALUES ('seed_probe','local_probe','00000000-0000-4000-8000-000000000001'); SELECT username FROM public.users WHERE username='seed_probe'; " + (('SELECT count(*) FROM public.cloud_vendor_costs; ' + ''.join('SELECT count(*) FROM public.' + name + ';' for name in SIT_RLS_TABLES)) if tagged and (self.r.get('tagged_lane') or {}).get('candidate_sha256') == SIT_RLS_CANDIDATE else ('SELECT count(*) FROM public.cloud_vendor_costs; ' if tagged else '')) + "ROLLBACK;"),
+             "BEGIN; INSERT INTO public.users(username,password,proxy_uuid) VALUES ('seed_probe','local_probe','00000000-0000-4000-8000-000000000001'); SELECT username FROM public.users WHERE username='seed_probe'; " + (('SELECT count(*) FROM public.cloud_vendor_costs; ' + ''.join('SELECT count(*) FROM public.' + name + ';' for name in SIT_RLS_TABLES)) if tagged and authorized_sit_lane(self.r) else ('SELECT count(*) FROM public.cloud_vendor_costs; ' if tagged else '')) + "ROLLBACK;"),
             ('xc_billing_rw', 'BILLING_PASSWORD',
              "BEGIN; INSERT INTO public.billing_source_sync_state(source_id) VALUES ('seed_probe'); UPDATE public.billing_source_sync_state SET last_error='' WHERE source_id='seed_probe'; SELECT source_id FROM public.billing_source_sync_state WHERE source_id='seed_probe'; ROLLBACK;"),
             ('xc_lane_audit','AUDIT_PASSWORD',
@@ -272,7 +299,7 @@ END IF; END $$;
             if role in ('xc_billing_rw','xc_lane_audit'):
                 rejects.append('SELECT password FROM public.users LIMIT 1;')
             if role == 'xc_lane_audit':
-                if tagged and (self.r.get('tagged_lane') or {}).get('candidate_sha256') == SIT_RLS_CANDIDATE:
+                if tagged and authorized_sit_lane(self.r):
                     rejects.append('SELECT count(*) FROM public.finance_invoices;')
                 rejects.extend(["INSERT INTO public.billing_source_sync_state(source_id) VALUES (NULL);",
                                 'UPDATE public.schema_migrations SET dirty=true;',
@@ -287,8 +314,8 @@ END IF; END $$;
 
     def ensure_authorized_rehearsal_rls(self):
         lane = self.r.get('tagged_lane') or {}
-        if (self.ns != 'feature-sit-test-1483-sit' or lane.get('feature_id') != 'sit-test-1483' or
-            lane.get('feature_tag') != 'smoke-sit-test-1483' or lane.get('candidate_sha256') != SIT_RLS_CANDIDATE):
+        if (self.ns != 'feature-sit-test-1483-sit' or not authorized_sit_lane(self.r) or
+            (lane.get('feature_tag') == 'retry-sit-test-1483' and self.r.get('namespace_uid') != SIT_RETRY_NAMESPACE_UID)):
             raise Blocked('RLS policy authorization is outside this fixed rehearsal')
         actual = set(self.psql("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND c.relrowsecurity;").split())
         if actual != set(SIT_RLS_TABLES):

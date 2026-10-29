@@ -222,6 +222,33 @@ class Client:
  def create(self,doc):
   return self.call(['create','-f','-','-o','json'],json.dumps(doc))
 
+def reviewed_refreeze_handoff(c, existing, source, jobs):
+ """Allow only the approved 1483 successor to reuse its existing Namespace."""
+ lane=c.get('tagged_lane') or {}; meta=existing.get('metadata', {}); labels=meta.get('labels', {})
+ return (c.get('mode')=='prepare' and c.get('environment')=='sit' and
+         c.get('candidate_sha')=='ce60e1d926a154652b91766ffc819811030f7c66' and
+         lane=={'feature_id':'sit-test-1483','feature_tag':'retry-sit-test-1483',
+                'candidate_sha256':'b78506e1bfab9bb2643b8c1561f235927745ab7e651f374c876453af7d3ad143'} and
+         meta.get('name')=='feature-sit-test-1483-sit' and
+         meta.get('uid')=='b3d9b516-eb7c-4e7d-ba81-470b4d4cacc6' and
+         isinstance(meta.get('resourceVersion'),str) and bool(meta['resourceVersion']) and
+         not meta.get('deletionTimestamp') and
+         labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and
+         labels.get('environment')=='sit' and labels.get('release.svc.plus/feature')=='sit-test-1483' and
+         labels.get('feature_id')=='sit-test-1483' and labels.get('release.svc.plus/feature-tag')=='smoke-sit-test-1483' and
+         source.get('spec',{}).get('ref',{}).get('commit')=='8cae3959b4539257db39579dc9c7c173989d277f' and
+         isinstance(jobs.get('items'),list) and all(not job.get('status',{}).get('active',0) for job in jobs['items']))
+
+
+def handoff_namespace(client, namespace, existing, new_tag):
+ meta=existing['metadata']
+ ops=[{'op':'test','path':'/metadata/uid','value':meta['uid']},
+      {'op':'test','path':'/metadata/resourceVersion','value':meta['resourceVersion']},
+      {'op':'test','path':'/metadata/labels/release.svc.plus~1feature-tag','value':'smoke-sit-test-1483'},
+      {'op':'replace','path':'/metadata/labels/release.svc.plus~1feature-tag','value':new_tag}]
+ client.call(['patch','namespace',namespace,'--type=json','-p',json.dumps(ops),'-o','json'])
+
+
 def rebuild_namespace(c,client,existing,sleep,clock):
  old_uid=c['namespace_uid']
  require(c['environment']=='sit','only an isolated SIT lane may be rebuilt')
@@ -289,16 +316,28 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
   return (client.get('nodes'),client.get('namespace','kube-system'),client.get('gitrepository',source,'flux-system'),client.get('kustomization',root,'flux-system'))
  baseline=base();preflight(c,*baseline)
  existing=client.get('namespace',NS,optional=True)
+ handoff=False
  if existing:
   require(not existing['metadata'].get('deletionTimestamp'),'namespace is terminating')
   if c['mode']=='verify':require(existing['metadata'].get('uid')==c.get('namespace_uid'),'namespace incarnation differs from authenticated prepare')
   labels=existing['metadata'].get('labels',{})
-  require(labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==feature and labels.get('environment')==c['environment'] and (tag is None or (labels.get('feature_id')==feature and labels.get('release.svc.plus/feature-tag')==tag)),'existing namespace has another owner; no takeover')
+  owned=labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==feature and labels.get('environment')==c['environment']
+  tag_matches=tag is None or (labels.get('feature_id')==feature and labels.get('release.svc.plus/feature-tag')==tag)
+  if owned and not tag_matches and c['mode']=='prepare':
+   previous=client.get('gitrepository',SOURCE,NS,optional=True) or {}
+   jobs=client.get('jobs',namespace=NS) or {}
+   handoff=reviewed_refreeze_handoff(c,existing,previous,jobs)
+  require(owned and (tag_matches or handoff),'existing namespace has another owner; no takeover')
  if c['mode']=='verify':require(existing is not None and UUID.fullmatch(c.get('namespace_uid','')),'verified live namespace UID required')
  report={'namespace_uid':existing['metadata'].get('uid') if existing else None,'mode':c['mode'],'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False,'audit_acceptance':'NOT_RUN','business_uid_acceptance':'NOT_RUN'}
  if tag is not None:
   report.update(feature_id=feature,feature_tag=tag,candidate_sha256=c['tagged_lane']['candidate_sha256'],lane_path=PATH,ingress_revision=baseline[3]['status']['lastAppliedRevision'])
  if c['mode']=='plan':return report
+ if handoff:
+  handoff_namespace(client,NS,existing,tag)
+  current=client.get('namespace',NS)
+  require(current.get('metadata',{}).get('uid')==existing['metadata']['uid'] and current.get('metadata',{}).get('labels',{}).get('release.svc.plus/feature-tag')==tag,'namespace handoff verification failed')
+  report['handoff']={'previous_feature_tag':'smoke-sit-test-1483','namespace_uid':existing['metadata']['uid'],'previous_candidate_sha':'8cae3959b4539257db39579dc9c7c173989d277f'}
  if c['mode']=='rebuild':
   report.update(rebuild_namespace(c,client,existing,sleep,clock))
   preflight(c,*base())
