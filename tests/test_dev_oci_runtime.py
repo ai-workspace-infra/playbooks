@@ -21,6 +21,17 @@ class Response:
  def read(self,size):return self.raw[:size]
 
 class OCITests(unittest.TestCase):
+ def test_tagged_registry_requires_only_read_packages(self):
+  class Profile:
+   def __init__(self,scopes):self.headers={'X-OAuth-Scopes':scopes}
+   def __enter__(self):return self
+   def __exit__(self,*args):pass
+   def read(self,*args):return b'{"login":"feature-user"}'
+  for scopes,accepted in [('read:packages',True),('read:packages, repo',False),('',False)]:
+   with self.subTest(scopes=scopes),patch.object(G.urllib.request,'urlopen',return_value=Profile(scopes)):
+    if accepted:G.verify_readonly_registry('feature-user','synthetic')
+    else:
+     with self.assertRaises(ValueError):G.verify_readonly_registry('feature-user','synthetic')
  def fixture(self,duplicate=False,architecture='amd64',labels=True):
   config={'os':'linux','architecture':architecture,'config':{'Env':['DO_NOT_RETURN=synthetic-private-value'],'Labels':{'org.opencontainers.image.source':'https://github.com/ai-workspace-services/accounts','org.opencontainers.image.revision':'a'*40} if labels else {}}}
   cb=encoded(config);child=encoded({'config':{'digest':digest(cb)}})
@@ -101,4 +112,38 @@ class RuntimeTests(unittest.TestCase):
   with self.assertRaises(ValueError):G.mapping(context,{'GHCR_USERNAME':'u','GHCR_TOKEN':'p'},lambda *args:{})
   _,context,_=self.fixture()
   with self.assertRaises(ValueError):G.mapping(context,{'GHCR_USERNAME':'u','GHCR_TOKEN':'p'},lambda *args:{'source_label_match':False})
+ def test_tagged_registry_requires_exact_scope_and_protected_caller_before_vault(self):
+  _,context,_=self.fixture();repo='ai-workspace-infra/Platform-Orchestrator'
+  context['namespace']='feature-sit-test-1483-sit'
+  context['tagged_lane']={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'f'*64}
+  context['source'].update(repository=repo,workflow_ref=repo+'/.github/workflows/feature-lane-deploy.yml@refs/heads/main')
+  secret=G.build(context['namespace'],{'GHCR_USERNAME':'u','GHCR_TOKEN':'synthetic'},context['tagged_lane'])
+  self.assertEqual(secret['metadata']['namespace'],context['namespace'])
+  G.validate_context(context)
+  command=G.remote_command(context['namespace'],context['namespace_uid'],context['tagged_lane'])
+  self.assertIn('release.svc.plus/feature-tag',command)
+  bad=copy.deepcopy(context);bad['source']['workflow_ref']=repo+'/.github/workflows/untrusted.yml@refs/heads/main'
+  with patch.dict('os.environ',{'DEV_REGISTRY_NAMESPACE':bad['namespace'],'DEV_REGISTRY_HOST':'127.0.0.1','DEV_REGISTRY_CONTEXT':json.dumps(bad)},clear=True),patch.object(G.urllib.request,'urlopen') as vault:
+   with self.assertRaises(ValueError):G.main()
+   vault.assert_not_called()
+  bad=copy.deepcopy(context);bad['namespace']='feature-other-sit'
+  with self.assertRaises(ValueError):G.validate_context(bad)
+  bad=copy.deepcopy(context);bad['tagged_lane']['feature_tag']='other-sit-test-1484'
+  with self.assertRaises(ValueError):G.validate_context(bad)
+ def test_tagged_prepare_receipt_binds_tag_fingerprint_and_namespace(self):
+  config,context,_=self.fixture();repo='ai-workspace-infra/Platform-Orchestrator'
+  lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'f'*64}
+  config.update(namespace='feature-sit-test-1483-sit',tagged_lane=lane)
+  context.update(namespace=config['namespace'],tagged_lane=lane)
+  context['source'].update(repository=repo,workflow_ref=repo+'/.github/workflows/feature-lane-deploy.yml@refs/heads/main')
+  def inspect(ref,*args):return {'image':ref,'manifest_digest':ref.split('@')[1],'platform_manifest_digest':'sha256:'+'f'*64,'config_digest':'sha256:'+'e'*64,'platform':'linux/amd64','source_label_match':True,'revision_label_match':True}
+  mapping=G.mapping(context,{'GHCR_USERNAME':'u','GHCR_TOKEN':'synthetic'},inspect)
+  receipt={**config,'schema_version':'dev-feature-flux/v1','result':'prepared','mode':'prepare','feature_tag':lane['feature_tag'],'candidate_sha256':lane['candidate_sha256'],'instance_id':'109324752','owner_sha':'d'*40,'run_id':'123','run_attempt':'1','registry':{'result':'configured','namespace':config['namespace'],'source_path':'kv/sit/platform/ghcr/feature-registry','secret_name':'web-saas-registry','oci_mapping':mapping}}
+  observation={'images':context['images'],'sources':context['sources']}
+  self.assertEqual(adapter.validate_prepare_receipt(receipt,config,observation),mapping)
+  bad=copy.deepcopy(receipt);bad['registry']['source_path']='kv/CICD/dev/ghcr'
+  with self.assertRaises(ValueError):adapter.validate_prepare_receipt(bad,config,observation)
+  for field,value in [('feature_tag','other-sit-test-1483'),('candidate_sha256','a'*64),('namespace','feature-other-sit')]:
+   bad=copy.deepcopy(receipt);bad[field]=value
+   with self.subTest(field=field),self.assertRaises(ValueError):adapter.validate_prepare_receipt(bad,config,observation)
 if __name__=='__main__':unittest.main()

@@ -31,6 +31,10 @@ def execute(a):
     cmdb = validate_cmdb(read_bound(a.cmdb, a.cmdb_sha256), a.instance_id)
     control = validate_candidate_receipt(read_bound(a.candidate_receipt, a.candidate_sha256),
         a.gitops_sha, a.stage, os.environ.get('GITHUB_RUN_ID'))
+    # This owner still binds its database, images and schema to the referral
+    # lane. Never let a tagged receipt fall through to that fixed target.
+    require(control.get('schema_version') == 'dev-feature-candidate/v1',
+            'tagged lane database seed owner is not implemented')
     observation = candidate.validate_tree(a.gitops_root, a.gitops_sha, a.stage)
     owner_sha = run(['git','-C',str(ROOT),'rev-parse','HEAD']).strip()
     require(candidate.SCOPE.SHA.fullmatch(a.platform_sha), 'immutable platform SHA required')

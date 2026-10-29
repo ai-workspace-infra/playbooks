@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Trusted Dev SIT namespace owner; never promotes the platform root to a PR."""
-import datetime,json,os,re,subprocess,time
+import datetime,ipaddress,json,os,re,subprocess,time
 
 NS='feature-xconnect-referral-sit'
 FEATURE='xconnect-referral'
@@ -62,10 +62,38 @@ def failure_code(operation,error):
 def require(value,message):
  if not value: raise ValueError(message)
 
+def verify_seed_baseline(seed, config):
+ digest=config.get('data_baseline_sha256')
+ require(isinstance(digest,str) and re.fullmatch(r'[0-9a-f]{64}',digest) and
+         seed.get('data_baseline_sha256')==digest,
+         'seed data baseline differs from verified candidate')
+
+def scope(c):
+ """Derive the only allowed target from a caller-authenticated tagged lane."""
+ lane=c.get('tagged_lane')
+ if lane is None:
+  require(c.get('environment') in SCOPES,'fixed Dev lane scope required')
+  ns,source,path=SCOPES[c['environment']]
+  return ns,source,path,FEATURE,DOMAINS[c['environment']],None
+ require(c.get('environment')=='sit' and isinstance(lane,dict) and set(lane)=={'feature_id','feature_tag','candidate_sha256'},'tagged lane requires the SIT candidate binding')
+ feature=lane.get('feature_id');tag=lane.get('feature_tag');fingerprint=lane.get('candidate_sha256')
+ require(isinstance(feature,str) and re.fullmatch(r'[a-z][a-z0-9-]{1,45}',feature) and not feature.endswith('-'),'invalid tagged Feature ID')
+ suffix='-'+feature
+ require(isinstance(tag,str) and tag.endswith(suffix) and re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*',tag[:-len(suffix)]),'tag does not bind Feature ID')
+ require(isinstance(fingerprint,str) and re.fullmatch(r'[0-9a-f]{64}',fingerprint),'candidate fingerprint required')
+ label=tag+'-sit'
+ require(all(len(prefix+label)<=63 for prefix in ('','accounts-','billing-')),'tagged lane hostname exceeds DNS label limit')
+ ns='feature-'+feature+'-sit'
+ domains={prefix+label+'.onwalk.net' for prefix in ('','accounts-','billing-')}
+ return ns,ns,'./services/distributed-web-saas-fullstack/dev/feature-lanes/'+feature,feature,domains,tag
+
 def validate(c):
- require(c.get('environment') in SCOPES and c.get('namespace')==SCOPES[c['environment']][0] and c.get('node_name')==NODE,'fixed Dev lane scope required')
+ ns,_,_,_,_,tag=scope(c)
+ require(c.get('namespace')==ns and c.get('node_name')==NODE,'fixed Dev lane scope required')
  require(c.get('mode') in ('plan','prepare','rebuild','submit','verify','enable-tls'),'explicit mode required')
+ if tag is not None:require(c.get('mode')!='enable-tls','tagged Caddy lane has no separate TLS ingress phase')
  if c.get('mode')=='rebuild':
+  require(tag is None,'tagged lane rebuild is not authorized by this owner')
   require(c.get('environment')=='sit' and UUID.fullmatch(c.get('namespace_uid','')),'SIT rebuild requires the authenticated current namespace UID')
  for key in ('candidate_sha','platform_sha','owner_sha'):
   require(SHA.fullmatch(c.get(key,'')), 'full immutable '+key+' required')
@@ -92,8 +120,10 @@ def preflight(c,nodes,cluster,platform,root):
  require(ready(root) and revision(root.get('status',{}).get('lastAppliedRevision'),c['platform_sha']),'protected platform root not Ready')
 
 def documents(c):
- NS,SOURCE,PATH=SCOPES[c['environment']]
- meta={'namespace':NS,'labels':{'app.kubernetes.io/managed-by':'dev-feature-flux-owner','environment':c['environment'],'release.svc.plus/feature':FEATURE,'feature_id':FEATURE}}
+ NS,SOURCE,PATH,feature,_,tag=scope(c)
+ labels={'app.kubernetes.io/managed-by':'dev-feature-flux-owner','environment':c['environment'],'release.svc.plus/feature':feature,'feature_id':feature}
+ if tag is not None:labels['release.svc.plus/feature-tag']=tag
+ meta={'namespace':NS,'labels':labels}
  namespace={'apiVersion':'v1','kind':'Namespace','metadata':{'name':NS,'labels':{**meta['labels'],'pod-security.kubernetes.io/enforce':'restricted','pod-security.kubernetes.io/enforce-version':'v1.37'}}}
  sa={'apiVersion':'v1','kind':'ServiceAccount','metadata':{**meta,'name':'lane-reconciler'},'automountServiceAccountToken':False}
  rules=[{'apiGroups':[''],'resources':['configmaps','secrets','services'],'verbs':['get','list','watch','create','update','patch','delete']},
@@ -118,6 +148,11 @@ def namespace_documents(c):
  """Trusted namespace identities shared by feature and independent ingress owner."""
  return documents(dict(c,mode='prepare'))[:7]
 
+def verify_tagged_readiness_probe(component,container):
+ if component in ('billing','content'):
+  probe=container.get('readinessProbe',{}).get('httpGet',{})
+  require(set(probe)<={'path','port','scheme'} and probe.get('path')=='/readyz' and probe.get('port')==8080 and probe.get('scheme','HTTP')=='HTTP','tagged service readiness probe differs from reviewed contract')
+
 def verify_runtime(c,pods):
  mapping=c.get('runtime_mapping',{});records=mapping.get('images',{})
  names={'accounts','billing','caddy','console','content','postgresql'}
@@ -138,6 +173,7 @@ def verify_runtime(c,pods):
   require(component not in result and meta.get('namespace')==c['namespace'],'duplicate or wrong namespace component')
   spec=pod.get('spec',{});containers=spec.get('containers',[])
   require(spec.get('nodeName')==NODE and not spec.get('initContainers') and not spec.get('ephemeralContainers') and len(containers)==1 and containers[0].get('name')==component and containers[0].get('image')==expected['image'],'runtime container spec differs from candidate')
+  if c.get('tagged_lane') is not None:verify_tagged_readiness_probe(component,containers[0])
   annotations=meta.get('annotations',{})
   require(annotations.get('release.svc.plus/source_repository')==expected['source_repository'] and annotations.get('release.svc.plus/source_sha')==expected['source_sha'] and annotations.get('release.svc.plus/image_digest')==expected['manifest_digest'] and str(annotations.get('release.svc.plus/build_run_id'))==str(expected['build_run_id']),'runtime release annotations mismatch')
   status=pod.get('status',{});states=status.get('containerStatuses',[])
@@ -226,8 +262,9 @@ def rebuild_namespace(c,client,existing,sleep,clock):
  return {'namespace_uid':new_uid,'rebuild':{'previous_namespace_uid':old_uid,'old_local_path_pvs':pv_names,'namespace_deleted':True,'persistent_volumes_reclaimed':True}}
 
 def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
- validate(c);require(re.fullmatch(r'[1-9][0-9]*',str(c.get('instance_id',''))),'CMDB instance identity required');client=client or Client()
- NS,SOURCE,PATH=SCOPES[c['environment']]
+ validate(c);require(re.fullmatch(r'[1-9][0-9]*',str(c.get('instance_id',''))),'CMDB instance identity required')
+ client=client or Client()
+ NS,SOURCE,PATH,feature,domains,tag=scope(c)
  def base():return (client.get('nodes'),client.get('namespace','kube-system'),client.get('gitrepository','platform-config','flux-system'),client.get('kustomization','platform-root','flux-system'))
  baseline=base();preflight(c,*baseline)
  existing=client.get('namespace',NS,optional=True)
@@ -235,9 +272,11 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
   require(not existing['metadata'].get('deletionTimestamp'),'namespace is terminating')
   if c['mode']=='verify':require(existing['metadata'].get('uid')==c.get('namespace_uid'),'namespace incarnation differs from authenticated prepare')
   labels=existing['metadata'].get('labels',{})
-  require(labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==FEATURE and labels.get('environment')==c['environment'],'existing namespace has another owner; no takeover')
+  require(labels.get('app.kubernetes.io/managed-by')=='dev-feature-flux-owner' and labels.get('release.svc.plus/feature')==feature and labels.get('environment')==c['environment'] and (tag is None or (labels.get('feature_id')==feature and labels.get('release.svc.plus/feature-tag')==tag)),'existing namespace has another owner; no takeover')
  if c['mode']=='verify':require(existing is not None and UUID.fullmatch(c.get('namespace_uid','')),'verified live namespace UID required')
  report={'namespace_uid':existing['metadata'].get('uid') if existing else None,'mode':c['mode'],'schema_version':'dev-feature-flux/v1','result':'planned','changed':False,'namespace':NS,'node_name':NODE,'node_uid':c['node_uid'],'cluster_uid':c['cluster_uid'],'candidate_sha':c['candidate_sha'],'manifest_sha256':c['manifest_sha256'],'owner_sha':c['owner_sha'],'platform_sha':c['platform_sha'],'business_acceptance':'NOT_RUN','application_secret_values_read':False,'audit_acceptance':'NOT_RUN','business_uid_acceptance':'NOT_RUN'}
+ if tag is not None:
+  report.update(feature_id=feature,feature_tag=tag,candidate_sha256=c['tagged_lane']['candidate_sha256'],lane_path=PATH)
  if c['mode']=='plan':return report
  if c['mode']=='rebuild':
   report.update(rebuild_namespace(c,client,existing,sleep,clock))
@@ -247,10 +286,19 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
  if c['mode']=='verify':
   seed=c.get('seed_receipt',{})
   require(seed.get('schema_version')=='dev-lane-seed/v1' and seed.get('result')=='verified' and seed.get('namespace')==NS and seed.get('namespace_uid')==c.get('namespace_uid') and seed.get('candidate_sha')==c['candidate_sha'] and seed.get('node_uid')==c['node_uid'] and seed.get('cluster_uid')==c['cluster_uid'] and seed.get('instance_id')==c['instance_id'] and seed.get('database_roles')==['xc_accounts_rw','xc_billing_rw'] and seed.get('schema_initialized') is True,'independent namespace seed owner receipt required before application reconciliation')
+  if tag is not None:
+   require(seed.get('feature_id')==feature and seed.get('feature_tag')==tag and seed.get('candidate_sha256')==c['tagged_lane']['candidate_sha256'],'tagged seed receipt differs from candidate')
+   verify_seed_baseline(seed,c)
+ if tag is not None and c['mode']=='submit':
+  proof=c.get('dns_http_proof',[])
+  try:target=ipaddress.IPv4Address(c.get('target_ip',''))
+  except (ipaddress.AddressValueError,TypeError):raise ValueError('valid public Dev ingress address required') from None
+  require(target.is_global,'valid public Dev ingress address required')
+  require({x.get('host') for x in proof}==domains and all(x.get('addresses')==[c.get('target_ip')] and x.get('http_status') in (200,404,308) and (x.get('http_status')!=308 or x.get('redirect_location')=='https://'+x['host']+'/.well-known/acme-challenge/owner-preflight') for x in proof),'fresh tagged DNS/HTTP evidence required before Caddy ingress')
  if c['mode']=='enable-tls':
   require(existing is not None,'prepare the namespace first')
   proof=c.get('dns_http_proof',[])
-  require({x.get('host') for x in proof}==DOMAINS[c['environment']] and all(x.get('addresses')==[c.get('target_ip')] and x.get('http_status') in (200,404) for x in proof),'fresh external DNS/HTTP evidence required before TLS')
+  require({x.get('host') for x in proof}==domains and all(x.get('addresses')==[c.get('target_ip')] and x.get('http_status') in (200,404) for x in proof),'fresh external DNS/HTTP evidence required before TLS')
   original=client.get('kustomization',SOURCE,NS);live=client.get('gitrepository',SOURCE,NS)
   require(ready(original) and revision(original.get('status',{}).get('lastAppliedRevision'),c['candidate_sha']) and ready(live),'base lane must be the exact Ready candidate before TLS')
  try:
@@ -277,7 +325,7 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
     current=client.get('namespace',NS)
     require(current['metadata'].get('uid')==c['namespace_uid'] and not current['metadata'].get('deletionTimestamp'),'namespace changed during runtime verification')
     report['runtime_images']=verify_runtime(c,client.get('pods',namespace=NS))
-   report.update(result='verified',source_revision=source['status']['artifact']['revision'],applied_revision=root['status']['lastAppliedRevision'],helm_ready=True,tls_certificate_acceptance='NOT_RUN',watch_main=c['environment']=='uat',observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+   report.update(result=('runtime_ready' if tag is not None and c['mode']=='verify' else 'verified'),source_revision=source['status']['artifact']['revision'],applied_revision=root['status']['lastAppliedRevision'],helm_ready=True,tls_certificate_acceptance='NOT_RUN',business_acceptance='NOT_RUN',watch_main=c['environment']=='uat',observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
    return report
   if clock()>=deadline:
    report.update(result='not_ready',source_ready=bool(source and ready(source)),kustomization_ready=bool(root and ready(root)),helm_ready=bool(release and ready(release)))
