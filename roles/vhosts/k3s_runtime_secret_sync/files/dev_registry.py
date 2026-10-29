@@ -6,6 +6,13 @@ _spec=importlib.util.spec_from_file_location("dev_registry_oci",Path(__file__).w
 dev_oci=importlib.util.module_from_spec(_spec);_spec.loader.exec_module(dev_oci)
 import base64,json,os,subprocess,urllib.request
 
+def verify_readonly_registry(username,token):
+ req=urllib.request.Request('https://api.github.com/user',headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'})
+ with urllib.request.urlopen(req,timeout=20) as response:
+  scopes={part.strip() for part in response.headers.get('X-OAuth-Scopes','').split(',') if part.strip()}
+  profile=json.load(response)
+ if scopes!={'read:packages'} or profile.get('login','').lower()!=username.lower():raise ValueError('tagged registry credential must be read:packages only')
+
 def validate_namespace(namespace,tagged_lane=None):
  if tagged_lane is None:
   if namespace not in ('feature-xconnect-referral-sit','web-saas-uat'):raise ValueError('Dev namespace required')
@@ -87,15 +94,21 @@ def main():
  context=json.loads(os.environ['DEV_REGISTRY_CONTEXT'])
  if context.get('namespace')!=ns:raise ValueError('registry namespace mismatch')
  validate_context(context)
- req=urllib.request.Request('https://vault.svc.plus/v1/kv/data/CICD/dev/ghcr',headers={'X-Vault-Token':os.environ['DEV_SYNC_VAULT_TOKEN']})
+ source='kv/sit/platform/ghcr/feature-registry' if context.get('tagged_lane') else 'kv/CICD/dev/ghcr'
+ path='kv/data/sit/platform/ghcr/feature-registry' if context.get('tagged_lane') else 'kv/data/CICD/dev/ghcr'
+ req=urllib.request.Request('https://vault.svc.plus/v1/'+path,headers={'X-Vault-Token':os.environ['DEV_SYNC_VAULT_TOKEN']})
  with urllib.request.urlopen(req,timeout=20) as response:record=json.load(response)['data']
+ if context.get('tagged_lane'):
+  username=record['data'].get('GHCR_USERNAME');token=record['data'].get('GHCR_TOKEN')
+  if not isinstance(username,str) or not username or not isinstance(token,str) or not token:raise ValueError('tagged registry fields missing')
+  verify_readonly_registry(username,token)
  secret=build(ns,record['data'],context.get('tagged_lane'))
  platform_mapping=mapping(context,record['data'])
  secret['metadata']['annotations']={'delivery.svc.plus/namespace-uid':context['namespace_uid']}
  args=['ssh','-F','/dev/null','-o','StrictHostKeyChecking=yes','-o','GlobalKnownHostsFile=/dev/null','-o','UpdateHostKeys=no','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','UserKnownHostsFile='+os.environ['DEV_REGISTRY_KNOWN_HOSTS'],'-i',os.environ['DEV_REGISTRY_PUBLIC_IDENTITY'],'root@'+host,remote_command(ns,context['namespace_uid'],context.get('tagged_lane'))]
  p=subprocess.run(args,input=json.dumps(secret),text=True,capture_output=True,timeout=60)
  if p.returncode or p.stdout.strip()!='secret/web-saas-registry':raise RuntimeError('registry projection failed')
- print(json.dumps({'result':'configured','namespace':ns,'secret_name':'web-saas-registry','source_path':'kv/CICD/dev/ghcr','source_version':record['metadata']['version'],'oci_mapping':platform_mapping}))
+ print(json.dumps({'result':'configured','namespace':ns,'secret_name':'web-saas-registry','source_path':source,'source_version':record['metadata']['version'],'oci_mapping':platform_mapping}))
 if __name__=='__main__':
  try:main()
  except Exception:raise SystemExit('Dev registry projection failed; sensitive diagnostics suppressed') from None

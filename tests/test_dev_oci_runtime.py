@@ -21,6 +21,17 @@ class Response:
  def read(self,size):return self.raw[:size]
 
 class OCITests(unittest.TestCase):
+ def test_tagged_registry_requires_only_read_packages(self):
+  class Profile:
+   def __init__(self,scopes):self.headers={'X-OAuth-Scopes':scopes}
+   def __enter__(self):return self
+   def __exit__(self,*args):pass
+   def read(self,*args):return b'{"login":"feature-user"}'
+  for scopes,accepted in [('read:packages',True),('read:packages, repo',False),('',False)]:
+   with self.subTest(scopes=scopes),patch.object(G.urllib.request,'urlopen',return_value=Profile(scopes)):
+    if accepted:G.verify_readonly_registry('feature-user','synthetic')
+    else:
+     with self.assertRaises(ValueError):G.verify_readonly_registry('feature-user','synthetic')
  def fixture(self,duplicate=False,architecture='amd64',labels=True):
   config={'os':'linux','architecture':architecture,'config':{'Env':['DO_NOT_RETURN=synthetic-private-value'],'Labels':{'org.opencontainers.image.source':'https://github.com/ai-workspace-services/accounts','org.opencontainers.image.revision':'a'*40} if labels else {}}}
   cb=encoded(config);child=encoded({'config':{'digest':digest(cb)}})
@@ -127,9 +138,11 @@ class RuntimeTests(unittest.TestCase):
   context['source'].update(repository=repo,workflow_ref=repo+'/.github/workflows/feature-lane-deploy.yml@refs/heads/main')
   def inspect(ref,*args):return {'image':ref,'manifest_digest':ref.split('@')[1],'platform_manifest_digest':'sha256:'+'f'*64,'config_digest':'sha256:'+'e'*64,'platform':'linux/amd64','source_label_match':True,'revision_label_match':True}
   mapping=G.mapping(context,{'GHCR_USERNAME':'u','GHCR_TOKEN':'synthetic'},inspect)
-  receipt={**config,'schema_version':'dev-feature-flux/v1','result':'prepared','mode':'prepare','feature_tag':lane['feature_tag'],'candidate_sha256':lane['candidate_sha256'],'instance_id':'109324752','owner_sha':'d'*40,'run_id':'123','run_attempt':'1','registry':{'result':'configured','namespace':config['namespace'],'source_path':'kv/CICD/dev/ghcr','secret_name':'web-saas-registry','oci_mapping':mapping}}
+  receipt={**config,'schema_version':'dev-feature-flux/v1','result':'prepared','mode':'prepare','feature_tag':lane['feature_tag'],'candidate_sha256':lane['candidate_sha256'],'instance_id':'109324752','owner_sha':'d'*40,'run_id':'123','run_attempt':'1','registry':{'result':'configured','namespace':config['namespace'],'source_path':'kv/sit/platform/ghcr/feature-registry','secret_name':'web-saas-registry','oci_mapping':mapping}}
   observation={'images':context['images'],'sources':context['sources']}
   self.assertEqual(adapter.validate_prepare_receipt(receipt,config,observation),mapping)
+  bad=copy.deepcopy(receipt);bad['registry']['source_path']='kv/CICD/dev/ghcr'
+  with self.assertRaises(ValueError):adapter.validate_prepare_receipt(bad,config,observation)
   for field,value in [('feature_tag','other-sit-test-1483'),('candidate_sha256','a'*64),('namespace','feature-other-sit')]:
    bad=copy.deepcopy(receipt);bad[field]=value
    with self.subTest(field=field),self.assertRaises(ValueError):adapter.validate_prepare_receipt(bad,config,observation)

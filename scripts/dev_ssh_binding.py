@@ -17,9 +17,10 @@ def run(args,env=None,stdin=None,timeout=1200):
  return p.stdout
 
 @contextmanager
-def binding(cmdb,instance_id):
+def binding(cmdb,instance_id,tagged=False):
  oidc=request(os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']+'&audience=vault',{'Authorization':'Bearer '+os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})['value']
- session=request('https://vault.svc.plus/v1/auth/jwt/login',{'Content-Type':'application/json'},json.dumps({'role':ROLE,'jwt':oidc}).encode())['auth']
+ role='github-actions-playbooks-feature-lane-sit' if tagged else ROLE
+ session=request('https://vault.svc.plus/v1/auth/jwt/login',{'Content-Type':'application/json'},json.dumps({'role':role,'jwt':oidc}).encode())['auth']
  validate_session(session);token=session['client_token'];agent=None
  try:
   secret=request('https://vault.svc.plus/v1/'+RECORD,{'X-Vault-Token':token})['data']['data']

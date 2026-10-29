@@ -119,7 +119,8 @@ def validate_prepare_receipt(receipt,config,observation):
   require(receipt.get(key)==config[key],'prepare proof stale or wrong target: '+key)
  require(receipt.get('instance_id')==config['instance_id'],'prepare instance mismatch')
  registry=receipt.get('registry',{})
- require(registry.get('result')=='configured' and registry.get('namespace')==config['namespace'] and registry.get('source_path')=='kv/CICD/dev/ghcr' and registry.get('secret_name')=='web-saas-registry','fixed Dev registry prepare receipt required')
+ expected_path='kv/sit/platform/ghcr/feature-registry' if config.get('tagged_lane') else 'kv/CICD/dev/ghcr'
+ require(registry.get('result')=='configured' and registry.get('namespace')==config['namespace'] and registry.get('source_path')==expected_path and registry.get('secret_name')=='web-saas-registry','fixed Dev registry prepare receipt required')
  mapping=registry.get('oci_mapping',{});binding=mapping.get('binding',{})
  require(mapping.get('schema_version')=='dev-oci-platform/v1' and binding.get('instance_id')==config['instance_id'],'OCI mapping producer required')
  for key in ('candidate_sha','namespace','namespace_uid','node_uid','cluster_uid','manifest_sha256'):
@@ -202,7 +203,7 @@ def execute(a):
   require(config['seed_receipt'].get('namespace_uid')==config['namespace_uid'],'seed/prepare namespace incarnation differs')
   config['runtime_mapping']=validate_prepare_receipt(prepare,config,observation)
  a.receipt.unlink(missing_ok=True)
- with dev_binding(cmdb,a.instance_id) as transport:
+ with dev_binding(cmdb,a.instance_id,tagged=projection is not None) as transport:
   d=transport.directory;report=d/'runtime.json'
   variables=d/'vars.json';variables.write_text(json.dumps({'dev_feature_target':'dev-k3s-v5','dev_feature_config':config,'dev_feature_apply':a.mode!='plan','dev_feature_report':str(report)}))
   env={**transport.env,'ANSIBLE_ROLES_PATH':str(ROOT/'roles')}
