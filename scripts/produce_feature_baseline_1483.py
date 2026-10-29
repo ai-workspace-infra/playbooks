@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -109,11 +110,21 @@ def main():
         os.environ.get('GITHUB_WORKFLOW_REF') != 'ai-workspace-infra/playbooks/.github/workflows/feature-baseline-1483.yml@refs/heads/main'):
         raise ValueError('protected Main workflow required')
     PHASE = 'isolated-image'
-    image = subprocess.run(['docker', 'run', '--rm', '--pull=always', '--platform', 'linux/amd64',
-                            '--network', 'none', '--read-only', '--user', '65534:65534', '--cap-drop', 'ALL',
-                            '--security-opt', 'no-new-privileges', '--entrypoint', '/usr/local/bin/migratectl',
-                            ACCOUNTS['image'], 'native-schema'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                           timeout=300, check=True).stdout
+    if not os.environ.get('FEATURE_GHCR_USERNAME') or not os.environ.get('FEATURE_GHCR_TOKEN'):
+        raise ValueError('dedicated GHCR pull identity required')
+    with tempfile.TemporaryDirectory(prefix='baseline-docker-') as directory:
+        config = Path(directory) / 'config.json'
+        # The helper receives credentials only through its process environment;
+        # the Docker configuration file contains no secret material.
+        config.write_text(json.dumps({'credHelpers': {'ghcr.io': 'feature-baseline'}}))
+        config.chmod(0o600)
+        env = dict(os.environ, DOCKER_CONFIG=directory,
+                   PATH=str(Path(__file__).resolve().parent) + os.pathsep + os.environ.get('PATH', ''))
+        image = subprocess.run(['docker', 'run', '--rm', '--pull=always', '--platform', 'linux/amd64',
+                                '--network', 'none', '--read-only', '--user', '65534:65534', '--cap-drop', 'ALL',
+                                '--security-opt', 'no-new-privileges', '--entrypoint', '/usr/local/bin/migratectl',
+                                ACCOUNTS['image'], 'native-schema'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                               env=env, timeout=300, check=True).stdout
     PHASE = 'source-and-build-evidence'
     result = produce(image)
     PHASE = 'artifact-write'
