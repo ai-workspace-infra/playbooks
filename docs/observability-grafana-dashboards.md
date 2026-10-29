@@ -83,16 +83,15 @@ permissions, and actual ingestion; the dashboard alone does not enable it or
 prove live data. Upstream documents PostgreSQL 17 in its CI matrix. Validate
 actual series and panel results for each deployed version before acceptance.
 
-### Production query evidence (user-reported)
+### Production query evidence
 
-The user reports executing all 16 adapted PromQL expressions read-only against
-production: each returned HTTP success. PostgreSQL version was 17.11 and
-postgres_exporter version was 0.17.1. The supplied selection was
+The task main agent executed all 16 adapted PromQL expressions read-only via
+SSH against production VictoriaMetrics `10.43.212.125:8428` at approximately
+2026-10-29 14:32 Asia/Shanghai; each returned HTTP success. PostgreSQL version
+was 17.11 and postgres_exporter version was 0.17.1. The selection was
 `environment=prod`, `cluster=prod-k3s-v5`, `service=postgresql`,
 `instance=prod-postgres-exporter.web-saas-k3s-v5.svc:9187`, `datname=account`,
-and rate range `5m`. Execution timestamp, datasource identity, raw responses and
-query-engine request IDs were not supplied; this is reported evidence, not an
-independently reproduced receipt.
+and rate range `5m`. No query-engine request IDs or raw responses are included in this record.
 
 | Panel | Ref | HTTP | Series result |
 | --- | --- | --- | --- |
@@ -114,7 +113,7 @@ independently reproduced receipt.
 | Number of active connections | A | success | Present |
 
 B/C/E are legacy bgwriter fields unavailable in PostgreSQL 17; F is the
-checkpointer series, which the user reports was not collected. An empty result
+checkpointer series, which was not collected. An empty result
 is not zero and HTTP success does not imply a series exists. Buffer metrics
 are instance-wide, regardless of the database selection. These observations
 apply only to the stated target, selection and window; they do not establish
