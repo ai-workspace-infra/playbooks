@@ -45,7 +45,9 @@ def execute(config, env=None, collector=cluster_identity.collect, remote_type=re
         release_codes = {'release_declaration','live_graph_read','live_graph_mismatch','live_gate_order',
                          'config_source_ready','root_ready','external-secrets_ready',
                          'identity_service_accounts','release_source_revision','release_root_revision',
-                         'live_gate_mismatch','vault_config_source_ready','identity_ready'}
+                         'live_gate_mismatch','vault_config_source_ready','identity_ready',
+                         'release_source_apply','release_root_apply','release_revision_validation',
+                         'release_post_reconcile_graph'}
         if config['mode'].startswith('release-'):
             if exc.stage in release_codes:
                 stage = exc.stage if exc.stage.startswith('release_') else 'release_' + exc.stage
@@ -97,7 +99,9 @@ def main():
                   'stage=release_live_graph_mismatch','stage=release_live_gate_order','stage=release_config_source_ready',
                   'stage=release_root_ready','stage=release_external-secrets_ready','stage=release_identity_service_accounts',
                   'stage=release_source_revision','stage=release_root_revision','stage=release_live_gate_mismatch',
-                  'stage=release_vault_config_source_ready','stage=release_identity_ready'}
+                  'stage=release_vault_config_source_ready','stage=release_identity_ready',
+                  'stage=release_source_apply','stage=release_root_apply',
+                  'stage=release_revision_validation','stage=release_post_reconcile_graph'}
         if stage not in stages:
             stage = 'stage=unexpected'
         failure_path = os.environ.get('WORKLOAD_IDENTITY_FAILURE')

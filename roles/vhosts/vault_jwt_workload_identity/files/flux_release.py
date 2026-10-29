@@ -141,26 +141,40 @@ def wait_ready(run, key, stage, deadline):
 
 def release(config, runner, cluster):
     stage = config['release_stage']
-    checkout = Path(config['gitops_checkout']).resolve()
-    tag = config['gitops_tag']
-    source, root, expected, active = graph(checkout, tag, stage)
-    observed, current = live_graph(runner, expected, require_full=stage != 'root')
-    prior = {'root': set(), 'eso': STAGE_ACTIVE['root'],
-             'identity': STAGE_ACTIVE['eso']}[stage]
-    if current != prior:
-        raise ClusterError('live V6 Flux gates are not at the required predecessor stage', 'live_gate_order')
-    if stage in ('eso', 'identity'):
-        if not ready(observed[('Kustomization', 'flux-system', 'prod-k3s-v6')]):
-            raise ClusterError('V6 root is not Ready before the next gate', 'live_gate_order')
-    if stage == 'identity':
-        if not ready(observed[('Kustomization', 'flux-system', 'external-secrets')]) or not ready(
-                observed[('HelmRelease', 'external-secrets', 'external-secrets')]):
-            raise ClusterError('ESO is not Ready before the identity gate', 'live_gate_order')
-    runner.apply_manifest((checkout / 'environments/clusters/prod-k3s-v6/source.yaml').read_text())
-    runner.apply_manifest((checkout / 'environments/clusters/prod-k3s-v6/root.yaml').read_text())
-    deadline = time.monotonic() + 900
-    wait_ready(runner, ('GitRepository', 'flux-system', 'config-prod'), 'config_source_ready', deadline)
-    wait_ready(runner, ('Kustomization', 'flux-system', 'prod-k3s-v6'), 'root_ready', deadline)
+    phase = 'release_declaration'
+    try:
+        checkout = Path(config['gitops_checkout']).resolve()
+        tag = config['gitops_tag']
+        source, root, expected, active = graph(checkout, tag, stage)
+        phase = 'live_graph_read'
+        observed, current = live_graph(runner, expected, require_full=stage != 'root')
+        prior = {'root': set(), 'eso': STAGE_ACTIVE['root'],
+                 'identity': STAGE_ACTIVE['eso']}[stage]
+        # A failed run may have applied only part or all of this exact stage.
+        # Continue only when every active gate belongs to the requested stage.
+        if not prior.issubset(active) or not current.issubset(active):
+            raise ClusterError('live V6 Flux gates are outside the requested stage', 'live_gate_order')
+        if stage in ('eso', 'identity'):
+            if not ready(observed[('Kustomization', 'flux-system', 'prod-k3s-v6')]):
+                raise ClusterError('V6 root is not Ready before the next gate', 'live_gate_order')
+        if stage == 'identity':
+            if not ready(observed[('Kustomization', 'flux-system', 'external-secrets')]) or not ready(
+                    observed[('HelmRelease', 'external-secrets', 'external-secrets')]):
+                raise ClusterError('ESO is not Ready before the identity gate', 'live_gate_order')
+        phase = 'release_source_apply'
+        runner.apply_manifest((checkout / 'environments/clusters/prod-k3s-v6/source.yaml').read_text())
+        phase = 'release_root_apply'
+        runner.apply_manifest((checkout / 'environments/clusters/prod-k3s-v6/root.yaml').read_text())
+        deadline = time.monotonic() + 900
+        phase = 'config_source_ready'
+        wait_ready(runner, ('GitRepository', 'flux-system', 'config-prod'), 'config_source_ready', deadline)
+        phase = 'root_ready'
+        wait_ready(runner, ('Kustomization', 'flux-system', 'prod-k3s-v6'), 'root_ready', deadline)
+    except ClusterError:
+        raise
+    except Exception:
+        raise ClusterError('V6 Flux stage execution failed', phase) from None
+    phase = 'release_revision_validation'
     try:
         source_live = json.loads(runner('get', 'gitrepository', 'config-prod', '-n', 'flux-system', '-o', 'json'))
         root_live = json.loads(runner('get', 'kustomization', 'prod-k3s-v6', '-n', 'flux-system', '-o', 'json'))
@@ -178,25 +192,32 @@ def release(config, runner, cluster):
     if stage == 'identity':
         readiness.extend([('GitRepository', 'flux-system', 'vault-prod-config'),
                           ('Kustomization', 'flux-system', 'vault-tls-identity')])
-    for key in readiness[2:]:
-        marker = {
-            ('Kustomization', 'flux-system', 'external-secrets'): 'external-secrets_ready',
-            ('HelmRelease', 'external-secrets', 'external-secrets'): 'external-secrets_ready',
-            ('GitRepository', 'flux-system', 'vault-prod-config'): 'vault_config_source_ready',
-            ('Kustomization', 'flux-system', 'vault-tls-identity'): 'identity_ready',
-        }[key]
-        wait_ready(runner, key, marker, deadline)
-    actual, actual_active = live_graph(runner, expected)
-    if actual_active != active:
-        raise ClusterError('live V6 Flux gate state differs after reconciliation', 'live_gate_mismatch')
-    if stage == 'identity':
-        try:
-            sa = json.loads(runner('get', 'serviceaccount', 'vault-tls-reader', '-n', 'vault-prod', '-o', 'json'))
-            probe = json.loads(runner('get', 'serviceaccount', 'default', '-n', 'vault-prod', '-o', 'json'))
-            if sa['metadata']['name'] != 'vault-tls-reader' or probe['metadata']['name'] != 'default':
-                raise ValueError()
-        except (ClusterError, KeyError, TypeError, ValueError):
-            raise ClusterError('TLS reader service accounts are not present', 'identity_service_accounts') from None
+    try:
+        for key in readiness[2:]:
+            marker = {
+                ('Kustomization', 'flux-system', 'external-secrets'): 'external-secrets_ready',
+                ('HelmRelease', 'external-secrets', 'external-secrets'): 'external-secrets_ready',
+                ('GitRepository', 'flux-system', 'vault-prod-config'): 'vault_config_source_ready',
+                ('Kustomization', 'flux-system', 'vault-tls-identity'): 'identity_ready',
+            }[key]
+            wait_ready(runner, key, marker, deadline)
+        phase = 'release_post_reconcile_graph'
+        actual, actual_active = live_graph(runner, expected)
+        if actual_active != active:
+            raise ClusterError('live V6 Flux gate state differs after reconciliation', 'live_gate_mismatch')
+        if stage == 'identity':
+            phase = 'identity_service_accounts'
+            try:
+                sa = json.loads(runner('get', 'serviceaccount', 'vault-tls-reader', '-n', 'vault-prod', '-o', 'json'))
+                probe = json.loads(runner('get', 'serviceaccount', 'default', '-n', 'vault-prod', '-o', 'json'))
+                if sa['metadata']['name'] != 'vault-tls-reader' or probe['metadata']['name'] != 'default':
+                    raise ValueError()
+            except Exception:
+                raise ClusterError('TLS reader service accounts are not present', 'identity_service_accounts') from None
+    except ClusterError:
+        raise
+    except Exception:
+        raise ClusterError('V6 Flux stage verification failed', phase) from None
     return {'result': 'V6_GITOPS_STAGE_READY', 'stage': stage, 'gitops_tag': tag,
             'gitops_sha': config['gitops_sha'], 'cluster_uid': cluster['cluster_uid'],
             'node_uid': cluster['node_uid'],
