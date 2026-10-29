@@ -99,7 +99,7 @@ def graph(checkout, tag, stage):
     return source, root, keyed, active
 
 
-def live_graph(run, expected, require_full=True):
+def live_graph(run, expected, required_keys):
     try:
         actual = json.loads(run('get', 'gitrepositories,kustomizations,helmreleases', '-A', '-o', 'json'))['items']
         observed = {ident(d): d for d in actual if ident(d) in expected}
@@ -107,8 +107,7 @@ def live_graph(run, expected, require_full=True):
         raise ClusterError('live V6 Flux graph could not be read', 'live_graph_read') from None
     except (KeyError, TypeError, ValueError):
         raise ClusterError('live V6 Flux graph could not be read', 'live_graph_read') from None
-    required = set(expected) if require_full else BASE_ACTIVE
-    if not required.issubset(observed.keys()):
+    if not set(required_keys).issubset(observed.keys()):
         raise ClusterError('live V6 Flux object identities differ from the reviewed graph', 'live_graph_mismatch')
     active = {key for key, doc in observed.items() if doc.get('spec', {}).get('suspend') is False}
     return observed, active
@@ -147,7 +146,12 @@ def release(config, runner, cluster):
         tag = config['gitops_tag']
         source, root, expected, active = graph(checkout, tag, stage)
         phase = 'live_graph_read'
-        observed, current = live_graph(runner, expected, require_full=stage != 'root')
+        management_keys = {key for key in expected if key[0] != 'HelmRelease'}
+        eso_release = ('HelmRelease', 'external-secrets', 'external-secrets')
+        preflight_keys = BASE_ACTIVE if stage == 'root' else management_keys
+        if stage == 'identity':
+            preflight_keys = management_keys | {eso_release}
+        observed, current = live_graph(runner, expected, preflight_keys)
         prior = {'root': set(), 'eso': STAGE_ACTIVE['root'],
                  'identity': STAGE_ACTIVE['eso']}[stage]
         # A failed run may have applied only part or all of this exact stage.
@@ -202,7 +206,8 @@ def release(config, runner, cluster):
             }[key]
             wait_ready(runner, key, marker, deadline)
         phase = 'release_post_reconcile_graph'
-        actual, actual_active = live_graph(runner, expected)
+        required_after = management_keys | ({eso_release} if stage in ('eso', 'identity') else set())
+        actual, actual_active = live_graph(runner, expected, required_after)
         if actual_active != active:
             raise ClusterError('live V6 Flux gate state differs after reconciliation', 'live_gate_mismatch')
         if stage == 'identity':
