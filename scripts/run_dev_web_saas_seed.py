@@ -82,7 +82,7 @@ def execute(a):
     # approval or namespace ownership behavior. Actual live scope is rechecked.
     candidate.SCOPE.validate({**config,'mode':'prepare','environment':a.stage,'node_name':'dev-k3s-v5'})
     a.receipt.unlink(missing_ok=True)
-    with binding(cmdb,a.instance_id,tagged=tagged) as transport:
+    with binding(cmdb,a.instance_id,tagged=tagged,seed=tagged) as transport:
         report = transport.directory/'seed-receipt.json'
         variables = transport.directory/'seed-vars.json'
         variables.write_text(json.dumps({'dev_web_saas_seed_target':'dev-k3s-v5',
