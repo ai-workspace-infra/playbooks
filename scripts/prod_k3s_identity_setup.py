@@ -86,6 +86,7 @@ def main():
     else:
         source = json.loads(vault(['kv', 'get', '-format=json', 'kv/CICD/prod']))['data']['data']
         key = base64.b64decode(source['SSH_PRIVATE_DEPLOY_KEY_B64'], validate=True).decode()
+    key = key.replace('\r\n', '\n').strip() + '\n'
     if public_key(key) not in allowed:
         raise ValueError('Runtime SSH key does not match declared authorized public keys')
     for name, role, policy, previous, existing_policy in plans:
