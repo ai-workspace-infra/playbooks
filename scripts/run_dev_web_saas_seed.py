@@ -102,6 +102,12 @@ def execute(a):
             require(result.get('schema_version') == 'dev-lane-seed/v1' and
                     all(result.get(k) == config[k] for k in ('candidate_sha','instance_id','node_uid','cluster_uid')),
                     'seed receipt target mismatch')
+            if tagged:
+                require(all(result.get(k) == config['tagged_lane'][k] for k in ('feature_id', 'feature_tag', 'candidate_sha256')) and
+                        result.get('data_baseline_sha256') == config['data_baseline_sha256'] and
+                        result.get('schema_initialized') is True and result.get('audit_metadata_read_verified') is True and
+                        result.get('audit_write_and_sensitive_read_denied') is True,
+                        'tagged seed receipt baseline or identity evidence differs')
         result.update(owner_sha=owner_sha, platform_sha=a.platform_sha,
             cmdb_sha256=a.cmdb_sha256,candidate_receipt_sha256=a.candidate_sha256,
             candidate_control_plane=control,phase=a.phase,

@@ -202,6 +202,54 @@ def test_seed_adapter_rejects_unbound_artifact_before_transport(monkeypatch, tmp
     # Reading valid bytes alone does not authenticate them or grant execution.
 
 
+def test_tagged_seed_adapter_passes_verified_mapping_to_owner(monkeypatch, tmp_path):
+    import contextlib
+    import json
+    import sys
+    from types import SimpleNamespace
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / 'scripts'))
+    import run_dev_web_saas_seed as adapter
+    lane = {'feature_id': 'sit-test-1483', 'feature_tag': 'smoke-sit-test-1483', 'candidate_sha256': 'a'*64}
+    mapping = {'images': {'postgresql': {'platform_manifest_digest': 'sha256:'+'b'*64}}}
+    inputs = {'schema': 'sit-data-input/v1'}
+    control = {'schema_version': 'dev-feature-candidate/v2', 'projection': {'tagged_lane': lane},
+               'data_baseline_inputs': inputs, 'data_baseline_sha256': 'c'*64}
+    observation = {'namespace': 'feature-sit-test-1483-sit', 'manifest_sha256': 'd'*64}
+    args = SimpleNamespace(phase='initialize', cmdb=tmp_path/'cmdb', cmdb_sha256='e'*64, instance_id='1',
+                           candidate_receipt=tmp_path/'candidate', candidate_sha256='f'*64, gitops_sha='1'*40,
+                           stage='sit', namespace_uid='2'*36, prepare_receipt=tmp_path/'prepare', prepare_sha256='3'*64,
+                           gitops_root=tmp_path, platform_sha='4'*40, node_uid='5'*36, cluster_uid='6'*36,
+                           receipt=tmp_path/'output'/'receipt.json')
+    monkeypatch.setattr(adapter, 'read_bound', lambda *a: {})
+    monkeypatch.setattr(adapter, 'validate_cmdb', lambda *a: {})
+    monkeypatch.setattr(adapter, 'validate_candidate_receipt', lambda *a: control)
+    monkeypatch.setattr(adapter, 'validate_receipt_inputs', lambda *a: None)
+    monkeypatch.setattr(adapter, 'require_same_run_prepare', lambda *a: None)
+    monkeypatch.setattr(adapter.candidate, 'validate_tree', lambda *a: observation)
+    monkeypatch.setattr(adapter, 'validate_prepare_receipt', lambda *a: mapping)
+    monkeypatch.setattr(adapter.candidate.SCOPE, 'validate', lambda *a: None)
+    @contextlib.contextmanager
+    def fake_binding(cmdb, instance_id, *, tagged, seed):
+        assert tagged and seed
+        yield SimpleNamespace(directory=tmp_path, env={})
+    monkeypatch.setattr(adapter, 'binding', fake_binding)
+    def fake_run(command, env=None):
+        if command[0] == 'git': return '7'*40
+        config = json.loads((tmp_path/'seed-vars.json').read_text())['dev_web_saas_seed_request']
+        assert config['tagged_lane'] == lane and config['runtime_mapping'] == mapping
+        assert config['data_baseline_inputs'] == inputs
+        if '--syntax-check' not in command:
+            receipt = {'schema_version':'dev-lane-seed/v1', 'result':'verified', 'namespace':config['namespace'],
+                       **config['tagged_lane'], 'data_baseline_sha256':config['data_baseline_sha256'],
+                       'schema_initialized':True, 'audit_metadata_read_verified':True, 'audit_write_and_sensitive_read_denied':True,
+                       **{key:config[key] for key in ('namespace_uid','candidate_sha','instance_id','node_uid','cluster_uid')}}
+            (tmp_path/'seed-receipt.json').write_text(json.dumps(receipt))
+        return ''
+    monkeypatch.setattr(adapter, 'run', fake_run)
+    adapter.execute(args)
+    assert json.loads(args.receipt.read_text())['business_acceptance'] == 'NOT_RUN'
+
+
 def test_seed_admin_refuses_stale_and_recreated_namespace(monkeypatch):
     import sys
     import types
