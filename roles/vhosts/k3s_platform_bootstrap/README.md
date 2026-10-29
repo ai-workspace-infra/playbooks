@@ -97,3 +97,31 @@ loads only its fixed non-production SSH binding from Vault via caller OIDC.
 Trusted known_hosts are mandatory; private keys are loaded via stdin into an
 isolated ssh-agent and never written to a key file. This role still runs as a
 system administrator for bootstrap; that is not a business or audit identity.
+
+### Fresh generation data mount and paused receipt
+
+`k3s_platform_require_data_mount` requires the UUID verified by
+`web_saas_data_volume` at `/data`; `k3s_platform_local_storage_path` routes the
+local provisioner to `/data/k3s/storage`. A systemd mount dependency prevents
+K3s starting against an unmounted system-disk directory. The V6 owner adapter
+consumes one receipt-verified CMDB, fixed GitOps checkout and provider-attested
+SSH keys. No V5 inventory or DNS operation is involved.
+
+The separate `prod-k3s-bootstrap` action loads the reviewed graph paused and
+emits `PAUSED_BOOTSTRAP_VERIFIED`, including actual node/cluster UID, version,
+mount UUID and resource counts. It does not assert business readiness. An active
+release graph is rejected. On failure retain the new node and disk for diagnosis;
+do not reformat or downgrade an existing stateful release. Before activating
+workloads review credentials, RBAC, application UID, storage and network access.
+
+The system-admin-only `scripts/prod_k3s_identity_setup.py` initializes the two
+reviewed V6 Vault roles and dedicated SSH binding from immutable source files.
+It does not run in CI or fall back to an administrator token. Secrets remain in
+memory and Vault; existing conflicting roles/keys are not overwritten.
+
+Fresh data-mounted clusters create locked Unix `cluster-audit` and a separate
+status-only ServiceAccount. They receive no sudo/runtime group, admin kubeconfig,
+Secrets, pod execution, proxy or write permissions. Live tests use the Unix user
+and a bounded in-memory ServiceAccount token to prove status reads and denied
+secret/proxy/writes (namespace write probe is server-side dry run). Business
+identities remain separate and must be qualified before releases are resumed.

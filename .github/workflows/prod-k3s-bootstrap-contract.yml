@@ -1,0 +1,27 @@
+name: PROD K3s cold bootstrap contract
+on:
+  pull_request:
+    paths:
+      - 'scripts/prod_k3s*.py'
+      - 'prod_k3s_generation_bootstrap.yml'
+      - 'roles/web_saas_data_volume/**'
+      - 'roles/vhosts/k3s_platform_bootstrap/**'
+      - 'inventory/terraform_cmdb.py'
+      - '.github/actions/prod-k3s-bootstrap/**'
+      - 'tests/test_prod_k3s*.py'
+      - '.github/workflows/prod-k3s-bootstrap-contract.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ansible-core==2.18.12 PyYAML==6.0.2
+      - run: ansible-galaxy collection install 'ansible.posix:==2.1.0' 'community.general:==10.7.0'
+      - run: python -m unittest discover -s tests -p test_prod_k3s*.py
+      - run: python -m unittest discover -s tests -p test_paused_flux_declarations.py
+      - run: ANSIBLE_ROLES_PATH=roles ansible-playbook -i tests/fixtures/dev_k3s_syntax.yml prod_k3s_generation_bootstrap.yml --syntax-check

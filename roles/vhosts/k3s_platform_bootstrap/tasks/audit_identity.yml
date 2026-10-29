@@ -1,0 +1,63 @@
+- name: Create independent locked system audit identity
+  ansible.builtin.user:
+    name: cluster-audit
+    system: true
+    create_home: false
+    password_lock: true
+    shell: /usr/sbin/nologin
+    groups: ''
+    append: false
+
+- name: Declare status-only cluster audit access
+  ansible.builtin.copy:
+    dest: /tmp/v6-audit-rbac.yaml
+    mode: '0600'
+    content: |
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: cluster-audit
+        namespace: flux-system
+      automountServiceAccountToken: false
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: cluster-audit
+      rules:
+        - apiGroups: [""]
+          resources: [nodes, namespaces]
+          verbs: [get, list]
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: cluster-audit
+      subjects:
+        - kind: ServiceAccount
+          name: cluster-audit
+          namespace: flux-system
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: cluster-audit
+
+- name: Apply bounded audit identities
+  ansible.builtin.command:
+    argv: [kubectl, apply, -f, /tmp/v6-audit-rbac.yaml]
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+
+- name: Install actual identity authorization verifier
+  ansible.builtin.copy:
+    src: verify_audit_identity.py
+    dest: "{{ k3s_platform_install_dir }}/verify_audit_identity.py"
+    mode: '0700'
+
+- name: Verify allowed status and denied secrets writes under real audit identities
+  ansible.builtin.command:
+    argv: [python3, "{{ k3s_platform_install_dir }}/verify_audit_identity.py"]
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  changed_when: false
+  register: k3s_platform_audit_evidence

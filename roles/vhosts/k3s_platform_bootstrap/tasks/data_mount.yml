@@ -1,0 +1,43 @@
+- name: Require the reviewed independent data mount
+  ansible.builtin.command:
+    argv: [findmnt, -nro, 'TARGET,UUID', --mountpoint, /data]
+  register: k3s_platform_data_mount
+  changed_when: false
+
+- name: Refuse missing or mismatched data volume before K3s installation
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_data_mount.stdout.split() | length == 2
+      - k3s_platform_data_mount.stdout.split()[0] == '/data'
+      - k3s_platform_data_mount.stdout.split()[1] == web_saas_data_evidence.filesystem_uuid
+      - k3s_platform_local_storage_path == '/data/k3s/storage'
+    fail_msg: K3s persistent storage must use the verified independent volume
+
+- name: Create storage provisioner path on the mounted data disk
+  ansible.builtin.file:
+    path: /data/k3s/storage
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create K3s mount dependency directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/k3s.service.d
+    state: directory
+    mode: '0755'
+
+- name: Refuse K3s startup when the data mount is unavailable
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/k3s.service.d/20-data-volume.conf
+    mode: '0644'
+    content: |
+      [Unit]
+      RequiresMountsFor=/data
+      BindsTo=data.mount
+      After=data.mount
+      ConditionPathIsMountPoint=/data
+
+- name: Reload unit dependency configuration
+  ansible.builtin.systemd:
+    daemon_reload: true

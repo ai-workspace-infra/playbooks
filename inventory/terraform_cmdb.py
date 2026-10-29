@@ -306,7 +306,7 @@ def build_inventory(cmdb):
             "ansible_host": address,
             "ansible_user": host.get("ansible_user", "root"),
             "ansible_port": host.get("ansible_port", 22),
-            "cmdb_environment": cmdb.get("environment") or environment,
+            "cmdb_environment": cmdb.get("environment") or host.get("environment") or host_vars.get("environment"),
             "environment": environment,
             "cmdb_cloud_provider": provider if provider != "unknown" else None,
             "cloud_provider": provider,
@@ -330,6 +330,8 @@ def build_inventory(cmdb):
             hostvars["ansible_ssh_private_key_file"] = host["ssh_private_key_file"]
         # CMDB 其余字段一并暴露给 playbook 使用
         hostvars.update(host_vars)
+        if isinstance(host.get("data_volume"), dict):
+            hostvars["data_volume"] = host["data_volume"]
         inv["_meta"]["hostvars"][name] = hostvars
 
         for group in host.get("groups", []) or ["ungrouped"]:

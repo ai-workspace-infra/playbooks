@@ -13,6 +13,16 @@
           and inventory_hostname in (service_domains | default([]))
           and 'web_saas_recovery' in group_names
         )
+        or (
+          web_saas_data_allow_generation_host | bool
+          and web_saas_data_environment == 'prod'
+          and 'prod' in group_names and 'k3s' in group_names
+          and (target_generation | default('')) is match('^prod-v[1-9][0-9]*$')
+          and (data_volume | default({})).get('linode_id', '') | string == (cmdb_instance_id | default('')) | string
+          and (data_volume | default({})).get('volume_id', '') | string == web_saas_data_expected_volume_id | string
+          and web_saas_data_expected_volume_id | string is match('^[1-9][0-9]*$')
+          and (data_volume | default({})).get('filesystem_path', '') == web_saas_data_device_path
+        )
       - web_saas_data_action in ['inspect', 'prepare_empty']
       - web_saas_data_mount_path == '/data'
       - web_saas_data_device_path is match('^/dev/disk/by-id/[A-Za-z0-9._+-]+$')

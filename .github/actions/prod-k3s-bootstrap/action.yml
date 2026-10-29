@@ -1,0 +1,41 @@
+name: Fresh PROD K3s bootstrap owner
+description: Bind one verified CMDB candidate, prepare its empty disk, install K3s and load paused Flux declarations.
+inputs:
+  cmdb: {required: true, description: Receipt verified CMDB path}
+  cmdb-sha256: {required: true, description: Expected CMDB checksum}
+  gitops: {required: true, description: Fixed GitOps checkout}
+  gitops-sha: {required: true, description: Full reviewed GitOps SHA}
+  known-hosts: {required: true, description: IaC provider attested host keys}
+  receipt: {required: true, description: Public paused bootstrap receipt path}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Prepare isolated Ansible runtime
+      shell: bash
+      env:
+        NODE_STAGE_ANSIBLE_CORE_VERSION: 2.18.12
+        NODE_STAGE_VENV: ${{ runner.temp }}/v6-owner-venv
+      run: bash "${GITHUB_ACTION_PATH}/../setup-node-stage-runner/scripts/setup.sh"
+    - name: Install pinned disk filesystem collection
+      shell: bash
+      run: ansible-galaxy collection install 'community.general:==10.7.0'
+    - uses: azure/setup-kubectl@v4
+      with:
+        version: v1.37.1
+    - name: Execute verified cold bootstrap roles
+      shell: bash
+      env:
+        V6_CMDB: ${{ inputs.cmdb }}
+        V6_CMDB_SHA256: ${{ inputs.cmdb-sha256 }}
+        V6_GITOPS: ${{ inputs.gitops }}
+        V6_GITOPS_SHA: ${{ inputs.gitops-sha }}
+        V6_KNOWN_HOSTS: ${{ inputs.known-hosts }}
+        V6_RECEIPT: ${{ inputs.receipt }}
+      run: >-
+        python3 "${GITHUB_ACTION_PATH}/../../../scripts/prod_k3s_bootstrap.py"
+        --cmdb "$V6_CMDB" --cmdb-sha256 "$V6_CMDB_SHA256"
+        --gitops "$V6_GITOPS" --gitops-sha "$V6_GITOPS_SHA"
+        --known-hosts "$V6_KNOWN_HOSTS" --receipt "$V6_RECEIPT"

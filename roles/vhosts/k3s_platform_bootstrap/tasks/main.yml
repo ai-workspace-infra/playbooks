@@ -151,6 +151,10 @@
     state: directory
     mode: "0755"
 
+- name: Bind K3s to the verified independent data mount
+  ansible.builtin.include_tasks: data_mount.yml
+  when: k3s_platform_require_data_mount | bool
+
 - name: Render k3s config
   ansible.builtin.template:
     src: k3s-config.yaml.j2
@@ -494,6 +498,46 @@
       environment:
         KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
 
+- name: Establish independent audit access for the fresh cluster
+  ansible.builtin.include_tasks: audit_identity.yml
+  when: k3s_platform_require_data_mount | bool
+
+- name: Verify paused declarations against actual cluster resources
+  when: k3s_platform_flux_bootstrap_mode == 'declarative_paused'
+  block:
+    - name: Install paused state verifier
+      ansible.builtin.copy:
+        src: verify_paused_bootstrap.py
+        dest: "{{ k3s_platform_install_dir }}/verify_paused_bootstrap.py"
+        mode: '0700'
+    - name: Verify node identity mount and exact paused resource graph
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ k3s_platform_install_dir }}/verify_paused_bootstrap.py"
+          - --bundle
+          - /tmp/flux-bootstrap-declarations.yaml
+          - --node
+          - "{{ k3s_platform_node_name }}"
+          - --version
+          - "{{ k3s_platform_k3s_version }}"
+          - --commit
+          - "{{ k3s_platform_git_commit }}"
+          - --volume-uuid
+          - "{{ web_saas_data_evidence.filesystem_uuid }}"
+      environment:
+        KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+      register: k3s_platform_paused_receipt
+      changed_when: false
+    - name: Retain public paused bootstrap evidence on controller
+      ansible.builtin.copy:
+        content: "{{ (k3s_platform_paused_receipt.stdout | from_json) | combine({'audit': (k3s_platform_audit_evidence.stdout | default('{}') | from_json)}) | to_json }}\n"
+        dest: "{{ k3s_platform_receipt_path }}"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+      when: k3s_platform_receipt_path | length > 0
+
 - name: Install bounded bootstrap receipt verifier
   ansible.builtin.copy:
     src: verify_bootstrap.py
@@ -584,3 +628,4 @@
     - /tmp/flux-bootstrap-declarations.yaml
     - /tmp/flux-git-deploy.key
     - /tmp/flux-git-deploy.pub
+    - /tmp/v6-audit-rbac.yaml
