@@ -11,6 +11,10 @@ inputs:
   bootstrap-receipt: {required: true, description: Verified bootstrap receipt}
   known-hosts: {required: true, description: Provider-attested SSH host keys}
   receipt: {required: true, description: Output path for redacted evidence}
+outputs:
+  receipt-created:
+    description: Whether a redacted owner receipt was created
+    value: ${{ steps.owner.outputs.receipt-created }}
 runs:
   using: composite
   steps:
@@ -24,6 +28,7 @@ runs:
         NODE_STAGE_VENV: ${{ runner.temp }}/workload-identity-owner-venv
       run: bash "${GITHUB_ACTION_PATH}/../setup-node-stage-runner/scripts/setup.sh"
     - name: Run identity owner with isolated SSH agent
+      id: owner
       shell: bash
       env:
         WORKLOAD_MODE: ${{ inputs.mode }}
@@ -38,9 +43,10 @@ runs:
         WORKLOAD_RECEIPT: ${{ inputs.receipt }}
       run: |
         set -euo pipefail
+        echo "receipt-created=false" >> "$GITHUB_OUTPUT"
+        trap 'env -u VAULT_TOKEN -u SSH_PRIVATE_KEY ssh-agent -k >/dev/null 2>&1 || true; if [[ -f "$WORKLOAD_RECEIPT" ]]; then echo "receipt-created=true" >> "$GITHUB_OUTPUT"; fi' EXIT
         : "${SSH_PRIVATE_KEY:?runtime SSH identity required}"
         eval "$(env -u VAULT_TOKEN -u SSH_PRIVATE_KEY ssh-agent -s)" >/dev/null
-        trap 'env -u VAULT_TOKEN -u SSH_PRIVATE_KEY ssh-agent -k >/dev/null 2>&1 || true' EXIT
         printf '%s\n' "$SSH_PRIVATE_KEY" | env -u VAULT_TOKEN -u SSH_PRIVATE_KEY ssh-add - >/dev/null 2>&1
         unset SSH_PRIVATE_KEY
         python3 "${GITHUB_ACTION_PATH}/../../../scripts/workload_identity_operation.py" \

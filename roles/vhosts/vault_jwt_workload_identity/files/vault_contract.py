@@ -95,7 +95,7 @@ def expect(result, codes):
 
 
 def provision(client, spec, issuer, public_keys):
-    """Create an absent mount and exact policy, rejecting ambiguous partial state."""
+    """Create missing identity resources, accepting only an exact existing state."""
     if not isinstance(issuer, str) or not issuer or not public_keys:
         raise VaultError('verified issuer and keys required', 'config')
     policy_path = 'sys/policies/acl/' + spec.policy
@@ -104,8 +104,9 @@ def provision(client, spec, issuer, public_keys):
         mounts = expect(client.request('GET', 'sys/auth'), {200})
     except VaultError as exc:
         raise VaultError('auth mount state could not be read', 'mount') from None
-    if mount_path in mounts.get('data', {}):
-        raise VaultError('auth mount already exists; do not overwrite unverified state', 'mount')
+    existing_mount = mounts.get('data', {}).get(mount_path)
+    if existing_mount is not None and existing_mount.get('type') != 'jwt':
+        raise VaultError('auth mount exists with an unexpected type', 'mount')
     try:
         status, policy = client.request('GET', policy_path)
     except VaultError:
@@ -118,24 +119,60 @@ def provision(client, spec, issuer, public_keys):
         create_policy = True
     else:
         raise VaultError('reader policy cannot be safely inspected', 'policy')
+    config_path = 'auth/' + spec.mount + '/config'
+    expected_config = {'bound_issuer': issuer, 'jwt_validation_pubkeys': public_keys}
+    config_missing = False
+    try:
+        status, current = client.request('GET', config_path)
+    except VaultError:
+        raise VaultError('dedicated JWT config state could not be read', 'config') from None
+    if status == 200:
+        current_data = (current or {}).get('data', {})
+        if any(current_data.get(key) != value for key, value in expected_config.items()):
+            raise VaultError('dedicated JWT config exists with unreviewed content', 'config')
+    elif status == 404:
+        config_missing = True
+    else:
+        raise VaultError('dedicated JWT config cannot be safely inspected', 'config')
+    role_path = 'auth/' + spec.mount + '/role/' + spec.role
+    try:
+        status, current = client.request('GET', role_path)
+    except VaultError:
+        raise VaultError('dedicated JWT role state could not be read', 'role') from None
+    role_missing = False
+    if status == 200:
+        current_data = (current or {}).get('data', {})
+        comparable = ('role_type', 'user_claim', 'bound_subject', 'bound_audiences',
+                      'token_no_default_policy', 'token_type', 'token_policies')
+        if any(current_data.get(key) != spec.role_config[key] for key in comparable):
+            raise VaultError('dedicated JWT role exists with unreviewed content', 'role')
+        for key in ('token_ttl', 'token_max_ttl', 'token_explicit_max_ttl'):
+            if int(current_data.get(key, 0)) != spec.ttl_seconds:
+                raise VaultError('dedicated JWT role has an unreviewed TTL', 'role')
+    elif status == 404:
+        role_missing = True
+    else:
+        raise VaultError('dedicated JWT role cannot be safely inspected', 'role')
     if create_policy:
         try:
             expect(client.request('PUT', policy_path, {'policy': spec.policy_hcl}), {200, 204})
         except VaultError:
             raise VaultError('reader policy creation failed', 'policy') from None
-    try:
-        expect(client.request('POST', 'sys/auth/' + spec.mount, {'type': 'jwt'}), {200, 204})
-    except VaultError:
-        raise VaultError('dedicated JWT mount creation failed', 'mount') from None
-    try:
-        expect(client.request('POST', 'auth/' + spec.mount + '/config',
-                              {'bound_issuer': issuer, 'jwt_validation_pubkeys': public_keys}), {200, 204})
-    except VaultError:
-        raise VaultError('dedicated JWT config creation failed', 'config') from None
-    try:
-        expect(client.request('POST', 'auth/' + spec.mount + '/role/' + spec.role, spec.role_config), {200, 204})
-    except VaultError:
-        raise VaultError('dedicated JWT role creation failed', 'role') from None
+    if existing_mount is None:
+        try:
+            expect(client.request('POST', 'sys/auth/' + spec.mount, {'type': 'jwt'}), {200, 204})
+        except VaultError:
+            raise VaultError('dedicated JWT mount creation failed', 'mount') from None
+    if config_missing:
+        try:
+            expect(client.request('POST', config_path, expected_config), {200, 204})
+        except VaultError:
+            raise VaultError('dedicated JWT config creation failed', 'config') from None
+    if role_missing:
+        try:
+            expect(client.request('POST', role_path, spec.role_config), {200, 204})
+        except VaultError:
+            raise VaultError('dedicated JWT role creation failed', 'role') from None
 
 
 def _claims(jwt):
