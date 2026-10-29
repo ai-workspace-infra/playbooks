@@ -20,6 +20,8 @@ ACCOUNTS = {'repo': 'ai-workspace-services/accounts', 'sha': 'a88195e5532e7be60b
             'run': 40709054881, 'artifact': 12825497078,
             'image': 'ghcr.io/ai-workspace-services/accounts@sha256:2938c97dc975c82cfdf2b9874b574e2aaa6357b4bb83a5a97f5b703448041434',
             'prefix': 'accounts-main-image'}
+PHASE = 'context'
+
 BILLING = {'repo': 'ai-workspace-services/billing-service', 'sha': '86b0560e616fa85eb9abcef49c0ca52f6bb99a9b',
            'run': 40729119885, 'artifact': 12835035241,
            'image': 'ghcr.io/ai-workspace-services/billing-service@sha256:66a7e12274a42c929277b68fbee58ff5e4277b21e37d4f8e937ed38b9ac474e4',
@@ -101,16 +103,20 @@ def produce(image_manifest_bytes):
 
 
 def main():
+    global PHASE
     if (os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('GITHUB_REPOSITORY') != 'ai-workspace-infra/playbooks' or
         os.environ.get('GITHUB_REF') != 'refs/heads/main' or os.environ.get('GITHUB_EVENT_NAME') != 'workflow_dispatch' or
         os.environ.get('GITHUB_WORKFLOW_REF') != 'ai-workspace-infra/playbooks/.github/workflows/feature-baseline-1483.yml@refs/heads/main'):
         raise ValueError('protected Main workflow required')
+    PHASE = 'isolated-image'
     image = subprocess.run(['docker', 'run', '--rm', '--pull=always', '--platform', 'linux/amd64',
                             '--network', 'none', '--read-only', '--user', '65534:65534', '--cap-drop', 'ALL',
                             '--security-opt', 'no-new-privileges', '--entrypoint', '/usr/local/bin/migratectl',
                             ACCOUNTS['image'], 'native-schema'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                            timeout=300, check=True).stdout
+    PHASE = 'source-and-build-evidence'
     result = produce(image)
+    PHASE = 'artifact-write'
     destination = Path(os.environ['RUNNER_TEMP']) / 'feature-baseline-1483.json'
     destination.write_text(json.dumps(result, sort_keys=True) + '\n', encoding='utf-8')
     print('Verified fixed baseline inputs; database status: NOT_RUN')
@@ -119,6 +125,6 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except Exception:
-        print('::error::Feature baseline source verification failed', file=sys.stderr)
+    except Exception as error:
+        print(f'::error::Feature baseline verification failed (phase={PHASE}, category={type(error).__name__})', file=sys.stderr)
         sys.exit(1)
