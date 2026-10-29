@@ -547,3 +547,24 @@ class IsolatedMailSinkTests(unittest.TestCase):
    bad=copy.deepcopy(docs);mutate(bad[index])
    with self.subTest(index=index),self.assertRaisesRegex(ValueError,'non-forwarding contract'):C.validate_sit_mail_sink(bad)
   with self.assertRaises(ValueError):C.validate_sit_mail_sink(docs[:2])
+
+class MailSinkRuntimeTests(unittest.TestCase):
+ def test_runtime_ready_is_successful_technical_result_not_business_acceptance(self):
+  self.assertTrue(R.successful_result('runtime_ready'))
+  self.assertFalse(R.successful_result('not_ready'))
+  self.assertFalse(R.successful_result('blocked_or_failed'))
+ def test_mail_sink_requires_exact_live_identity_and_ready_state(self):
+  image='ghcr.io/axllent/mailpit@sha256:0790692be935ea4420d085694f7985b1f692ca6a8771ab0e0bd8ba75ac180498'
+  child='sha256:938ce54b7b946ef3f45a03e119952cf7e67a7969d61f45a3ed055442a77e00f4'
+  c={'namespace':'feature-sit-test-1483-sit'}
+  pod={'metadata':{'name':'sink-1','uid':'1'*8+'-'+'1'*4+'-'+'1'*4+'-'+'1'*4+'-'+'1'*12,'namespace':c['namespace'],'labels':{'websaas.io/workload':'sit-mail-sink'}},'spec':{'nodeName':'dev-k3s-v5','automountServiceAccountToken':False,'containers':[{'name':'mail-sink','image':image}]},'status':{'phase':'Running','conditions':[{'type':'Ready','status':'True'}],'containerStatuses':[{'name':'mail-sink','ready':True,'imageID':'containerd://'+child,'state':{'running':{}}}]}}
+  policy=list(yaml.safe_load_all((ROOT/'roles/platform/dev_feature_flux/files/sit-mail-sink.yaml').read_text()))[2]
+  client=Mock();client.get.side_effect=lambda kind,*args,**kwargs: {'items':[policy]} if kind=='networkpolicies' else pod
+  self.assertTrue(R.verify_sit_mail_sink(c,{'items':[pod]},client)['smtp_test_accepted'])
+  self.assertIn('test@invalid.example',client.call.call_args.args[0])
+  for fn in (lambda x:x['spec'].update(nodeName='other'),lambda x:x['spec']['containers'][0].update(image='other'),lambda x:x['status']['containerStatuses'][0].update(ready=False),lambda x:x['spec'].update(hostNetwork=True)):
+   changed=copy.deepcopy(pod);fn(changed)
+   with self.assertRaises(ValueError):R.verify_sit_mail_sink(c,{'items':[changed]},client)
+  bad=copy.deepcopy(policy);bad['spec']['egress']=[{}]
+  client.get.side_effect=lambda kind,*args,**kwargs: {'items':[bad]} if kind=='networkpolicies' else pod
+  with self.assertRaisesRegex(ValueError,'live isolation'):R.verify_sit_mail_sink(c,{'items':[pod]},client)

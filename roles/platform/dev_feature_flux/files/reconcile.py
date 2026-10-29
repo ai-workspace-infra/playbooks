@@ -206,6 +206,55 @@ def verify_runtime(c,pods):
   result[component]={'pod':meta['name'],'pod_uid':meta['uid'],'spec_image':containers[0]['image'],'image_id':image_id,'root_digest':expected['manifest_digest'],'platform_digest':expected['platform_manifest_digest'],'ready':True}
  return result
 
+def verify_sit_mail_sink(c,pods,client):
+ """Bind the non-forwarding test mail Pod to its reviewed image and node."""
+ image='ghcr.io/axllent/mailpit@sha256:0790692be935ea4420d085694f7985b1f692ca6a8771ab0e0bd8ba75ac180498'
+ root='sha256:0790692be935ea4420d085694f7985b1f692ca6a8771ab0e0bd8ba75ac180498'
+ amd64='sha256:938ce54b7b946ef3f45a03e119952cf7e67a7969d61f45a3ed055442a77e00f4'
+ selected=[p for p in pods.get('items',[]) if not p.get('metadata',{}).get('deletionTimestamp') and p.get('metadata',{}).get('labels',{}).get('websaas.io/workload')=='sit-mail-sink']
+ require(len(selected)==1,'exactly one isolated SIT mail sink required')
+ pod=selected[0];meta=pod.get('metadata',{});spec=pod.get('spec',{});containers=spec.get('containers',[]);status=pod.get('status',{});states=status.get('containerStatuses',[])
+ require(meta.get('namespace')==c['namespace'] and spec.get('nodeName')==NODE and not spec.get('hostNetwork') and
+         spec.get('automountServiceAccountToken') is False and len(containers)==1 and
+         containers[0].get('name')=='mail-sink' and containers[0].get('image')==image and
+         not spec.get('initContainers') and not spec.get('ephemeralContainers'), 'SIT mail sink runtime scope differs')
+ require(status.get('phase')=='Running' and any(x.get('type')=='Ready' and x.get('status')=='True' for x in status.get('conditions',[])) and
+         len(states)==1 and states[0].get('name')=='mail-sink' and states[0].get('ready') is True and
+         states[0].get('state',{}).get('running') is not None,'SIT mail sink is not Ready')
+ image_id=states[0].get('imageID','');value=image_id
+ for prefix in ('docker-pullable://','containerd://','docker://'):
+  if value.startswith(prefix):value=value[len(prefix):];break
+ if '@' in value:
+  repository,value=value.split('@',1);require(repository=='ghcr.io/axllent/mailpit','SIT mail sink repository differs')
+ require(value in (root,amd64),'SIT mail sink runtime image differs')
+ name=meta.get('name');uid=meta.get('uid')
+ require(isinstance(name,str) and re.fullmatch(r'[a-z0-9][a-z0-9.-]*',name) and UUID.fullmatch(uid or ''),'SIT mail sink Pod identity invalid')
+ current=client.get('pod',name,c['namespace'])
+ require(current.get('metadata',{}).get('uid')==uid and not current.get('metadata',{}).get('deletionTimestamp'),'SIT mail sink Pod changed before SMTP probe')
+ policies=client.get('networkpolicies',namespace=c['namespace']).get('items',[])
+ def matches(selector,labels):
+  for k,v in selector.get('matchLabels',{}).items():
+   if labels.get(k)!=v:return False
+  for expr in selector.get('matchExpressions',[]):
+   key=expr.get('key');op=expr.get('operator');values=expr.get('values',[])
+   if op=='In' and (key not in labels or labels[key] not in values):return False
+   elif op=='NotIn' and key in labels and labels[key] in values:return False
+   elif op=='Exists' and key not in labels:return False
+   elif op=='DoesNotExist' and key in labels:return False
+   elif op not in ('In','NotIn','Exists','DoesNotExist'):raise ValueError('unsupported network policy selector')
+  return True
+ selected_policies=[p for p in policies if matches(p.get('spec',{}).get('podSelector',{}),meta.get('labels',{}))]
+ require(len(selected_policies)==1 and selected_policies[0].get('metadata',{}).get('name')=='sit-mail-sink-isolation','SIT mail sink selected by unexpected network policy')
+ policy=selected_policies[0].get('spec',{})
+ require(policy.get('podSelector')=={'matchLabels':{'websaas.io/workload':'sit-mail-sink'}} and
+         set(policy.get('policyTypes',[]))=={'Ingress','Egress'} and not policy.get('egress') and
+         policy.get('ingress')==[{'from':[{'podSelector':{'matchLabels':{'websaas.io/workload':'accounts'}}}],'ports':[{'protocol':'TCP','port':1025}]}],
+         'SIT mail sink live isolation policy differs')
+ message='From: sit-test-1483@invalid.example\nTo: test@invalid.example\nSubject: SIT isolation probe\n\nIsolated test.\n'
+ client.call(['exec','-i','-n',c['namespace'],name,'-c','mail-sink','--','/mailpit','sendmail','-S','127.0.0.1:1025','test@invalid.example'],message)
+ return {'pod':name,'pod_uid':uid,'image':image,'image_id':image_id,'ready':True,'egress_policy':'deny_all_live','smtp_test_accepted':True}
+
+
 class Client:
  def call(self,args,stdin=None):
   p=subprocess.run(['/usr/local/bin/k3s','kubectl','--kubeconfig=/etc/rancher/k3s/k3s.yaml','--request-timeout=20s',*args],input=stdin,text=True,capture_output=True,timeout=30)
@@ -384,7 +433,9 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
    if c['mode']=='verify':
     current=client.get('namespace',NS)
     require(current['metadata'].get('uid')==c['namespace_uid'] and not current['metadata'].get('deletionTimestamp'),'namespace changed during runtime verification')
-    report['runtime_images']=verify_runtime(c,client.get('pods',namespace=NS))
+    runtime_pods=client.get('pods',namespace=NS)
+    report['runtime_images']=verify_runtime(c,runtime_pods)
+    if tag=='mail-sit-test-1483':report['sit_mail_sink']=verify_sit_mail_sink(c,runtime_pods,client)
    report.update(result=('runtime_ready' if tag is not None and c['mode']=='verify' else 'verified'),source_revision=source['status']['artifact']['revision'],applied_revision=root['status']['lastAppliedRevision'],helm_ready=True,tls_certificate_acceptance='NOT_RUN',business_acceptance='NOT_RUN',watch_main=c['environment']=='uat',observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
    return report
   if clock()>=deadline:
@@ -392,10 +443,14 @@ def execute(c,client=None,sleep=time.sleep,clock=time.monotonic):
    return report
   sleep(5)
 
+def successful_result(result):
+ return result in ('planned','prepared','submitted_pending_seed','verified','runtime_ready')
+
+
 if __name__=='__main__':
  try:
   result=execute(json.loads(os.environ['DEV_FEATURE_CONFIG']));print(json.dumps(result,sort_keys=True))
-  raise SystemExit(0 if result['result'] in ('planned','prepared','submitted_pending_seed','verified') else 1)
+  raise SystemExit(0 if successful_result(result['result']) else 1)
  except Exception as error:
   config={}
   try:config=json.loads(os.environ.get('DEV_FEATURE_CONFIG','{}'))
