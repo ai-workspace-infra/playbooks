@@ -5,8 +5,44 @@
       - k3s_platform_git_commit | length > 0 or k3s_platform_git_branch | length > 0
       - k3s_platform_git_commit | length == 0 or k3s_platform_git_commit is match("^[0-9a-f]{40}$")
       - k3s_platform_flux_root_path | length > 0
+      - k3s_platform_flux_bootstrap_mode in ['generated', 'declarative_paused']
       - k3s_platform_git_auth_mode | default('public') | lower in ['public', 'ssh', 'https-basic', 'https-bearer', '']
     fail_msg: "k3s platform bootstrap requires git url, branch, root path, and a supported git auth mode."
+
+- name: Prepare immutable paused GitOps declarations before host changes
+  when: k3s_platform_flux_bootstrap_mode == 'declarative_paused'
+  block:
+    - name: Require fixed checkout and staged receipt semantics
+      ansible.builtin.assert:
+        that:
+          - k3s_platform_gitops_checkout_path | length > 0
+          - k3s_platform_git_commit is match('^[0-9a-f]{40}$')
+          - not (k3s_platform_strict_dev_receipt | bool)
+        fail_msg: Paused bootstrap requires an immutable checkout and cannot claim Ready reconciliation
+
+    - name: Validate and render the declared Flux tree on the controller
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ role_path }}/files/stage_flux_declarations.py"
+          - --checkout
+          - "{{ k3s_platform_gitops_checkout_path }}"
+          - --commit
+          - "{{ k3s_platform_git_commit }}"
+          - --root-path
+          - "{{ k3s_platform_flux_root_path }}"
+          - --root-name
+          - "{{ k3s_platform_flux_root_name }}"
+          - --source
+          - "{{ k3s_platform_flux_source_name }}"
+          - --namespace
+          - "{{ k3s_platform_flux_namespace }}"
+          - --git-url
+          - "{{ k3s_platform_git_url }}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: k3s_platform_paused_declarations
 
 - name: Resolve flux git auth inputs
   ansible.builtin.set_fact:
@@ -270,6 +306,32 @@
   delay: 5
   until: k3s_platform_apiserver_ready.rc == 0
 
+- name: Check paused cluster before modifying Flux authentication
+  when: k3s_platform_flux_bootstrap_mode == 'declarative_paused'
+  block:
+    - name: Inspect existing Flux resources before staged bootstrap
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - get
+          - gitrepositories.source.toolkit.fluxcd.io,kustomizations.kustomize.toolkit.fluxcd.io,helmreleases.helm.toolkit.fluxcd.io
+          - --all-namespaces
+          - -o
+          - json
+      environment:
+        KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+      changed_when: false
+      register: k3s_platform_existing_flux
+
+    - name: Refuse to restage any active Flux resources
+      ansible.builtin.assert:
+        that:
+          - item.spec.suspend | default(false) | bool
+        fail_msg: Staged bootstrap is for an empty or already paused cluster; active resources require their normal release path
+      loop: "{{ (k3s_platform_existing_flux.stdout | from_json)['items'] }}"
+      loop_control:
+        label: "{{ item.kind }}/{{ item.metadata.name }}"
+
 - name: Render flux bootstrap env file
   ansible.builtin.template:
     src: flux-bootstrap.env.j2
@@ -372,6 +434,7 @@
     - k3s_platform_git_auth_mode_effective == 'https-bearer'
 
 - name: Apply root Flux source and kustomization
+  when: k3s_platform_flux_bootstrap_mode == 'generated'
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
@@ -401,7 +464,7 @@
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
     metadata:
-      name: platform-root
+      name: {{ k3s_platform_flux_root_name }}
       namespace: ${FLUX_NAMESPACE}
     spec:
       interval: 5m0s
@@ -416,6 +479,21 @@
   args:
     executable: /bin/bash
 
+- name: Apply unified paused declarations without reconciliation
+  when: k3s_platform_flux_bootstrap_mode == 'declarative_paused'
+  block:
+    - name: Copy validated declaration bundle to target
+      ansible.builtin.copy:
+        content: "{{ k3s_platform_paused_declarations.stdout }}\n"
+        dest: /tmp/flux-bootstrap-declarations.yaml
+        mode: "0600"
+
+    - name: Load paused source root child Kustomizations and HelmReleases
+      ansible.builtin.command:
+        argv: [kubectl, apply, -f, /tmp/flux-bootstrap-declarations.yaml]
+      environment:
+        KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+
 - name: Install bounded bootstrap receipt verifier
   ansible.builtin.copy:
     src: verify_bootstrap.py
@@ -426,6 +504,7 @@
   when: k3s_platform_strict_dev_receipt | bool
 
 - name: Reconcile root Flux source synchronously
+  when: k3s_platform_flux_bootstrap_mode == 'generated'
   ansible.builtin.command:
     argv:
       - flux
@@ -441,12 +520,13 @@
   changed_when: true
 
 - name: Reconcile root Flux kustomization synchronously
+  when: k3s_platform_flux_bootstrap_mode == 'generated'
   ansible.builtin.command:
     argv:
       - flux
       - reconcile
       - kustomization
-      - platform-root
+      - "{{ k3s_platform_flux_root_name }}"
       - --namespace
       - "{{ k3s_platform_flux_namespace }}"
       - --with-source
@@ -466,6 +546,8 @@
       - "{{ k3s_platform_flux_namespace }}"
       - --source
       - "{{ k3s_platform_flux_source_name }}"
+      - --root-name
+      - "{{ k3s_platform_flux_root_name }}"
       - --commit
       - "{{ k3s_platform_git_commit }}"
       - --version
@@ -499,5 +581,6 @@
     - "{{ k3s_platform_k3s_install_script_path }}"
     - "{{ k3s_platform_k3s_install_log_path }}"
     - /tmp/flux-bootstrap.env
+    - /tmp/flux-bootstrap-declarations.yaml
     - /tmp/flux-git-deploy.key
     - /tmp/flux-git-deploy.pub

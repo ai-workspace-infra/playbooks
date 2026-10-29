@@ -1,8 +1,10 @@
 """Offline contract tests only; these are not runtime acceptance evidence."""
 import copy
 import importlib.util
+import sys
 from pathlib import Path
 import unittest
+from unittest import mock
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +23,17 @@ SHA = "a" * 40
 
 
 class Contract(unittest.TestCase):
+    def test_runtime_verifier_observes_explicit_root_name(self):
+        argv = ["verify", "--node", ADAPTER.TARGET, "--namespace", "flux-system", "--source", "config",
+                "--root-name", "generation-root", "--commit", SHA, "--version", "", "--architecture", ""]
+        with mock.patch.object(sys, 'argv', argv), \
+             mock.patch.object(VERIFY, 'get', side_effect=self.resources()) as observe, \
+             mock.patch.object(VERIFY.socket, 'gethostname', return_value=ADAPTER.TARGET), \
+             mock.patch('builtins.print'):
+            VERIFY.main()
+        self.assertEqual(observe.call_args_list[-1].args,
+                         ('-n', 'flux-system', 'get', 'kustomization', 'generation-root'))
+
     def cmdb(self):
         return {ADAPTER.TARGET: {"name": ADAPTER.TARGET, "label": ADAPTER.TARGET, "instance_id": 123,
             "ip": "198.51.100.10", "groups": ["dev", "k3s"], "host_vars": {
