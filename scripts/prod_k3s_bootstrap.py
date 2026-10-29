@@ -123,6 +123,7 @@ def main():
     receipt = json.loads(Path(a.receipt).read_text())
     require(receipt.get('result') == 'PAUSED_BOOTSTRAP_VERIFIED' and receipt.get('gitops_sha') == a.gitops_sha, 'Missing verified paused receipt')
     require(receipt.get('counts') == {'GitRepository': 6, 'Kustomization': 6, 'HelmRelease': 7}, 'Unexpected V6 release graph')
+    require(receipt.get('audit', {}).get('result') == 'AUDIT_ALLOW_DENY_VERIFIED', 'Independent audit identity not verified')
     print('PAUSED_BOOTSTRAP_VERIFIED; no business reconciliation or writer transfer performed')
 
 

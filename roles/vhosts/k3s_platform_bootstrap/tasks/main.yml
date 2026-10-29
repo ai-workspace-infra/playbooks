@@ -531,7 +531,7 @@
       changed_when: false
     - name: Retain public paused bootstrap evidence on controller
       ansible.builtin.copy:
-        content: "{{ k3s_platform_paused_receipt.stdout }}\n"
+        content: "{{ (k3s_platform_paused_receipt.stdout | from_json) | combine({'audit': (k3s_platform_audit_evidence.stdout | default('{}') | from_json)}) | to_json }}\n"
         dest: "{{ k3s_platform_receipt_path }}"
         mode: '0600'
       delegate_to: localhost
