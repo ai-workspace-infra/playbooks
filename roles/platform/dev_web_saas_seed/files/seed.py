@@ -12,7 +12,7 @@ import secrets
 import subprocess
 import sys
 import urllib.request
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from platform_scope import preflight, failure_code
 from contracts import ACCOUNTS_SHA, BILLING_SHA, SCHEMA_SHA, target, identity, verify_sources, verify_tagged_sources, grants, audit_grants
 
@@ -152,7 +152,7 @@ END IF; END $$;
                         *command, 'psql', '-XAtq', '-U', 'lane_admin', '-d', 'account',
                         '-v', 'ON_ERROR_STOP=1', data=sql)
 
-    def job(self, purpose, image, command, env=None):
+    def job(self, purpose, image, command, env=None, wait_postgres=None):
         name = 'dev-seed-' + purpose + '-' + secrets.token_hex(4)
         pod = {'automountServiceAccountToken': False, 'restartPolicy': 'Never',
                'imagePullSecrets': [{'name': 'web-saas-registry'}],
@@ -162,12 +162,40 @@ END IF; END $$;
                                'env': env or [], 'securityContext': {
                                    'allowPrivilegeEscalation': False,
                                    'capabilities': {'drop': ['ALL']}}}]}
+        if wait_postgres is not None:
+            host = f'web-saas-postgresql.{self.ns}.svc.cluster.local'
+            pod['initContainers'] = [{'name': 'wait-for-lane-postgres', 'image': wait_postgres,
+                'command': ['/bin/sh', '-c', 'for i in $(seq 1 60); do pg_isready -t 2 -h "$PGHOST" -p 5432 -U lane_admin -d account && exit 0; sleep 2; done; exit 1'],
+                'env': [{'name': 'PGHOST', 'value': host}], 'securityContext': {
+                    'allowPrivilegeEscalation': False, 'capabilities': {'drop': ['ALL']}}}]
         self.apply({'apiVersion': 'batch/v1', 'kind': 'Job', 'metadata': {
             'name': name, 'namespace': self.ns, 'labels': {'seed-owner': OWNER}},
             'spec': {'backoffLimit': 0, 'activeDeadlineSeconds': 360,
                      'template': {'spec': pod}}})
         self.raw('-n', self.ns, 'wait', '--for=condition=complete', 'job/' + name, '--timeout=370s')
         return self.raw('-n', self.ns, 'logs', 'job/' + name)
+
+    def validate_empty_recovery(self, host, passwords):
+        # Only resume a failed, unpublished, empty SIT initialization. No
+        # application secret may exist and every seed job must be terminal.
+        self.check_namespace()
+        jobs = self.k('-n', self.ns, 'get', 'jobs')['items']
+        if any(job.get('status', {}).get('active', 0) for job in jobs):
+            raise Blocked('active jobs prevent partial seed recovery')
+        roles = set(self.psql("SELECT rolname FROM pg_roles WHERE rolname IN ('xc_schema_owner','xc_accounts_rw','xc_billing_rw','xc_lane_audit') AND rolcanlogin AND NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls);").split())
+        if roles != set(passwords):
+            raise Blocked('partial seed role identities require review')
+        if self.psql("SELECT count(*) FROM pg_auth_members m JOIN pg_roles r ON r.oid IN (m.roleid,m.member) WHERE r.rolname IN ('xc_schema_owner','xc_accounts_rw','xc_billing_rw','xc_lane_audit');").strip() != '0':
+            raise Blocked('partial seed role memberships require review')
+        if self.psql("SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname='account';").strip() != 'xc_schema_owner':
+            raise Blocked('partial seed database owner requires review')
+        if self.psql("SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='public';").strip() != 'xc_schema_owner':
+            raise Blocked('partial seed schema owner requires review')
+        ddl = self.secret('web-saas-db-ddl', {'NATIVE_TARGET_DSN': ''})
+        parsed = urlsplit(ddl['NATIVE_TARGET_DSN'])
+        if (parsed.scheme != 'postgresql' or parsed.username != 'xc_schema_owner' or parsed.hostname != host or parsed.port != 5432 or parsed.path != '/account' or parsed.query != 'sslmode=disable' or not re.fullmatch(r'[0-9a-f]{64}', parsed.password or '')):
+            raise Blocked('partial seed DDL credential contract mismatch')
+        return parsed.password
 
     def initialize(self):
         self.check_namespace()
@@ -227,22 +255,39 @@ END IF; END $$;
         if any(compiled.get(key) != manifest.get(key) for key in ('format', 'migration_version', 'schema_sha256', 'business_table_count', 'business_tables')):
             raise Blocked('image compiled schema mismatch')
         existing = {s['metadata']['name'] for s in self.k('-n', self.ns, 'get', 'secrets')['items']}
-        if existing.intersection({'web-saas-db-ddl','web-saas-db-probe','web-saas-db-audit','web-saas-accounts-runtime','web-saas-billing-runtime','web-saas-console-runtime','web-saas-content-runtime'}):
+        seed_secrets = existing.intersection({'web-saas-db-ddl','web-saas-db-probe','web-saas-db-audit','web-saas-accounts-runtime','web-saas-billing-runtime','web-saas-console-runtime','web-saas-content-runtime'})
+        recovery = bool(seed_secrets)
+        lane = self.r.get('tagged_lane') or {}
+        if recovery and (lane.get('feature_id') != 'sit-test-1483' or seed_secrets not in ({'web-saas-db-ddl'}, {'web-saas-db-ddl','web-saas-db-probe'})):
             raise Blocked('existing seed state: review required, no implicit rotation')
         passwords = {role: secrets.token_hex(32) for role in ('xc_schema_owner','xc_accounts_rw','xc_billing_rw','xc_lane_audit')}
         host = f'web-saas-postgresql.{self.ns}.svc.cluster.local'
         def dsn(role):
             return f'postgresql://{role}:{quote(passwords[role], safe="")}@{host}:5432/account?sslmode=disable'
-        ddl = self.secret('web-saas-db-ddl', {'NATIVE_TARGET_DSN': dsn('xc_schema_owner')})
-        # Credentials are random hex, identifiers fixed constants. Management SQL
-        # remains stdin-only. Fresh DB owner changes before objects exist.
-        self.psql(''.join(f"CREATE ROLE {r} LOGIN PASSWORD '{pw}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" for r,pw in passwords.items()) +
-                   'ALTER DATABASE account OWNER TO xc_schema_owner; ALTER SCHEMA public OWNER TO xc_schema_owner;', sensitive=True)
+        if recovery:
+            passwords['xc_schema_owner'] = self.validate_empty_recovery(host, passwords)
+        else:
+            ddl = self.secret('web-saas-db-ddl', {'NATIVE_TARGET_DSN': dsn('xc_schema_owner')})
+        # Persist unpublished business passwords before creating or updating roles;
+        # a retry reuses exactly the same owner-labelled secret.
+        probe = self.secret('web-saas-db-probe', {'ACCOUNTS_PASSWORD': passwords['xc_accounts_rw'], 'BILLING_PASSWORD': passwords['xc_billing_rw'], 'AUDIT_PASSWORD': passwords['xc_lane_audit']})
+        for role, key in (('xc_accounts_rw','ACCOUNTS_PASSWORD'),('xc_billing_rw','BILLING_PASSWORD'),('xc_lane_audit','AUDIT_PASSWORD')):
+            if not re.fullmatch(r'[0-9a-f]{64}', probe[key]):
+                raise Blocked('partial seed probe credential contract mismatch')
+            passwords[role] = probe[key]
+        self.check_namespace()
+        if self.psql("SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema');").strip() != '0' or self.psql("SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename <> 'lane_admin';").strip() != '0':
+            raise Blocked('partial seed target changed before role preparation')
+        if recovery:
+            self.psql(''.join(f"ALTER ROLE {r} PASSWORD '{passwords[r]}';" for r in ('xc_accounts_rw','xc_billing_rw','xc_lane_audit')), sensitive=True)
+        else:
+            self.psql(''.join(f"CREATE ROLE {r} LOGIN PASSWORD '{pw}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" for r,pw in passwords.items()) +
+                       'ALTER DATABASE account OWNER TO xc_schema_owner; ALTER SCHEMA public OWNER TO xc_schema_owner;', sensitive=True)
         env = [{'name': 'NATIVE_TARGET_DSN', 'valueFrom': {'secretKeyRef': {
             'name': 'web-saas-db-ddl', 'key': 'NATIVE_TARGET_DSN'}}}]
         output = self.job('native-init', accounts_image, ['/usr/local/bin/migratectl','init',
             '--environment',self.r['stage'],'--dsn-env','NATIVE_TARGET_DSN',
-            '--schema-sha256',schema_sha,'--writers-paused','--dry-run=false'], env)
+            '--schema-sha256',schema_sha,'--writers-paused','--dry-run=false'], env, wait_postgres=pg_image)
         # A zero exit is necessary, and the actual postcondition is checked below.
         del output, ddl
         self.psql('SET ROLE xc_schema_owner;\n' + billing.decode() + '\n' + grants(tables, expected_count=inputs['business_table_count'] if inputs else 77))
@@ -254,10 +299,6 @@ END IF; END $$;
         self.psql('SET ROLE xc_schema_owner;\n' + audit_grants())
         # Probe via actual authenticated TCP identities. No administrator SET ROLE
         # substitutes for these connections. Every probe transaction rolls back.
-        self.secret('web-saas-db-probe', {
-            'ACCOUNTS_PASSWORD': passwords['xc_accounts_rw'],
-            'BILLING_PASSWORD': passwords['xc_billing_rw'],
-            'AUDIT_PASSWORD': passwords['xc_lane_audit']})
         for role, key, dml in (
             ('xc_accounts_rw', 'ACCOUNTS_PASSWORD',
              "BEGIN; INSERT INTO public.users(username,password,proxy_uuid) VALUES ('seed_probe','local_probe','00000000-0000-4000-8000-000000000001'); SELECT username FROM public.users WHERE username='seed_probe'; ROLLBACK;"),
@@ -311,7 +352,7 @@ END IF; END $$;
                 'namespace_uid': self.r['namespace_uid'],
                 'candidate_sha': self.r['candidate_sha'],
                 'database_roles': ['xc_accounts_rw','xc_billing_rw'],
-                'schema_initialized': True, 'audit_role':'xc_lane_audit',
+                'schema_initialized': True, 'seed_recovery': 'empty_unpublished_roles' if recovery else 'none', 'audit_role':'xc_lane_audit',
                 'audit_metadata_read_verified':True, 'audit_write_and_sensitive_read_denied':True}
         if tagged:
             receipt.update(feature_id=self.r['tagged_lane']['feature_id'],
