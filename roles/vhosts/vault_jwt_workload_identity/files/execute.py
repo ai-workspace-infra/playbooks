@@ -32,7 +32,12 @@ def execute(config, env=None, collector=cluster_identity.collect, remote_type=re
             stage = 'administrator_scope'
         else:
             stage = 'workload_login_and_path_checks'
-    except (KeyError, TypeError, ValueError, OSError, cluster_identity.ClusterError, vault_contract.VaultError):
+    except cluster_identity.ClusterError as exc:
+        allowed = {'namespace_read','nodes_read','node_receipt_match','service_accounts_read',
+                   'oidc_discovery','token_requests','cluster_identity_mismatch'}
+        stage = 'cluster_' + exc.stage if exc.stage in allowed else 'cluster_identity'
+        raise RuntimeError('stage=' + stage) from None
+    except (KeyError, TypeError, ValueError, OSError, vault_contract.VaultError):
         raise RuntimeError('stage=' + stage) from None
     if config['mode'] == 'configure':
         try:
@@ -66,7 +71,11 @@ def main():
         print(json.dumps(result,sort_keys=True))
     except RuntimeError as exc:
         stage = str(exc)
-        if stage not in ('stage=cluster_identity', 'stage=administrator_scope', 'stage=workload_login_and_path_checks', 'stage=vault_provision'):
+        stages = {'stage=cluster_identity','stage=cluster_namespace_read','stage=cluster_nodes_read',
+                  'stage=cluster_node_receipt_match','stage=cluster_service_accounts_read',
+                  'stage=cluster_oidc_discovery','stage=cluster_token_requests','stage=cluster_identity_mismatch',
+                  'stage=administrator_scope','stage=workload_login_and_path_checks','stage=vault_provision'}
+        if stage not in stages:
             stage = 'stage=unexpected'
         failure_path = os.environ.get('WORKLOAD_IDENTITY_FAILURE')
         if failure_path:

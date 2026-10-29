@@ -74,7 +74,10 @@ def main():
         stage='owner_execution'
         try:
             failure=json.loads(Path(failure_path).read_text())
-            allowed={'cluster_identity','administrator_scope','workload_login_and_path_checks','vault_provision','input_validation'}
+            allowed={'cluster_identity','cluster_namespace_read','cluster_nodes_read','cluster_node_receipt_match',
+                     'cluster_service_accounts_read','cluster_oidc_discovery','cluster_token_requests',
+                     'cluster_identity_mismatch','administrator_scope','workload_login_and_path_checks',
+                     'vault_provision','input_validation'}
             if failure.get('result')=='FAILED' and failure.get('stage') in allowed:
                 stage=failure['stage']
         except (OSError,ValueError,TypeError):
@@ -89,7 +92,9 @@ if __name__=='__main__':
     try:main()
     except RuntimeError as exc:
         message=str(exc)
-        stages={'owner_execution','cluster_identity','administrator_scope','workload_login_and_path_checks','vault_provision','input_validation'}
+        stages={'owner_execution','cluster_identity','cluster_namespace_read','cluster_nodes_read','cluster_node_receipt_match',
+                'cluster_service_accounts_read','cluster_oidc_discovery','cluster_token_requests','cluster_identity_mismatch',
+                'administrator_scope','workload_login_and_path_checks','vault_provision','input_validation'}
         stage=message.rsplit('stage=',1)[-1]
         if stage not in stages: stage='input_validation'
         print('workload_identity_owner_failure stage='+stage,file=sys.stderr)
