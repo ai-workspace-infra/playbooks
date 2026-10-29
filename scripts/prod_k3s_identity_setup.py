@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess
 import yaml
 
-NAMES = ('prod-k3s-v6-iac', 'prod-k3s-v6-bootstrap')
+NAMES = tuple('github-actions-platform-ops-toolkit-prod-k3s-v6-' + kind for kind in ('iac', 'bootstrap'))
 SSH_PATH = 'kv/prod/platform/prod-k3s-v6/ssh'
 
 
