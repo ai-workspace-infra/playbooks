@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import shutil
+import subprocess
 from unittest import mock
 import yaml
 
@@ -14,6 +16,15 @@ spec=importlib.util.spec_from_file_location('identity_setup',ROOT/'scripts/prod_
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 class InitializerTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('openssl') and shutil.which('ssh-agent'), 'OpenSSL and SSH agent required')
+    def test_real_throwaway_private_key_is_validated_without_a_key_file(self):
+        key = subprocess.check_output(['openssl', 'genrsa', '2048'], stderr=subprocess.DEVNULL, text=True)
+        public = m.public_key(key)
+        self.assertTrue(public.startswith('ssh-rsa '))
+        self.assertEqual(2, len(public.split()))
+        with self.assertRaises(ValueError):
+            m.public_key('invalid fixture key')
+
     def execute(self, pubkey='ssh-ed25519 allowed', existing=None):
         calls=[]
         with tempfile.TemporaryDirectory() as tmp:
