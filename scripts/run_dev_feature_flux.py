@@ -22,6 +22,19 @@ def validate_target_observation(observation, instance_id, ip, cmdb_sha256, candi
  require(timestamp.tzinfo is not None and datetime.timedelta(0)<=now-timestamp<=datetime.timedelta(minutes=20),
          'provider observation expired or from the future')
 
+def validate_dns_receipts(root,lane,instance_id,ip,cmdb_sha256):
+ require(root is not None,'same-run DNS receipts required')
+ feature=lane['feature_id'];tag=lane['feature_tag'];fingerprint=lane['candidate_sha256'];host=tag+'-sit.onwalk.net'
+ for service,prefix in (('console',''),('accounts','accounts-'),('billing','billing-')):
+  path=root/service/'receipt.json'
+  require(not path.is_symlink() and path.is_file() and path.stat().st_size<=100000,'DNS receipt missing')
+  receipt=json.loads(path.read_text());provider=receipt.get('provider_observation',{})
+  require(receipt.get('result')=='verified' and receipt.get('service')==service and receipt.get('feature_id')==feature and
+          receipt.get('feature_tag')==tag and receipt.get('candidate_sha256')==fingerprint and receipt.get('hostname')==prefix+host and
+          receipt.get('address')==ip and receipt.get('action') in ('create','update','noop') and bool(receipt.get('record_id')) and
+          provider.get('node')=='dev-k3s-v5' and provider.get('instance_id')==instance_id and provider.get('ip')==ip and
+          provider.get('cmdb_sha256')==cmdb_sha256,'DNS receipt differs from candidate or target')
+
 def tagged_dns_addresses(host,target_ip):
  require(ipaddress.IPv4Address(target_ip).is_global,'tagged DNS target must be a public IPv4 address')
  records=socket.getaddrinfo(host,443,socket.AF_UNSPEC,socket.SOCK_STREAM)
@@ -157,6 +170,7 @@ def execute(a):
  if projection is not None:
   require(a.target_observation is not None,'same-run provider observation required for tagged lane')
   validate_target_observation(json.loads(a.target_observation.read_text()),a.instance_id,cmdb['dev-k3s-v5']['ip'],a.cmdb_sha256,a.candidate_sha256,datetime.datetime.now(datetime.timezone.utc))
+  validate_dns_receipts(a.dns_receipts,projection['tagged_lane'],a.instance_id,cmdb['dev-k3s-v5']['ip'],a.cmdb_sha256)
  observation=candidate.validate_tree(a.gitops_root,a.gitops_sha,a.stage,a.mode=='enable-tls',projection)
  owner_sha=run(['git','-C',str(ROOT),'rev-parse','HEAD']).strip()
  config={'instance_id':a.instance_id,'mode':a.mode,'environment':a.stage,'namespace':observation['namespace'],'node_name':'dev-k3s-v5','node_uid':a.node_uid,'cluster_uid':a.cluster_uid,'candidate_sha':a.gitops_sha,'platform_sha':a.platform_sha,'owner_sha':owner_sha,'manifest_sha256':observation['manifest_sha256'],'wait_seconds':900}
@@ -232,6 +246,7 @@ def main():
  for name in ('cmdb','gitops-root','receipt','candidate-receipt'):p.add_argument('--'+name,required=True,type=Path)
  p.add_argument('--seed-receipt',type=Path);p.add_argument('--seed-sha256');p.add_argument('--prepare-receipt',type=Path);p.add_argument('--prepare-sha256')
  p.add_argument('--target-observation',type=Path)
+ p.add_argument('--dns-receipts',type=Path)
  execute(p.parse_args())
 if __name__=='__main__':
  try:main()
