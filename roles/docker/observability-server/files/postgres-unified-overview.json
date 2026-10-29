@@ -32,16 +32,16 @@
   "panels": [
     {
       "type": "row",
-      "title": "Health and transactions",
+      "title": "Summary",
       "collapsed": false,
+      "panels": [],
+      "id": 1,
       "gridPos": {
         "x": 0,
         "y": 0,
         "w": 24,
         "h": 1
-      },
-      "panels": [],
-      "id": 1
+      }
     },
     {
       "datasource": {
@@ -435,16 +435,16 @@
     },
     {
       "type": "row",
-      "title": "Connections and capacity",
+      "title": "Detailed metrics",
       "collapsed": false,
+      "panels": [],
+      "id": 8,
       "gridPos": {
         "x": 0,
         "y": 6,
         "w": 24,
         "h": 1
-      },
-      "panels": [],
-      "id": 8
+      }
     },
     {
       "datasource": {
@@ -465,7 +465,7 @@
         "x": 0,
         "y": 7,
         "w": 12,
-        "h": 8
+        "h": 10
       },
       "id": 9,
       "title": "Active Backends per Database",
@@ -501,7 +501,7 @@
         "x": 12,
         "y": 7,
         "w": 12,
-        "h": 8
+        "h": 10
       },
       "id": 10,
       "title": "Database Disk Size",
@@ -518,19 +518,6 @@
         }
       ],
       "description": "Requires pg_database_size_bytes from the exporter; absent series remain No data."
-    },
-    {
-      "type": "row",
-      "title": "Database activity",
-      "collapsed": false,
-      "gridPos": {
-        "x": 0,
-        "y": 15,
-        "w": 24,
-        "h": 1
-      },
-      "panels": [],
-      "id": 11
     },
     {
       "datasource": {
@@ -591,11 +578,11 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 16,
+        "y": 17,
         "w": 12,
-        "h": 8
+        "h": 10
       },
-      "id": 12,
+      "id": 11,
       "links": [],
       "options": {
         "legend": {
@@ -981,11 +968,11 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 16,
+        "y": 17,
         "w": 12,
-        "h": 8
+        "h": 10
       },
-      "id": 13,
+      "id": 12,
       "links": [],
       "options": {
         "legend": {
@@ -1179,11 +1166,11 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 27,
         "w": 12,
-        "h": 8
+        "h": 10
       },
-      "id": 14,
+      "id": 13,
       "links": [],
       "options": {
         "legend": {
@@ -1273,11 +1260,11 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 24,
+        "y": 27,
         "w": 12,
-        "h": 8
+        "h": 10
       },
-      "id": 15,
+      "id": 14,
       "links": [],
       "options": {
         "legend": {
@@ -1581,6 +1568,201 @@
       "title": "Buffers (instance-wide)",
       "type": "timeseries",
       "description": "Instance-wide; database selection does not apply. PostgreSQL 17 removes several legacy bgwriter metrics. Checkpointer metrics require the optional collector."
+    },
+    {
+      "type": "row",
+      "title": "Heatmaps",
+      "collapsed": false,
+      "panels": [],
+      "id": 15,
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "description": "Distribution of observed backend counts across selected database and instance series in each time bucket. Color represents sample count, not query latency or connection events.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 12,
+        "h": 10
+      },
+      "id": 16,
+      "options": {
+        "calculate": true,
+        "calculation": {
+          "xBuckets": {
+            "mode": "count",
+            "value": "60"
+          },
+          "yBuckets": {
+            "mode": "count",
+            "value": "20"
+          }
+        },
+        "cellGap": 1,
+        "cellValues": {
+          "unit": ""
+        },
+        "color": {
+          "exponent": 0.5,
+          "fill": "dark-orange",
+          "mode": "scheme",
+          "reverse": false,
+          "scale": "exponential",
+          "scheme": "Spectral",
+          "steps": 64
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "legend": {
+          "show": true
+        },
+        "rowsFrame": {
+          "layout": "auto"
+        },
+        "tooltip": {
+          "mode": "single",
+          "showColorScale": false,
+          "yHistogram": false
+        },
+        "yAxis": {
+          "axisPlacement": "left",
+          "reverse": false,
+          "unit": "short"
+        }
+      },
+      "pluginVersion": "11.5.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "pg_stat_database_numbackends{environment=~\"${environment:regex}\",environment!=\"\", cluster=~\"${cluster:regex}\",cluster!=\"\", service=~\"${service:regex}\",service!=\"\", instance=~\"${instance:regex}\",instance!=\"\", datname=~\"${datname:regex}\",datname!=\"\"}",
+          "legendFormat": "{{datname}} ({{instance}})",
+          "refId": "A",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Connections distribution over time",
+      "type": "heatmap"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "description": "Distribution of observed database sizes across selected database and instance series in each time bucket. Color represents sample count, not capacity limits.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 38,
+        "w": 12,
+        "h": 10
+      },
+      "id": 17,
+      "options": {
+        "calculate": true,
+        "calculation": {
+          "xBuckets": {
+            "mode": "count",
+            "value": "60"
+          },
+          "yBuckets": {
+            "mode": "count",
+            "value": "20"
+          }
+        },
+        "cellGap": 1,
+        "cellValues": {
+          "unit": ""
+        },
+        "color": {
+          "exponent": 0.5,
+          "fill": "dark-orange",
+          "mode": "scheme",
+          "reverse": false,
+          "scale": "exponential",
+          "scheme": "Spectral",
+          "steps": 64
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "legend": {
+          "show": true
+        },
+        "rowsFrame": {
+          "layout": "auto"
+        },
+        "tooltip": {
+          "mode": "single",
+          "showColorScale": false,
+          "yHistogram": false
+        },
+        "yAxis": {
+          "axisPlacement": "left",
+          "reverse": false,
+          "unit": "bytes"
+        }
+      },
+      "pluginVersion": "11.5.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "expr": "pg_database_size_bytes{environment=~\"${environment:regex}\",environment!=\"\", cluster=~\"${cluster:regex}\",cluster!=\"\", service=~\"${service:regex}\",service!=\"\", instance=~\"${instance:regex}\",instance!=\"\", datname=~\"${datname:regex}\",datname!=\"\"}",
+          "legendFormat": "{{datname}} ({{instance}})",
+          "refId": "A",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "title": "Database size distribution over time",
+      "type": "heatmap"
     }
   ],
   "refresh": false,

@@ -49,6 +49,19 @@ class UnifiedPostgresDashboardTest(unittest.TestCase):
                         self.assertNotIn('datname=', selector)
         self.assertTrue({'pg_up', 'pg_database_size_bytes', 'pg_stat_database_xact_commit', 'pg_stat_database_xact_rollback', 'pg_stat_database_deadlocks', 'pg_stat_database_tup_fetched', 'pg_stat_checkpointer_buffers_written_total'} <= seen)
 
+    def test_caddy_style_sections_and_real_metric_heatmaps(self):
+        panels = self.dashboard['panels']
+        self.assertEqual([p['title'] for p in panels if p['type'] == 'row'],
+                         ['Summary', 'Detailed metrics', 'Heatmaps'])
+        heatmaps = [p for p in panels if p['type'] == 'heatmap']
+        self.assertEqual(len(heatmaps), 2)
+        for panel, metric in zip(heatmaps, ['pg_stat_database_numbackends', 'pg_database_size_bytes']):
+            self.assertTrue(panel['options']['calculate'])
+            self.assertIn(metric, panel['targets'][0]['expr'])
+            self.assertEqual(panel['targets'][0]['format'], 'time_series')
+            self.assertIn('sample count', panel['description'])
+        self.assertEqual(len([p for p in panels if p['type'] == 'stat']), 6)
+
     def test_layout_has_no_overlaps(self):
         cells = set()
         for panel in self.dashboard['panels']:
