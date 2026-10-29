@@ -18,11 +18,23 @@ def jwt(subject=SPEC.subject,audience=SPEC.audience):
 
 class Fake:
     def __init__(self):
-        self.calls=[];self.mounts={};self.policy_status=404;self.scoped_policies=[SPEC.policy];self.denied_status=403;self.bad_login_status=400
+        self.calls=[];self.mounts={};self.policies={};self.configs={};self.roles={};self.scoped_policies=[SPEC.policy];self.denied_status=403;self.bad_login_status=400
     def request(self,method,path,body=None,read_json=True):
         self.calls.append((method,path,body,read_json))
         if path=='sys/auth' and method=='GET':return 200,{'data':self.mounts}
-        if path.startswith('sys/policies/acl/') and method=='GET':return self.policy_status,None
+        if path.startswith('sys/policies/acl/'):
+            if method=='GET':return (404,None) if path not in self.policies else (200,{'data':{'policy':self.policies[path]}})
+            if method=='PUT':self.policies[path]=body['policy'];return 204,None
+        if path.startswith('sys/auth/') and method=='POST':
+            mount=path.removeprefix('sys/auth/')+'/'
+            self.mounts[mount]={'type':'jwt'};self.configs[mount]={'bound_issuer':'','jwt_validation_pubkeys':[]};return 204,None
+        if path.startswith('auth/') and path.endswith('/config'):
+            mount=path.removeprefix('auth/').removesuffix('/config')+'/'
+            if method=='GET':return 200,{'data':self.configs.get(mount,{'bound_issuer':'','jwt_validation_pubkeys':[]})}
+            if method=='POST':self.configs[mount]=body;return 204,None
+        if path.startswith('auth/') and '/role/' in path:
+            if method=='GET':return (404,None) if path not in self.roles else (200,{'data':self.roles[path]})
+            if method=='POST':self.roles[path]=body;return 204,None
         if path.endswith('/login'):
             if body['jwt']==jwt():return 200,{'auth':{'client_token':'test-only','policies':self.scoped_policies}}
             return self.bad_login_status,None
@@ -39,8 +51,10 @@ class Contract(unittest.TestCase):
         self.assertEqual(writes[-1][2],SPEC.role_config);self.assertEqual(writes[0][2]['policy'],SPEC.policy_hcl)
 
     def test_existing_state_causes_no_write(self):
-        for attr,value in [('mounts',{SPEC.mount+'/':{}}),('policy_status',200),('policy_status',403)]:
-            c=Fake();setattr(c,attr,value)
+        for kind in ('mount','policy'):
+            c=Fake()
+            if kind=='mount':c.mounts[SPEC.mount+'/']={'type':'kv'}
+            else:c.policies['sys/policies/acl/'+SPEC.policy]='path "wrong" {}'
             with self.assertRaises(v.VaultError):v.provision(c,SPEC,ISSUER,['key'])
             self.assertFalse(any(method!='GET' for method,_,_,_ in c.calls))
 
@@ -71,5 +85,11 @@ class Contract(unittest.TestCase):
         c=Fake();v.provision(c,other,ISSUER,['key'])
         self.assertEqual(c.calls[-1][1],'auth/jwt-test-two/role/reader-two')
         self.assertEqual(c.calls[-1][2]['bound_subject'],'system:serviceaccount:another-ns:another-sa')
+
+    def test_exact_policy_partial_state_continues_before_mount_creation(self):
+        c=Fake();c.policies['sys/policies/acl/'+SPEC.policy]=SPEC.policy_hcl
+        v.provision(c,SPEC,ISSUER,['public-key'])
+        self.assertEqual([x[1] for x in c.calls if x[0]!='GET'],[
+            'sys/auth/'+SPEC.mount,'auth/'+SPEC.mount+'/config','auth/'+SPEC.mount+'/role/'+SPEC.role])
 
 if __name__=='__main__':unittest.main()
