@@ -64,14 +64,36 @@ def main():
     config=build_config(yaml.safe_load(operation.read_text()),json.loads(cmdb_raw),receipt,a.known_hosts,a.mode)
     require(os.environ.get('VAULT_ADDR')==config['vault_address'])
     fd=os.open(a.receipt,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.close(fd)
+    failure_path=a.receipt+'.failure'
     run_env={**env,'WORKLOAD_IDENTITY_CONFIG':json.dumps(config),'WORKLOAD_IDENTITY_RESULT':a.receipt,
+             'WORKLOAD_IDENTITY_FAILURE':failure_path,
              'ANSIBLE_ROLES_PATH':str(ROOT/'roles'),'VAULT_TOKEN':os.environ.get('VAULT_TOKEN','')}
-    subprocess.run(['ansible-playbook','-i','localhost,',str(ROOT/'vault_jwt_workload_identity.yml')],env=run_env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    result_run=subprocess.run(['ansible-playbook','-i','localhost,',str(ROOT/'vault_jwt_workload_identity.yml')],
+                              env=run_env,check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    if result_run.returncode:
+        stage='owner_execution'
+        try:
+            failure=json.loads(Path(failure_path).read_text())
+            allowed={'cluster_identity','administrator_scope','workload_login_and_path_checks','vault_provision','input_validation'}
+            if failure.get('result')=='FAILED' and failure.get('stage') in allowed:
+                stage=failure['stage']
+        except (OSError,ValueError,TypeError):
+            pass
+        Path(a.receipt).write_text(json.dumps({'result':'FAILED','stage':stage},sort_keys=True)+'\n')
+        raise RuntimeError('workload identity owner failed at stage='+stage)
     result=json.loads(Path(a.receipt).read_text());result.update({'gitops_sha':a.gitops_sha,'bootstrap_sha256':hashlib.sha256(raw).hexdigest(),'operation_path':a.operation_path})
     Path(a.receipt).write_text(json.dumps(result,sort_keys=True)+'\n');print(result['result'])
 
 
 if __name__=='__main__':
     try:main()
+    except RuntimeError as exc:
+        message=str(exc)
+        stages={'owner_execution','cluster_identity','administrator_scope','workload_login_and_path_checks','vault_provision','input_validation'}
+        stage=message.rsplit('stage=',1)[-1]
+        if stage not in stages: stage='input_validation'
+        print('workload_identity_owner_failure stage='+stage,file=sys.stderr)
+        raise SystemExit('workload identity owner failed; consult redacted evidence') from None
     except (OSError,ValueError,KeyError,TypeError,VaultError,subprocess.SubprocessError):
+        print('workload_identity_owner_failure stage=input_validation',file=sys.stderr)
         raise SystemExit('workload identity owner failed; consult redacted evidence') from None
