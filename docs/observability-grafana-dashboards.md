@@ -21,6 +21,7 @@ copies by hand.
 | `dashboard.json` | `begqoward2epsf` | Xray Dashboard |
 | `homepage-navigation.json` | `homepage-navigation` | 平台导航与总览 (Navigation Homepage) |
 | `k6-performance-capacity-dashboard.json` | `k6-performance-capacity-overview` | k6 Performance & Capacity Stress Test Dashboard |
+| `postgres-community-overview.json` | `postgres-community-overview` | PostgreSQL Community Overview |
 | `postgres-exporter-dashboard.json` | `postgres-exporter-overview` | PostgreSQL Database Overview |
 | `process-exporter-dashboard-with-treemap.json` | `process-exporter-with-tree` | process exporter dashboard with treemap |
 | `serverless-edge-cloudrun-supabase-dashboard.json` | `serverless-fullstack-architecture` | 全栈无服务器与边缘架构总览 (Serverless & Edge Full-Stack Topology) |
@@ -52,3 +53,55 @@ workflow verifies these UIDs/titles after deployment; it does not copy these
 runtime drifted files back into Git.
 
 The Caddy dashboard uses the `VictoriaMetrics` Prometheus-compatible datasource by default. It requires Caddy native metrics to be scraped and delivered to that VictoriaMetrics instance with `job` and `instance` labels. DataKit delivery to Guance alone does not populate this datasource.
+
+## PostgreSQL community overview
+
+`postgres-community-overview.json` adapts the official
+[prometheus-community postgres_exporter dashboard](https://github.com/prometheus-community/postgres_exporter/blob/281cf032091aaaffded97f7df29b8ab29be051bd/postgres_mixin/dashboards/postgres-overview.json)
+at commit `281cf032091aaaffded97f7df29b8ab29be051bd`. It is distributed
+under [Apache License 2.0](licenses/prometheus-community-postgres-exporter-APACHE-2.0.txt).
+Changes: distinct UID/title, datasource and cascading selectors, strict
+nonempty label filters, instance-scope clarification, and a PG17 checkpointer
+series. The original dashboard layout and existing dashboard remain available.
+
+The datasource must contain `pg_stat_database_numbackends` with nonempty
+`environment`, `cluster`, `service`, `instance` and `datname` labels. Every
+metric used must carry the first four labels; database metrics also require
+`datname`. Missing labels deliberately produce no data. Database selections
+apply to database metrics; bgwriter and checkpointer are PostgreSQL instance
+metrics without a database dimension, so the Buffers panel remains scoped to
+the selected instances and does not claim per-database attribution. The TPS
+panel inherits the upstream calculation of transaction commits plus rollbacks,
+not SQL statement throughput.
+
+For PostgreSQL 17, upstream's bgwriter collector no longer emits
+`buffers_checkpoint`, `buffers_backend`, or `buffers_backend_fsync`: those
+legacy series may be absent. The replacement checkpointer buffers series
+requires the exporter `stat_checkpointer` collector, disabled by default. Its
+availability depends on the deployed exporter version, collector configuration,
+permissions, and actual ingestion; the dashboard alone does not enable it or
+prove live data. Upstream documents PostgreSQL 17 in its CI matrix. Validate
+actual series and panel results for each deployed version before acceptance.
+
+### Online query verification status
+
+User-provided observation: PostgreSQL 17.11 with postgres_exporter 0.17.1 has data for `buffers_alloc` and `buffers_clean`, and lacks the three legacy checkpoint/backend/backend_fsync series. This is metric-level evidence, not execution of the adapted PromQL. No online query endpoint or scoped access was supplied in this task; each expression below remains unverified online. `No data` is not zero.
+
+| Panel | Ref | Online result |
+| --- | --- | --- |
+| TPS | A | Not executed |
+| Rows | A | Not executed |
+| Rows | B | Not executed |
+| Rows | C | Not executed |
+| Rows | D | Not executed |
+| Rows | E | Not executed |
+| Buffers (instance-wide) | A | Not executed |
+| Buffers (instance-wide) | B | Not executed |
+| Buffers (instance-wide) | C | Not executed |
+| Buffers (instance-wide) | D | Not executed |
+| Buffers (instance-wide) | E | Not executed |
+| Buffers (instance-wide) | F | Not executed |
+| Conflicts/Deadlocks | A | Not executed |
+| Conflicts/Deadlocks | B | Not executed |
+| Cache hit ratio | A | Not executed |
+| Number of active connections | A | Not executed |
