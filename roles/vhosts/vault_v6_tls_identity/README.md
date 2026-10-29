@@ -33,3 +33,11 @@ three real short-lived TokenRequest JWTs from the authenticated target cluster,
 verify the node and cluster UID against a trusted receipt, bind the fetched issuer
 and signing keys, use an approved short-lived administrative identity, and emit a
 redacted receipt. Unit tests of the contract do not establish live Vault access.
+
+`files/cluster_identity.py` is a separate in-memory collector. It checks the
+cluster UID, the unique expected node UID/name/version and node readiness against
+inputs from the verified bootstrap receipt before reading API discovery or creating
+three short-lived TokenRequests. It then returns the issuer, public key set and
+JWTs to an in-process caller. Kubectl error output and returned tokens must not be
+logged. The caller must still establish the authenticated private connection and
+verify receipt provenance; locally supplied UIDs alone do not establish trust.
