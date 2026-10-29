@@ -279,3 +279,31 @@ def test_seed_admin_refuses_stale_and_recreated_namespace(monkeypatch):
     with pytest.raises(module.Blocked, match='namespace UID'):
         owner.seed_admin()
     assert writes == []  # Stale input is rejected before any second Secret write.
+
+
+def test_tagged_seed_preflight_uses_independent_web_saas_ingress(monkeypatch):
+    import sys, types
+    monkeypatch.setitem(sys.modules, 'contracts', c)
+    calls = []
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: calls.append(args), failure_code=scope.failure_code))
+    spec = importlib.util.spec_from_file_location('independent_tagged_seed', P.parent / 'seed.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, 'target', lambda *args: None)
+    monkeypatch.setattr(module.Owner, 'check_namespace', lambda self: None)
+    seen = []
+    def k(self, *args):
+        seen.append(args)
+        if args == ('get', 'nodes'):
+            return {'items': [{'metadata': {'uid': 'node', 'labels': {'kubernetes.io/arch': 'amd64'}}}]}
+        if args == ('get', 'namespace', 'kube-system'):
+            return {'metadata': {'uid': 'cluster'}}
+        return {'name': args[-1]}
+    monkeypatch.setattr(module.Owner, 'k', k)
+    module.Owner({'stage': 'sit', 'namespace': 'feature-sit-test-1483-sit',
+                  'tagged_lane': {'feature_id': 'sit-test-1483'}, 'candidate_sha': 'a' * 40,
+                  'instance_id': '123', 'node_uid': 'node', 'cluster_uid': 'cluster', 'namespace_uid': 'namespace'})
+    assert ('-n', 'flux-system', 'get', 'gitrepository', 'platform-config-dev') in seen
+    assert ('-n', 'flux-system', 'get', 'kustomization', 'platform-ingress-dev') in seen
+    assert ('-n', 'flux-system', 'get', 'kustomization', 'platform-root') not in seen
+    assert len(calls) == 1
