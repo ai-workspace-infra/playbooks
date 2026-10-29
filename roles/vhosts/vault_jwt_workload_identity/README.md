@@ -1,12 +1,21 @@
 # Vault JWT workload identity
 
 This reusable role creates a dedicated Vault JWT authentication mount and
-single-path read policy or verifies a workload's allowed and denied access. It
-accepts explicit target and identity parameters and has no cluster-generation,
-namespace, audience, Vault endpoint or Kubernetes version defaults. The caller
-must validate CMDB, node identity, host-key attestation and receipt provenance.
+single-path read policy, verifies a workload's allowed and denied access, or
+releases one reviewed V6 Flux stage. It accepts explicit target and identity
+parameters and has no cluster-generation, namespace, audience, Vault endpoint or
+Kubernetes version defaults. The caller must validate CMDB, node identity,
+host-key attestation and receipt provenance.
 
-`vault_jwt_workload_identity_mode` is `configure` or `verify` (default). The
+`vault_jwt_workload_identity_mode` is `configure`, `verify`, `release-root`,
+`release-eso`, or `release-identity` (default `verify`). Release modes require
+the pinned GitOps checkout and immutable tag. They apply only the declared V6
+management source and root, then wait for the exact gate set in that release.
+The root stage keeps every child paused; the ESO stage enables only ESO; the
+identity stage additionally enables the Vault TLS reader ServiceAccount gate.
+Later stages are intentionally not inferred or enabled by these modes.
+
+The
 `vault_jwt_workload_identity_config` mapping supplies `host`, `ssh_user`, `known_hosts`,
 `cluster_uid`, `node_uid`, `node_name`, `expected_version`, `vault_address`,
 `admin_policy` for configure, and `identity`: mount, role, policy, namespace,
@@ -24,4 +33,6 @@ suppressed and the result fact contains only redacted status and cluster IDs.
 
 The caller owns staged rollout, access to the authenticated Vault endpoint,
 artifact and key attestation, revocation/rollback, and interpretation of a
-partial configure failure. This role changes no DNS, database, or Flux release.
+partial configure failure. Flux release modes do not change DNS, database
+state, business writers, or service HelmReleases outside the explicitly allowed
+V6 gate set.
