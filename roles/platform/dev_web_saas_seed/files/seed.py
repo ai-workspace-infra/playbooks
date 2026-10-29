@@ -336,13 +336,13 @@ END IF; END $$;
             self.job('native-init', accounts_image, ['/usr/local/bin/migratectl','init',
                 '--environment',self.r['stage'],'--dsn-env','NATIVE_TARGET_DSN',
                 '--schema-sha256',schema_sha,'--writers-paused','--dry-run=false'], env, wait_postgres=pg_image)
-        self.psql('BEGIN; SET LOCAL ROLE xc_schema_owner;\n' + billing.decode() + '\n' + grants(tables, expected_count=inputs['business_table_count'] if inputs else 77) + '\nCOMMIT;')
+        self.psql('BEGIN; SET LOCAL ROLE xc_schema_owner;\n' + billing.decode() + '\n' + grants(tables, expected_count=inputs['business_table_count'] if inputs else 77, tagged=bool(tagged)) + '\nCOMMIT;')
         actual = set(self.psql("SELECT tablename FROM pg_tables WHERE schemaname='public';").split())
         if actual != set(tables) | {'schema_migrations','cloud_vendor_costs'}:
             raise Blocked('unexpected initialized table set')
         if self.psql("SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.prosecdef;").strip() != '0':
             raise Blocked('unexpected SECURITY DEFINER function requires review')
-        self.psql('SET ROLE xc_schema_owner;\n' + audit_grants())
+        self.psql('SET ROLE xc_schema_owner;\n' + audit_grants(tagged=bool(tagged)))
         # Probe via actual authenticated TCP identities. No administrator SET ROLE
         # substitutes for these connections. Every probe transaction rolls back.
         for role, key, dml in (
@@ -351,7 +351,7 @@ END IF; END $$;
             ('xc_billing_rw', 'BILLING_PASSWORD',
              "BEGIN; INSERT INTO public.billing_source_sync_state(source_id) VALUES ('seed_probe'); UPDATE public.billing_source_sync_state SET last_error='' WHERE source_id='seed_probe'; SELECT source_id FROM public.billing_source_sync_state WHERE source_id='seed_probe'; ROLLBACK;"),
             ('xc_lane_audit','AUDIT_PASSWORD',
-             'SELECT version, dirty FROM public.dev_lane_schema_status;')):
+             'SELECT version, dirty FROM ' + ('lane_audit' if tagged else 'public') + '.dev_lane_schema_status;')):
             probe_env = [{'name': 'PGPASSWORD', 'valueFrom': {'secretKeyRef': {
                 'name': 'web-saas-db-probe', 'key': key}}},
                 {'name':'PGHOST','value':host}, {'name':'PGPORT','value':'5432'},
