@@ -1,0 +1,44 @@
+name: Feature SIT baseline inputs 1483
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Read dedicated GHCR pull identity
+        id: registry
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4
+        with:
+          url: https://vault.svc.plus
+          method: jwt
+          role: github-actions-feature-baseline-ghcr-read-sit
+          jwtGithubAudience: vault
+          exportEnv: false
+          secrets: |
+            kv/data/sit/platform/ghcr/feature-baseline username | FEATURE_GHCR_USERNAME ;
+            kv/data/sit/platform/ghcr/feature-baseline token | FEATURE_GHCR_TOKEN
+      - name: Verify fixed sources and isolated image schema
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEATURE_GHCR_USERNAME: ${{ steps.registry.outputs.FEATURE_GHCR_USERNAME }}
+          FEATURE_GHCR_TOKEN: ${{ steps.registry.outputs.FEATURE_GHCR_TOKEN }}
+        run: python3 scripts/produce_feature_baseline_1483.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: feature-baseline-1483-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/feature-baseline-1483.json
+          if-no-files-found: error
+          retention-days: 30

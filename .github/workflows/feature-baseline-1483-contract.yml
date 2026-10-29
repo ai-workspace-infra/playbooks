@@ -1,0 +1,24 @@
+name: Feature SIT baseline input contracts
+on:
+  pull_request:
+    paths:
+      - 'scripts/dev_feature_baseline_inputs.py'
+      - 'scripts/produce_feature_baseline_1483.py'
+      - 'scripts/docker-credential-feature-baseline'
+      - 'tests/test_feature_baseline_credential_helper.py'
+      - 'tests/test_dev_feature_baseline_inputs.py'
+      - 'tests/test_feature_baseline_1483_producer.py'
+      - '.github/workflows/feature-baseline-1483*.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tests -p test_dev_feature_baseline_inputs.py
+      - run: python -m unittest discover -s tests -p test_feature_baseline_1483_producer.py
+      - run: python -m unittest discover -s tests -p test_feature_baseline_credential_helper.py
