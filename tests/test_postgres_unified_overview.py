@@ -78,15 +78,26 @@ class UnifiedPostgresDashboardTest(unittest.TestCase):
     def test_caddy_style_sections_and_real_metric_heatmaps(self):
         panels = self.dashboard['panels']
         self.assertEqual([p['title'] for p in panels if p['type'] == 'row'],
-                         ['Summary', 'Detailed metrics', 'Heatmaps'])
+                         ['概览', '详细指标', '热力图'])
         heatmaps = [p for p in panels if p['type'] == 'heatmap']
         self.assertEqual(len(heatmaps), 2)
         for panel, metric in zip(heatmaps, ['pg_stat_database_numbackends', 'pg_database_size_bytes']):
             self.assertTrue(panel['options']['calculate'])
             self.assertIn(metric, panel['targets'][0]['expr'])
             self.assertEqual(panel['targets'][0]['format'], 'time_series')
-            self.assertIn('sample count', panel['description'])
+            self.assertIn('样本数量', panel['description'])
+            self.assertIn('不是请求延迟分布', panel['description'])
         self.assertEqual(len([p for p in panels if p['type'] == 'stat']), 6)
+
+    def test_chinese_labels_and_instance_buffer_description(self):
+        variables = self.dashboard['templating']['list']
+        self.assertEqual([v['label'] for v in variables],
+                         ['数据源', '环境', '集群', '服务', '实例', '数据库'])
+        panels = self.dashboard['panels']
+        self.assertTrue(all(p.get('description') for p in panels if p['type'] != 'row'))
+        buffers = next(p for p in panels if p['id'] == 14)
+        for text in ('实例级', 'PostgreSQL 17', '缺失不等于 0'):
+            self.assertIn(text, buffers['description'])
 
     def test_layout_has_no_overlaps(self):
         cells = set()

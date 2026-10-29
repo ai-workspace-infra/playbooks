@@ -21,7 +21,7 @@
       }
     ]
   },
-  "description": "PostgreSQL exporter overview. Missing metrics remain No data. Instance-wide panels are not filtered by database; metric availability depends on exporter configuration and PostgreSQL version.",
+  "description": "PostgreSQL exporter 监控概览。缺失的指标显示为无数据；实例级面板不受数据库筛选影响，指标可用性取决于 exporter 配置和 PostgreSQL 版本。",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "gnetId": null,
@@ -32,7 +32,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "Summary",
+      "title": "概览",
       "collapsed": false,
       "panels": [],
       "id": 1,
@@ -87,7 +87,7 @@
           ]
         }
       },
-      "title": "PostgreSQL availability (pg_up)",
+      "title": "PostgreSQL 可用性 (pg_up)",
       "type": "stat",
       "targets": [
         {
@@ -100,7 +100,7 @@
           "refId": "A"
         }
       ],
-      "description": "Exporter connection status per selected instance. Database selection does not apply."
+      "description": "所选实例的 exporter 数据库连接状态；不受数据库筛选影响。"
     },
     {
       "datasource": {
@@ -146,7 +146,7 @@
           ]
         }
       },
-      "title": "Active Backends / Connections",
+      "title": "活跃后端连接数",
       "type": "stat",
       "targets": [
         {
@@ -158,7 +158,8 @@
           "legendFormat": "Connections",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "所选数据库的后端连接数总和。"
     },
     {
       "datasource": {
@@ -204,7 +205,7 @@
           ]
         }
       },
-      "title": "Cache Hit Ratio",
+      "title": "缓存命中率",
       "type": "stat",
       "targets": [
         {
@@ -216,7 +217,8 @@
           "legendFormat": "Hit Ratio",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "所选数据库缓存命中次数占缓存命中与磁盘读取总次数的比例。"
     },
     {
       "datasource": {
@@ -245,7 +247,7 @@
           ]
         }
       },
-      "title": "Transactions Committed / sec",
+      "title": "每秒提交事务数",
       "type": "stat",
       "targets": [
         {
@@ -257,7 +259,8 @@
           "legendFormat": "Commits/s",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "所选数据库每秒提交事务的速率总和。"
     },
     {
       "datasource": {
@@ -299,7 +302,7 @@
           ]
         }
       },
-      "title": "Transactions Rollback / sec",
+      "title": "每秒回滚事务数",
       "type": "stat",
       "targets": [
         {
@@ -311,7 +314,8 @@
           "legendFormat": "Rollbacks/s",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "所选数据库每秒回滚事务的速率总和。"
     },
     {
       "datasource": {
@@ -429,13 +433,13 @@
           ]
         }
       ],
-      "title": "TPS",
+      "title": "每秒事务数 (TPS)",
       "type": "stat",
-      "description": "Transactions per second: commits plus rollbacks."
+      "description": "每秒提交与回滚事务的速率之和。"
     },
     {
       "type": "row",
-      "title": "Detailed metrics",
+      "title": "详细指标",
       "collapsed": false,
       "panels": [],
       "id": 8,
@@ -468,7 +472,7 @@
         "h": 10
       },
       "id": 9,
-      "title": "Active Backends per Database",
+      "title": "各数据库活跃后端连接数",
       "type": "timeseries",
       "targets": [
         {
@@ -480,7 +484,8 @@
           "legendFormat": "{{datname}} ({{instance}})",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "按数据库和实例展示当前后端连接数。"
     },
     {
       "datasource": {
@@ -504,7 +509,7 @@
         "h": 10
       },
       "id": 10,
-      "title": "Database Disk Size",
+      "title": "数据库磁盘大小",
       "type": "timeseries",
       "targets": [
         {
@@ -517,7 +522,7 @@
           "refId": "A"
         }
       ],
-      "description": "Requires pg_database_size_bytes from the exporter; absent series remain No data."
+      "description": "按数据库和实例展示数据库大小；依赖 exporter 提供 pg_database_size_bytes，缺失时显示无数据。"
     },
     {
       "datasource": {
@@ -888,8 +893,9 @@
           ]
         }
       ],
-      "title": "Rows",
-      "type": "timeseries"
+      "title": "数据行操作速率",
+      "type": "timeseries",
+      "description": "展示所选数据库读取、返回、插入、更新和删除的数据行每秒速率。"
     },
     {
       "datasource": {
@@ -1102,8 +1108,9 @@
           ]
         }
       ],
-      "title": "Conflicts/Deadlocks",
-      "type": "timeseries"
+      "title": "冲突与死锁",
+      "type": "timeseries",
+      "description": "展示所选数据库冲突和死锁的累计计数总和。"
     },
     {
       "datasource": {
@@ -1197,8 +1204,9 @@
           "step": 240
         }
       ],
-      "title": "Cache hit ratio",
-      "type": "timeseries"
+      "title": "各数据库缓存命中率",
+      "type": "timeseries",
+      "description": "按数据库展示缓存命中率。"
     },
     {
       "datasource": {
@@ -1565,13 +1573,13 @@
           "legendFormat": "Checkpointer buffers written (PG17+, optional collector)"
         }
       ],
-      "title": "Buffers (instance-wide)",
+      "title": "缓冲区（实例级）",
       "type": "timeseries",
-      "description": "Instance-wide; database selection does not apply. PostgreSQL 17 removes several legacy bgwriter metrics. Checkpointer metrics require the optional collector."
+      "description": "实例级指标，不受数据库筛选影响。PostgreSQL 17 移除了部分旧版 bgwriter 指标；checkpointer 指标需要可选采集器。指标缺失不等于 0。"
     },
     {
       "type": "row",
-      "title": "Heatmaps",
+      "title": "热力图",
       "collapsed": false,
       "panels": [],
       "id": 15,
@@ -1587,7 +1595,7 @@
         "type": "prometheus",
         "uid": "$datasource"
       },
-      "description": "Distribution of observed backend counts across selected database and instance series in each time bucket. Color represents sample count, not query latency or connection events.",
+      "description": "每个时间桶内，所选数据库和实例的后端连接数样本分布；颜色表示样本数量，不是请求延迟分布，也不是连接事件数。",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1670,7 +1678,7 @@
           "range": true
         }
       ],
-      "title": "Connections distribution over time",
+      "title": "连接数样本随时间的分布",
       "type": "heatmap"
     },
     {
@@ -1678,7 +1686,7 @@
         "type": "prometheus",
         "uid": "$datasource"
       },
-      "description": "Distribution of observed database sizes across selected database and instance series in each time bucket. Color represents sample count, not capacity limits.",
+      "description": "每个时间桶内，所选数据库和实例的数据库大小样本分布；颜色表示样本数量，不是请求延迟分布，也不是容量上限。",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1761,7 +1769,7 @@
           "range": true
         }
       ],
-      "title": "Database size distribution over time",
+      "title": "数据库大小样本随时间的分布",
       "type": "heatmap"
     }
   ],
@@ -1776,7 +1784,7 @@
     "list": [
       {
         "name": "datasource",
-        "label": "Datasource",
+        "label": "数据源",
         "type": "datasource",
         "query": "prometheus",
         "refresh": 1,
@@ -1785,7 +1793,7 @@
       },
       {
         "name": "environment",
-        "label": "Environment",
+        "label": "环境",
         "type": "query",
         "datasource": {
           "type": "prometheus",
@@ -1809,7 +1817,7 @@
       },
       {
         "name": "cluster",
-        "label": "Cluster",
+        "label": "集群",
         "type": "query",
         "datasource": {
           "type": "prometheus",
@@ -1833,7 +1841,7 @@
       },
       {
         "name": "service",
-        "label": "Service",
+        "label": "服务",
         "type": "query",
         "datasource": {
           "type": "prometheus",
@@ -1857,7 +1865,7 @@
       },
       {
         "name": "instance",
-        "label": "Instance",
+        "label": "实例",
         "type": "query",
         "datasource": {
           "type": "prometheus",
@@ -1881,7 +1889,7 @@
       },
       {
         "name": "datname",
-        "label": "Database",
+        "label": "数据库",
         "type": "query",
         "datasource": {
           "type": "prometheus",
@@ -1909,7 +1917,7 @@
     "from": "now-1h",
     "to": "now"
   },
-  "title": "PostgreSQL Unified Overview",
+  "title": "PostgreSQL 统一监控概览",
   "uid": "postgres-unified-overview",
   "version": 1,
   "weekStart": ""
