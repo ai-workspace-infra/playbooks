@@ -1,6 +1,13 @@
 name: Feature SIT baseline inputs 1483
 on:
   workflow_dispatch:
+    inputs:
+      baseline_profile:
+        description: Fixed reviewed baseline profile
+        type: choice
+        required: true
+        default: main
+        options: [main, pr-1483]
 permissions:
   contents: read
   actions: read
@@ -32,6 +39,7 @@ jobs:
             kv/data/sit/platform/ghcr/feature-baseline GITHUB_TOKEN | FEATURE_GHCR_TOKEN
       - name: Verify fixed sources and isolated image schema
         env:
+          BASELINE_PROFILE: ${{ inputs.baseline_profile }}
           GH_TOKEN: ${{ github.token }}
           FEATURE_GHCR_USERNAME: ${{ steps.registry.outputs.FEATURE_GHCR_USERNAME }}
           FEATURE_GHCR_TOKEN: ${{ steps.registry.outputs.FEATURE_GHCR_TOKEN }}
