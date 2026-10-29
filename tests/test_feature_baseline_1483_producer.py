@@ -40,6 +40,31 @@ class ProducerTest(unittest.TestCase):
             with self.assertRaises(ValueError): producer.check_build(self.row)
             self.run['head_sha']=self.row['sha']; self.meta['digest']='sha256:'+'0'*64
             with self.assertRaises(ValueError): producer.check_build(self.row)
+    def test_pr_baseline_requires_live_pr_and_exact_evidence(self):
+        row = dict(producer.PR_ACCOUNTS)
+        proof = {'schema':1,'evidence_kind':'github-pr-run-and-registry','repository':row['repo'],'source_sha':row['sha'],'image':row['image'],'pr':row['pr'],'base_sha':row['base'],'producer_run_id':row['build_run'],'producer_attempt':1}
+        stream=io.BytesIO()
+        with zipfile.ZipFile(stream,'w') as archive: archive.writestr('accounts-pr-image-evidence.json',json.dumps(proof))
+        raw=stream.getvalue()
+        run={'id':row['run'],'path':'.github/workflows/accounts-pr-image-evidence.yml','event':'workflow_dispatch','head_branch':'main','head_sha':row['base'],'run_attempt':1,'status':'completed','conclusion':'success','repository':{'full_name':row['repo']},'head_repository':{'full_name':row['repo']}}
+        original={'id':row['build_run'],'path':'.github/workflows/ci-pipeline.yml','event':'workflow_dispatch','head_sha':row['sha'],'run_attempt':1,'status':'completed','conclusion':'success','head_repository':{'full_name':row['repo']}}
+        meta={'id':row['artifact'],'expired':False,'name':f"{row['prefix']}-{row['run']}-1",'workflow_run':{'id':row['run'],'head_sha':row['base']},'size_in_bytes':len(raw),'digest':'sha256:'+hashlib.sha256(raw).hexdigest()}
+        pull={'state':'open','merged':False,'head':{'sha':row['sha'],'repo':{'full_name':row['repo']}},'base':{'ref':'main','sha':row['base'],'repo':{'full_name':row['repo']}}}
+        def api(path, *, binary=False):
+            if path.endswith('/zip'): return raw
+            if '/actions/artifacts/' in path: return meta
+            if path.endswith('/'+str(row['run'])): return run
+            if path.endswith('/'+str(row['build_run'])): return original
+            if '/pulls/' in path: return pull
+            if '/git/ref/heads/main' in path: return {'object':{'sha':row['base']}}
+            raise AssertionError(path)
+        with patch.object(producer,'api',side_effect=api):
+            producer.check_pr(row); producer.check_pr_build(row)
+            pull['head']['sha']='f'*40
+            with self.assertRaises(ValueError): producer.check_pr(row)
+            pull['head']['sha']=row['sha']; meta['digest']='sha256:'+'0'*64
+            with self.assertRaises(ValueError): producer.check_pr_build(row)
+
     def test_registry_token_must_be_read_packages_only_and_match_username(self):
         class Response(io.BytesIO):
             def __init__(self, scopes, login):

@@ -22,6 +22,11 @@ ACCOUNTS = {'repo': 'ai-workspace-services/accounts', 'sha': 'a88195e5532e7be60b
             'run': 40709054881, 'artifact': 12825497078,
             'image': 'ghcr.io/ai-workspace-services/accounts@sha256:2938c97dc975c82cfdf2b9874b574e2aaa6357b4bb83a5a97f5b703448041434',
             'prefix': 'accounts-main-image'}
+PR_ACCOUNTS = {'repo': 'ai-workspace-services/accounts', 'sha': '0bf29d88b3e8fc3421ef52fc35b0e26df061899e',
+               'base': '38c3a3c2e19b7d177e6cb5e019a49c1b35027e95', 'pr': 280,
+               'run': 40836607277, 'artifact': 12880199249, 'build_run': 40835969395,
+               'image': 'ghcr.io/ai-workspace-services/accounts@sha256:cf8e14f91c42aa4741013876de7e1a36d5f5c7c65323dbf3db39f0cb58f22a12',
+               'prefix': 'accounts-pr-image-evidence'}
 PHASE = 'context'
 
 BILLING = {'repo': 'ai-workspace-services/billing-service', 'sha': '86b0560e616fa85eb9abcef49c0ca52f6bb99a9b',
@@ -86,22 +91,77 @@ def check_build(row):
         raise ValueError('build manifest does not match fixed source')
 
 
-def produce(image_manifest_bytes):
-    for row in (ACCOUNTS, BILLING):
-        check_main(row)
-        check_build(row)
-    manifest = source(ACCOUNTS, 'sql/init/accounts-native.manifest.json')
-    native = source(ACCOUNTS, 'sql/init/accounts-native.sql')
+def check_pr(row):
+    pull = api(f"repos/{row['repo']}/pulls/{row['pr']}")
+    if (pull.get('state') != 'open' or pull.get('merged') is not False or
+        pull.get('head', {}).get('sha') != row['sha'] or
+        pull.get('head', {}).get('repo', {}).get('full_name') != row['repo'] or
+        pull.get('base', {}).get('ref') != 'main' or pull.get('base', {}).get('sha') != row['base'] or
+        pull.get('base', {}).get('repo', {}).get('full_name') != row['repo']):
+        raise ValueError('fixed Accounts PR moved')
+    if api(f"repos/{row['repo']}/git/ref/heads/main").get('object', {}).get('sha') != row['base']:
+        raise ValueError('Accounts Main moved')
+
+
+def check_pr_build(row):
+    repo, rid, aid = row['repo'], row['run'], row['artifact']
+    run = api(f'repos/{repo}/actions/runs/{rid}')
+    if (run.get('id') != rid or run.get('path', '').split('@')[0] != '.github/workflows/accounts-pr-image-evidence.yml' or
+        run.get('event') != 'workflow_dispatch' or run.get('head_branch') != 'main' or run.get('head_sha') != row['base'] or
+        run.get('run_attempt') != 1 or run.get('status') != 'completed' or run.get('conclusion') != 'success' or
+        run.get('repository', {}).get('full_name') != repo or run.get('head_repository', {}).get('full_name') != repo):
+        raise ValueError('PR evidence run identity mismatch')
+    meta = api(f'repos/{repo}/actions/artifacts/{aid}')
+    if (meta.get('id') != aid or meta.get('expired') is not False or meta.get('name') != f"{row['prefix']}-{rid}-1" or
+        meta.get('workflow_run', {}).get('id') != rid or meta.get('workflow_run', {}).get('head_sha') != row['base'] or
+        type(meta.get('size_in_bytes')) is not int or not 0 < meta['size_in_bytes'] <= 2_000_000):
+        raise ValueError('PR evidence artifact identity mismatch')
+    archive = api(f'repos/{repo}/actions/artifacts/{aid}/zip', binary=True)
+    if meta.get('digest') != 'sha256:' + hashlib.sha256(archive).hexdigest():
+        raise ValueError('PR evidence artifact digest mismatch')
+    with zipfile.ZipFile(io.BytesIO(archive)) as zipped:
+        entries = zipped.infolist()
+        if len(entries) != 1 or entries[0].filename != 'accounts-pr-image-evidence.json' or entries[0].file_size > 100_000:
+            raise ValueError('unexpected PR evidence archive')
+        proof = json.loads(zipped.read(entries[0]))
+    if (proof.get('schema') != 1 or proof.get('evidence_kind') != 'github-pr-run-and-registry' or
+        proof.get('repository') != repo or proof.get('source_sha') != row['sha'] or proof.get('image') != row['image'] or
+        proof.get('pr') != row['pr'] or proof.get('base_sha') != row['base'] or
+        proof.get('producer_run_id') != row['build_run'] or proof.get('producer_attempt') != 1):
+        raise ValueError('PR evidence does not match fixed source')
+    original = api(f"repos/{repo}/actions/runs/{row['build_run']}")
+    if (original.get('id') != row['build_run'] or original.get('head_sha') != row['sha'] or
+        original.get('path', '').split('@')[0] != '.github/workflows/ci-pipeline.yml' or
+        original.get('event') != 'workflow_dispatch' or original.get('run_attempt') != 1 or
+        original.get('status') != 'completed' or original.get('conclusion') != 'success' or
+        original.get('head_repository', {}).get('full_name') != repo):
+        raise ValueError('PR producer run identity mismatch')
+
+
+def produce(image_manifest_bytes, profile='main'):
+    if profile not in ('main', 'pr-1483'):
+        raise ValueError('unknown baseline profile')
+    accounts = PR_ACCOUNTS if profile == 'pr-1483' else ACCOUNTS
+    if profile == 'pr-1483':
+        check_pr(accounts); check_pr_build(accounts)
+    else:
+        check_main(accounts); check_build(accounts)
+    check_main(BILLING); check_build(BILLING)
+    manifest = source(accounts, 'sql/init/accounts-native.manifest.json')
+    native = source(accounts, 'sql/init/accounts-native.sql')
     billing = source(BILLING, 'sql/billing-service-schema.sql')
-    result = inspect(manifest, native, billing, image_manifest_bytes, accounts_sha=ACCOUNTS['sha'],
-                     billing_sha=BILLING['sha'], accounts_image=ACCOUNTS['image'])
-    for row in (ACCOUNTS, BILLING):
-        check_main(row)
+    result = inspect(manifest, native, billing, image_manifest_bytes, accounts_sha=accounts['sha'],
+                     billing_sha=BILLING['sha'], accounts_image=accounts['image'])
+    if profile == 'pr-1483':
+        check_pr(accounts)
+    else:
+        check_main(accounts)
+    check_main(BILLING)
     return {'schema': 'sit-data-baseline/v1', 'result': 'verified', 'feature_id': 'sit-test-1483',
             'namespace': 'feature-sit-test-1483-sit', 'data_baseline_sha256': result['data_baseline_sha256'],
             'inputs': result['inputs'], 'database_status': 'NOT_RUN',
             'source_builds': [{'repository': row['repo'], 'sha': row['sha'], 'run_id': row['run'],
-                               'artifact_id': row['artifact']} for row in (ACCOUNTS, BILLING)]}
+                               'artifact_id': row['artifact']} for row in (accounts, BILLING)]}
 
 
 def validate_registry_credential(username, token):
@@ -123,6 +183,10 @@ def main():
         os.environ.get('GITHUB_REF') != 'refs/heads/main' or os.environ.get('GITHUB_EVENT_NAME') != 'workflow_dispatch' or
         os.environ.get('GITHUB_WORKFLOW_REF') != 'ai-workspace-infra/playbooks/.github/workflows/feature-baseline-1483.yml@refs/heads/main'):
         raise ValueError('protected Main workflow required')
+    profile = os.environ.get('BASELINE_PROFILE', 'main')
+    if profile not in ('main', 'pr-1483'):
+        raise ValueError('unknown baseline profile')
+    accounts = PR_ACCOUNTS if profile == 'pr-1483' else ACCOUNTS
     PHASE = 'isolated-image'
     validate_registry_credential(os.environ.get('FEATURE_GHCR_USERNAME', ''), os.environ.get('FEATURE_GHCR_TOKEN', ''))
     with tempfile.TemporaryDirectory(prefix='baseline-docker-') as directory:
@@ -136,10 +200,10 @@ def main():
         image = subprocess.run(['docker', 'run', '--rm', '--pull=always', '--platform', 'linux/amd64',
                                 '--network', 'none', '--read-only', '--user', '65534:65534', '--cap-drop', 'ALL',
                                 '--security-opt', 'no-new-privileges', '--entrypoint', '/usr/local/bin/migratectl',
-                                ACCOUNTS['image'], 'native-schema'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                accounts['image'], 'native-schema'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                env=env, timeout=300, check=True).stdout
     PHASE = 'source-and-build-evidence'
-    result = produce(image)
+    result = produce(image, profile)
     PHASE = 'artifact-write'
     destination = Path(os.environ['RUNNER_TEMP']) / 'feature-baseline-1483.json'
     destination.write_text(json.dumps(result, sort_keys=True) + '\n', encoding='utf-8')
