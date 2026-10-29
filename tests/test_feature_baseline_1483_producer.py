@@ -65,6 +65,17 @@ class ProducerTest(unittest.TestCase):
             pull['head']['sha']=row['sha']; meta['digest']='sha256:'+'0'*64
             with self.assertRaises(ValueError): producer.check_pr_build(row)
 
+    def test_two_pr_profile_checks_both_open_sources_and_fixed_builds(self):
+        from unittest.mock import call
+        result={'data_baseline_sha256':'a'*64,'inputs':{'schema':'fixture'}}
+        with patch.object(producer,'check_pr') as pr, patch.object(producer,'check_pr_build') as build, \
+             patch.object(producer,'source',return_value=b'fixture'), patch.object(producer,'inspect',return_value=result):
+            report=producer.produce(b'image', 'pr-both-1483')
+        self.assertEqual(report['data_baseline_sha256'], 'a'*64)
+        self.assertEqual(pr.call_args_list,[call(producer.PR_ACCOUNTS),call(producer.PR_BILLING),call(producer.PR_ACCOUNTS),call(producer.PR_BILLING)])
+        self.assertEqual(build.call_args_list,[call(producer.PR_ACCOUNTS),call(producer.PR_BILLING)])
+        self.assertEqual([row['repository'] for row in report['source_builds']],['ai-workspace-services/accounts','ai-workspace-services/billing-service'])
+
     def test_registry_token_must_be_read_packages_only_and_match_username(self):
         class Response(io.BytesIO):
             def __init__(self, scopes, login):
