@@ -365,3 +365,96 @@ def test_native_init_waits_for_postgres_from_same_pod_network(monkeypatch):
     assert 'pg_isready' in pod['initContainers'][0]['command'][2]
     assert pod['initContainers'][0]['env'][0]['value'] == 'web-saas-postgresql.feature-sit-test-1483-sit.svc.cluster.local'
     assert pod['automountServiceAccountToken'] is False
+
+
+def test_native_continuation_requires_exact_successful_job_and_empty_business_data(monkeypatch):
+    import copy, sys, types
+    monkeypatch.setitem(sys.modules, 'contracts', c)
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None, failure_code=scope.failure_code))
+    spec = importlib.util.spec_from_file_location('native_continuation_owner', P.parent / 'seed.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    owner = module.Owner.__new__(module.Owner)
+    owner.ns = 'feature-sit-test-1483-sit'
+    image = 'ghcr.io/ai-workspace-services/accounts@sha256:'+'a'*64
+    sha = 'c'*64; uid = '1'*8+'-'+'1'*4+'-'+'1'*4+'-'+'1'*4+'-'+'1'*12
+    owner.r = {'tagged_lane': {'feature_id': 'sit-test-1483'}, 'runtime_mapping': {'images': {'accounts': {'platform_manifest_digest': 'sha256:'+'b'*64}}}}
+    cmd = ['/usr/local/bin/migratectl','init','--environment','sit','--dsn-env','NATIVE_TARGET_DSN','--schema-sha256',sha,'--writers-paused','--dry-run=false']
+    env = [{'name':'NATIVE_TARGET_DSN','valueFrom':{'secretKeyRef':{'name':'web-saas-db-ddl','key':'NATIVE_TARGET_DSN'}}}]
+    job = {'metadata': {'name':'dev-seed-native-init-1234','namespace':owner.ns,'uid':uid,'labels':{'seed-owner':module.OWNER}}, 'status': {'succeeded':1,'conditions':[{'type':'Complete','status':'True'}]}, 'spec': {'template':{'spec':{'containers':[{'image':image,'command':cmd,'env':env}]}}}}
+    pod = {'metadata':{'ownerReferences':[{'uid':uid,'controller':True}]},'status':{'phase':'Succeeded','containerStatuses':[{'imageID':image,'state':{'terminated':{'exitCode':0}}}]}}
+    owner.k = lambda *args: {'items': [job] if 'jobs' in args else [pod]}
+    def psql(query):
+        if 'SELECT tablename' in query: return 'one\ntwo\nschema_migrations'
+        if 'SELECT version,dirty' in query: return '123|f'
+        if 'pg_stat_activity' in query: return '0'
+        if 'SELECT count(*) FROM public.' in query: return '0\n0'
+        raise AssertionError(query)
+    owner.psql = psql
+    assert owner.validate_native_continuation(['one','two'], {'migration_version':123}, image, sha) == uid
+    job['spec']['template']['spec']['containers'][0]['image'] = image.replace('a'*64,'d'*64)
+    with pytest.raises(module.Blocked, match='unique authenticated'):
+        owner.validate_native_continuation(['one','two'], {'migration_version':123}, image, sha)
+    job['spec']['template']['spec']['containers'][0]['image'] = image
+    owner.psql = lambda query: '1\n0' if 'SELECT count(*) FROM public.' in query else psql(query)
+    with pytest.raises(module.Blocked, match='business data'):
+        owner.validate_native_continuation(['one','two'], {'migration_version':123}, image, sha)
+
+
+def test_initialized_native_recovery_skips_native_and_role_rotation(monkeypatch):
+    import json, sys, types
+    monkeypatch.setitem(sys.modules, 'contracts', c)
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None, failure_code=scope.failure_code))
+    spec = importlib.util.spec_from_file_location('native_complete_owner', P.parent / 'seed.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    sha = 'a'*40; image = 'ghcr.io/ai-workspace-services/postgresql@sha256:'+'e'*64
+    tables = ['table_' + str(i) for i in range(78)]
+    manifest = {'format':1, 'migration_version':123, 'schema_sha256':'d'*64, 'business_table_count':78, 'business_tables':tables}
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self, *args): return json.dumps(manifest).encode()
+    monkeypatch.setattr(module.urllib.request, 'urlopen', lambda *args,**kwargs: Response())
+    monkeypatch.setattr(module, 'verify_tagged_sources', lambda *args: tables)
+    owner = module.Owner.__new__(module.Owner)
+    owner.ns = 'feature-sit-test-1483-sit'
+    lane = {'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'b'*64}
+    inputs = {'accounts_image':'accounts-image','accounts_sha':sha,'billing_sha':sha,'accounts_native_sha256':'d'*64,'business_table_count':78,'migration_version':123}
+    owner.r = {'tagged_lane':lane, 'candidate_sha':sha,'stage':'sit','instance_id':'123','node_uid':'node','cluster_uid':'cluster','namespace_uid':'ns','data_baseline_sha256':'c'*64}
+    owner.tagged_inputs = lambda: (inputs,image,'sha256:'+'f'*64)
+    owner.check_namespace = lambda: None
+    source = {'metadata':{'name':'fixed'},'spec':{'url':'https://github.com/ai-workspace-infra/gitops.git','ref':{'commit':sha}},'status':{'artifact':{'revision':'sha1:'+sha}}}
+    def k(*args):
+        if 'gitrepositories.source.toolkit.fluxcd.io' in args: return {'items':[source]}
+        if 'gitrepository' in args: return source
+        if 'secrets' in args: return {'items':[{'metadata':{'name':'web-saas-db-ddl'}},{'metadata':{'name':'web-saas-db-probe'}}]}
+        if 'pod' in args: return {'spec':{'containers':[{'image':image}]},'status':{'containerStatuses':[{'imageID':image}]}}
+        raise AssertionError(args)
+    owner.k = k
+    owner.raw = lambda *args,**kwargs: ''
+    owner.validate_empty_recovery = lambda host,passwords,require_empty: 'e'*64
+    native_checks = []
+    owner.validate_native_continuation = lambda *args: native_checks.append(True) or 'prior-job-uid'
+    owner.secret = lambda name,fields: ({'ACCOUNTS_PASSWORD':'1'*64,'BILLING_PASSWORD':'2'*64,'AUDIT_PASSWORD':'3'*64} if name == 'web-saas-db-probe' else fields)
+    sql = []
+    def psql(query, **kwargs):
+        sql.append(query)
+        if 'SHOW log_statement' in query: return 'none\n-1\n-1\n'
+        if "count(*) FROM pg_tables WHERE schemaname NOT" in query: return '79'
+        if 'SELECT tablename' in query: return '\n'.join(tables+['schema_migrations','cloud_vendor_costs'])
+        if 'SELECT count(*)' in query: return '0'
+        return ''
+    owner.psql = psql
+    jobs = []
+    def job(purpose,*args,**kwargs):
+        jobs.append(purpose)
+        if purpose == 'manifest': return json.dumps(manifest)
+        if purpose.startswith('probe-'): return 'identity_probes_verified\n'
+        raise AssertionError('native init must not be repeated')
+    owner.job = job
+    result = owner.initialize()
+    assert result['seed_recovery'] == 'verified_native_initialized' and result['prior_native_job_uid'] == 'prior-job-uid'
+    assert native_checks == [True] and 'native-init' not in jobs
+    assert not any('ALTER ROLE' in query or 'CREATE ROLE' in query for query in sql)
+    assert any(query.startswith('BEGIN; SET LOCAL ROLE') and query.endswith('COMMIT;') for query in sql)
