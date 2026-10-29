@@ -27,9 +27,35 @@ class UnifiedPostgresDashboardTest(unittest.TestCase):
             query = var['query']['query']
             self.assertEqual(var['datasource']['uid'], '$datasource')
             for label in LABELS[:index]:
-                self.assertIn(f'{label}=~"${{{label}:regex}}"', query)
+                self.assertIn(f'{label}=~`${{{label}:regex}}`', query)
                 self.assertIn(f'{label}!=""', query)
             self.assertIn(f'{LABELS[index]}!=""', query)
+
+    def test_regex_variables_use_raw_strings_in_complete_expressions(self):
+        expressions = [target['expr'] for panel in self.dashboard['panels']
+                       for target in panel.get('targets', [])]
+        for variable in self.dashboard['templating']['list'][1:]:
+            self.assertEqual(variable['definition'], variable['query']['query'])
+            self.assertRegex(variable['definition'], r'^label_values\(pg_stat_database_numbackends\{.*\}, [a-z]+\)$')
+            expressions.extend([variable['definition'], variable['query']['query']])
+        for expression in expressions:
+            for match in re.finditer(r'\$\{[a-z]+:regex\}', expression):
+                self.assertEqual(expression[match.start() - 1], '`', expression)
+                self.assertEqual(expression[match.end()], '`', expression)
+
+    def test_interpolated_instance_patterns_preserve_regex_semantics(self):
+        instance = 'prod-postgres-exporter.web-saas-k3s-v5.svc:9187'
+        other = 'another.exporter:9187'
+        escaped = re.escape(instance)
+        variable = next(v for v in self.dashboard['templating']['list'] if v['name'] == 'datname')
+        expression = variable['query']['query']
+        for pattern, expected in [(escaped, (True, False)),
+                                  (f'({escaped}|{re.escape(other)})', (True, True)),
+                                  ('.*', (True, True))]:
+            rendered = expression.replace('${instance:regex}', pattern)
+            self.assertIn(f'instance=~`{pattern}`', rendered)
+            self.assertEqual(tuple(bool(re.fullmatch(pattern, value)) for value in (instance, other)), expected)
+        self.assertFalse(re.fullmatch(escaped, instance.replace('.', 'X', 1)))
 
     def test_all_metrics_are_scoped_and_missing_data_is_not_filled(self):
         seen = set()
@@ -43,7 +69,7 @@ class UnifiedPostgresDashboardTest(unittest.TestCase):
                 for metric, selector in metrics:
                     seen.add(metric)
                     for label in LABELS if metric.startswith('pg_stat_database_') or metric == 'pg_database_size_bytes' else LABELS[:-1]:
-                        self.assertIn(f'{label}=~"${{{label}:regex}}"', selector, expr)
+                        self.assertIn(f'{label}=~`${{{label}:regex}}`', selector, expr)
                         self.assertIn(f'{label}!=""', selector, expr)
                     if metric == 'pg_up' or metric.startswith(('pg_stat_bgwriter_', 'pg_stat_checkpointer_')):
                         self.assertNotIn('datname=', selector)
