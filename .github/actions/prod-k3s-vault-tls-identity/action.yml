@@ -2,6 +2,7 @@ name: V6 Vault TLS identity owner
 description: Configure or verify the dedicated Vault TLS reader using reviewed evidence and scoped identities.
 inputs:
   mode: {required: true, description: configure or verify}
+  operation-path: {required: true, description: Reviewed identity operation declaration path}
   cmdb: {required: true, description: Verified IaC CMDB file}
   cmdb-sha256: {required: true, description: CMDB checksum from verified receipt}
   gitops: {required: true, description: Reviewed immutable GitOps checkout}
@@ -27,6 +28,7 @@ runs:
       shell: bash
       env:
         V6_MODE: ${{ inputs.mode }}
+        V6_OPERATION_PATH: ${{ inputs.operation-path }}
         V6_CMDB: ${{ inputs.cmdb }}
         V6_CMDB_SHA256: ${{ inputs.cmdb-sha256 }}
         V6_GITOPS: ${{ inputs.gitops }}
@@ -44,7 +46,7 @@ runs:
         printf '%s\n' "$SSH_PRIVATE_KEY" | env -u VAULT_TOKEN -u SSH_PRIVATE_KEY ssh-add - >/dev/null 2>&1
         unset SSH_PRIVATE_KEY
         python3 "${GITHUB_ACTION_PATH}/../../../scripts/prod_k3s_vault_tls_identity.py" \
-          --mode "$V6_MODE" --cmdb "$V6_CMDB" --cmdb-sha256 "$V6_CMDB_SHA256" \
+          --mode "$V6_MODE" --operation-path "$V6_OPERATION_PATH" --cmdb "$V6_CMDB" --cmdb-sha256 "$V6_CMDB_SHA256" \
           --gitops "$V6_GITOPS" --gitops-sha "$V6_GITOPS_SHA" \
           --bootstrap-receipt "$V6_BOOTSTRAP_RECEIPT" --bootstrap-sha256 "$V6_BOOTSTRAP_SHA256" \
           --bootstrap-gitops-sha "$V6_BOOTSTRAP_GITOPS_SHA" --known-hosts "$V6_KNOWN_HOSTS" \

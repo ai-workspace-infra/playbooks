@@ -36,25 +36,10 @@ def prepare_inputs(cmdb_raw, cmdb_sha, declaration, gitops_sha, checkout, bootst
     return cmdb['hosts'][name]['ip']
 
 
-def client_factory(admin_token):
-    def make(admin, token=None):
-        if admin:
-            require(bool(admin_token), 'short-lived scoped Vault identity required')
-            client = vault_contract.Client('https://vault.svc.plus', admin_token)
-            data = vault_contract.expect(client.request('GET', 'auth/token/lookup-self'), {200})['data']
-            policies = set(data.get('policies') or [])
-            require(policies == {'github-actions-platform-ops-toolkit-prod-k3s-v6-vault-tls-admin'}
-                    and data.get('ttl', 0) > 0 and data.get('ttl', 0) <= 1200,
-                    'Vault administrator identity must be scoped and short-lived')
-            return client
-        return vault_contract.Client('https://vault.svc.plus', token)
-    return make
-
-
 def main():
     p = argparse.ArgumentParser()
     for field in ('cmdb', 'cmdb-sha256', 'gitops', 'gitops-sha', 'bootstrap-receipt',
-                  'bootstrap-sha256', 'bootstrap-gitops-sha', 'known-hosts', 'receipt'):
+                  'bootstrap-sha256', 'bootstrap-gitops-sha', 'known-hosts', 'receipt', 'operation-path'):
         p.add_argument('--' + field, required=True)
     p.add_argument('--mode', required=True, choices=('configure', 'verify'))
     a = p.parse_args()
@@ -67,23 +52,36 @@ def main():
     require(actual == a.gitops_sha and not dirty, 'reviewed GitOps checkout mismatch')
     bootstrap_raw = Path(a.bootstrap_receipt).read_bytes()
     cmdb_raw = Path(a.cmdb).read_bytes()
-    declaration = yaml.safe_load((checkout / bootstrap.RESOURCE).read_text())
+    operation_file = (checkout / a.operation_path).resolve()
+    require(operation_file.is_relative_to(checkout) and operation_file.is_file(), 'identity operation must reside in reviewed checkout')
+    operation = yaml.safe_load(operation_file.read_text())
+    require(operation.get('apiVersion') == 'operations.svc.plus/v1alpha1' and operation.get('kind') == 'VaultWorkloadIdentityOperation', 'invalid identity operation')
+    op = operation['spec']
+    require(op['environment'] == 'prod' and op['target']['node'] == identity_execution.NODE
+            and op['target']['declaration'] == bootstrap.RESOURCE, 'identity operation target mismatch')
+    require(op['evidence']['bootstrap']['gitopsSha'] == a.bootstrap_gitops_sha
+            and op['evidence']['bootstrap']['fileSha256'] == a.bootstrap_sha256, 'identity operation evidence mismatch')
+    declaration = yaml.safe_load((checkout / op['target']['declaration']).read_text())
     host = prepare_inputs(cmdb_raw, a.cmdb_sha256, declaration, a.gitops_sha, checkout,
                           bootstrap_raw, a.bootstrap_sha256, a.bootstrap_gitops_sha)
     require(bool(child_env.get('SSH_AUTH_SOCK')), 'isolated SSH agent required')
-    require(os.environ.get('VAULT_ADDR') == 'https://vault.svc.plus', 'explicit production Vault endpoint required')
+    require(os.environ.get('VAULT_ADDR') == op['vault']['address'], 'Vault endpoint differs from reviewed operation')
     bootstrap_evidence = identity_execution.receipt_contract(bootstrap_raw, a.bootstrap_sha256, a.bootstrap_gitops_sha)
+    require(bootstrap_evidence['version'] == op['target']['kubernetesVersion'], 'Kubernetes version differs from reviewed operation')
     # Reserve an exclusive private receipt before any Vault write. An empty
     # receipt after failure never constitutes success evidence.
     fd = os.open(a.receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     os.close(fd)
-    from dataclasses import asdict
-    config = {'mode': a.mode, 'runtime': 'k3s', 'host': host, 'ssh_user': 'root',
+    mapping = {'serviceAccount': 'service_account', 'deniedAudience': 'denied_audience',
+               'probeServiceAccount': 'probe_service_account', 'allowedPath': 'allowed_path',
+               'deniedPath': 'denied_path', 'ttlSeconds': 'ttl_seconds'}
+    identity = {mapping.get(k, k): v for k, v in op['identity'].items()}
+    vault_contract.IdentitySpec(**identity)
+    config = {'mode': a.mode, 'runtime': op['target']['runtime'], 'host': host, 'ssh_user': op['target']['sshUser'],
               'known_hosts': a.known_hosts, 'cluster_uid': bootstrap_evidence['cluster_uid'],
               'node_uid': bootstrap_evidence['node_uid'], 'node_name': identity_execution.NODE,
-              'expected_version': bootstrap_evidence['version'], 'vault_address': 'https://vault.svc.plus',
-              'admin_policy': 'github-actions-platform-ops-toolkit-prod-k3s-v6-vault-tls-admin',
-              'identity': asdict(identity_execution.IDENTITY)}
+              'expected_version': op['target']['kubernetesVersion'], 'vault_address': op['vault']['address'],
+              'admin_policy': op['vault']['adminPolicy'], 'identity': identity}
     run_env = {**child_env, 'WORKLOAD_IDENTITY_CONFIG': json.dumps(config),
                'WORKLOAD_IDENTITY_RESULT': a.receipt, 'ANSIBLE_ROLES_PATH': str(ROOT / 'roles'),
                'VAULT_TOKEN': os.environ.get('VAULT_TOKEN', '')}
