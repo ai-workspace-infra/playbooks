@@ -23,6 +23,7 @@ copies by hand.
 | `k6-performance-capacity-dashboard.json` | `k6-performance-capacity-overview` | k6 Performance & Capacity Stress Test Dashboard |
 | `postgres-community-overview.json` | `postgres-community-overview` | PostgreSQL Community Overview |
 | `postgres-exporter-dashboard.json` | `postgres-exporter-overview` | PostgreSQL Database Overview |
+| `postgres-unified-overview.json` | `postgres-unified-overview` | PostgreSQL Unified Overview |
 | `process-exporter-dashboard-with-treemap.json` | `process-exporter-with-tree` | process exporter dashboard with treemap |
 | `serverless-edge-cloudrun-supabase-dashboard.json` | `serverless-fullstack-architecture` | 全栈无服务器与边缘架构总览 (Serverless & Edge Full-Stack Topology) |
 | `victoria-logs-overview.json` | `victoria-logs-overview` | Victoria Logs Overview |
@@ -118,3 +119,7 @@ is not zero and HTTP success does not imply a series exists. Buffer metrics
 are instance-wide, regardless of the database selection. These observations
 apply only to the stated target, selection and window; they do not establish
 other databases, instances, times, Grafana rendering or deployment acceptance.
+
+## PostgreSQL unified overview
+
+`postgres-unified-overview.json` combines the community and exporter dashboards while retaining both originals. The selectors cascade from datasource through environment, cluster, service, instance and database using `pg_stat_database_numbackends`. Required labels and missing data behave as described above. `pg_up` and buffer metrics are instance-wide and ignore the database selection. Database disk size requires `pg_database_size_bytes`; PG17 checkpointer and older bgwriter series depend on exporter and PostgreSQL version. Missing series are not replaced with zero. Availability reflects the exporter database connection, not end-to-end application availability.
