@@ -51,12 +51,22 @@ FAILURE_CODE_BY_REASON={
  ('initialize','Kubernetes operation failed (sensitive output suppressed)'):'sit_seed_kubernetes_operation_failed',
 }
 
+# Fixed, non-sensitive platform preflight reasons apply to every lane mode.
+PREFLIGHT_FAILURE_CODE_BY_REASON={
+ 'actual Dev node identity mismatch':'dev_platform_node_identity_mismatch',
+ 'actual cluster identity mismatch':'dev_platform_cluster_identity_mismatch',
+ 'Dev node not Ready':'dev_platform_node_not_ready',
+ 'protected platform source mismatch':'dev_platform_source_mismatch_or_not_ready',
+ 'protected source revision mismatch':'dev_platform_source_revision_mismatch',
+ 'protected platform root not Ready':'dev_platform_root_not_ready_or_revision_mismatch',
+}
+
 def failure_code(operation,error):
  if isinstance(error,subprocess.TimeoutExpired):return 'owner_timeout'
  if isinstance(error,KeyError):return 'owner_input_missing'
  if isinstance(error,(ValueError,RuntimeError)) or type(error).__name__=='Blocked':
   reason=error.args[0] if error.args and isinstance(error.args[0],str) else None
-  return FAILURE_CODE_BY_REASON.get((operation,reason),'owner_rejected_or_internal_error')
+  return FAILURE_CODE_BY_REASON.get((operation,reason), PREFLIGHT_FAILURE_CODE_BY_REASON.get(reason, 'owner_rejected_or_internal_error'))
  return 'owner_internal_error'
 
 def require(value,message):
