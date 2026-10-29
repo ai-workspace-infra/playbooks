@@ -43,6 +43,11 @@ def tagged_dns_addresses(host,target_ip):
  require(ipv4==[target_ip] and not ipv6,'tagged DNS must resolve only to the selected IPv4 target')
  return ipv4
 
+def verify_tagged_public_dns(lane,target_ip):
+ host=lane['feature_tag']+'-sit.onwalk.net'
+ return {service:tagged_dns_addresses(prefix+host,target_ip) for service,prefix in
+         (('console',''),('accounts','accounts-'),('billing','billing-'))}
+
 def pin_connection(connection,target_ip):
  connection._create_connection=lambda address,timeout=None,source_address=None:socket.create_connection((target_ip,address[1]),timeout,source_address)
  return connection
@@ -171,6 +176,7 @@ def execute(a):
   require(a.target_observation is not None,'same-run provider observation required for tagged lane')
   validate_target_observation(json.loads(a.target_observation.read_text()),a.instance_id,cmdb['dev-k3s-v5']['ip'],a.cmdb_sha256,a.candidate_sha256,datetime.datetime.now(datetime.timezone.utc))
   validate_dns_receipts(a.dns_receipts,projection['tagged_lane'],a.instance_id,cmdb['dev-k3s-v5']['ip'],a.cmdb_sha256)
+  verify_tagged_public_dns(projection['tagged_lane'],cmdb['dev-k3s-v5']['ip'])
  observation=candidate.validate_tree(a.gitops_root,a.gitops_sha,a.stage,a.mode=='enable-tls',projection)
  owner_sha=run(['git','-C',str(ROOT),'rev-parse','HEAD']).strip()
  config={'instance_id':a.instance_id,'mode':a.mode,'environment':a.stage,'namespace':observation['namespace'],'node_name':'dev-k3s-v5','node_uid':a.node_uid,'cluster_uid':a.cluster_uid,'candidate_sha':a.gitops_sha,'platform_sha':a.platform_sha,'owner_sha':owner_sha,'manifest_sha256':observation['manifest_sha256'],'wait_seconds':900}

@@ -9,6 +9,15 @@ import dev_feature_candidate as C
 R=C.SCOPE
 
 class Contracts(unittest.TestCase):
+ def test_tagged_preparation_checks_all_public_dns_names(self):
+  import run_dev_feature_flux as owner
+  lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'a'*64}
+  with patch.object(owner,'tagged_dns_addresses',return_value=['8.8.8.8']) as lookup:
+   result=owner.verify_tagged_public_dns(lane,'8.8.8.8')
+   self.assertEqual(set(result),{'console','accounts','billing'})
+   self.assertEqual({call.args[0] for call in lookup.call_args_list},{'smoke-sit-test-1483-sit.onwalk.net','accounts-smoke-sit-test-1483-sit.onwalk.net','billing-smoke-sit-test-1483-sit.onwalk.net'})
+  with patch.object(owner,'tagged_dns_addresses',side_effect=ValueError('unexpected DNS')):
+   with self.assertRaises(ValueError):owner.verify_tagged_public_dns(lane,'8.8.8.8')
  def test_tagged_dns_receipts_bind_all_services_to_candidate_and_target(self):
   import tempfile,run_dev_feature_flux as owner
   lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'a'*64}
