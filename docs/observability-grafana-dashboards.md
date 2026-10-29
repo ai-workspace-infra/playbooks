@@ -21,6 +21,7 @@ copies by hand.
 | `dashboard.json` | `begqoward2epsf` | Xray Dashboard |
 | `homepage-navigation.json` | `homepage-navigation` | 平台导航与总览 (Navigation Homepage) |
 | `k6-performance-capacity-dashboard.json` | `k6-performance-capacity-overview` | k6 Performance & Capacity Stress Test Dashboard |
+| `postgres-community-overview.json` | `postgres-community-overview` | PostgreSQL Community Overview |
 | `postgres-exporter-dashboard.json` | `postgres-exporter-overview` | PostgreSQL Database Overview |
 | `process-exporter-dashboard-with-treemap.json` | `process-exporter-with-tree` | process exporter dashboard with treemap |
 | `serverless-edge-cloudrun-supabase-dashboard.json` | `serverless-fullstack-architecture` | 全栈无服务器与边缘架构总览 (Serverless & Edge Full-Stack Topology) |
@@ -52,3 +53,68 @@ workflow verifies these UIDs/titles after deployment; it does not copy these
 runtime drifted files back into Git.
 
 The Caddy dashboard uses the `VictoriaMetrics` Prometheus-compatible datasource by default. It requires Caddy native metrics to be scraped and delivered to that VictoriaMetrics instance with `job` and `instance` labels. DataKit delivery to Guance alone does not populate this datasource.
+
+## PostgreSQL community overview
+
+`postgres-community-overview.json` adapts the official
+[prometheus-community postgres_exporter dashboard](https://github.com/prometheus-community/postgres_exporter/blob/281cf032091aaaffded97f7df29b8ab29be051bd/postgres_mixin/dashboards/postgres-overview.json)
+at commit `281cf032091aaaffded97f7df29b8ab29be051bd`. It is distributed
+under [Apache License 2.0](licenses/prometheus-community-postgres-exporter-APACHE-2.0.txt).
+Changes: distinct UID/title, datasource and cascading selectors, strict
+nonempty label filters, instance-scope clarification, and a PG17 checkpointer
+series. The original dashboard layout and existing dashboard remain available.
+
+The datasource must contain `pg_stat_database_numbackends` with nonempty
+`environment`, `cluster`, `service`, `instance` and `datname` labels. Every
+metric used must carry the first four labels; database metrics also require
+`datname`. Missing labels deliberately produce no data. Database selections
+apply to database metrics; bgwriter and checkpointer are PostgreSQL instance
+metrics without a database dimension, so the Buffers panel remains scoped to
+the selected instances and does not claim per-database attribution. The TPS
+panel inherits the upstream calculation of transaction commits plus rollbacks,
+not SQL statement throughput.
+
+For PostgreSQL 17, upstream's bgwriter collector no longer emits
+`buffers_checkpoint`, `buffers_backend`, or `buffers_backend_fsync`: those
+legacy series may be absent. The replacement checkpointer buffers series
+requires the exporter `stat_checkpointer` collector, disabled by default. Its
+availability depends on the deployed exporter version, collector configuration,
+permissions, and actual ingestion; the dashboard alone does not enable it or
+prove live data. Upstream documents PostgreSQL 17 in its CI matrix. Validate
+actual series and panel results for each deployed version before acceptance.
+
+### Production query evidence
+
+The task main agent executed all 16 adapted PromQL expressions read-only via
+SSH against production VictoriaMetrics `10.43.212.125:8428` at approximately
+2026-10-29 14:32 Asia/Shanghai; each returned HTTP success. PostgreSQL version
+was 17.11 and postgres_exporter version was 0.17.1. The selection was
+`environment=prod`, `cluster=prod-k3s-v5`, `service=postgresql`,
+`instance=prod-postgres-exporter.web-saas-k3s-v5.svc:9187`, `datname=account`,
+and rate range `5m`. No query-engine request IDs or raw responses are included in this record.
+
+| Panel | Ref | HTTP | Series result |
+| --- | --- | --- | --- |
+| TPS | A | success | Present |
+| Rows | A | success | Present |
+| Rows | B | success | Present |
+| Rows | C | success | Present |
+| Rows | D | success | Present |
+| Rows | E | success | Present |
+| Buffers (instance-wide) | A | success | Present |
+| Buffers (instance-wide) | B | success | Absent |
+| Buffers (instance-wide) | C | success | Absent |
+| Buffers (instance-wide) | D | success | Present |
+| Buffers (instance-wide) | E | success | Absent |
+| Buffers (instance-wide) | F | success | Absent |
+| Conflicts/Deadlocks | A | success | Present |
+| Conflicts/Deadlocks | B | success | Present |
+| Cache hit ratio | A | success | Present |
+| Number of active connections | A | success | Present |
+
+B/C/E are legacy bgwriter fields unavailable in PostgreSQL 17; F is the
+checkpointer series, which was not collected. An empty result
+is not zero and HTTP success does not imply a series exists. Buffer metrics
+are instance-wide, regardless of the database selection. These observations
+apply only to the stated target, selection and window; they do not establish
+other databases, instances, times, Grafana rendering or deployment acceptance.
