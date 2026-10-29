@@ -365,3 +365,37 @@ def test_native_init_waits_for_postgres_from_same_pod_network(monkeypatch):
     assert 'pg_isready' in pod['initContainers'][0]['command'][2]
     assert pod['initContainers'][0]['env'][0]['value'] == 'web-saas-postgresql.feature-sit-test-1483-sit.svc.cluster.local'
     assert pod['automountServiceAccountToken'] is False
+
+
+def test_native_continuation_requires_exact_successful_job_and_empty_business_data(monkeypatch):
+    import copy, sys, types
+    monkeypatch.setitem(sys.modules, 'contracts', c)
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None, failure_code=scope.failure_code))
+    spec = importlib.util.spec_from_file_location('native_continuation_owner', P.parent / 'seed.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    owner = module.Owner.__new__(module.Owner)
+    owner.ns = 'feature-sit-test-1483-sit'
+    image = 'ghcr.io/ai-workspace-services/accounts@sha256:'+'a'*64
+    sha = 'c'*64; uid = '1'*8+'-'+'1'*4+'-'+'1'*4+'-'+'1'*4+'-'+'1'*12
+    owner.r = {'tagged_lane': {'feature_id': 'sit-test-1483'}, 'runtime_mapping': {'images': {'accounts': {'platform_manifest_digest': 'sha256:'+'b'*64}}}}
+    cmd = ['/usr/local/bin/migratectl','init','--environment','sit','--dsn-env','NATIVE_TARGET_DSN','--schema-sha256',sha,'--writers-paused','--dry-run=false']
+    env = [{'name':'NATIVE_TARGET_DSN','valueFrom':{'secretKeyRef':{'name':'web-saas-db-ddl','key':'NATIVE_TARGET_DSN'}}}]
+    job = {'metadata': {'name':'dev-seed-native-init-1234','namespace':owner.ns,'uid':uid,'labels':{'seed-owner':module.OWNER}}, 'status': {'succeeded':1,'conditions':[{'type':'Complete','status':'True'}]}, 'spec': {'template':{'spec':{'containers':[{'image':image,'command':cmd,'env':env}]}}}}
+    pod = {'metadata':{'ownerReferences':[{'uid':uid,'controller':True}]},'status':{'phase':'Succeeded','containerStatuses':[{'imageID':image,'state':{'terminated':{'exitCode':0}}}]}}
+    owner.k = lambda *args: {'items': [job] if 'jobs' in args else [pod]}
+    def psql(query):
+        if 'SELECT tablename' in query: return 'one\ntwo\nschema_migrations'
+        if 'SELECT version,dirty' in query: return '123|f'
+        if 'pg_stat_activity' in query: return '0'
+        if 'SELECT count(*) FROM public.' in query: return '0\n0'
+        raise AssertionError(query)
+    owner.psql = psql
+    assert owner.validate_native_continuation(['one','two'], {'migration_version':123}, image, sha) == uid
+    job['spec']['template']['spec']['containers'][0]['image'] = image.replace('a'*64,'d'*64)
+    with pytest.raises(module.Blocked, match='unique authenticated'):
+        owner.validate_native_continuation(['one','two'], {'migration_version':123}, image, sha)
+    job['spec']['template']['spec']['containers'][0]['image'] = image
+    owner.psql = lambda query: '1\n0' if 'SELECT count(*) FROM public.' in query else psql(query)
+    with pytest.raises(module.Blocked, match='business data'):
+        owner.validate_native_continuation(['one','two'], {'migration_version':123}, image, sha)

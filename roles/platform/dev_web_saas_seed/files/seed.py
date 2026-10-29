@@ -175,7 +175,7 @@ END IF; END $$;
         self.raw('-n', self.ns, 'wait', '--for=condition=complete', 'job/' + name, '--timeout=370s')
         return self.raw('-n', self.ns, 'logs', 'job/' + name)
 
-    def validate_empty_recovery(self, host, passwords):
+    def validate_empty_recovery(self, host, passwords, require_empty=True):
         # Only resume a failed, unpublished, empty SIT initialization. No
         # application secret may exist and every seed job must be terminal.
         self.check_namespace()
@@ -183,7 +183,7 @@ END IF; END $$;
         if any(job.get('status', {}).get('active', 0) for job in jobs):
             raise Blocked('active jobs prevent partial seed recovery')
         empty = self.psql("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND c.relkind IN ('r','p','v','m','S','f'); SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%'; SELECT count(*) FROM pg_namespace WHERE nspname NOT IN ('pg_catalog','information_schema','public') AND nspname NOT LIKE 'pg_toast%' AND nspname NOT LIKE 'pg_temp_%';").split()
-        if empty != ['0','0','0']:
+        if require_empty and empty != ['0','0','0']:
             raise Blocked('partial seed contains schema objects or extra schemas')
         roles = set(self.psql("SELECT rolname FROM pg_roles WHERE rolname IN ('xc_schema_owner','xc_accounts_rw','xc_billing_rw','xc_lane_audit') AND rolcanlogin AND NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls);").split())
         if roles != set(passwords):
@@ -199,6 +199,44 @@ END IF; END $$;
         if (parsed.scheme != 'postgresql' or parsed.username != 'xc_schema_owner' or parsed.hostname != host or parsed.port != 5432 or parsed.path != '/account' or parsed.query != 'sslmode=disable' or not re.fullmatch(r'[0-9a-f]{64}', parsed.password or '')):
             raise Blocked('partial seed DDL credential contract mismatch')
         return parsed.password
+
+    def validate_native_continuation(self, tables, inputs, accounts_image, schema_sha):
+        # Recover only from an authenticated exact-image native job, an exact
+        # migration/table set, and a database with no application data/writers.
+        if not inputs or self.r.get('tagged_lane', {}).get('feature_id') != 'sit-test-1483':
+            raise Blocked('native continuation is outside the approved lane')
+        jobs = self.k('-n', self.ns, 'get', 'jobs')['items']
+        if any(j.get('status', {}).get('active', 0) for j in jobs):
+            raise Blocked('active jobs prevent native continuation')
+        expected_cmd = ['/usr/local/bin/migratectl','init','--environment','sit','--dsn-env','NATIVE_TARGET_DSN','--schema-sha256',schema_sha,'--writers-paused','--dry-run=false']
+        expected_env = [{'name':'NATIVE_TARGET_DSN','valueFrom':{'secretKeyRef':{'name':'web-saas-db-ddl','key':'NATIVE_TARGET_DSN'}}}]
+        found = []
+        for job in jobs:
+            meta = job.get('metadata', {}); status = job.get('status', {})
+            containers = job.get('spec', {}).get('template', {}).get('spec', {}).get('containers', [])
+            if (meta.get('namespace') == self.ns and meta.get('name','').startswith('dev-seed-native-init-') and meta.get('labels',{}).get('seed-owner') == OWNER and status.get('succeeded') == 1 and any(x.get('type') == 'Complete' and x.get('status') == 'True' for x in status.get('conditions',[])) and len(containers) == 1 and containers[0].get('image') == accounts_image and containers[0].get('command') == expected_cmd and containers[0].get('env') == expected_env and re.fullmatch(r'[0-9a-f-]{36}',meta.get('uid',''))):
+                found.append(job)
+        if len(found) != 1:
+            raise Blocked('unique authenticated native initialization job required')
+        job = found[0]; name = job['metadata']['name']; uid = job['metadata']['uid']
+        pods = self.k('-n', self.ns, 'get', 'pods', '-l', 'job-name='+name)['items']
+        if len(pods) != 1:
+            raise Blocked('native initialization pod identity mismatch')
+        pod = pods[0]; statuses = pod.get('status', {}).get('containerStatuses', [])
+        mapped = self.r['runtime_mapping']['images']['accounts']; image_id = statuses[0].get('imageID','') if len(statuses) == 1 else ''
+        allowed = {accounts_image, 'docker-pullable://' + accounts_image, accounts_image.split('@')[0] + '@' + mapped['platform_manifest_digest'], 'docker-pullable://' + accounts_image.split('@')[0] + '@' + mapped['platform_manifest_digest']}
+        if (pod.get('status', {}).get('phase') != 'Succeeded' or not any(ref.get('uid') == uid and ref.get('controller') is True for ref in pod.get('metadata',{}).get('ownerReferences',[])) or len(statuses) != 1 or statuses[0].get('state',{}).get('terminated',{}).get('exitCode') != 0 or image_id not in allowed):
+            raise Blocked('native initialization runtime evidence mismatch')
+        actual = set(self.psql("SELECT tablename FROM pg_tables WHERE schemaname='public';").split())
+        if actual != set(tables) | {'schema_migrations'}:
+            raise Blocked('native continuation table set mismatch')
+        if self.psql('SELECT version,dirty FROM public.schema_migrations;').strip() != str(inputs['migration_version']) + '|f':
+            raise Blocked('native continuation migration version mismatch')
+        if self.psql(''.join('SELECT count(*) FROM public.' + table + ';' for table in tables)).split() != ['0'] * len(tables):
+            raise Blocked('native continuation contains business data')
+        if self.psql("SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename <> 'lane_admin';").strip() != '0':
+            raise Blocked('native continuation has active writers')
+        return uid
 
     def initialize(self):
         self.check_namespace()
@@ -235,7 +273,8 @@ END IF; END $$;
             raise Blocked('SQL logging may expose runtime credential statements')
         # A fresh empty target is mandatory. Retries after an interrupted init are
         # blocked for read-only investigation, never auto-reset or overwrite.
-        if self.psql("SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema');").strip() != '0':
+        existing_table_count = self.psql("SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema');").strip()
+        if existing_table_count != '0' and (not tagged or self.r.get('tagged_lane', {}).get('feature_id') != 'sit-test-1483'):
             raise Blocked('nonempty target: review required, no reinitialization')
         # No application writers should exist before runtime secret publication.
         if self.psql("SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename <> 'lane_admin';").strip() != '0':
@@ -260,6 +299,9 @@ END IF; END $$;
         existing = {s['metadata']['name'] for s in self.k('-n', self.ns, 'get', 'secrets')['items']}
         seed_secrets = existing.intersection({'web-saas-db-ddl','web-saas-db-probe','web-saas-db-audit','web-saas-accounts-runtime','web-saas-billing-runtime','web-saas-console-runtime','web-saas-content-runtime'})
         recovery = bool(seed_secrets)
+        native_continuation = existing_table_count != '0'
+        if native_continuation and seed_secrets != {'web-saas-db-ddl','web-saas-db-probe'}:
+            raise Blocked('native continuation requires exact unpublished seed credentials')
         lane = self.r.get('tagged_lane') or {}
         if recovery and (lane.get('feature_id') != 'sit-test-1483' or seed_secrets not in ({'web-saas-db-ddl'}, {'web-saas-db-ddl','web-saas-db-probe'})):
             raise Blocked('existing seed state: review required, no implicit rotation')
@@ -268,7 +310,7 @@ END IF; END $$;
         def dsn(role):
             return f'postgresql://{role}:{quote(passwords[role], safe="")}@{host}:5432/account?sslmode=disable'
         if recovery:
-            passwords['xc_schema_owner'] = self.validate_empty_recovery(host, passwords)
+            passwords['xc_schema_owner'] = self.validate_empty_recovery(host, passwords, require_empty=not native_continuation)
         else:
             ddl = self.secret('web-saas-db-ddl', {'NATIVE_TARGET_DSN': dsn('xc_schema_owner')})
         # Persist unpublished business passwords before creating or updating roles;
@@ -279,21 +321,22 @@ END IF; END $$;
                 raise Blocked('partial seed probe credential contract mismatch')
             passwords[role] = probe[key]
         self.check_namespace()
-        if self.psql("SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema');").strip() != '0' or self.psql("SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename <> 'lane_admin';").strip() != '0':
+        if self.psql("SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema');").strip() != existing_table_count or self.psql("SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename <> 'lane_admin';").strip() != '0':
             raise Blocked('partial seed target changed before role preparation')
-        if recovery:
+        if native_continuation:
+            prior_native_uid = self.validate_native_continuation(tables, inputs, accounts_image, schema_sha)
+        elif recovery:
             self.psql(''.join(f"ALTER ROLE {r} PASSWORD '{passwords[r]}';" for r in ('xc_accounts_rw','xc_billing_rw','xc_lane_audit')), sensitive=True)
         else:
             self.psql(''.join(f"CREATE ROLE {r} LOGIN PASSWORD '{pw}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" for r,pw in passwords.items()) +
                        'ALTER DATABASE account OWNER TO xc_schema_owner; ALTER SCHEMA public OWNER TO xc_schema_owner;', sensitive=True)
-        env = [{'name': 'NATIVE_TARGET_DSN', 'valueFrom': {'secretKeyRef': {
-            'name': 'web-saas-db-ddl', 'key': 'NATIVE_TARGET_DSN'}}}]
-        output = self.job('native-init', accounts_image, ['/usr/local/bin/migratectl','init',
-            '--environment',self.r['stage'],'--dsn-env','NATIVE_TARGET_DSN',
-            '--schema-sha256',schema_sha,'--writers-paused','--dry-run=false'], env, wait_postgres=pg_image)
-        # A zero exit is necessary, and the actual postcondition is checked below.
-        del output, ddl
-        self.psql('SET ROLE xc_schema_owner;\n' + billing.decode() + '\n' + grants(tables, expected_count=inputs['business_table_count'] if inputs else 77))
+        if not native_continuation:
+            env = [{'name': 'NATIVE_TARGET_DSN', 'valueFrom': {'secretKeyRef': {
+                'name': 'web-saas-db-ddl', 'key': 'NATIVE_TARGET_DSN'}}}]
+            self.job('native-init', accounts_image, ['/usr/local/bin/migratectl','init',
+                '--environment',self.r['stage'],'--dsn-env','NATIVE_TARGET_DSN',
+                '--schema-sha256',schema_sha,'--writers-paused','--dry-run=false'], env, wait_postgres=pg_image)
+        self.psql('BEGIN; SET LOCAL ROLE xc_schema_owner;\n' + billing.decode() + '\n' + grants(tables, expected_count=inputs['business_table_count'] if inputs else 77) + '\nCOMMIT;')
         actual = set(self.psql("SELECT tablename FROM pg_tables WHERE schemaname='public';").split())
         if actual != set(tables) | {'schema_migrations','cloud_vendor_costs'}:
             raise Blocked('unexpected initialized table set')
@@ -355,8 +398,10 @@ END IF; END $$;
                 'namespace_uid': self.r['namespace_uid'],
                 'candidate_sha': self.r['candidate_sha'],
                 'database_roles': ['xc_accounts_rw','xc_billing_rw'],
-                'schema_initialized': True, 'seed_recovery': 'empty_unpublished_roles' if recovery else 'none', 'audit_role':'xc_lane_audit',
+                'schema_initialized': True, 'seed_recovery': 'verified_native_initialized' if native_continuation else ('empty_unpublished_roles' if recovery else 'none'), 'audit_role':'xc_lane_audit',
                 'audit_metadata_read_verified':True, 'audit_write_and_sensitive_read_denied':True}
+        if native_continuation:
+            receipt['prior_native_job_uid'] = prior_native_uid
         if tagged:
             receipt.update(feature_id=self.r['tagged_lane']['feature_id'],
                            feature_tag=self.r['tagged_lane']['feature_tag'],
