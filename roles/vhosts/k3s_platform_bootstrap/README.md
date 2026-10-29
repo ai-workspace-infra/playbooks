@@ -118,3 +118,10 @@ The system-admin-only `scripts/prod_k3s_identity_setup.py` initializes the two
 reviewed V6 Vault roles and dedicated SSH binding from immutable source files.
 It does not run in CI or fall back to an administrator token. Secrets remain in
 memory and Vault; existing conflicting roles/keys are not overwritten.
+
+Fresh data-mounted clusters create locked Unix `cluster-audit` and a separate
+status-only ServiceAccount. They receive no sudo/runtime group, admin kubeconfig,
+Secrets, pod execution, proxy or write permissions. Live tests use the Unix user
+and a bounded in-memory ServiceAccount token to prove status reads and denied
+secret/proxy/writes (namespace write probe is server-side dry run). Business
+identities remain separate and must be qualified before releases are resumed.

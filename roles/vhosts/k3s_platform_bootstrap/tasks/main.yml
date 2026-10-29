@@ -498,6 +498,10 @@
       environment:
         KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
 
+- name: Establish independent audit access for the fresh cluster
+  ansible.builtin.include_tasks: audit_identity.yml
+  when: k3s_platform_require_data_mount | bool
+
 - name: Verify paused declarations against actual cluster resources
   when: k3s_platform_flux_bootstrap_mode == 'declarative_paused'
   block:
@@ -624,3 +628,4 @@
     - /tmp/flux-bootstrap-declarations.yaml
     - /tmp/flux-git-deploy.key
     - /tmp/flux-git-deploy.pub
+    - /tmp/v6-audit-rbac.yaml
