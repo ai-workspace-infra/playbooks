@@ -38,6 +38,18 @@ class TaggedSeedSchemaTest(unittest.TestCase):
                                             dict(self.inputs, business_table_count=77))
         with self.assertRaises(ValueError): contracts.grants(['users; DROP TABLE x'], expected_count=1)
 
+    def test_namespace_binding_requires_exact_feature_tag_and_digest(self):
+        lane = {'feature_id': 'sit-test-1483', 'feature_tag': 'smoke-sit-test-1483', 'candidate_sha256': 'a'*64}
+        namespace = 'feature-sit-test-1483-sit'
+        contracts.target('sit', namespace, lane)
+        self.assertEqual(len(contracts.identity(namespace, 'xc_accounts_rw', lane)), 64)
+        for stage, ns, bad in [('sit', 'feature-other-sit', lane), ('prod', namespace, lane),
+                               ('sit', namespace, dict(lane, feature_tag='smoke-sit-test-1484')),
+                               ('sit', namespace, dict(lane, candidate_sha256='bad')),
+                               ('sit', namespace, None)]:
+            with self.subTest(stage=stage, namespace=ns, lane=bad), self.assertRaises(ValueError):
+                contracts.target(stage, ns, bad)
+
 
 if __name__ == '__main__':
     unittest.main()

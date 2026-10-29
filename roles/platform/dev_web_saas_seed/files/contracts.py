@@ -12,9 +12,20 @@ BILLING_WRITES = ('traffic_stat_checkpoints', 'traffic_minute_buckets', 'billing
 STAGES = {'sit': 'feature-xconnect-referral-sit'}
 
 
-def target(stage, namespace):
-    if STAGES.get(stage) != namespace:
-        raise ValueError('unsupported Dev stage/namespace')
+def target(stage, namespace, tagged_lane=None):
+    if tagged_lane is None:
+        if STAGES.get(stage) != namespace:
+            raise ValueError('unsupported Dev stage/namespace')
+        return
+    if not isinstance(tagged_lane, dict) or set(tagged_lane) != {'feature_id', 'feature_tag', 'candidate_sha256'}:
+        raise ValueError('invalid tagged lane binding')
+    feature, tag, digest = (tagged_lane.get(k) for k in ('feature_id', 'feature_tag', 'candidate_sha256'))
+    if (stage != 'sit' or not isinstance(feature, str) or not re.fullmatch(r'[a-z][a-z0-9-]{1,45}', feature) or
+        feature.endswith('-') or not isinstance(tag, str) or not tag.endswith('-' + feature) or
+        not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', tag[:-(len(feature)+1)]) or
+        not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest) or
+        namespace != 'feature-' + feature + '-sit' or len(namespace) > 63):
+        raise ValueError('unsupported tagged Dev stage/namespace')
 
 
 def verify_sources(manifest, native_sql, billing_sql):
@@ -57,8 +68,9 @@ def verify_tagged_sources(manifest_bytes, native_sql, billing_sql, image_manifes
     return tables
 
 
-def identity(namespace, role):
-    if namespace not in STAGES.values() or role not in ('xc_accounts_rw', 'xc_billing_rw'):
+def identity(namespace, role, tagged_lane=None):
+    target('sit', namespace, tagged_lane)
+    if role not in ('xc_accounts_rw', 'xc_billing_rw'):
         raise ValueError('unsupported runtime identity')
     value = {'Host': f'web-saas-postgresql.{namespace}.svc.cluster.local',
              'Port': 5432, 'Database': 'account', 'Role': role}
