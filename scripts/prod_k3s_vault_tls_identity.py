@@ -16,7 +16,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'roles/vhosts/vault_jwt_workload_identity/files'))
 sys.path.insert(0, str(ROOT / 'scripts/v6_vault_tls_identity'))
 import cluster_identity
-import execute as workload_owner
 import identity_execution
 import remote_kubectl
 import vault_contract
@@ -77,18 +76,24 @@ def main():
     # Reserve an exclusive private receipt before any Vault write. An empty
     # receipt after failure never constitutes success evidence.
     fd = os.open(a.receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-        from dataclasses import asdict
-        config = {'mode': a.mode, 'runtime': 'k3s', 'host': host, 'ssh_user': 'root',
-                  'known_hosts': a.known_hosts, 'cluster_uid': bootstrap_evidence['cluster_uid'],
-                  'node_uid': bootstrap_evidence['node_uid'], 'node_name': identity_execution.NODE,
-                  'expected_version': bootstrap_evidence['version'], 'vault_address': 'https://vault.svc.plus',
-                  'admin_policy': 'github-actions-platform-ops-toolkit-prod-k3s-v6-vault-tls-admin',
-                  'identity': asdict(identity_execution.IDENTITY)}
-        result = workload_owner.execute(config)
-        result['bootstrap_gitops_sha'] = a.bootstrap_gitops_sha
-        result['bootstrap_receipt_sha256'] = a.bootstrap_sha256
-        result['gitops_sha'] = a.gitops_sha
+    os.close(fd)
+    from dataclasses import asdict
+    config = {'mode': a.mode, 'runtime': 'k3s', 'host': host, 'ssh_user': 'root',
+              'known_hosts': a.known_hosts, 'cluster_uid': bootstrap_evidence['cluster_uid'],
+              'node_uid': bootstrap_evidence['node_uid'], 'node_name': identity_execution.NODE,
+              'expected_version': bootstrap_evidence['version'], 'vault_address': 'https://vault.svc.plus',
+              'admin_policy': 'github-actions-platform-ops-toolkit-prod-k3s-v6-vault-tls-admin',
+              'identity': asdict(identity_execution.IDENTITY)}
+    run_env = {**child_env, 'WORKLOAD_IDENTITY_CONFIG': json.dumps(config),
+               'WORKLOAD_IDENTITY_RESULT': a.receipt, 'ANSIBLE_ROLES_PATH': str(ROOT / 'roles'),
+               'VAULT_TOKEN': os.environ.get('VAULT_TOKEN', '')}
+    subprocess.run(['ansible-playbook', '-i', 'localhost,', str(ROOT / 'vault_jwt_workload_identity.yml')],
+                   env=run_env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    result = json.loads(Path(a.receipt).read_text())
+    result['bootstrap_gitops_sha'] = a.bootstrap_gitops_sha
+    result['bootstrap_receipt_sha256'] = a.bootstrap_sha256
+    result['gitops_sha'] = a.gitops_sha
+    with Path(a.receipt).open('w', encoding='utf-8') as stream:
         json.dump(result, stream, sort_keys=True)
         stream.write('\n')
     print(result['result'])
