@@ -14,7 +14,9 @@ from signing_keys import discovery_contract
 
 
 class ClusterError(Exception):
-    pass
+    def __init__(self, message='authenticated cluster operation failed', stage='cluster_identity'):
+        super().__init__(message)
+        self.stage = stage
 
 
 def command(*args):
@@ -38,26 +40,33 @@ def collect(cluster_uid, node_uid, expected_version, node_name, identity, run=co
         raise ClusterError('explicit Kubernetes version required')
     if not isinstance(node_name,str) or not re.fullmatch(r'[a-z0-9][a-z0-9.-]*',node_name):
         raise ClusterError('invalid expected node name')
+    stage = 'namespace_read'
     try:
         ns = json.loads(run('get', 'namespace', 'kube-system', '-o', 'json'))
+        stage = 'nodes_read'
         nodes = json.loads(run('get', 'nodes', '-o', 'json'))['items']
         if ns['metadata']['uid'] != cluster_uid:
-            raise ClusterError('cluster identity differs from receipt')
+            raise ClusterError('cluster identity differs from receipt', 'cluster_identity_mismatch')
+        stage = 'node_receipt_match'
         selected = [node for node in nodes if node.get('metadata', {}).get('name') == node_name]
         if len(selected) != 1:
-            raise ClusterError('expected node not uniquely present')
+            raise ClusterError('expected node not uniquely present', stage)
         node = selected[0]
         if (node['metadata']['name'] != node_name or node['metadata']['uid'] != node_uid
                 or node['status']['nodeInfo']['kubeletVersion'] != expected_version
                 or not any(x['type'] == 'Ready' and x['status'] == 'True' for x in node['status']['conditions'])):
-            raise ClusterError('node identity or readiness differs from receipt')
+            raise ClusterError('node identity or readiness differs from receipt', stage)
+        stage = 'service_accounts_read'
         for name in (identity.service_account, identity.probe_service_account):
             account = json.loads(run('get', 'serviceaccount', name, '-n', identity.namespace, '-o', 'json'))
             if account['metadata']['name'] != name or account['metadata']['namespace'] != identity.namespace:
-                raise ClusterError('service account identity differs')
+                raise ClusterError('service account identity differs', stage)
+        stage = 'oidc_discovery'
         issuer, pems = discovery_contract(run('get', '--raw', '/.well-known/openid-configuration'),
                                            run('get', '--raw', '/openid/v1/jwks'))
         def token(name, audience):
+            nonlocal stage
+            stage = 'token_requests'
             value = run('create', 'token', name, '-n', identity.namespace, '--audience', audience, '--duration', '600s')
             if not value or value.count('.') != 2 or any(c.isspace() for c in value):
                 raise ClusterError('invalid service account TokenRequest result')
@@ -66,5 +75,9 @@ def collect(cluster_uid, node_uid, expected_version, node_name, identity, run=co
                 'good_jwt': token(identity.service_account, identity.audience),
                 'wrong_audience_jwt': token(identity.service_account, identity.denied_audience),
                 'wrong_service_account_jwt': token(identity.probe_service_account, identity.audience)}
+    except ClusterError as exc:
+        if exc.stage == 'cluster_identity':
+            raise ClusterError(stage, stage) from None
+        raise
     except (KeyError, TypeError, json.JSONDecodeError, ValueError):
-        raise ClusterError('cluster identity discovery failed') from None
+        raise ClusterError(stage, stage) from None
