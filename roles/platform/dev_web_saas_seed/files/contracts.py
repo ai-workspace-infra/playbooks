@@ -77,7 +77,7 @@ def identity(namespace, role, tagged_lane=None):
     return hashlib.sha256(json.dumps(value, separators=(',', ':')).encode()).hexdigest()
 
 
-def grants(tables, expected_count=77):
+def grants(tables, expected_count=77, tagged=False):
     """Run as the DDL owner after native init + exact Billing bootstrap SQL.
 
     No ownership transfer, role creation/passwords, defaults for future unknown objects,
@@ -89,6 +89,7 @@ def grants(tables, expected_count=77):
         raise ValueError('unverified table list')
     account_tables = ', '.join('public.' + t for t in tables)
     billing_tables = ', '.join('public.' + t for t in BILLING_WRITES)
+    extra_read = 'GRANT SELECT ON public.cloud_vendor_costs TO xc_accounts_rw;\n' if tagged else ''
     return f'''REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 REVOKE ALL ON DATABASE account FROM PUBLIC;
 GRANT CONNECT ON DATABASE account TO xc_accounts_rw, xc_billing_rw;
@@ -100,17 +101,19 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO xc_accounts_rw;
 GRANT SELECT ON public.schema_migrations TO xc_accounts_rw;
 GRANT SELECT, INSERT, UPDATE ON {billing_tables} TO xc_billing_rw;
 GRANT SELECT ON public.account_billing_profiles TO xc_billing_rw;
-'''
+{extra_read}'''
 
 
-def audit_grants():
+def audit_grants(tagged=False):
     """Only sanitized migration metadata, no business rows or write functions."""
-    return '''REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+    schema = 'lane_audit' if tagged else 'public'
+    prepare = 'CREATE SCHEMA lane_audit AUTHORIZATION xc_schema_owner; REVOKE ALL ON SCHEMA lane_audit FROM PUBLIC;\n' if tagged else ''
+    return f'''REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES FOR ROLE xc_schema_owner IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES FOR ROLE xc_schema_owner IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO xc_accounts_rw;
-CREATE VIEW public.dev_lane_schema_status AS SELECT version, dirty FROM public.schema_migrations;
+{prepare}CREATE VIEW {schema}.dev_lane_schema_status AS SELECT version, dirty FROM public.schema_migrations;
 GRANT CONNECT ON DATABASE account TO xc_lane_audit;
-GRANT USAGE ON SCHEMA public TO xc_lane_audit;
-GRANT SELECT ON public.dev_lane_schema_status TO xc_lane_audit;
+GRANT USAGE ON SCHEMA {schema} TO xc_lane_audit;
+GRANT SELECT ON {schema}.dev_lane_schema_status TO xc_lane_audit;
 '''

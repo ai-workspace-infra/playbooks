@@ -460,3 +460,17 @@ def test_initialized_native_recovery_skips_native_and_role_rotation(monkeypatch)
     assert native_checks == [True] and 'native-init' not in jobs
     assert not any('ALTER ROLE' in query or 'CREATE ROLE' in query for query in sql)
     assert any(query.startswith('BEGIN; SET LOCAL ROLE') and query.endswith('COMMIT;') for query in sql)
+
+
+def test_tagged_seed_keeps_audit_view_outside_accounts_catalog_and_grants_minimal_cloud_read():
+    tables = ['table_' + str(i) for i in range(78)]
+    sql = c.grants(tables, expected_count=78, tagged=True)
+    assert 'GRANT SELECT ON public.cloud_vendor_costs TO xc_accounts_rw;' in sql
+    assert 'GRANT SELECT, INSERT, UPDATE, DELETE ON public.cloud_vendor_costs TO xc_accounts_rw' not in sql
+    audit = c.audit_grants(tagged=True)
+    assert 'CREATE SCHEMA lane_audit AUTHORIZATION xc_schema_owner' in audit
+    assert 'CREATE VIEW lane_audit.dev_lane_schema_status' in audit
+    assert 'CREATE VIEW public.dev_lane_schema_status' not in audit
+    assert 'GRANT SELECT ON lane_audit.dev_lane_schema_status TO xc_lane_audit' in audit
+    assert 'GRANT USAGE ON SCHEMA public TO xc_lane_audit' not in audit
+    assert 'CREATE VIEW public.dev_lane_schema_status' in c.audit_grants()
