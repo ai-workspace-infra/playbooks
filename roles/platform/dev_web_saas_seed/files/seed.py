@@ -200,7 +200,7 @@ END IF; END $$;
             raise Blocked('partial seed DDL credential contract mismatch')
         return parsed.password
 
-    def validate_native_continuation(self, tables, inputs, accounts_image, schema_sha):
+    def validate_native_continuation(self, tables, inputs, accounts_image, schema_sha, seeded=False):
         # Recover only from an authenticated exact-image native job, an exact
         # migration/table set, and a database with no application data/writers.
         if not inputs or self.r.get('tagged_lane', {}).get('feature_id') != 'sit-test-1483':
@@ -228,15 +228,98 @@ END IF; END $$;
         if (pod.get('status', {}).get('phase') != 'Succeeded' or not any(ref.get('uid') == uid and ref.get('controller') is True for ref in pod.get('metadata',{}).get('ownerReferences',[])) or len(statuses) != 1 or statuses[0].get('state',{}).get('terminated',{}).get('exitCode') != 0 or image_id not in allowed):
             raise Blocked('native initialization runtime evidence mismatch')
         actual = set(self.psql("SELECT tablename FROM pg_tables WHERE schemaname='public';").split())
-        if actual != set(tables) | {'schema_migrations'}:
+        expected = set(tables) | {'schema_migrations'} | ({'cloud_vendor_costs'} if seeded else set())
+        if actual != expected:
             raise Blocked('native continuation table set mismatch')
         if self.psql('SELECT version,dirty FROM public.schema_migrations;').strip() != str(inputs['migration_version']) + '|f':
             raise Blocked('native continuation migration version mismatch')
         if self.psql(''.join('SELECT count(*) FROM public.' + table + ';' for table in tables)).split() != ['0'] * len(tables):
             raise Blocked('native continuation contains business data')
-        if self.psql("SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename <> 'lane_admin';").strip() != '0':
-            raise Blocked('native continuation has active writers')
+        if seeded and self.psql('SELECT count(*) FROM public.cloud_vendor_costs;').strip() != '0':
+            raise Blocked('scope repair cost table is not empty')
+        activity = "SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename NOT IN ('lane_admin','xc_billing_rw');" if seeded else "SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename <> 'lane_admin';"
+        if self.psql(activity).strip() != '0':
+            raise Blocked('native continuation has unexpected connections')
         return uid
+
+    def verify_role_identities(self, pg_image, host, tagged):
+        # Probe via actual authenticated TCP identities. No administrator SET ROLE
+        # substitutes for these connections. Every probe transaction rolls back.
+        for role, key, dml in (
+            ('xc_accounts_rw', 'ACCOUNTS_PASSWORD',
+             "BEGIN; INSERT INTO public.users(username,password,proxy_uuid) VALUES ('seed_probe','local_probe','00000000-0000-4000-8000-000000000001'); SELECT username FROM public.users WHERE username='seed_probe'; " + ('SELECT count(*) FROM public.cloud_vendor_costs; ' if tagged else '') + "ROLLBACK;"),
+            ('xc_billing_rw', 'BILLING_PASSWORD',
+             "BEGIN; INSERT INTO public.billing_source_sync_state(source_id) VALUES ('seed_probe'); UPDATE public.billing_source_sync_state SET last_error='' WHERE source_id='seed_probe'; SELECT source_id FROM public.billing_source_sync_state WHERE source_id='seed_probe'; ROLLBACK;"),
+            ('xc_lane_audit','AUDIT_PASSWORD',
+             'SELECT version, dirty FROM ' + ('lane_audit' if tagged else 'public') + '.dev_lane_schema_status;')):
+            probe_env = [{'name': 'PGPASSWORD', 'valueFrom': {'secretKeyRef': {
+                'name': 'web-saas-db-probe', 'key': key}}},
+                {'name':'PGHOST','value':host}, {'name':'PGPORT','value':'5432'},
+                {'name':'PGDATABASE','value':'account'}, {'name':'PGUSER','value':role}]
+            # Fixed commands only; credentials are environment SecretRefs.
+            script = "set -eu\npsql -XAtq -v ON_ERROR_STOP=1 <<'SQL'\n" + dml + "\nSQL\n"
+            rejects = ['CREATE TABLE public.__seed_probe(id int);',
+                       'CREATE TEMP TABLE __seed_probe(id int);', 'SET ROLE xc_schema_owner;']
+            if role == 'xc_accounts_rw' and tagged:
+                rejects.append('UPDATE public.cloud_vendor_costs SET provider=provider;')
+            if role in ('xc_billing_rw','xc_lane_audit'):
+                rejects.append('SELECT password FROM public.users LIMIT 1;')
+            if role == 'xc_lane_audit':
+                rejects.extend(["INSERT INTO public.billing_source_sync_state(source_id) VALUES (NULL);",
+                                'UPDATE public.schema_migrations SET dirty=true;',
+                                'SET ROLE xc_accounts_rw;'])
+            for query in rejects:
+                script += "set +e\nresult=$(psql -XAtq -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -c '" + query + "' 2>&1)\nstatus=$?\nset -e\n[ \"$status\" -ne 0 ] || exit 42\nprintf '%s' \"$result\" | grep -q '42501' || exit 43\n"
+            script += 'echo identity_probes_verified\n'
+            result = self.job('probe-' + role.replace('_','-'), pg_image,
+                              ['/bin/sh', '-c', script], probe_env, wait_postgres=pg_image)
+            if not result.rstrip().endswith('identity_probes_verified'):
+                raise Blocked('identity probe result missing')
+
+    def repair_seeded_scope(self, tables, inputs, accounts_image, schema_sha, pg_image, revision, source_record):
+        lane = self.r.get('tagged_lane') or {}
+        if lane.get('feature_id') != 'sit-test-1483' or self.ns != 'feature-sit-test-1483-sit':
+            raise Blocked('scope repair is outside the approved test lane')
+        host = f'web-saas-postgresql.{self.ns}.svc.cluster.local'
+        passwords = {role: '' for role in ('xc_schema_owner','xc_accounts_rw','xc_billing_rw','xc_lane_audit')}
+        self.validate_empty_recovery(host, passwords, require_empty=False)
+        prior_uid = self.validate_native_continuation(tables, inputs, accounts_image, schema_sha, seeded=True)
+        self.check_namespace()
+        state = self.psql("SELECT COALESCE(to_regclass('public.dev_lane_schema_status')::text,'none'), COALESCE(to_regclass('lane_audit.dev_lane_schema_status')::text,'none');").strip()
+        if state not in ('dev_lane_schema_status|none', 'none|lane_audit.dev_lane_schema_status'):
+            raise Blocked('audit view placement requires review')
+        view = 'public.dev_lane_schema_status' if state.startswith('dev_lane_schema_status|') else 'lane_audit.dev_lane_schema_status'
+        definition = ' '.join(self.psql("SELECT pg_get_viewdef('" + view + "'::regclass, true);").split())
+        if definition != 'SELECT version, dirty FROM schema_migrations;':
+            raise Blocked('audit view definition requires review')
+        relations = set(self.psql("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f');").split())
+        expected = set(tables) | {'schema_migrations', 'cloud_vendor_costs'} | ({'dev_lane_schema_status'} if view.startswith('public.') else set())
+        if relations != expected:
+            raise Blocked('public Accounts catalog differs from fixed candidate')
+        audit_owner = self.psql("SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='lane_audit';").strip()
+        if audit_owner not in ('', 'xc_schema_owner'):
+            raise Blocked('audit schema ownership requires review')
+        owners = self.psql("SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid IN ('public.cloud_vendor_costs'::regclass, '" + view + "'::regclass) ORDER BY oid;").split()
+        if owners != ['xc_schema_owner','xc_schema_owner']:
+            raise Blocked('scope repair object ownership requires review')
+        # Only the audit view moves; Billing data stays in its canonical public
+        # table. No runtime password, table contents, or other lane is changed.
+        move = 'ALTER VIEW public.dev_lane_schema_status SET SCHEMA lane_audit;' if view.startswith('public.') else ''
+        self.psql("BEGIN; SET LOCAL lock_timeout='5s'; SET LOCAL ROLE xc_schema_owner; CREATE SCHEMA IF NOT EXISTS lane_audit AUTHORIZATION xc_schema_owner; REVOKE ALL ON SCHEMA lane_audit FROM PUBLIC; " + move + ' GRANT USAGE ON SCHEMA lane_audit TO xc_lane_audit; REVOKE USAGE ON SCHEMA public FROM xc_lane_audit; GRANT SELECT ON public.cloud_vendor_costs TO xc_accounts_rw; COMMIT;')
+        self.verify_role_identities(pg_image, host, True)
+        self.check_namespace()
+        final_source = self.k('-n', self.ns, 'get', 'gitrepository', source_record['metadata']['name'])
+        if final_source.get('status', {}).get('artifact', {}).get('revision') != revision:
+            raise Blocked('candidate changed during scope repair')
+        return {'schema_version':'dev-lane-seed/v1', 'result':'verified', 'instance_id':self.r['instance_id'],
+                'node_uid':self.r['node_uid'], 'cluster_uid':self.r['cluster_uid'], 'namespace':self.ns,
+                'namespace_uid':self.r['namespace_uid'], 'candidate_sha':self.r['candidate_sha'],
+                'database_roles':['xc_accounts_rw','xc_billing_rw'], 'schema_initialized':True,
+                'seed_recovery':'audit_scope_isolation', 'prior_native_job_uid':prior_uid,
+                'audit_role':'xc_lane_audit', 'audit_metadata_read_verified':True,
+                'audit_write_and_sensitive_read_denied':True, 'feature_id':lane['feature_id'],
+                'feature_tag':lane['feature_tag'], 'candidate_sha256':lane['candidate_sha256'],
+                'data_baseline_sha256':self.r['data_baseline_sha256']}
 
     def initialize(self):
         self.check_namespace()
@@ -271,13 +354,19 @@ END IF; END $$;
             raise Blocked('PostgreSQL image mismatch')
         if self.psql('SHOW log_statement; SHOW log_min_duration_statement; SHOW log_min_duration_sample;').split() != ['none', '-1', '-1']:
             raise Blocked('SQL logging may expose runtime credential statements')
+        secret_items = self.k('-n', self.ns, 'get', 'secrets')['items']
+        owned = {row['metadata']['name']: row['metadata'].get('labels', {}).get('seed-owner') for row in secret_items}
+        runtime_names = {'web-saas-db-ddl','web-saas-db-probe','web-saas-db-audit','web-saas-accounts-runtime','web-saas-billing-runtime','web-saas-console-runtime','web-saas-content-runtime'}
+        seeded = bool(tagged and self.r.get('tagged_lane', {}).get('feature_id') == 'sit-test-1483' and runtime_names <= set(owned))
+        if seeded and any(owned[name] != OWNER for name in runtime_names):
+            raise Blocked('existing runtime secrets have unknown owner')
         # A fresh empty target is mandatory. Retries after an interrupted init are
         # blocked for read-only investigation, never auto-reset or overwrite.
         existing_table_count = self.psql("SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema');").strip()
         if existing_table_count != '0' and (not tagged or self.r.get('tagged_lane', {}).get('feature_id') != 'sit-test-1483'):
             raise Blocked('nonempty target: review required, no reinitialization')
         # No application writers should exist before runtime secret publication.
-        if self.psql("SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename <> 'lane_admin';").strip() != '0':
+        if not seeded and self.psql("SELECT count(*) FROM pg_stat_activity WHERE datname='account' AND usename <> 'lane_admin';").strip() != '0':
             raise Blocked('target writers not paused')
         def fetch_source(repo, sha, path):
             url = f'https://raw.githubusercontent.com/ai-workspace-services/{repo}/{sha}/{path}'
@@ -296,6 +385,8 @@ END IF; END $$;
         compiled = json.loads(compiled_bytes)
         if any(compiled.get(key) != manifest.get(key) for key in ('format', 'migration_version', 'schema_sha256', 'business_table_count', 'business_tables')):
             raise Blocked('image compiled schema mismatch')
+        if seeded:
+            return self.repair_seeded_scope(tables, inputs, accounts_image, schema_sha, pg_image, revision, source_record)
         existing = {s['metadata']['name'] for s in self.k('-n', self.ns, 'get', 'secrets')['items']}
         seed_secrets = existing.intersection({'web-saas-db-ddl','web-saas-db-probe','web-saas-db-audit','web-saas-accounts-runtime','web-saas-billing-runtime','web-saas-console-runtime','web-saas-content-runtime'})
         recovery = bool(seed_secrets)
@@ -343,36 +434,7 @@ END IF; END $$;
         if self.psql("SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.prosecdef;").strip() != '0':
             raise Blocked('unexpected SECURITY DEFINER function requires review')
         self.psql('SET ROLE xc_schema_owner;\n' + audit_grants(tagged=bool(tagged)))
-        # Probe via actual authenticated TCP identities. No administrator SET ROLE
-        # substitutes for these connections. Every probe transaction rolls back.
-        for role, key, dml in (
-            ('xc_accounts_rw', 'ACCOUNTS_PASSWORD',
-             "BEGIN; INSERT INTO public.users(username,password,proxy_uuid) VALUES ('seed_probe','local_probe','00000000-0000-4000-8000-000000000001'); SELECT username FROM public.users WHERE username='seed_probe'; ROLLBACK;"),
-            ('xc_billing_rw', 'BILLING_PASSWORD',
-             "BEGIN; INSERT INTO public.billing_source_sync_state(source_id) VALUES ('seed_probe'); UPDATE public.billing_source_sync_state SET last_error='' WHERE source_id='seed_probe'; SELECT source_id FROM public.billing_source_sync_state WHERE source_id='seed_probe'; ROLLBACK;"),
-            ('xc_lane_audit','AUDIT_PASSWORD',
-             'SELECT version, dirty FROM ' + ('lane_audit' if tagged else 'public') + '.dev_lane_schema_status;')):
-            probe_env = [{'name': 'PGPASSWORD', 'valueFrom': {'secretKeyRef': {
-                'name': 'web-saas-db-probe', 'key': key}}},
-                {'name':'PGHOST','value':host}, {'name':'PGPORT','value':'5432'},
-                {'name':'PGDATABASE','value':'account'}, {'name':'PGUSER','value':role}]
-            # Fixed commands only; credentials are environment SecretRefs.
-            script = "set -eu\npsql -XAtq -v ON_ERROR_STOP=1 <<'SQL'\n" + dml + "\nSQL\n"
-            rejects = ['CREATE TABLE public.__seed_probe(id int);',
-                       'CREATE TEMP TABLE __seed_probe(id int);', 'SET ROLE xc_schema_owner;']
-            if role in ('xc_billing_rw','xc_lane_audit'):
-                rejects.append('SELECT password FROM public.users LIMIT 1;')
-            if role == 'xc_lane_audit':
-                rejects.extend(["INSERT INTO public.billing_source_sync_state(source_id) VALUES (NULL);",
-                                'UPDATE public.schema_migrations SET dirty=true;',
-                                'SET ROLE xc_accounts_rw;'])
-            for query in rejects:
-                script += "set +e\nresult=$(psql -XAtq -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -c '" + query + "' 2>&1)\nstatus=$?\nset -e\n[ \"$status\" -ne 0 ] || exit 42\nprintf '%s' \"$result\" | grep -q '42501' || exit 43\n"
-            script += 'echo identity_probes_verified\n'
-            result = self.job('probe-' + role.replace('_','-'), pg_image,
-                              ['/bin/sh', '-c', script], probe_env, wait_postgres=pg_image)
-            if not result.rstrip().endswith('identity_probes_verified'):
-                raise Blocked('identity probe result missing')
+        self.verify_role_identities(pg_image, host, tagged)
         self.secret('web-saas-db-audit', {'DATABASE_URL':dsn('xc_lane_audit')})
         internal = secrets.token_hex(32)
         self.secret('web-saas-accounts-runtime', {

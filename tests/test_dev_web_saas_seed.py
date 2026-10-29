@@ -474,3 +474,86 @@ def test_tagged_seed_keeps_audit_view_outside_accounts_catalog_and_grants_minima
     assert 'GRANT SELECT ON lane_audit.dev_lane_schema_status TO xc_lane_audit' in audit
     assert 'GRANT USAGE ON SCHEMA public TO xc_lane_audit' not in audit
     assert 'CREATE VIEW public.dev_lane_schema_status' in c.audit_grants()
+
+
+def test_seeded_scope_repair_is_bound_idempotent_and_preserves_credentials(monkeypatch):
+    import sys, types
+    monkeypatch.setitem(sys.modules, 'contracts', c)
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None, failure_code=scope.failure_code))
+    spec = importlib.util.spec_from_file_location('scope_repair_owner', P.parent / 'seed.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    owner = module.Owner.__new__(module.Owner)
+    owner.ns = 'feature-sit-test-1483-sit'
+    owner.r = {'tagged_lane':{'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'c'*64},
+               'instance_id':'123','node_uid':'node','cluster_uid':'cluster','namespace_uid':'ns','candidate_sha':'a'*40,'data_baseline_sha256':'d'*64}
+    owner.check_namespace = lambda: None
+    owner.validate_empty_recovery = lambda host,passwords,require_empty: 'f'*64
+    owner.validate_native_continuation = lambda *args,**kwargs: 'prior-job-uid'
+    owner.k = lambda *args: {'status':{'artifact':{'revision':'sha1:'+'a'*40}}}
+    probes = []
+    owner.verify_role_identities = lambda *args: probes.append(args)
+    writes = []
+    def psql(query):
+        if 'to_regclass' in query: return 'dev_lane_schema_status|none'
+        if 'pg_get_viewdef' in query: return ' SELECT version,\n dirty\n FROM schema_migrations;'
+        if 'SELECT c.relname' in query: return 'one\ntwo\nschema_migrations\ncloud_vendor_costs\ndev_lane_schema_status'
+        if 'FROM pg_namespace' in query: return ''
+        if 'FROM pg_class WHERE oid' in query: return 'xc_schema_owner\nxc_schema_owner'
+        if query.startswith('BEGIN;'): writes.append(query); return ''
+        raise AssertionError(query)
+    owner.psql = psql
+    result = owner.repair_seeded_scope(['one','two'], {}, 'image', 'd'*64, 'postgres', 'sha1:'+'a'*40, {'metadata':{'name':'source'}})
+    assert result['result'] == 'verified' and result['seed_recovery'] == 'audit_scope_isolation'
+    assert result['prior_native_job_uid'] == 'prior-job-uid' and len(probes) == 1
+    assert 'ALTER VIEW public.dev_lane_schema_status SET SCHEMA lane_audit' in writes[0]
+    assert 'GRANT SELECT ON public.cloud_vendor_costs TO xc_accounts_rw' in writes[0]
+    assert 'ALTER ROLE' not in writes[0] and 'DROP ' not in writes[0]
+    writes.clear()
+    owner.psql = lambda query: 'unexpected' if 'pg_get_viewdef' in query else psql(query)
+    with pytest.raises(module.Blocked, match='view definition'):
+        owner.repair_seeded_scope(['one','two'], {}, 'image', 'd'*64, 'postgres', 'sha1:'+'a'*40, {'metadata':{'name':'source'}})
+    assert not writes
+    owner.r['tagged_lane']['feature_id'] = 'other'
+    with pytest.raises(module.Blocked, match='outside the approved'):
+        owner.repair_seeded_scope(['one','two'], {}, 'image', 'd'*64, 'postgres', 'sha1:'+'a'*40, {'metadata':{'name':'source'}})
+
+
+def test_seeded_rehearsal_routes_to_scope_repair_without_reinitializing(monkeypatch):
+    import json, sys, types
+    monkeypatch.setitem(sys.modules, 'contracts', c)
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None, failure_code=scope.failure_code))
+    spec = importlib.util.spec_from_file_location('seeded_scope_entry', P.parent / 'seed.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    sha = 'a'*40; image = 'ghcr.io/ai-workspace-services/postgresql@sha256:'+'e'*64
+    tables = ['table_' + str(i) for i in range(78)]
+    manifest = {'format':1,'migration_version':123,'schema_sha256':'d'*64,'business_table_count':78,'business_tables':tables}
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self,*args): pass
+        def read(self,*args): return json.dumps(manifest).encode()
+    monkeypatch.setattr(module.urllib.request,'urlopen',lambda *args,**kwargs:Response())
+    monkeypatch.setattr(module,'verify_tagged_sources',lambda *args:tables)
+    owner = module.Owner.__new__(module.Owner)
+    owner.ns = 'feature-sit-test-1483-sit'
+    lane = {'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'b'*64}
+    inputs = {'accounts_image':'accounts-image','accounts_sha':sha,'billing_sha':sha,'accounts_native_sha256':'d'*64,'business_table_count':78,'migration_version':123}
+    owner.r = {'tagged_lane':lane,'candidate_sha':sha,'stage':'sit'}
+    owner.tagged_inputs = lambda: (inputs,image,'sha256:'+'f'*64)
+    owner.check_namespace = lambda: None
+    source = {'metadata':{'name':'fixed'},'spec':{'url':'https://github.com/ai-workspace-infra/gitops.git','ref':{'commit':sha}},'status':{'artifact':{'revision':'sha1:'+sha}}}
+    names = ['web-saas-db-ddl','web-saas-db-probe','web-saas-db-audit','web-saas-accounts-runtime','web-saas-billing-runtime','web-saas-console-runtime','web-saas-content-runtime']
+    def k(*args):
+        if 'gitrepositories.source.toolkit.fluxcd.io' in args: return {'items':[source]}
+        if 'secrets' in args: return {'items':[{'metadata':{'name':name,'labels':{'seed-owner':module.OWNER}}} for name in names]}
+        if 'pod' in args: return {'spec':{'containers':[{'image':image}]},'status':{'containerStatuses':[{'imageID':image}]}}
+        raise AssertionError(args)
+    owner.k = k
+    owner.raw = lambda *args,**kwargs: ''
+    owner.psql = lambda q,**kwargs: 'none\n-1\n-1\n' if 'SHOW log_statement' in q else '80'
+    calls = []
+    owner.job = lambda purpose,*args,**kwargs: json.dumps(manifest) if purpose == 'manifest' else pytest.fail('must not reinitialize')
+    owner.repair_seeded_scope = lambda *args: calls.append(args) or {'result':'verified','seed_recovery':'audit_scope_isolation'}
+    assert owner.initialize()['seed_recovery'] == 'audit_scope_isolation'
+    assert len(calls) == 1
