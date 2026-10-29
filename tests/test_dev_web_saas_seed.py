@@ -64,6 +64,33 @@ def test_owned_secret_reused_without_rotation_and_foreign_owner_refused(monkeypa
         owner.secret('web-saas-db-admin', {'password': 'different-test-value'})
 
 
+def test_tagged_owner_rejects_baseline_and_oci_changes_before_database_operations(monkeypatch):
+    import hashlib
+    import json
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, 'contracts', c)
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None, failure_code=scope.failure_code))
+    spec = importlib.util.spec_from_file_location('tagged_seed_owner', P.parent / 'seed.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    owner = module.Owner.__new__(module.Owner)
+    owner.ns = 'feature-sit-test-1483-sit'
+    lane = {'feature_id': 'sit-test-1483', 'feature_tag': 'smoke-sit-test-1483', 'candidate_sha256': 'a'*64}
+    inputs = {'schema': 'sit-data-input/v1'}
+    baseline_sha = hashlib.sha256(json.dumps(inputs, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    pg = {'image': 'ghcr.io/ai-workspace-services/postgresql@sha256:'+'b'*64, 'platform_manifest_digest': 'sha256:'+'c'*64,
+          'manifest_digest': 'sha256:'+'b'*64, 'platform': 'linux/amd64'}
+    owner.r = {'stage': 'sit', 'tagged_lane': lane, 'data_baseline_inputs': inputs,
+               'data_baseline_sha256': baseline_sha, 'runtime_mapping': {'images': {'postgresql': pg}}}
+    assert owner.tagged_inputs()[1] == pg['image']
+    inputs['schema'] = 'tampered'
+    with pytest.raises(module.Blocked, match='baseline digest'): owner.tagged_inputs()
+    inputs['schema'] = 'sit-data-input/v1'
+    pg['platform_manifest_digest'] = 'sha256:invalid'
+    with pytest.raises(module.Blocked, match='PostgreSQL OCI'): owner.tagged_inputs()
+
+
 def test_complete_initialize_returns_receipt_after_all_probes(monkeypatch):
     import sys
     import types
