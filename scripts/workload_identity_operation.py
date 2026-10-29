@@ -19,6 +19,18 @@ def require(condition):
     if not condition:raise ValueError('workload identity input validation failed')
 
 
+def sanitize_mount_diagnostic(stage, diagnostic):
+    allowed={'auth_mount_list','auth_mount_inspect','auth_mount_create'}
+    if stage!='vault_mount' or not isinstance(diagnostic,dict) or diagnostic.get('operation') not in allowed:
+        return None
+    safe={'operation':diagnostic['operation']}
+    if type(diagnostic.get('http_status')) is int and 100 <= diagnostic['http_status'] <= 599:
+        safe['http_status']=diagnostic['http_status']
+    if diagnostic.get('reason')=='unexpected_mount_type':
+        safe['reason']='unexpected_mount_type'
+    return safe if len(safe)>1 else None
+
+
 def build_config(operation,cmdb,receipt,hostkeys,mode):
     require(operation.get('apiVersion')=='operations.svc.plus/v1alpha1' and operation.get('kind')=='VaultWorkloadIdentityOperation')
     spec=operation['spec'];target=spec['target'];vault=spec['vault'];identity=spec['identity']
@@ -76,6 +88,7 @@ def main():
                               env=run_env,check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     if result_run.returncode:
         stage='owner_execution'
+        safe_diagnostic=None
         try:
             failure=json.loads(Path(failure_path).read_text())
             allowed={'cluster_identity','cluster_namespace_read','cluster_nodes_read','cluster_node_receipt_match',
@@ -93,9 +106,13 @@ def main():
                      'input_validation'}
             if failure.get('result')=='FAILED' and failure.get('stage') in allowed:
                 stage=failure['stage']
+                safe_diagnostic=sanitize_mount_diagnostic(stage,failure.get('diagnostic'))
         except (OSError,ValueError,TypeError):
             pass
-        Path(a.receipt).write_text(json.dumps({'result':'FAILED','stage':stage},sort_keys=True)+'\n')
+        record={'result':'FAILED','stage':stage}
+        if safe_diagnostic:
+            record['diagnostic']=safe_diagnostic
+        Path(a.receipt).write_text(json.dumps(record,sort_keys=True)+'\n')
         raise RuntimeError('workload identity owner failed at stage='+stage)
     result=json.loads(Path(a.receipt).read_text());result.update({'gitops_sha':a.gitops_sha,'bootstrap_sha256':hashlib.sha256(raw).hexdigest(),'operation_path':a.operation_path})
     Path(a.receipt).write_text(json.dumps(result,sort_keys=True)+'\n');print(result['result'])

@@ -12,6 +12,13 @@ spec=importlib.util.spec_from_file_location('owner',ROOT/'scripts/workload_ident
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 class Owner(unittest.TestCase):
+    def test_mount_diagnostic_allowlist_rejects_untrusted_fields(self):
+        safe=m.sanitize_mount_diagnostic('vault_mount',{
+            'operation':'auth_mount_create','http_status':403,'token':'must-not-escape','body':'secret'})
+        self.assertEqual(safe,{'operation':'auth_mount_create','http_status':403})
+        self.assertIsNone(m.sanitize_mount_diagnostic('vault_config',{'operation':'auth_mount_create','http_status':403}))
+        self.assertIsNone(m.sanitize_mount_diagnostic('vault_mount',{'operation':'unknown','http_status':403}))
+
     def test_real_candidate_evidence_and_mismatched_instance(self):
         candidate=Path('/tmp/gitops-v6-identity-gate/operations/workload-identities/prod-k3s-v6/vault-tls-reader.yaml')
         receipt=Path('/tmp/v6-receipt-verified/v6-bootstrap-receipt.json')
