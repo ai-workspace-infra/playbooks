@@ -14,7 +14,7 @@ import sys
 import urllib.request
 from urllib.parse import quote
 from platform_scope import preflight, failure_code
-from contracts import ACCOUNTS_SHA, BILLING_SHA, SCHEMA_SHA, target, identity, verify_sources, grants, audit_grants
+from contracts import ACCOUNTS_SHA, BILLING_SHA, SCHEMA_SHA, target, identity, verify_sources, verify_tagged_sources, grants, audit_grants
 
 ACCOUNTS_IMAGE = 'ghcr.io/ai-workspace-services/accounts@sha256:6edd156ce6974dfd0cd7486beebbb446091e4019eacf3c272e05aba4a609737d'
 PG_AMD64_DIGEST = 'sha256:f326b029499b2f255f5341d0a06d710c4380e6683315c8ab367b25c7069bdfca'
@@ -29,7 +29,7 @@ class Blocked(Exception):
 class Owner:
     def __init__(self, request):
         self.r = request
-        target(request['stage'], request['namespace'])
+        target(request['stage'], request['namespace'], request.get('tagged_lane'))
         self.ns = request['namespace']
         config = {**request, 'environment':request['stage'], 'mode':'prepare', 'node_name':'dev-k3s-v5'}
         preflight(config, self.k('get','nodes'), self.k('get','namespace','kube-system'),
@@ -52,6 +52,31 @@ class Owner:
             raise Blocked('single-node identity mismatch')
         self.check_namespace()
 
+    def tagged_inputs(self):
+        """Recheck typed identities supplied by the authenticated seed adapter."""
+        lane = self.r.get('tagged_lane')
+        if lane is None:
+            return None
+        target(self.r['stage'], self.ns, lane)
+        inputs = self.r.get('data_baseline_inputs')
+        runtime = self.r.get('runtime_mapping')
+        if not isinstance(inputs, dict) or not isinstance(runtime, dict):
+            raise Blocked('missing authenticated seed baseline or OCI mapping')
+        encoded = json.dumps(inputs, sort_keys=True, separators=(',', ':')).encode()
+        if hashlib.sha256(encoded).hexdigest() != self.r.get('data_baseline_sha256'):
+            raise Blocked('baseline digest mismatch')
+        records = runtime.get('images', {})
+        if not isinstance(records, dict) or not isinstance(records.get('postgresql'), dict):
+            raise Blocked('missing PostgreSQL OCI mapping')
+        pg = records['postgresql']
+        image = pg.get('image', '')
+        child = pg.get('platform_manifest_digest', '')
+        if (not re.fullmatch(r'ghcr\.io/ai-workspace-services/postgresql@sha256:[0-9a-f]{64}', image) or
+            not re.fullmatch(r'sha256:[0-9a-f]{64}', child) or pg.get('manifest_digest') != image.split('@')[1] or
+            pg.get('platform') != 'linux/amd64'):
+            raise Blocked('invalid PostgreSQL OCI identity')
+        return inputs, image, child
+
     def check_namespace(self):
         ns = self.k('get', 'namespace', self.ns)
         if ns['metadata'].get('uid') != self.r['namespace_uid']:
@@ -60,9 +85,14 @@ class Owner:
             raise Blocked('namespace is terminating')
         if ns['metadata'].get('labels', {}).get('environment') != self.r['stage']:
             raise Blocked('namespace stage mismatch')
+        lane = self.r.get('tagged_lane')
+        if lane is not None and (ns['metadata'].get('labels', {}).get('feature_id') != lane['feature_id'] or
+                                 ns['metadata'].get('labels', {}).get('release.svc.plus/feature-tag') != lane['feature_tag']):
+            raise Blocked('namespace feature label mismatch')
 
     def seed_admin(self):
         self.check_namespace()
+        self.tagged_inputs()
         self.secret('web-saas-db-admin', {'password': secrets.token_hex(32)})
         self.check_namespace()
         return {'result':'admin_secret_prepared', 'namespace':self.ns,
@@ -140,6 +170,12 @@ END IF; END $$;
 
     def initialize(self):
         self.check_namespace()
+        tagged = self.tagged_inputs()
+        inputs, pg_image, pg_child = tagged if tagged else (None, PG_IMAGE, PG_AMD64_DIGEST)
+        accounts_image = inputs['accounts_image'] if inputs else ACCOUNTS_IMAGE
+        accounts_sha = inputs['accounts_sha'] if inputs else ACCOUNTS_SHA
+        billing_sha = inputs['billing_sha'] if inputs else BILLING_SHA
+        schema_sha = inputs['accounts_native_sha256'] if inputs else SCHEMA_SHA
         sources = self.k('-n', self.ns, 'get', 'gitrepositories.source.toolkit.fluxcd.io')['items']
         if len(sources) != 1:
             raise Blocked('exactly one reviewed lane source required')
@@ -156,12 +192,12 @@ END IF; END $$;
                  'pod/web-saas-postgresql-0', '--timeout=300s')
         pg = self.k('-n', self.ns, 'get', 'pod', 'web-saas-postgresql-0')
         image_id = pg.get('status', {}).get('containerStatuses', [{}])[0].get('imageID', '')
-        if image_id not in (PG_IMAGE,
-                            'docker-pullable://' + PG_IMAGE,
-                            'ghcr.io/ai-workspace-services/postgresql@' + PG_AMD64_DIGEST,
-                            'docker-pullable://ghcr.io/ai-workspace-services/postgresql@' + PG_AMD64_DIGEST):
+        if image_id not in (pg_image,
+                            'docker-pullable://' + pg_image,
+                            'ghcr.io/ai-workspace-services/postgresql@' + pg_child,
+                            'docker-pullable://ghcr.io/ai-workspace-services/postgresql@' + pg_child):
             raise Blocked('PostgreSQL runtime imageID mismatch')
-        if pg['spec']['containers'][0]['image'] != PG_IMAGE:
+        if pg['spec']['containers'][0]['image'] != pg_image:
             raise Blocked('PostgreSQL image mismatch')
         if self.psql('SHOW log_statement; SHOW log_min_duration_statement; SHOW log_min_duration_sample;').split() != ['none', '-1', '-1']:
             raise Blocked('SQL logging may expose runtime credential statements')
@@ -179,12 +215,14 @@ END IF; END $$;
             if len(data) > 2_000_000:
                 raise Blocked('source size limit')
             return data
-        manifest_bytes = fetch_source('accounts', ACCOUNTS_SHA, 'sql/init/accounts-native.manifest.json')
-        native = fetch_source('accounts', ACCOUNTS_SHA, 'sql/init/accounts-native.sql')
-        billing = fetch_source('billing-service', BILLING_SHA, 'sql/billing-service-schema.sql')
+        manifest_bytes = fetch_source('accounts', accounts_sha, 'sql/init/accounts-native.manifest.json')
+        native = fetch_source('accounts', accounts_sha, 'sql/init/accounts-native.sql')
+        billing = fetch_source('billing-service', billing_sha, 'sql/billing-service-schema.sql')
         manifest = json.loads(manifest_bytes)
-        tables = verify_sources(manifest, native, billing)
-        compiled = json.loads(self.job('manifest', ACCOUNTS_IMAGE, ['/usr/local/bin/migratectl', 'native-schema']))
+        compiled_bytes = self.job('manifest', accounts_image, ['/usr/local/bin/migratectl', 'native-schema']).encode()
+        tables = (verify_tagged_sources(manifest_bytes, native, billing, compiled_bytes, inputs)
+                  if inputs else verify_sources(manifest, native, billing))
+        compiled = json.loads(compiled_bytes)
         if any(compiled.get(key) != manifest.get(key) for key in ('format', 'migration_version', 'schema_sha256', 'business_table_count', 'business_tables')):
             raise Blocked('image compiled schema mismatch')
         existing = {s['metadata']['name'] for s in self.k('-n', self.ns, 'get', 'secrets')['items']}
@@ -201,12 +239,12 @@ END IF; END $$;
                    'ALTER DATABASE account OWNER TO xc_schema_owner; ALTER SCHEMA public OWNER TO xc_schema_owner;', sensitive=True)
         env = [{'name': 'NATIVE_TARGET_DSN', 'valueFrom': {'secretKeyRef': {
             'name': 'web-saas-db-ddl', 'key': 'NATIVE_TARGET_DSN'}}}]
-        output = self.job('native-init', ACCOUNTS_IMAGE, ['/usr/local/bin/migratectl','init',
+        output = self.job('native-init', accounts_image, ['/usr/local/bin/migratectl','init',
             '--environment',self.r['stage'],'--dsn-env','NATIVE_TARGET_DSN',
-            '--schema-sha256',SCHEMA_SHA,'--writers-paused','--dry-run=false'], env)
+            '--schema-sha256',schema_sha,'--writers-paused','--dry-run=false'], env)
         # A zero exit is necessary, and the actual postcondition is checked below.
         del output, ddl
-        self.psql('SET ROLE xc_schema_owner;\n' + billing.decode() + '\n' + grants(tables))
+        self.psql('SET ROLE xc_schema_owner;\n' + billing.decode() + '\n' + grants(tables, expected_count=inputs['business_table_count'] if inputs else 77))
         actual = set(self.psql("SELECT tablename FROM pg_tables WHERE schemaname='public';").split())
         if actual != set(tables) | {'schema_migrations','cloud_vendor_costs'}:
             raise Blocked('unexpected initialized table set')
@@ -243,7 +281,7 @@ END IF; END $$;
             for query in rejects:
                 script += "set +e\nresult=$(psql -XAtq -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -c '" + query + "' 2>&1)\nstatus=$?\nset -e\n[ \"$status\" -ne 0 ] || exit 42\nprintf '%s' \"$result\" | grep -q '42501' || exit 43\n"
             script += 'echo identity_probes_verified\n'
-            result = self.job('probe-' + role.replace('_','-'), PG_IMAGE,
+            result = self.job('probe-' + role.replace('_','-'), pg_image,
                               ['/bin/sh', '-c', script], probe_env)
             if not result.rstrip().endswith('identity_probes_verified'):
                 raise Blocked('identity probe result missing')
@@ -251,7 +289,7 @@ END IF; END $$;
         internal = secrets.token_hex(32)
         self.secret('web-saas-accounts-runtime', {
             'DATABASE_URL': dsn('xc_accounts_rw'),
-            'DATABASE_IDENTITY_SHA256': identity(self.ns, 'xc_accounts_rw'),
+            'DATABASE_IDENTITY_SHA256': identity(self.ns, 'xc_accounts_rw', self.r.get('tagged_lane')),
             'POSTGRES_PASSWORD': passwords['xc_accounts_rw'],
             'ROOT_BOOTSTRAP_PASSWORD': secrets.token_hex(32),
             'AUTH_TOKEN_PUBLIC_TOKEN': secrets.token_hex(32),
@@ -266,7 +304,7 @@ END IF; END $$;
         if final_source.get('status', {}).get('artifact', {}).get('revision') != revision:
             raise Blocked('candidate changed during initialization')
         self.check_namespace()
-        return {'schema_version': 'dev-lane-seed/v1', 'result': 'verified',
+        receipt = {'schema_version': 'dev-lane-seed/v1', 'result': 'verified',
                 'instance_id': self.r['instance_id'], 'node_uid': self.r['node_uid'],
                 'cluster_uid': self.r['cluster_uid'], 'namespace': self.ns,
                 'namespace_uid': self.r['namespace_uid'],
@@ -274,6 +312,12 @@ END IF; END $$;
                 'database_roles': ['xc_accounts_rw','xc_billing_rw'],
                 'schema_initialized': True, 'audit_role':'xc_lane_audit',
                 'audit_metadata_read_verified':True, 'audit_write_and_sensitive_read_denied':True}
+        if tagged:
+            receipt.update(feature_id=self.r['tagged_lane']['feature_id'],
+                           feature_tag=self.r['tagged_lane']['feature_tag'],
+                           candidate_sha256=self.r['tagged_lane']['candidate_sha256'],
+                           data_baseline_sha256=self.r['data_baseline_sha256'])
+        return receipt
 
 
 

@@ -38,6 +38,16 @@ on:
         description: Live UID from the authenticated prepare receipt
         type: string
         required: true
+      prepare_artifact:
+        description: Same-run authenticated tagged-lane prepare receipt artifact
+        type: string
+        required: false
+        default: ''
+      prepare_sha256:
+        description: SHA256 of the authenticated tagged-lane prepare receipt
+        type: string
+        required: false
+        default: ''
       cluster_uid:
         type: string
         required: true
@@ -83,6 +93,11 @@ jobs:
         with:
           name: ${{ inputs.cmdb_artifact }}
           path: ${{ runner.temp }}/dev-feature-cmdb
+      - uses: actions/download-artifact@v4
+        if: inputs.prepare_artifact != ''
+        with:
+          name: ${{ inputs.prepare_artifact }}
+          path: ${{ runner.temp }}/dev-feature-prepare
       - name: Run the fixed trusted owner
         env:
           STAGE: ${{ inputs.stage }}
@@ -95,16 +110,23 @@ jobs:
           NODE_UID: ${{ inputs.node_uid }}
           CLUSTER_UID: ${{ inputs.cluster_uid }}
           NAMESPACE_UID: ${{ inputs.namespace_uid }}
+          PREPARE_ARTIFACT: ${{ inputs.prepare_artifact }}
+          PREPARE_SHA256: ${{ inputs.prepare_sha256 }}
         shell: bash
         run: |
           set -euo pipefail
+          extra=()
+          if [[ -n "$PREPARE_ARTIFACT" || -n "$PREPARE_SHA256" ]]; then
+            [[ -n "$PREPARE_ARTIFACT" && "$PREPARE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+            extra+=(--prepare-receipt "$RUNNER_TEMP/dev-feature-prepare/receipt.json" --prepare-sha256 "$PREPARE_SHA256")
+          fi
           "$RUNNER_TEMP/dev-feature-venv/bin/python" scripts/run_dev_web_saas_seed.py \
             --candidate-receipt "$RUNNER_TEMP/dev-feature-candidate/receipt.json" --candidate-sha256 "$CANDIDATE_RECEIPT_SHA256" \
             --stage "$STAGE" --phase "$PHASE" --instance-id "$INSTANCE_ID" \
             --cmdb "$RUNNER_TEMP/dev-feature-cmdb/cmdb.json" --cmdb-sha256 "$CMDB_SHA256" \
             --gitops-root "$GITHUB_WORKSPACE/gitops-candidate" --gitops-sha "$CANDIDATE_SHA" \
             --platform-sha "$PLATFORM_SHA" --node-uid "$NODE_UID" --cluster-uid "$CLUSTER_UID" --namespace-uid "$NAMESPACE_UID" \
-            --receipt "$RUNNER_TEMP/dev-feature-evidence/receipt.json"
+            --receipt "$RUNNER_TEMP/dev-feature-evidence/receipt.json" "${extra[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
