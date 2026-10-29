@@ -40,6 +40,19 @@ class ProducerTest(unittest.TestCase):
             with self.assertRaises(ValueError): producer.check_build(self.row)
             self.run['head_sha']=self.row['sha']; self.meta['digest']='sha256:'+'0'*64
             with self.assertRaises(ValueError): producer.check_build(self.row)
+    def test_registry_token_must_be_read_packages_only_and_match_username(self):
+        class Response(io.BytesIO):
+            def __init__(self, scopes, login):
+                super().__init__(json.dumps({'login':login}).encode()); self.headers={'X-OAuth-Scopes':scopes}
+            def __enter__(self): return self
+            def __exit__(self,*args): self.close()
+        for scopes,login,allowed in [('read:packages','reader',True), ('read:packages, repo','reader',False),
+                                     ('write:packages','reader',False), ('','reader',False), ('read:packages','other',False)]:
+            with self.subTest(scopes=scopes,login=login), patch.object(producer.urllib.request,'urlopen',return_value=Response(scopes,login)):
+                if allowed: producer.validate_registry_credential('reader','fixture')
+                else:
+                    with self.assertRaises(ValueError): producer.validate_registry_credential('reader','fixture')
+
     def test_denies_unprotected_workflow_context(self):
         with patch.dict('os.environ', {'GITHUB_ACTIONS':'true','GITHUB_REPOSITORY':'ai-workspace-infra/playbooks',
                     'GITHUB_REF':'refs/heads/other','GITHUB_EVENT_NAME':'workflow_dispatch',

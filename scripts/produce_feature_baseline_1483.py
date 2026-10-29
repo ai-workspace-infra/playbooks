@@ -11,6 +11,8 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -102,6 +104,19 @@ def produce(image_manifest_bytes):
                                'artifact_id': row['artifact']} for row in (ACCOUNTS, BILLING)]}
 
 
+def validate_registry_credential(username, token):
+    """Require a classic GitHub token scoped only to read:packages."""
+    if not username or not token or any(c in username + token for c in '\r\n'):
+        raise ValueError('dedicated GHCR pull identity required')
+    request = urllib.request.Request('https://api.github.com/user', headers={
+        'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json'})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        scopes = {part.strip() for part in response.headers.get('X-OAuth-Scopes', '').split(',') if part.strip()}
+        profile = json.load(response)
+    if scopes != {'read:packages'} or profile.get('login', '').lower() != username.lower():
+        raise ValueError('GHCR credential must have only read:packages scope')
+
+
 def main():
     global PHASE
     if (os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('GITHUB_REPOSITORY') != 'ai-workspace-infra/playbooks' or
@@ -109,11 +124,20 @@ def main():
         os.environ.get('GITHUB_WORKFLOW_REF') != 'ai-workspace-infra/playbooks/.github/workflows/feature-baseline-1483.yml@refs/heads/main'):
         raise ValueError('protected Main workflow required')
     PHASE = 'isolated-image'
-    image = subprocess.run(['docker', 'run', '--rm', '--pull=always', '--platform', 'linux/amd64',
-                            '--network', 'none', '--read-only', '--user', '65534:65534', '--cap-drop', 'ALL',
-                            '--security-opt', 'no-new-privileges', '--entrypoint', '/usr/local/bin/migratectl',
-                            ACCOUNTS['image'], 'native-schema'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                           timeout=300, check=True).stdout
+    validate_registry_credential(os.environ.get('FEATURE_GHCR_USERNAME', ''), os.environ.get('FEATURE_GHCR_TOKEN', ''))
+    with tempfile.TemporaryDirectory(prefix='baseline-docker-') as directory:
+        config = Path(directory) / 'config.json'
+        # The helper receives credentials only through its process environment;
+        # the Docker configuration file contains no secret material.
+        config.write_text(json.dumps({'credHelpers': {'ghcr.io': 'feature-baseline'}}))
+        config.chmod(0o600)
+        env = dict(os.environ, DOCKER_CONFIG=directory,
+                   PATH=str(Path(__file__).resolve().parent) + os.pathsep + os.environ.get('PATH', ''))
+        image = subprocess.run(['docker', 'run', '--rm', '--pull=always', '--platform', 'linux/amd64',
+                                '--network', 'none', '--read-only', '--user', '65534:65534', '--cap-drop', 'ALL',
+                                '--security-opt', 'no-new-privileges', '--entrypoint', '/usr/local/bin/migratectl',
+                                ACCOUNTS['image'], 'native-schema'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                               env=env, timeout=300, check=True).stdout
     PHASE = 'source-and-build-evidence'
     result = produce(image)
     PHASE = 'artifact-write'
