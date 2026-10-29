@@ -41,3 +41,11 @@ three short-lived TokenRequests. It then returns the issuer, public key set and
 JWTs to an in-process caller. Kubectl error output and returned tokens must not be
 logged. The caller must still establish the authenticated private connection and
 verify receipt provenance; locally supplied UIDs alone do not establish trust.
+
+`files/identity_execution.py` composes receipt structure/checksum validation,
+cluster collection and Vault operations. Its receipt validation is necessary but
+not sufficient: an orchestration caller must retrieve the artifact from the exact
+successful protected run and establish that the checksum is trusted, rather than
+accepting both data and digest from an arbitrary dispatch input. It exposes no
+standalone CLI or credential source. The original V6 paused-bootstrap receipt is
+compatible with this contract; no live identity operation is implied.
