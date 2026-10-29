@@ -19,3 +19,17 @@ reviewed declarations, prove permitted and denied access using the actual worklo
 identity, emit only redacted evidence, and remain separate from DNS and migration.
 Removal of this unused helper has no runtime effect; no production rollback is
 required until a reviewed caller exists.
+
+`files/vault_contract.py` contains the narrowly scoped Vault operations and
+allow/deny acceptance logic. Provisioning rejects an existing dedicated mount or
+policy before writing; a partial failure requires operator inspection and is not
+silently retried. It validates the workload token has only the dedicated policy,
+reads the allowed record without parsing its body, and requires denial for an
+adjacent record and two real wrong-claim TokenRequest probes. Probe claims are
+checked before login; JWT signature verification is performed by Vault.
+
+The module is intentionally not an entrypoint. A controlled caller must acquire
+three real short-lived TokenRequest JWTs from the authenticated target cluster,
+verify the node and cluster UID against a trusted receipt, bind the fetched issuer
+and signing keys, use an approved short-lived administrative identity, and emit a
+redacted receipt. Unit tests of the contract do not establish live Vault access.
