@@ -4,6 +4,7 @@ import argparse
 import base64
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import yaml
@@ -22,11 +23,26 @@ def vault(args, data=None, missing=False):
 
 
 def public_key(private):
-    result = subprocess.run(['ssh-keygen', '-y', '-f', '/dev/stdin'], input=private,
-                            capture_output=True, text=True)
-    if result.returncode:
-        raise ValueError('Unable to validate SSH key identity')
-    return ' '.join(result.stdout.split()[:2])
+    # ssh-keygen -f /dev/stdin applies file-mode checks to the pipe on macOS.
+    # A separate agent accepts stdin without creating a private-key file.
+    env = os.environ.copy()
+    result = subprocess.run(['ssh-agent', '-s'], capture_output=True, text=True, check=True)
+    for field in ('SSH_AUTH_SOCK', 'SSH_AGENT_PID'):
+        match = re.search(field + r'=([^;]+);', result.stdout)
+        if not match:
+            raise ValueError('Unable to initialize isolated key validation agent')
+        env[field] = match.group(1)
+    try:
+        added = subprocess.run(['ssh-add', '-'], input=private, env=env, capture_output=True, text=True)
+        if added.returncode:
+            raise ValueError('Unable to validate SSH key identity')
+        result = subprocess.run(['ssh-add', '-L'], env=env, capture_output=True, text=True, check=True)
+        keys = result.stdout.splitlines()
+        if len(keys) != 1:
+            raise ValueError('Expected exactly one isolated SSH identity')
+        return ' '.join(keys[0].split()[:2])
+    finally:
+        subprocess.run(['ssh-agent', '-k'], env=env, capture_output=True, text=True, check=True)
 
 
 def main():
