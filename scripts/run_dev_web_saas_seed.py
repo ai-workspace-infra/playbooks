@@ -9,7 +9,7 @@ from pathlib import Path
 import dev_feature_candidate as candidate
 from dev_k3s_bootstrap import validate_cmdb
 from dev_ssh_binding import binding, run
-from run_dev_feature_flux import validate_candidate_receipt
+from run_dev_feature_flux import validate_candidate_receipt, validate_prepare_receipt
 from tagged_seed_baseline import validate_receipt_inputs
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +37,17 @@ def execute(a):
         # projected baseline and namespace incarnation before considering a
         # future tagged execution path. This check alone grants no authority.
         validate_receipt_inputs(control, a.namespace_uid)
+        require(a.prepare_receipt is not None, 'authenticated prepare receipt required')
+        prior = read_bound(a.prepare_receipt, a.prepare_sha256)
+        projection = control['projection']
+        observation = candidate.validate_tree(a.gitops_root, a.gitops_sha, a.stage, False, projection)
+        owner_sha = run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).strip()
+        config = {'instance_id': a.instance_id, 'namespace': observation['namespace'],
+                  'node_uid': a.node_uid, 'cluster_uid': a.cluster_uid, 'namespace_uid': a.namespace_uid,
+                  'candidate_sha': a.gitops_sha, 'platform_sha': a.platform_sha,
+                  'owner_sha': owner_sha, 'manifest_sha256': observation['manifest_sha256'],
+                  'tagged_lane': projection['tagged_lane']}
+        validate_prepare_receipt(prior, config, observation)
     # This owner still binds its database, images and schema to the referral
     # lane. Never let a tagged receipt fall through to that fixed target.
     require(control.get('schema_version') == 'dev-feature-candidate/v1',
@@ -88,6 +99,8 @@ def main():
         p.add_argument('--'+key,required=True)
     for key in ('cmdb','candidate-receipt','gitops-root','receipt'):
         p.add_argument('--'+key,required=True,type=Path)
+    p.add_argument('--prepare-receipt', type=Path)
+    p.add_argument('--prepare-sha256')
     execute(p.parse_args())
 
 
