@@ -28,9 +28,13 @@ class FeatureOwnerCheckoutTest(unittest.TestCase):
                 checkouts = [step["with"] for step in steps
                              if step.get("uses", "").startswith("actions/checkout@")
                              and step.get("with", {}).get("repository") == "ai-workspace-infra/playbooks"]
-                self.assertEqual(len(checkouts), 1)
-                self.assertEqual(checkouts[0]["ref"], "${{ job.workflow_sha }}")
-                self.assertIs(checkouts[0]["persist-credentials"], False)
+                self.assertEqual(len(checkouts), 2 if name == 'dev-web-saas-seed.yml' else 1)
+                for checkout in checkouts:
+                    self.assertEqual(checkout["ref"], "${{ job.workflow_sha }}")
+                    self.assertIs(checkout["persist-credentials"], False)
+                if name == 'dev-web-saas-seed.yml':
+                    self.assertEqual(workflow['jobs']['lane']['if'], "inputs.phase != 'identity-probe'")
+                    self.assertEqual(workflow['jobs']['identity-probe']['if'], "inputs.phase == 'identity-probe'")
 
 
 if __name__ == "__main__":
