@@ -450,7 +450,9 @@ def test_initialized_native_recovery_skips_native_and_role_rotation(monkeypatch)
     def job(purpose,*args,**kwargs):
         jobs.append(purpose)
         if purpose == 'manifest': return json.dumps(manifest)
-        if purpose.startswith('probe-'): return 'identity_probes_verified\n'
+        if purpose.startswith('probe-'):
+            assert kwargs.get('wait_postgres') == image
+            return 'identity_probes_verified\n'
         raise AssertionError('native init must not be repeated')
     owner.job = job
     result = owner.initialize()
