@@ -45,7 +45,8 @@ def execute(a):
     cmdb = validate_cmdb(read_bound(a.cmdb, a.cmdb_sha256), a.instance_id)
     control = validate_candidate_receipt(read_bound(a.candidate_receipt, a.candidate_sha256),
         a.gitops_sha, a.stage, os.environ.get('GITHUB_RUN_ID'))
-    if control.get('schema_version') == 'dev-feature-candidate/v2':
+    tagged = control.get('schema_version') == 'dev-feature-candidate/v2'
+    if tagged:
         # Candidate provenance has already been checked above. Bind the exact
         # projected baseline and namespace incarnation before considering a
         # future tagged execution path. This check alone grants no authority.
@@ -54,6 +55,8 @@ def execute(a):
         prior = read_bound(a.prepare_receipt, a.prepare_sha256)
         require_same_run_prepare(prior, os.environ)
         projection = control['projection']
+        require(projection['tagged_lane'].get('feature_id') == 'sit-test-1483',
+                'tagged seed is authorized only for the reviewed rehearsal')
         observation = candidate.validate_tree(a.gitops_root, a.gitops_sha, a.stage, False, projection)
         owner_sha = run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).strip()
         config = {'instance_id': a.instance_id, 'namespace': observation['namespace'],
@@ -61,23 +64,25 @@ def execute(a):
                   'candidate_sha': a.gitops_sha, 'platform_sha': a.platform_sha,
                   'owner_sha': owner_sha, 'manifest_sha256': observation['manifest_sha256'],
                   'tagged_lane': projection['tagged_lane']}
-        validate_prepare_receipt(prior, config, observation)
-    # This owner still binds its database, images and schema to the referral
-    # lane. Never let a tagged receipt fall through to that fixed target.
-    require(control.get('schema_version') == 'dev-feature-candidate/v1',
-            'tagged lane database seed owner is not implemented')
-    observation = candidate.validate_tree(a.gitops_root, a.gitops_sha, a.stage)
-    owner_sha = run(['git','-C',str(ROOT),'rev-parse','HEAD']).strip()
+        runtime_mapping = validate_prepare_receipt(prior, config, observation)
+    else:
+        require(control.get('schema_version') == 'dev-feature-candidate/v1', 'unknown candidate receipt schema')
+        observation = candidate.validate_tree(a.gitops_root, a.gitops_sha, a.stage)
+        owner_sha = run(['git','-C',str(ROOT),'rev-parse','HEAD']).strip()
     require(candidate.SCOPE.SHA.fullmatch(a.platform_sha), 'immutable platform SHA required')
     config = {'phase':a.phase,'stage':a.stage,'namespace':observation['namespace'],
         'candidate_sha':a.gitops_sha,'platform_sha':a.platform_sha,'owner_sha':owner_sha,
         'manifest_sha256':observation['manifest_sha256'],'instance_id':a.instance_id,
         'node_uid':a.node_uid,'cluster_uid':a.cluster_uid,'namespace_uid':a.namespace_uid}
+    if tagged:
+        config.update(tagged_lane=projection['tagged_lane'], runtime_mapping=runtime_mapping,
+                      data_baseline_inputs=control['data_baseline_inputs'],
+                      data_baseline_sha256=control['data_baseline_sha256'])
     # Reuse A's validator for UID/SHA/namespace constraints without changing A's
     # approval or namespace ownership behavior. Actual live scope is rechecked.
     candidate.SCOPE.validate({**config,'mode':'prepare','environment':a.stage,'node_name':'dev-k3s-v5'})
     a.receipt.unlink(missing_ok=True)
-    with binding(cmdb,a.instance_id) as transport:
+    with binding(cmdb,a.instance_id,tagged=tagged) as transport:
         report = transport.directory/'seed-receipt.json'
         variables = transport.directory/'seed-vars.json'
         variables.write_text(json.dumps({'dev_web_saas_seed_target':'dev-k3s-v5',
