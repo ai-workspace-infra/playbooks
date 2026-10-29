@@ -112,6 +112,28 @@ def provision(client, spec, issuer, public_keys):
     if existing_mount is not None and existing_mount.get('type') != 'jwt':
         raise VaultError('auth mount exists with an unexpected type', 'mount',
                          {'operation': 'auth_mount_inspect', 'reason': 'unexpected_mount_type'})
+    if existing_mount is None:
+        try:
+            status, capability_result = client.request(
+                'POST', 'sys/capabilities-self',
+                {'paths': ['sys/auth/' + spec.mount]})
+        except VaultError:
+            raise VaultError('auth mount capabilities could not be read', 'mount') from None
+        if status != 200:
+            raise VaultError('auth mount capabilities could not be read', 'mount',
+                             {'operation': 'auth_mount_capabilities', 'http_status': status})
+        capability_result = capability_result or {}
+        capabilities = capability_result.get('capabilities')
+        if capabilities is None:
+            capabilities = (capability_result.get('data') or {}).get('capabilities')
+        if not isinstance(capabilities, list) or any(not isinstance(cap, str) for cap in capabilities):
+            raise VaultError('auth mount capabilities response was invalid', 'mount',
+                             {'operation': 'auth_mount_capabilities',
+                              'reason': 'unexpected_capability_response'})
+        missing = sorted({'create', 'update', 'sudo'} - set(capabilities))
+        if missing:
+            raise VaultError('auth mount capabilities are insufficient', 'mount',
+                             {'operation': 'auth_mount_capabilities', 'missing': missing})
     try:
         status, policy = client.request('GET', policy_path)
     except VaultError:

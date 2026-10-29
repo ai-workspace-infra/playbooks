@@ -20,7 +20,7 @@ def require(condition):
 
 
 def sanitize_mount_diagnostic(stage, diagnostic):
-    allowed={'auth_mount_list','auth_mount_inspect','auth_mount_create'}
+    allowed={'auth_mount_list','auth_mount_inspect','auth_mount_create','auth_mount_capabilities'}
     if stage!='vault_mount' or not isinstance(diagnostic,dict) or diagnostic.get('operation') not in allowed:
         return None
     safe={'operation':diagnostic['operation']}
@@ -28,6 +28,11 @@ def sanitize_mount_diagnostic(stage, diagnostic):
         safe['http_status']=diagnostic['http_status']
     if diagnostic.get('reason')=='unexpected_mount_type':
         safe['reason']='unexpected_mount_type'
+    if diagnostic.get('reason')=='unexpected_capability_response':
+        safe['reason']='unexpected_capability_response'
+    missing=diagnostic.get('missing')
+    if isinstance(missing,list) and all(cap in {'create','update','sudo'} for cap in missing) and len(missing)==len(set(missing)):
+        safe['missing']=sorted(missing)
     return safe if len(safe)>1 else None
 
 

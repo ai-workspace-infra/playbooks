@@ -113,7 +113,8 @@ def main():
             record = {'result':'FAILED','stage':stage.removeprefix('stage=')}
             diagnostic = getattr(exc, 'safe_diagnostic', None)
             if isinstance(diagnostic, dict):
-                allowed = {'auth_mount_list', 'auth_mount_inspect', 'auth_mount_create'}
+                allowed = {'auth_mount_list', 'auth_mount_inspect', 'auth_mount_create',
+                           'auth_mount_capabilities'}
                 operation = diagnostic.get('operation')
                 if operation in allowed:
                     safe = {'operation': operation}
@@ -121,6 +122,12 @@ def main():
                         safe['http_status'] = diagnostic['http_status']
                     if diagnostic.get('reason') == 'unexpected_mount_type':
                         safe['reason'] = 'unexpected_mount_type'
+                    if diagnostic.get('reason') == 'unexpected_capability_response':
+                        safe['reason'] = 'unexpected_capability_response'
+                    missing = diagnostic.get('missing')
+                    if (isinstance(missing, list) and all(cap in {'create', 'update', 'sudo'} for cap in missing)
+                            and len(missing) == len(set(missing))):
+                        safe['missing'] = sorted(missing)
                     if len(safe) > 1:
                         record['diagnostic'] = safe
             Path(failure_path).write_text(json.dumps(record,sort_keys=True)+'\n')
