@@ -103,6 +103,21 @@ jobs:
           name: ${{ inputs.target_artifact }}
           path: ${{ runner.temp }}/dev-feature-target
       - uses: actions/download-artifact@v4
+        if: inputs.target_artifact != ''
+        with:
+          name: feature-sit-dns-console-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dev-feature-dns/console
+      - uses: actions/download-artifact@v4
+        if: inputs.target_artifact != ''
+        with:
+          name: feature-sit-dns-accounts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dev-feature-dns/accounts
+      - uses: actions/download-artifact@v4
+        if: inputs.target_artifact != ''
+        with:
+          name: feature-sit-dns-billing-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dev-feature-dns/billing
+      - uses: actions/download-artifact@v4
         if: inputs.mode == 'rebuild' || inputs.mode == 'verify'
         with:
           name: ${{ inputs.prepare_artifact }}
@@ -134,7 +149,7 @@ jobs:
           target_args=()
           if [[ -n "$TARGET_ARTIFACT" ]]; then
             [[ "$TARGET_ARTIFACT" == "feature-sit-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ]]
-            target_args=(--target-observation "$RUNNER_TEMP/dev-feature-target/feature-target-observation.json")
+            target_args=(--target-observation "$RUNNER_TEMP/dev-feature-target/feature-target-observation.json" --dns-receipts "$RUNNER_TEMP/dev-feature-dns")
           fi
           if [[ "$MODE" == rebuild ]]; then
             prepare_args=(--prepare-receipt "$RUNNER_TEMP/dev-feature-prepare/receipt.json" --prepare-sha256 "$PREPARE_SHA256")

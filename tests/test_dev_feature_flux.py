@@ -9,6 +9,20 @@ import dev_feature_candidate as C
 R=C.SCOPE
 
 class Contracts(unittest.TestCase):
+ def test_tagged_dns_receipts_bind_all_services_to_candidate_and_target(self):
+  import tempfile,run_dev_feature_flux as owner
+  lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'a'*64}
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);host=lane['feature_tag']+'-sit.onwalk.net'
+   for service,prefix in (('console',''),('accounts','accounts-'),('billing','billing-')):
+    d=root/service;d.mkdir();(d/'receipt.json').write_text(json.dumps({'result':'verified','service':service,'feature_id':lane['feature_id'],'feature_tag':lane['feature_tag'],'candidate_sha256':'a'*64,'hostname':prefix+host,'address':'8.8.8.8','action':'create','record_id':'abc','provider_observation':{'node':'dev-k3s-v5','instance_id':'123','ip':'8.8.8.8','cmdb_sha256':'b'*64}}))
+   owner.validate_dns_receipts(root,lane,'123','8.8.8.8','b'*64)
+   path=root/'accounts'/'receipt.json';original=json.loads(path.read_text())
+   for change in ({'hostname':'other.onwalk.net'},{'candidate_sha256':'c'*64},{'action':'delete'}):
+    path.write_text(json.dumps({**original,**change}))
+    with self.subTest(change=change),self.assertRaises(ValueError):owner.validate_dns_receipts(root,lane,'123','8.8.8.8','b'*64)
+   path.unlink()
+   with self.assertRaises(ValueError):owner.validate_dns_receipts(root,lane,'123','8.8.8.8','b'*64)
  def test_tagged_provider_observation_requires_current_exact_target(self):
   import datetime,run_dev_feature_flux as owner
   now=datetime.datetime.now(datetime.timezone.utc)
