@@ -491,6 +491,7 @@ def test_seeded_scope_repair_is_bound_idempotent_and_preserves_credentials(monke
     owner.validate_empty_recovery = lambda host,passwords,require_empty: 'f'*64
     owner.validate_native_continuation = lambda *args,**kwargs: 'prior-job-uid'
     owner.k = lambda *args: {'status':{'artifact':{'revision':'sha1:'+'a'*40}}}
+    owner.ensure_authorized_rehearsal_rls = lambda: 15
     probes = []
     owner.verify_role_identities = lambda *args: probes.append(args)
     writes = []
@@ -557,3 +558,45 @@ def test_seeded_rehearsal_routes_to_scope_repair_without_reinitializing(monkeypa
     owner.repair_seeded_scope = lambda *args: calls.append(args) or {'result':'verified','seed_recovery':'audit_scope_isolation'}
     assert owner.initialize()['seed_recovery'] == 'audit_scope_isolation'
     assert len(calls) == 1
+
+
+def test_rehearsal_rls_is_scoped_and_verified(monkeypatch):
+    import sys, types
+    monkeypatch.setitem(sys.modules, 'contracts', c)
+    monkeypatch.setitem(sys.modules, 'platform_scope', types.SimpleNamespace(preflight=lambda *args: None, failure_code=scope.failure_code))
+    spec = importlib.util.spec_from_file_location('rls_owner', P.parent / 'seed.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    owner = module.Owner.__new__(module.Owner)
+    owner.ns = 'feature-sit-test-1483-sit'
+    owner.r = {'tagged_lane': {'feature_id':'sit-test-1483', 'feature_tag':'smoke-sit-test-1483', 'candidate_sha256':module.SIT_RLS_CANDIDATE}}
+    state = {'policies': 0, 'invalid': 0, 'tables': set(module.SIT_RLS_TABLES), 'writes': []}
+    def psql(query):
+        if query.startswith('SELECT c.relname'): return '\n'.join(state['tables'])
+        if 'relforcerowsecurity OR' in query: return str(state['invalid'])
+        if query.startswith('SELECT count(*) FROM pg_policy'): return f"{state['policies']}\n{state['policies']}"
+        if query.startswith('BEGIN;'):
+            state['writes'].append(query)
+            state['policies'] = 15
+            return ''
+        raise AssertionError(query)
+    owner.psql = psql
+    assert owner.ensure_authorized_rehearsal_rls() == 15
+    assert state['writes'][0].count('CREATE POLICY accounts_runtime_access') == 15
+    assert 'BYPASSRLS' not in state['writes'][0]
+    assert owner.ensure_authorized_rehearsal_rls() == 15 and len(state['writes']) == 1
+    owner.r['tagged_lane']['candidate_sha256'] = 'other'
+    with pytest.raises(module.Blocked, match='outside'):
+        owner.ensure_authorized_rehearsal_rls()
+    owner.r['tagged_lane']['candidate_sha256'] = module.SIT_RLS_CANDIDATE
+    state['invalid'] = 1
+    with pytest.raises(module.Blocked, match='scope changed'):
+        owner.ensure_authorized_rehearsal_rls()
+    state['invalid'] = 0
+    state['tables'].add('unexpected')
+    with pytest.raises(module.Blocked, match='scope changed'):
+        owner.ensure_authorized_rehearsal_rls()
+    state['tables'].remove('unexpected')
+    state['policies'] = 1
+    with pytest.raises(module.Blocked, match='requires review'):
+        owner.ensure_authorized_rehearsal_rls()

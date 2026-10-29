@@ -20,6 +20,13 @@ ACCOUNTS_IMAGE = 'ghcr.io/ai-workspace-services/accounts@sha256:6edd156ce6974dfd
 PG_AMD64_DIGEST = 'sha256:f326b029499b2f255f5341d0a06d710c4380e6683315c8ab367b25c7069bdfca'
 PG_IMAGE = 'ghcr.io/ai-workspace-services/postgresql@sha256:c6ee94d4c91054128823e816e936e03702eee80fdcc04d3271a7e68167974ad2'
 OWNER = 'dev-web-saas-seed-v1'
+# Explicit user authorization applies only to the frozen rehearsal candidate.
+SIT_RLS_CANDIDATE = 'c470c495623f45ae0f98bf641bcdd49a42d4459c9c3eec0460ea03980b9d8b23'
+SIT_RLS_TABLES = ('account_lifecycle_events','finance_invoices','finance_operation_events',
+                  'finance_operations','finance_payments','finance_refunds','mfa_recovery_codes',
+                  'mfa_reset_requests','network_team_members','network_teams','overlay_config_acks',
+                  'overlay_nodes','password_recovery_challenges','subscription_lifecycle_states',
+                  'team_agent_enrollments')
 
 
 class Blocked(Exception):
@@ -247,7 +254,7 @@ END IF; END $$;
         # substitutes for these connections. Every probe transaction rolls back.
         for role, key, dml in (
             ('xc_accounts_rw', 'ACCOUNTS_PASSWORD',
-             "BEGIN; INSERT INTO public.users(username,password,proxy_uuid) VALUES ('seed_probe','local_probe','00000000-0000-4000-8000-000000000001'); SELECT username FROM public.users WHERE username='seed_probe'; " + ('SELECT count(*) FROM public.cloud_vendor_costs; ' if tagged else '') + "ROLLBACK;"),
+             "BEGIN; INSERT INTO public.users(username,password,proxy_uuid) VALUES ('seed_probe','local_probe','00000000-0000-4000-8000-000000000001'); SELECT username FROM public.users WHERE username='seed_probe'; " + (('SELECT count(*) FROM public.cloud_vendor_costs; ' + ''.join('SELECT count(*) FROM public.' + name + ';' for name in SIT_RLS_TABLES)) if tagged and (self.r.get('tagged_lane') or {}).get('candidate_sha256') == SIT_RLS_CANDIDATE else ('SELECT count(*) FROM public.cloud_vendor_costs; ' if tagged else '')) + "ROLLBACK;"),
             ('xc_billing_rw', 'BILLING_PASSWORD',
              "BEGIN; INSERT INTO public.billing_source_sync_state(source_id) VALUES ('seed_probe'); UPDATE public.billing_source_sync_state SET last_error='' WHERE source_id='seed_probe'; SELECT source_id FROM public.billing_source_sync_state WHERE source_id='seed_probe'; ROLLBACK;"),
             ('xc_lane_audit','AUDIT_PASSWORD',
@@ -265,6 +272,8 @@ END IF; END $$;
             if role in ('xc_billing_rw','xc_lane_audit'):
                 rejects.append('SELECT password FROM public.users LIMIT 1;')
             if role == 'xc_lane_audit':
+                if tagged and (self.r.get('tagged_lane') or {}).get('candidate_sha256') == SIT_RLS_CANDIDATE:
+                    rejects.append('SELECT count(*) FROM public.finance_invoices;')
                 rejects.extend(["INSERT INTO public.billing_source_sync_state(source_id) VALUES (NULL);",
                                 'UPDATE public.schema_migrations SET dirty=true;',
                                 'SET ROLE xc_accounts_rw;'])
@@ -275,6 +284,28 @@ END IF; END $$;
                               ['/bin/sh', '-c', script], probe_env, wait_postgres=pg_image)
             if not result.rstrip().endswith('identity_probes_verified'):
                 raise Blocked('identity probe result missing')
+
+    def ensure_authorized_rehearsal_rls(self):
+        lane = self.r.get('tagged_lane') or {}
+        if (self.ns != 'feature-sit-test-1483-sit' or lane.get('feature_id') != 'sit-test-1483' or
+            lane.get('feature_tag') != 'smoke-sit-test-1483' or lane.get('candidate_sha256') != SIT_RLS_CANDIDATE):
+            raise Blocked('RLS policy authorization is outside this fixed rehearsal')
+        actual = set(self.psql("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND c.relrowsecurity;").split())
+        if actual != set(SIT_RLS_TABLES):
+            raise Blocked('reviewed RLS table or ownership scope changed')
+        invalid = self.psql("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND c.relrowsecurity AND (c.relforcerowsecurity OR pg_get_userbyid(c.relowner)<>'xc_schema_owner');").strip()
+        if invalid != '0':
+            raise Blocked('reviewed RLS table or ownership scope changed')
+        policy_query = "SELECT count(*) FROM pg_policy p JOIN pg_class c ON c.oid=p.polrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relrowsecurity; SELECT count(*) FROM pg_policy p JOIN pg_class c ON c.oid=p.polrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relrowsecurity AND p.polname='accounts_runtime_access' AND p.polcmd='*' AND p.polpermissive AND p.polroles=ARRAY[(SELECT oid FROM pg_roles WHERE rolname='xc_accounts_rw')] AND pg_get_expr(p.polqual,p.polrelid)='true' AND pg_get_expr(p.polwithcheck,p.polrelid)='true';"
+        counts = self.psql(policy_query).split()
+        if counts == ['0','0']:
+            commands = ''.join('CREATE POLICY accounts_runtime_access ON public.' + name + ' FOR ALL TO xc_accounts_rw USING (true) WITH CHECK (true);' for name in SIT_RLS_TABLES)
+            self.psql("BEGIN; SET LOCAL lock_timeout='5s'; SET LOCAL ROLE xc_schema_owner; " + commands + ' COMMIT;')
+        elif counts != [str(len(SIT_RLS_TABLES)), str(len(SIT_RLS_TABLES))]:
+            raise Blocked('existing RLS policy state requires review')
+        if self.psql(policy_query).split() != [str(len(SIT_RLS_TABLES)), str(len(SIT_RLS_TABLES))]:
+            raise Blocked('RLS policy verification failed')
+        return len(SIT_RLS_TABLES)
 
     def repair_seeded_scope(self, tables, inputs, accounts_image, schema_sha, pg_image, revision, source_record):
         lane = self.r.get('tagged_lane') or {}
@@ -306,6 +337,7 @@ END IF; END $$;
         # table. No runtime password, table contents, or other lane is changed.
         move = 'ALTER VIEW public.dev_lane_schema_status SET SCHEMA lane_audit;' if view.startswith('public.') else ''
         self.psql("BEGIN; SET LOCAL lock_timeout='5s'; SET LOCAL ROLE xc_schema_owner; CREATE SCHEMA IF NOT EXISTS lane_audit AUTHORIZATION xc_schema_owner; REVOKE ALL ON SCHEMA lane_audit FROM PUBLIC; " + move + ' GRANT USAGE ON SCHEMA lane_audit TO xc_lane_audit; REVOKE USAGE ON SCHEMA public FROM xc_lane_audit; GRANT SELECT ON public.cloud_vendor_costs TO xc_accounts_rw; COMMIT;')
+        rls_count = self.ensure_authorized_rehearsal_rls()
         self.verify_role_identities(pg_image, host, True)
         self.check_namespace()
         final_source = self.k('-n', self.ns, 'get', 'gitrepository', source_record['metadata']['name'])
@@ -315,7 +347,7 @@ END IF; END $$;
                 'node_uid':self.r['node_uid'], 'cluster_uid':self.r['cluster_uid'], 'namespace':self.ns,
                 'namespace_uid':self.r['namespace_uid'], 'candidate_sha':self.r['candidate_sha'],
                 'database_roles':['xc_accounts_rw','xc_billing_rw'], 'schema_initialized':True,
-                'seed_recovery':'audit_scope_isolation', 'prior_native_job_uid':prior_uid,
+                'seed_recovery':'audit_scope_isolation', 'prior_native_job_uid':prior_uid, 'accounts_rls_policy_count':rls_count,
                 'audit_role':'xc_lane_audit', 'audit_metadata_read_verified':True,
                 'audit_write_and_sensitive_read_denied':True, 'feature_id':lane['feature_id'],
                 'feature_tag':lane['feature_tag'], 'candidate_sha256':lane['candidate_sha256'],
