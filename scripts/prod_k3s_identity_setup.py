@@ -51,7 +51,7 @@ def main():
         if role['token_policies'] != [name] or role['token_type'] != 'batch' or role['token_explicit_max_ttl'] > 1200:
             raise ValueError('Unsafe role token boundary')
         claims = role['bound_claims']
-        if claims['repository'] != 'ai-workspace-infra/Platform-Orchestrator' or claims['environment'] != 'prod' or claims['ref'] != ['refs/tags/v*']:
+        if claims['repository'] != 'ai-workspace-infra/Platform-Orchestrator' or claims['environment'] != 'prod' or claims['ref'] != ['refs/tags/v6.*'] or claims.get('ref_protected') != 'true':
             raise ValueError('Unsafe workload binding')
         previous = vault(['read', '-format=json', 'auth/jwt/role/' + name], missing=True)
         if previous:

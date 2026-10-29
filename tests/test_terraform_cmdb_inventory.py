@@ -15,6 +15,14 @@ SPEC.loader.exec_module(MODULE)
 
 
 class TerraformCmdbInventoryTest(unittest.TestCase):
+    def test_missing_environment_remains_missing_provenance(self):
+        record = {'node': {'ip': '192.0.2.1', 'groups': ['test']}}
+        facts = MODULE.build_inventory(record)['_meta']['hostvars']['node']
+        self.assertIsNone(facts['cmdb_environment'])
+        self.assertEqual('unknown', facts['environment'])
+        record['environment'] = 'uat'
+        self.assertEqual('uat', MODULE.build_inventory(record)['_meta']['hostvars']['node']['cmdb_environment'])
+
     def test_cmdb_v1_uses_hosts_and_preserves_provider_facts(self):
         cmdb = {
             "schema_version": "cmdb.v1",

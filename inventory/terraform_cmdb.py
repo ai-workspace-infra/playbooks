@@ -306,7 +306,7 @@ def build_inventory(cmdb):
             "ansible_host": address,
             "ansible_user": host.get("ansible_user", "root"),
             "ansible_port": host.get("ansible_port", 22),
-            "cmdb_environment": cmdb.get("environment") or environment,
+            "cmdb_environment": cmdb.get("environment") or host.get("environment") or host_vars.get("environment"),
             "environment": environment,
             "cmdb_cloud_provider": provider if provider != "unknown" else None,
             "cloud_provider": provider,
