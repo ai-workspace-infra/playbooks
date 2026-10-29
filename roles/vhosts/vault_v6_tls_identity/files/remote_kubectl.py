@@ -13,7 +13,7 @@ from cluster_identity import AUDIENCE, DENIED_AUDIENCE, NAMESPACE, SA, ClusterEr
 
 
 class RemoteKubectl:
-    def __init__(self, host, known_hosts):
+    def __init__(self, host, known_hosts, env=None):
         try:
             address = ipaddress.ip_address(host)
         except ValueError:
@@ -23,7 +23,7 @@ class RemoteKubectl:
         path = Path(known_hosts).resolve()
         if not path.is_file() or path.stat().st_size == 0:
             raise ClusterError('provider-attested host keys required')
-        self.host, self.known_hosts = str(address), str(path)
+        self.host, self.known_hosts, self.env = str(address), str(path), env
 
     def __call__(self, *args):
         fixed = {
@@ -47,7 +47,7 @@ class RemoteKubectl:
                    '-o', 'PermitLocalCommand=no', '-o', 'PasswordAuthentication=no',
                    '-o', 'ConnectTimeout=15', '-l', 'root', self.host, remote]
         try:
-            result = subprocess.run(command, text=True, capture_output=True, timeout=45, check=False)
+            result = subprocess.run(command, text=True, capture_output=True, timeout=45, check=False, env=self.env)
         except (OSError, subprocess.TimeoutExpired):
             raise ClusterError('verified host operation failed') from None
         if result.returncode:

@@ -58,3 +58,19 @@ The authenticated SSH agent, exact CMDB-derived node address and independently
 attested `known_hosts` file must be supplied by a reviewed caller. Vault admin
 credentials are used by the controller process and are not sent to the node.
 This adapter remains unconnected to an execution entrypoint.
+
+`scripts/prod_k3s_vault_tls_identity.py` is the candidate owner entrypoint.
+It requires the reviewed GitOps checkout, checksum-bound CMDB, bootstrap receipt,
+attested host keys and an isolated SSH agent from the caller. It reuses the
+existing V6 CMDB/declaration validation and matches the instance ID to the
+bootstrap receipt. Child commands inherit a limited environment and do not
+receive Vault or SSH private-key variables. Configure mode accepts only the
+named short-lived non-root administrator policy; verify mode uses workload JWTs.
+The receipt is exclusively created with mode 0600 before any Vault mutation and
+contains only redacted evidence. An empty receipt means failure.
+
+The entrypoint cannot establish the provenance of caller-supplied checksums or
+host keys by itself. A reviewed orchestrator must retrieve and validate the exact
+Actions artifacts and provide the SSH agent and short-lived Vault identity. It
+must enforce the separate configure and allow/deny verification phases; this
+owner does not release Flux or change DNS.
