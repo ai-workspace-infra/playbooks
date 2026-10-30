@@ -1,0 +1,37 @@
+---
+# obs_agent Docker role defaults
+
+# 镜像配置
+obs_agent_image: "pubrepo.guance.com/guance/obs-agent:v0.15.2"
+obs_agent_container_name: "obs-agent"
+
+# 安全与权限规范 (文档明确指定 10001:10001)
+obs_agent_user: "10001:10001"
+
+# 部署工作目录 (用于放置 compose 文件和权限受控的 .env)
+obs_agent_deploy_dir: "/opt/obs-agent"
+
+# 持久化卷名称规范
+obs_agent_volume_work: "obs-agent-work"
+obs_agent_volume_profile_cache: "obs-agent-profile-cache"
+obs_agent_volume_owl: "obs-agent-owl"
+
+# Vault 凭据引擎与路径
+obs_agent_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+obs_agent_vault_jwt_token: "{{ lookup('ansible.builtin.env', 'VAULT_JWT_TOKEN') | default('', true) }}"
+obs_agent_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
+obs_agent_vault_path: "obs-agent/{{ inventory_hostname }}"
+
+# 运行时认证凭据 (优先从环境变量/Vault动态注入，不要明文硬编码)
+obs_agent_beak_ws_url: "https://agent-api.guance.com"
+obs_agent_id: ""
+obs_agent_api_key: ""
+
+# 可选：自定义模型与外部服务参数
+obs_agent_llm_base_url: ""
+obs_agent_llm_api_key: ""
+obs_agent_llm_model: ""
+obs_agent_web_search_base_url: ""
+obs_agent_send_email_base_url: ""
+obs_agent_web_search_enabled: ""
+obs_agent_send_email_enabled: ""

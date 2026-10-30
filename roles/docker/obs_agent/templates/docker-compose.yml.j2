@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  obs-agent:
+    image: "{{ obs_agent_image }}"
+    container_name: "{{ obs_agent_container_name }}"
+    restart: unless-stopped
+    user: "{{ obs_agent_user }}"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    volumes:
+      - {{ obs_agent_volume_work }}:/app
+      - {{ obs_agent_volume_profile_cache }}:/var/lib/obs-agent/profile-cache
+      - {{ obs_agent_volume_owl }}:/app/.owl
+
+volumes:
+  {{ obs_agent_volume_work }}:
+    external: true
+  {{ obs_agent_volume_profile_cache }}:
+    external: true
+  {{ obs_agent_volume_owl }}:
+    external: true

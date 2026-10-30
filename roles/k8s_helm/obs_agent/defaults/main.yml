@@ -1,0 +1,33 @@
+---
+# obs_agent Kubernetes Helm role defaults
+
+# Helm Chart 与仓库配置
+obs_agent_helm_repo_url: "https://pubrepo.guance.com/chartrepo/obs-agent"
+obs_agent_helm_repo_name: "obs-agent"
+obs_agent_chart_name: "obs-agent/obs-agent"
+obs_agent_chart_version: "" # 为空则拉取最新版本
+
+obs_agent_release_name: "obs-agent"
+obs_agent_namespace: "obs-agent"
+
+# 镜像配置
+obs_agent_image_repo: "pubrepo.guance.com/guance/obs-agent"
+obs_agent_image_tag: "v0.15.2"
+
+# 存储类配置 (留空表示采用集群默认 StorageClass)
+obs_agent_storage_class: ""
+obs_agent_work_pvc_size: "20Gi"
+obs_agent_profile_cache_pvc_size: "5Gi"
+obs_agent_owl_pvc_size: "5Gi"
+
+# Vault 配置
+obs_agent_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+obs_agent_vault_jwt_token: "{{ lookup('ansible.builtin.env', 'VAULT_JWT_TOKEN') | default('', true) }}"
+obs_agent_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
+obs_agent_vault_path: "obs-agent/clusters/{{ k8s_cluster_name | default('default') }}"
+
+# 认证凭证
+obs_agent_beak_ws_url: "" # 官方 Chart 已内嵌品牌地址，若非自定义一般留空
+obs_agent_id: ""
+obs_agent_api_key: ""
+obs_agent_secret_name: "obs-agent-secret"
