@@ -1,0 +1,28 @@
+- name: Require explicit identity delivery contract
+  ansible.builtin.assert:
+    that:
+      - k3s_identity_environment in ['sit', 'uat', 'prod']
+      - k3s_identity_cluster is match('^[a-z0-9][a-z0-9-]*$')
+      - k3s_identity_cluster_uid | length > 0
+      - k3s_identity_api_server is match('^https://')
+      - k3s_identity_ca_data | length > 0
+      - k3s_identity_checks | length > 0
+    fail_msg: Identity delivery requires a reviewed target, CA and real-identity acceptance contract
+
+- name: Read actual cluster identity before credential delivery
+  ansible.builtin.command:
+    argv: [kubectl, get, namespace, kube-system, -o, 'jsonpath={.metadata.uid}']
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  register: k3s_identity_actual_uid
+  changed_when: false
+
+- name: Verify cluster identity binding
+  ansible.builtin.assert:
+    that: k3s_identity_actual_uid.stdout == k3s_identity_cluster_uid
+
+- name: Deliver each independently authenticated identity
+  ansible.builtin.include_tasks: identity_user.yml
+  loop: [root, operator, auditor]
+  loop_control:
+    loop_var: k3s_identity_role

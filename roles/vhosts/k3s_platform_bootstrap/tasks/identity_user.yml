@@ -1,0 +1,76 @@
+- name: Resolve existing OS identity
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ k3s_identity_role }}"
+
+- name: Read exact role credential from Vault on controller
+  ansible.builtin.uri:
+    url: "{{ lookup('env', 'VAULT_ADDR') }}/v1/kv/data/{{ k3s_identity_environment }}/{{ k3s_identity_cluster }}/{{ k3s_identity_role }}"
+    headers:
+      X-Vault-Token: "{{ lookup('env', 'VAULT_TOKEN') }}"
+    return_content: true
+    validate_certs: true
+  delegate_to: localhost
+  become: false
+  register: k3s_identity_vault
+  no_log: true
+
+- name: Validate credential target and certificate format
+  ansible.builtin.assert:
+    that:
+      - k3s_identity_vault.json.data.data.environment == k3s_identity_environment
+      - k3s_identity_vault.json.data.data.cluster == k3s_identity_cluster
+      - k3s_identity_vault.json.data.data.cluster_uid == k3s_identity_cluster_uid
+      - k3s_identity_vault.json.data.data.subject == k3s_identity_role
+      - k3s_identity_vault.json.data.data.auth_type == 'client_certificate'
+      - k3s_identity_vault.json.data.data.client_private_key | length > 0
+      - k3s_identity_vault.json.data.data.client_certificate | length > 0
+  no_log: true
+
+- name: Prepare private Kubernetes client directory
+  ansible.builtin.file:
+    path: "{{ getent_passwd[k3s_identity_role][4] }}/.kube"
+    state: directory
+    owner: "{{ k3s_identity_role }}"
+    group: "{{ k3s_identity_role }}"
+    mode: '0700'
+
+- name: Deliver independent client configuration without copying admin credentials
+  ansible.builtin.template:
+    src: identity-kubeconfig.json.j2
+    dest: "{{ getent_passwd[k3s_identity_role][4] }}/.kube/identity-config"
+    owner: "{{ k3s_identity_role }}"
+    group: "{{ k3s_identity_role }}"
+    mode: '0600'
+  no_log: true
+  diff: false
+
+- name: Verify actual authenticated Kubernetes username
+  ansible.builtin.command:
+    argv: [kubectl, auth, whoami, -o, json]
+  become: true
+  become_user: "{{ k3s_identity_role }}"
+  environment:
+    KUBECONFIG: "{{ getent_passwd[k3s_identity_role][4] }}/.kube/identity-config"
+  register: k3s_identity_whoami
+  changed_when: false
+
+- name: Require expected independently authenticated subject
+  ansible.builtin.assert:
+    that:
+      - (k3s_identity_whoami.stdout | from_json).status.userInfo.username == k3s_identity_role
+      - "'system:masters' not in ((k3s_identity_whoami.stdout | from_json).status.userInfo.groups | default([]))"
+
+- name: Validate declared allow and deny cases with actual credentials
+  ansible.builtin.command:
+    argv: "{{ ['kubectl', 'auth', 'can-i', item.verb, item.resource, '--namespace', item.namespace] }}"
+  become: true
+  become_user: "{{ k3s_identity_role }}"
+  environment:
+    KUBECONFIG: "{{ getent_passwd[k3s_identity_role][4] }}/.kube/identity-config"
+  loop: "{{ k3s_identity_checks[k3s_identity_role] }}"
+  register: k3s_identity_authorization
+  changed_when: false
+  failed_when: >-
+    (k3s_identity_authorization.stdout | trim != ('yes' if item.allowed else 'no')) or
+    (k3s_identity_authorization.rc != (0 if item.allowed else 1))

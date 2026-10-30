@@ -2,6 +2,89 @@
 
 Bootstraps a single-node K3s control plane and connects Flux to a GitOps root.
 
+## Target initialization scope
+
+The platform bootstrap covers node/cluster initialization, coordination of the
+OS and Kubernetes `root`, `operator`, and `auditor` identities, Flux controllers,
+External Secrets Operator (ESO), and the Ingress controller. GitOps declares
+the desired components and versions; the role establishes the cluster and Flux,
+loads the reviewed declarations, and verifies each component as its gate is
+released. `vhosts/common` remains responsible for OS preparation.
+
+| Order | Initialization and gate |
+| --- | --- |
+| 1 | Verify the IaC/CMDB target and independent storage; run `vhosts/common` to prepare and validate the three OS accounts, then initialize K3s and verify the node and API. |
+| 2 | Install Flux controllers and load the fixed GitOps source and root declarations. |
+| 3 | Bind the verified cluster identity to independently issued credentials in Vault; reconcile the reviewed GitOps RBAC, deliver each user's kubeconfig through the K3s role, and validate with all three actual identities. |
+| 4 | Release and verify ESO and its CRDs; establish the reviewed external Vault identity and secret synchronization prerequisites. |
+| 5 | Initialize and validate the Ingress controller through its own GitOps release. For a generation replacement, do this after Vault, PostgreSQL, observability, and business deployment; validate without changing DNS. |
+
+This is the intended scope, not a claim that each stage is implemented or active.
+The current role directly installs K3s and Flux and stages the paused GitOps graph;
+ESO and Ingress are independently reconciled from GitOps after their respective
+gates are released. Three-role credentials and RBAC delivery remain unfinished.
+Ingress controller initialization does not itself authorize a DNS cutover.
+OS accounts and SSH remain owned by `vhosts/common`; the K3s role coordinates
+their separately authenticated Kubernetes identities, while GitOps owns RBAC
+and Vault stores the per-cluster credentials. See the
+[three-role design](docs/three-role-design.md) for the contract and acceptance.
+
+The [OS and Kubernetes three-role design](docs/three-role-design.md) describes
+the proposed generic root/operator/auditor identities, GitOps declarations,
+execution boundaries, migration/audit reads and acceptance. It is a design,
+not evidence that these Kubernetes identities have been installed.
+
+## TL;DR: initialize K3s identity records
+
+The initializer is a work in progress: it does not verify the target cluster's
+trust chain or authenticate to its API. Use an isolated test Vault until those
+checks and the identity delivery/acceptance workflow are implemented.
+
+Prerequisites: Python 3, OpenSSL, the Vault CLI, an authenticated Vault session
+with exact KV v2 metadata-read and create permissions for all three paths, and
+three independently issued client certificates and private keys. The cluster ID
+and UID must come from the reviewed target declaration; the current script
+records the supplied UID but does not query the cluster to verify it.
+
+Prepare one protected JSON file per role (`root.json`, `operator.json`,
+`auditor.json`). Each must contain exactly these fields; PEM values are JSON
+strings with newline characters escaped as `\n`. The certificate CN must match
+the corresponding role and its private key must match the certificate.
+
+```json
+{
+  "auth_type": "client_certificate",
+  "client_private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+  "client_certificate": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+  "owner": "identity-owner",
+  "issued_at": "2026-01-01T00:00:00Z",
+  "rotation_due_at": "2026-02-01T00:00:00Z",
+  "credential_id": "replace-with-issued-credential-id"
+}
+```
+
+Run from the playbooks repository root, with file paths and the reviewed target
+values supplied by the operator:
+
+```bash
+export VAULT_ADDR="https://vault.example.invalid"
+./scripts/bootstrap_k3s_identity_keys.sh \
+  --environment sit \
+  --cluster core-a \
+  --cluster-uid "<reviewed-cluster-uid>" \
+  --root-file /secure/path/root.json \
+  --operator-file /secure/path/operator.json \
+  --auditor-file /secure/path/auditor.json
+```
+
+The files contain private keys: keep them out of Git, restrict access, and
+remove them according to the credential owner's handling procedure. The script
+creates `kv/sit/core-a/{root,operator,auditor}` with CAS protection and refuses
+existing records. Writes are sequential, not atomic; if one fails, inspect the
+reported created paths before retrying. Do not print secret contents when
+checking the result. `--environment` accepts `sit`, `uat`, or `prod`; the
+placeholder Vault address and paths above must be replaced.
+
 ## Inputs
 
 | Variable | Default | Purpose |
@@ -140,3 +223,21 @@ it on an already initialized cluster or to replace its live Flux graph. A separa
 reviewed transition must reconcile an existing graph while preserving its state.
 Identity-object readiness does not prove Vault allow/deny authorization; that is a
 separate evidence gate before certificate synchronization.
+
+## Independent identity delivery: implementation in progress
+
+`tasks/identity_delivery.yml` is an explicit tasks entrypoint, not yet included in
+normal bootstrap. It requires `k3s_identity_environment`, `k3s_identity_cluster`,
+`k3s_identity_cluster_uid`, `k3s_identity_api_server`, `k3s_identity_ca_data`
+(base64 CA), and `k3s_identity_checks` keyed by root/operator/auditor. Each check
+has verb, resource, namespace and boolean allowed. The controller reads exact
+KV v2 paths using runtime VAULT_ADDR/VAULT_TOKEN; secret tasks suppress logs.
+Existing OS accounts and independently issued credentials must already exist.
+It writes each user's `.kube/identity-config`, verifies `kubectl auth whoami`,
+and evaluates authorization cases using real credentials. GitOps owns RBAC.
+
+This entrypoint has only YAML parsing validation so far. Mandatory security
+case validation, certificate-chain validation, GitOps reconciliation evidence,
+revocation/rollback and isolated integration tests remain required before use.
+Do not call this entrypoint against production yet. It does not install RBAC
+or remove existing admin or legacy audit credentials.
