@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Initialize one environment's OS SSH public keys without overwriting Vault data."""
+"""Initialize environment OS SSH key records without overwriting Vault data."""
 import argparse
 import json
 import os
@@ -40,18 +40,34 @@ def main():
         if shared:
             print('Warning: shared SSH keys can authenticate to multiple roles; '
                   'role separation does not isolate key holders.', file=sys.stderr)
-        result = subprocess.run(['vault', 'kv', 'put', '-mount=kv', '-cas=0',
-                                 args.environment + '/security', '-'],
-                                input=json.dumps(records), text=True,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False)
-        if result.returncode:
-            print('Vault initialization failed; verify access and that the record does not already exist.',
-                  file=sys.stderr)
-            return 1
+        # Confirm every destination is absent before the first write. Permission
+        # and network errors are not evidence of absence; CAS still protects
+        # each write against a concurrent creation after this preflight.
+        for name in ('root', 'operator', 'auditor'):
+            path = args.environment + '/security/' + name
+            result = subprocess.run(['vault', 'kv', 'metadata', 'get', '-mount=kv', path],
+                                    text=True, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.PIPE, check=False)
+            if result.returncode == 0:
+                raise ValueError('destination already exists: kv/' + path)
+            if result.returncode != 2 or 'No value found at ' not in result.stderr:
+                raise ValueError('cannot confirm destination absence: kv/' + path)
+        created = []
+        for name in ('root', 'operator', 'auditor'):
+            path = args.environment + '/security/' + name
+            result = subprocess.run(['vault', 'kv', 'put', '-mount=kv', '-cas=0', path, '-'],
+                                    input=json.dumps({'authorized_keys': records[name]}), text=True,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False)
+            if result.returncode:
+                print('Vault initialization failed at kv/' + path + '; created: ' +
+                      (', '.join(created) if created else 'none') +
+                      '. Inspect these paths before retrying.', file=sys.stderr)
+                return 1
+            created.append('kv/' + path)
     except (OSError, UnicodeError, ValueError) as exc:
         print('Preflight failed: ' + str(exc), file=sys.stderr)
         return 1
-    print('Initialized kv/' + args.environment + '/security with root, operator and auditor public keys.')
+    print('Initialized root, operator and auditor public-key records under kv/' + args.environment + '/security/.')
     return 0
 
 
