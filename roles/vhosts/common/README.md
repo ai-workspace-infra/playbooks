@@ -10,9 +10,11 @@ the controller needs `vault`, `ssh-keygen`, Vault authentication and the
 `ansible.posix` collection. The profile fails on unmanaged user, group or home
 collisions, missing public keys, or incompatible SSH authentication policy.
 
-It creates private `vhosts-operator` and `vhosts-auditor` groups without using
-the OS's potentially pre-existing `operator` group. It adds authorized keys
-without deleting existing keys, preserves root and the
+It uses the `operator` and `auditor` groups as their respective primary groups.
+An existing empty `operator` group may be reused; unexpected members, unmanaged
+accounts and home collisions fail before changes. Reused OS group ownership and
+permissions must be inspected on the target before enabling this profile. It adds
+authorized keys without deleting existing keys, preserves root and the
 old `cluster-audit`, and uses root-owned markers for safe reruns. The initial
 operator sudo rule permits only `systemctl is-system-running`; other runtime and
 cluster permissions belong to their owners and are not implicitly granted. The

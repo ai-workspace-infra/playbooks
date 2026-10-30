@@ -61,7 +61,7 @@
 
 - name: OS identities | check existing role groups
   ansible.builtin.command:
-    argv: [getent, group, 'vhosts-{{ item }}']
+    argv: [getent, group, '{{ item }}']
   register: common_os_identity_existing_groups
   changed_when: false
   failed_when: common_os_identity_existing_groups.rc not in [0, 2]
@@ -98,7 +98,7 @@
 - name: OS identities | reject unmanaged role group or home collisions
   ansible.builtin.assert:
     that:
-      - (item.0.rc == 2 and not item.1.stat.exists) or (item.2.stat.exists and item.2.stat.isreg and item.2.stat.uid == 0 and item.2.stat.mode == '0600')
+      - ((item.0.rc == 2 or (item.0.item == 'operator' and item.0.rc == 0 and item.0.stdout.split(':')[-1] == '')) and not item.1.stat.exists) or (item.2.stat.exists and item.2.stat.isreg and item.2.stat.uid == 0 and item.2.stat.mode == '0600')
     fail_msg: Existing group or home lacks a trusted common ownership marker.
   loop: '{{ common_os_identity_existing_groups.results | zip(common_os_identity_homes.results, common_os_identity_markers.results) | list }}'
   loop_control:
@@ -115,7 +115,7 @@
 - name: OS identities | reject unexpected group membership
   ansible.builtin.assert:
     that:
-      - item.stdout.split() == ['vhosts-' + item.item.item]
+      - item.stdout.split() == [item.item.item]
     fail_msg: Managed account has unexpected groups; inspect before changing it.
   loop: '{{ common_os_identity_groups.results }}'
   when: not item.skipped | default(false)
@@ -175,14 +175,14 @@
 
 - name: OS identities | create role groups
   ansible.builtin.group:
-    name: 'vhosts-{{ item }}'
+    name: '{{ item }}'
     state: present
   loop: [operator, auditor]
 
 - name: OS identities | create role accounts without passwords or supplementary groups
   ansible.builtin.user:
     name: '{{ item.item }}'
-    group: 'vhosts-{{ item.item }}'
+    group: '{{ item.item }}'
     shell: "{{ item.stdout.split(':')[-1] if item.rc == 0 else '/usr/sbin/nologin' }}"
     create_home: true
     password_lock: true
