@@ -30,22 +30,29 @@
 
 日常运行操作员是人或自动化操作身份；实际应用进程另用非 root 服务身份，不继承操作员的 sudo 或管理权限。rootful Docker socket、`docker` 组和任意 sudo 都具备接近 root 的主机管理能力；不得在授予这些权限后声称 operator 与 root 强制隔离。确需这些能力时按显式系统管理阶段处理，审计账户不得获得。
 
-## 3. OS 所需 Vault KV 路径
+## 3. 环境级 Vault KV 记录
 
-使用 KV v2；`<environment>`、`<node>` 必须由声明显式提供，缺失则停止，不回退到生产路径。以下为 CLI 逻辑路径，API/policy 路径在 `kv/` 后加入 `data/`；metadata 权限单独评审。
+各环境共用一条 KV v2 记录，所有节点消费相同公钥授权，不按节点复制配置。调用方必须显式指定 `<environment>`，允许 `sit`、`uat`、`prod`，缺失或不支持时停止，不回退到生产路径。
 
-| 用途 | KV CLI 路径 | 规划字段与消费者 |
+| 用途 | KV CLI 路径 | 字段 |
 | --- | --- | --- |
-| 主机 OS 身份绑定 | `kv/<environment>/platform/nodes/<node>/identity-bindings` | 三用户名、SSH 授权引用及受控 OS 权限配置；common 读取，GitOps 只保存非敏感引用 |
-| root SSH 授权 | `kv/<environment>/platform/nodes/<node>/ssh/root` | `authorized_keys`；受控 common 管理身份读取并部署公钥 |
-| operator SSH 授权 | `kv/<environment>/platform/nodes/<node>/ssh/operator` | `authorized_keys`；受控 common 管理身份读取 |
-| auditor SSH 授权 | `kv/<environment>/platform/nodes/<node>/ssh/auditor` | `authorized_keys`；受控 common 管理身份读取 |
+| Linux SSH 公钥授权 | `kv/<environment>/security` | `root`、`operator`、`auditor`，每个字段为对应角色的公钥文本，多把公钥使用换行分隔 |
 
-此表只保留 OS 记录，不包含 Kubernetes 身份映射、迁移源连接、目标写入或管理连接路径。
+例如生产路径为 `kv/prod/security`，KV v2 API/policy 路径为 `kv/data/prod/security`。该条记录按环境授权，不按节点复制；字段为公钥，不存放 SSH 私钥。各角色的公钥必须不同；调用方的 Vault 读取身份可读取该记录，具体授权和轮换由 Vault owner 管理。
 
-SSH 优先由操作员各自持有私钥；Vault 保存公钥授权或提供短期 SSH 证书，不默认创建三个共享私钥。自动化私钥确有需要时使用调用方已有的独立受控凭据路径，不放入共享授权记录。common 消费已授权的 Vault 读取能力，不自行创建或修改 Vault policy。
+使用已认证 Vault 管理终端手动初始化：
 
-V6 示例参数为 `environment=prod`、`node=prod-k3s-v6`，例如 `kv/prod/platform/nodes/prod-k3s-v6/ssh/operator`。这些仅为路径规划，尚未写入 Vault。既有 `kv/prod/platform/prod-k3s-v6/ssh` 在消费者切换验收前保持可用，不删除、不复制秘密到新路径。
+```sh
+export VAULT_ADDR=https://vault.svc.plus
+python3 scripts/bootstrap_os_identity_keys.py --environment prod \
+  --root-public-keys /path/to/root.pub \
+  --operator-public-keys /path/to/operator.pub \
+  --auditor-public-keys /path/to/auditor.pub
+```
+
+每个文件可包含多行 SSH 公钥。脚本验证每把公钥和角色间指纹不重用，使用 KV v2 `cas=0` 仅创建不存在的记录；已有记录时停止，不能覆盖或清空其他字段。已有记录的更新和轮换另按 Vault owner 的受控流程执行。脚本不会生成私钥或将数据写入 Git。`prod` 是示例，目标环境必须明确指定。
+
+旧 `kv/prod/platform/prod-k3s-v6/ssh` 保持原有调用方使用，消费者切换验收前不删除、不复制秘密到新路径。当前新路径只代表规划及初始化工具，不代表已写入或 common 已消费。
 
 ## 4. 新 OS 节点接管顺序
 
