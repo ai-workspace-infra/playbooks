@@ -98,7 +98,8 @@ def main():
              '--root-name', declared['k3s_platform_flux_root_name'],
              '--source', declared['k3s_platform_flux_source_name'],
              '--namespace', declared.get('k3s_platform_flux_namespace', 'flux-system'),
-             '--git-url', declared['k3s_platform_git_url']], os.environ.copy(), stdout=subprocess.DEVNULL)
+             '--git-url', declared['k3s_platform_git_url'],
+             '--state', 'active' if declared['k3s_platform_flux_bootstrap_mode'] == 'declarative_active' else 'paused'], os.environ.copy(), stdout=subprocess.DEVNULL)
     env = {k: v for k, v in os.environ.items() if not k.startswith(('VAULT_', 'LINODE_'))}
     key = env.pop('SSH_PRIVATE_KEY', '')
     require(bool(key), 'Runtime Vault SSH key missing')
@@ -135,9 +136,9 @@ def main():
         require(receipt.get('result') == 'COMMON_NODE_VERIFIED', 'Missing common-only receipt')
         print('COMMON_NODE_VERIFIED; host identity preparation complete')
         return
-    require(receipt.get('result') == 'PAUSED_BOOTSTRAP_VERIFIED', 'Missing verified paused receipt')
+    require(receipt.get('result') == ('FLUX_HANDOVER_VERIFIED' if declared['k3s_platform_flux_bootstrap_mode'] == 'declarative_active' else 'PAUSED_BOOTSTRAP_VERIFIED'), 'Missing verified bootstrap receipt')
     require(receipt.get('audit', {}).get('result') == 'AUDIT_ALLOW_DENY_VERIFIED', 'Independent audit identity not verified')
-    print('PAUSED_BOOTSTRAP_VERIFIED; no business reconciliation or writer transfer performed')
+    print(receipt['result'])
 
 
 if __name__ == '__main__':

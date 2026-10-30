@@ -46,19 +46,19 @@ def identity(doc):
     return doc["kind"], meta.get("namespace", ""), meta["name"]
 
 
-def documents(output):
+def documents(output, state="paused"):
     docs = list(yaml.safe_load_all(output))
     for doc in docs:
         if not isinstance(doc, dict) or doc.get("kind") not in ALLOWED:
             raise ValueError("bootstrap accepts only Flux declarations and namespaces")
         if doc["kind"] in FLUX_APIS:
-            if doc.get("apiVersion") != FLUX_APIS[doc["kind"]] or doc.get("spec", {}).get("suspend") is not True:
+            if doc.get("apiVersion") != FLUX_APIS[doc["kind"]] or (state == "paused" and doc.get("spec", {}).get("suspend") is not True):
                 raise ValueError("every GitRepository, Flux Kustomization and HelmRelease must be suspended")
         identity(doc)
     return docs
 
 
-def build(checkout, commit, root_path, root_name, source_name, namespace, git_url, runner=command):
+def build(checkout, commit, root_path, root_name, source_name, namespace, git_url, runner=command, state="paused"):
     checkout = Path(checkout).resolve()
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("a full immutable checkout commit is required")
@@ -67,7 +67,7 @@ def build(checkout, commit, root_path, root_name, source_name, namespace, git_ur
     if runner("git", "-C", str(checkout), "status", "--porcelain", "--untracked-files=all"):
         raise ValueError("bootstrap checkout must be clean")
     root_dir = inside(checkout, root_path)
-    docs = documents(runner("kubectl", "kustomize", str(root_dir)))
+    docs = documents(runner("kubectl", "kustomize", str(root_dir)), state)
     indexed = {}
 
     def add(items):
@@ -101,6 +101,15 @@ def build(checkout, commit, root_path, root_name, source_name, namespace, git_ur
     children = [doc for doc in docs if doc["kind"] == "Kustomization" and identity(doc) != identity(root)]
     if not children:
         raise ValueError("at least one independent child unit is required")
+    if state == "active":
+        if root["spec"].get("suspend", False) or sources[source_name]["spec"].get("suspend", False):
+            raise ValueError("Flux handover requires active source and root")
+        for child in children:
+            inside(checkout, child["spec"]["path"])
+            ref = child["spec"].get("sourceRef", {})
+            if ref.get("kind") != "GitRepository" or ref.get("name") not in sources:
+                raise ValueError("child source is not declared")
+        return docs
     used_sources = set()
     v6 = root_name == "prod-k3s-v6"
     if v6 and not (set(V6_DEFERRED) | {V6_ESO[0]}).issubset({c["metadata"]["name"] for c in children}):
@@ -146,9 +155,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for field in ("checkout", "commit", "root-path", "root-name", "source", "namespace", "git-url"):
         parser.add_argument("--" + field, required=True)
+    parser.add_argument("--state", choices=("paused", "active"), default="paused")
     args = parser.parse_args()
     try:
-        result = build(args.checkout, args.commit, args.root_path, args.root_name, args.source, args.namespace, args.git_url)
+        result = build(args.checkout, args.commit, args.root_path, args.root_name, args.source, args.namespace, args.git_url, state=args.state)
         sys.stdout.write(yaml.safe_dump_all(result, sort_keys=False))
     except (ValueError, KeyError, TypeError, yaml.YAMLError, subprocess.TimeoutExpired):
         raise SystemExit("paused Flux declaration validation failed; no declarations emitted") from None
