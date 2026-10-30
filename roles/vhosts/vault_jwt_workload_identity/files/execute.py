@@ -55,7 +55,9 @@ def execute(config, env=None, collector=cluster_identity.collect, remote_type=re
                 stage = 'release_' + exc.stage if exc.stage in release_stages else 'release_cluster_identity'
         else:
             stage = 'cluster_' + exc.stage if exc.stage in allowed else 'cluster_identity'
-        raise RuntimeError('stage=' + stage) from None
+        error = RuntimeError('stage=' + stage)
+        error.safe_diagnostic = exc.diagnostic
+        raise error from None
     except (KeyError, TypeError, ValueError, OSError, vault_contract.VaultError):
         raise RuntimeError('stage=' + stage) from None
     if config['mode'] == 'configure':
@@ -130,6 +132,38 @@ def main():
                         safe['missing'] = sorted(missing)
                     if len(safe) > 1:
                         record['diagnostic'] = safe
+                elif (record['stage'] == 'release_live_gate_order'
+                      and diagnostic.get('operation') == 'live_flux_gate_state'):
+                    safe_names = {
+                        'GitRepository/flux-system/config-prod',
+                        'GitRepository/flux-system/vault-prod-config',
+                        'GitRepository/flux-system/postgresql-prod-config',
+                        'GitRepository/flux-system/ingress-prod-config',
+                        'GitRepository/flux-system/observability-prod-config',
+                        'GitRepository/flux-system/web-saas-prod-config',
+                        'Kustomization/flux-system/prod-k3s-v6',
+                        'Kustomization/flux-system/external-secrets',
+                        'Kustomization/flux-system/vault-tls-identity',
+                        'Kustomization/flux-system/vault-tls-bootstrap',
+                        'Kustomization/flux-system/vault-prod',
+                        'Kustomization/flux-system/postgresql-prod',
+                        'Kustomization/flux-system/ingress-prod',
+                        'Kustomization/flux-system/observability-prod',
+                        'Kustomization/flux-system/web-saas-prod',
+                        'HelmRelease/external-secrets/external-secrets',
+                        'HelmRelease/vault-prod/vault-prod',
+                        'HelmRelease/postgresql-prod/postgresql-prod',
+                        'HelmRelease/ingress-prod/caddy-ingress',
+                        'HelmRelease/observability-prod/observability',
+                        'HelmRelease/observability-prod/observability-agent',
+                        'HelmRelease/observability-prod/datakit',
+                        'HelmRelease/web-saas-prod/web-saas',
+                    }
+                    active = diagnostic.get('active')
+                    if (isinstance(active, list) and all(name in safe_names for name in active)
+                            and len(active) == len(set(active))):
+                        record['diagnostic'] = {'operation': 'live_flux_gate_state',
+                                                'active': sorted(active)}
             Path(failure_path).write_text(json.dumps(record,sort_keys=True)+'\n')
         print('workload_identity_failure ' + stage, file=sys.stderr)
         raise SystemExit('Vault workload identity operation failed') from None

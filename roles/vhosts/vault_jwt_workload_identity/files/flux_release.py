@@ -157,7 +157,10 @@ def release(config, runner, cluster):
         # A failed run may have applied only part or all of this exact stage.
         # Continue only when every active gate belongs to the requested stage.
         if not prior.issubset(active) or not current.issubset(active):
-            raise ClusterError('live V6 Flux gates are outside the requested stage', 'live_gate_order')
+            observed_active = sorted(f'{kind}/{namespace}/{name}'
+                                     for kind, namespace, name in current)
+            raise ClusterError('live V6 Flux gates are outside the requested stage', 'live_gate_order',
+                               {'operation': 'live_flux_gate_state', 'active': observed_active})
         if stage in ('eso', 'identity'):
             if not ready(observed[('Kustomization', 'flux-system', 'prod-k3s-v6')]):
                 raise ClusterError('V6 root is not Ready before the next gate', 'live_gate_order')

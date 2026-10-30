@@ -36,6 +36,45 @@ def sanitize_mount_diagnostic(stage, diagnostic):
     return safe if len(safe)>1 else None
 
 
+def sanitize_release_diagnostic(stage, diagnostic):
+    allowed={
+        'GitRepository/flux-system/config-prod',
+        'GitRepository/flux-system/vault-prod-config',
+        'GitRepository/flux-system/postgresql-prod-config',
+        'GitRepository/flux-system/ingress-prod-config',
+        'GitRepository/flux-system/observability-prod-config',
+        'GitRepository/flux-system/web-saas-prod-config',
+        'Kustomization/flux-system/prod-k3s-v6',
+        'Kustomization/flux-system/external-secrets',
+        'Kustomization/flux-system/vault-tls-identity',
+        'Kustomization/flux-system/vault-tls-bootstrap',
+        'Kustomization/flux-system/vault-prod',
+        'Kustomization/flux-system/postgresql-prod',
+        'Kustomization/flux-system/ingress-prod',
+        'Kustomization/flux-system/observability-prod',
+        'Kustomization/flux-system/web-saas-prod',
+        'HelmRelease/external-secrets/external-secrets',
+        'HelmRelease/vault-prod/vault-prod',
+        'HelmRelease/postgresql-prod/postgresql-prod',
+        'HelmRelease/ingress-prod/caddy-ingress',
+        'HelmRelease/observability-prod/observability',
+        'HelmRelease/observability-prod/observability-agent',
+        'HelmRelease/observability-prod/datakit',
+        'HelmRelease/web-saas-prod/web-saas',
+    }
+    if (stage!='release_live_gate_order' or not isinstance(diagnostic,dict)
+            or diagnostic.get('operation')!='live_flux_gate_state'):
+        return None
+    active=diagnostic.get('active')
+    if not isinstance(active,list) or any(name not in allowed for name in active) or len(active)!=len(set(active)):
+        return None
+    return {'operation':'live_flux_gate_state','active':sorted(active)}
+
+
+def sanitize_failure_diagnostic(stage, diagnostic):
+    return sanitize_mount_diagnostic(stage,diagnostic) or sanitize_release_diagnostic(stage,diagnostic)
+
+
 def build_config(operation,cmdb,receipt,hostkeys,mode):
     require(operation.get('apiVersion')=='operations.svc.plus/v1alpha1' and operation.get('kind')=='VaultWorkloadIdentityOperation')
     spec=operation['spec'];target=spec['target'];vault=spec['vault'];identity=spec['identity']
@@ -111,7 +150,7 @@ def main():
                      'input_validation'}
             if failure.get('result')=='FAILED' and failure.get('stage') in allowed:
                 stage=failure['stage']
-                safe_diagnostic=sanitize_mount_diagnostic(stage,failure.get('diagnostic'))
+                safe_diagnostic=sanitize_failure_diagnostic(stage,failure.get('diagnostic'))
         except (OSError,ValueError,TypeError):
             pass
         record={'result':'FAILED','stage':stage}
