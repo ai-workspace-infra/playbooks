@@ -1,5 +1,31 @@
 # Common vhost configuration
 
+## Explicit OS identity profile
+
+`tasks_from: os_identity.yml` reads the `authorized_keys` fields from Vault KV v2
+`<environment>/security/{root,operator,auditor}` on the controller and configures
+the three OS accounts. Invoke `common_os_identities.yml` with an explicit
+`common_os_identity_environment` (`sit`, `uat`, or `prod`) and `VAULT_ADDR`;
+the controller needs `vault`, `ssh-keygen`, Vault authentication and the
+`ansible.posix` collection. The profile fails on unmanaged user, group or home
+collisions, missing public keys, or incompatible SSH authentication policy.
+
+It creates private `vhosts-operator` and `vhosts-auditor` groups without using
+the OS's potentially pre-existing `operator` group. It adds authorized keys
+without deleting existing keys, preserves root and the
+old `cluster-audit`, and uses root-owned markers for safe reruns. The initial
+operator sudo rule permits only `systemctl is-system-running`; other runtime and
+cluster permissions belong to their owners and are not implicitly granted. The
+auditor gets no sudo or supplementary groups. This profile checks bounded OS
+allow/deny conditions; actual SSH login and broader filesystem/ACL access still
+need independent verification. Shared keys allow their holder to log in as each
+authorized role and do not provide per-person separation.
+
+This is a separate, opt-in profile; legacy `common` and `node_bootstrap.yml`
+remain unchanged. Rollback restores only the selected new sudo policy and
+role-managed accounts/keys after checking consumers and preserving existing root
+access; do not delete old audit accounts or persistent data as a side effect.
+
 Owner of shared OS configuration and the controller prerequisites used to parse
 vhost roles. Remote bootstrap remains explicitly selected by each caller; preparing
 the controller does not enable common host, firewall or SSH changes.

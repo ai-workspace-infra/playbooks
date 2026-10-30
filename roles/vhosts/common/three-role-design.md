@@ -1,6 +1,6 @@
 # Linux OS 三类操作身份：最小实施草案
 
-状态：OS 账户设计已收敛；尚未实现账户任务、写入 Vault 或在主机执行。
+状态：OS 账户设计已收敛；`os_identity.yml` 和独立入口已实现，部署和真实账户验收以运行回执为准。
 
 ## 1. 职责边界
 
@@ -99,4 +99,4 @@ python3 scripts/bootstrap_os_identity_keys.py --environment prod \
 | SSH 与 sudo | 语法校验通过、用户独立授权、父目录/ACL/组及实际访问符合预期；配置变更才 reload |
 | 幂等与恢复 | 重跑不重建用户或无故重启；保留老管理入口；新增访问可独立撤销，不删除未知配置 |
 
-现有 `vhosts/common/tasks/node_bootstrap.yml` 仅建立锁定登录的 cluster-audit 和有限 OS 检查，尚未实现本文的三用户 SSH 和完整 OS 权限交付。后续实现范围仅为上述 OS 基线，不捆绑集群身份或数据迁移。
+现有 `vhosts/common/tasks/node_bootstrap.yml` 仍建立锁定登录的 cluster-audit 和有限 OS 检查。新的独立 `os_identity.yml` 负责三用户 OS 身份，不捆绑集群身份或数据迁移；运行结果和真实 SSH 验收另行记录。旧调用方仍依赖 cluster-audit，消费者迁移前不清理该账户。
