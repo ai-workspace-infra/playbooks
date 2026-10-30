@@ -52,6 +52,16 @@ class ServerlessOperationGateTests(unittest.TestCase):
                 result = self.invoke("prod", operation, RELEASE_TAG, self.locator())
                 self.assertNotEqual(result.returncode, 0)
 
+    def test_direct_owner_rejects_cross_environment_path_and_secret_inputs(self):
+        for config in ({"supabase_vault_path": "kv/data/prod/serverless/supabase"},
+                       {"nested": {"target_dsn": "redacted"}},
+                       {"note": "postgresql://user:password@example.invalid/db"},
+                       {"supabase_vault_path": "kv/data/uat/serverless/supabase\nmalicious"}):
+            with self.subTest(config=config):
+                self.assertNotEqual(self.invoke("uat", "probe", config=config).returncode, 0)
+        self.assertEqual(self.invoke("uat", "probe", config={
+            "supabase_vault_path": "kv/data/uat/serverless/supabase"}).returncode, 0)
+
     def test_checkpoint_run_id_alone_fails_before_credentials(self):
         result = self.invoke("uat", "baseline", RELEASE_TAG, {"checkpoint_run_id": "123"})
         self.assertNotEqual(result.returncode, 0)

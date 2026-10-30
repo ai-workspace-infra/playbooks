@@ -127,7 +127,10 @@ class RepairTests(unittest.TestCase):
         workflow = yaml.safe_load((ROOT / ".github/workflows/serverless-database-operations.yml").read_text())
         trigger = workflow.get("on", workflow.get(True, {}))
         self.assertEqual(set(trigger), {"workflow_call"})
-        steps = workflow["jobs"]["database_operation"]["steps"]
+        caller_steps = workflow["jobs"]["database_operation"]["steps"]
+        self.assertEqual(caller_steps[1]["uses"], "./playbooks-owner/.github/actions/serverless-database-operation")
+        action = yaml.safe_load((ROOT / ".github/actions/serverless-database-operation/action.yml").read_text())
+        steps = action["runs"]["steps"]
         names = [s["name"] for s in steps]
         before = next(s for s in steps if s["name"] == "Capture private before-repair evidence")
         after = next(s for s in steps if s["name"] == "Verify retained data and serving health after repair")
