@@ -2,6 +2,102 @@
 
 Bootstraps a single-node K3s control plane and connects Flux to a GitOps root.
 
+## Target initialization scope
+
+The platform bootstrap covers node/cluster initialization, coordination of the
+OS and Kubernetes `root`, `operator`, and `auditor` identities, Flux controllers,
+External Secrets Operator (ESO), and the Ingress controller. GitOps declares
+the desired components and versions; the role establishes the cluster and Flux,
+loads the reviewed declarations, and verifies each component as its gate is
+released. `vhosts/common` remains responsible for OS preparation.
+
+| Order | Initialization and gate |
+| --- | --- |
+| 1 | Verify the IaC/CMDB target and independent storage; run `vhosts/common` to prepare and validate the three OS accounts, then initialize K3s and verify the node and API. |
+| 2 | Install Flux controllers and load the fixed GitOps source and root declarations. |
+| 3 | Generate independent credentials and private kubeconfigs on the initialized master, verify their trust chain, and write them to Vault; reconcile the reviewed GitOps RBAC, deliver each user's kubeconfig through the K3s role, and validate with all three actual identities. |
+| 4 | Release and verify ESO and its CRDs; establish the reviewed external Vault identity and secret synchronization prerequisites. |
+| 5 | Initialize and validate the Ingress controller through its own GitOps release. For a generation replacement, do this after Vault, PostgreSQL, observability, and business deployment; validate without changing DNS. |
+
+This is the intended scope, not a claim that each stage is implemented or active.
+The current role directly installs K3s and Flux and stages the paused GitOps graph;
+ESO and Ingress are independently reconciled from GitOps after their respective
+gates are released. Three-role credentials and RBAC delivery remain unfinished.
+Ingress controller initialization does not itself authorize a DNS cutover.
+OS accounts and SSH remain owned by `vhosts/common`; the K3s role coordinates
+their separately authenticated Kubernetes identities, while GitOps owns RBAC
+and Vault stores the per-cluster credentials. See the
+[three-role design](docs/three-role-design.md) for the contract and acceptance.
+
+The [OS and Kubernetes three-role design](docs/three-role-design.md) describes
+the proposed generic root/operator/auditor identities, GitOps declarations,
+execution boundaries, migration/audit reads and acceptance. It is a design,
+not evidence that these Kubernetes identities have been installed.
+
+## Identity initialization contract
+
+K3s master initialization generates independent EC client keys and short-lived
+client certificates for root/operator/auditor, verifies the client CA chain,
+key pairing, exact username and expiration, and builds private kubeconfigs on
+the master. No prebuilt credential files are required. No organization/group is
+embedded in the certificates; all three identities receive permissions via RBAC,
+including root (no system:masters bypass). The cluster CA key remains on master.
+
+The role archives the generated record and kubeconfig at
+`kv/<environment>/<cluster>/<role>` with KV v2 CAS=0, then verifies read-back.
+Protected master state supports retry after partial Vault writes. Matching Vault
+records are reused; different records, expired certificates, changed cluster
+UID/API trust, or partial local issuance fail closed. Automatic rotation is
+intentionally not supported; do not delete state or Vault records to force retry.
+
+Normal bootstrap opts in with `k3s_identity_enabled: true`. Existing masters use
+`k3s_identity_bootstrap.yml` without reinstalling K3s or replaying paused bootstrap.
+Both require the reviewed target and actual kube-system UID, API endpoint,
+`k3s_identity_tls_dir` (actual K3s server/tls directory), and acceptance cases for
+all three subjects. The root-owned state directory defaults to
+`/var/lib/k3s-platform-identities` (its parent must already exist). Lifetime is
+`k3s_identity_certificate_days`, default 7, range 2..30 days.
+
+Runtime Vault authentication must provide a narrowly scoped short-lived writer
+through VAULT_ADDR/VAULT_TOKEN. The node needs HTTPS connectivity and system CA
+trust for Vault. Its Vault policy needs read and create on only the three exact
+KV v2 data paths; no list, update, delete or CA-secret access is needed. These
+Vault policy/role grants are not created by this role. GitOps RBAC must already
+be reconciled at the reviewed revision before real-identity acceptance.
+
+The role installs each config as the corresponding OS user at
+`~/.kube/identity-config` (directory 0700, file 0600) and validates actual
+`kubectl auth whoami`, caller-specified allow/deny cases and mandatory sensitive
+operation denials. Select it with KUBECONFIG; the existing default/admin configs
+are preserved. Each role needs at least one allowed and one denied case:
+
+```yaml
+# Repeat with separately reviewed cases for operator and auditor.
+k3s_identity_checks:
+  root:
+    - {verb: get, resource: nodes, namespace: default, allowed: true}
+    - {verb: impersonate, resource: users, namespace: default, allowed: false}
+```
+
+```bash
+# Run only with reviewed immutable code, runtime Vault identity, verified CMDB,
+# reconciled RBAC and a complete non-secret variables file.
+ansible-playbook -i inventory/terraform_cmdb.py k3s_identity_bootstrap.yml \
+  --limit '<selected-master>' -e @/secure/path/identity-vars.yml
+```
+
+The standalone `scripts/bootstrap_k3s_identity_keys.sh --help` wrapper invokes
+the same master-side generator. It only generates/archives root-protected state;
+the role performs per-user delivery and real-identity acceptance. Certificates
+and private state persist solely on the protected master and in Vault; secret
+values are suppressed from task logs/diffs and are not sent in command arguments.
+
+Validation currently includes local certificate-generation/archival unit tests
+and Ansible syntax checks. Live Vault authorization, actual cluster identity/RBAC
+acceptance and production idempotency are separate runtime gates. There is no
+automatic revocation or CA rotation; deleting a Vault record does not revoke a
+certificate. Existing admin recovery and legacy consumers remain untouched.
+
 ## Inputs
 
 | Variable | Default | Purpose |
