@@ -1,0 +1,277 @@
+---
+# Explicit entrypoint: do not include from the legacy common role by default.
+- name: OS identities | require an explicit environment and Vault endpoint
+  ansible.builtin.assert:
+    that:
+      - common_os_identity_environment | default('') in ['sit', 'uat', 'prod']
+      - lookup('ansible.builtin.env', 'VAULT_ADDR') | length > 0
+      - ansible_os_family == 'Debian'
+    fail_msg: An explicit environment, VAULT_ADDR and supported Debian host are required.
+
+- name: OS identities | read role-specific public keys from Vault on controller
+  ansible.builtin.command:
+    argv:
+      - vault
+      - kv
+      - get
+      - -mount=kv
+      - -field=authorized_keys
+      - '{{ common_os_identity_environment }}/security/{{ item }}'
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+  no_log: true
+  loop: [root, operator, auditor]
+  register: common_os_identity_key_results
+
+- name: OS identities | require nonempty public keys
+  ansible.builtin.assert:
+    that:
+      - item.stdout | trim | length > 0
+    fail_msg: An OS role has no SSH public key in Vault.
+  loop: '{{ common_os_identity_key_results.results }}'
+  no_log: true
+
+- name: OS identities | validate SSH public keys on controller
+  ansible.builtin.command:
+    argv: [ssh-keygen, -lf, '-']
+    stdin: '{{ item.1 }}'
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+  no_log: true
+  loop: '{{ common_os_identity_key_results.results | subelements("stdout_lines") }}'
+
+- name: OS identities | check existing users and ownership markers
+  ansible.builtin.command:
+    argv: [getent, passwd, '{{ item }}']
+  changed_when: false
+  failed_when: common_os_identity_users.rc not in [0, 2]
+  register: common_os_identity_users
+  loop: [operator, auditor]
+
+- name: OS identities | inspect ownership markers
+  ansible.builtin.stat:
+    path: '/var/lib/vhosts-common/os-identities/{{ item }}'
+    follow: false
+  register: common_os_identity_markers
+  loop: [operator, auditor]
+
+- name: OS identities | check existing role groups
+  ansible.builtin.command:
+    argv: [getent, group, 'vhosts-{{ item }}']
+  register: common_os_identity_existing_groups
+  changed_when: false
+  failed_when: common_os_identity_existing_groups.rc not in [0, 2]
+  loop: [operator, auditor]
+
+- name: OS identities | inspect existing home paths
+  ansible.builtin.stat:
+    path: '/home/{{ item }}'
+    follow: false
+  register: common_os_identity_homes
+  loop: [operator, auditor]
+
+- name: OS identities | inspect operator sudoers ownership
+  ansible.builtin.stat:
+    path: /etc/sudoers.d/vhosts-common-operator
+    follow: false
+  register: common_os_identity_sudoers
+
+- name: OS identities | reject unmanaged sudoers collision
+  ansible.builtin.assert:
+    that:
+      - not common_os_identity_sudoers.stat.exists or (common_os_identity_markers.results[0].stat.exists and common_os_identity_markers.results[0].stat.isreg and common_os_identity_markers.results[0].stat.uid == 0 and common_os_identity_markers.results[0].stat.mode == '0600')
+    fail_msg: Existing sudoers entry is not associated with a trusted common-managed operator.
+
+- name: OS identities | reject pre-existing unmanaged accounts
+  ansible.builtin.assert:
+    that:
+      - item.0.rc == 2 or (item.1.stat.exists and item.1.stat.isreg and item.1.stat.uid == 0 and item.1.stat.mode == '0600')
+    fail_msg: Existing account lacks a trusted common ownership marker; inspect before changing it.
+  loop: '{{ common_os_identity_users.results | zip(common_os_identity_markers.results) | list }}'
+  loop_control:
+    label: '{{ item.0.item }}'
+
+- name: OS identities | reject unmanaged role group or home collisions
+  ansible.builtin.assert:
+    that:
+      - (item.0.rc == 2 and not item.1.stat.exists) or (item.2.stat.exists and item.2.stat.isreg and item.2.stat.uid == 0 and item.2.stat.mode == '0600')
+    fail_msg: Existing group or home lacks a trusted common ownership marker.
+  loop: '{{ common_os_identity_existing_groups.results | zip(common_os_identity_homes.results, common_os_identity_markers.results) | list }}'
+  loop_control:
+    label: '{{ item.0.item }}'
+
+- name: OS identities | check current supplementary groups for managed accounts
+  ansible.builtin.command:
+    argv: [id, -nG, '{{ item.item }}']
+  loop: '{{ common_os_identity_users.results }}'
+  when: item.rc == 0
+  register: common_os_identity_groups
+  changed_when: false
+
+- name: OS identities | reject unexpected group membership
+  ansible.builtin.assert:
+    that:
+      - item.stdout.split() == ['vhosts-' + item.item.item]
+    fail_msg: Managed account has unexpected groups; inspect before changing it.
+  loop: '{{ common_os_identity_groups.results }}'
+  when: not item.skipped | default(false)
+  loop_control:
+    label: '{{ item.item.item }}'
+
+- name: OS identities | validate current SSH daemon configuration
+  ansible.builtin.command:
+    argv: [/usr/sbin/sshd, -t]
+  check_mode: false
+  changed_when: false
+
+- name: OS identities | validate the existing sudo configuration
+  ansible.builtin.command:
+    argv: [/usr/sbin/visudo, -c]
+  check_mode: false
+  changed_when: false
+
+- name: OS identities | inspect SSH authentication policy for each role
+  ansible.builtin.command:
+    argv: [/usr/sbin/sshd, -T, -C, 'user={{ item }},host=localhost,addr=127.0.0.1']
+  loop: [root, operator, auditor]
+  register: common_os_identity_sshd_policy
+  check_mode: false
+  changed_when: false
+
+- name: OS identities | require public-key access and disabled password access
+  ansible.builtin.assert:
+    that:
+      - "'pubkeyauthentication yes' in item.stdout_lines"
+      - "'passwordauthentication no' in item.stdout_lines"
+      - "'kbdinteractiveauthentication no' in item.stdout_lines"
+      - "item.item != 'root' or 'permitrootlogin without-password' in item.stdout_lines or 'permitrootlogin prohibit-password' in item.stdout_lines"
+    fail_msg: SSH policy is not compatible with the requested role access; resolve before account changes.
+  loop: '{{ common_os_identity_sshd_policy.results }}'
+  no_log: true
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: OS identities | reserve root-owned management directory
+  ansible.builtin.file:
+    path: /var/lib/vhosts-common/os-identities
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: OS identities | reserve account names before creating them
+  ansible.builtin.copy:
+    dest: '/var/lib/vhosts-common/os-identities/{{ item }}'
+    content: "managed by vhosts/common os_identity\n"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  loop: [operator, auditor]
+
+- name: OS identities | create role groups
+  ansible.builtin.group:
+    name: 'vhosts-{{ item }}'
+    state: present
+  loop: [operator, auditor]
+
+- name: OS identities | create role accounts without passwords or supplementary groups
+  ansible.builtin.user:
+    name: '{{ item.item }}'
+    group: 'vhosts-{{ item.item }}'
+    shell: "{{ item.stdout.split(':')[-1] if item.rc == 0 else '/usr/sbin/nologin' }}"
+    create_home: true
+    password_lock: true
+    groups: ''
+    append: false
+    state: present
+  loop: '{{ common_os_identity_users.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: OS identities | add public keys without removing existing authorized keys
+  ansible.posix.authorized_key:
+    user: '{{ item.item }}'
+    key: '{{ item.stdout }}'
+    state: present
+    exclusive: false
+    manage_dir: true
+  loop: '{{ common_os_identity_key_results.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+  no_log: true
+
+- name: OS identities | install restricted operator sudo policy
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/vhosts-common-operator
+    owner: root
+    group: root
+    mode: '0440'
+    content: "operator ALL=(root) NOPASSWD: /usr/bin/systemctl is-system-running\n"
+    validate: '/usr/sbin/visudo -cf %s'
+
+- name: OS identities | verify operator can use the bounded sudo command
+  ansible.builtin.command:
+    argv: [runuser, -u, operator, --, sudo, -n, -l, /usr/bin/systemctl, is-system-running]
+  changed_when: false
+
+- name: OS identities | validate the complete sudo configuration
+  ansible.builtin.command:
+    argv: [/usr/sbin/visudo, -c]
+  changed_when: false
+
+- name: OS identities | verify auditor can read hostname
+  ansible.builtin.command:
+    argv: [runuser, -u, auditor, --, hostname]
+  changed_when: false
+
+- name: OS identities | verify auditor cannot read the system password database
+  ansible.builtin.command:
+    argv: [runuser, -u, auditor, --, test, -r, /etc/shadow]
+  register: common_os_identity_shadow_probe
+  changed_when: false
+  failed_when: common_os_identity_shadow_probe.rc != 1
+
+- name: OS identities | verify auditor cannot write system configuration
+  ansible.builtin.command:
+    argv: [runuser, -u, auditor, --, test, -w, '{{ item }}']
+  register: common_os_identity_write_probe
+  changed_when: false
+  failed_when: common_os_identity_write_probe.rc != 1
+  loop: [/etc, /usr/local/bin, /var/lib/vhosts-common, /data]
+
+- name: OS identities | inspect runtime sockets if present
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: true
+  register: common_os_identity_sockets
+  loop: [/var/run/docker.sock, /run/containerd/containerd.sock, /run/k3s/containerd/containerd.sock]
+
+- name: OS identities | deny auditor access to existing runtime sockets
+  ansible.builtin.command:
+    argv: [runuser, -u, auditor, --, test, -w, '{{ item.item }}']
+  loop: '{{ common_os_identity_sockets.results }}'
+  when: item.stat.exists
+  register: common_os_identity_socket_probe
+  changed_when: false
+  failed_when: common_os_identity_socket_probe.rc != 1
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: OS identities | verify auditor cannot use sudo
+  ansible.builtin.command:
+    argv: [runuser, -u, auditor, --, sudo, -n, /usr/bin/true]
+  register: common_os_identity_sudo_probe
+  changed_when: false
+  failed_when: common_os_identity_sudo_probe.rc != 1
+
+- name: OS identities | enable SSH shell after the local permission probes pass
+  ansible.builtin.user:
+    name: '{{ item }}'
+    shell: /bin/bash
+    state: present
+  loop: [operator, auditor]
