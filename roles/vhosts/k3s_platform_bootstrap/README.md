@@ -15,7 +15,7 @@ released. `vhosts/common` remains responsible for OS preparation.
 | --- | --- |
 | 1 | Verify the IaC/CMDB target and independent storage; run `vhosts/common` to prepare and validate the three OS accounts, then initialize K3s and verify the node and API. |
 | 2 | Install Flux controllers and load the fixed GitOps source and root declarations. |
-| 3 | Bind the verified cluster identity to independently issued credentials in Vault; reconcile the reviewed GitOps RBAC, deliver each user's kubeconfig through the K3s role, and validate with all three actual identities. |
+| 3 | Generate independent credentials and private kubeconfigs on the initialized master, verify their trust chain, and write them to Vault; reconcile the reviewed GitOps RBAC, deliver each user's kubeconfig through the K3s role, and validate with all three actual identities. |
 | 4 | Release and verify ESO and its CRDs; establish the reviewed external Vault identity and secret synchronization prerequisites. |
 | 5 | Initialize and validate the Ingress controller through its own GitOps release. For a generation replacement, do this after Vault, PostgreSQL, observability, and business deployment; validate without changing DNS. |
 
@@ -34,56 +34,25 @@ the proposed generic root/operator/auditor identities, GitOps declarations,
 execution boundaries, migration/audit reads and acceptance. It is a design,
 not evidence that these Kubernetes identities have been installed.
 
-## TL;DR: initialize K3s identity records
+## Identity initialization contract
 
-The initializer is a work in progress: it does not verify the target cluster's
-trust chain or authenticate to its API. Use an isolated test Vault until those
-checks and the identity delivery/acceptance workflow are implemented.
+K3s master initialization owns the three-identity lifecycle. After verifying the
+OS accounts, cluster API and target identity, the role generates independent
+client private keys on the master, signs short-lived client certificates through
+the cluster's controlled administrator signing path, verifies the client trust
+chain and key pairing, and generates each user's private kubeconfig. It writes
+the generated credential records to `kv/<environment>/<cluster>/<role>` using a
+narrowly scoped runtime Vault identity. The signing CA private key stays on the
+master and is never included in those records or handed to the other users.
 
-Prerequisites: Python 3, OpenSSL, the Vault CLI, an authenticated Vault session
-with exact KV v2 metadata-read and create permissions for all three paths, and
-three independently issued client certificates and private keys. The cluster ID
-and UID must come from the reviewed target declaration; the current script
-records the supplied UID but does not query the cluster to verify it.
-
-Prepare one protected JSON file per role (`root.json`, `operator.json`,
-`auditor.json`). Each must contain exactly these fields; PEM values are JSON
-strings with newline characters escaped as `\n`. The certificate CN must match
-the corresponding role and its private key must match the certificate.
-
-```json
-{
-  "auth_type": "client_certificate",
-  "client_private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
-  "client_certificate": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
-  "owner": "identity-owner",
-  "issued_at": "2026-01-01T00:00:00Z",
-  "rotation_due_at": "2026-02-01T00:00:00Z",
-  "credential_id": "replace-with-issued-credential-id"
-}
-```
-
-Run from the playbooks repository root, with file paths and the reviewed target
-values supplied by the operator:
-
-```bash
-export VAULT_ADDR="https://vault.example.invalid"
-./scripts/bootstrap_k3s_identity_keys.sh \
-  --environment sit \
-  --cluster core-a \
-  --cluster-uid "<reviewed-cluster-uid>" \
-  --root-file /secure/path/root.json \
-  --operator-file /secure/path/operator.json \
-  --auditor-file /secure/path/auditor.json
-```
-
-The files contain private keys: keep them out of Git, restrict access, and
-remove them according to the credential owner's handling procedure. The script
-creates `kv/sit/core-a/{root,operator,auditor}` with CAS protection and refuses
-existing records. Writes are sequential, not atomic; if one fails, inspect the
-reported created paths before retrying. Do not print secret contents when
-checking the result. `--environment` accepts `sit`, `uat`, or `prod`; the
-placeholder Vault address and paths above must be replaced.
+Credentials are generated during initialization, not supplied as three prebuilt
+JSON files. `bootstrap_k3s_identity_keys.py` must be adapted to this node-side
+flow. Its current file-import implementation and the existing read-only delivery
+tasks are incomplete draft code and do not implement this contract yet.
+Normal reruns must verify and reuse matching valid credentials; rotation and
+replacement require an explicit reviewed mode rather than unconditional overwrite.
+GitOps owns RBAC; real authentication and allow/deny acceptance follow generation
+and reconciliation. No production command is provided for the incomplete draft.
 
 ## Inputs
 
@@ -232,7 +201,7 @@ normal bootstrap. It requires `k3s_identity_environment`, `k3s_identity_cluster`
 (base64 CA), and `k3s_identity_checks` keyed by root/operator/auditor. Each check
 has verb, resource, namespace and boolean allowed. The controller reads exact
 KV v2 paths using runtime VAULT_ADDR/VAULT_TOKEN; secret tasks suppress logs.
-Existing OS accounts and independently issued credentials must already exist.
+This draft currently expects existing credentials; it must be replaced by the master-side generation flow described above. Existing OS accounts remain a prerequisite.
 It writes each user's `.kube/identity-config`, verifies `kubectl auth whoami`,
 and evaluates authorization cases using real credentials. GitOps owns RBAC.
 

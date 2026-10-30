@@ -109,13 +109,13 @@ KV v2 中 `kv` 为 mount：逻辑路径 `kv/prod/core-a/auditor` 对应读取/�
 | 1. 声明目标 | GitOps | 声明环境、集群标识、节点及身份策略引用；固定 Git revision | 身份契约尚未接入 |
 | 2. 创建主机与独立存储 | IaC | 消费目标声明；输出实例 ID、地址、磁盘等 CMDB 事实，供 Ansible 选择目标 | 现有 IaC/CMDB 交接；IaC 不负责签发客户端凭据 |
 | 3. OS 与平台初始化 | `vhosts/common`、`vhosts/k3s_platform_bootstrap`、Flux | CMDB 选择并验证节点；初始化 OS、K3s、Flux，并按 GitOps 门禁初始化 ESO 和 Ingress；bootstrap receipt 记录节点 UID、集群标记和声明 revision | role 已初始化 K3s/Flux 并加载声明；ESO、Ingress 按各自 GitOps 单元放行，三身份交付尚未接入 |
-| 4. 签发与初始化凭据 | 受控证书 owner、`bootstrap_k3s_identity_keys.py` | 依据固定环境、集群标识和已验收 receipt 的集群标记签发三份独立凭据；脚本创建 Vault KV | 脚本需人工输入；签发、信任链验证及自动交接尚未实现 |
+| 4. 节点生成与归档凭据 | K3s role、节点侧初始化脚本 | master 生成三份独立密钥及客户端证书，验证信任链并生成私有 kubeconfig，写入各角色 Vault KV；CA 私钥留在 master | 当前文件导入脚本需改造；节点生成、签发与归档尚未实现 |
 | 5. 权限与凭据交付 | Flux、K3s/K8s role | Flux 收敛审查后的 RBAC；role 从 Vault 精确路径读取各自凭据，核对目标并交付独立 kubeconfig | 尚未实现；不能将脚本执行等同 RBAC 已生效 |
 | 6. 验收与轮换 | K3s/K8s role、身份 owner | 使用三套真实身份验证允许/拒绝，记录目标和固定 revision；后续按凭据 owner 流程轮换 | 尚未实现 |
 
 当前 paused bootstrap verifier 将 `kube-system` namespace 的 `metadata.uid` 作为 receipt 中的 `cluster_uid` 标记；它是本项目选择的运行时标识，并非 Kubernetes 原生的集群 UID，也不是 IaC 实例 ID。后续交接必须先验证该 receipt 与目标实例和声明匹配，并明确此标记的生命周期：namespace 或集群重建会改变它，需要重新绑定和验证，不能自动复用旧凭据。初始化脚本目前只记录调用者传入的 UID，不自行核验 receipt 或连接集群。
 
-K3s 首次启动和客户端签发之间不能形成循环依赖：先使用受控 bootstrap 管理入口建立并核验集群，再由独立 owner 签发客户端证书，初始化 Vault，最后交付并验收新身份。GitOps 中只放非敏感路径与 RBAC 声明，IaC state、CMDB、Git 仓库和普通日志都不承载私钥。不得将 CA 私钥交给日常 operator 或 auditor，也不得以已有管理员 kubeconfig 冒充三套独立身份。
+K3s 首次启动和客户端签发之间不能形成循环依赖：先使用受控 bootstrap 管理入口建立并核验集群，再由 K3s role 在 master 节点生成各角色独立私钥，经受控管理员签发路径签发短期客户端证书，验证客户端信任链和密钥匹配，生成各用户私有 kubeconfig，并将角色凭据写入 Vault，最后验收新身份。凭据在节点初始化阶段生成，不要求预置三份 JSON 或提前写入 Vault。GitOps 中只放非敏感路径与 RBAC 声明，IaC state、CMDB、Git 仓库和普通日志都不承载私钥。不得将 CA 私钥交给日常 operator 或 auditor，也不得以已有管理员 kubeconfig 冒充三套独立身份。
 
 ESO 与 Ingress 均属于平台初始化范围，但由各自的 GitOps 发布单元声明和调谐，避免 Playbooks 和 Flux 双重管理。集群代际替换时先初始化 ESO 并完成 Vault TLS 前置，再依次部署 Vault、PostgreSQL、Observability 和业务，最后初始化并验证 Ingress；不自动启用或修改 DNS。
 
