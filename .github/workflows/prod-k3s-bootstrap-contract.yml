@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - 'scripts/prod_k3s*.py'
+      - 'scripts/bootstrap_k3s_identity_keys.*'
+      - 'k3s_identity_bootstrap.yml'
+      - 'tests/test_k3s_identity_bootstrap.py'
+      - 'tests/fixtures/k3s_identity_syntax_playbook.yml'
       - 'prod_k3s_generation_bootstrap.yml'
       - 'roles/web_saas_data_volume/**'
       - 'roles/vhosts/k3s_platform_bootstrap/**'
@@ -25,4 +29,6 @@ jobs:
       - run: ansible-galaxy collection install 'ansible.posix:==2.1.0' 'community.general:==10.7.0'
       - run: python -m unittest discover -s tests -p test_prod_k3s*.py
       - run: python -m unittest discover -s tests -p test_paused_flux_declarations.py
+      - run: python -m unittest discover -s tests -p test_k3s_identity_bootstrap.py
+      - run: ANSIBLE_ROLES_PATH=roles ansible-playbook -i tests/fixtures/dev_k3s_syntax.yml tests/fixtures/k3s_identity_syntax_playbook.yml --syntax-check
       - run: ANSIBLE_ROLES_PATH=roles ansible-playbook -i tests/fixtures/dev_k3s_syntax.yml prod_k3s_generation_bootstrap.yml --syntax-check
