@@ -35,9 +35,11 @@ def main():
         records, fingerprints = {}, {}
         for name in ('root', 'operator', 'auditor'):
             records[name], fingerprints[name] = public_keys(getattr(args, name + '_public_keys'))
-        for first, second in (('root', 'operator'), ('root', 'auditor'), ('operator', 'auditor')):
-            if fingerprints[first] & fingerprints[second]:
-                raise ValueError('public keys must be distinct across roles')
+        shared = any(fingerprints[first] & fingerprints[second] for first, second in
+                     (('root', 'operator'), ('root', 'auditor'), ('operator', 'auditor')))
+        if shared:
+            print('Warning: shared SSH keys can authenticate to multiple roles; '
+                  'role separation does not isolate key holders.', file=sys.stderr)
         result = subprocess.run(['vault', 'kv', 'put', '-mount=kv', '-cas=0',
                                  args.environment + '/security', '-'],
                                 input=json.dumps(records), text=True,

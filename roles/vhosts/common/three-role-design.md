@@ -38,7 +38,7 @@
 | --- | --- | --- |
 | Linux SSH 公钥授权 | `kv/<environment>/security` | `root`、`operator`、`auditor`，每个字段为对应角色的公钥文本，多把公钥使用换行分隔 |
 
-例如生产路径为 `kv/prod/security`，KV v2 API/policy 路径为 `kv/data/prod/security`。该条记录按环境授权，不按节点复制；字段为公钥，不存放 SSH 私钥。各角色的公钥必须不同；调用方的 Vault 读取身份可读取该记录，具体授权和轮换由 Vault owner 管理。
+例如生产路径为 `kv/prod/security`，KV v2 API/policy 路径为 `kv/data/prod/security`。该条记录按环境授权，不按节点复制；三个角色是同一记录的不同字段，字段为公钥，不存放 SSH 私钥。暂时允许使用同一公钥，后续应轮换为独立公钥。持有该私钥的人能登录所有获此公钥授权的角色，因此不能声称这些角色在人员身份层面相互隔离。调用方的 Vault 读取身份可读取该记录，具体授权和轮换由 Vault owner 管理。
 
 使用已认证 Vault 管理终端手动初始化：
 
@@ -50,7 +50,7 @@ python3 scripts/bootstrap_os_identity_keys.py --environment prod \
   --auditor-public-keys /path/to/auditor.pub
 ```
 
-每个文件可包含多行 SSH 公钥。脚本验证每把公钥和角色间指纹不重用，使用 KV v2 `cas=0` 仅创建不存在的记录；已有记录时停止，不能覆盖或清空其他字段。已有记录的更新和轮换另按 Vault owner 的受控流程执行。脚本不会生成私钥或将数据写入 Git。`prod` 是示例，目标环境必须明确指定。
+每个文件可包含多行 SSH 公钥。脚本验证每把公钥，复用公钥时输出权限边界提示，并使用 KV v2 `cas=0` 仅创建不存在的记录；已有记录时停止，不能覆盖或清空其他字段。已有记录的更新和轮换另按 Vault owner 的受控流程执行。脚本不会生成私钥或将数据写入 Git。`prod` 是示例，目标环境必须明确指定。也可使用 `bash scripts/bootstrap_os_identity_keys.sh`，参数与 Python 入口相同。
 
 旧 `kv/prod/platform/prod-k3s-v6/ssh` 保持原有调用方使用，消费者切换验收前不删除、不复制秘密到新路径。当前新路径只代表规划及初始化工具，不代表已写入或 common 已消费。
 
