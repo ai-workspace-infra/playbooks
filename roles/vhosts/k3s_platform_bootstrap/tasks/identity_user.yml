@@ -3,31 +3,9 @@
     database: passwd
     key: "{{ k3s_identity_role }}"
 
-- name: Read exact role credential from Vault on controller
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'VAULT_ADDR') }}/v1/kv/data/{{ k3s_identity_environment }}/{{ k3s_identity_cluster }}/{{ k3s_identity_role }}"
-    headers:
-      X-Vault-Token: "{{ lookup('env', 'VAULT_TOKEN') }}"
-    return_content: true
-    validate_certs: true
-  delegate_to: localhost
-  become: false
-  register: k3s_identity_vault
-  no_log: true
-
-- name: Validate credential target and certificate format
-  ansible.builtin.assert:
-    that:
-      - k3s_identity_vault.json.data.data.environment == k3s_identity_environment
-      - k3s_identity_vault.json.data.data.cluster == k3s_identity_cluster
-      - k3s_identity_vault.json.data.data.cluster_uid == k3s_identity_cluster_uid
-      - k3s_identity_vault.json.data.data.subject == k3s_identity_role
-      - k3s_identity_vault.json.data.data.auth_type == 'client_certificate'
-      - k3s_identity_vault.json.data.data.client_private_key | length > 0
-      - k3s_identity_vault.json.data.data.client_certificate | length > 0
-  no_log: true
-
 - name: Prepare private Kubernetes client directory
+  become: true
+  become_user: "{{ k3s_identity_role }}"
   ansible.builtin.file:
     path: "{{ getent_passwd[k3s_identity_role][4] }}/.kube"
     state: directory
@@ -35,9 +13,17 @@
     group: "{{ k3s_identity_role }}"
     mode: '0700'
 
-- name: Deliver independent client configuration without copying admin credentials
-  ansible.builtin.template:
-    src: identity-kubeconfig.json.j2
+- name: Read root-protected master-generated private Kubernetes configuration
+  ansible.builtin.slurp:
+    src: "{{ k3s_identity_state_dir }}/{{ k3s_identity_role }}/kubeconfig"
+  register: k3s_identity_local_config
+  no_log: true
+
+- name: Deliver master-generated private Kubernetes configuration as its OS owner
+  become: true
+  become_user: "{{ k3s_identity_role }}"
+  ansible.builtin.copy:
+    content: "{{ k3s_identity_local_config.content | b64decode }}"
     dest: "{{ getent_passwd[k3s_identity_role][4] }}/.kube/identity-config"
     owner: "{{ k3s_identity_role }}"
     group: "{{ k3s_identity_role }}"
@@ -74,3 +60,39 @@
   failed_when: >-
     (k3s_identity_authorization.stdout | trim != ('yes' if item.allowed else 'no')) or
     (k3s_identity_authorization.rc != (0 if item.allowed else 1))
+
+- name: Require mandatory sensitive-operation denials under actual non-admin identity
+  ansible.builtin.command:
+    argv: "{{ ['kubectl', 'auth', 'can-i', item.verb, item.resource, '--namespace', k3s_identity_checks[k3s_identity_role][0].namespace] }}"
+  become: true
+  become_user: "{{ k3s_identity_role }}"
+  environment:
+    KUBECONFIG: "{{ getent_passwd[k3s_identity_role][4] }}/.kube/identity-config"
+  loop:
+    - {verb: get, resource: secrets}
+    - {verb: create, resource: pods/exec}
+    - {verb: create, resource: pods/attach}
+    - {verb: create, resource: pods/portforward}
+    - {verb: get, resource: nodes/proxy}
+    - {verb: create, resource: serviceaccounts/token}
+    - {verb: bind, resource: roles.rbac.authorization.k8s.io}
+    - {verb: escalate, resource: clusterroles.rbac.authorization.k8s.io}
+    - {verb: impersonate, resource: users}
+    - {verb: create, resource: certificatesigningrequests.certificates.k8s.io}
+  register: k3s_identity_denial
+  changed_when: false
+  failed_when: k3s_identity_denial.stdout | trim != 'no' or k3s_identity_denial.rc != 1
+  when: k3s_identity_role != 'root'
+
+- name: Require auditor business write denials
+  ansible.builtin.command:
+    argv: "{{ ['kubectl', 'auth', 'can-i', item, 'deployments.apps', '--namespace', k3s_identity_checks[k3s_identity_role][0].namespace] }}"
+  become: true
+  become_user: auditor
+  environment:
+    KUBECONFIG: "{{ getent_passwd[k3s_identity_role][4] }}/.kube/identity-config"
+  loop: [create, update, patch, delete]
+  register: k3s_identity_auditor_denial
+  changed_when: false
+  failed_when: k3s_identity_auditor_denial.stdout | trim != 'no' or k3s_identity_auditor_denial.rc != 1
+  when: k3s_identity_role == 'auditor'

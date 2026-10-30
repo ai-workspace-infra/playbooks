@@ -36,23 +36,67 @@ not evidence that these Kubernetes identities have been installed.
 
 ## Identity initialization contract
 
-K3s master initialization owns the three-identity lifecycle. After verifying the
-OS accounts, cluster API and target identity, the role generates independent
-client private keys on the master, signs short-lived client certificates through
-the cluster's controlled administrator signing path, verifies the client trust
-chain and key pairing, and generates each user's private kubeconfig. It writes
-the generated credential records to `kv/<environment>/<cluster>/<role>` using a
-narrowly scoped runtime Vault identity. The signing CA private key stays on the
-master and is never included in those records or handed to the other users.
+K3s master initialization generates independent EC client keys and short-lived
+client certificates for root/operator/auditor, verifies the client CA chain,
+key pairing, exact username and expiration, and builds private kubeconfigs on
+the master. No prebuilt credential files are required. No organization/group is
+embedded in the certificates; all three identities receive permissions via RBAC,
+including root (no system:masters bypass). The cluster CA key remains on master.
 
-Credentials are generated during initialization, not supplied as three prebuilt
-JSON files. `bootstrap_k3s_identity_keys.py` must be adapted to this node-side
-flow. Its current file-import implementation and the existing read-only delivery
-tasks are incomplete draft code and do not implement this contract yet.
-Normal reruns must verify and reuse matching valid credentials; rotation and
-replacement require an explicit reviewed mode rather than unconditional overwrite.
-GitOps owns RBAC; real authentication and allow/deny acceptance follow generation
-and reconciliation. No production command is provided for the incomplete draft.
+The role archives the generated record and kubeconfig at
+`kv/<environment>/<cluster>/<role>` with KV v2 CAS=0, then verifies read-back.
+Protected master state supports retry after partial Vault writes. Matching Vault
+records are reused; different records, expired certificates, changed cluster
+UID/API trust, or partial local issuance fail closed. Automatic rotation is
+intentionally not supported; do not delete state or Vault records to force retry.
+
+Normal bootstrap opts in with `k3s_identity_enabled: true`. Existing masters use
+`k3s_identity_bootstrap.yml` without reinstalling K3s or replaying paused bootstrap.
+Both require the reviewed target and actual kube-system UID, API endpoint,
+`k3s_identity_tls_dir` (actual K3s server/tls directory), and acceptance cases for
+all three subjects. The root-owned state directory defaults to
+`/var/lib/k3s-platform-identities` (its parent must already exist). Lifetime is
+`k3s_identity_certificate_days`, default 7, range 2..30 days.
+
+Runtime Vault authentication must provide a narrowly scoped short-lived writer
+through VAULT_ADDR/VAULT_TOKEN. The node needs HTTPS connectivity and system CA
+trust for Vault. Its Vault policy needs read and create on only the three exact
+KV v2 data paths; no list, update, delete or CA-secret access is needed. These
+Vault policy/role grants are not created by this role. GitOps RBAC must already
+be reconciled at the reviewed revision before real-identity acceptance.
+
+The role installs each config as the corresponding OS user at
+`~/.kube/identity-config` (directory 0700, file 0600) and validates actual
+`kubectl auth whoami`, caller-specified allow/deny cases and mandatory sensitive
+operation denials. Select it with KUBECONFIG; the existing default/admin configs
+are preserved. Each role needs at least one allowed and one denied case:
+
+```yaml
+# Repeat with separately reviewed cases for operator and auditor.
+k3s_identity_checks:
+  root:
+    - {verb: get, resource: nodes, namespace: default, allowed: true}
+    - {verb: impersonate, resource: users, namespace: default, allowed: false}
+```
+
+```bash
+# Run only with reviewed immutable code, runtime Vault identity, verified CMDB,
+# reconciled RBAC and a complete non-secret variables file.
+ansible-playbook -i inventory/terraform_cmdb.py k3s_identity_bootstrap.yml \
+  --limit '<selected-master>' -e @/secure/path/identity-vars.yml
+```
+
+The standalone `scripts/bootstrap_k3s_identity_keys.sh --help` wrapper invokes
+the same master-side generator. It only generates/archives root-protected state;
+the role performs per-user delivery and real-identity acceptance. Certificates
+and private state persist solely on the protected master and in Vault; secret
+values are suppressed from task logs/diffs and are not sent in command arguments.
+
+Validation currently includes local certificate-generation/archival unit tests
+and Ansible syntax checks. Live Vault authorization, actual cluster identity/RBAC
+acceptance and production idempotency are separate runtime gates. There is no
+automatic revocation or CA rotation; deleting a Vault record does not revoke a
+certificate. Existing admin recovery and legacy consumers remain untouched.
 
 ## Inputs
 
@@ -192,21 +236,3 @@ it on an already initialized cluster or to replace its live Flux graph. A separa
 reviewed transition must reconcile an existing graph while preserving its state.
 Identity-object readiness does not prove Vault allow/deny authorization; that is a
 separate evidence gate before certificate synchronization.
-
-## Independent identity delivery: implementation in progress
-
-`tasks/identity_delivery.yml` is an explicit tasks entrypoint, not yet included in
-normal bootstrap. It requires `k3s_identity_environment`, `k3s_identity_cluster`,
-`k3s_identity_cluster_uid`, `k3s_identity_api_server`, `k3s_identity_ca_data`
-(base64 CA), and `k3s_identity_checks` keyed by root/operator/auditor. Each check
-has verb, resource, namespace and boolean allowed. The controller reads exact
-KV v2 paths using runtime VAULT_ADDR/VAULT_TOKEN; secret tasks suppress logs.
-This draft currently expects existing credentials; it must be replaced by the master-side generation flow described above. Existing OS accounts remain a prerequisite.
-It writes each user's `.kube/identity-config`, verifies `kubectl auth whoami`,
-and evaluates authorization cases using real credentials. GitOps owns RBAC.
-
-This entrypoint has only YAML parsing validation so far. Mandatory security
-case validation, certificate-chain validation, GitOps reconciliation evidence,
-revocation/rollback and isolated integration tests remain required before use.
-Do not call this entrypoint against production yet. It does not install RBAC
-or remove existing admin or legacy audit credentials.

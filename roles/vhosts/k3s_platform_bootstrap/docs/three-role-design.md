@@ -100,7 +100,7 @@ OS 方案参考 [common three-role-design.md](../../common/three-role-design.md)
 
 KV v2 中 `kv` 为 mount：逻辑路径 `kv/prod/core-a/auditor` 对应读取/策略路径 `kv/data/prod/core-a/auditor`；元数据路径为 `kv/metadata/prod/core-a/auditor`，不能混用逻辑路径与 API 路径。GitOps 只保存逻辑路径、认证方式及必要的非敏感引用，不保存字段值。
 
-初始化脚本 `scripts/bootstrap_k3s_identity_keys.sh` 接收环境、集群、集群 UID 和三个独立 JSON 输入文件；目前仅支持客户端证书记录。它检查三条目标路径不存在，并以 KV v2 CAS 创建；多条写入不是原子事务，失败时列出已创建路径供检查。脚本校验证书主体、有效期和私钥匹配，但尚未验证目标集群信任链、证书扩展及实际 API 认证，不能作为身份验收或生产放行依据；安全签发和完整证书验证尚待实现。
+初始化脚本 `scripts/bootstrap_k3s_identity_keys.sh` 调用 role 中唯一的节点侧生成器，输入环境、集群、真实集群标记、API 地址、master 的客户端 CA/密钥与服务端 CA 路径，以及受保护状态目录。脚本在节点签发三套独立短期凭据、验证链与密钥匹配、生成私有 kubeconfig，再以 CAS=0 写入和回读 Vault。无需预置 JSON。相同目标的有效本地状态与 Vault 记录可复用；部分签发、不同记录或过期凭据拒绝自动覆盖，需管理者检查。多条 Vault 写入非原子，失败时保留节点受保护状态以供安全重试。CA 私钥不进入 Vault 角色记录。上述代码已实现并通过本地测试，尚未完成实际 Vault 和集群身份验收。
 
 ### 4.2 与 IaC、K3s bootstrap 的交接
 
@@ -109,11 +109,11 @@ KV v2 中 `kv` 为 mount：逻辑路径 `kv/prod/core-a/auditor` 对应读取/�
 | 1. 声明目标 | GitOps | 声明环境、集群标识、节点及身份策略引用；固定 Git revision | 身份契约尚未接入 |
 | 2. 创建主机与独立存储 | IaC | 消费目标声明；输出实例 ID、地址、磁盘等 CMDB 事实，供 Ansible 选择目标 | 现有 IaC/CMDB 交接；IaC 不负责签发客户端凭据 |
 | 3. OS 与平台初始化 | `vhosts/common`、`vhosts/k3s_platform_bootstrap`、Flux | CMDB 选择并验证节点；初始化 OS、K3s、Flux，并按 GitOps 门禁初始化 ESO 和 Ingress；bootstrap receipt 记录节点 UID、集群标记和声明 revision | role 已初始化 K3s/Flux 并加载声明；ESO、Ingress 按各自 GitOps 单元放行，三身份交付尚未接入 |
-| 4. 节点生成与归档凭据 | K3s role、节点侧初始化脚本 | master 生成三份独立密钥及客户端证书，验证信任链并生成私有 kubeconfig，写入各角色 Vault KV；CA 私钥留在 master | 当前文件导入脚本需改造；节点生成、签发与归档尚未实现 |
+| 4. 节点生成与归档凭据 | K3s role、节点侧初始化脚本 | master 生成三份独立密钥及客户端证书，验证信任链并生成私有 kubeconfig，写入各角色 Vault KV；CA 私钥留在 master | 节点侧生成、签发、归档及 role 调用已实现；真实 Vault/集群验收待执行 |
 | 5. 权限与凭据交付 | Flux、K3s/K8s role | Flux 收敛审查后的 RBAC；role 从 Vault 精确路径读取各自凭据，核对目标并交付独立 kubeconfig | 尚未实现；不能将脚本执行等同 RBAC 已生效 |
 | 6. 验收与轮换 | K3s/K8s role、身份 owner | 使用三套真实身份验证允许/拒绝，记录目标和固定 revision；后续按凭据 owner 流程轮换 | 尚未实现 |
 
-当前 paused bootstrap verifier 将 `kube-system` namespace 的 `metadata.uid` 作为 receipt 中的 `cluster_uid` 标记；它是本项目选择的运行时标识，并非 Kubernetes 原生的集群 UID，也不是 IaC 实例 ID。后续交接必须先验证该 receipt 与目标实例和声明匹配，并明确此标记的生命周期：namespace 或集群重建会改变它，需要重新绑定和验证，不能自动复用旧凭据。初始化脚本目前只记录调用者传入的 UID，不自行核验 receipt 或连接集群。
+当前 paused bootstrap verifier 将 `kube-system` namespace 的 `metadata.uid` 作为 receipt 中的 `cluster_uid` 标记；它是本项目选择的运行时标识，并非 Kubernetes 原生的集群 UID，也不是 IaC 实例 ID。后续交接必须先验证该 receipt 与目标实例和声明匹配，并明确此标记的生命周期：namespace 或集群重建会改变它，需要重新绑定和验证，不能自动复用旧凭据。初始化脚本会连接实际集群核对该 UID；调用者仍需核验 receipt、CMDB 与固定声明的绑定。
 
 K3s 首次启动和客户端签发之间不能形成循环依赖：先使用受控 bootstrap 管理入口建立并核验集群，再由 K3s role 在 master 节点生成各角色独立私钥，经受控管理员签发路径签发短期客户端证书，验证客户端信任链和密钥匹配，生成各用户私有 kubeconfig，并将角色凭据写入 Vault，最后验收新身份。凭据在节点初始化阶段生成，不要求预置三份 JSON 或提前写入 Vault。GitOps 中只放非敏感路径与 RBAC 声明，IaC state、CMDB、Git 仓库和普通日志都不承载私钥。不得将 CA 私钥交给日常 operator 或 auditor，也不得以已有管理员 kubeconfig 冒充三套独立身份。
 
