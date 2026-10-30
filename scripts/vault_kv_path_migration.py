@@ -122,6 +122,13 @@ def preview(plan: dict) -> list[str]:
         lines.append(f"RETIREMENT CANDIDATE (NO DELETE): {item['path']} — gate: {item['gate']}")
     for item in plan.get("planned_destinations", []):
         lines.append(f"PLANNED DESTINATION (NO AUTOMATIC COPY): {item['path']} — {item['status']}")
+    for item in plan.get("identity_mappings", []):
+        lines.append(
+            "IDENTITY MAP ONLY (NO CREDENTIAL INHERITANCE): "
+            f"{item['vault_path']} -> chart:{item['chart_role']} "
+            f"os:{item['os_role']} k8s:{item['kubernetes_subject']} "
+            f"secret:{item['kubernetes_secret']}"
+        )
     for item in plan.get("never_copy_without_new_review", []):
         lines.append(f"EXCLUDED FROM AUTOMATIC COPY: {item}")
     return lines
