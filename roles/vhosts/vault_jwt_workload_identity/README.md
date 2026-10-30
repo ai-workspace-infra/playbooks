@@ -11,7 +11,8 @@ host-key attestation and receipt provenance.
 `release-eso`, or `release-identity` (default `verify`). Release modes require
 the pinned GitOps checkout and immutable tag. They apply only the declared V6
 management source and root, then wait for the exact gate set in that release.
-The root stage keeps every child paused; the ESO stage enables only ESO; the
+The PROD environment root is `prod-k3s`; its path remains batch-scoped at
+`environments/clusters/prod-k3s-v6`. The root stage keeps every child paused; the ESO stage enables only ESO; the
 identity stage additionally enables the Vault TLS reader ServiceAccount gate.
 Later stages are intentionally not inferred or enabled by these modes.
 

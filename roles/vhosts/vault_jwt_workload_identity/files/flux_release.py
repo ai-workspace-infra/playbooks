@@ -13,9 +13,10 @@ API = {
     'Kustomization': 'kustomize.toolkit.fluxcd.io/v1',
     'HelmRelease': 'helm.toolkit.fluxcd.io/v2',
 }
+ROOT_NAME = 'prod-k3s'
 STAGES = ('root', 'eso', 'identity')
 BASE_ACTIVE = {('GitRepository', 'flux-system', 'config-prod'),
-               ('Kustomization', 'flux-system', 'prod-k3s-v6')}
+               ('Kustomization', 'flux-system', ROOT_NAME)}
 STAGE_ACTIVE = {
     'root': BASE_ACTIVE,
     'eso': BASE_ACTIVE | {('Kustomization', 'flux-system', 'external-secrets'),
@@ -59,7 +60,7 @@ def graph(checkout, tag, stage):
             or source.get('spec', {}).get('suspend') is not False):
         raise ClusterError('V6 management source differs from the reviewed tag', 'release_declaration')
     if (root.get('apiVersion') != API['Kustomization'] or root.get('kind') != 'Kustomization'
-            or ident(root) != ('Kustomization', 'flux-system', 'prod-k3s-v6')
+            or ident(root) != ('Kustomization', 'flux-system', ROOT_NAME)
             or root.get('spec', {}).get('sourceRef') != {'kind': 'GitRepository', 'name': 'config-prod'}
             or root.get('spec', {}).get('path') != './environments/clusters/prod-k3s-v6'
             or root.get('spec', {}).get('suspend') is not False):
@@ -162,7 +163,7 @@ def release(config, runner, cluster):
             raise ClusterError('live V6 Flux gates are outside the requested stage', 'live_gate_order',
                                {'operation': 'live_flux_gate_state', 'active': observed_active})
         if stage in ('eso', 'identity'):
-            if not ready(observed[('Kustomization', 'flux-system', 'prod-k3s-v6')]):
+            if not ready(observed[('Kustomization', 'flux-system', ROOT_NAME)]):
                 raise ClusterError('V6 root is not Ready before the next gate', 'live_gate_order')
         if stage == 'identity':
             if not ready(observed[('Kustomization', 'flux-system', 'external-secrets')]) or not ready(
@@ -176,7 +177,7 @@ def release(config, runner, cluster):
         phase = 'config_source_ready'
         wait_ready(runner, ('GitRepository', 'flux-system', 'config-prod'), 'config_source_ready', deadline)
         phase = 'root_ready'
-        wait_ready(runner, ('Kustomization', 'flux-system', 'prod-k3s-v6'), 'root_ready', deadline)
+        wait_ready(runner, ('Kustomization', 'flux-system', ROOT_NAME), 'root_ready', deadline)
     except ClusterError:
         raise
     except Exception:
@@ -184,7 +185,7 @@ def release(config, runner, cluster):
     phase = 'release_revision_validation'
     try:
         source_live = json.loads(runner('get', 'gitrepository', 'config-prod', '-n', 'flux-system', '-o', 'json'))
-        root_live = json.loads(runner('get', 'kustomization', 'prod-k3s-v6', '-n', 'flux-system', '-o', 'json'))
+        root_live = json.loads(runner('get', 'kustomization', ROOT_NAME, '-n', 'flux-system', '-o', 'json'))
     except ClusterError:
         raise ClusterError('Flux revision evidence could not be read', 'release_source_revision') from None
     if config['gitops_sha'] not in source_live.get('status', {}).get('artifact', {}).get('revision', ''):
@@ -192,7 +193,7 @@ def release(config, runner, cluster):
     if config['gitops_sha'] not in root_live.get('status', {}).get('lastAppliedRevision', ''):
         raise ClusterError('V6 root revision differs from the immutable release', 'release_root_revision')
     readiness = [('GitRepository', 'flux-system', 'config-prod'),
-                 ('Kustomization', 'flux-system', 'prod-k3s-v6')]
+                 ('Kustomization', 'flux-system', ROOT_NAME)]
     if stage in ('eso', 'identity'):
         readiness.extend([('Kustomization', 'flux-system', 'external-secrets'),
                           ('HelmRelease', 'external-secrets', 'external-secrets')])
