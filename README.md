@@ -140,7 +140,7 @@ fact 缓存落 `/tmp/ansible_facts`（1h）、开启 `pipelining` 与 `profile_t
 | `*.yml` / `*.yaml` | 顶层场景入口（playbook），一个文件 = 一个可执行场景 |
 | `roles/vhosts/` | **宿主机原生交付**：systemd 服务、on-host 配置渲染、内核/网络调优 |
 | `roles/docker/` | **Docker Compose 交付**：渲染 `docker-compose.yaml.j2` 并拉起单机服务栈 |
-| `roles/charts/` | **Kubernetes / Helm 交付**：以 Helm release 形式投放到集群 |
+| `roles/k8s_helm/` | **Kubernetes / Helm 交付**：以 Helm release 形式投放到集群 |
 | `roles/host/` | 宿主机级共享物料（目前仅 `stunnel-certs`） |
 | `roles/grafana-dashboard/` | Grafana 面板 JSON 资产（非可执行 role） |
 | `roles/README.md` | 角色分层规划：Ansible role vs. Helm chart 的边界约定 |
@@ -159,7 +159,7 @@ fact 缓存落 `/tmp/ansible_facts`（1h）、开启 `pipelining` 与 `profile_t
 ```
 roles/vhosts/postgres      → 直接装在宿主机上，systemd 托管
 roles/docker/postgres      → 单机 Docker Compose 栈
-roles/charts/postgresql    → K8s 集群内 Helm release
+roles/k8s_helm/postgresql    → K8s 集群内 Helm release
 ```
 
 `roles/README.md` 给出的边界规则：**与宿主机强耦合的配置走 Ansible role，跑在 Pod 里的工作负载走 Helm chart。**
@@ -207,9 +207,9 @@ roles/charts/postgresql    → K8s 集群内 Helm release
 
 | Role | 说明 |
 | --- | --- |
-| `charts/gpu-operator` / `charts/nvidia_gpu_operator` | NVIDIA GPU Operator |
-| `charts/ray_cluster` / `charts/ray_service` | Ray 集群与服务 |
-| `charts/vllm_runtime` / `charts/vllm_service` | vLLM 推理运行时与服务 |
+| `k8s_helm/gpu-operator` / `k8s_helm/nvidia_gpu_operator` | NVIDIA GPU Operator |
+| `k8s_helm/ray_cluster` / `k8s_helm/ray_service` | Ray 集群与服务 |
+| `k8s_helm/vllm_runtime` / `k8s_helm/vllm_service` | vLLM 推理运行时与服务 |
 | `litellm` | LiteLLM 多模型网关 |
 | `ai_agent_runtime` | AI Agent 运行时装配 |
 | `agent_skills` | Agent skills 分发 |
@@ -521,7 +521,7 @@ ansible-playbook -i inventory.ini deploy_console_svc_plus.yml \
 
 **分支** — `main` 是 preview 分支，`release/*` 是生产发布线，只接受 release manager 本地 cherry-pick，禁止 force-push、要求线性历史。完整策略见 [`skills/release-branch-policy/SKILL.md`](skills/release-branch-policy/SKILL.md)，PR 校验由 `.github/workflows/validate-release-pr.yml` 执行。
 
-**Role vs. Chart** — 新增组件前先读 [`roles/README.md`](roles/README.md)：宿主机耦合的配置进 `roles/vhosts`（或 `roles/docker`），Pod 内工作负载进 `roles/charts`。
+**Role vs. Chart** — 新增组件前先读 [`roles/README.md`](roles/README.md)：宿主机耦合的配置进 `roles/vhosts`（或 `roles/docker`），Pod 内工作负载进 `roles/k8s_helm`。
 
 ---
 
@@ -529,7 +529,7 @@ ansible-playbook -i inventory.ini deploy_console_svc_plus.yml \
 
 目录已建但 `tasks/main.yml` 仍为 placeholder 的 role —— **执行它们只会打印一条 debug 消息，不会产生任何变更**：
 
-- `roles/charts/`（21 个）：`embedding-service` `feast` `flink-operator` `grafana` `iceberg-bucket` `inference-gateway` `kafka-cluster` `loki` `minio` `mlflow` `nvidia-operator` `openobserve` `postgres` `prometheus-stack` `ray-cluster` `redpanda` `sglang` `spark-operator` `tempo` `trino` `vllm`
+- `roles/k8s_helm/`（21 个）：`embedding-service` `feast` `flink-operator` `grafana` `iceberg-bucket` `inference-gateway` `kafka-cluster` `loki` `minio` `mlflow` `nvidia-operator` `openobserve` `postgres` `prometheus-stack` `ray-cluster` `redpanda` `sglang` `spark-operator` `tempo` `trino` `vllm`
 - `roles/docker/`（16 个）：`OpenObserve` `Tempo` `VictoriaLogs` `VictoriaMetrics` `clickhouse` `embedding-service` `kafka` `loki` `minio` `mlflow` `otel` `ray` `redpanda` `sglang` `trino` `vllm`
 - `roles/vhosts/`（4 个，无 `tasks/` 目录）：`HAProxy` `alicloud_dns_sync` `docker-compose` `vpn-overlay`
 
