@@ -1,0 +1,12 @@
+---
+- name: 包含 K8s 命名空间与环境前置检查
+  ansible.builtin.include_tasks: prereqs.yml
+
+- name: 包含 Vault/Env 密钥解析与 K8s Secret 生成
+  ansible.builtin.include_tasks: secrets.yml
+
+- name: 包含 Helm 仓库拉取与 Chart 发布
+  ansible.builtin.include_tasks: helm.yml
+
+- name: 包含 Deployment 状态与 PVC Bound 验证
+  ansible.builtin.include_tasks: verify.yml
