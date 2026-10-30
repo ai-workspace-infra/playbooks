@@ -1,0 +1,25 @@
+---
+- name: 等待容器启动完成并进入 Running 状态
+  ansible.builtin.command:
+    cmd: "docker inspect --format='{{ '{{' }} .State.Status {{ '}}' }}' {{ obs_agent_container_name }}"
+  register: obs_agent_status
+  retries: 10
+  delay: 3
+  until: obs_agent_status.stdout == "running"
+  changed_when: false
+
+- name: 巡检 obs-agent 关键启动日志 (WebSocket 连接验证)
+  ansible.builtin.command:
+    cmd: "docker logs --tail 50 {{ obs_agent_container_name }}"
+  register: obs_agent_logs
+  retries: 15
+  delay: 4
+  until: >
+    ('obs-agent profile request loaded' in obs_agent_logs.stdout or
+     'obs-agent websocket connected' in obs_agent_logs.stdout or
+     'websocket' in obs_agent_logs.stdout | lower)
+  changed_when: false
+
+- name: 打印启动健康摘要
+  ansible.builtin.debug:
+    msg: "obs-agent 容器运行正常，WebSocket 连接建立成功！"

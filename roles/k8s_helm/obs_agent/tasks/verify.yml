@@ -1,0 +1,29 @@
+---
+- name: 等待 obs-agent Deployment 进入 Ready 状态
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ obs_agent_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/instance={{ obs_agent_release_name }}"
+  register: obs_agent_deploy
+  retries: 20
+  delay: 6
+  until: >
+    obs_agent_deploy.resources is defined and
+    obs_agent_deploy.resources | length > 0 and
+    (obs_agent_deploy.resources[0].status.readyReplicas | default(0)) >= 1
+
+- name: 验证 PVC 绑定状态 (work, profile-cache, owl)
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: PersistentVolumeClaim
+    namespace: "{{ obs_agent_namespace }}"
+  register: obs_agent_pvcs
+  failed_when: >
+    obs_agent_pvcs.resources | length < 3 or
+    (obs_agent_pvcs.resources | selectattr('status.phase', 'equalto', 'Bound') | list | length) < 3
+
+- name: 打印部署成功状态
+  ansible.builtin.debug:
+    msg: "obs-agent Helm Release ({{ obs_agent_release_name }}) 在集群中就绪，3个持久化卷已成功 Bound！"
