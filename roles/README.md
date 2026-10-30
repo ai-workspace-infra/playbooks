@@ -30,7 +30,7 @@ This document clarifies what should live under `/playbooks/roles/` for host-leve
 - `ml_node_prep/`: Python/conda base, SSH workspace prep for ML workloads.
 - `dl_inference_node/`: tensorRT/cuDNN dependencies and runtime checks for Triton/LMDeploy nodes.
 
-Helm-delivered components should live under `playbooks/roles/charts/` or the repo’s Helm release structure and include Spark/Flink Operators, Kafka/Redpanda/MinIO, Ray Cluster, Triton, vLLM/LMDeploy, MLflow, and JupyterHub.
+Helm-delivered components should live under `playbooks/roles/k8s_helm/` or the repo’s Helm release structure and include Spark/Flink Operators, Kafka/Redpanda/MinIO, Ray Cluster, Triton, vLLM/LMDeploy, MLflow, and JupyterHub.
 
 ## Other host-local roles
 Not every role under `roles/vhosts/` fits the data-platform tiers above. For

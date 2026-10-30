@@ -134,13 +134,13 @@ spec:
 
 ---
 
-## 三、Ansible Playbook 角色规范 (`roles/charts/datakit`)
+## 三、Ansible Playbook 角色规范 (`roles/k8s_helm/datakit`)
 
 在 `ai-workspace-infra/playbooks` 仓库新增标准角色，支持离线/在线一键发布、配置变更与升级。
 
 ### 1. 角色目录结构
 ```text
-roles/charts/datakit/
+roles/k8s_helm/datakit/
 ├── defaults/
 │   └── main.yml           # 默认仓库、版本、Chart 配置、探针端口
 ├── tasks/
@@ -192,7 +192,7 @@ datakit_resources:
   hosts: "{{ target_hosts | default('k3s_clusters') }}"
   gather_facts: false
   roles:
-    - role: charts/datakit
+    - role: k8s_helm/datakit
 ```
 
 ---
@@ -476,7 +476,7 @@ collection remains available for non-Kubernetes hosts only.
 4. **启用默认采集模块**：
    在 `default_enabled_inputs` 中追加 `prom` 插件。
 5. **Ansible Playbook 角色主干合入**：
-   相关配置已在 `playbooks/roles/charts/datakit` 中完成模板固化，并通过 [PR #824](https://github.com/ai-workspace-infra/playbooks/pull/824)（`fix(datakit): explicitly disable election for local prom exporter inputs`）全绿合入 `main`。
+   相关配置已在 `playbooks/roles/k8s_helm/datakit` 中完成模板固化，并通过 [PR #824](https://github.com/ai-workspace-infra/playbooks/pull/824)（`fix(datakit): explicitly disable election for local prom exporter inputs`）全绿合入 `main`。
 
 ### 4. 采集指标与实测验证
 
