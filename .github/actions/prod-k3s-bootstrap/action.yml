@@ -1,6 +1,7 @@
 name: Fresh PROD K3s bootstrap owner
 description: Bind one verified CMDB candidate, prepare its empty disk, install K3s and load paused Flux declarations.
 inputs:
+  resource-manifest: {required: true, description: Resource declaration path inside the pinned GitOps checkout}
   phase: {required: false, default: cluster, description: 'common host identity checks or full cluster bootstrap'}
   cmdb: {required: true, description: Receipt verified CMDB path}
   cmdb-sha256: {required: true, description: Expected CMDB checksum}
@@ -29,6 +30,7 @@ runs:
     - name: Execute verified cold bootstrap roles
       shell: bash
       env:
+        K3S_RESOURCE_MANIFEST: ${{ inputs.resource-manifest }}
         V6_PHASE: ${{ inputs.phase }}
         V6_CMDB: ${{ inputs.cmdb }}
         V6_CMDB_SHA256: ${{ inputs.cmdb-sha256 }}
@@ -38,6 +40,6 @@ runs:
         V6_RECEIPT: ${{ inputs.receipt }}
       run: >-
         python3 "${GITHUB_ACTION_PATH}/../../../scripts/prod_k3s_bootstrap.py"
-        --phase "$V6_PHASE" --cmdb "$V6_CMDB" --cmdb-sha256 "$V6_CMDB_SHA256"
+        --resource-manifest "$K3S_RESOURCE_MANIFEST" --phase "$V6_PHASE" --cmdb "$V6_CMDB" --cmdb-sha256 "$V6_CMDB_SHA256"
         --gitops "$V6_GITOPS" --gitops-sha "$V6_GITOPS_SHA"
         --known-hosts "$V6_KNOWN_HOSTS" --receipt "$V6_RECEIPT"
