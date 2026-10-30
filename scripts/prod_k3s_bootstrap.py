@@ -13,7 +13,6 @@ import tempfile
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-RESOURCE = 'resources/svc.plus/prod/akamai/prod-k3s-v6.yaml'
 
 
 def require(ok, reason):
@@ -24,18 +23,18 @@ def require(ok, reason):
 def prepare(cmdb, declaration, gitops_sha, checkout, receipt, phase="cluster"):
     require(phase in {'common', 'cluster'}, 'Unsupported bootstrap phase')
     g = declaration['global']
-    require((g['environment'], g['provider'], g['account'], g['workspace']) ==
-            ('prod', 'akamai-cloud', 'manbuzhe2026', 'prod-k3s-v6'), 'Wrong declaration scope')
+    require(g['environment'] in {'sit', 'uat', 'prod'} and g['provider'] == 'akamai-cloud'
+            and g['account'] and g['workspace'], 'Unsupported declaration scope')
     require(len(declaration['hosts']) == 1, 'Expected one declared node')
     host = declaration['hosts'][0]
     name = host['name']
-    require(name == 'prod-k3s-v6' and host['type'] == 'g6-standard-2', 'Wrong candidate or plan')
+    require(re.fullmatch(r'[a-z0-9][a-z0-9-]{0,62}', name), 'Invalid declared hostname')
     records = cmdb.get('hosts', {})
     if not records:
         records = {k: v for k, v in cmdb.items() if isinstance(v, dict) and ('ip' in v or 'ansible_host' in v)}
     require(list(records) == [name], 'CMDB must contain only the reviewed candidate')
     live = records[name]
-    require('prod' in live.get('groups', []) and 'k3s' in live.get('groups', []), 'CMDB environment or runtime mismatch')
+    require(g['environment'] in live.get('groups', []) and 'k3s' in live.get('groups', []), 'CMDB environment or runtime mismatch')
     require((live.get('cloud_provider') or live.get('host_vars', {}).get('cloud_provider')) == g['provider'], 'CMDB provider mismatch')
     require(live.get('type') == host['type'] and live.get('image') == host['image'], 'CMDB plan or image mismatch')
     require(live.get('region') == host['region'], 'CMDB region mismatch')
@@ -57,12 +56,12 @@ def prepare(cmdb, declaration, gitops_sha, checkout, receipt, phase="cluster"):
     vars_.update(prod_k3s_bootstrap_phase=phase, target_generation=declared['target_generation'],
                  k3s_platform_git_commit=gitops_sha, k3s_platform_gitops_checkout_path=str(checkout),
                  k3s_platform_receipt_path=str(receipt), k3s_platform_git_auth_mode='public',
-                 web_saas_data_environment='prod', web_saas_data_target_host=name,
+                 web_saas_data_environment=g['environment'], web_saas_data_target_host=name,
                  web_saas_data_action='prepare_empty' if phase == 'cluster' else 'inspect', web_saas_data_allow_initialize=phase == 'cluster',
                  web_saas_data_allow_generation_host=True,
                  web_saas_data_expected_volume_id=volume['volume_id'],
                  web_saas_data_device_path=device, web_saas_data_filesystem_label=host['volume']['label'])
-    clean = {'schema_version': 'cmdb.v1', 'environment': 'prod', 'account': g['account'],
+    clean = {'schema_version': 'cmdb.v1', 'environment': g['environment'], 'account': g['account'],
              'provider': g['provider'], 'hosts': {name: {
                  'ip': address, 'instance_id': node_id, 'region': host['region'],
                  'groups': host['groups'], 'ansible_user': 'root', 'data_volume': volume,
@@ -76,7 +75,7 @@ def execute(argv, env, **kwargs):
 
 def main():
     p = argparse.ArgumentParser()
-    for key in ('cmdb', 'cmdb-sha256', 'gitops', 'gitops-sha', 'known-hosts', 'receipt'):
+    for key in ('cmdb', 'cmdb-sha256', 'gitops', 'gitops-sha', 'known-hosts', 'receipt', 'resource-manifest'):
         p.add_argument('--' + key, required=True)
     p.add_argument('--phase', choices=('common', 'cluster'), default='cluster')
     a = p.parse_args()
@@ -86,19 +85,24 @@ def main():
     require(not subprocess.check_output(['git', '-C', str(checkout), 'status', '--porcelain'], text=True).strip(), 'Dirty GitOps checkout')
     raw = Path(a.cmdb).read_bytes()
     require(hashlib.sha256(raw).hexdigest() == a.cmdb_sha256, 'CMDB checksum mismatch')
-    name, clean = prepare(json.loads(raw), yaml.safe_load((checkout / RESOURCE).read_text()), a.gitops_sha, checkout, Path(a.receipt).resolve(), phase=a.phase)
+    manifest = (checkout / a.resource_manifest).resolve()
+    require(manifest.is_relative_to(checkout) and manifest.is_file(), 'Invalid resource manifest path')
+    name, clean = prepare(json.loads(raw), yaml.safe_load(manifest.read_text()), a.gitops_sha, checkout, Path(a.receipt).resolve(), phase=a.phase)
     known = Path(a.known_hosts).resolve()
     require(known.is_file() and known.stat().st_size > 0, 'Provider-attested known_hosts required')
-    # Render/validate the complete paused graph before SSH or disk changes.
+    declared = clean['hosts'][name]['host_vars']
+    # Resolve the stable root and batch path independently from the hostname.
     execute(['python3', str(ROOT / 'roles/vhosts/k3s_platform_bootstrap/files/stage_flux_declarations.py'),
              '--checkout', str(checkout), '--commit', a.gitops_sha,
-             '--root-path', './environments/clusters/prod-k3s-v6', '--root-name', name,
-             '--source', 'config-prod', '--namespace', 'flux-system',
-             '--git-url', 'https://github.com/ai-workspace-infra/gitops.git'], os.environ.copy(), stdout=subprocess.DEVNULL)
+             '--root-path', declared['k3s_platform_flux_root_path'],
+             '--root-name', declared['k3s_platform_flux_root_name'],
+             '--source', declared['k3s_platform_flux_source_name'],
+             '--namespace', declared.get('k3s_platform_flux_namespace', 'flux-system'),
+             '--git-url', declared['k3s_platform_git_url']], os.environ.copy(), stdout=subprocess.DEVNULL)
     env = {k: v for k, v in os.environ.items() if not k.startswith(('VAULT_', 'LINODE_'))}
     key = env.pop('SSH_PRIVATE_KEY', '')
     require(bool(key), 'Runtime Vault SSH key missing')
-    with tempfile.TemporaryDirectory(prefix='v6-bootstrap-') as tmp:
+    with tempfile.TemporaryDirectory(prefix='k3s-bootstrap-') as tmp:
         os.chmod(tmp, 0o700)
         cmdb = Path(tmp) / 'cmdb.json'
         cmdb.write_text(json.dumps(clean))
@@ -132,7 +136,6 @@ def main():
         print('COMMON_NODE_VERIFIED; host identity preparation complete')
         return
     require(receipt.get('result') == 'PAUSED_BOOTSTRAP_VERIFIED', 'Missing verified paused receipt')
-    require(receipt.get('counts') == {'GitRepository': 6, 'Kustomization': 9, 'HelmRelease': 8}, 'Unexpected V6 release graph')
     require(receipt.get('audit', {}).get('result') == 'AUDIT_ALLOW_DENY_VERIFIED', 'Independent audit identity not verified')
     print('PAUSED_BOOTSTRAP_VERIFIED; no business reconciliation or writer transfer performed')
 
