@@ -14,9 +14,10 @@ from signing_keys import discovery_contract
 
 
 class ClusterError(Exception):
-    def __init__(self, message='authenticated cluster operation failed', stage='cluster_identity'):
+    def __init__(self, message='authenticated cluster operation failed', stage='cluster_identity', diagnostic=None):
         super().__init__(message)
         self.stage = stage
+        self.diagnostic = diagnostic
 
 
 def command(*args):
