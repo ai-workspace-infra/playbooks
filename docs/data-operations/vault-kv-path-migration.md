@@ -10,6 +10,16 @@ python3 scripts/vault_kv_path_migration.py --plan /secure/path/migration-plan.js
 
 The preview lists paths, field names, review state, planned destinations, identity mappings, and retirement gates only. It does not contact Vault. The plan schema is JSON with `schema_version: 1`, a `migrations` array (`source`, `destination`, `fields`, `status`, optional note), and optional `planned_destinations`, `identity_mappings`, and `retirement_candidates`. A logical path has the form `mount/path` and omits the KV v2 `/data/` API segment. Identity mappings are traceability metadata only: the same role key across Vault, Linux, K3s, and PostgreSQL does not imply credential or permission inheritance.
 
+Before DB initialization, the identity check can verify that the planned Vault records and password fields exist without revealing values:
+
+```sh
+python3 scripts/vault_kv_path_migration.py \
+  --plan /secure/path/migration-plan.json \
+  --check-identities
+```
+
+This uses only the configured source Vault read identity. It is a path/field presence check, not proof that ESO's separate workload identity can read the records or that the synchronized Kubernetes Secrets are current. Verify ESO readiness and each target Secret before enabling the chart identity hook.
+
 ## Apply reviewed copies
 
 Only set an entry's status to `approved` after the data owner confirms the exact source and destination Vaults, field contract, consumer, rotation decision, and whether a historical value is safe to reuse. Provide narrowly scoped, short-lived source read and destination write credentials through the environment:

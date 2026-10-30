@@ -98,6 +98,14 @@ def load_plan(path: Path) -> dict:
         for old, new in item.get("fields", {}).items():
             if not isinstance(old, str) or not old or not isinstance(new, str) or not new:
                 raise MigrationError(f"Invalid field mapping for {source}")
+    mappings = plan.get("identity_mappings", [])
+    if not isinstance(mappings, list):
+        raise MigrationError("identity_mappings must be an array")
+    for item in mappings:
+        parse_kv_path(item.get("vault_path", ""))
+        for key in ("vault_field", "chart_role", "os_role", "kubernetes_subject", "kubernetes_secret", "secret_key"):
+            if not isinstance(item.get(key), str) or not item[key]:
+                raise MigrationError(f"identity_mappings entry requires {key}")
     return plan
 
 
@@ -127,7 +135,7 @@ def preview(plan: dict) -> list[str]:
             "IDENTITY MAP ONLY (NO CREDENTIAL INHERITANCE): "
             f"{item['vault_path']} -> chart:{item['chart_role']} "
             f"os:{item['os_role']} k8s:{item['kubernetes_subject']} "
-            f"secret:{item['kubernetes_secret']}"
+            f"field:{item['vault_field']} secret:{item['kubernetes_secret']}#{item['secret_key']}"
         )
     for item in plan.get("never_copy_without_new_review", []):
         lines.append(f"EXCLUDED FROM AUTOMATIC COPY: {item}")
@@ -166,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, help="protected, owner-reviewed JSON plan; do not commit internal Vault paths")
     parser.add_argument("--apply", action="store_true", help="copy reviewed mappings; source records are never deleted")
+    parser.add_argument("--check-identities", action="store_true", help="read only mapped identity records and verify field presence without printing values")
     parser.add_argument("--confirm-copy", help='required exact phrase: "COPY REVIEWED VAULT FIELDS"')
     args = parser.parse_args(argv)
     try:
@@ -173,12 +182,33 @@ def main(argv: list[str] | None = None) -> int:
         for line in preview(plan):
             print(line)
         if not args.apply:
+            if args.check_identities:
+                mappings = plan.get("identity_mappings", [])
+                if not mappings:
+                    raise MigrationError("No identity mappings are present in the plan")
+                source_client = VaultClient(
+                    os.environ.get("VAULT_SOURCE_ADDR", os.environ.get("VAULT_ADDR", "")),
+                    os.environ.get("VAULT_SOURCE_TOKEN", os.environ.get("VAULT_TOKEN", "")),
+                    os.environ.get("VAULT_SOURCE_NAMESPACE", os.environ.get("VAULT_NAMESPACE", "")),
+                )
+                if not source_client.address or not source_client.token:
+                    raise MigrationError("Set a read-only source Vault address and token via environment variables")
+                for item in mappings:
+                    mount, path = parse_kv_path(item["vault_path"])
+                    record = source_client.read(mount, path)
+                    if record is None or item["vault_field"] not in record:
+                        raise MigrationError(f"Identity field missing at {item['vault_path']}#{item['vault_field']}")
+                    print(f"PASS: {item['vault_path']}#{item['vault_field']} exists; value redacted; maps to chart role {item['chart_role']}")
+                print("Identity record check complete. No values were printed and no writes were made.")
+                return 0
             print("Preview only. No Vault requests were made.")
             if not args.plan:
                 print("Pass --plan with a protected JSON path inventory to preview specific paths.")
             return 0
         if not args.plan:
             raise MigrationError("--apply requires --plan with owner-reviewed field mappings")
+        if args.check_identities:
+            raise MigrationError("--check-identities cannot be combined with --apply")
         if args.confirm_copy != "COPY REVIEWED VAULT FIELDS":
             raise MigrationError('Apply requires --confirm-copy "COPY REVIEWED VAULT FIELDS"')
         approved = [item for item in plan["migrations"] if item["status"] == "approved" and item.get("fields")]
