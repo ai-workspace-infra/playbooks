@@ -8,7 +8,7 @@ This repository contains a generic, fail-closed copier for explicitly reviewed K
 python3 scripts/vault_kv_path_migration.py --plan /secure/path/migration-plan.json
 ```
 
-The preview lists paths, field names, review state, and retirement gates only. It does not contact Vault. The plan schema is JSON with `schema_version: 1`, a `migrations` array (`source`, `destination`, `fields`, `status`, optional note), and optional `retirement_candidates`. A logical path has the form `mount/path` and omits the KV v2 `/data/` API segment.
+The preview lists paths, field names, review state, planned destinations, and retirement gates only. It does not contact Vault. The plan schema is JSON with `schema_version: 1`, a `migrations` array (`source`, `destination`, `fields`, `status`, optional note), and optional `planned_destinations` and `retirement_candidates`. A logical path has the form `mount/path` and omits the KV v2 `/data/` API segment.
 
 ## Apply reviewed copies
 

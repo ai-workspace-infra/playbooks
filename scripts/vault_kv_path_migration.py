@@ -120,6 +120,8 @@ def preview(plan: dict) -> list[str]:
         lines.append(f"{action}: {item['source']} -> {item['destination']} [{names}]")
     for item in plan.get("retirement_candidates", []):
         lines.append(f"RETIREMENT CANDIDATE (NO DELETE): {item['path']} — gate: {item['gate']}")
+    for item in plan.get("planned_destinations", []):
+        lines.append(f"PLANNED DESTINATION (NO AUTOMATIC COPY): {item['path']} — {item['status']}")
     for item in plan.get("never_copy_without_new_review", []):
         lines.append(f"EXCLUDED FROM AUTOMATIC COPY: {item}")
     return lines
