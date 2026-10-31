@@ -71,7 +71,7 @@ flowchart LR
 
 - `vhosts/k3s_platform_bootstrap`
   - installs the platform node and prepares GitOps handoff
-- `vhosts/k3s_platform_addon`
-  - installs shared platform services such as `cert-manager`, `external-secrets`, `caddy`, and `external-dns`
+- Flux addon releases
+  - GitOps declares selected platform services and their dependencies
 - `GitOps`
   - owns the namespace-local `Certificate` manifests and workload wiring
