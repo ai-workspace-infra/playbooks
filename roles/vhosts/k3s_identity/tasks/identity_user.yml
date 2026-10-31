@@ -97,7 +97,7 @@
 
 - name: Validate declared allow and deny cases with actual credentials
   ansible.builtin.command:
-    argv: "{{ ['kubectl', 'auth', 'can-i', item.verb, item.resource, '--namespace', item.namespace] }}"
+    argv: "{{ ['kubectl', 'auth', 'can-i', item.verb, item.resource.split('/')[0], '--namespace', item.namespace] + (['--subresource=' ~ item.resource.split('/')[1]] if '/' in item.resource else []) }}"
   become: true
   become_user: "{{ k3s_identity_role }}"
   environment:
@@ -111,7 +111,7 @@
 
 - name: Require mandatory sensitive-operation denials under actual non-admin identity
   ansible.builtin.command:
-    argv: "{{ ['kubectl', 'auth', 'can-i', item.verb, item.resource, '--namespace', k3s_identity_checks[k3s_identity_role][0].namespace] }}"
+    argv: "{{ ['kubectl', 'auth', 'can-i', item.verb, item.resource.split('/')[0], '--namespace', k3s_identity_checks[k3s_identity_role][0].namespace] + (['--subresource=' ~ item.resource.split('/')[1]] if '/' in item.resource else []) }}"
   become: true
   become_user: "{{ k3s_identity_role }}"
   environment:
