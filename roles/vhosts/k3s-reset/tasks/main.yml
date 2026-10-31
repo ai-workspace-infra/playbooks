@@ -1,3 +1,49 @@
-- name: Reset K3S Cluster
-  script: files/reset-k3s.sh
-  when: (inventory_hostname in groups[group] ) and ( cluster_reset | default('enable') == 'enable' )
+- name: Inspect and reset only the selected K3s host
+  when:
+    - inventory_hostname in groups[group]
+    - cluster_reset | default('enable') == 'enable'
+  block:
+    - name: Inspect K3s binaries, service files and configuration paths
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        follow: false
+      loop:
+        - /usr/local/bin/k3s
+        - /usr/bin/k3s
+        - /usr/local/bin/k3s-uninstall.sh
+        - /usr/local/bin/k3s-agent-uninstall.sh
+        - /usr/local/bin/k3s-killall.sh
+        - /etc/systemd/system/k3s.service
+        - /etc/systemd/system/k3s-agent.service
+        - /etc/rancher/k3s
+        - /opt/rancher/k3s
+        - /var/lib/rancher/k3s
+      register: k3s_reset_paths
+
+    - name: Inspect K3s binary in the execution path
+      ansible.builtin.shell: command -v k3s
+      register: k3s_reset_binary
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Inspect K3s systemd unit load state
+      ansible.builtin.command:
+        argv: [systemctl, show, '--property=LoadState', '--value', '{{ item }}']
+      loop: [k3s.service, k3s-agent.service]
+      register: k3s_reset_services
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Decide whether a K3s installation or residue exists
+      ansible.builtin.import_tasks: decide.yml
+
+    - name: Report an already empty K3s host
+      ansible.builtin.debug:
+        msg: K3s is absent; no cleanup script or network changes were run.
+      when: not (k3s_reset_present | bool)
+
+    - name: Reset existing K3s installation
+      ansible.builtin.script: files/reset-k3s.sh
+      when: k3s_reset_present | bool
