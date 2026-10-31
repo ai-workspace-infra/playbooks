@@ -15,6 +15,7 @@ import json
 import re
 import sys
 from urllib.error import HTTPError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 ENVIRONMENTS = {"sit", "uat", "prod"}
@@ -39,7 +40,10 @@ def strict_bool(req, key, default=False):
 
 class Vault:
     def __init__(self, address, token, timeout=20):
-        if not address.startswith("https://") and not address.startswith("http://127.0.0.1"):
+        url = urlsplit(address)
+        if (not url.hostname or url.username or url.password or url.path not in ('', '/')
+                or url.query or url.fragment or
+                not (url.scheme == 'https' or (url.scheme == 'http' and url.hostname == '127.0.0.1'))):
             raise ValueError("explicit HTTPS Vault address required")
         if not token:
             raise ValueError("runtime Vault identity required")
@@ -104,24 +108,58 @@ def ssh_ca(vault, req):
 
 
 # ---- jwt_contract -------------------------------------------------------------
+def canonical_contract(contract):
+    """Convert parsed GitOps YAML declarations to the Vault API contract."""
+    if 'role_declaration' not in contract and 'policy_declaration' not in contract:
+        return contract
+    role_doc, policy_doc = contract['role_declaration'], contract['policy_declaration']
+    if (role_doc.get('apiVersion') != 'security.gitops/v1alpha1' or
+            role_doc.get('kind') != 'VaultJWTAuthRole' or
+            policy_doc.get('apiVersion') != 'security.gitops/v1alpha1' or
+            policy_doc.get('kind') != 'VaultACLPolicy'):
+        raise ValueError('unsupported GitOps Vault declaration')
+    name = role_doc.get('metadata', {}).get('name')
+    if not name or policy_doc.get('metadata', {}).get('name') != name:
+        raise ValueError('role and policy names must match')
+    paths = policy_doc.get('spec', {}).get('paths')
+    if not isinstance(paths, list) or not paths:
+        raise ValueError('GitOps policy must contain explicit paths')
+    rules = {}
+    for entry in paths:
+        if not isinstance(entry, dict) or set(entry) != {'path', 'capabilities'}:
+            raise ValueError('unsupported GitOps policy path fields')
+        path, capabilities = entry['path'], entry['capabilities']
+        if not isinstance(path, str) or not path or path in rules or not isinstance(capabilities, list) or not capabilities:
+            raise ValueError('invalid or duplicate GitOps policy path')
+        rules[path] = {'capabilities': capabilities}
+    return {'role_name': name, 'role': role_doc.get('spec', {}), 'policy': {'path': rules}}
+
+
 def jwt_contract(vault, req):
-    contract = req["contract"]
+    contract = canonical_contract(req["contract"])
     name, role, policy = contract["role_name"], contract["role"], contract["policy"]
     if not NAME.match(name):
         raise ValueError("invalid role name")
     claims = role.get("bound_claims") or {}
-    if not claims.get("ref") or not claims.get("job_workflow_ref"):
-        raise ValueError("ref and exact job_workflow_ref bindings are required")
-    if "*" in json.dumps(claims.get("job_workflow_ref")).split("@")[0]:
-        raise ValueError("wildcard workflow names are forbidden")
+    workflows = [claims[k] for k in ('workflow_ref', 'job_workflow_ref') if claims.get(k)]
+    if not claims.get("ref") or not workflows:
+        raise ValueError("ref and exact workflow_ref or job_workflow_ref bindings are required")
+    for workflow in workflows:
+        for ref in workflow if isinstance(workflow, list) else [workflow]:
+            if (not isinstance(ref, str) or '@' not in ref or
+                    any(c in ref.split('@', 1)[0] for c in '*?[]')):
+                raise ValueError("wildcard or invalid workflow names are forbidden")
     allowed = set(req.get("allowed_capabilities", ["read"]))
     for path, rule in (policy.get("path") or {}).items():
         if not set(rule.get("capabilities", [])) <= allowed:
             raise ValueError(f"policy capability outside the allowed set for {path}")
     if not policy.get("path"):
         raise ValueError("policy must list explicit paths")
-    if role.get("token_policies") and set(role["token_policies"]) - {name}:
-        raise ValueError("role may only reference its own policy")
+    if not isinstance(role.get('token_policies'), list) or set(role['token_policies']) != {name}:
+        raise ValueError("role must reference its own policy only")
+    mount = req.get("auth_mount", "jwt")
+    if not NAME.fullmatch(mount):
+        raise ValueError("invalid auth mount")
     pending = []
     policy_text = json.dumps(policy, sort_keys=True)
     current_policy = (vault.read(f"sys/policies/acl/{name}") or {}).get("policy")
@@ -131,12 +169,20 @@ def jwt_contract(vault, req):
         same_policy = False
     if not same_policy:
         pending.append(("PUT", f"sys/policies/acl/{name}", {"policy": policy_text}, "policy"))
-    mount = req.get("auth_mount", "jwt")
     current = vault.read(f"auth/{mount}/role/{name}") or {}
 
-    def norm(v):
+    def norm(v, field):
+        if field in ('token_ttl', 'token_max_ttl', 'token_explicit_max_ttl'):
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                return int(v)
+            if isinstance(v, str):
+                if v.isdecimal():
+                    return int(v)
+                parts = re.findall(r'(\d+)(h|m|s)', v)
+                if parts and ''.join(a + b for a, b in parts) == v:
+                    return sum(int(n) * {'h': 3600, 'm': 60, 's': 1}[unit] for n, unit in parts)
         return sorted(v) if isinstance(v, list) else v
-    if any(norm(current.get(k)) != norm(v) for k, v in role.items() if k not in ("token_ttl", "token_max_ttl")):
+    if any(norm(current.get(k), k) != norm(v, k) for k, v in role.items()):
         pending.append(("POST", f"auth/{mount}/role/{name}", role, "role"))
     if req.get("apply"):
         for method, path, payload, _ in pending:
