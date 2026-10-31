@@ -45,6 +45,21 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | Verify 阶段前置条件 | ❌ [Orchestrator #1587](https://github.com/ai-workspace-infra/Platform-Orchestrator/pull/1587) OPEN | 明确要求 Resolve、IaC/Provision、Deploy 成功后才执行 Verify；合入前不应以不完整 stage 结果宣称全链路验收 |
 | Flux 接管和服务部署 | ❌ 尚无完整运行验收证据 | 最近 apply 在 Provision 阶段失败，Deploy/Migrate/Verify 均跳过；没有 common、数据盘、OS/K3s 身份、K3s/Flux、Vault、PostgreSQL、Observability、Web SaaS、Ingress 的本次运行就绪证据。需先满足 Vault reader 与 Verify 门禁，再按当前 main 重派并记录真实回执 |
 
+### 可选检查项：Vault OIDC
+
+按本次部署或工作流实际使用的身份提供方选择检查；这两项不是每次 K3s
+初始化或服务部署的必选门禁。选中后，核对本次固定 GitOps commit 中的声明、
+Vault role 的精确身份绑定、所引用策略的最小路径和能力，并通过实际认证验证
+授权路径允许、相邻路径拒绝。未选择时标记“不适用”，不能据此推断已配置或已验收。
+
+| 可选检查项 | 适用范围 | 核对内容 | 状态记录规则 |
+| --- | --- | --- | --- |
+| `vault_github_oidc` | 使用 GitHub Actions OIDC 向 Vault 认证的任务 | 仓库、workflow、ref/environment claims；GitOps policy 引用；最小路径授权及允许/拒绝结果 | 仅按需检查；本项不代表 Vault role 或运行身份已验收 |
+| `vault_google_oidc` | 使用 Google OIDC 向 Vault 认证的任务 | issuer、audience、subject claims；GitOps policy 引用；最小路径授权及允许/拒绝结果 | 仅按需检查；本项不代表 Vault role 或运行身份已验收 |
+
+OIDC 可选检查不替代 K3s `root`、`operator`、`auditor` 的独立 Kubernetes
+认证和 RBAC 验收，也不自动授权修改 Vault auth mount、role 或 policy。
+
 当前清单文件迁入本目录的 [Playbooks #904](https://github.com/ai-workspace-infra/playbooks/pull/904) 已合并。所有角色遵循 `AGENTS.md` 的单一职责规则。
 
 ## 主线执行 role
