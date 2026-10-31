@@ -50,7 +50,9 @@ records are reused; different records, expired certificates, changed cluster
 UID/API trust, or partial local issuance fail closed. Automatic rotation is
 intentionally not supported; do not delete state or Vault records to force retry.
 
-Normal bootstrap opts in with `k3s_identity_enabled: true`. Existing masters use
+Normal bootstrap enables identity delivery by default. The required identity inputs,
+GitOps RBAC and Vault writer must be prepared; missing prerequisites fail rather
+than silently skip validation. Existing masters use
 `k3s_identity_bootstrap.yml` without reinstalling K3s or replaying paused bootstrap.
 Both require the reviewed target and actual kube-system UID, API endpoint,
 `k3s_identity_tls_dir` (actual K3s server/tls directory), and acceptance cases for
