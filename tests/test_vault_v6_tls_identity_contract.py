@@ -34,7 +34,7 @@ class Fake:
             self.mounts[mount]={'type':'jwt'};self.configs[mount]={'bound_issuer':'','jwt_validation_pubkeys':[]};return 204,None
         if path.startswith('auth/') and path.endswith('/config'):
             mount=path.removeprefix('auth/').removesuffix('/config')+'/'
-            if method=='GET':return 200,{'data':self.configs.get(mount,{'bound_issuer':'','jwt_validation_pubkeys':[]})}
+            if method=='GET':return (404,None) if mount not in self.mounts else (200,{'data':self.configs.get(mount,{'bound_issuer':'','jwt_validation_pubkeys':[]})})
             if method=='POST':self.configs[mount]=body;return 204,None
         if path.startswith('auth/') and '/role/' in path:
             if method=='GET':return (404,None) if path not in self.roles else (200,{'data':self.roles[path]})
