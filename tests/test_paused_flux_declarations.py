@@ -66,6 +66,22 @@ class Graph(unittest.TestCase):
         self.dirty = True
         with self.assertRaises(ValueError): self.build()
 
+    def test_active_management_pin_is_separate_from_unit_refs(self):
+        for item in self.docs:
+            item['spec']['suspend'] = False
+        self.docs[0]['metadata']['annotations'] = {'kustomize.toolkit.fluxcd.io/ssa': 'IfNotPresent'}
+        self.docs[0]['spec']['ref'] = {'branch': 'main'}
+        self.docs[2]['spec']['ref'] = {'tag': 'v1.2.3'}
+        self.docs[4]['spec']['ref'] = {'branch': 'main'}
+        result = STAGED.build(self.repo, SHA, './cluster', 'generation-root', 'bootstrap', 'flux-system', URL, self.runner, state='active')
+        sources = {item['metadata']['name']: item for item in result if item['kind'] == 'GitRepository'}
+        self.assertEqual({'commit': SHA}, sources['bootstrap']['spec']['ref'])
+        self.assertEqual({'tag': 'v1.2.3'}, sources['unit-a-config']['spec']['ref'])
+        self.assertEqual({'branch': 'main'}, sources['unit-b-config']['spec']['ref'])
+        del self.docs[0]['metadata']['annotations']
+        with self.assertRaises(ValueError):
+            STAGED.build(self.repo, SHA, './cluster', 'generation-root', 'bootstrap', 'flux-system', URL, self.runner, state='active')
+
     def test_unit_cannot_share_source_or_escape_checkout(self):
         unit = self.docs[-1]
         unit["spec"]["sourceRef"]["name"] = "unit-a-config"

@@ -13,6 +13,7 @@ IaC CMDB + 本次解析到 commit 的 GitOps 期望配置
       → flux_controllers：Flux 控制器及 rollout
       → flux_gitops：source/root 交接及独立回执
       → k3s_identity：三套认证凭据交付及真实允许/拒绝
+      → flux_workload_readiness：声明的 source、Kustomization 和 HelmRelease 就绪证据
   → Flux 按 GitOps 依赖调谐 RBAC、ESO/TLS、Vault、DB、监控和业务资源
 ```
 
@@ -39,7 +40,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `k3s_runtime_secret_sync` | ✅ 独立运维入口 | 不属于 bootstrap；通用 KV 同步与环境专用投影仍需梳理 |
 | 三身份与 Flux RBAC | ✅ [GitOps #682](https://github.com/ai-workspace-infra/gitops/pull/682)、[Playbooks #906](https://github.com/ai-workspace-infra/playbooks/pull/906) 已合并；❌ 目标集群验收待执行 | 三身份及 RBAC 依赖已声明；operator 只具备业务读取及扩缩容，工作负载写入需另审准入策略。kubeconfig 使用节点内 loopback，远程访问需另行设计 |
 | Orchestrator → Playbooks | ❌ 参数交接未贯通 | 需传入 GitOps checkout/SHA、资源声明路径、CMDB SHA 和回执路径 |
-| Vault writer 与真实身份验收 | ❌ 未完成 | 使用受控短期身份写入三个精确路径后，以实际账户验证认证及允许/拒绝 |
+| Vault writer 与真实身份验收 | ❌ 未完成；[Playbooks #918](https://github.com/ai-workspace-infra/playbooks/pull/918)、[GitOps #683](https://github.com/ai-workspace-infra/gitops/pull/683) 为草稿 | 候选要求独立短期 writer，部署 workflow 身份绑定及 Vault 受控应用、精确路径允许/拒绝和真实身份验收仍待验证；不同 token 不代表已证实权限范围 |
 | Flux 接管和服务部署 | ❌ 尚无完整运行验收证据 | 需核对调用链、身份授权、实际 RBAC 和服务就绪；不得据源码或静态测试宣称完成 |
 
 当前清单文件迁入本目录的 [Playbooks #904](https://github.com/ai-workspace-infra/playbooks/pull/904) 已合并。所有角色遵循 `AGENTS.md` 的单一职责规则。
@@ -56,6 +57,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `flux_controllers` | Flux CLI 与控制器初始化 | K3s API、私有 admin kubeconfig | controller rollout 就绪 |
 | `flux_gitops` | 经审查的 source/root 交接 | 解析过 commit 的 GitOps 配置与 ready Flux | Flux 交接回执，不声称业务 Ready |
 | `k3s_identity` | Kubernetes 三身份生命周期 | OS 三账户、实际 CA/UID、GitOps RBAC、受控 Vault writer | 独立密钥/证书/私有 kubeconfig、KV CAS 归档、真实认证与允许/拒绝 |
+| `flux_workload_readiness` | 只读观察声明的 Flux 对象 | 三身份任务完成且 GitOps 提供待观察对象 | 独立 `FLUX_OBJECTS_READY` 回执；记录各对象 revision，不替代应用接口、数据和用户流程验收；候选随 #918，未生产验证 |
 
 生成器、模板、默认值及验收脚本随能力移动；没有复制第二套实现。
 现有 `k3s_platform_*` 和 `k3s_identity_*` 为调用合同，未增加环境专用别名。

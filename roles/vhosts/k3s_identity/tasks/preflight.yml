@@ -2,6 +2,8 @@
   ansible.builtin.assert:
     that:
       - k3s_identity_environment in ['sit', 'uat', 'prod']
+      - lookup('env', 'K3S_IDENTITY_VAULT_TOKEN') | length > 0
+      - lookup('env', 'K3S_IDENTITY_VAULT_TOKEN') != lookup('env', 'VAULT_TOKEN')
       - k3s_identity_cluster is match('^[a-z0-9][a-z0-9-]*$')
       - k3s_identity_api_server is match('^https://')
       - k3s_identity_tls_dir | length > 0
@@ -13,6 +15,7 @@
       - k3s_identity_rbac_wait_retries | int > 0
       - k3s_identity_rbac_wait_delay | int > 0
     fail_msg: Identity delivery requires a reviewed target, CA and real-identity acceptance contract
+  no_log: true
 
 - name: Require actual allow and deny cases for each role
   ansible.builtin.assert:
