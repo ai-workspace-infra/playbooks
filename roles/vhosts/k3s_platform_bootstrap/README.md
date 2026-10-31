@@ -47,7 +47,7 @@ remain the shared caller contract, without environment-specific aliases.
 - [GitOps handover](../flux_gitops/README.md)
 - [Kubernetes identities](../k3s_identity/README.md)
 - [Three-role design](../k3s_identity/docs/three-role-design.md)
-- [Role inventory and migration scope](../../../docs/k3s-role-map.md)
+- [Role inventory and migration scope](k3s-role-map.md)
 
 Use `k3s_platform_bootstrap.yml` with `inventory/terraform_cmdb.py` for normal
 IaC delivery. `scripts/pipeline/bootstrap-k3s.sh` receives `MATRIX_HOST`,
