@@ -11,24 +11,21 @@ class DefaultKubeconfigTest(unittest.TestCase):
         by_name = {t.get('name'): t for t in tasks}
         install = by_name['Deliver master-generated private Kubernetes configuration as its OS owner']
         self.assertEqual(install['ansible.builtin.copy']['mode'], '0600')
-        link = by_name['Make the restricted user identity the default kubectl config']
+        link = by_name['Make the user identity the default kubectl config']
         self.assertFalse(link['ansible.builtin.file']['force'])
         env = Environment()
-        condition = env.compile_expression(link['when'])
-        for role, permitted in [('operator', True), ('auditor', True), ('root', False)]:
-            self.assertEqual(condition(k3s_identity_role=role), permitted)
-            if permitted:
-                variables = {'k3s_identity_role': role, 'getent_passwd': {role: ['', '', '', '', '/home/' + role]}}
-                for key, suffix in [('src', '/.kube/identity-config'), ('dest', '/.kube/config')]:
-                    self.assertEqual(env.from_string(link['ansible.builtin.file'][key]).render(**variables), '/home/' + role + suffix)
-        guard = by_name['Reject an unmanaged restricted-user default kubeconfig']
+        for role, home in [('operator', '/home/operator'), ('auditor', '/home/auditor'), ('root', '/root')]:
+            variables = {'k3s_identity_role': role, 'getent_passwd': {role: ['', '', '', '', home]}}
+            for key, suffix in [('src', '/.kube/identity-config'), ('dest', '/.kube/config')]:
+                self.assertEqual(env.from_string(link['ansible.builtin.file'][key]).render(**variables), home + suffix)
+        guard = by_name['Reject an unmanaged default kubeconfig']
         check = env.compile_expression(guard['ansible.builtin.assert']['that'][0])
         context = {'k3s_identity_role': 'auditor', 'getent_passwd': {'auditor': ['', '', '', '', '/home/auditor']}}
         self.assertTrue(check(**context, k3s_identity_default_config={'stat': {'exists': False}}))
         self.assertFalse(check(**context, k3s_identity_default_config={'stat': {'exists': True, 'islnk': False}}))
         self.assertFalse(check(**context, k3s_identity_default_config={'stat': {'exists': True, 'islnk': True, 'lnk_target': '/root/.kube/config'}}))
         self.assertTrue(check(**context, k3s_identity_default_config={'stat': {'exists': True, 'islnk': True, 'lnk_target': '/home/auditor/.kube/identity-config'}}))
-        verify = by_name['Require the default Kubernetes identity to remain non-admin']
+        verify = by_name['Require the default Kubernetes identity to match its assigned subject']
         self.assertIn('k3s_identity_role', verify['ansible.builtin.assert']['that'][0])
 
 if __name__ == '__main__': unittest.main()
