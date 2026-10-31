@@ -1,0 +1,76 @@
+name: Test Gitea Installer
+
+on:
+  pull_request:
+    paths:
+      - "roles/vhosts/gitea/files/setup-gitea.sh"
+      - ".github/workflows/test-setup-gitea.yml"
+  push:
+    branches: [main]
+    paths:
+      - "roles/vhosts/gitea/files/setup-gitea.sh"
+      - ".github/workflows/test-setup-gitea.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint and syntax checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax check (bash -n)
+        run: bash -n roles/vhosts/gitea/files/setup-gitea.sh
+
+      - name: Static analysis (shellcheck)
+        run: shellcheck roles/vhosts/gitea/files/setup-gitea.sh
+
+      - name: Verify --help flag
+        run: bash roles/vhosts/gitea/files/setup-gitea.sh --help
+
+  smoke-test:
+    name: Smoke test across distributions
+    runs-on: ubuntu-latest
+    needs: [lint]
+    strategy:
+      matrix:
+        image:
+          - debian:12-slim
+          - ubuntu:22.04
+          - ubuntu:24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Smoke test --help
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.image }} bash roles/vhosts/gitea/files/setup-gitea.sh --help
+
+      - name: Smoke test standalone --dry-run
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.image }} bash roles/vhosts/gitea/files/setup-gitea.sh --domain git.example.com --standalone --dry-run
+
+      - name: Smoke test team mode fail-closed
+        run: |
+          if docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.image }} bash roles/vhosts/gitea/files/setup-gitea.sh --domain git.example.com --with-runner; then
+            echo "Expected team mode to fail without required environment variables!" >&2
+            exit 1
+          else
+            echo "Team mode successfully failed-closed when environment variables were missing."
+          fi
+
+      - name: Smoke test team mode --dry-run
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" \
+            -e GITEA_DOMAIN="git.example.com" \
+            -e GITEA_ADMIN_USER="platform-admin" \
+            -e GITEA_ADMIN_PASSWORD="ci-secret-password-12345" \
+            -e RUNNER_REGISTRATION_TOKEN="ci-runner-token-67890" \
+            ${{ matrix.image }} bash roles/vhosts/gitea/files/setup-gitea.sh --domain git.example.com --with-runner --dry-run
+
+      - name: Smoke test uninstall --dry-run
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.image }} bash roles/vhosts/gitea/files/setup-gitea.sh --uninstall --dry-run

@@ -1,0 +1,77 @@
+name: Test setup-vault-zitadel installer
+
+on:
+  pull_request:
+    paths:
+      - 'roles/vhosts/vault_zitadel_bootstrap/files/setup-vault-zitadel.sh'
+      - '.github/workflows/test-setup-vault-zitadel.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'roles/vhosts/vault_zitadel_bootstrap/files/setup-vault-zitadel.sh'
+      - '.github/workflows/test-setup-vault-zitadel.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-syntax:
+    name: Shellcheck and Bash syntax verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Syntax check with bash -n
+        run: bash -n roles/vhosts/vault_zitadel_bootstrap/files/setup-vault-zitadel.sh
+
+      - name: Static analysis with shellcheck
+        run: shellcheck roles/vhosts/vault_zitadel_bootstrap/files/setup-vault-zitadel.sh
+
+  smoke-tests:
+    name: Container smoke tests
+    runs-on: ubuntu-latest
+    needs: [lint-and-syntax]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify --help flag
+        run: bash roles/vhosts/vault_zitadel_bootstrap/files/setup-vault-zitadel.sh --help
+
+      - name: Test --help in Debian 12 container
+        run: >-
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:12-slim
+          bash roles/vhosts/vault_zitadel_bootstrap/files/setup-vault-zitadel.sh --help
+
+      - name: Test standalone dry-run on Debian 12
+        run: >-
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:12-slim
+          bash roles/vhosts/vault_zitadel_bootstrap/files/setup-vault-zitadel.sh --domain vault.example.com --standalone --dry-run
+
+      - name: Test standalone dry-run on Ubuntu 24.04
+        run: >-
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" ubuntu:24.04
+          bash roles/vhosts/vault_zitadel_bootstrap/files/setup-vault-zitadel.sh --domain vault.example.com --standalone --dry-run
+
+      - name: Test team mode dry-run with environment variables
+        run: |
+          DUMMY_MASTERKEY="$(printf 'x%.0s' {1..32})"
+          docker run --rm \
+            -e VAULT_DOMAIN="vault.example.com" \
+            -e ZITADEL_DOMAIN="auth.example.com" \
+            -e ZITADEL_MASTERKEY="${DUMMY_MASTERKEY}" \
+            -e VAULT_UNSEAL_KEY="test-unseal-key" \
+            -v "$PWD:$PWD" -w "$PWD" debian:12-slim \
+            bash roles/vhosts/vault_zitadel_bootstrap/files/setup-vault-zitadel.sh --domain vault.example.com --with-oidc --dry-run
+
+      - name: Test uninstall dry-run on Debian 12
+        run: >-
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:12-slim
+          bash roles/vhosts/vault_zitadel_bootstrap/files/setup-vault-zitadel.sh --uninstall --dry-run
+
+      - name: Verify idempotency in dry-run
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:12-slim bash roles/vhosts/vault_zitadel_bootstrap/files/setup-vault-zitadel.sh --domain vault.example.com --standalone --dry-run > /tmp/run1.log
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:12-slim bash roles/vhosts/vault_zitadel_bootstrap/files/setup-vault-zitadel.sh --domain vault.example.com --standalone --dry-run > /tmp/run2.log
+          diff -u /tmp/run1.log /tmp/run2.log
