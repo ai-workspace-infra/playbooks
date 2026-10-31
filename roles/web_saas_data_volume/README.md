@@ -24,7 +24,7 @@ Run `ansible-playbook --syntax-check -i 'web-saas-uat,'
 web-saas-data-volume.yml -e 'web_saas_data_target_host=web-saas-uat'` after
 editing the role. Syntax success is not proof that a remote disk is mounted.
 
-Fresh K3s generations may explicitly enable `web_saas_data_allow_generation_host`.
-They must be in PROD/K3s groups with a generation marker and carry a verified
+K3s hosts may explicitly enable `web_saas_data_allow_generation_host`.
+They must be in their declared environment and K3s groups and carry a verified
 CMDB data-volume ID attached to the exact CMDB instance. The owner adapter supplies
 `web_saas_data_expected_volume_id`; normal defaults still reject arbitrary hosts.
