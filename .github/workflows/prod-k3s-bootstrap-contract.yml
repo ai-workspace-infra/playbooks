@@ -28,6 +28,9 @@ on:
       - 'roles/vhosts/k3s_identity/**'
       - 'tests/test_k3s_role_separation.py'
       - 'tests/test_flux_workload_readiness.py'
+      - 'tests/test_k3s_handover_boundary.py'
+      - 'scripts/pipeline/bootstrap-k3s.sh'
+      - '.github/actions/k3s-bootstrap/**'
       - 'tests/test_k3s_identity_writer_contract.py'
       - 'tests/test_common_vault_reader.py'
       - 'tests/test_k3s_platform_node_identity.py'
@@ -57,6 +60,7 @@ jobs:
       - run: python -m unittest discover -s tests -p test_k3s_volume_target_contract.py
       - run: python -m unittest discover -s tests -p test_k3s_identity_rbac_readiness.py
       - run: python -m unittest discover -s tests -p test_flux_workload_readiness.py
+      - run: python -m unittest discover -s tests -p test_k3s_handover_boundary.py
       - run: python -m unittest discover -s tests -p test_k3s_identity_writer_contract.py
       - run: python -m unittest discover -s tests -p test_common_vault_reader.py
       - run: ANSIBLE_ROLES_PATH=roles ansible-playbook -i tests/fixtures/dev_k3s_syntax.yml tests/fixtures/k3s_identity_syntax_playbook.yml --syntax-check

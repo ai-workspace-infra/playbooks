@@ -10,8 +10,8 @@ outputs.
 
 The owner entry checks the GitOps commit, clean checkout, CMDB checksum,
 manifest containment and host presence; it runs the common and K3s roles and
-validates three receipts before this action succeeds. The caller publishes and
-correlates the three output paths per host, and distinguishes runtime service
-acceptance from Flux object readiness. This action does not create cloud
+validates the handover and identities receipts before this action succeeds. The caller publishes and
+correlates both output paths per host. Flux workload reconciliation and runtime service
+acceptance are outside this handover. This action does not create cloud
 resources, modify DNS or perform data migration. Disk initialization follows
 the reviewed declaration and role safety checks.
