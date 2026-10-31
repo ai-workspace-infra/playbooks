@@ -35,7 +35,6 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `k3s_platform_addon`、`k3s-addon` | ❌ 旧实现和调用方仍存在 | 待目标环境采用 Flux 声明并完成发布身份、调用方和运行验证后退役，当前不属于新 bootstrap 主线 |
 | cert-manager、reloader、APISIX、ExternalDNS、NGINX Ingress | ✅ [GitOps #681](https://github.com/ai-workspace-infra/gitops/pull/681) 已合并 | 已提供可独立选择的 Flux 模板，未接入任何环境；ExternalDNS 默认 dry-run |
 | ESO、Caddy | ✅ GitOps 已有 V6 HelmRelease 声明；❌ 实际调谐及服务验收待核验 | 不再通过旧 addon role 重复安装 |
-| `k3s-cluster-agent` | ❌ 未完成 | bootstrap、upgrade、destroy 任务为空，不能当作可用 worker 能力 |
 | `k3s-reset` | ❌ 安全边界待修复 | 独立破坏性入口，旧默认值需收敛；#905 移除两个初始化入口的隐式重置 |
 | `k3s_runtime_secret_sync` | ✅ 独立运维入口 | 不属于 bootstrap；通用 KV 同步与环境专用投影仍需梳理 |
 | 三身份与 Flux RBAC | ❌ [GitOps #682](https://github.com/ai-workspace-infra/gitops/pull/682)、[Playbooks #906](https://github.com/ai-workspace-infra/playbooks/pull/906) 待合并 | 候选声明三身份和 RBAC 依赖；operator 当前只具备业务读取及扩缩容，工作负载写入需另审准入策略 |
@@ -79,7 +78,6 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `k3s` | 旧脚本混合 K3s/Helm/CNI；meta 自动依赖 common；含固定域名和忽略错误 | K3s 安装统一到 server，调用方切换，旧实现删除。非默认 CNI 明确拒绝，需由独立 GitOps 声明与执行链另行交付 |
 | `k3s_platform_addon` | 直接 Helm 管理 cert-manager/ESO/reloader/Caddy/APISIX/external-dns，默认含业务路由与域名；与 GitOps 资源 owner 重叠 | 本次不接入冷启动主线，也未删除；后续逐资源确认 GitOps 接管及旧消费者退出，停止双重调谐，再清理实现 |
 | `k3s-addon` | 脚本管理 ingress/DNS，meta 自动安装 cert-manager，存在忽略错误与销毁操作 | 存量旧入口冻结；不并入控制面 role。核对旧调用方及实际资源后迁入 GitOps/对应 owner，禁止新主线使用 |
-| `k3s-cluster-agent` | 有 action 分发器，但 bootstrap/upgrade/destroy 都是空文件，vars 有固定 IP/占位 token | worker 是独立职责，不能并入 server；当前不能宣称支持 worker 生命周期。本次未实现或执行该 role |
 | `k3s-reset` | 调用重置脚本，旧默认 `cluster_reset=enable`；属于破坏性恢复 | 独立保留，不列入初始化依赖。本次未执行；显式确认、精确范围、备份和恢复验证等防护仍需另行收敛 |
 | `k3s_runtime_secret_sync` | Vault KV 字段 CAS 同步，并包含 dev-registry 投影模式；不是 K3s 安装/RBAC | 保留独立运维入口，不进入 bootstrap。后续拆分通用 KV 同步与环境投影；不能自动扩大路径权限或覆盖业务记录 |
 
@@ -96,8 +94,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `k3s-cluster.yaml`、`setup-k3s-node.yaml`、`init_k3s_cluster_server` | 直接 `k3s-cluster-server` | 仅初始化控制面，目标组统一 `k3s`；不再隐式部署 Registry/Flux/ESO |
 | `k3s_platform_addon.yml`、`k3s_reset.yml`、`reconcile_k3s_runtime_secrets.yml` | 保持独立旧入口 | 非新 bootstrap 的依赖，不自动执行 |
 
-`init_k3s_cluster_agent` 的 worker role 路径与空实现尚需专门修复，不以
-目录名或脚手架视为已就绪。独立脚本模拟安装 Flux/ESO 不是本 DAG 验收；
+空的 worker role 和入口已移除。独立脚本模拟安装 Flux/ESO 不是本 DAG 验收；
 OrbStack 历史模拟探针不构成拆分后调用链或幂等性的证据。
 
 旧 Dev reusable workflow 仍固定 checkout 历史 Playbooks SHA，不会自动采用本次
