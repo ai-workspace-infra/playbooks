@@ -76,6 +76,20 @@ def build(checkout, commit, root_path, root_name, source_name, namespace, git_ur
         if source["metadata"].get("namespace") != namespace or source["spec"].get("url") != git_url:
             raise ValueError("sources must use the expected repository and Flux namespace")
         ref = source["spec"].get("ref", {})
+        if state == "active":
+            if len(ref) != 1 or not isinstance(next(iter(ref.values()), None), str):
+                raise ValueError("each source must declare exactly one ref")
+            kind, value = next(iter(ref.items()))
+            if kind not in {"branch", "tag", "commit"} or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", value):
+                raise ValueError("source ref must be a valid branch, tag or commit")
+            if kind == "commit" and not re.fullmatch(r"[0-9a-f]{40}", value):
+                raise ValueError("source commit must be a full SHA")
+            if source["metadata"]["name"] == source_name:
+                annotations = source["metadata"].get("annotations", {})
+                if annotations.get("kustomize.toolkit.fluxcd.io/ssa") != "IfNotPresent":
+                    raise ValueError("bootstrap source must not overwrite its run-specific commit pin")
+                source["spec"]["ref"] = {"commit": commit}
+            continue
         if set(ref) == {"commit"}:
             resolved = ref["commit"]
         elif set(ref) == {"tag"} and re.fullmatch(r"v[0-9][A-Za-z0-9.+-]*", ref["tag"]):
