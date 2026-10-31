@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class K3sTarget(unittest.TestCase):
-    def run_assertion(self, env, volume_id=22, group=None, instance_id=11):
+    def run_assertion(self, env, volume_id=22, group=None, instance_id=11, filesystem_label=''):
         task = yaml.safe_load((ROOT / 'roles/web_saas_data_volume/tasks/main.yml').read_text())[0]
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
@@ -26,7 +26,7 @@ class K3sTarget(unittest.TestCase):
                 'data_volume': {'linode_id': instance_id, 'volume_id': volume_id,
                                 'filesystem_path': '/dev/disk/by-id/test-volume'},
                 'web_saas_data_action': 'inspect', 'web_saas_data_mount_path': '/data',
-                'web_saas_data_filesystem_label': ''}
+                'web_saas_data_filesystem_label': filesystem_label}
             play.write_text(yaml.safe_dump([{'hosts': 'node-a', 'gather_facts': False,
                                              'vars': variables, 'tasks': [task]}]))
             config = tmp / 'ansible.cfg'
@@ -45,6 +45,13 @@ class K3sTarget(unittest.TestCase):
         for instance_id in (None, '', 0):
             with self.subTest(instance_id=instance_id):
                 self.assertNotEqual(self.run_assertion('prod', instance_id=instance_id).returncode, 0)
+
+    def test_filesystem_label_is_separate_and_bounded(self):
+        self.assertEqual(self.run_assertion('prod', filesystem_label='k3sdata').returncode, 0)
+        self.assertNotEqual(self.run_assertion('prod', filesystem_label='prod-k3s-v6-cold-20261031-data').returncode, 0)
+        play = yaml.safe_load((ROOT / 'k3s_platform_bootstrap.yml').read_text())[0]
+        binding = next(t for t in play['pre_tasks'] if t.get('name') == 'Bind runtime sources and data device without generating cloud facts')
+        self.assertIn('k3s_platform_data_filesystem_label', binding['ansible.builtin.set_fact']['web_saas_data_filesystem_label'])
 
 
 if __name__ == '__main__':

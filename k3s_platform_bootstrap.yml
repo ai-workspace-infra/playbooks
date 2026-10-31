@@ -41,7 +41,7 @@
         web_saas_data_allow_generation_host: true
         web_saas_data_expected_volume_id: '{{ data_volume.volume_id }}'
         web_saas_data_device_path: '{{ data_volume.filesystem_path }}'
-        web_saas_data_filesystem_label: '{{ data_volume.label }}'
+        web_saas_data_filesystem_label: '{{ bootstrap_node_candidates[0].host_vars.k3s_platform_data_filesystem_label | default("") }}'
     - name: Require identity configuration before node changes
       ansible.builtin.assert:
         that:
@@ -55,6 +55,7 @@
           - k3s_identity_checks | default({}) | list | sort == ['auditor', 'operator', 'root']
           - k3s_identity_rbac_kustomizations | default([]) | length > 0
           - k3s_platform_acceptance_objects | default([]) | length > 0
+          - web_saas_data_filesystem_label is match('^[A-Za-z0-9_-]{1,16}$')
           - bootstrap_gitops_sha is match('^[0-9a-f]{40}$')
           - k3s_platform_write_kubeconfig_mode | default('') == '0600'
         fail_msg: Declare Kubernetes identities, RBAC acceptance and Vault writer prerequisites in GitOps before bootstrap.
