@@ -37,7 +37,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | ESO、Caddy | ✅ GitOps 已有 V6 HelmRelease 声明；❌ 实际调谐及服务验收待核验 | 不再通过旧 addon role 重复安装 |
 | `k3s-reset` | ❌ 安全边界待修复 | 独立破坏性入口，旧默认值需收敛；#905 移除两个初始化入口的隐式重置 |
 | `k3s_runtime_secret_sync` | ✅ 独立运维入口 | 不属于 bootstrap；通用 KV 同步与环境专用投影仍需梳理 |
-| 三身份与 Flux RBAC | ❌ [GitOps #682](https://github.com/ai-workspace-infra/gitops/pull/682)、[Playbooks #906](https://github.com/ai-workspace-infra/playbooks/pull/906) 待合并 | 候选声明三身份和 RBAC 依赖；operator 当前只具备业务读取及扩缩容，工作负载写入需另审准入策略 |
+| 三身份与 Flux RBAC | ✅ [GitOps #682](https://github.com/ai-workspace-infra/gitops/pull/682)、[Playbooks #906](https://github.com/ai-workspace-infra/playbooks/pull/906) 已合并；❌ 目标集群验收待执行 | 三身份及 RBAC 依赖已声明；operator 只具备业务读取及扩缩容，工作负载写入需另审准入策略。kubeconfig 使用节点内 loopback，远程访问需另行设计 |
 | Orchestrator → Playbooks | ❌ 参数交接未贯通 | 需传入 GitOps checkout/SHA、资源声明路径、CMDB SHA 和回执路径 |
 | Vault writer 与真实身份验收 | ❌ 未完成 | 使用受控短期身份写入三个精确路径后，以实际账户验证认证及允许/拒绝 |
 | V6 Flux 接管和服务部署 | ❌ 尚无完整运行验收证据 | 需核对调用链、身份授权、实际 RBAC 和服务就绪；不得据源码或静态测试宣称完成 |
