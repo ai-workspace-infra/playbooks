@@ -39,8 +39,9 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `k3s-reset` | ❌ 安全边界待修复；[Playbooks #915](https://github.com/ai-workspace-infra/playbooks/pull/915) 待合并 | 空节点无操作修复已在目标节点验证；已安装集群的重置仍需单独验证，不属于初始化依赖 |
 | `k3s_runtime_secret_sync` | ✅ 独立运维入口 | 不属于 bootstrap；通用 KV 同步与环境专用投影仍需梳理 |
 | 三身份与 Flux RBAC | ✅ [GitOps #682](https://github.com/ai-workspace-infra/gitops/pull/682)、[Playbooks #906](https://github.com/ai-workspace-infra/playbooks/pull/906) 已合并；❌ 目标集群验收待执行 | 三身份及 RBAC 依赖已声明；operator 只具备业务读取及扩缩容，工作负载写入需另审准入策略。kubeconfig 使用节点内 loopback，远程访问需另行设计 |
-| Orchestrator → Playbooks | ❌ 参数交接未贯通 | 需传入 GitOps checkout/SHA、资源声明路径、CMDB SHA 和回执路径 |
-| Vault writer 与真实身份验收 | ❌ 运行验收未完成；[Playbooks #918](https://github.com/ai-workspace-infra/playbooks/pull/918)、[GitOps #683](https://github.com/ai-workspace-infra/gitops/pull/683) 已合并 | 专用 policy/role 已定向应用，配置核验包含三个精确 create/read 路径和受保护 PROD Deploy 身份；真实 JWT 登录、相邻路径拒绝和三账户 RBAC 尚待验证，不以配置读取代替实际授权证据 |
+| Orchestrator → Playbooks | ❌ 生产调用尚未验证；[Orchestrator #1585](https://github.com/ai-workspace-infra/Platform-Orchestrator/pull/1585) 为已通过检查的 OPEN 候选 | 本次实派发在旧通用 Vault credential-preparation role 的 `ref` claim 被拒后停止，common/K3s 未执行。候选按 IaC CMDB catalog 选择 K3s 目标，从 GitOps 声明传节点 SSH Vault 引用，跳过传统 Web SaaS 凭据预处理；仍需合并后通过真实完整调用链验证 |
+| Vault writer 与真实身份验收 | ❌ 运行验收未完成；[Playbooks #918](https://github.com/ai-workspace-infra/playbooks/pull/918)、[GitOps #683](https://github.com/ai-workspace-infra/gitops/pull/683) 已合并 | K3s identity writer policy/role 已定向应用，精确授权三条 create/read 路径并绑定受保护 PROD Deploy 身份；该身份负责签发凭据归档，不负责节点 SSH 登录或 common 公钥读取。真实 JWT 登录、相邻路径拒绝和三账户 RBAC 尚待验证 |
+| common Vault 公钥 reader | ❌ 尚未应用/运行验收；[GitOps #684](https://github.com/ai-workspace-infra/gitops/pull/684)、[Playbooks #920](https://github.com/ai-workspace-infra/playbooks/pull/920) 检查通过但仍 OPEN | 单独的只读 identity 只读取三条 OS 公钥记录；common 通过严格 HTTPS/TLS 的 Vault KV v2 API 消费短期 token，不依赖 runner 安装 Vault CLI。需合并后由受控管理员定向配置 role/policy，再验证允许目标路径、拒绝相邻路径 |
 | Flux 接管和服务部署 | ❌ 尚无完整运行验收证据 | 需核对调用链、身份授权、实际 RBAC 和服务就绪；不得据源码或静态测试宣称完成 |
 
 当前清单文件迁入本目录的 [Playbooks #904](https://github.com/ai-workspace-infra/playbooks/pull/904) 已合并。所有角色遵循 `AGENTS.md` 的单一职责规则。
@@ -50,7 +51,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | Role | 唯一能力 | 前置条件 | 输出/验收 |
 | --- | --- | --- | --- |
 | `vhosts/common` 的 `node_bootstrap.yml` | 校验节点身份、建立 OS 三账户并串联声明的独立盘准备 | CMDB 精确节点、受控 SSH 公钥；既有节点和 PV 亲和性检查 | 主线要求盘挂载及 UUID 证据后才产生 `COMMON_NODE_VERIFIED`；不代表完整主机安全基线 |
-| `vhosts/common` 的 OS Vault reader | 以受控 Vault 会话读取三账户公钥 | 明确的 HTTPS Vault、目标环境和只读会话；证书严格校验 | 候选使用 KV v2 HTTPS 接口，无需在 runner 安装 Vault CLI；缺失或拒绝读取时失败 |
+| `vhosts/common` 的 OS Vault reader | 以受控 Vault 会话读取三账户公钥 | 明确的 HTTPS Vault、目标环境和只读会话；证书严格校验；分别依赖 GitOps reader 声明和精确只读 Vault role | #920 候选使用 KV v2 HTTPS 接口，无需在 runner 安装 Vault CLI；缺失或拒绝读取时失败；目前没有 V6 实际调用回执 |
 | `web_saas_data_volume` | 核验并准备声明的独立文件系统 | CMDB 实例、卷及设备匹配；空盘初始化需显式授权 | 挂载点、UUID、文件系统证据；不自动重格式化已有文件系统 |
 | `k3s-cluster-server` | 初始化单节点 K3s 控制面 | common 已设置 hostname；要求独立盘时卷证据已通过 | K3s 服务启动及 API `/readyz`；既有安装跳过安装器，不等于已升级 |
 | `k3s_platform_bootstrap` | 按依赖顺序编排子 role | 已完成入口绑定、common 和数据盘角色 | 子 role 顺序执行；失败停止后续执行，不代表业务服务验收 |
