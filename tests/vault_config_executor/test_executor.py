@@ -165,6 +165,65 @@ class JwtContract(unittest.TestCase):
         with self.assertRaises(ValueError):
             ex.run({"operation": "jwt_contract", "environment": "uat", "contract": c}, FakeVault())
 
+    def test_canonical_gitops_declarations_are_converted(self):
+        role = {'apiVersion': 'security.gitops/v1alpha1', 'kind': 'VaultJWTAuthRole',
+                'metadata': {'name': 'uat-compute-cleanup'},
+                'spec': {'bound_claims': {'ref': ['refs/heads/main'],
+                          'workflow_ref': 'o/r/.github/workflows/c.yml@refs/heads/main'},
+                         'token_policies': ['uat-compute-cleanup']}}
+        policy = {'apiVersion': 'security.gitops/v1alpha1', 'kind': 'VaultACLPolicy',
+                  'metadata': {'name': 'uat-compute-cleanup'},
+                  'spec': {'paths': [{'path': 'kv/data/uat/serverless/gcp', 'capabilities': ['read']}]}}
+        request = {'operation': 'jwt_contract', 'environment': 'uat',
+                   'contract': {'role_declaration': role, 'policy_declaration': policy}}
+        self.assertEqual(ex.run(request, FakeVault())['pending'], ['policy', 'role'])
+        policy['spec']['paths'].append(policy['spec']['paths'][0])
+        with self.assertRaisesRegex(ValueError, 'duplicate'):
+            ex.run(request, GuardVault())
+
+    def test_loopback_prefix_cannot_impersonate_a_local_vault(self):
+        for url in ('http://127.0.0.1.attacker.example', 'http://127.0.0.1@attacker.example',
+                    'https://user:password@example.com', 'https://example.com/path'):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                ex.Vault(url, 'test-token')
+        ex.Vault('http://127.0.0.1:8200', 'test-token')
+
+    def test_existing_role_ttl_is_compared_in_seconds(self):
+        c = json.loads(json.dumps(self.contract))
+        c['role']['token_ttl'] = '10m'
+        current = dict(c['role'], token_ttl=600)
+        v = FakeVault({'sys/policies/acl/uat-compute-cleanup': {'policy': json.dumps(c['policy'])},
+                       'auth/jwt/role/uat-compute-cleanup': current})
+        req = {'operation': 'jwt_contract', 'environment': 'uat', 'contract': c}
+        self.assertEqual(ex.run(req, v)['pending'], [])
+        current['token_ttl'] = 1200
+        self.assertEqual(ex.run(req, v)['pending'], ['role'])
+
+    def test_role_policy_and_mount_validation_precede_vault_calls(self):
+        for c in (dict(self.contract, role={'bound_claims': self.contract['role']['bound_claims']}),
+                  self.contract):
+            req = {'operation': 'jwt_contract', 'environment': 'uat', 'contract': c,
+                   'auth_mount': '../jwt'}
+            with self.assertRaises(ValueError):
+                ex.run(req, GuardVault())
+
+    def test_jwt_contract_rejects_other_environment_before_vault(self):
+        c = json.loads(json.dumps(self.contract))
+        c['policy']['path'] = {'kv/data/prod/accounts/runtime': {'capabilities': ['read']}}
+        with self.assertRaisesRegex(ValueError, 'different environment'):
+            ex.run({'operation': 'jwt_contract', 'environment': 'uat', 'contract': c}, GuardVault())
+        c = json.loads(json.dumps(self.contract))
+        c['role']['bound_claims']['environment'] = ['uat', 'prod']
+        with self.assertRaisesRegex(ValueError, 'environment'):
+            ex.run({'operation': 'jwt_contract', 'environment': 'uat', 'contract': c}, GuardVault())
+
+    def test_jwt_contract_rejects_unscoped_kv_wildcards(self):
+        for path in ('kv/data/*', 'kv/data/+/accounts', 'kv/metadata/prod*/x'):
+            c = json.loads(json.dumps(self.contract))
+            c['policy']['path'] = {path: {'capabilities': ['read']}}
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, 'explicit environment'):
+                ex.run({'operation': 'jwt_contract', 'environment': 'uat', 'contract': c}, GuardVault())
+
 
 if __name__ == "__main__":
     unittest.main()
