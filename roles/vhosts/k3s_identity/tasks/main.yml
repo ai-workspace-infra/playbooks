@@ -1,14 +1,5 @@
-- name: Require explicit identity delivery contract
-  ansible.builtin.assert:
-    that:
-      - k3s_identity_environment in ['sit', 'uat', 'prod']
-      - k3s_identity_cluster is match('^[a-z0-9][a-z0-9-]*$')
-      - k3s_identity_api_server is match('^https://')
-      - k3s_identity_tls_dir | length > 0
-      - k3s_identity_state_dir is match("^/[^.]+$")
-      - k3s_identity_checks.keys() | list | sort == ["auditor", "operator", "root"]
-      - k3s_identity_checks | length > 0
-    fail_msg: Identity delivery requires a reviewed target, CA and real-identity acceptance contract
+- name: Validate independent identity prerequisites
+  ansible.builtin.import_tasks: preflight.yml
 
 - name: Read actual cluster identity before credential delivery
   ansible.builtin.command:
@@ -30,13 +21,6 @@
 - name: Verify cluster identity binding
   ansible.builtin.assert:
     that: k3s_identity_actual_uid.stdout == k3s_identity_cluster_uid
-
-- name: Require actual allow and deny cases for each role
-  ansible.builtin.assert:
-    that:
-      - k3s_identity_checks[item] | selectattr('allowed', 'equalto', true) | list | length > 0
-      - k3s_identity_checks[item] | selectattr('allowed', 'equalto', false) | list | length > 0
-  loop: [root, operator, auditor]
 
 - name: Install master-local credential generator
   ansible.builtin.copy:

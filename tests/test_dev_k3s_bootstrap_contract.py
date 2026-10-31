@@ -18,7 +18,7 @@ def load(name, path):
 
 
 ADAPTER = load("dev_adapter", "scripts/dev_k3s_bootstrap.py")
-VERIFY = load("dev_verify", "roles/vhosts/k3s_platform_bootstrap/files/verify_bootstrap.py")
+VERIFY = load("dev_verify", "roles/vhosts/flux_gitops/files/verify_bootstrap.py")
 SHA = "a" * 40
 
 
@@ -130,9 +130,9 @@ class Contract(unittest.TestCase):
                 ADAPTER.validate_session({**valid, "lease_duration": ttl})
 
     def test_single_node_receipt_is_opt_in_not_a_generic_role_change(self):
-        defaults = yaml.safe_load((ROOT / "roles/vhosts/k3s_platform_bootstrap/defaults/main.yml").read_text())
+        defaults = yaml.safe_load((ROOT / "roles/vhosts/flux_gitops/defaults/main.yml").read_text())
         self.assertFalse(defaults["k3s_platform_strict_dev_receipt"])
-        tasks = yaml.safe_load((ROOT / "roles/vhosts/k3s_platform_bootstrap/tasks/main.yml").read_text())
+        tasks = yaml.safe_load((ROOT / "roles/vhosts/flux_gitops/tasks/handover.yml").read_text())
         observer = next(t for t in tasks if t["name"] == "Verify actual node cluster and observed Flux revision")
         self.assertEqual(observer["when"], "k3s_platform_strict_dev_receipt | bool")
         self.assertIn('"k3s_platform_strict_dev_receipt": True', (ROOT / "scripts/dev_k3s_bootstrap.py").read_text())
@@ -146,7 +146,7 @@ class Contract(unittest.TestCase):
                 VERIFY.evaluate(*args, ADAPTER.TARGET, SHA, version, arch)
 
     def test_source_commit_and_synchronous_role_are_present(self):
-        tasks = (ROOT / "roles/vhosts/k3s_platform_bootstrap/tasks/main.yml").read_text()
+        tasks = (ROOT / "roles/vhosts/flux_gitops/tasks/handover.yml").read_text()
         self.assertIsInstance(yaml.safe_load(tasks), list)
         self.assertIn("commit: {{ k3s_platform_git_commit }}", tasks)
         self.assertNotIn("poll: 0", tasks)

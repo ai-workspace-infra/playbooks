@@ -13,7 +13,7 @@ def load(name, path):
     return mod
 
 adapter = load('v6_adapter', 'scripts/prod_k3s_bootstrap.py')
-verifier = load('v6_verify', 'roles/vhosts/k3s_platform_bootstrap/files/verify_paused_bootstrap.py')
+verifier = load('v6_verify', 'roles/vhosts/flux_gitops/files/verify_paused_bootstrap.py')
 
 class CandidateTests(unittest.TestCase):
     def setUp(self):
@@ -52,7 +52,7 @@ class CandidateTests(unittest.TestCase):
             with self.assertRaises(ValueError): self.prepare()
             self.live['prod-k3s-v6']['data_volume'][field]=old
     def test_mount_dependency_precedes_install(self):
-        tasks=yaml.safe_load((ROOT/'roles/vhosts/k3s_platform_bootstrap/tasks/main.yml').read_text())
+        tasks=yaml.safe_load((ROOT/'roles/vhosts/k3s-cluster-server/tasks/bootstrap.yml').read_text())
         names=[t['name'] for t in tasks]
         self.assertLess(names.index('Bind K3s to the verified independent data mount'),names.index('Run k3s installer script'))
 

@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import Mock
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('k3s_identity', ROOT / 'roles/vhosts/k3s_platform_bootstrap/files/bootstrap_k3s_identity_keys.py')
+spec = importlib.util.spec_from_file_location('k3s_identity', ROOT / 'roles/vhosts/k3s_identity/files/bootstrap_k3s_identity_keys.py')
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 

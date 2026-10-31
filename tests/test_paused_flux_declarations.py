@@ -7,7 +7,7 @@ import unittest
 
 import yaml
 
-SPEC = importlib.util.spec_from_file_location("staged", Path(__file__).resolve().parents[1] / "roles/vhosts/k3s_platform_bootstrap/files/stage_flux_declarations.py")
+SPEC = importlib.util.spec_from_file_location("staged", Path(__file__).resolve().parents[1] / "roles/vhosts/flux_gitops/files/stage_flux_declarations.py")
 STAGED = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(STAGED)
 SHA = "a" * 40

@@ -92,7 +92,7 @@ def main():
     require(known.is_file() and known.stat().st_size > 0, 'Provider-attested known_hosts required')
     declared = clean['hosts'][name]['host_vars']
     # Resolve the stable root and batch path independently from the hostname.
-    execute(['python3', str(ROOT / 'roles/vhosts/k3s_platform_bootstrap/files/stage_flux_declarations.py'),
+    execute(['python3', str(ROOT / 'roles/vhosts/flux_gitops/files/stage_flux_declarations.py'),
              '--checkout', str(checkout), '--commit', a.gitops_sha,
              '--root-path', declared['k3s_platform_flux_root_path'],
              '--root-name', declared['k3s_platform_flux_root_name'],

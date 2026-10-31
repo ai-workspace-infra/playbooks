@@ -108,12 +108,12 @@ KV v2 中 `kv` 为 mount：逻辑路径 `kv/prod/core-a/auditor` 对应读取/�
 | --- | --- | --- | --- |
 | 1. 声明目标 | GitOps | 声明环境、集群标识、节点及身份策略引用；固定 Git revision | 身份契约尚未接入 |
 | 2. 创建主机与独立存储 | IaC | 消费目标声明；输出实例 ID、地址、磁盘等 CMDB 事实，供 Ansible 选择目标 | 现有 IaC/CMDB 交接；IaC 不负责签发客户端凭据 |
-| 3. OS 与平台初始化 | `vhosts/common`、`vhosts/k3s_platform_bootstrap`、Flux | CMDB 选择并验证节点；初始化 OS、K3s、Flux，并按 GitOps 门禁初始化 ESO 和 Ingress；bootstrap receipt 记录节点 UID、集群标记和声明 revision | role 已初始化 K3s/Flux 并加载声明；ESO、Ingress 按各自 GitOps 单元放行，三身份交付尚未接入 |
+| 3. OS 与平台初始化 | `vhosts/common`、bootstrap 编排器及独立执行 role、Flux | common 初始化 OS；`k3s-cluster-server` 初始化控制面，`flux_controllers` 安装控制器，`flux_gitops` 交接声明并记录实际 revision；ESO、Ingress 由 GitOps 调谐 | 执行职责已拆分；拆分后的生产运行证据待取得 |
 | 4. 节点生成与归档凭据 | K3s role、节点侧初始化脚本 | master 生成三份独立密钥及客户端证书，验证信任链并生成私有 kubeconfig，写入各角色 Vault KV；CA 私钥留在 master | 节点侧生成、签发、归档及 role 调用已实现；真实 Vault/集群验收待执行 |
-| 5. 权限与凭据交付 | Flux、K3s/K8s role | Flux 收敛审查后的 RBAC；role 从 Vault 精确路径读取各自凭据，核对目标并交付独立 kubeconfig | 尚未实现；不能将脚本执行等同 RBAC 已生效 |
-| 6. 验收与轮换 | K3s/K8s role、身份 owner | 使用三套真实身份验证允许/拒绝，记录目标和固定 revision；后续按凭据 owner 流程轮换 | 尚未实现 |
+| 5. 权限与凭据交付 | Flux、`vhosts/k3s_identity` | Flux 收敛审查后的 RBAC；role 将 master 生成、已归档且读回确认的 kubeconfig 交付对应 OS 用户 | 交付代码已实现；GitOps RBAC 就绪、Vault writer 授权及真实交付仍需运行证据 |
+| 6. 验收与轮换 | `vhosts/k3s_identity`、身份 owner | 使用三套真实身份验证允许/拒绝；后续按凭据 owner 流程轮换 | whoami、声明允许/拒绝和强制敏感操作拒绝探针已实现；真实验收待执行，自动轮换未实现 |
 
-当前 paused bootstrap verifier 将 `kube-system` namespace 的 `metadata.uid` 作为 receipt 中的 `cluster_uid` 标记；它是本项目选择的运行时标识，并非 Kubernetes 原生的集群 UID，也不是 IaC 实例 ID。后续交接必须先验证该 receipt 与目标实例和声明匹配，并明确此标记的生命周期：namespace 或集群重建会改变它，需要重新绑定和验证，不能自动复用旧凭据。初始化脚本会连接实际集群核对该 UID；调用者仍需核验 receipt、CMDB 与固定声明的绑定。
+交接 verifier 将 `kube-system` namespace 的 `metadata.uid` 作为 receipt 中的 `cluster_uid` 标记；它是本项目选择的运行时标识，并非 Kubernetes 原生的集群 UID，也不是 IaC 实例 ID。后续交接必须先验证该 receipt 与目标实例和声明匹配，并明确此标记的生命周期：namespace 或集群重建会改变它，需要重新绑定和验证，不能自动复用旧凭据。初始化脚本会连接实际集群核对该 UID；调用者仍需核验 receipt、CMDB 与固定声明的绑定。
 
 K3s 首次启动和客户端签发之间不能形成循环依赖：先使用受控 bootstrap 管理入口建立并核验集群，再由 K3s role 在 master 节点生成各角色独立私钥，经受控管理员签发路径签发短期客户端证书，验证客户端信任链和密钥匹配，生成各用户私有 kubeconfig，并将角色凭据写入 Vault，最后验收新身份。凭据在节点初始化阶段生成，不要求预置三份 JSON 或提前写入 Vault。GitOps 中只放非敏感路径与 RBAC 声明，IaC state、CMDB、Git 仓库和普通日志都不承载私钥。不得将 CA 私钥交给日常 operator 或 auditor，也不得以已有管理员 kubeconfig 冒充三套独立身份。
 

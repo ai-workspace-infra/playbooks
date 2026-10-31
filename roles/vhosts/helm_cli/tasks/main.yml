@@ -1,0 +1,10 @@
+- name: Install helm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if command -v helm >/dev/null 2>&1; then
+      exit 0
+    fi
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+      | DESIRED_VERSION="{{ k3s_platform_helm_version }}" bash
+  args:
+    executable: /bin/bash

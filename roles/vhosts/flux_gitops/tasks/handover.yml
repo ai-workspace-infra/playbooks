@@ -1,0 +1,270 @@
+- name: Render flux bootstrap env file
+  ansible.builtin.template:
+    src: flux-bootstrap.env.j2
+    dest: /tmp/flux-bootstrap.env
+    mode: "0600"
+
+- name: Write flux git private key file
+  ansible.builtin.copy:
+    content: "{{ k3s_platform_git_private_key_resolved }}\n"
+    dest: /tmp/flux-git-deploy.key
+    mode: "0600"
+  no_log: true
+  when:
+    - k3s_platform_git_auth_mode_effective == 'ssh'
+
+- name: Write flux git public key file when provided
+  ansible.builtin.copy:
+    content: "{{ k3s_platform_git_public_key }}\n"
+    dest: /tmp/flux-git-deploy.pub
+    mode: "0644"
+  when:
+    - k3s_platform_git_public_key | length > 0
+    - k3s_platform_git_auth_mode_effective == 'ssh'
+
+- name: Remove flux git auth secret for public repositories
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - "{{ k3s_platform_flux_namespace }}"
+      - delete
+      - secret
+      - "{{ k3s_platform_flux_source_name }}"
+      - --ignore-not-found
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  when:
+    - k3s_platform_git_auth_mode_effective in ['public', 'none', '']
+
+- name: Create or update flux git auth secret with SSH
+  ansible.builtin.shell: |
+    set -euo pipefail
+    . /tmp/flux-bootstrap.env
+    flux create secret git "${GIT_SOURCE_NAME}" \
+      --url="${GIT_URL}" \
+      --private-key-file=/tmp/flux-git-deploy.key \
+      --namespace="${FLUX_NAMESPACE}" \
+      --export | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  no_log: true
+  when:
+    - k3s_platform_git_auth_mode_effective == 'ssh'
+
+- name: Create or update flux git auth secret with HTTPS basic auth
+  ansible.builtin.shell: |
+    set -euo pipefail
+    . /tmp/flux-bootstrap.env
+    cat <<EOF | kubectl apply -f -
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: ${GIT_SOURCE_NAME}
+      namespace: ${FLUX_NAMESPACE}
+    type: Opaque
+    stringData:
+      username: {{ k3s_platform_git_http_username | to_json }}
+      password: {{ k3s_platform_git_http_password | to_json }}
+    EOF
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  no_log: true
+  when:
+    - k3s_platform_git_auth_mode_effective == 'https-basic'
+
+- name: Create or update flux git auth secret with HTTPS bearer token
+  ansible.builtin.shell: |
+    set -euo pipefail
+    . /tmp/flux-bootstrap.env
+    cat <<EOF | kubectl apply -f -
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: ${GIT_SOURCE_NAME}
+      namespace: ${FLUX_NAMESPACE}
+    type: Opaque
+    stringData:
+      bearerToken: {{ k3s_platform_git_bearer_token | to_json }}
+    EOF
+  args:
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  no_log: true
+  when:
+    - k3s_platform_git_auth_mode_effective == 'https-bearer'
+
+- name: Apply root Flux source and kustomization
+  when: k3s_platform_flux_bootstrap_mode == 'generated'
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    . /tmp/flux-bootstrap.env
+    if [ "{{ k3s_platform_git_auth_mode_effective }}" = "public" ] || [ "{{ k3s_platform_git_auth_mode_effective }}" = "none" ] || [ -z "{{ k3s_platform_git_auth_mode_effective }}" ]; then
+      SECRET_REF_BLOCK=""
+    else
+      SECRET_REF_BLOCK="      secretRef:\n        name: ${GIT_SOURCE_NAME}\n"
+    fi
+    cat <<EOF | kubectl apply -f -
+    apiVersion: source.toolkit.fluxcd.io/v1
+    kind: GitRepository
+    metadata:
+      name: ${GIT_SOURCE_NAME}
+      namespace: ${FLUX_NAMESPACE}
+    spec:
+      interval: 1m0s
+      url: ${GIT_URL}
+      ref:
+    {% if k3s_platform_git_commit | length > 0 %}
+        commit: {{ k3s_platform_git_commit }}
+    {% else %}
+        branch: ${GIT_BRANCH}
+    {% endif %}
+    ${SECRET_REF_BLOCK}
+    ---
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: {{ k3s_platform_flux_root_name }}
+      namespace: ${FLUX_NAMESPACE}
+    spec:
+      interval: 5m0s
+      sourceRef:
+        kind: GitRepository
+        name: ${GIT_SOURCE_NAME}
+      path: ${FLUX_ROOT_PATH}
+      prune: true
+      wait: true
+      timeout: 5m0s
+    EOF
+  args:
+    executable: /bin/bash
+
+- name: Hand active declarations to Flux without applying business workloads
+  when: k3s_platform_flux_bootstrap_mode == 'declarative_active'
+  block:
+    - name: Install active bootstrap entrypoint and verifier
+      ansible.builtin.copy:
+        src: active_flux_bootstrap.py
+        dest: "{{ k3s_platform_install_dir }}/active_flux_bootstrap.py"
+        mode: '0700'
+    - name: Copy the validated full graph for local entrypoint selection
+      ansible.builtin.copy:
+        content: "{{ k3s_platform_active_declarations.stdout }}\n"
+        dest: /tmp/flux-bootstrap-declarations.yaml
+        mode: '0600'
+    - name: Apply source and root then verify Flux handover
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ k3s_platform_install_dir }}/active_flux_bootstrap.py"
+          - --bundle
+          - /tmp/flux-bootstrap-declarations.yaml
+          - --root
+          - "{{ k3s_platform_flux_root_name }}"
+          - --source
+          - "{{ k3s_platform_flux_source_name }}"
+          - --namespace
+          - "{{ k3s_platform_flux_namespace }}"
+          - --node
+          - "{{ k3s_platform_node_name }}"
+          - --version
+          - "{{ k3s_platform_k3s_version }}"
+          - --commit
+          - "{{ k3s_platform_git_commit }}"
+          - --volume-uuid
+          - "{{ web_saas_data_evidence.filesystem_uuid }}"
+      environment:
+        KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+      register: k3s_platform_active_receipt
+    - name: Save Flux handover evidence separately from service acceptance
+      ansible.builtin.copy:
+        content: "{{ (k3s_platform_active_receipt.stdout | from_json) | combine({'common': common_node_bootstrap_evidence}) | to_json }}\n"
+        dest: "{{ k3s_platform_receipt_path }}"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+
+- name: Install bounded bootstrap receipt verifier
+  ansible.builtin.copy:
+    src: verify_bootstrap.py
+    dest: "{{ k3s_platform_install_dir }}/verify_bootstrap.py"
+    owner: root
+    group: root
+    mode: "0700"
+  when: k3s_platform_strict_dev_receipt | bool
+
+- name: Reconcile root Flux source synchronously
+  when: k3s_platform_flux_bootstrap_mode == 'generated'
+  ansible.builtin.command:
+    argv:
+      - flux
+      - reconcile
+      - source
+      - git
+      - "{{ k3s_platform_flux_source_name }}"
+      - --namespace
+      - "{{ k3s_platform_flux_namespace }}"
+      - --timeout=5m
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  changed_when: true
+
+- name: Reconcile root Flux kustomization synchronously
+  when: k3s_platform_flux_bootstrap_mode == 'generated'
+  ansible.builtin.command:
+    argv:
+      - flux
+      - reconcile
+      - kustomization
+      - "{{ k3s_platform_flux_root_name }}"
+      - --namespace
+      - "{{ k3s_platform_flux_namespace }}"
+      - --with-source
+      - --timeout=10m
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  changed_when: true
+
+- name: Verify actual node cluster and observed Flux revision
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ k3s_platform_install_dir }}/verify_bootstrap.py"
+      - --node
+      - "{{ k3s_platform_node_name | default(inventory_hostname) }}"
+      - --namespace
+      - "{{ k3s_platform_flux_namespace }}"
+      - --source
+      - "{{ k3s_platform_flux_source_name }}"
+      - --root-name
+      - "{{ k3s_platform_flux_root_name }}"
+      - --commit
+      - "{{ k3s_platform_git_commit }}"
+      - --version
+      - "{{ k3s_platform_k3s_version }}"
+      - --architecture
+      - "{{ k3s_platform_expected_architecture }}"
+      - --timeout
+      - "{{ k3s_platform_ready_timeout | string }}"
+  environment:
+    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+  register: k3s_platform_verified_receipt
+  changed_when: false
+  when: k3s_platform_strict_dev_receipt | bool
+
+- name: Save verified public bootstrap receipt on controller
+  ansible.builtin.copy:
+    content: "{{ k3s_platform_verified_receipt.stdout }}\n"
+    dest: "{{ k3s_platform_receipt_path }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  when:
+    - k3s_platform_strict_dev_receipt | bool
+    - k3s_platform_receipt_path | length > 0

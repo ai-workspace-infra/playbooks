@@ -1,31 +1,51 @@
-# K3s Cluster Server Bootstrap
+# K3s control-plane initialization
 
-This role prepares a K3s server, installs the Flux and ESO controllers, and connects the cluster to the declared GitOps root. It does not provision DNS records or configure Caddy routes; those remain declared in GitOps and rendered by the owning Helm chart.
+Single responsibility: initialize a declared K3s server and verify its API.
+This is the shared control-plane installer used by platform bootstrap and the
+manual cluster-server entrypoints. The former `k3s-cluster` script installer
+has been retired; no compatibility role or extra installer is retained.
 
-## GitOps inputs
+## Contract
 
-| Variable | Purpose |
+Target group: `k3s`, using IaC CMDB inventory. Run as the system administrator.
+Run `vhosts/common` first: hostname and OS accounts remain its responsibility.
+The role checks the OS hostname instead of renaming a running K3s/PV node.
+When `k3s_platform_require_data_mount=true`, the data-volume role must supply
+`web_saas_data_evidence.filesystem_uuid`; K3s is bound to that verified mount.
+
+| Input | Purpose |
 | --- | --- |
-| `k8s_deployment_environment` | Environment selector; defaults to `uat`. |
-| `k8s_gitops_ref_kind` | Git ref kind, `branch` or immutable `tag`; defaults to `branch`. |
-| `k8s_gitops_ref_name` | Branch or tag name; defaults to `main`. |
-| `k8s_gitops_source_name` | Flux GitRepository name; defaults to `platform-config`. |
-| `k8s_gitops_kustomization_name` | Flux Kustomization name; defaults to the UAT bootstrap name. |
-| `k8s_gitops_path` | Repository path reconciled by Flux; defaults to the UAT cluster root. |
+| `k3s_platform_node_name` | Canonical node identity; defaults to inventory hostname |
+| `k3s_platform_k3s_version` | Pinned initial installation version |
+| `k3s_platform_k3s_config_path`, `k3s_platform_install_dir` | Config and data paths |
+| `k3s_platform_cluster_cidr`, `k3s_platform_service_cidr` | Cluster networking |
+| `k3s_platform_tls_sans`, `k3s_platform_disable_components` | Declared API names and built-in component selection |
+| `k3s_platform_write_kubeconfig_mode` | Must be `0600`; no business/audit access to admin credentials |
+| `k3s_platform_require_data_mount`, `k3s_platform_local_storage_path` | Independent filesystem dependency |
 
-For PROD, pass the reviewed GitOps release tag, `platform-config-prod`, and the matching `./environments/clusters/prod-*` path explicitly. The role fails closed when PROD is paired with a branch, a non-PROD path, or a different Flux source name. The exact release tag is selected by the deployment caller so it cannot silently drift to `main`.
-
-Example PROD inputs:
+Full defaults: [defaults/main.yml](defaults/main.yml). Inputs are non-secret
+configuration from GitOps; node facts come from CMDB. The role installs no
+Helm, Flux, ESO, Registry, business Secret or DNS resources. CA key material
+remains on the master. Successful completion requires `/readyz` success.
 
 ```yaml
-k8s_deployment_environment: prod
-k8s_gitops_ref_kind: tag
-k8s_gitops_ref_name: v<reviewed-release-tag>
-k8s_gitops_source_name: platform-config-prod
-k8s_gitops_kustomization_name: prod-web-saas-k3s-v5
-k8s_gitops_path: ./environments/clusters/prod-web-saas-k3s-v5
+- hosts: k3s
+  become: true
+  roles:
+    # Run common and the declared filesystem preparation before this play.
+    - vhosts/k3s-cluster-server
 ```
 
-## Scope and rollback
+## Retry and rollback
 
-The role installs or reconciles K3s platform components and creates the Flux source/Kustomization resources. It does not change public DNS, host routes, application data, or existing VPS resources. To roll back the GitOps selection, re-run the role with the previously reviewed immutable tag and the matching cluster path; application rollback remains owned by Flux and the chart release.
+An existing binary/unit skips initial installation. This is not a version
+upgrade implementation. Config and service state are converged; data is not
+removed or reformatted. `action` values other than `bootstrap` are rejected:
+the former add-master/backup/recovery/upgrade/destroy task files were empty,
+and must not report successful operations. Use separately reviewed owners for
+these capabilities. No automatic downgrade, CA rotation or cleanup is provided.
+
+The old implicit local Registry/nerdctl/self-signed CA setup is intentionally
+removed from the two legacy install playbooks; Registry provisioning is a
+separate operation. The old role-generation script and static server vars
+are removed so they cannot recreate the retired implementation.

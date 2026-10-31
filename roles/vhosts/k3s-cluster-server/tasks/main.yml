@@ -1,2 +1,5 @@
-- name: Execute action on K3s cluster server
-  include_tasks: "{{ action }}.yml"
+- name: Validate control-plane prerequisites without changing the host
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Initialize the K3s control plane
+  ansible.builtin.import_tasks: bootstrap.yml
