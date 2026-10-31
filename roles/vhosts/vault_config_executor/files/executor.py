@@ -138,7 +138,7 @@ def canonical_contract(contract):
 def jwt_contract(vault, req):
     contract = canonical_contract(req["contract"])
     name, role, policy = contract["role_name"], contract["role"], contract["policy"]
-    if not NAME.match(name):
+    if not NAME.fullmatch(name) or name == 'root':
         raise ValueError("invalid role name")
     claims = role.get("bound_claims") or {}
     declared_environment = claims.get('environment')
@@ -156,6 +156,9 @@ def jwt_contract(vault, req):
                 raise ValueError("wildcard or invalid workflow names are forbidden")
     allowed = set(req.get("allowed_capabilities", ["read"]))
     for path, rule in (policy.get("path") or {}).items():
+        scope = re.match(r'^kv/(?:data|metadata)/([^/]+)', path)
+        if scope and any(c in scope.group(1) for c in '*+?[]{}'):
+            raise ValueError('KV policy path must have an explicit environment or shared scope')
         scoped_path = re.match(r'^kv/(?:data|metadata)/(sit|uat|prod)(?:/|$)', path)
         if scoped_path and scoped_path.group(1) != req['environment']:
             raise ValueError('policy path belongs to a different environment')

@@ -217,6 +217,13 @@ class JwtContract(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'environment'):
             ex.run({'operation': 'jwt_contract', 'environment': 'uat', 'contract': c}, GuardVault())
 
+    def test_jwt_contract_rejects_unscoped_kv_wildcards(self):
+        for path in ('kv/data/*', 'kv/data/+/accounts', 'kv/metadata/prod*/x'):
+            c = json.loads(json.dumps(self.contract))
+            c['policy']['path'] = {path: {'capabilities': ['read']}}
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, 'explicit environment'):
+                ex.run({'operation': 'jwt_contract', 'environment': 'uat', 'contract': c}, GuardVault())
+
 
 if __name__ == "__main__":
     unittest.main()
