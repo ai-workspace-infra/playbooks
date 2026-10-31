@@ -48,6 +48,10 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 
 | Role | 唯一能力 | 前置条件 | 输出/验收 |
 | --- | --- | --- | --- |
+| `vhosts/common` 的 `node_bootstrap.yml` | 校验节点身份并建立 OS 三账户 | CMDB 精确节点、受控 SSH 公钥；既有节点和 PV 亲和性检查 | `COMMON_NODE_VERIFIED` 只覆盖该节点身份和 OS 账户探针，不代表完整主机安全基线 |
+| `web_saas_data_volume` | 核验并准备声明的独立文件系统 | CMDB 实例、卷及设备匹配；空盘初始化需显式授权 | 挂载点、UUID、文件系统证据；不自动重格式化已有文件系统 |
+| `k3s-cluster-server` | 初始化单节点 K3s 控制面 | common 已设置 hostname；要求独立盘时卷证据已通过 | K3s 服务启动及 API `/readyz`；既有安装跳过安装器，不等于已升级 |
+| `k3s_platform_bootstrap` | 按依赖顺序编排子 role | 已完成入口绑定、common 和数据盘角色 | 子 role 顺序执行；失败停止后续执行，不代表业务服务验收 |
 | `helm_cli` | Helm 客户端准备 | 主机包/CA/网络 | 现有客户端或安装成功，不部署 chart |
 | `flux_controllers` | Flux CLI 与控制器初始化 | K3s API、私有 admin kubeconfig | controller rollout 就绪 |
 | `flux_gitops` | 经审查的 source/root 交接 | 解析过 commit 的 GitOps 配置与 ready Flux | Flux 交接回执，不声称业务 Ready |
@@ -55,6 +59,24 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 
 生成器、模板、默认值及验收脚本随能力移动；没有复制第二套实现。
 现有 `k3s_platform_*` 和 `k3s_identity_*` 为调用合同，未增加环境专用别名。
+
+## 输入、证据与重复执行边界
+
+| 阶段 | 必要输入与失败条件 | 可记录证据和重复执行边界 |
+| --- | --- | --- |
+| 入口选择 | `MATRIX_HOST`、CMDB 文件及 SHA、固定 GitOps checkout/SHA、仓库内资源声明路径和新的回执路径；目标/区域/实例/盘不匹配即失败 | 本次 GitOps/Playbooks SHA、CMDB SHA 和实例 ID；当前入口仍校验 Linode 字段，跨 provider 不可假定已支持 |
+| common | 节点名称与 OS 身份输入；已有节点/PV 亲和性冲突即停止 | `COMMON_NODE_VERIFIED` 包含节点、OS 身份结果和实例 ID；不表示 fail2ban、auditd、UFW 或云防火墙通过 |
+| 独立盘 | 精确卷 ID、设备、挂载目标及文件系统；他处挂载、未知签名或目标已有文件时停止 | 记录真实 UUID 和挂载结果；已挂载时核对同一设备并保留数据；仅无签名空盘可在显式授权下初始化 |
+| 控制面及 Flux | hostname、K3s 版本、私有管理 kubeconfig、声明的 source/root/path；声明或实际节点/版本/磁盘不匹配时失败 | `FLUX_HANDOVER_VERIFIED` 记录 source/applied revision 与集群和节点标记；不表示 RBAC、身份或业务就绪。当前 active 验证器约束单节点及 ext4 |
+| 三身份 | 声明的 RBAC Kustomization 当前 generation Ready 且应用所选 commit；独立短期 Vault writer、实际 CA、UID 和 allow/deny 清单 | master 签发独立凭据、验证信任链并以 KV v2 CAS=0 写入，CA 私钥留在 master；不同记录、部分签发或过期证书失败，不以删除数据强制重试 |
+| 服务与 DNS | GitOps 依赖图、服务所需的受控凭据与制品、目标环境声明 | 分别记录各服务健康、接口和数据证据；DNS 变更必须符合单独声明与授权，Flux 交接回执不是流量切换或服务验收 |
+
+**回执时序：** 当前 `flux_gitops` 在 `k3s_identity` 运行之前写入交接回执。
+身份任务失败时该文件仍可能存在；消费者必须同时检查整个 playbook/owner 进程退出状态及真实身份验收，不能仅凭文件或 `FLUX_HANDOVER_VERIFIED` 判定整条主线成功。
+
+入口的身份字段断言在 common 和数据盘之前；`flux_gitops` 与 `k3s_identity` 的完整 role 预检则在两者之后。因而缺少某些 Flux 输入时，不能声称所有主机或数据盘操作都尚未发生；应先在 caller 补足前置检查。
+
+匹配已有挂载和受保护的身份状态可支持部分重试；当前没有目标节点的完整重复运行证据。数据库版本、SQL schema、Vault Raft、监控存储及其他持久卷的升级或迁移仍按新集群和独立存储处理；代码或回执的回退不等于数据回滚。
 
 ## 验证和发布边界
 
