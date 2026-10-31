@@ -9,6 +9,7 @@
 所有 Linux 节点采用同一套用户名，不因是否安装 Kubernetes 而改变。
 
 - K3s/K8s 的认证主体、kubeconfig、RBAC 和集群权限验收由对应集群 role 实现。
+- Linux OS 用户与 Kubernetes 主体的映射、各自 kubeconfig 的生成/交付，以及指定用户的默认 `~/.kube/config` 均由 K3s role 实现；`k3s_platform_bootstrap` 只编排对应子 role。common 不写入 kubeconfig，也不授予集群权限。
 - 数据迁移及数据库连接授权由对应迁移/数据库 role 实现，调用方显式选择执行角色。
 - Docker 安装和运行配置由对应运行时 role 实现；common 仅负责 OS 账户和权限边界。
 
