@@ -73,7 +73,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `k3s_platform_bootstrap` | 原来混合 K3s、Helm、Flux、交接、凭据生成与验收；README 含暂停式旧描述 | 改为仅调用子 role 的编排器；执行实现全部归对应子 role |
 | `k3s-cluster-server` | 原 bootstrap 同时安装 K3s/Flux/ESO，写业务 namespace/Vault token Secret；静态 vars 写死目标；其余五个 action 文件为空 | 保留为唯一主线控制面安装 role；替换旧混合 bootstrap，删除空 action、静态 vars、无调用模板与旧生成脚本。只实现初始化，非 bootstrap 的 action 明确拒绝 |
 | `k3s-cluster` | 脚本安装 K3s，随后隐式装 nerdctl/CNI、本地 Registry 和自签 CA；重复安装且夹带额外资源 | 合并控制面能力到 `k3s-cluster-server`；更新两个 playbook 调用方后删除目录。新主线不隐式创建 Registry；此行为变化必须在审查中确认 |
-| `k3s` | 另一套脚本安装 K3s/CNI；meta 自动依赖 common；含固定域名和忽略错误 | 存量实现仍在，冻结扩展；本次主线不调用。迁移其专有 CNI 需求和消费者验证后才退役，不新增兼容包装 |
+| `k3s` | 旧脚本混合 K3s/Helm/CNI；meta 自动依赖 common；含固定域名和忽略错误 | K3s 安装统一到 server，调用方切换，旧实现删除。非默认 CNI 明确拒绝，需由独立 GitOps 声明与执行链另行交付 |
 | `k3s_platform_addon` | 直接 Helm 管理 cert-manager/ESO/reloader/Caddy/APISIX/external-dns，默认含业务路由与域名；与 GitOps 资源 owner 重叠 | 本次不接入冷启动主线，也未删除；后续逐资源确认 GitOps 接管及旧消费者退出，停止双重调谐，再清理实现 |
 | `k3s-addon` | 脚本管理 ingress/DNS，meta 自动安装 cert-manager，存在忽略错误与销毁操作 | 存量旧入口冻结；不并入控制面 role。核对旧调用方及实际资源后迁入 GitOps/对应 owner，禁止新主线使用 |
 | `k3s-cluster-agent` | 有 action 分发器，但 bootstrap/upgrade/destroy 都是空文件，vars 有固定 IP/占位 token | worker 是独立职责，不能并入 server；当前不能宣称支持 worker 生命周期。本次未实现或执行该 role |

@@ -10,14 +10,12 @@
         group: master
         cluster_reset: 'enable'
     - include_role:
-        name: k3s
+        name: vhosts/k3s-cluster-server
+      when: inventory_hostname in groups['master']
       vars:
-        group: master
-        cni: default
-        version: 'v1.27.2+k3s1'
-        pod_cidr: '10.10.0.0/16'
-        svc_cidr: '172.16.0.0/16'
-        enable_api_access: true
+        k3s_platform_k3s_version: 'v1.27.2+k3s1'
+        k3s_platform_cluster_cidr: '10.10.0.0/16'
+        k3s_platform_service_cidr: '172.16.0.0/16'
     - include_role:
         name: k3s-addon
       vars:

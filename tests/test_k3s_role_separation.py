@@ -91,6 +91,13 @@ class RoleContracts(unittest.TestCase):
         self.assertIn('initializes the control plane only', result.stdout)
         self.assertNotIn('Verify the OS hostname', result.stdout)
 
+    def test_legacy_nondefault_cni_fails_before_installation(self):
+        result = self.run_role('k3s-cluster-server', phase='preflight.yml',
+                               variables={'cni': 'kubeovn'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('default CNI', result.stdout)
+        self.assertNotIn('Verify the OS hostname', result.stdout)
+
     def test_retired_installer_is_not_a_second_execution_path(self):
         self.assertFalse((ROLES / 'k3s-cluster').exists())
         self.assertFalse((ROOT / 'scripts/k3s-cluster/init_k3s_cluster_server_role.sh').exists())
