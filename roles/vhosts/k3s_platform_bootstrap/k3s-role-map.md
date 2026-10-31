@@ -13,7 +13,7 @@ IaC CMDB + 本次解析到 commit 的 GitOps 期望配置
       → flux_controllers：Flux 控制器及 rollout
       → flux_gitops：source/root 交接及独立回执
       → k3s_identity：三套认证凭据交付及真实允许/拒绝
-      → flux_workload_readiness：声明的 source、Kustomization 和 HelmRelease 就绪证据
+      → 完成交接；业务资源由 Flux 异步调谐
   → Flux 按 GitOps 依赖调谐 RBAC、ESO/TLS、Vault、DB、监控和业务资源
 ```
 
