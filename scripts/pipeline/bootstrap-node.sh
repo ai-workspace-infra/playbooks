@@ -6,6 +6,14 @@ set -euo pipefail
 cmdb_file="../cmdb/cmdb.json"
 mapfile -t node_groups < <(jq -r --arg host "${MATRIX_HOST}" '.[$host].groups[]? // empty' "${cmdb_file}")
 
+# Explicit runtime takes precedence over business groups: a Kubernetes SaaS node
+# also belongs to web_saas, which must not send it to a Compose installer.
+deployment_mode="$(jq -r --arg host "$MATRIX_HOST" '.[$host].host_vars.deployment_mode // .[$host].deployment_mode // ""' "$cmdb_file")"
+if [[ "$deployment_mode" == kubernetes ]]; then
+  export CMDB_FILE="$cmdb_file"
+  exec bash scripts/pipeline/bootstrap-k3s.sh
+fi
+
 playbook=""
 for group in "${node_groups[@]}"; do
   case "${group}" in
