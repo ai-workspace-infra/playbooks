@@ -64,7 +64,6 @@ usage() {
   QMD_MCP_TOKEN                   QMD MCP 协议交互 Token
   POSTGRES_PASSWORD               PostgreSQL 管理员口令
 EOF
-  exit 1
 }
 
 while [[ $# -gt 0 ]]; do
@@ -95,10 +94,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       usage
+      exit 0
       ;;
     *)
       echo "错误: 未知参数 $1" >&2
       usage
+      exit 1
       ;;
   esac
 done
