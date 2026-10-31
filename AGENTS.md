@@ -1,6 +1,6 @@
 # playbooks Agent 约束：主机与服务 Roles
 
-四边界完整判定见
+五仓职责完整判定见
 [`execution-ownership-migration`](https://github.com/ai-workspace-lab/xworkspace-core-skills/blob/main/skills/engineering-standards/execution-ownership-migration/SKILL.md)。
 
 ## 允许内容
@@ -19,8 +19,15 @@ Ansible Roles/Playbooks 及其 reusable workflows：主机初始化、服务部�
 数据库和 Observability 的执行逻辑归 Playbooks，但 workflow 入口可以由 Toolkit 通过固定 SHA reusable workflow 调用。
 新增 Role 后必须先完成 owner → caller → 验证 → 删除旧副本，不能保留双重执行路径。
 
-## 跨仓职责与 bootstrap 约束
+## 声明驱动的 bootstrap 与验收
 
-Platform-Orchestrator 负责输入、授权、DAG、派发、等待和回执汇总；IaC 负责云资源、DNS、State 和 CMDB；GitOps 负责环境、资源和 Flux 声明；Artifacts 负责构建、镜像、Chart 和制品发布；Playbooks 负责主机、服务、数据库、备份恢复和迁移执行。
+- 只消费本次已解析并记录 commit 的 GitOps 期望配置和 IaC CMDB 事实。清晰定义支持字段、类型与映射；不能仅转发旧前缀而静默丢弃身份等新增配置，也不能维护本地环境 YAML 副本。
+- 禁止在 bootstrap、role、默认变量或脚本中写死环境批次、节点、云账号、state 路径、生产域名、Flux 根/namespace/TLS/ESO 对象清单。不得按名称/目录后缀推断行为；明确参数化能力和失败条件。
+- 声明中的根名称、节点 hostname、批次目录和 source path 分开消费。修改主机名前核验现存 K3s/PV 身份；已有状态不一致时停止，不重绑持久卷或强行重命名。
+- common 分别验证 hostname、OS 三账户/组、SSH 允许/拒绝和声明要求的安全基线；账号存在和旧节点回执均不能替代新节点完整验收。主机内防火墙归本仓，云防火墙归 IaC。
+- K3s 初始化后读取真实 cluster UID，master 生成独立密钥、证书和私有 kubeconfig，校验信任链并以受控 Vault 身份写入声明路径；CA 私钥留在 master，不从 CMDB/预置配置交付。RBAC 的应用顺序须消除与身份验证的循环依赖。
+- OS、Kubernetes 和数据库凭据各自授权。真实主体的认证及允许/拒绝验收与 Flux 接管、服务/数据验收分别记录；缺少必填参数或权限时明确失败，不回退到管理员。
+- 本仓拥有主机、服务、数据库、备份恢复、迁移及受控 Vault 管理配置执行；不在此解析环境选择规则、生成云事实或操作云资源/DNS/State。简单任务优先 Ansible + YAML，复杂脚本须属于具体 role 并有明确输入输出。
+- 通用入口、调用方和回执消费者验证完成后，删除旧实现、旧常量、旧测试期待和过期文档；不得增加版本专用兼容层、别名包装或静默 fallback。历史账号和持久资源的退役独立处理。
 
-禁止在 Playbooks bootstrap 脚本或 role 中硬编码环境批次、节点、云账号、state 路径及其对应配置，也禁止复制 GitOps 声明形成第二套环境配置。目标与资源事实从 IaC CMDB 获取；期望配置通过本次解析并记录 commit 的 GitOps 声明传入；凭据从受控 Vault 身份获取。先补齐可复用 owner 入口与调用链并验证，再移除旧实现，不保留新的版本专用兼容路径。
+详细交接与硬编码判定见：[declaration-and-handoff](https://github.com/ai-workspace-lab/xworkspace-core-skills/blob/main/skills/engineering-standards/execution-ownership-migration/references/declaration-and-handoff.md)。
