@@ -33,6 +33,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `k3s-cluster-server` | ✅ #903 已合并 | K3s 控制面初始化、hostname 校验、API 就绪；不承担插件发布 |
 | `k3s-cluster` | ✅ #903 已删除旧实现 | 两个安装入口已切换到 `k3s-cluster-server` |
 | `helm_cli`、`flux_controllers`、`flux_gitops`、`k3s_identity` | ✅ #903 已合并 | 分别负责 Helm 客户端、Flux 控制器、声明交接、三身份交付和验证；真实身份、Vault writer 与 RBAC 仍需目标集群验收 |
+| OS `operator` 的默认 K3s 客户端身份 | ❌ Playbooks 候选待合并 | `k3s_identity` 候选将 `~/.kube/config` 安全链接到 OS operator 自己的受限 `identity-config`，拒绝覆盖不受管配置，并验证默认 `kubectl` 主体；不授予 K3s admin kubeconfig、containerd socket 或额外 sudo |
 | `k3s` 旧安装器 | ✅ [Playbooks #905](https://github.com/ai-workspace-infra/playbooks/pull/905) 已合并并移除旧实现 | 安装由 server 负责；非默认 CNI 明确拒绝，需另行交付独立的 CNI 能力 |
 | `k3s_platform_addon`、`k3s-addon` | ✅ 已从当前代码及调用方移除 | 平台插件由 GitOps 按环境显式选择；现有发布的 Flux 接管与运行验收仍需逐项验证 |
 | cert-manager、reloader、APISIX、ExternalDNS、NGINX Ingress | ✅ [GitOps #681](https://github.com/ai-workspace-infra/gitops/pull/681) 已合并 | 已提供可独立选择的 Flux 模板，未接入任何环境；ExternalDNS 默认 dry-run |
