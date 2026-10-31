@@ -13,6 +13,7 @@ IaC CMDB + 本次解析到 commit 的 GitOps 期望配置
       → flux_controllers：Flux 控制器及 rollout
       → flux_gitops：source/root 交接及独立回执
       → k3s_identity：三套认证凭据交付及真实允许/拒绝
+      → flux_workload_readiness：声明的 source、Kustomization 和 HelmRelease 就绪证据
   → Flux 按 GitOps 依赖调谐 RBAC、ESO/TLS、Vault、DB、监控和业务资源
 ```
 
@@ -56,6 +57,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `flux_controllers` | Flux CLI 与控制器初始化 | K3s API、私有 admin kubeconfig | controller rollout 就绪 |
 | `flux_gitops` | 经审查的 source/root 交接 | 解析过 commit 的 GitOps 配置与 ready Flux | Flux 交接回执，不声称业务 Ready |
 | `k3s_identity` | Kubernetes 三身份生命周期 | OS 三账户、实际 CA/UID、GitOps RBAC、受控 Vault writer | 独立密钥/证书/私有 kubeconfig、KV CAS 归档、真实认证与允许/拒绝 |
+| `flux_workload_readiness` | 只读观察声明的 Flux 对象 | 三身份任务完成且 GitOps 提供待观察对象 | 独立 `FLUX_OBJECTS_READY` 回执；记录各对象 revision，不替代应用接口、数据和用户流程验收；候选随 #918，未生产验证 |
 
 生成器、模板、默认值及验收脚本随能力移动；没有复制第二套实现。
 现有 `k3s_platform_*` 和 `k3s_identity_*` 为调用合同，未增加环境专用别名。

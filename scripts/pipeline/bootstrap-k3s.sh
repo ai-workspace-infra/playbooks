@@ -29,3 +29,5 @@ ansible-playbook -i inventory/terraform_cmdb.py k3s_platform_bootstrap.yml --lim
 ansible -i inventory/terraform_cmdb.py "$MATRIX_HOST" -m ansible.builtin.ping
 ansible-playbook -i inventory/terraform_cmdb.py k3s_platform_bootstrap.yml --limit "$MATRIX_HOST" --extra-vars "@$params"
 jq -e --arg sha "$K3S_GITOPS_SHA" '.result == "FLUX_HANDOVER_VERIFIED" and .gitops_sha == $sha and .common.result == "COMMON_NODE_VERIFIED"' "$K3S_BOOTSTRAP_RECEIPT" >/dev/null
+jq -e --arg sha "$K3S_GITOPS_SHA" '.result == "K3S_IDENTITIES_VERIFIED" and .rbac_revision == $sha and .principals == ["root", "operator", "auditor"]' "$K3S_BOOTSTRAP_RECEIPT.identities.json" >/dev/null
+jq -e --arg sha "$K3S_GITOPS_SHA" '.result == "FLUX_OBJECTS_READY" and .gitops_sha == $sha and .runtime_acceptance == "NOT_RUN" and (.objects | length > 0)' "$K3S_BOOTSTRAP_RECEIPT.flux-readiness.json" >/dev/null

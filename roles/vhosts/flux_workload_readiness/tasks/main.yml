@@ -1,0 +1,69 @@
+---
+- name: Require declared Flux workload readiness targets
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_acceptance_objects | length > 0
+      - item.kind in ['gitrepositories', 'kustomizations', 'helmreleases']
+      - item.name is match('^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$')
+      - item.namespace is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+    fail_msg: Flux readiness requires explicitly declared object names and namespaces.
+  loop: '{{ k3s_platform_acceptance_objects }}'
+
+- name: Wait for declared Flux objects to become Ready
+  ansible.builtin.command:
+    argv: ['kubectl', '-n', '{{ item.namespace }}', 'wait', '{{ item.kind }}/{{ item.name }}', '--for=condition=Ready', '--timeout=5s']
+  environment:
+    KUBECONFIG: '{{ k3s_platform_kubeconfig_path }}'
+  register: flux_readiness_wait
+  until: flux_readiness_wait.rc == 0
+  retries: '{{ k3s_platform_acceptance_retries | int }}'
+  delay: '{{ k3s_platform_acceptance_delay | int }}'
+  changed_when: false
+  loop: '{{ k3s_platform_acceptance_objects }}'
+
+- name: Read observed Flux generations and revisions
+  ansible.builtin.command:
+    argv: ['kubectl', '-n', '{{ item.namespace }}', 'get', '{{ item.kind }}', '{{ item.name }}', '-o', json]
+  environment:
+    KUBECONFIG: '{{ k3s_platform_kubeconfig_path }}'
+  register: flux_readiness_objects
+  changed_when: false
+  no_log: true
+  loop: '{{ k3s_platform_acceptance_objects }}'
+
+- name: Require current generation and Ready after observation
+  ansible.builtin.assert:
+    that:
+      - (item.stdout | from_json).status.observedGeneration | default(-1) | int == (item.stdout | from_json).metadata.generation | int
+      - ((item.stdout | from_json).status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length) > 0
+  loop: '{{ flux_readiness_objects.results }}'
+  no_log: true
+
+- name: Initialize non-secret readiness observations
+  ansible.builtin.set_fact:
+    flux_readiness_evidence: []
+
+- name: Summarize each source and controller revision without copying specs
+  ansible.builtin.set_fact:
+    flux_readiness_evidence: "{{ flux_readiness_evidence + [{'kind': item.item.kind, 'namespace': item.item.namespace, 'name': item.item.name, 'generation': (item.stdout | from_json).metadata.generation, 'source': ((item.stdout | from_json).spec.sourceRef.name | default('')), 'revision': ((item.stdout | from_json).status.lastAppliedRevision | default((item.stdout | from_json).status.artifact.revision | default('')))}] }}"
+  loop: '{{ flux_readiness_objects.results }}'
+  no_log: true
+
+- name: Require each unit to have applied its observed source revision
+  ansible.builtin.assert:
+    that:
+      - matched_sources | length == 1
+      - item.revision | length > 0
+      - item.revision == matched_sources[0].revision
+    fail_msg: A declared Flux unit has not applied its current source revision.
+  vars:
+    matched_sources: "{{ flux_readiness_evidence | selectattr('kind', 'equalto', 'gitrepositories') | selectattr('namespace', 'equalto', item.namespace) | selectattr('name', 'equalto', item.source) | list }}"
+  loop: "{{ flux_readiness_evidence | selectattr('kind', 'equalto', 'kustomizations') | list }}"
+
+- name: Save Flux object readiness separately from service runtime acceptance
+  ansible.builtin.copy:
+    content: "{{ {'result': 'FLUX_OBJECTS_READY', 'runtime_acceptance': 'NOT_RUN', 'gitops_sha': k3s_platform_git_commit, 'objects': flux_readiness_evidence} | to_json }}\n"
+    dest: '{{ k3s_platform_receipt_path }}.flux-readiness.json'
+    mode: '0600'
+  delegate_to: localhost
+  become: false

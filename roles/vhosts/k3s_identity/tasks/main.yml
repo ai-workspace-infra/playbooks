@@ -70,3 +70,12 @@
   loop: [root, operator, auditor]
   loop_control:
     loop_var: k3s_identity_role
+
+- name: Save real-identity authentication and authorization evidence
+  ansible.builtin.copy:
+    content: "{{ {'result': 'K3S_IDENTITIES_VERIFIED', 'cluster_uid': k3s_identity_cluster_uid, 'rbac_revision': k3s_identity_rbac_revision, 'principals': ['root', 'operator', 'auditor'], 'checks': 'actual-authentication-and-allow-deny'} | to_json }}\n"
+    dest: '{{ k3s_platform_receipt_path }}.identities.json'
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+  when: k3s_platform_receipt_path | default('') | length > 0
