@@ -19,7 +19,7 @@ def execute(config, env=None, collector=cluster_identity.collect, remote_type=re
             client_type=vault_contract.Client):
     env = os.environ if env is None else env
     spec = vault_contract.IdentitySpec(**config['identity'])
-    if config['mode'] not in ('configure', 'verify', 'release-root', 'release-eso', 'release-identity'):
+    if config['mode'] not in ('configure', 'refresh', 'verify', 'release-root', 'release-eso', 'release-identity'):
         raise ValueError('unsupported operation')
     child_env = {k: env[k] for k in ('PATH','HOME','LANG','LC_ALL','TMPDIR','SSH_AUTH_SOCK') if k in env}
     if not child_env.get('SSH_AUTH_SOCK'):
@@ -34,7 +34,7 @@ def execute(config, env=None, collector=cluster_identity.collect, remote_type=re
             return flux_release.release(config, runner, cluster)
         data = collector(config['cluster_uid'], config['node_uid'], config['expected_version'],
                          config['node_name'], spec, run=runner)
-        if config['mode'] == 'configure':
+        if config['mode'] in ('configure', 'refresh'):
             stage = 'administrator_scope'
         else:
             stage = 'workload_login_and_path_checks'
@@ -60,7 +60,7 @@ def execute(config, env=None, collector=cluster_identity.collect, remote_type=re
         raise error from None
     except (KeyError, TypeError, ValueError, OSError, vault_contract.VaultError):
         raise RuntimeError('stage=' + stage) from None
-    if config['mode'] == 'configure':
+    if config['mode'] in ('configure', 'refresh'):
         try:
             if not env.get('VAULT_TOKEN'):
                 raise ValueError('scoped administrator token required')
@@ -72,13 +72,18 @@ def execute(config, env=None, collector=cluster_identity.collect, remote_type=re
         except (KeyError,TypeError,ValueError,OSError,vault_contract.VaultError):
             raise RuntimeError('stage=administrator_scope') from None
         try:
-            vault_contract.provision(admin,spec,data['issuer'],data['public_keys'])
+            if config['mode'] == 'refresh':
+                vault_contract.refresh_signing_keys(admin, spec, data['issuer'], data['public_keys'], config['expected_previous_key_sha256'])
+                vault_contract.verify(lambda token:client_type(config['vault_address'],token),spec,data['issuer'],
+                                      data['good_jwt'],data['wrong_audience_jwt'],data['wrong_service_account_jwt'])
+            else:
+                vault_contract.provision(admin,spec,data['issuer'],data['public_keys'])
         except vault_contract.VaultError as exc:
             stage = 'vault_' + exc.stage if exc.stage in {'policy','mount','config','role'} else 'vault_provision'
             error = RuntimeError('stage=' + stage)
             error.safe_diagnostic = exc.diagnostic
             raise error from None
-        result={'result':'VAULT_WORKLOAD_IDENTITY_CONFIGURED'}
+        result={'result': 'VAULT_WORKLOAD_IDENTITY_REFRESHED_AND_VERIFIED' if config['mode'] == 'refresh' else 'VAULT_WORKLOAD_IDENTITY_CONFIGURED'}
     else:
         try:
             result=vault_contract.verify(lambda token:client_type(config['vault_address'],token),spec,data['issuer'],

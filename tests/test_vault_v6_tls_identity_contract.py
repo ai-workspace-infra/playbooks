@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -47,6 +48,25 @@ class Fake:
 
 
 class Contract(unittest.TestCase):
+    def test_refresh_requires_reviewed_prior_key_and_preserves_boundaries(self):
+        c=Fake()
+        c.mounts[SPEC.mount+'/']={'type':'jwt'}
+        c.policies['sys/policies/acl/'+SPEC.policy]=SPEC.policy_hcl
+        c.roles['auth/'+SPEC.mount+'/role/'+SPEC.role]=SPEC.role_config.copy()
+        c.configs[SPEC.mount+'/']={'bound_issuer':ISSUER,'jwt_validation_pubkeys':['old-key']}
+        old=[hashlib.sha256(b'old-key').hexdigest()]
+        with self.assertRaises(v.VaultError): v.refresh_signing_keys(c,SPEC,ISSUER,['new-key'],['0'*64])
+        self.assertFalse(any(method == 'POST' for method,_,_,_ in c.calls))
+        self.assertTrue(v.refresh_signing_keys(c,SPEC,ISSUER,['new-key'],old))
+        self.assertEqual(c.configs[SPEC.mount+'/']['jwt_validation_pubkeys'],['new-key'])
+        self.assertFalse(v.refresh_signing_keys(c,SPEC,ISSUER,['new-key'],old))
+
+    def test_refresh_rejects_drifted_policy_without_writing(self):
+        c=Fake();c.mounts[SPEC.mount+'/']={'type':'jwt'}
+        c.policies['sys/policies/acl/'+SPEC.policy]='path "*" { capabilities = ["read"] }'
+        with self.assertRaises(v.VaultError): v.refresh_signing_keys(c,SPEC,ISSUER,['new-key'],['0'*64])
+        self.assertFalse(any(method == 'POST' for method,_,_,_ in c.calls))
+
     def test_provision_dedicated_mount_with_exact_boundary(self):
         c=Fake();v.provision(c,SPEC,ISSUER,['public-key'])
         writes=[(method,path,body) for method,path,body,_ in c.calls if method!='GET']
