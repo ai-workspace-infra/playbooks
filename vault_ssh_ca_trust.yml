@@ -1,0 +1,9 @@
+---
+# Replaces Platform-Orchestrator scripts/vault/install_legacy_ssh_ca.sh.
+# Targets come from CMDB or a verified one-shot inventory; existing key access is kept.
+- name: Trust the Vault SSH user CA on the selected host
+  hosts: "{{ vault_ssh_ca_trust_hosts | default('vault_legacy_source') }}"
+  become: true
+  gather_facts: false
+  roles:
+    - role: vhosts/vault_ssh_ca_trust

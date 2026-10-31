@@ -1,0 +1,62 @@
+---
+- name: Validate SSH CA trust input
+  ansible.builtin.assert:
+    that:
+      - vault_ssh_ca_trust_principal is match('^[a-z_][a-z0-9_-]{0,31}$')
+      - vault_ssh_ca_trust_public_key is match('^ssh-ed25519 [A-Za-z0-9+/=]+( .*)?$')
+    fail_msg: principal and an Ed25519 public CA are required
+
+- name: Ensure the migration principal exists
+  ansible.builtin.user:
+    name: '{{ vault_ssh_ca_trust_principal }}'
+    shell: /bin/bash
+    create_home: true
+
+- name: Install the Vault user CA (public key only)
+  ansible.builtin.copy:
+    content: "{{ vault_ssh_ca_trust_public_key | trim }}\n"
+    dest: /etc/ssh/vault-user-ca.pub
+    mode: '0644'
+
+- name: Ensure principals directory
+  ansible.builtin.file:
+    path: /etc/ssh/auth_principals
+    state: directory
+    mode: '0755'
+
+- name: Restrict the principal to itself
+  ansible.builtin.copy:
+    content: "{{ vault_ssh_ca_trust_principal }}\n"
+    dest: '/etc/ssh/auth_principals/{{ vault_ssh_ca_trust_principal }}'
+    mode: '0644'
+
+- name: Grant migration sudo
+  ansible.builtin.copy:
+    content: "{{ vault_ssh_ca_trust_principal }} ALL=(ALL) NOPASSWD: ALL\n"
+    dest: '/etc/sudoers.d/vault-migration-{{ vault_ssh_ca_trust_principal }}'
+    mode: '0440'
+    validate: visudo -cf %s
+  when: vault_ssh_ca_trust_sudo | bool
+
+- name: Read existing CA sshd drop-in
+  ansible.builtin.slurp:
+    src: /etc/ssh/sshd_config.d/20-vault-migration-ca.conf
+  register: vault_ssh_ca_trust_existing
+  failed_when: false
+
+- name: Refuse to replace a differing reviewed drop-in
+  ansible.builtin.assert:
+    that: >-
+      vault_ssh_ca_trust_existing.content is not defined or
+      (vault_ssh_ca_trust_existing.content | b64decode) == vault_ssh_ca_trust_dropin
+    fail_msg: Existing CA SSH configuration differs; review it first
+  vars:
+    vault_ssh_ca_trust_dropin: "TrustedUserCAKeys /etc/ssh/vault-user-ca.pub\nAuthorizedPrincipalsFile /etc/ssh/auth_principals/%u\n"
+
+- name: Install CA sshd drop-in (validated before reload)
+  ansible.builtin.copy:
+    content: "TrustedUserCAKeys /etc/ssh/vault-user-ca.pub\nAuthorizedPrincipalsFile /etc/ssh/auth_principals/%u\n"
+    dest: /etc/ssh/sshd_config.d/20-vault-migration-ca.conf
+    mode: '0644'
+    validate: sshd -t -f /etc/ssh/sshd_config
+  notify: Reload ssh
