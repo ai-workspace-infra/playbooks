@@ -28,6 +28,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | 项目 | 当前状态 | 当前责任与缺口 |
 | --- | --- | --- |
 | `vhosts/common` 与独立数据盘 | ✅ [Playbooks #916](https://github.com/ai-workspace-infra/playbooks/pull/916) 已合并；❌ 目标节点盘就绪待验收 | 通用 K3s 入口由 common 调用数据盘 role，挂载及 UUID 验证通过后才发出 common 回执；此前节点的 100 GB 盘未挂载、无文件系统，需实际执行后重新核验 |
+| PROD-K3S-V6 当前节点只读观察 | ❌ 2026-10-31 18:00 Asia/Shanghai SSH 现场检查；非流水线回执 | hostname `prod-k3s-v6`、Debian 13、2 vCPU/约 3.8 GiB；OS 三账户存在，但未验 SSH 允许/拒绝矩阵。`/dev/sdc` 100 GB 无文件系统/挂载；K3s inactive 且命令不存在，因此无 Flux/Kubernetes workload 状态可验。`fail2ban`、`auditd`、`ufw` inactive；云防火墙需由 IaC 核验。检查只读，未改变生产状态 |
 | `k3s_platform_bootstrap` | ✅ Playbooks #903 已合并 | 只编排子 role 及依赖顺序 |
 | `k3s-cluster-server` | ✅ #903 已合并 | K3s 控制面初始化、hostname 校验、API 就绪；不承担插件发布 |
 | `k3s-cluster` | ✅ #903 已删除旧实现 | 两个安装入口已切换到 `k3s-cluster-server` |
@@ -59,6 +60,9 @@ Vault role 的精确身份绑定、所引用策略的最小路径和能力，并
 
 OIDC 可选检查不替代 K3s `root`、`operator`、`auditor` 的独立 Kubernetes
 认证和 RBAC 验收，也不自动授权修改 Vault auth mount、role 或 policy。
+上述 SSH 状态是指定时刻的人工现场观察，不构成 `COMMON_NODE_VERIFIED`、
+K3s/Flux bootstrap 或正式流水线回执；完整安全基线、数据盘 UUID/挂载证据和
+云防火墙状态仍须由各自 owner 执行并验收。
 
 当前清单文件迁入本目录的 [Playbooks #904](https://github.com/ai-workspace-infra/playbooks/pull/904) 已合并。所有角色遵循 `AGENTS.md` 的单一职责规则。
 
