@@ -81,3 +81,12 @@ own reviewed operation.
 Local contract tests and Ansible syntax/list-task checks verify composition.
 No local check demonstrates production RBAC, Vault authorization, idempotency
 or application readiness; record those separately after authorized execution.
+
+The `k3s-handover-receipt` action assembles a per-target evidence record after
+successful bootstrap. It checks the CMDB digest, instance ID, GitOps commit,
+handover and identity evidence and records the current Playbooks checkout SHA
+and GitHub run identity. The environment is the caller's authorized scope; the
+caller must independently bind it, the artifact provenance and the expected
+Playbooks SHA to the original request. The action does not establish workload
+readiness or service acceptance. Missing evidence fails and creates no success
+receipt.
