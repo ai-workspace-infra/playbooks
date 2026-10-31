@@ -1,0 +1,17 @@
+- name: Require conclusive binary and systemd inspection
+  ansible.builtin.assert:
+    that:
+      - k3s_reset_binary.rc in [0, 1, 127]
+      - k3s_reset_binary.rc == 0 or k3s_reset_binary.stdout | default('') | trim == ''
+      - k3s_reset_services.results | length == 2
+      - k3s_reset_services.results | selectattr('rc', 'equalto', 0) | list | length == 2
+      - k3s_reset_services.results | map(attribute='stdout') | map('trim') | reject('in', ['loaded', 'not-found', 'masked']) | list | length == 0
+    fail_msg: Cannot establish whether K3s is installed; reset must not silently succeed.
+
+- name: Classify K3s installation and residue
+  ansible.builtin.set_fact:
+    k3s_reset_present: >-
+      {{ k3s_reset_binary.rc == 0 or
+         (k3s_reset_paths.results | selectattr('stat.exists', 'equalto', true) | list | length > 0) or
+         (k3s_reset_services.results | selectattr('stdout', 'equalto', 'loaded') | list | length > 0) or
+         (k3s_reset_services.results | selectattr('stdout', 'equalto', 'masked') | list | length > 0) }}
