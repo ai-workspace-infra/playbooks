@@ -1,0 +1,31 @@
+name: K3s handover receipt
+description: Validate and assemble one target handover receipt.
+inputs:
+  host: {required: true, description: Exact CMDB hostname}
+  environment: {required: true, description: Authorized environment from caller}
+  cmdb: {required: true, description: IaC CMDB file}
+  cmdb-sha256: {required: true, description: IaC CMDB checksum}
+  gitops-checkout: {required: true, description: GitOps checkout}
+  gitops-sha: {required: true, description: Resolved GitOps commit}
+  bootstrap-receipt: {required: true, description: Playbooks handover receipt path}
+  output: {required: true, description: Fresh output file path}
+outputs:
+  receipt:
+    description: Verified per-target receipt file
+    value: ${{ inputs.output }}
+runs:
+  using: composite
+  steps:
+    - name: Assemble validated handover evidence
+      shell: bash
+      working-directory: ${{ github.action_path }}/../../..
+      env:
+        MATRIX_HOST: ${{ inputs.host }}
+        K3S_ENVIRONMENT: ${{ inputs.environment }}
+        CMDB_FILE: ${{ inputs.cmdb }}
+        K3S_CMDB_SHA256: ${{ inputs.cmdb-sha256 }}
+        K3S_GITOPS_CHECKOUT: ${{ inputs.gitops-checkout }}
+        K3S_GITOPS_SHA: ${{ inputs.gitops-sha }}
+        K3S_BOOTSTRAP_RECEIPT: ${{ inputs.bootstrap-receipt }}
+        K3S_RECEIPT_OUTPUT: ${{ inputs.output }}
+      run: bash roles/vhosts/k3s_platform_bootstrap/files/assemble-handover-receipt.sh
