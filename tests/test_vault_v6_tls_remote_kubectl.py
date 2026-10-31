@@ -27,8 +27,13 @@ class RemoteTests(unittest.TestCase):
         self.assertIn('StrictHostKeyChecking=yes', argv)
         self.assertIn('ForwardAgent=no', argv)
         self.assertIn('UserKnownHostsFile='+str(self.known.resolve()), argv)
-        self.assertEqual(argv[-1], 'k3s kubectl get nodes -o json')
+        self.assertEqual(argv[-1], 'env -u KUBECONFIG k3s kubectl get nodes -o json')
         self.assertTrue(run.call_args.kwargs['capture_output'])
+
+    def test_k3s_manifest_apply_clears_inherited_kubeconfig(self):
+        with patch.object(m.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'ok', '')) as run:
+            self.remote.apply_manifest('kind: List\nitems: []\n')
+        self.assertEqual(run.call_args.args[0][-1], 'env -u KUBECONFIG k3s kubectl apply -f -')
 
     def test_unlisted_command_fails_before_ssh(self):
         with patch.object(m.subprocess, 'run') as run:
