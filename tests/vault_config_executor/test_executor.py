@@ -207,6 +207,16 @@ class JwtContract(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ex.run(req, GuardVault())
 
+    def test_jwt_contract_rejects_other_environment_before_vault(self):
+        c = json.loads(json.dumps(self.contract))
+        c['policy']['path'] = {'kv/data/prod/accounts/runtime': {'capabilities': ['read']}}
+        with self.assertRaisesRegex(ValueError, 'different environment'):
+            ex.run({'operation': 'jwt_contract', 'environment': 'uat', 'contract': c}, GuardVault())
+        c = json.loads(json.dumps(self.contract))
+        c['role']['bound_claims']['environment'] = ['uat', 'prod']
+        with self.assertRaisesRegex(ValueError, 'environment'):
+            ex.run({'operation': 'jwt_contract', 'environment': 'uat', 'contract': c}, GuardVault())
+
 
 if __name__ == "__main__":
     unittest.main()

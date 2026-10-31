@@ -141,6 +141,11 @@ def jwt_contract(vault, req):
     if not NAME.match(name):
         raise ValueError("invalid role name")
     claims = role.get("bound_claims") or {}
+    declared_environment = claims.get('environment')
+    if declared_environment is not None:
+        environments = declared_environment if isinstance(declared_environment, list) else [declared_environment]
+        if req['environment'] not in environments or any(env != req['environment'] for env in environments):
+            raise ValueError('role environment does not match the selected environment')
     workflows = [claims[k] for k in ('workflow_ref', 'job_workflow_ref') if claims.get(k)]
     if not claims.get("ref") or not workflows:
         raise ValueError("ref and exact workflow_ref or job_workflow_ref bindings are required")
@@ -151,6 +156,9 @@ def jwt_contract(vault, req):
                 raise ValueError("wildcard or invalid workflow names are forbidden")
     allowed = set(req.get("allowed_capabilities", ["read"]))
     for path, rule in (policy.get("path") or {}).items():
+        scoped_path = re.match(r'^kv/(?:data|metadata)/(sit|uat|prod)(?:/|$)', path)
+        if scoped_path and scoped_path.group(1) != req['environment']:
+            raise ValueError('policy path belongs to a different environment')
         if not set(rule.get("capabilities", [])) <= allowed:
             raise ValueError(f"policy capability outside the allowed set for {path}")
     if not policy.get("path"):
