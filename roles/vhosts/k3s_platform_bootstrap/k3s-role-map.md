@@ -1,26 +1,5 @@
 # K3s role 职责与依赖清单
 
-## 当前状态（2026-10-31）
-
-以下状态区分仓库 `main`、待合并候选和生产实际验收。Role 存在或 CI 通过不等于目标集群已完成部署。
-
-| 项目 | 当前状态 | 当前责任与缺口 |
-| --- | --- | --- |
-| `k3s_platform_bootstrap` | ✅ Playbooks #903 已合并 | 只编排子 role 及依赖顺序 |
-| `k3s-cluster-server` | ✅ #903 已合并 | K3s 控制面初始化、hostname 校验、API 就绪；不承担插件发布 |
-| `k3s-cluster` | ✅ #903 已删除旧实现 | 两个安装入口已切换到 `k3s-cluster-server` |
-| `helm_cli`、`flux_controllers`、`flux_gitops`、`k3s_identity` | ✅ #903 已合并 | 分别负责 Helm 客户端、Flux 控制器、声明交接、三身份交付和验证；真实身份、Vault writer 与 RBAC 仍需目标集群验收 |
-| `k3s` 旧安装器 | ❌ 仍在 main；[Playbooks #905](https://github.com/ai-workspace-infra/playbooks/pull/905) 待合并 | 候选将调用方切至 server 并移除旧实现；非默认 CNI 明确拒绝，需另行交付独立的 CNI 能力 |
-| `k3s_platform_addon`、`k3s-addon` | ❌ 旧实现和调用方仍存在 | 待目标环境采用 Flux 声明并完成发布身份、调用方和运行验证后退役，当前不属于新 bootstrap 主线 |
-| cert-manager、reloader、APISIX、ExternalDNS、NGINX Ingress | ❌ [GitOps #681](https://github.com/ai-workspace-infra/gitops/pull/681) 待合并 | 候选提供可独立选择的 Flux 模板，未接入任何环境；ExternalDNS 默认 dry-run |
-| ESO、Caddy | ✅ GitOps 已有 V6 HelmRelease 声明；❌ 实际调谐及服务验收待核验 | 不再通过旧 addon role 重复安装 |
-| `k3s-cluster-agent` | ❌ 未完成 | bootstrap、upgrade、destroy 任务为空，不能当作可用 worker 能力 |
-| `k3s-reset` | ❌ 安全边界待修复 | 独立破坏性入口，旧默认值需收敛；#905 候选移除两个初始化入口的隐式重置 |
-| `k3s_runtime_secret_sync` | ✅ 独立运维入口 | 不属于 bootstrap；通用 KV 同步与环境专用投影仍需梳理 |
-| V6 Flux 接管和服务部署 | ❌ 尚无完整运行验收证据 | 需核对调用链、身份授权、实际 RBAC 和服务就绪；不得据源码或静态测试宣称完成 |
-
-当前清单文件迁入本目录的 [Playbooks #904](https://github.com/ai-workspace-infra/playbooks/pull/904) 待合并。所有角色遵循 `AGENTS.md` 的单一职责规则。
-
 ## 当前主线与依赖
 
 ```text
@@ -41,6 +20,27 @@ IaC CMDB + 本次解析到 commit 的 GitOps 期望配置
 RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依赖尚未签发的
 三身份凭据，也不能用“管理员 impersonation 成功”替代真实身份登录。
 主机名、Flux root 名、环境批次目录和 source path 各自独立，不按名字推断流程。
+
+## 当前相关 role 列表（2026-10-31）
+
+以下状态区分仓库 `main`、待合并候选和生产实际验收。Role 存在或 CI 通过不等于目标集群已完成部署。
+
+| 项目 | 当前状态 | 当前责任与缺口 |
+| --- | --- | --- |
+| `k3s_platform_bootstrap` | ✅ Playbooks #903 已合并 | 只编排子 role 及依赖顺序 |
+| `k3s-cluster-server` | ✅ #903 已合并 | K3s 控制面初始化、hostname 校验、API 就绪；不承担插件发布 |
+| `k3s-cluster` | ✅ #903 已删除旧实现 | 两个安装入口已切换到 `k3s-cluster-server` |
+| `helm_cli`、`flux_controllers`、`flux_gitops`、`k3s_identity` | ✅ #903 已合并 | 分别负责 Helm 客户端、Flux 控制器、声明交接、三身份交付和验证；真实身份、Vault writer 与 RBAC 仍需目标集群验收 |
+| `k3s` 旧安装器 | ❌ 仍在 main；[Playbooks #905](https://github.com/ai-workspace-infra/playbooks/pull/905) 待合并 | 候选将调用方切至 server 并移除旧实现；非默认 CNI 明确拒绝，需另行交付独立的 CNI 能力 |
+| `k3s_platform_addon`、`k3s-addon` | ❌ 旧实现和调用方仍存在 | 待目标环境采用 Flux 声明并完成发布身份、调用方和运行验证后退役，当前不属于新 bootstrap 主线 |
+| cert-manager、reloader、APISIX、ExternalDNS、NGINX Ingress | ❌ [GitOps #681](https://github.com/ai-workspace-infra/gitops/pull/681) 待合并 | 候选提供可独立选择的 Flux 模板，未接入任何环境；ExternalDNS 默认 dry-run |
+| ESO、Caddy | ✅ GitOps 已有 V6 HelmRelease 声明；❌ 实际调谐及服务验收待核验 | 不再通过旧 addon role 重复安装 |
+| `k3s-cluster-agent` | ❌ 未完成 | bootstrap、upgrade、destroy 任务为空，不能当作可用 worker 能力 |
+| `k3s-reset` | ❌ 安全边界待修复 | 独立破坏性入口，旧默认值需收敛；#905 候选移除两个初始化入口的隐式重置 |
+| `k3s_runtime_secret_sync` | ✅ 独立运维入口 | 不属于 bootstrap；通用 KV 同步与环境专用投影仍需梳理 |
+| V6 Flux 接管和服务部署 | ❌ 尚无完整运行验收证据 | 需核对调用链、身份授权、实际 RBAC 和服务就绪；不得据源码或静态测试宣称完成 |
+
+当前清单文件迁入本目录的 [Playbooks #904](https://github.com/ai-workspace-infra/playbooks/pull/904) 待合并。所有角色遵循 `AGENTS.md` 的单一职责规则。
 
 ## 主线执行 role
 
@@ -83,7 +83,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 这些历史 role 的问题是盘点结论；本次未对所有旧实现逐一改造，不能将
 “本次主线不调用”写成“全仓陈旧代码已清理”。
 
-## 入口与历史调用迁移
+### 入口与历史调用迁移
 
 | 入口 | 调用路径 | 范围 |
 | --- | --- | --- |
