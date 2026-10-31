@@ -6,12 +6,12 @@
       - k3s_platform_git_commit | length == 0 or k3s_platform_git_commit is match("^[0-9a-f]{40}$")
       - k3s_platform_flux_root_path | length > 0
       - not (k3s_platform_require_data_mount | bool) or (common_node_bootstrap_evidence | default({})).get('result') == 'COMMON_NODE_VERIFIED'
-      - k3s_platform_flux_bootstrap_mode in ['generated', 'declarative_paused', 'declarative_active']
+      - k3s_platform_flux_bootstrap_mode in ['generated', 'declarative_active']
       - k3s_platform_git_auth_mode | default('public') | lower in ['public', 'ssh', 'https-basic', 'https-bearer', '']
     fail_msg: "k3s platform bootstrap requires git url, branch, root path, and a supported git auth mode."
 
 - name: Prepare immutable paused GitOps declarations before host changes
-  when: k3s_platform_flux_bootstrap_mode in ['declarative_paused', 'declarative_active']
+  when: k3s_platform_flux_bootstrap_mode == 'declarative_active'
   block:
     - name: Require fixed checkout and staged receipt semantics
       ansible.builtin.assert:
@@ -41,7 +41,7 @@
           - --git-url
           - "{{ k3s_platform_git_url }}"
           - --state
-          - "{{ 'active' if k3s_platform_flux_bootstrap_mode == 'declarative_active' else 'paused' }}"
+          - "active"
       delegate_to: localhost
       become: false
       changed_when: false
@@ -317,32 +317,6 @@
   delay: 5
   until: k3s_platform_apiserver_ready.rc == 0
 
-- name: Check paused cluster before modifying Flux authentication
-  when: k3s_platform_flux_bootstrap_mode == 'declarative_paused'
-  block:
-    - name: Inspect existing Flux resources before staged bootstrap
-      ansible.builtin.command:
-        argv:
-          - kubectl
-          - get
-          - gitrepositories.source.toolkit.fluxcd.io,kustomizations.kustomize.toolkit.fluxcd.io,helmreleases.helm.toolkit.fluxcd.io
-          - --all-namespaces
-          - -o
-          - json
-      environment:
-        KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
-      changed_when: false
-      register: k3s_platform_existing_flux
-
-    - name: Refuse to restage any active Flux resources
-      ansible.builtin.assert:
-        that:
-          - item.spec.suspend | default(false) | bool
-        fail_msg: Staged bootstrap is for an empty or already paused cluster; active resources require their normal release path
-      loop: "{{ (k3s_platform_existing_flux.stdout | from_json)['items'] }}"
-      loop_control:
-        label: "{{ item.kind }}/{{ item.metadata.name }}"
-
 - name: Render flux bootstrap env file
   ansible.builtin.template:
     src: flux-bootstrap.env.j2
@@ -490,21 +464,6 @@
   args:
     executable: /bin/bash
 
-- name: Apply unified paused declarations without reconciliation
-  when: k3s_platform_flux_bootstrap_mode == 'declarative_paused'
-  block:
-    - name: Copy validated declaration bundle to target
-      ansible.builtin.copy:
-        content: "{{ k3s_platform_paused_declarations.stdout }}\n"
-        dest: /tmp/flux-bootstrap-declarations.yaml
-        mode: "0600"
-
-    - name: Load paused source root child Kustomizations and HelmReleases
-      ansible.builtin.command:
-        argv: [kubectl, apply, -f, /tmp/flux-bootstrap-declarations.yaml]
-      environment:
-        KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
-
 - name: Hand active declarations to Flux without applying business workloads
   when: k3s_platform_flux_bootstrap_mode == 'declarative_active'
   block:
@@ -549,42 +508,6 @@
         mode: '0600'
       delegate_to: localhost
       become: false
-
-- name: Verify paused declarations against actual cluster resources
-  when: k3s_platform_flux_bootstrap_mode == 'declarative_paused'
-  block:
-    - name: Install paused state verifier
-      ansible.builtin.copy:
-        src: verify_paused_bootstrap.py
-        dest: "{{ k3s_platform_install_dir }}/verify_paused_bootstrap.py"
-        mode: '0700'
-    - name: Verify node identity mount and exact paused resource graph
-      ansible.builtin.command:
-        argv:
-          - python3
-          - "{{ k3s_platform_install_dir }}/verify_paused_bootstrap.py"
-          - --bundle
-          - /tmp/flux-bootstrap-declarations.yaml
-          - --node
-          - "{{ k3s_platform_node_name }}"
-          - --version
-          - "{{ k3s_platform_k3s_version }}"
-          - --commit
-          - "{{ k3s_platform_git_commit }}"
-          - --volume-uuid
-          - "{{ web_saas_data_evidence.filesystem_uuid }}"
-      environment:
-        KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
-      register: k3s_platform_paused_receipt
-      changed_when: false
-    - name: Retain public paused bootstrap evidence on controller
-      ansible.builtin.copy:
-        content: "{{ (k3s_platform_paused_receipt.stdout | from_json) | combine({'common': (common_node_bootstrap_evidence | default({}))}) | to_json }}\n"
-        dest: "{{ k3s_platform_receipt_path }}"
-        mode: '0600'
-      delegate_to: localhost
-      become: false
-      when: k3s_platform_receipt_path | length > 0
 
 - name: Install bounded bootstrap receipt verifier
   ansible.builtin.copy:
