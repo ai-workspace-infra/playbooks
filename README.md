@@ -191,7 +191,7 @@ roles/k8s_helm/postgresql    → K8s 集群内 Helm release
 
 | Role | 说明 |
 | --- | --- |
-| `k3s` / `k3s-cluster` / `k3s-cluster-server` / `k3s-cluster-agent` | 单机与多节点 K3s 安装 |
+| `k3s-cluster-server` | K3s 控制面初始化 |
 | `k3s-addon` / `k3s_platform_addon` | K3s 平台插件层 |
 | `k3s_platform_bootstrap` | K3s 初始化依赖编排；执行交给独立子 role，见 [职责清单](roles/vhosts/k3s_platform_bootstrap/k3s-role-map.md) |
 | `k3s-cluster-server` | 唯一主线控制面初始化与 API 验证 |
