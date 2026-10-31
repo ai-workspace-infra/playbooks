@@ -1,0 +1,10 @@
+- name: Validate the GitOps handover contract
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Hand declarations to Flux and always remove temporary authentication material
+  block:
+    - name: Load and verify the reviewed GitOps entrypoints
+      ansible.builtin.import_tasks: handover.yml
+  always:
+    - name: Clean temporary handover material
+      ansible.builtin.import_tasks: cleanup.yml

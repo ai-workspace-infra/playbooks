@@ -1,0 +1,37 @@
+- name: Install flux cli
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if command -v flux >/dev/null 2>&1; then
+      exit 0
+    fi
+    curl -fsSL https://fluxcd.io/install.sh \
+      | FLUX_VERSION="{{ k3s_platform_flux_version }}" bash
+  args:
+    executable: /bin/bash
+
+- name: Ensure flux namespace exists
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl get namespace "{{ k3s_platform_flux_namespace }}" >/dev/null 2>&1 || kubectl create namespace "{{ k3s_platform_flux_namespace }}"
+  args:
+    executable: /bin/bash
+
+- name: Install flux controllers
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    flux install --namespace "{{ k3s_platform_flux_namespace }}"
+  args:
+    executable: /bin/bash
+
+- name: Wait for flux controllers to become ready
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/source-controller --timeout=300s
+    kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/kustomize-controller --timeout=300s
+    kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/helm-controller --timeout=300s
+    kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/notification-controller --timeout=300s
+  args:
+    executable: /bin/bash

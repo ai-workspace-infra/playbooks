@@ -193,7 +193,10 @@ roles/k8s_helm/postgresql    → K8s 集群内 Helm release
 | --- | --- |
 | `k3s` / `k3s-cluster` / `k3s-cluster-server` / `k3s-cluster-agent` | 单机与多节点 K3s 安装 |
 | `k3s-addon` / `k3s_platform_addon` | K3s 平台插件层 |
-| `k3s_platform_bootstrap` | 单节点 K3s GitOps 平台引导 |
+| `k3s_platform_bootstrap` | K3s 初始化依赖编排；执行交给独立子 role，见 [职责清单](docs/k3s-role-map.md) |
+| `k3s-cluster-server` | 唯一主线控制面初始化与 API 验证 |
+| `helm_cli` / `flux_controllers` / `flux_gitops` | 分别负责 Helm 客户端、Flux 控制器和 GitOps 声明交接 |
+| `k3s_identity` | Kubernetes 三身份生成、归档、交付与真实认证/权限验证 |
 | `k3s-reset` | K3s 环境重置 |
 | `k8s-node` | 通用 Kubernetes 节点引导 |
 | `sealos-k8s` / `sealos_cluster` | 基于 Sealos 的集群安装 |

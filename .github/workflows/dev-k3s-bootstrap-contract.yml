@@ -3,6 +3,18 @@ on:
   pull_request:
     paths:
       - 'roles/vhosts/k3s_platform_bootstrap/**'
+      - 'roles/vhosts/k3s-cluster-server/**'
+      - 'k3s_platform_bootstrap.yml'
+      - 'k3s_platform_bootstrap_with_gitops.yml'
+      - 'k3s-cluster.yaml'
+      - 'setup-k3s-node.yaml'
+      - 'init_k3s_cluster_server'
+      - 'roles/vhosts/helm_cli/**'
+      - 'roles/vhosts/flux_controllers/**'
+      - 'roles/vhosts/flux_gitops/**'
+      - 'roles/vhosts/k3s_identity/**'
+      - 'tests/test_k3s_role_separation.py'
+      - 'tests/test_k3s_platform_node_identity.py'
       - 'scripts/dev_k3s_bootstrap.py'
       - 'tests/test_dev_k3s_bootstrap_contract.py'
       - 'tests/test_paused_flux_declarations.py'
@@ -19,6 +31,8 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install ansible-core==2.17.14 PyYAML==6.0.2
       - run: python -m unittest discover -s tests -p test_dev_k3s_bootstrap_contract.py
+      - run: python -m unittest discover -s tests -p test_k3s_role_separation.py
+      - run: python -m unittest discover -s tests -p test_k3s_platform_node_identity.py
       - run: python -m unittest discover -s tests -p test_paused_flux_declarations.py
       - name: Check role syntax with a syntax-only local inventory
         run: ANSIBLE_ROLES_PATH=roles ansible-playbook -i tests/fixtures/dev_k3s_syntax.yml tests/fixtures/dev_k3s_syntax_playbook.yml --syntax-check

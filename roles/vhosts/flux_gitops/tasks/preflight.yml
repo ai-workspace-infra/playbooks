@@ -1,0 +1,101 @@
+- name: Validate bootstrap inputs
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_git_url | length > 0
+      - k3s_platform_git_commit | length > 0 or k3s_platform_git_branch | length > 0
+      - k3s_platform_git_commit | length == 0 or k3s_platform_git_commit is match("^[0-9a-f]{40}$")
+      - k3s_platform_flux_root_path | length > 0
+      - k3s_platform_flux_root_name | length > 0
+      - k3s_platform_flux_source_name | length > 0
+      - k3s_platform_flux_namespace | length > 0
+      - not (k3s_platform_require_data_mount | bool) or (common_node_bootstrap_evidence | default({})).get('result') == 'COMMON_NODE_VERIFIED'
+      - k3s_platform_flux_bootstrap_mode in ['generated', 'declarative_active']
+      - k3s_platform_git_auth_mode | default('public') | lower in ['public', 'ssh', 'https-basic', 'https-bearer', '']
+    fail_msg: "k3s platform bootstrap requires git url, branch, root path, and a supported git auth mode."
+
+- name: Prepare immutable active GitOps declarations before host changes
+  when: k3s_platform_flux_bootstrap_mode == 'declarative_active'
+  block:
+    - name: Require fixed checkout and handover receipt semantics
+      ansible.builtin.assert:
+        that:
+          - k3s_platform_gitops_checkout_path | length > 0
+          - k3s_platform_git_commit is match('^[0-9a-f]{40}$')
+          - not (k3s_platform_strict_dev_receipt | bool)
+        fail_msg: Active bootstrap requires an immutable checkout and a separate handover receipt
+
+    - name: Validate and render the declared Flux tree on the controller
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ role_path }}/files/stage_flux_declarations.py"
+          - --checkout
+          - "{{ k3s_platform_gitops_checkout_path }}"
+          - --commit
+          - "{{ k3s_platform_git_commit }}"
+          - --root-path
+          - "{{ k3s_platform_flux_root_path }}"
+          - --root-name
+          - "{{ k3s_platform_flux_root_name }}"
+          - --source
+          - "{{ k3s_platform_flux_source_name }}"
+          - --namespace
+          - "{{ k3s_platform_flux_namespace }}"
+          - --git-url
+          - "{{ k3s_platform_git_url }}"
+          - --state
+          - "active"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: k3s_platform_active_declarations
+
+- name: Resolve flux git auth inputs
+  ansible.builtin.set_fact:
+    k3s_platform_git_auth_mode_effective: "{{ (k3s_platform_git_auth_mode | default('public')) | lower | trim }}"
+  no_log: true
+
+- name: Resolve SSH git private key when needed
+  ansible.builtin.set_fact:
+    k3s_platform_git_private_key_resolved: >-
+      {{
+        k3s_platform_git_private_key
+        if (k3s_platform_git_auth_mode_effective == 'ssh' and k3s_platform_git_private_key | default('') | length > 0)
+        else (
+          lookup('ansible.builtin.file', k3s_platform_git_private_key_path) | trim
+          if (k3s_platform_git_auth_mode_effective == 'ssh')
+          else ''
+        )
+      }}
+  no_log: true
+
+- name: Assert SSH auth material is available
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_git_private_key_resolved | length > 0
+    fail_msg: "SSH auth requires a git deploy key content or readable key path."
+  when:
+    - k3s_platform_git_auth_mode_effective == 'ssh'
+
+- name: Assert HTTPS basic auth material is available
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_git_http_username | default('') | length > 0
+      - k3s_platform_git_http_password | default('') | length > 0
+    fail_msg: "HTTPS basic auth requires username and password/token."
+  when:
+    - k3s_platform_git_auth_mode_effective == 'https-basic'
+
+- name: Assert HTTPS bearer auth material is available
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_git_bearer_token | default('') | length > 0
+    fail_msg: "HTTPS bearer auth requires a bearer token."
+  when:
+    - k3s_platform_git_auth_mode_effective == 'https-bearer'
+
+- name: Normalize public git auth mode
+  ansible.builtin.set_fact:
+    k3s_platform_git_auth_mode_effective: public
+  when:
+    - k3s_platform_git_auth_mode_effective in ['', 'public', 'none']

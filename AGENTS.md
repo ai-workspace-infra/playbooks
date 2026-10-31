@@ -19,6 +19,16 @@ Ansible Roles/Playbooks 及其 reusable workflows：主机初始化、服务部�
 数据库和 Observability 的执行逻辑归 Playbooks，但 workflow 入口可以由 Toolkit 通过固定 SHA reusable workflow 调用。
 新增 Role 后必须先完成 owner → caller → 验证 → 删除旧副本，不能保留双重执行路径。
 
+## Role 单一职责与依赖编排
+
+- 一个 role 聚焦一项核心能力，例如 OS 基线、K3s 控制面、Flux 控制器、GitOps 交接或 Kubernetes 身份生命周期。关联任务可以分为 install/configure/validate；不得把多个独立组件的安装、配置和运维堆进同一 role。
+- 入口 playbook 负责目标选择、输入绑定和角色调用顺序。确需保留 bootstrap 聚合 role 时，它只声明子 role 和依赖顺序，不直接执行 package、shell、文件写入、集群资源变更或凭据签发。
+- 每个执行 role 的 README 必须说明唯一职责、目标组、输入、前置条件、输出/验收证据、幂等重试及回退边界。缺少依赖时明确失败，不隐式安装其他组件或回退成管理身份。
+- 使用显式 `import_role`/`include_role` 表达有顺序的依赖。`meta/main.yml` 仅用于必须先执行且可安全复用的依赖；不要用自动依赖隐藏初始化次序、重复初始化或形成循环。K3s API 就绪后才能安装 Flux，声明交接后才能验证由 GitOps 授权的真实身份。
+- OS hostname、用户与基线归 common；K3s 控制面 role 消费并校验这些前置事实。Flux 控制器安装与 GitOps source/root 交接分开；ESO、Ingress 和业务 HelmRelease 的调谐依赖由 GitOps 声明，不塞回 bootstrap。
+- 默认变量、模板、执行脚本和 handler 随所属能力放在对应 role 内；共享输入合同通过显式变量传递，不跨 role 读取内部 tasks/files，也不复制实现。重构必须同步入口、脚本包装器、测试、CI 路径过滤和文档引用。
+- 拆分前盘点调用方与输出合同；拆分后验证依赖顺序、独立入口、缺参失败、凭据保护及已有验收。删除旧副本不能先于调用链验证，不创建版本专用别名或兼容实现。静态/本地测试通过不代表生产验收通过。
+
 ## 声明驱动的 bootstrap 与验收
 
 - 只消费本次已解析并记录 commit 的 GitOps 期望配置和 IaC CMDB 事实。清晰定义支持字段、类型与映射；不能仅转发旧前缀而静默丢弃身份等新增配置，也不能维护本地环境 YAML 副本。
