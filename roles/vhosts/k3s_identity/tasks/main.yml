@@ -60,7 +60,7 @@
       - "{{ k3s_identity_certificate_days | string }}"
   environment:
     VAULT_ADDR: "{{ lookup('env', 'VAULT_ADDR') }}"
-    VAULT_TOKEN: "{{ lookup('env', 'VAULT_TOKEN') }}"
+    VAULT_TOKEN: "{{ lookup('env', 'K3S_IDENTITY_VAULT_TOKEN') }}"
   register: k3s_identity_generation
   changed_when: (k3s_identity_generation.stdout | from_json).created | length > 0
   no_log: true

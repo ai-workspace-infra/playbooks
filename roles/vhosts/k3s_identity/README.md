@@ -9,10 +9,16 @@ per-user authentication probes run as the corresponding OS user.
 ## Dependencies and inputs
 
 Run common first to establish OS users/groups. K3s API, master-local client CA
-and GitOps-managed RBAC must be ready. Runtime VAULT_ADDR/VAULT_TOKEN must
+and GitOps-managed RBAC must be ready. Runtime `VAULT_ADDR` and
+`K3S_IDENTITY_VAULT_TOKEN` must
 provide a short-lived writer authorized for read/create on only the three exact
 KV v2 data paths; no root token or fallback identity. Preparing/applying that
 controlled writer policy belongs to its separate reviewed owner operation.
+The controller must obtain the writer separately from the common OS reader;
+the identity role rejects a missing writer or a token equal to `VAULT_TOKEN`.
+Token inequality alone does not prove its policy scope: the caller must verify
+the actual role and allow/deny behavior. The writer must remain valid until
+credential generation; an expired token fails closed.
 
 | Input | Purpose |
 | --- | --- |
