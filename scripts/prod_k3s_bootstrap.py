@@ -130,14 +130,13 @@ def main():
     receipt = json.loads(Path(a.receipt).read_text())
     require(receipt.get('gitops_sha') == a.gitops_sha, 'Receipt source binding mismatch')
     common = receipt if a.phase == 'common' else receipt.get('common', {})
-    require(common.get('result') == 'COMMON_NODE_VERIFIED', 'Vhost common identity checks not verified')
+    require(common.get('result') == 'COMMON_NODE_VERIFIED' and common.get('os_identities') == 'OS_IDENTITY_CHECKS_PASSED', 'Vhost common identity checks not verified')
     require(common.get('node') == name and str(common.get('cmdb_instance_id')) == str(clean['hosts'][name]['instance_id']), 'Common receipt node binding differs')
     if a.phase == 'common':
         require(receipt.get('result') == 'COMMON_NODE_VERIFIED', 'Missing common-only receipt')
         print('COMMON_NODE_VERIFIED; host identity preparation complete')
         return
     require(receipt.get('result') == ('FLUX_HANDOVER_VERIFIED' if declared['k3s_platform_flux_bootstrap_mode'] == 'declarative_active' else 'PAUSED_BOOTSTRAP_VERIFIED'), 'Missing verified bootstrap receipt')
-    require(receipt.get('audit', {}).get('result') == 'AUDIT_ALLOW_DENY_VERIFIED', 'Independent audit identity not verified')
     print(receipt['result'])
 
 

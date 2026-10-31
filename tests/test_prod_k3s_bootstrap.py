@@ -56,17 +56,6 @@ class CandidateTests(unittest.TestCase):
         names=[t['name'] for t in tasks]
         self.assertLess(names.index('Bind K3s to the verified independent data mount'),names.index('Run k3s installer script'))
 
-class AuditScopeTests(unittest.TestCase):
-    def test_status_only_rules_and_real_identity_checks(self):
-        tasks=yaml.safe_load((ROOT/'roles/vhosts/k3s_platform_bootstrap/tasks/audit_identity.yml').read_text())
-        bundle=next(t['ansible.builtin.copy']['content'] for t in tasks if t.get('name')=='Declare status-only cluster audit access')
-        role=list(yaml.safe_load_all(bundle))[1]
-        self.assertEqual([{'apiGroups':[''],'resources':['nodes','namespaces'],'verbs':['get','list']}],role['rules'])
-        script=(ROOT/'roles/vhosts/k3s_platform_bootstrap/files/verify_audit_identity.py').read_text()
-        self.assertIn("'runuser', '-u', 'cluster-audit'",script)
-        self.assertIn('dryRun=All',script)
-        self.assertIn('!=403',script)
-
 class ReceiptTests(unittest.TestCase):
     def setUp(self):
         self.obj={'kind':'GitRepository','metadata':{'name':'config-prod','namespace':'flux-system'},'spec':{'suspend':True,'ref':{'tag':'v1.0.0'}}}

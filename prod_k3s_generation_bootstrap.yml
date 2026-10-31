@@ -7,15 +7,17 @@
       ansible.builtin.assert:
         that:
           - prod_k3s_bootstrap_phase in ['common', 'cluster']
-          - target_generation == 'prod-v6'
-          - k3s_platform_flux_bootstrap_mode == 'declarative_paused'
-          - k3s_platform_node_name == 'prod-k3s-v6'
+          - target_generation is match('^[a-z0-9][a-z0-9-]*$')
+          - k3s_platform_flux_bootstrap_mode == 'declarative_active'
+          - k3s_platform_node_name == inventory_hostname
           - k3s_platform_write_kubeconfig_mode == '0600'
-          - k3s_platform_local_storage_path == '/data/k3s/storage'
+          - k3s_platform_local_storage_path is match('^/[^.]+$')
     - name: Run vhost common identity and PV checks before storage
       ansible.builtin.include_role:
         name: vhosts/common
         tasks_from: node_bootstrap.yml
+      vars:
+        common_os_identity_environment: "{{ web_saas_data_environment }}"
     - name: Install empty-disk and observation prerequisites
       ansible.builtin.apt:
         name: [python3-yaml, util-linux, e2fsprogs]

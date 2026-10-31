@@ -14,8 +14,8 @@ It uses the `operator` and `auditor` groups as their respective primary groups.
 An existing empty `operator` group may be reused; unexpected members, unmanaged
 accounts and home collisions fail before changes. Reused OS group ownership and
 permissions must be inspected on the target before enabling this profile. It adds
-authorized keys without deleting existing keys, preserves root and the
-old `cluster-audit`, and uses root-owned markers for safe reruns. The initial
+authorized keys without deleting existing keys, preserves root, and uses
+root-owned markers for safe reruns. The initial
 operator sudo rule permits only `systemctl is-system-running`; other runtime and
 cluster permissions belong to their owners and are not implicitly granted. The
 auditor gets no sudo or supplementary groups. This profile checks bounded OS
@@ -23,8 +23,7 @@ allow/deny conditions; actual SSH login and broader filesystem/ACL access still
 need independent verification. Shared keys allow their holder to log in as each
 authorized role and do not provide per-person separation.
 
-This is a separate, opt-in profile; legacy `common` and `node_bootstrap.yml`
-remain unchanged. Rollback restores only the selected new sudo policy and
+`node_bootstrap.yml` invokes this identity profile before emitting its receipt. Rollback restores only the selected new sudo policy and
 role-managed accounts/keys after checking consumers and preserving existing root
 access; do not delete old audit accounts or persistent data as a side effect.
 
@@ -66,7 +65,9 @@ hostname and local resolution, and persists cloud-init hostname ownership.
 before disk preparation or K3s installation; existing PVs are never rebound.
 
 The V6 entry invokes this profile automatically after IaC, before the data-volume
-and cluster roles. Its final receipt must include `COMMON_NODE_VERIFIED`.
+and cluster roles. Its receipt includes `COMMON_NODE_VERIFIED` and
+`OS_IDENTITY_CHECKS_PASSED`; separately verify actual SSH logins and the
+remaining host security baseline before declaring acceptance.
 The full legacy common baseline remains an explicit separate caller choice;
 this profile does not change firewall rules, credentials or business services.
 

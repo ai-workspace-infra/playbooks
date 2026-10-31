@@ -82,11 +82,9 @@ python3 scripts/bootstrap_os_identity_keys.py --environment prod \
 
 本节仅约定跨 role 的身份选择边界，common 不执行迁移、不读取迁移连接，也不实现集群授权。
 
-## 6. 现有 cluster-audit 的 OS 侧渐进替换
+## 6. 新节点身份
 
-新节点统一使用 `auditor`。旧节点先创建并验证 auditor，再逐个迁移 Linux 审计调用方和 OS 验证脚本；确认 OS 消费者已切换，且其他 role 已确认没有依赖后，才单独评审停用旧 cluster-audit。
-
-不直接重命名旧账户、不递归修改数据卷所有权、不批量撤权。其他 role 对旧身份的引用由各自 owner 处理。历史回执保留原用户名，不能改写为 auditor 已完成验收。
+新节点统一使用 `root`、`operator` 和 `auditor`。历史节点的账号和数据不由新节点初始化清理；历史回执保留实际身份，不能改写为新身份验收。
 
 ## 7. 最小实现与 OS 验收
 
@@ -99,4 +97,4 @@ python3 scripts/bootstrap_os_identity_keys.py --environment prod \
 | SSH 与 sudo | 语法校验通过、用户独立授权、父目录/ACL/组及实际访问符合预期；配置变更才 reload |
 | 幂等与恢复 | 重跑不重建用户或无故重启；保留老管理入口；新增访问可独立撤销，不删除未知配置 |
 
-现有 `vhosts/common/tasks/node_bootstrap.yml` 仍建立锁定登录的 cluster-audit 和有限 OS 检查。新的独立 `os_identity.yml` 负责三用户 OS 身份，不捆绑集群身份或数据迁移；运行结果和真实 SSH 验收另行记录。旧调用方仍依赖 cluster-audit，消费者迁移前不清理该账户。
+`vhosts/common/tasks/node_bootstrap.yml` 在 hostname 检查之后调用 `os_identity.yml`，完成三用户 OS 身份检查后才输出 common 回执；真实 SSH 验收、主机安全基线和集群身份另行记录。

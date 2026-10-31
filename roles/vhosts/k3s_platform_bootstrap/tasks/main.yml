@@ -505,10 +505,6 @@
       environment:
         KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
 
-- name: Establish independent audit access for the fresh cluster
-  ansible.builtin.include_tasks: audit_identity.yml
-  when: k3s_platform_require_data_mount | bool
-
 - name: Hand active declarations to Flux without applying business workloads
   when: k3s_platform_flux_bootstrap_mode == 'declarative_active'
   block:
@@ -548,7 +544,7 @@
       register: k3s_platform_active_receipt
     - name: Save Flux handover evidence separately from service acceptance
       ansible.builtin.copy:
-        content: "{{ (k3s_platform_active_receipt.stdout | from_json) | combine({'audit': (k3s_platform_audit_evidence.stdout | from_json), 'common': common_node_bootstrap_evidence}) | to_json }}\n"
+        content: "{{ (k3s_platform_active_receipt.stdout | from_json) | combine({'common': common_node_bootstrap_evidence}) | to_json }}\n"
         dest: "{{ k3s_platform_receipt_path }}"
         mode: '0600'
       delegate_to: localhost
@@ -583,7 +579,7 @@
       changed_when: false
     - name: Retain public paused bootstrap evidence on controller
       ansible.builtin.copy:
-        content: "{{ (k3s_platform_paused_receipt.stdout | from_json) | combine({'audit': (k3s_platform_audit_evidence.stdout | default('{}') | from_json), 'common': (common_node_bootstrap_evidence | default({}))}) | to_json }}\n"
+        content: "{{ (k3s_platform_paused_receipt.stdout | from_json) | combine({'common': (common_node_bootstrap_evidence | default({}))}) | to_json }}\n"
         dest: "{{ k3s_platform_receipt_path }}"
         mode: '0600'
       delegate_to: localhost
@@ -680,7 +676,6 @@
     - /tmp/flux-bootstrap-declarations.yaml
     - /tmp/flux-git-deploy.key
     - /tmp/flux-git-deploy.pub
-    - /tmp/v6-audit-rbac.yaml
 
 - name: Initialize OS-linked Kubernetes identities and verify real credentials
   ansible.builtin.include_tasks: identity_delivery.yml
