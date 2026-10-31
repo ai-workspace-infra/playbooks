@@ -38,9 +38,12 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `k3s-cluster-agent` | ❌ 未完成 | bootstrap、upgrade、destroy 任务为空，不能当作可用 worker 能力 |
 | `k3s-reset` | ❌ 安全边界待修复 | 独立破坏性入口，旧默认值需收敛；#905 移除两个初始化入口的隐式重置 |
 | `k3s_runtime_secret_sync` | ✅ 独立运维入口 | 不属于 bootstrap；通用 KV 同步与环境专用投影仍需梳理 |
+| 三身份与 Flux RBAC | ❌ [GitOps #682](https://github.com/ai-workspace-infra/gitops/pull/682)、[Playbooks #906](https://github.com/ai-workspace-infra/playbooks/pull/906) 待合并 | 候选声明 root、operator、auditor 和依赖；等待所选 commit 的 Flux RBAC。operator 仅有业务范围读取及扩缩容，工作负载写入需另审准入策略 |
+| Orchestrator → Playbooks | ❌ 参数交接未贯通 | 需传入本次 GitOps checkout/SHA、资源声明路径、CMDB SHA 和独立回执路径，并由 owner 验证 |
+| Vault writer 与真实身份验收 | ❌ 未完成 | 需使用短期受控身份写入三个精确路径，再由实际账户验证认证与允许/拒绝；未取得运行证据 |
 | V6 Flux 接管和服务部署 | ❌ 尚无完整运行验收证据 | 需核对调用链、身份授权、实际 RBAC 和服务就绪；不得据源码或静态测试宣称完成 |
 
-当前清单文件迁入本目录的 [Playbooks #904](https://github.com/ai-workspace-infra/playbooks/pull/904) 待合并。所有角色遵循 `AGENTS.md` 的单一职责规则。
+当前清单文件迁入本目录的 [Playbooks #904](https://github.com/ai-workspace-infra/playbooks/pull/904) 已合并。所有角色遵循 `AGENTS.md` 的单一职责规则。
 
 ## 主线执行 role
 
