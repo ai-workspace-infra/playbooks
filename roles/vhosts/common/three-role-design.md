@@ -19,7 +19,7 @@
 | Linux 用户 | 固定角色 | OS 职责与权限 |
 | --- | --- | --- |
 | `root` | 系统管理 | 保留现有 root；用于初始化、安装、恢复和必要管理，平时不用作业务进程身份 |
-| `operator` | 日常运行操作 | 通用操作账户，可 SSH 公钥登录；操作被授权的服务和工作目录，通过受控 sudo 执行必要运行操作 |
+| `operator` | 日常运行操作 | 通用操作账户，可 SSH 公钥登录并使用交互 shell；操作被授权的服务和工作目录，通过受控 sudo 执行必要运行操作 |
 | `auditor` | 只读审计与分析 | 可 SSH 公钥登录；读取授权系统状态及脱敏输出；无通用 sudo、系统配置写权限、运行时 socket 或管理凭据访问权限 |
 
 三者通过受信管理网络使用独立公钥/证书授权，禁用密码认证；root 使用 `PermitRootLogin prohibit-password`。保留现有管理入口直至新身份登录及权限验收通过；先验证 sshd 配置，再 reload。密码锁定与公钥登录须在实际 OS/PAM 配置下验证。
@@ -28,7 +28,7 @@
 
 `operator` 为通用保留名：接管前检查现有用户、UID/GID、文件归属和组；发现同名用户或未知权限时停止，不直接接管、改名或重置。
 
-日常运行操作员是人或自动化操作身份；实际应用进程另用非 root 服务身份，不继承操作员的 sudo 或管理权限。rootful Docker socket、`docker` 组和任意 sudo 都具备接近 root 的主机管理能力；不得在授予这些权限后声称 operator 与 root 强制隔离。确需这些能力时按显式系统管理阶段处理，审计账户不得获得。
+日常运行操作员是人或自动化操作身份；实际应用进程另用非 root 服务身份，不继承操作员的 sudo 或管理权限。K3s 节点上的 OS `operator` 使用普通交互 shell 执行客户端命令；K3s 安装、独立 kubeconfig、认证与 RBAC 由 K3s role 管理。普通 `kubectl` 调用不需要宿主机 root、Docker/containerd 组或 root 管理 kubeconfig。rootful Docker socket、`docker` 组和任意 sudo 都具备接近 root 的主机管理能力；不得在授予这些权限后声称 operator 与 root 强制隔离。确需这些能力时按显式系统管理阶段处理，审计账户不得获得。
 
 ## 3. 环境级 Vault KV 记录
 
@@ -61,7 +61,7 @@ python3 scripts/bootstrap_os_identity_keys.py --environment prod \
 以后每次接管新 Linux 节点，标准入口先执行 `vhosts/common`：
 
 1. 核实受信 host key、CMDB/inventory、OS、主机名和既有用户/权限，记录脱敏基线。
-2. 使用 root 建立或核实 operator/auditor，配置各自公钥、受控 sudo、工作目录和 SSH 策略。
+2. 使用 root 建立或核实 operator/auditor，配置各自公钥、可交互登录 shell、受控 sudo、工作目录和 SSH 策略。
 3. 检查父目录、ACL、sudoers、有效组和敏感文件访问；先验证配置，再 reload SSH。
 4. 分别验证三用户实际 SSH 登录、OS 允许/拒绝和必要运行操作，保留回执及管理恢复入口。
 5. OS 基线通过后，由调用方进入服务、运行时、K3s/K8s 或迁移等对应 role。
