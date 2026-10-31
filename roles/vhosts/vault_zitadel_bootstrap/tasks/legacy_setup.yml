@@ -1,0 +1,16 @@
+---
+- name: Execute explicitly requested legacy installer under its service owner
+  when: vhosts_vault_zitadel_bootstrap_legacy_setup_enabled | bool
+  block:
+    - name: Validate the selected compatibility installer
+      ansible.builtin.assert:
+        that:
+          - vhosts_vault_zitadel_bootstrap_legacy_setup_script in ['setup-vault-zitadel.sh']
+          - vhosts_vault_zitadel_bootstrap_legacy_setup_arguments is sequence and vhosts_vault_zitadel_bootstrap_legacy_setup_arguments is not string
+    - name: Run the owner installer on the selected inventory host
+      ansible.builtin.script:
+        cmd: "{{ role_path }}/files/{{ vhosts_vault_zitadel_bootstrap_legacy_setup_script }} {{ vhosts_vault_zitadel_bootstrap_legacy_setup_arguments | map('quote') | join(' ') }}"
+        executable: /bin/bash
+      environment: '{{ vhosts_vault_zitadel_bootstrap_legacy_setup_environment }}'
+      no_log: true
+      when: not ansible_check_mode

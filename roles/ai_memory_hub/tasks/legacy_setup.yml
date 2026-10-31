@@ -1,0 +1,16 @@
+---
+- name: Execute explicitly requested legacy installer under its service owner
+  when: ai_memory_hub_legacy_setup_enabled | bool
+  block:
+    - name: Validate the selected compatibility installer
+      ansible.builtin.assert:
+        that:
+          - ai_memory_hub_legacy_setup_script in ['setup-ai-memory-hub.sh']
+          - ai_memory_hub_legacy_setup_arguments is sequence and ai_memory_hub_legacy_setup_arguments is not string
+    - name: Run the owner installer on the selected inventory host
+      ansible.builtin.script:
+        cmd: "{{ role_path }}/files/{{ ai_memory_hub_legacy_setup_script }} {{ ai_memory_hub_legacy_setup_arguments | map('quote') | join(' ') }}"
+        executable: /bin/bash
+      environment: '{{ ai_memory_hub_legacy_setup_environment }}'
+      no_log: true
+      when: not ansible_check_mode
