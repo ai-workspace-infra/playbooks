@@ -147,7 +147,7 @@ fact 缓存落 `/tmp/ansible_facts`（1h）、开启 `pipelining` 与 `profile_t
 | `group_vars/` `host_vars/` | 全局与主机变量；`group_vars/all/vault_s3.yml` 承载 S3/Vault 凭据 |
 | `inventory/` | 动态清单：`terraform_cmdb.py`（Terraform CMDB）、`hosts.ini` |
 | `vars/` | DNS 记录等数据集（`dns_records_svc_plus.yaml`、`cloudflare_svc_plus_dns.yml`） |
-| `docs/` | 设计文档、迁移记录、任务与用例（`k3s-role-map.md`、`vault-secrets-dataflow-design.md` 等） |
+| `docs/` | 设计文档、迁移记录、任务与用例（`vault-secrets-dataflow-design.md` 等） |
 | `scripts/` | 非 Ansible 的一次性/旁路脚本（安装器、证书轮转、网络排查） |
 | `skills/` | 仓库协作约定：`config-as-code-Spec`、`release-branch-policy` |
 | `.github/workflows/` | 域名级 CD 流水线 + release PR 校验 |
@@ -193,7 +193,7 @@ roles/k8s_helm/postgresql    → K8s 集群内 Helm release
 | --- | --- |
 | `k3s` / `k3s-cluster` / `k3s-cluster-server` / `k3s-cluster-agent` | 单机与多节点 K3s 安装 |
 | `k3s-addon` / `k3s_platform_addon` | K3s 平台插件层 |
-| `k3s_platform_bootstrap` | K3s 初始化依赖编排；执行交给独立子 role，见 [职责清单](docs/k3s-role-map.md) |
+| `k3s_platform_bootstrap` | K3s 初始化依赖编排；执行交给独立子 role，见 [职责清单](roles/vhosts/k3s_platform_bootstrap/k3s-role-map.md) |
 | `k3s-cluster-server` | 唯一主线控制面初始化与 API 验证 |
 | `helm_cli` / `flux_controllers` / `flux_gitops` | 分别负责 Helm 客户端、Flux 控制器和 GitOps 声明交接 |
 | `k3s_identity` | Kubernetes 三身份生成、归档、交付与真实认证/权限验证 |
@@ -204,7 +204,7 @@ roles/k8s_helm/postgresql    → K8s 集群内 Helm release
 | `gpu-k8s` / `gpu-k8s-reset` | GPU 节点的 K8s 装配与回滚 |
 | `charts/metrics-server` `charts/kubernetes-dashboard` `charts/chaos-mesh` | 集群基础组件 |
 
-参考：[`docs/k3s-role-map.md`](docs/k3s-role-map.md)
+参考：[`roles/vhosts/k3s_platform_bootstrap/k3s-role-map.md`](roles/vhosts/k3s_platform_bootstrap/k3s-role-map.md)
 
 ### 3. GPU / AI 推理与 Agent 运行时
 

@@ -1,10 +1,6 @@
 # K3s role 职责与依赖清单
 
-本清单依据仓库任务、脚本与调用方核对；目录存在不等于能力已实现。
-以下为本次重构的代码布局，不代表已部署或生产验收通过。
-所有 role 均服从根目录 AGENTS 的“一项核心能力一个 role”。
-
-## 本次收敛后的主线
+## 当前主线与依赖
 
 ```text
 IaC CMDB + 本次解析到 commit 的 GitOps 期望配置
@@ -25,7 +21,52 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 三身份凭据，也不能用“管理员 impersonation 成功”替代真实身份登录。
 主机名、Flux root 名、环境批次目录和 source path 各自独立，不按名字推断流程。
 
-## 原有目录逐项核对
+## 当前相关 role 列表（2026-10-31）
+
+以下状态区分仓库 `main`、待合并候选和生产实际验收。Role 存在或 CI 通过不等于目标集群已完成部署。
+
+| 项目 | 当前状态 | 当前责任与缺口 |
+| --- | --- | --- |
+| `k3s_platform_bootstrap` | ✅ Playbooks #903 已合并 | 只编排子 role 及依赖顺序 |
+| `k3s-cluster-server` | ✅ #903 已合并 | K3s 控制面初始化、hostname 校验、API 就绪；不承担插件发布 |
+| `k3s-cluster` | ✅ #903 已删除旧实现 | 两个安装入口已切换到 `k3s-cluster-server` |
+| `helm_cli`、`flux_controllers`、`flux_gitops`、`k3s_identity` | ✅ #903 已合并 | 分别负责 Helm 客户端、Flux 控制器、声明交接、三身份交付和验证；真实身份、Vault writer 与 RBAC 仍需目标集群验收 |
+| `k3s` 旧安装器 | ❌ 仍在 main；[Playbooks #905](https://github.com/ai-workspace-infra/playbooks/pull/905) 待合并 | 候选将调用方切至 server 并移除旧实现；非默认 CNI 明确拒绝，需另行交付独立的 CNI 能力 |
+| `k3s_platform_addon`、`k3s-addon` | ❌ 旧实现和调用方仍存在 | 待目标环境采用 Flux 声明并完成发布身份、调用方和运行验证后退役，当前不属于新 bootstrap 主线 |
+| cert-manager、reloader、APISIX、ExternalDNS、NGINX Ingress | ❌ [GitOps #681](https://github.com/ai-workspace-infra/gitops/pull/681) 待合并 | 候选提供可独立选择的 Flux 模板，未接入任何环境；ExternalDNS 默认 dry-run |
+| ESO、Caddy | ✅ GitOps 已有 V6 HelmRelease 声明；❌ 实际调谐及服务验收待核验 | 不再通过旧 addon role 重复安装 |
+| `k3s-cluster-agent` | ❌ 未完成 | bootstrap、upgrade、destroy 任务为空，不能当作可用 worker 能力 |
+| `k3s-reset` | ❌ 安全边界待修复 | 独立破坏性入口，旧默认值需收敛；#905 候选移除两个初始化入口的隐式重置 |
+| `k3s_runtime_secret_sync` | ✅ 独立运维入口 | 不属于 bootstrap；通用 KV 同步与环境专用投影仍需梳理 |
+| V6 Flux 接管和服务部署 | ❌ 尚无完整运行验收证据 | 需核对调用链、身份授权、实际 RBAC 和服务就绪；不得据源码或静态测试宣称完成 |
+
+当前清单文件迁入本目录的 [Playbooks #904](https://github.com/ai-workspace-infra/playbooks/pull/904) 待合并。所有角色遵循 `AGENTS.md` 的单一职责规则。
+
+## 主线执行 role
+
+| Role | 唯一能力 | 前置条件 | 输出/验收 |
+| --- | --- | --- | --- |
+| `helm_cli` | Helm 客户端准备 | 主机包/CA/网络 | 现有客户端或安装成功，不部署 chart |
+| `flux_controllers` | Flux CLI 与控制器初始化 | K3s API、私有 admin kubeconfig | controller rollout 就绪 |
+| `flux_gitops` | 经审查的 source/root 交接 | 解析过 commit 的 GitOps 配置与 ready Flux | Flux 交接回执，不声称业务 Ready |
+| `k3s_identity` | Kubernetes 三身份生命周期 | OS 三账户、实际 CA/UID、GitOps RBAC、受控 Vault writer | 独立密钥/证书/私有 kubeconfig、KV CAS 归档、真实认证与允许/拒绝 |
+
+生成器、模板、默认值及验收脚本随能力移动；没有复制第二套实现。
+现有 `k3s_platform_*` 和 `k3s_identity_*` 为调用合同，未增加环境专用别名。
+
+## 验证和发布边界
+
+本次同步受影响的 Python 包装器、测试导入、Ansible 入口和 CI 路径过滤。
+契约测试检查编排器没有直接副作用、独立 role 可解析、前置失败不会进入
+安装，以及真实身份生成器的证书/目标绑定/CAS 行为。生产验证必须另记
+实际 GitOps/Playbooks SHA、CMDB 实例、运行 ID 与真实身份/服务结果。
+
+本次已合并的拆分未执行卸载、原地升级、删盘、数据迁移、DNS 更新或凭据轮换。
+回退 PR 只恢复代码调用路径，不回滚数据，也不撤销已签发证书。
+
+## 历史 role 与迁移记录
+
+以下表格记录 #903 完成时的旧实现与处理；后续变化以文首状态表和对应 PR 为准。
 
 | 原 role | 实际职责/问题 | 本次处理与后续边界 |
 | --- | --- | --- |
@@ -42,19 +83,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 这些历史 role 的问题是盘点结论；本次未对所有旧实现逐一改造，不能将
 “本次主线不调用”写成“全仓陈旧代码已清理”。
 
-## 新抽出的执行 role
-
-| Role | 唯一能力 | 前置条件 | 输出/验收 |
-| --- | --- | --- | --- |
-| `helm_cli` | Helm 客户端准备 | 主机包/CA/网络 | 现有客户端或安装成功，不部署 chart |
-| `flux_controllers` | Flux CLI 与控制器初始化 | K3s API、私有 admin kubeconfig | controller rollout 就绪 |
-| `flux_gitops` | 经审查的 source/root 交接 | 解析过 commit 的 GitOps 配置与 ready Flux | Flux 交接回执，不声称业务 Ready |
-| `k3s_identity` | Kubernetes 三身份生命周期 | OS 三账户、实际 CA/UID、GitOps RBAC、受控 Vault writer | 独立密钥/证书/私有 kubeconfig、KV CAS 归档、真实认证与允许/拒绝 |
-
-生成器、模板、默认值及验收脚本随能力移动；没有复制第二套实现。
-现有 `k3s_platform_*` 和 `k3s_identity_*` 为调用合同，未增加环境专用别名。
-
-## 入口与调用迁移
+### 入口与历史调用迁移
 
 | 入口 | 调用路径 | 范围 |
 | --- | --- | --- |
@@ -72,13 +101,3 @@ OrbStack 历史模拟探针不构成拆分后调用链或幂等性的证据。
 拆分；其专用 adapter 仍依赖旧 source/root 默认值且未提供完整身份合同。
 它不属于已接通的新入口，更新该消费者前需从所选 GitOps 声明补齐配置与
 common 前置，不能仅移动 checkout SHA 或据其旧回执宣称本次部署通过。
-
-## 验证和发布边界
-
-本次同步受影响的 Python 包装器、测试导入、Ansible 入口和 CI 路径过滤。
-契约测试检查编排器没有直接副作用、独立 role 可解析、前置失败不会进入
-安装，以及真实身份生成器的证书/目标绑定/CAS 行为。生产验证必须另记
-实际 GitOps/Playbooks SHA、CMDB 实例、运行 ID 与真实身份/服务结果。
-
-没有自动卸载、原地升级、删盘、数据迁移、DNS 更新或凭据轮换。
-回退 PR 只恢复代码调用路径，不回滚数据，也不撤销已签发证书。
