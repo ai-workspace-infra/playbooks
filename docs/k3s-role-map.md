@@ -30,7 +30,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | 原 role | 实际职责/问题 | 本次处理与后续边界 |
 | --- | --- | --- |
 | `k3s_platform_bootstrap` | 原来混合 K3s、Helm、Flux、交接、凭据生成与验收；README 含暂停式旧描述 | 改为仅调用子 role 的编排器；执行实现全部归对应子 role |
-| `k3s-cluster-server` | 原 bootstrap 同时安装 K3s/Flux/ESO，写业务 namespace/Vault token Secret；静态 vars 写死目标；其余六个 action 文件为空 | 保留为唯一主线控制面安装 role；替换旧混合 bootstrap，删除空 action、静态 vars、无调用模板与旧生成脚本。只实现初始化，非 bootstrap 的 action 明确拒绝 |
+| `k3s-cluster-server` | 原 bootstrap 同时安装 K3s/Flux/ESO，写业务 namespace/Vault token Secret；静态 vars 写死目标；其余五个 action 文件为空 | 保留为唯一主线控制面安装 role；替换旧混合 bootstrap，删除空 action、静态 vars、无调用模板与旧生成脚本。只实现初始化，非 bootstrap 的 action 明确拒绝 |
 | `k3s-cluster` | 脚本安装 K3s，随后隐式装 nerdctl/CNI、本地 Registry 和自签 CA；重复安装且夹带额外资源 | 合并控制面能力到 `k3s-cluster-server`；更新两个 playbook 调用方后删除目录。新主线不隐式创建 Registry；此行为变化必须在审查中确认 |
 | `k3s` | 另一套脚本安装 K3s/CNI；meta 自动依赖 common；含固定域名和忽略错误 | 存量实现仍在，冻结扩展；本次主线不调用。迁移其专有 CNI 需求和消费者验证后才退役，不新增兼容包装 |
 | `k3s_platform_addon` | 直接 Helm 管理 cert-manager/ESO/reloader/Caddy/APISIX/external-dns，默认含业务路由与域名；与 GitOps 资源 owner 重叠 | 本次不接入冷启动主线，也未删除；后续逐资源确认 GitOps 接管及旧消费者退出，停止双重调谐，再清理实现 |
@@ -67,6 +67,11 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 `init_k3s_cluster_agent` 的 worker role 路径与空实现尚需专门修复，不以
 目录名或脚手架视为已就绪。独立脚本模拟安装 Flux/ESO 不是本 DAG 验收；
 OrbStack 历史模拟探针不构成拆分后调用链或幂等性的证据。
+
+旧 Dev reusable workflow 仍固定 checkout 历史 Playbooks SHA，不会自动采用本次
+拆分；其专用 adapter 仍依赖旧 source/root 默认值且未提供完整身份合同。
+它不属于已接通的新入口，更新该消费者前需从所选 GitOps 声明补齐配置与
+common 前置，不能仅移动 checkout SHA 或据其旧回执宣称本次部署通过。
 
 ## 验证和发布边界
 
