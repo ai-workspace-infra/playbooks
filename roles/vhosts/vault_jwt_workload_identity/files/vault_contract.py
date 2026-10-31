@@ -233,14 +233,16 @@ def refresh_signing_keys(client, spec, issuer, public_keys, expected_previous_sh
     if not public_keys or any(not isinstance(k, str) or not k for k in public_keys):
         raise VaultError('verified live public keys required', 'config')
     fingerprint = lambda keys: sorted(hashlib.sha256(key.encode()).hexdigest() for key in keys)
-    if old == public_keys:
+    normalized = lambda keys: [key.strip() for key in keys]
+    if normalized(old) == normalized(public_keys):
         return False
     if fingerprint(old) != sorted(expected_previous_sha256):
         raise VaultError('current key fingerprints differ from reviewed values', 'config')
     # Vault JWT config has no compare-and-swap; callers must serialize this mount.
     expect(client.request('POST', path, {'bound_issuer': issuer, 'jwt_validation_pubkeys': public_keys}), {200, 204})
     after = expect(client.request('GET', path), {200}).get('data', {})
-    if after.get('bound_issuer') != issuer or after.get('jwt_validation_pubkeys') != public_keys:
+    after_keys = after.get('jwt_validation_pubkeys')
+    if after.get('bound_issuer') != issuer or not isinstance(after_keys, list) or normalized(after_keys) != normalized(public_keys):
         raise VaultError('JWT config read-back differs', 'config')
     return True
 

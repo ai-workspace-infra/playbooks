@@ -61,6 +61,21 @@ class Contract(unittest.TestCase):
         self.assertEqual(c.configs[SPEC.mount+'/']['jwt_validation_pubkeys'],['new-key'])
         self.assertFalse(v.refresh_signing_keys(c,SPEC,ISSUER,['new-key'],old))
 
+    def test_refresh_accepts_vault_stripped_pem_newline(self):
+        c=Fake();c.mounts[SPEC.mount+'/']={'type':'jwt'}
+        c.policies['sys/policies/acl/'+SPEC.policy]=SPEC.policy_hcl
+        c.roles['auth/'+SPEC.mount+'/role/'+SPEC.role]=SPEC.role_config.copy()
+        c.configs[SPEC.mount+'/']={'bound_issuer':ISSUER,'jwt_validation_pubkeys':['old-key']}
+        original=c.request
+        def normalized(method,path,body=None,read_json=True):
+            if method == 'POST' and path.endswith('/config'):
+                body=dict(body, jwt_validation_pubkeys=[key.strip() for key in body['jwt_validation_pubkeys']])
+            return original(method,path,body,read_json)
+        c.request=normalized
+        old=[hashlib.sha256(b'old-key').hexdigest()]
+        self.assertTrue(v.refresh_signing_keys(c,SPEC,ISSUER,['new-key\n'],old))
+        self.assertFalse(v.refresh_signing_keys(c,SPEC,ISSUER,['new-key\n'],old))
+
     def test_refresh_rejects_drifted_policy_without_writing(self):
         c=Fake();c.mounts[SPEC.mount+'/']={'type':'jwt'}
         c.policies['sys/policies/acl/'+SPEC.policy]='path "*" { capabilities = ["read"] }'
