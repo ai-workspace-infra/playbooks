@@ -10,20 +10,6 @@ import yaml
 
 
 ALLOWED = {"Namespace", "GitRepository", "Kustomization", "HelmRelease", "HelmRepository", "OCIRepository"}
-# These leaves are inspected but deliberately not included in the paused bundle:
-# their CRDs may not exist yet and applying an ExternalSecret would sync early.
-V6_DEFERRED = {
-    "vault-tls-identity": ("vault-prod-config", "./services/prod-k3s-v6/vault-prod/tls-identity", {
-        ("v1", "ServiceAccount", "vault-prod", "vault-tls-reader"),
-        ("rbac.authorization.k8s.io/v1", "Role", "vault-prod", "eso-token-vault-tls-reader"),
-        ("rbac.authorization.k8s.io/v1", "RoleBinding", "vault-prod", "eso-token-vault-tls-reader"),
-    }),
-    "vault-tls-bootstrap": ("vault-prod-config", "./services/prod-k3s-v6/vault-prod/tls-bootstrap", {
-        ("external-secrets.io/v1", "SecretStore", "vault-prod", "shared-vault-tls-bootstrap"),
-        ("external-secrets.io/v1", "ExternalSecret", "vault-prod", "vault-server-tls"),
-    }),
-}
-V6_ESO = ("external-secrets", "./services/prod-k3s-v6/cluster-prerequisites/external-secrets")
 FLUX_APIS = {"GitRepository": "source.toolkit.fluxcd.io/v1", "Kustomization": "kustomize.toolkit.fluxcd.io/v1", "HelmRelease": "helm.toolkit.fluxcd.io/v2"}
 
 
@@ -111,35 +97,15 @@ def build(checkout, commit, root_path, root_name, source_name, namespace, git_ur
                 raise ValueError("child source is not declared")
         return docs
     used_sources = set()
-    v6 = root_name == "prod-k3s-v6"
-    if v6 and not (set(V6_DEFERRED) | {V6_ESO[0]}).issubset({c["metadata"]["name"] for c in children}):
-        raise ValueError("V6 prerequisite declarations are incomplete")
     for child in children:
         ref = child["spec"].get("sourceRef", {})
         name = ref.get("name")
         if child["metadata"].get("namespace") != namespace or ref.get("kind") != "GitRepository" or name not in sources:
             raise ValueError("child must reference a declared unit configuration source")
-        child_name = child["metadata"]["name"]
         path = child["spec"]["path"]
-        if v6 and child_name in V6_DEFERRED:
-            expected_source, expected_path, expected_objects = V6_DEFERRED[child_name]
-            if name != expected_source or path != expected_path:
-                raise ValueError("V6 deferred prerequisite source or path differs")
-            raw = list(yaml.safe_load_all(runner("kubectl", "kustomize", str(inside(checkout, path)))))
-            try:
-                identities = {(d["apiVersion"], d["kind"], d["metadata"]["namespace"], d["metadata"]["name"]) for d in raw}
-            except (KeyError, TypeError):
-                raise ValueError("invalid deferred prerequisite") from None
-            if len(raw) != len(expected_objects) or identities != expected_objects:
-                raise ValueError("unexpected deferred prerequisite resources")
-            continue
-        if v6 and child_name == V6_ESO[0]:
-            if name != source_name or path != V6_ESO[1]:
-                raise ValueError("V6 ESO source or path differs")
-        else:
-            if name == source_name or name in used_sources:
-                raise ValueError("each business child requires its own independent configuration source")
-            used_sources.add(name)
+        if name == source_name or name in used_sources:
+            raise ValueError("each business child requires its own independent configuration source")
+        used_sources.add(name)
         leaf = documents(runner("kubectl", "kustomize", str(inside(checkout, path))))
         if any(doc["kind"] in {"Kustomization", "GitRepository"} for doc in leaf):
             raise ValueError("unit paths cannot redefine bootstrap or sibling controllers")
