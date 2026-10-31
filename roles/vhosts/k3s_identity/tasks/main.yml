@@ -62,8 +62,15 @@
     VAULT_ADDR: "{{ lookup('env', 'VAULT_ADDR') }}"
     VAULT_TOKEN: "{{ lookup('env', 'K3S_IDENTITY_VAULT_TOKEN') }}"
   register: k3s_identity_generation
-  changed_when: (k3s_identity_generation.stdout | from_json).created | length > 0
+  failed_when: false
+  changed_when: k3s_identity_generation.rc == 0 and (k3s_identity_generation.stdout | from_json).created | length > 0
   no_log: true
+
+- name: Require successful identity issuance and archival
+  ansible.builtin.assert:
+    that:
+      - k3s_identity_generation.rc == 0
+    fail_msg: "Identity bootstrap failed with exit code {{ k3s_identity_generation.rc }}; inspect protected node state, trust and Vault authorization. No credential output is displayed."
 
 - name: Deliver each independently authenticated identity
   ansible.builtin.include_tasks: identity_user.yml
