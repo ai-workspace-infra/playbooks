@@ -191,7 +191,10 @@
   ansible.builtin.user:
     name: '{{ item.item }}'
     group: '{{ item.item }}'
-    shell: "{{ item.stdout.split(':')[-1] if item.rc == 0 else '/usr/sbin/nologin' }}"
+    # Operator and auditor are interactive SSH identities. K3s authorization
+    # is delivered separately by the K3s identity role, never through sudo or
+    # a runtime socket.
+    shell: /bin/bash
     create_home: true
     password_lock: true
     groups: ''
@@ -225,6 +228,18 @@
 - name: OS identities | verify operator can use the bounded sudo command
   ansible.builtin.command:
     argv: [runuser, -u, operator, --, sudo, -n, -l, /usr/bin/systemctl, is-system-running]
+  changed_when: false
+
+- name: OS identities | verify operator can launch an interactive login shell
+  ansible.builtin.command:
+    argv:
+      - runuser
+      - -l
+      - operator
+      - --
+      - /bin/bash
+      - -lc
+      - 'test "$(id -un)" = operator && test "$HOME" = /home/operator && test -w "$HOME"'
   changed_when: false
 
 - name: OS identities | validate the complete sudo configuration
@@ -276,10 +291,3 @@
   register: common_os_identity_sudo_probe
   changed_when: false
   failed_when: common_os_identity_sudo_probe.rc != 1
-
-- name: OS identities | enable SSH shell after the local permission probes pass
-  ansible.builtin.user:
-    name: '{{ item }}'
-    shell: /bin/bash
-    state: present
-  loop: [operator, auditor]

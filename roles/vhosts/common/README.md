@@ -23,9 +23,21 @@ allow/deny conditions; actual SSH login and broader filesystem/ACL access still
 need independent verification. Shared keys allow their holder to log in as each
 authorized role and do not provide per-person separation.
 
-`node_bootstrap.yml` invokes this identity profile before emitting its receipt. Rollback restores only the selected new sudo policy and
-role-managed accounts/keys after checking consumers and preserving existing root
-access; do not delete old audit accounts or persistent data as a side effect.
+The `operator` account receives `/bin/bash` at creation and is checked for a
+working login shell. This is the OS-side prerequisite for running ordinary
+commands such as `kubectl` after the K3s role installs/provides its client.
+K3s authentication, the operator kubeconfig and Kubernetes RBAC belong to the
+K3s identity role. Do not add `operator` to `docker`, `containerd` or other
+runtime-admin groups, and do not grant access to the root K3s kubeconfig or
+container runtime sockets. This common profile does not install the K3s client
+or assign Kubernetes permissions.
+
+This profile is invoked explicitly through `common_os_identities.yml`; it does
+not implicitly run as part of `node_bootstrap.yml`. The K3s caller must run the
+OS identity profile before the K3s identity role. Rollback restores only the
+selected new sudo policy and role-managed accounts/keys after checking
+consumers and preserving existing root access; do not delete old audit
+accounts or persistent data as a side effect.
 
 Owner of shared OS configuration and the controller prerequisites used to parse
 vhost roles. Remote bootstrap remains explicitly selected by each caller; preparing
