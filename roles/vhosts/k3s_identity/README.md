@@ -64,14 +64,14 @@ Sanitized failure exit codes are 21 for preflight, 22 for local issuance and
 23 for Vault archival. These indicate only the failed stage; they do not expose
 credential values or identify a specific root cause.
 
-Deliver each `~/.kube/identity-config` with directory 0700/file 0600; do not
-replace existing unmanaged configs. For OS `operator` and `auditor`, the role safely
-links `~/.kube/config` to that user's own `identity-config` after rejecting any
-pre-existing unmanaged path, then verifies default `kubectl auth whoami` still
-identifies that same user outside `system:masters`. This makes ordinary `kubectl`
-use the already-scoped GitOps RBAC without granting OS sudo, access to the
-K3s admin kubeconfig, or container runtime socket permissions. Root
-continues using the explicit `identity-config` path. Real `kubectl auth whoami` and `can-i` must
+Deliver each `~/.kube/identity-config` with directory 0700/file 0600; reject
+existing unmanaged `~/.kube/config` paths and link each of root, operator and
+auditor to their own independent identity. K3s provides kubectl as a K3s
+applet, which defaults to the server admin config; the role configures Bash
+startup files to set KUBECONFIG to the user's own default only when the caller
+has not supplied KUBECONFIG. Other shells and non-interactive callers must set
+KUBECONFIG explicitly. The role verifies the profile and real authenticated
+identity without granting access to the server admin config. Real `kubectl auth whoami` and `can-i` must
 match caller-defined allow/deny cases and mandatory non-admin secret/exec/
 attach/proxy/token/bind/escalate/impersonation denials. Auditor write denials
 are mandatory. A config/Flux receipt is not real-identity acceptance.
