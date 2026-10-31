@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 import base64
 import json
+import hashlib
 import re
 
 
@@ -203,6 +204,45 @@ def provision(client, spec, issuer, public_keys):
             expect(client.request('POST', role_path, spec.role_config), {200, 204})
         except VaultError:
             raise VaultError('dedicated JWT role creation failed', 'role') from None
+
+
+def refresh_signing_keys(client, spec, issuer, public_keys, expected_previous_sha256):
+    """Replace only an independently reviewed JWT key set after validating existing boundaries."""
+    if (not isinstance(expected_previous_sha256, list) or not expected_previous_sha256
+            or any(not isinstance(x, str) or not re.fullmatch(r"[0-9a-f]{64}", x) for x in expected_previous_sha256)):
+        raise VaultError('reviewed previous key fingerprints required', 'config')
+    path = 'auth/' + spec.mount + '/config'
+    mounts = expect(client.request('GET', 'sys/auth'), {200}).get('data', {})
+    if mounts.get(spec.mount + '/', {}).get('type') != 'jwt':
+        raise VaultError('dedicated JWT mount missing or unexpected', 'mount')
+    policy = expect(client.request('GET', 'sys/policies/acl/' + spec.policy), {200}).get('data', {})
+    if policy.get('policy') != spec.policy_hcl:
+        raise VaultError('reader policy differs', 'policy')
+    role = expect(client.request('GET', 'auth/' + spec.mount + '/role/' + spec.role), {200}).get('data', {})
+    fields = ('role_type', 'user_claim', 'bound_subject', 'bound_audiences', 'token_no_default_policy', 'token_type', 'token_policies')
+    if any(role.get(k) != spec.role_config[k] for k in fields) or any(int(role.get(k, 0)) != spec.ttl_seconds for k in ('token_ttl', 'token_max_ttl', 'token_explicit_max_ttl')):
+        raise VaultError('reader role differs', 'role')
+    current = expect(client.request('GET', path), {200}).get('data', {})
+    old = current.get('jwt_validation_pubkeys')
+    if current.get('bound_issuer') != issuer or not isinstance(old, list) or not old:
+        raise VaultError('issuer or current keys differ', 'config')
+    for field in ('default_role', 'jwks_url', 'jwks_ca_pem', 'oidc_client_id', 'oidc_discovery_url', 'oidc_discovery_ca_pem', 'oidc_response_mode'):
+        if current.get(field): raise VaultError('unexpected JWT config field', 'config')
+    for field in ('jwks_pairs', 'jwt_supported_algs', 'oidc_response_types', 'provider_config', 'unsupported_critical_cert_extensions'):
+        if current.get(field): raise VaultError('unexpected JWT config field', 'config')
+    if not public_keys or any(not isinstance(k, str) or not k for k in public_keys):
+        raise VaultError('verified live public keys required', 'config')
+    fingerprint = lambda keys: sorted(hashlib.sha256(key.encode()).hexdigest() for key in keys)
+    if old == public_keys:
+        return False
+    if fingerprint(old) != sorted(expected_previous_sha256):
+        raise VaultError('current key fingerprints differ from reviewed values', 'config')
+    # Vault JWT config has no compare-and-swap; callers must serialize this mount.
+    expect(client.request('POST', path, {'bound_issuer': issuer, 'jwt_validation_pubkeys': public_keys}), {200, 204})
+    after = expect(client.request('GET', path), {200}).get('data', {})
+    if after.get('bound_issuer') != issuer or after.get('jwt_validation_pubkeys') != public_keys:
+        raise VaultError('JWT config read-back differs', 'config')
+    return True
 
 
 def _claims(jwt):

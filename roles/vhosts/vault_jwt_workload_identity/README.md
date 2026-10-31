@@ -46,3 +46,12 @@ mount, reader policy, auth config and role first; it creates only missing items
 and leaves exact matching items untouched. Any type or content mismatch blocks
 before writes. The admin token therefore requires read on only this mount's
 config and role plus its existing exact mount and policy scope.
+
+The `refresh` role mode is an explicit signing-key replacement for a verified
+existing cluster. Its `expected_previous_key_sha256` input is the reviewed list
+of SHA-256 fingerprints of the current PEM keys. It validates the JWT mount,
+issuer, exact reader policy and role before replacing keys with the live cluster
+keys, reads back the result, and performs allow/deny checks. Vault JWT config
+has no compare-and-swap: callers must serialize access to the mount and review
+the old fingerprint and target identity. A failure after writing is a partial
+change, not a successful receipt; inspect state before retry.
