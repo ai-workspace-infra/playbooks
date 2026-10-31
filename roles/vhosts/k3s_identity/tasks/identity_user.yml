@@ -31,6 +31,36 @@
   no_log: true
   diff: false
 
+- name: Inspect operator's default Kubernetes config path
+  ansible.builtin.stat:
+    path: "{{ getent_passwd['operator'][4] }}/.kube/config"
+    follow: false
+  register: k3s_identity_operator_default_config
+  when: k3s_identity_role == 'operator'
+
+- name: Reject an unmanaged operator default kubeconfig
+  ansible.builtin.assert:
+    that:
+      - >-
+        not k3s_identity_operator_default_config.stat.exists or
+        (k3s_identity_operator_default_config.stat.islnk | default(false) and
+        k3s_identity_operator_default_config.stat.lnk_target ==
+        getent_passwd['operator'][4] ~ '/.kube/identity-config')
+    fail_msg: >-
+      operator's ~/.kube/config already exists and is not the common-managed
+      link to its own identity-config; inspect it before changing anything.
+  when: k3s_identity_role == 'operator'
+
+- name: Make the restricted operator identity the default kubectl config
+  ansible.builtin.file:
+    src: "{{ getent_passwd['operator'][4] }}/.kube/identity-config"
+    dest: "{{ getent_passwd['operator'][4] }}/.kube/config"
+    state: link
+    owner: operator
+    group: operator
+    force: false
+  when: k3s_identity_role == 'operator'
+
 - name: Verify actual authenticated Kubernetes username
   ansible.builtin.command:
     argv: [kubectl, auth, whoami, -o, json]
@@ -46,6 +76,24 @@
     that:
       - (k3s_identity_whoami.stdout | from_json).status.userInfo.username == k3s_identity_role
       - "'system:masters' not in ((k3s_identity_whoami.stdout | from_json).status.userInfo.groups | default([]))"
+
+- name: Verify operator's default kubectl config uses the restricted identity
+  ansible.builtin.command:
+    argv: [/usr/bin/env, -u, KUBECONFIG, kubectl, auth, whoami, -o, json]
+  become: true
+  become_user: operator
+  environment:
+    HOME: "{{ getent_passwd['operator'][4] }}"
+  register: k3s_identity_operator_default_whoami
+  changed_when: false
+  when: k3s_identity_role == 'operator'
+
+- name: Require operator's default Kubernetes identity to remain non-admin
+  ansible.builtin.assert:
+    that:
+      - (k3s_identity_operator_default_whoami.stdout | from_json).status.userInfo.username == 'operator'
+      - "'system:masters' not in ((k3s_identity_operator_default_whoami.stdout | from_json).status.userInfo.groups | default([]))"
+  when: k3s_identity_role == 'operator'
 
 - name: Validate declared allow and deny cases with actual credentials
   ansible.builtin.command:

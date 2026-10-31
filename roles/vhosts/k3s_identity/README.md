@@ -59,7 +59,13 @@ Conflicting target/cluster/trust, partial state or expired material fails closed
 there is no automatic rotation or deletion to force retry.
 
 Deliver each `~/.kube/identity-config` with directory 0700/file 0600; do not
-replace default recovery configs. Real `kubectl auth whoami` and `can-i` must
+replace existing unmanaged configs. For the OS `operator` only, the role safely
+links `~/.kube/config` to that user's own `identity-config` after rejecting any
+pre-existing unmanaged path, then verifies default `kubectl auth whoami` still
+identifies `operator` outside `system:masters`. This makes ordinary `kubectl`
+use the already-scoped GitOps RBAC without granting OS sudo, access to the
+K3s admin kubeconfig, or container runtime socket permissions. Root and auditor
+continue using the explicit `identity-config` path. Real `kubectl auth whoami` and `can-i` must
 match caller-defined allow/deny cases and mandatory non-admin secret/exec/
 attach/proxy/token/bind/escalate/impersonation denials. Auditor write denials
 are mandatory. A config/Flux receipt is not real-identity acceptance.
