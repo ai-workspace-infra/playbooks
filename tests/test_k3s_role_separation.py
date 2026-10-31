@@ -45,7 +45,7 @@ class RoleContracts(unittest.TestCase):
                    'Run k3s installer script', 'Wait for Kubernetes API readiness',
                    'Install helm', 'Install flux controllers',
                    'Apply source and root then verify Flux handover',
-                   'Generate verify and archive independent client credentials on master']
+                   'Generate and verify all identities locally']
         positions = [listing.stdout.index(name) for name in ordered]
         self.assertEqual(positions, sorted(positions))
 
