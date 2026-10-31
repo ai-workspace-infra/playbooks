@@ -7,9 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class IdentityFailureDiagnosticsTest(unittest.TestCase):
     def test_nonzero_does_not_parse_empty_stdout(self):
-        tasks = yaml.safe_load((ROOT / 'roles/vhosts/k3s_identity/tasks/main.yml').read_text())
-        generation = next(t for t in tasks if t.get('name') == 'Generate verify and archive independent client credentials on master')
-        report = next(t for t in tasks if t.get('name') == 'Require successful identity issuance and archival')
+        tasks = yaml.safe_load((ROOT / 'roles/vhosts/k3s_identity/tasks/credential_phase.yml').read_text())
+        generation = next(t for t in tasks if t.get('name') == 'Generate or archive independent client credentials on master')
+        report = next(t for t in tasks if t.get('name') == 'Require successful identity phase')
         self.assertTrue(generation['no_log'])
         self.assertFalse(generation['failed_when'])
         self.assertEqual(report['ansible.builtin.assert']['that'], ['k3s_identity_generation.rc == 0'])
