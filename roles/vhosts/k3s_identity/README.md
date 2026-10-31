@@ -58,6 +58,10 @@ prevent accidental overwrite; protected local state permits bounded retries.
 Conflicting target/cluster/trust, partial state or expired material fails closed;
 there is no automatic rotation or deletion to force retry.
 
+Sanitized failure exit codes are 21 for preflight, 22 for local issuance and
+23 for Vault archival. These indicate only the failed stage; they do not expose
+credential values or identify a specific root cause.
+
 Deliver each `~/.kube/identity-config` with directory 0700/file 0600; do not
 replace existing unmanaged configs. For OS `operator` and `auditor`, the role safely
 links `~/.kube/config` to that user's own `identity-config` after rejecting any
