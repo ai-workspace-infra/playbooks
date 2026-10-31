@@ -52,7 +52,7 @@ class RemoteKubectl:
         }
         if tuple(args) not in fixed:
             raise ClusterError('kubectl operation outside identity allowlist')
-        executable = ('k3s', 'kubectl') if self.runtime == 'k3s' else ('kubectl',)
+        executable = ('env', '-u', 'KUBECONFIG', 'k3s', 'kubectl') if self.runtime == 'k3s' else ('kubectl',)
         remote = shlex.join((*executable, *args))
         command = ['ssh', '-F', '/dev/null', '-o', 'BatchMode=yes',
                    '-o', 'StrictHostKeyChecking=yes', '-o', 'GlobalKnownHostsFile=/dev/null',
@@ -77,7 +77,7 @@ class RemoteKubectl:
                    '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes',
                    '-o', 'PermitLocalCommand=no', '-o', 'PasswordAuthentication=no',
                    '-o', 'ConnectTimeout=15', '-l', self.ssh_user, self.host,
-                   shlex.join((*(('k3s','kubectl') if self.runtime == 'k3s' else ('kubectl',)), 'apply', '-f', '-'))]
+                   shlex.join((*(('env','-u','KUBECONFIG','k3s','kubectl') if self.runtime == 'k3s' else ('kubectl',)), 'apply', '-f', '-'))]
         try:
             result = subprocess.run(command, input=manifest, text=True, capture_output=True,
                                     timeout=45, check=False, env=self.env)
