@@ -16,6 +16,7 @@
         or (
           web_saas_data_allow_generation_host | bool
           and web_saas_data_environment in group_names and 'k3s' in group_names
+          and (cmdb_instance_id | default('')) | string is match('^[1-9][0-9]*$')
           and (data_volume | default({})).get('linode_id', '') | string == (cmdb_instance_id | default('')) | string
           and (data_volume | default({})).get('volume_id', '') | string == web_saas_data_expected_volume_id | string
           and web_saas_data_expected_volume_id | string is match('^[1-9][0-9]*$')
