@@ -230,14 +230,22 @@
     argv: [runuser, -u, operator, --, sudo, -n, -l, /usr/bin/systemctl, is-system-running]
   changed_when: false
 
-- name: OS identities | verify operator can launch an interactive login shell
+- name: OS identities | verify operator login identity
   ansible.builtin.command:
-    argv:
-      - runuser
-      - -l
-      - operator
-      - -c
-      - 'test "$(id -un)" = operator && test "$HOME" = /home/operator && test -w "$HOME"'
+    argv: [runuser, -l, operator, -c, 'test "$(id -un)" = operator']
+    expand_argument_vars: false
+  changed_when: false
+
+- name: OS identities | verify operator login HOME
+  ansible.builtin.command:
+    argv: [runuser, -l, operator, -c, 'test "$HOME" = /home/operator']
+    expand_argument_vars: false
+  changed_when: false
+
+- name: OS identities | verify operator home is writable
+  ansible.builtin.command:
+    argv: [runuser, -l, operator, -c, 'test -w /home/operator']
+    expand_argument_vars: false
   changed_when: false
 
 - name: OS identities | validate the complete sudo configuration
