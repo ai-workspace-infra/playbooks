@@ -23,6 +23,7 @@
           - bootstrap_node_candidates[0].host_vars.k3s_platform_flux_bootstrap_mode == 'declarative_active'
           - data_volume.linode_id | string == cmdb_instance_id | string
           - data_volume.label == bootstrap_node_candidates[0].volume.label
+          - bootstrap_node_candidates[0].volume.filesystem_label | default('') is match('^[A-Za-z0-9_-]{1,16}$')
     - name: Consume declared platform and identity configuration
       ansible.builtin.set_fact:
         '{{ item.key }}': '{{ item.value }}'
@@ -41,7 +42,7 @@
         web_saas_data_allow_generation_host: true
         web_saas_data_expected_volume_id: '{{ data_volume.volume_id }}'
         web_saas_data_device_path: '{{ data_volume.filesystem_path }}'
-        web_saas_data_filesystem_label: '{{ data_volume.label }}'
+        web_saas_data_filesystem_label: '{{ bootstrap_node_candidates[0].volume.filesystem_label }}'
     - name: Require identity configuration before node changes
       ansible.builtin.assert:
         that:
