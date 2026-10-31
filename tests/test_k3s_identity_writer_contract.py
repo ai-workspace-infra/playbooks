@@ -15,8 +15,8 @@ class WriterContract(unittest.TestCase):
         checks = tasks[contract]['ansible.builtin.assert']['that']
         self.assertIn("lookup('env', 'K3S_IDENTITY_VAULT_TOKEN') | length > 0", checks)
         self.assertIn("lookup('env', 'K3S_IDENTITY_VAULT_TOKEN') != lookup('env', 'VAULT_TOKEN')", checks)
-        identity = yaml.safe_load((ROOT / 'roles/vhosts/k3s_identity/tasks/main.yml').read_text())
-        generation = next(t for t in identity if t['name'] == 'Generate verify and archive independent client credentials on master')
+        identity = yaml.safe_load((ROOT / 'roles/vhosts/k3s_identity/tasks/credential_phase.yml').read_text())
+        generation = next(t for t in identity if t['name'] == 'Generate or archive independent client credentials on master')
         self.assertEqual("{{ lookup('env', 'K3S_IDENTITY_VAULT_TOKEN') }}", generation['environment']['VAULT_TOKEN'])
         self.assertTrue(generation['no_log'])
 

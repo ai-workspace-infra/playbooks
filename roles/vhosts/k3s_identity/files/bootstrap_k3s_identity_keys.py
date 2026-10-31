@@ -152,6 +152,7 @@ def prepare(args, role):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--phase', choices=('local', 'archive'), required=True)
     parser.add_argument('--environment', choices=('sit', 'uat', 'prod'), required=True)
     parser.add_argument('--cluster', required=True)
     parser.add_argument('--cluster-uid', required=True)
@@ -177,18 +178,22 @@ def main():
         actual = run('kubectl', '--kubeconfig', args.admin_kubeconfig, 'get', 'namespace', 'kube-system', '-o', 'jsonpath={.metadata.uid}')
         if actual != args.cluster_uid or not actual:
             raise ValueError('actual cluster UID differs')
-        vault = Vault(os.environ.get('VAULT_ADDR', ''), os.environ.get('VAULT_TOKEN', ''))
         phase = 'local_issuance'
         directory(args.state_dir)
         with os.fdopen(os.open(args.state_dir / 'bootstrap.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600), 'a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if args.phase == 'archive' and any(not (args.state_dir / role / 'record.json').is_file() for role in ROLES):
+                raise ValueError('local issuance incomplete')
+            new_roles = [role for role in ROLES if not (args.state_dir / role / 'record.json').exists()]
             records = {role: prepare(args, role) for role in ROLES}
-            changes = []
-            phase = 'vault_archival'
-            for role, record in records.items():
-                if vault.archive(args.environment + '/' + args.cluster + '/' + role, record):
-                    changes.append(role)
-        print(json.dumps({'result': 'CREDENTIALS_ARCHIVED', 'cluster_uid': actual, 'created': changes}))
+            changes = new_roles if args.phase == 'local' else []
+            if args.phase == 'archive':
+                phase = 'vault_archival'
+                vault = Vault(os.environ.get('VAULT_ADDR', ''), os.environ.get('VAULT_TOKEN', ''))
+                for role, record in records.items():
+                    if vault.archive(args.environment + '/' + args.cluster + '/' + role, record):
+                        changes.append(role)
+        print(json.dumps({'result': 'CREDENTIALS_ARCHIVED' if args.phase == 'archive' else 'CREDENTIALS_PREPARED', 'cluster_uid': actual, 'created': changes}))
         return 0
     except (OSError, ValueError, KeyError, subprocess.SubprocessError):
         print('Identity bootstrap failed; inspect target, trust, Vault access and protected local state. Existing credentials were not rotated.', file=sys.stderr)

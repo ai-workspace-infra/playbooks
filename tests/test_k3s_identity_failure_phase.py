@@ -13,9 +13,20 @@ m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
 class FailurePhaseTest(unittest.TestCase):
+    def test_local_phase_does_not_contact_vault(self):
+        with tempfile.TemporaryDirectory() as directory:
+            argv = ['identity', '--phase', 'local', '--environment', 'prod', '--cluster', 'example', '--cluster-uid', 'uid', '--api-server', 'https://localhost', '--admin-kubeconfig', '/tmp/config', '--client-ca', '/tmp/ca', '--client-ca-key', '/tmp/key', '--server-ca', '/tmp/server', '--state-dir', directory]
+            with patch.object(sys, 'argv', argv), patch.object(m.os, 'geteuid', return_value=0), patch.object(m, 'run', return_value='uid'), patch.object(m, 'directory'), patch.object(m, 'prepare', return_value={}), patch.object(m, 'Vault') as vault, patch('sys.stdout', new_callable=io.StringIO):
+                self.assertEqual(m.main(), 0)
+                vault.assert_not_called()
+
     def test_archive_error_reports_only_phase_code(self):
         with tempfile.TemporaryDirectory() as directory:
-            argv = ['identity', '--environment', 'prod', '--cluster', 'example', '--cluster-uid', 'uid', '--api-server', 'https://localhost', '--admin-kubeconfig', '/tmp/config', '--client-ca', '/tmp/ca', '--client-ca-key', '/tmp/key', '--server-ca', '/tmp/server', '--state-dir', directory]
+            argv = ['identity', '--phase', 'archive', '--environment', 'prod', '--cluster', 'example', '--cluster-uid', 'uid', '--api-server', 'https://localhost', '--admin-kubeconfig', '/tmp/config', '--client-ca', '/tmp/ca', '--client-ca-key', '/tmp/key', '--server-ca', '/tmp/server', '--state-dir', directory]
+            for role in m.ROLES:
+                folder = Path(directory) / role
+                folder.mkdir()
+                (folder / 'record.json').touch()
             error = io.StringIO()
             with patch.object(sys, 'argv', argv), patch.object(m.os, 'geteuid', return_value=0), patch.object(m, 'run', return_value='uid'), patch.object(m, 'directory'), patch.object(m, 'prepare', return_value={}), patch.object(m, 'Vault') as vault, redirect_stderr(error):
                 vault.return_value.archive.side_effect = ValueError('sensitive marker')
