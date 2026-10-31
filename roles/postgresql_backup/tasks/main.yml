@@ -1,0 +1,36 @@
+---
+- name: Run the explicitly selected backup operation
+  when: postgresql_backup_enabled | bool
+  block:
+    - name: Validate the operation and restore authorization
+      ansible.builtin.assert:
+        that:
+          - postgresql_backup_action in postgresql_backup_commands
+          - postgresql_backup_action != 'restore' or postgresql_backup_restore_approved | bool
+          - postgresql_backup_arguments is sequence and postgresql_backup_arguments is not string
+        fail_msg: Select an explicit supported action; restore requires separate authorization.
+    - name: Create private execution directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: postgresql_backup-
+      register: postgresql_backup_stage
+      when: not ansible_check_mode
+    - name: Execute staged owner implementation
+      when: not ansible_check_mode
+      block:
+        - name: Stage role executors together
+          ansible.builtin.copy:
+            src: '{{ role_path }}/files/'
+            dest: '{{ postgresql_backup_stage.path }}/'
+            mode: '0700'
+        - name: Execute selected operation with runtime credentials
+          ansible.builtin.command:
+            argv: "{{ [postgresql_backup_commands[postgresql_backup_action][0], postgresql_backup_stage.path + '/' + postgresql_backup_commands[postgresql_backup_action][1]] + postgresql_backup_arguments }}"
+          environment: '{{ postgresql_backup_environment }}'
+          no_log: true
+          changed_when: true
+      always:
+        - name: Remove staged executors
+          ansible.builtin.file:
+            path: '{{ postgresql_backup_stage.path }}'
+            state: absent

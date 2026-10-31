@@ -1,0 +1,36 @@
+---
+- name: Run the explicitly selected backup operation
+  when: vault_backup_enabled | bool
+  block:
+    - name: Validate the operation and restore authorization
+      ansible.builtin.assert:
+        that:
+          - vault_backup_action in vault_backup_commands
+          - vault_backup_action != 'restore' or vault_backup_restore_approved | bool
+          - vault_backup_arguments is sequence and vault_backup_arguments is not string
+        fail_msg: Select an explicit supported action; restore requires separate authorization.
+    - name: Create private execution directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: vault_backup-
+      register: vault_backup_stage
+      when: not ansible_check_mode
+    - name: Execute staged owner implementation
+      when: not ansible_check_mode
+      block:
+        - name: Stage role executors together
+          ansible.builtin.copy:
+            src: '{{ role_path }}/files/'
+            dest: '{{ vault_backup_stage.path }}/'
+            mode: '0700'
+        - name: Execute selected operation with runtime credentials
+          ansible.builtin.command:
+            argv: "{{ [vault_backup_commands[vault_backup_action][0], vault_backup_stage.path + '/' + vault_backup_commands[vault_backup_action][1]] + vault_backup_arguments }}"
+          environment: '{{ vault_backup_environment }}'
+          no_log: true
+          changed_when: true
+      always:
+        - name: Remove staged executors
+          ansible.builtin.file:
+            path: '{{ vault_backup_stage.path }}'
+            state: absent
