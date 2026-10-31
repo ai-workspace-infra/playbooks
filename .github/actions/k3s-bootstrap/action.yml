@@ -1,0 +1,46 @@
+name: K3s node bootstrap
+description: Run the Playbooks K3s owner entry for one CMDB host and return its receipt paths.
+inputs:
+  host:
+    description: Exact CMDB inventory hostname
+    required: true
+  cmdb:
+    description: IaC CMDB JSON path from the verified run artifact
+    required: true
+  cmdb-sha256:
+    description: SHA256 of the CMDB artifact
+    required: true
+  gitops-checkout:
+    description: Clean GitOps checkout path
+    required: true
+  gitops-sha:
+    description: Resolved GitOps commit SHA
+    required: true
+  resource-manifest:
+    description: GitOps resource declaration path relative to checkout
+    required: true
+  receipt:
+    description: Fresh per-host receipt path
+    required: true
+outputs:
+  bootstrap-receipt:
+    description: Verified common and Flux handover receipt path
+    value: ${{ inputs.receipt }}
+  identities-receipt:
+    description: Verified Kubernetes identities receipt path
+    value: ${{ inputs.receipt }}.identities.json
+runs:
+  using: composite
+  steps:
+    - name: Bootstrap and verify declared node
+      shell: bash
+      working-directory: ${{ github.action_path }}/../../..
+      env:
+        MATRIX_HOST: ${{ inputs.host }}
+        CMDB_FILE: ${{ inputs.cmdb }}
+        K3S_CMDB_SHA256: ${{ inputs.cmdb-sha256 }}
+        K3S_GITOPS_CHECKOUT: ${{ inputs.gitops-checkout }}
+        K3S_GITOPS_SHA: ${{ inputs.gitops-sha }}
+        K3S_RESOURCE_MANIFEST: ${{ inputs.resource-manifest }}
+        K3S_BOOTSTRAP_RECEIPT: ${{ inputs.receipt }}
+      run: bash scripts/pipeline/bootstrap-k3s.sh
