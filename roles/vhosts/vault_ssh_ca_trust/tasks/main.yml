@@ -1,4 +1,13 @@
 ---
+# Order: validate input -> read-only conflict checks -> candidate validation in a
+# temporary tree -> mutations (each notifies reload) -> validated reload.
+- name: Reject removed default-sudo switch
+  ansible.builtin.assert:
+    that: vault_ssh_ca_trust_sudo is not defined
+    fail_msg: >-
+      vault_ssh_ca_trust_sudo was removed; sudo needs
+      vault_ssh_ca_trust_management_purpose plus the exact confirmation
+
 - name: Validate SSH CA trust input
   ansible.builtin.assert:
     that:
@@ -6,57 +15,207 @@
       - vault_ssh_ca_trust_public_key is match('^ssh-ed25519 [A-Za-z0-9+/=]+( .*)?$')
     fail_msg: principal and an Ed25519 public CA are required
 
+- name: Derive desired state
+  ansible.builtin.set_fact:
+    _vsct_ca_path: "{{ vault_ssh_ca_trust_ssh_dir }}/vault-user-ca.pub"
+    _vsct_dropin_path: "{{ vault_ssh_ca_trust_ssh_dir }}/sshd_config.d/20-vault-migration-ca.conf"
+    _vsct_principals_path: "{{ vault_ssh_ca_trust_ssh_dir }}/auth_principals/{{ vault_ssh_ca_trust_principal }}"
+    _vsct_sudoers_path: "{{ vault_ssh_ca_trust_sudoers_dir }}/vault-migration-{{ vault_ssh_ca_trust_principal }}"
+    _vsct_ca: "{{ vault_ssh_ca_trust_public_key | trim }}\n"
+    _vsct_dropin: >-
+      TrustedUserCAKeys {{ vault_ssh_ca_trust_ssh_dir }}/vault-user-ca.pub
+
+      AuthorizedPrincipalsFile {{ vault_ssh_ca_trust_ssh_dir }}/auth_principals/%u
+    _vsct_grant_sudo: "{{ vault_ssh_ca_trust_management_purpose | length > 0 }}"
+
+- name: Normalise drop-in text
+  ansible.builtin.set_fact:
+    _vsct_dropin: "{{ _vsct_dropin | trim }}\n"
+
+- name: Validate explicit management sudo authorisation
+  ansible.builtin.assert:
+    that:
+      - vault_ssh_ca_trust_management_purpose in vault_ssh_ca_trust_allowed_management_purposes
+      - vault_ssh_ca_trust_grant_sudo_confirm == 'GRANT-NOPASSWD-ALL-' ~ vault_ssh_ca_trust_principal
+    fail_msg: sudo requires an allowed management purpose and the exact confirmation
+  when: _vsct_grant_sudo | bool
+
+# ---- read-only conflict checks (no mutation above this line) ---------------
+- name: Read existing state (read-only)
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  register: _vsct_existing
+  failed_when: false
+  loop:
+    - "{{ _vsct_ca_path }}"
+    - "{{ _vsct_dropin_path }}"
+    - "{{ _vsct_principals_path }}"
+    - "{{ _vsct_sudoers_path }}"
+
+- name: Index existing state
+  ansible.builtin.set_fact:
+    _vsct_cur: "{{ _vsct_cur | default({}) | combine({item.item: (item.content | b64decode) if item.content is defined else none}) }}"
+  loop: "{{ _vsct_existing.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Fingerprint existing CA (read-only)
+  ansible.builtin.command: ssh-keygen -lf {{ _vsct_ca_path }}
+  register: _vsct_cur_fp
+  changed_when: false
+  when:
+    - _vsct_cur[_vsct_ca_path] is not none
+    - _vsct_cur[_vsct_ca_path] != _vsct_ca
+
+- name: Refuse to replace a different CA without the rotation contract
+  ansible.builtin.assert:
+    that:
+      - vault_ssh_ca_trust_rotate_from_fingerprint | length > 0
+      - (_vsct_cur_fp.stdout.split() | default(['', ''], true))[1] == vault_ssh_ca_trust_rotate_from_fingerprint
+      - vault_ssh_ca_trust_rotate_confirm == 'ROTATE-VAULT-SSH-CA-' ~ inventory_hostname
+    fail_msg: >-
+      A different Vault user CA is already trusted; CA rotation requires
+      vault_ssh_ca_trust_rotate_from_fingerprint and the exact confirmation
+  when:
+    - _vsct_cur[_vsct_ca_path] is not none
+    - _vsct_cur[_vsct_ca_path] != _vsct_ca
+
+- name: Refuse to replace differing reviewed drop-in, principals or sudoers
+  ansible.builtin.assert:
+    that:
+      - _vsct_cur[_vsct_dropin_path] is none or _vsct_cur[_vsct_dropin_path] == _vsct_dropin
+      - _vsct_cur[_vsct_principals_path] is none or _vsct_cur[_vsct_principals_path] == (vault_ssh_ca_trust_principal ~ "\n")
+      - >-
+        not (_vsct_grant_sudo | bool) or _vsct_cur[_vsct_sudoers_path] is none or
+        _vsct_cur[_vsct_sudoers_path] == (vault_ssh_ca_trust_principal ~ " ALL=(ALL) NOPASSWD: ALL\n")
+    fail_msg: Existing SSH CA configuration differs; review it first
+
+- name: Read live sshd main config (read-only)
+  ansible.builtin.slurp:
+    src: "{{ vault_ssh_ca_trust_ssh_dir }}/sshd_config"
+  register: _vsct_main
+
+- name: Find live drop-ins (read-only)
+  ansible.builtin.find:
+    paths: "{{ vault_ssh_ca_trust_ssh_dir }}/sshd_config.d"
+    patterns: '*.conf'
+  register: _vsct_dropins
+
+# ---- candidate validation in a temporary tree ------------------------------
+- name: Create candidate tree
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: vault-ssh-ca
+  register: _vsct_tmp
+  changed_when: false
+
+- name: Validate candidate and clean up
+  block:
+    - name: Ensure candidate drop-in directory
+      ansible.builtin.file:
+        path: "{{ _vsct_tmp.path }}/sshd_config.d"
+        state: directory
+        mode: '0700'
+      changed_when: false
+
+    - name: Copy other live drop-ins into the candidate tree
+      ansible.builtin.copy:
+        remote_src: true
+        src: "{{ item.path }}"
+        dest: "{{ _vsct_tmp.path }}/sshd_config.d/{{ item.path | basename }}"
+        mode: '0600'
+      loop: "{{ _vsct_dropins.files | rejectattr('path', 'equalto', _vsct_dropin_path) | list }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      changed_when: false
+
+    - name: Write candidate CA, drop-in and main config
+      ansible.builtin.copy:
+        content: "{{ item.content }}"
+        dest: "{{ _vsct_tmp.path }}/{{ item.name }}"
+        mode: '0600'
+      loop:
+        - name: vault-user-ca.pub
+          content: "{{ _vsct_ca }}"
+        - name: sshd_config.d/20-vault-migration-ca.conf
+          content: "{{ _vsct_dropin }}"
+        - name: sshd_config
+          content: >-
+            {{ (_vsct_main.content | b64decode)
+               | replace(vault_ssh_ca_trust_ssh_dir ~ '/sshd_config.d/', _vsct_tmp.path ~ '/sshd_config.d/')
+               | regex_replace('(?m)^(\s*Include\s+)sshd_config\.d/', '\1' ~ _vsct_tmp.path ~ '/sshd_config.d/') }}
+      loop_control:
+        label: "{{ item.name }}"
+      changed_when: false
+
+    - name: Candidate CA must parse as a public key
+      ansible.builtin.command: ssh-keygen -lf {{ _vsct_tmp.path }}/vault-user-ca.pub
+      changed_when: false
+
+    - name: Candidate sshd configuration must pass sshd -t
+      ansible.builtin.command: "{{ vault_ssh_ca_trust_sshd_bin }} -t -f {{ _vsct_tmp.path }}/sshd_config"
+      changed_when: false
+
+    - name: Read candidate effective configuration
+      ansible.builtin.command: >-
+        {{ vault_ssh_ca_trust_sshd_bin }} -T -f {{ _vsct_tmp.path }}/sshd_config
+        -C user={{ vault_ssh_ca_trust_principal }},host=localhost,addr=127.0.0.1
+      register: _vsct_effective
+      changed_when: false
+
+    - name: Candidate drop-in must be effective (not shadowed by earlier config)
+      ansible.builtin.assert:
+        that:
+          - ('trustedusercakeys ' ~ _vsct_ca_path) in _vsct_effective.stdout_lines
+          - >-
+            ('authorizedprincipalsfile ' ~ vault_ssh_ca_trust_ssh_dir ~ '/auth_principals/%u')
+            in _vsct_effective.stdout_lines
+        fail_msg: candidate drop-in is not effective in the sshd configuration
+  always:
+    - name: Remove candidate tree
+      ansible.builtin.file:
+        path: "{{ _vsct_tmp.path }}"
+        state: absent
+      changed_when: false
+
+# ---- mutations (only after every check passed) -----------------------------
 - name: Ensure the migration principal exists
   ansible.builtin.user:
     name: '{{ vault_ssh_ca_trust_principal }}'
     shell: /bin/bash
     create_home: true
-
-- name: Install the Vault user CA (public key only)
-  ansible.builtin.copy:
-    content: "{{ vault_ssh_ca_trust_public_key | trim }}\n"
-    dest: /etc/ssh/vault-user-ca.pub
-    mode: '0644'
+  when: vault_ssh_ca_trust_manage_account | bool
 
 - name: Ensure principals directory
   ansible.builtin.file:
-    path: /etc/ssh/auth_principals
+    path: "{{ vault_ssh_ca_trust_ssh_dir }}/auth_principals"
     state: directory
     mode: '0755'
 
 - name: Restrict the principal to itself
   ansible.builtin.copy:
     content: "{{ vault_ssh_ca_trust_principal }}\n"
-    dest: '/etc/ssh/auth_principals/{{ vault_ssh_ca_trust_principal }}'
+    dest: "{{ _vsct_principals_path }}"
     mode: '0644'
 
-- name: Grant migration sudo
+- name: Install the Vault user CA (public key only)
+  ansible.builtin.copy:
+    content: "{{ _vsct_ca }}"
+    dest: "{{ _vsct_ca_path }}"
+    mode: '0644'
+  notify: Reload ssh
+
+- name: Install CA sshd drop-in (candidate already validated)
+  ansible.builtin.copy:
+    content: "{{ _vsct_dropin }}"
+    dest: "{{ _vsct_dropin_path }}"
+    mode: '0644'
+  notify: Reload ssh
+
+- name: Grant management sudo (explicit purpose only)
   ansible.builtin.copy:
     content: "{{ vault_ssh_ca_trust_principal }} ALL=(ALL) NOPASSWD: ALL\n"
-    dest: '/etc/sudoers.d/vault-migration-{{ vault_ssh_ca_trust_principal }}'
+    dest: "{{ _vsct_sudoers_path }}"
     mode: '0440'
-    validate: visudo -cf %s
-  when: vault_ssh_ca_trust_sudo | bool
-
-- name: Read existing CA sshd drop-in
-  ansible.builtin.slurp:
-    src: /etc/ssh/sshd_config.d/20-vault-migration-ca.conf
-  register: vault_ssh_ca_trust_existing
-  failed_when: false
-
-- name: Refuse to replace a differing reviewed drop-in
-  ansible.builtin.assert:
-    that: >-
-      vault_ssh_ca_trust_existing.content is not defined or
-      (vault_ssh_ca_trust_existing.content | b64decode) == vault_ssh_ca_trust_dropin
-    fail_msg: Existing CA SSH configuration differs; review it first
-  vars:
-    vault_ssh_ca_trust_dropin: "TrustedUserCAKeys /etc/ssh/vault-user-ca.pub\nAuthorizedPrincipalsFile /etc/ssh/auth_principals/%u\n"
-
-- name: Install CA sshd drop-in (validated before reload)
-  ansible.builtin.copy:
-    content: "TrustedUserCAKeys /etc/ssh/vault-user-ca.pub\nAuthorizedPrincipalsFile /etc/ssh/auth_principals/%u\n"
-    dest: /etc/ssh/sshd_config.d/20-vault-migration-ca.conf
-    mode: '0644'
-    validate: sshd -t -f /etc/ssh/sshd_config
-  notify: Reload ssh
+    validate: "{{ vault_ssh_ca_trust_visudo_bin }} -cf %s"
+  when: _vsct_grant_sudo | bool

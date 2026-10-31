@@ -2,4 +2,28 @@
 vault_ssh_ca_trust_principal: vault-migrate
 # Ed25519 public CA from `vault_config_executor` operation ssh_ca (public only).
 vault_ssh_ca_trust_public_key: ''
-vault_ssh_ca_trust_sudo: true
+
+# Ordinary trust installation never grants sudo. NOPASSWD ALL is only written
+# for an explicit, reviewed management purpose plus an exact confirmation:
+#   vault_ssh_ca_trust_management_purpose: vault-legacy-migration
+#   vault_ssh_ca_trust_grant_sudo_confirm: GRANT-NOPASSWD-ALL-<principal>
+vault_ssh_ca_trust_management_purpose: ''
+vault_ssh_ca_trust_grant_sudo_confirm: ''
+vault_ssh_ca_trust_allowed_management_purposes:
+  - vault-legacy-migration
+
+# A different CA already on the host is rejected. Rotation is a separate,
+# explicit contract: the current CA fingerprint (ssh-keygen -lf, SHA256:...)
+# and the exact confirmation ROTATE-VAULT-SSH-CA-<inventory_hostname>.
+vault_ssh_ca_trust_rotate_from_fingerprint: ''
+vault_ssh_ca_trust_rotate_confirm: ''
+
+# Paths/commands are parameterised for isolated tests only.
+vault_ssh_ca_trust_ssh_dir: /etc/ssh
+vault_ssh_ca_trust_sudoers_dir: /etc/sudoers.d
+vault_ssh_ca_trust_sshd_bin: /usr/sbin/sshd
+vault_ssh_ca_trust_manage_account: true
+vault_ssh_ca_trust_service: ssh
+# Non-empty: run this command instead of the service module (isolated tests).
+vault_ssh_ca_trust_reload_command: ''
+vault_ssh_ca_trust_visudo_bin: visudo

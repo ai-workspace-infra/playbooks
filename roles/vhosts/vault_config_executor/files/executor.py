@@ -22,6 +22,20 @@ NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
 KV_PATH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]{0,200}$")
 FIELD = re.compile(r"^[A-Z][A-Z0-9_]{0,80}$")
 
+# KV writes are confined to the selected environment's prefix. Legacy shared
+# layouts are only allowed through this reviewed, exact (environment, mount,
+# path) list; there is deliberately no caller-controlled bypass flag.
+ENV_KV_PREFIX = {"sit": "sit/", "uat": "uat/", "prod": "prod/"}
+REVIEWED_SHARED_KV_PATHS = frozenset()  # e.g. {("prod", "kv", "shared/x")} after owner review
+REMOVED_KV_KEYS = ("allow_shared_path",)
+
+
+def strict_bool(req, key, default=False):
+    value = req.get(key, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be a JSON boolean")
+    return value
+
 
 class Vault:
     def __init__(self, address, token, timeout=20):
@@ -54,8 +68,7 @@ class Vault:
 def common(req):
     if req.get("environment") not in ENVIRONMENTS:
         raise ValueError("environment must be one of sit/uat/prod")
-    if not isinstance(req.get("apply", False), bool):
-        raise ValueError("apply must be a boolean")
+    strict_bool(req, "apply")
     if req.get("apply") and req.get("confirm") != f"APPLY-VAULT-{req['operation'].upper()}-{req['environment'].upper()}":
         raise ValueError("apply requires the exact confirmation token")
 
@@ -136,11 +149,18 @@ def kv_fields(vault, req):
     mount, path, fields = req.get("mount", "kv"), req["path"], req["fields"]
     if not NAME.match(mount) or not KV_PATH.match(path) or ".." in path:
         raise ValueError("invalid KV mount or path")
-    if not path.startswith(req["environment"] + "/") and not req.get("allow_shared_path"):
+    for key in REMOVED_KV_KEYS:
+        if key in req:
+            raise ValueError(f"{key} is not supported; shared paths need a reviewed exact exception")
+    env = req["environment"]
+    if not path.startswith(ENV_KV_PREFIX[env]) and (env, mount, path) not in REVIEWED_SHARED_KV_PATHS:
         raise ValueError("KV path must live under the selected environment")
+    for other, prefix in ENV_KV_PREFIX.items():
+        if other != env and path.startswith(prefix):
+            raise ValueError("cross-environment KV write rejected")
     if not fields or not all(FIELD.match(k) and isinstance(v, str) and v for k, v in fields.items()):
         raise ValueError("explicit non-empty field values required")
-    overwrite = bool(req.get("overwrite", False))
+    overwrite = strict_bool(req, "overwrite")
     current = vault.read(f"{mount}/data/{path}")
     data = (current or {}).get("data") or {}
     version = ((current or {}).get("metadata") or {}).get("version", 0)

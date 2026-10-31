@@ -69,6 +69,58 @@ class KvFields(unittest.TestCase):
             ex.run(kv(path="prod/accounts/runtime"), FakeVault())
 
 
+class GuardVault(FakeVault):
+    """Fails the test if any Vault read or write is attempted."""
+
+    def read(self, path):
+        raise AssertionError(f"Vault read before validation: {path}")
+
+    def call(self, *a, **k):
+        raise AssertionError("Vault write before validation")
+
+
+class KvRejectsBeforeVault(unittest.TestCase):
+    def reject(self, req):
+        with self.assertRaises(ValueError):
+            ex.run(req, GuardVault())
+
+    def test_uat_cannot_target_prod_even_with_legacy_flag(self):
+        for flag in (True, "true", 1):
+            self.reject(kv(path="prod/accounts/runtime", allow_shared_path=flag))
+
+    def test_legacy_flag_rejected_even_on_own_path(self):
+        self.reject(kv(allow_shared_path=False))
+
+    def test_unlisted_shared_path_rejected(self):
+        self.reject(kv(path="shared/accounts/runtime"))
+
+    def test_apply_cross_env_rejected(self):
+        self.reject(kv(path="prod/x", apply=True, confirm="APPLY-VAULT-KV_FIELDS-UAT"))
+
+    def test_overwrite_must_be_boolean(self):
+        for value in ("false", "true", 0, 1, None):
+            self.reject(kv(overwrite=value))
+
+    def test_apply_must_be_boolean(self):
+        self.reject(kv(apply="false"))
+
+    def test_reviewed_exact_exception_only(self):
+        orig = ex.REVIEWED_SHARED_KV_PATHS
+        try:
+            ex.REVIEWED_SHARED_KV_PATHS = frozenset({("uat", "kv", "shared/runtime")})
+            ex.run(kv(path="shared/runtime"), FakeVault())
+            self.reject(kv(path="shared/runtime/extra"))
+            self.reject(dict(kv(path="shared/runtime"), environment="sit"))
+        finally:
+            ex.REVIEWED_SHARED_KV_PATHS = orig
+
+    def test_overwrite_true_replaces_differing_value(self):
+        path = "kv/data/uat/accounts/runtime"
+        v = FakeVault({path: {"data": {"BRIDGE_CREDENTIAL_TOKEN_PEPPER": "old"}, "metadata": {"version": 1}}})
+        r = ex.run(kv(apply=True, overwrite=True, confirm="APPLY-VAULT-KV_FIELDS-UAT"), v)
+        self.assertEqual(r["pending"], ["BRIDGE_CREDENTIAL_TOKEN_PEPPER"])
+
+
 class SshCa(unittest.TestCase):
     req = {"operation": "ssh_ca", "environment": "prod", "role": "vault-legacy-ops", "principal": "vault-migrate"}
 
