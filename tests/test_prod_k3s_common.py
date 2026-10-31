@@ -38,6 +38,19 @@ class CommonNodeTests(unittest.TestCase):
         self.assertFalse((ROOT/'roles/vhosts/common/tasks/audit_user.yml').exists())
         self.assertFalse((ROOT/'roles/vhosts/k3s_platform_bootstrap/tasks/audit_identity.yml').exists())
 
+    def test_main_bootstrap_requires_volume_before_common_receipt(self):
+        play=yaml.safe_load((ROOT/'k3s_platform_bootstrap.yml').read_text())[0]
+        common=next(t for t in play['pre_tasks'] if t.get('ansible.builtin.include_role',{}).get('name')=='vhosts/common')
+        self.assertTrue(common['vars']['common_node_require_data_volume'])
+        self.assertFalse(any(r['role']=='web_saas_data_volume' for r in play['roles']))
+        tasks=yaml.safe_load((ROOT/'roles/vhosts/common/tasks/node_bootstrap.yml').read_text())
+        volume=next(i for i,t in enumerate(tasks) if t.get('ansible.builtin.include_role',{}).get('name')=='web_saas_data_volume')
+        check=next(i for i,t in enumerate(tasks) if t.get('name')=='Common | require independent data volume readiness')
+        receipt=next(i for i,t in enumerate(tasks) if 'common_node_bootstrap_evidence' in t.get('ansible.builtin.set_fact',{}))
+        self.assertLess(volume,check)
+        self.assertLess(check,receipt)
+        self.assertIn('web_saas_data_evidence.mounted | default(false) | bool',tasks[check]['ansible.builtin.assert']['that'])
+
     def test_guard_executes_before_hostname_and_does_not_rebind_volumes(self):
         tasks=yaml.safe_load((ROOT/'roles/vhosts/common/tasks/node_bootstrap.yml').read_text())
         guard=next(i for i,t in enumerate(tasks) if t.get('name')=='Common | verify existing node and persistent-volume affinity before hostname changes')

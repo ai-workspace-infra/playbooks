@@ -8,7 +8,7 @@ IaC CMDB remains authoritative for target facts.
 | Order | Role | One responsibility | Required dependency / evidence |
 | --- | --- | --- | --- |
 | Before this role | `vhosts/common` | OS hostname, root/operator/auditor and baseline | Current-node common evidence; no implicit account creation here |
-| Before this role | `web_saas_data_volume` | Independent data filesystem | Verified mount UUID when required |
+| Before this role | `vhosts/common` invoking `web_saas_data_volume` | Independent data filesystem | Verified mount UUID included in common readiness |
 | Preflight | `vhosts/flux_gitops`, `vhosts/k3s_identity` | Validate their own input contracts | Fail before installing software on missing declaration or identity inputs |
 | 1 | `vhosts/k3s-cluster-server` | Initialize the control plane | Declared OS hostname, private admin config, mounted storage; API ready |
 | 2 | `vhosts/helm_cli` | Prepare the Helm client | Pinned CLI version; no chart deployment |
