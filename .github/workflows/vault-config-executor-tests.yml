@@ -1,0 +1,27 @@
+name: vault-config-executor-tests
+on:
+  pull_request:
+    paths:
+      - roles/vhosts/vault_config_executor/**
+      - roles/vhosts/vault_ssh_ca_trust/**
+      - vault_config_executor.yml
+      - vault_ssh_ca_trust.yml
+      - tests/vault_config_executor/**
+      - tests/vault_ssh_ca_trust/**
+      - .github/workflows/vault-config-executor-tests.yml
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s tests/vault_config_executor -p 'test_*.py' -v
+      - run: pip install ansible-core && ansible-playbook --syntax-check vault_config_executor.yml vault_ssh_ca_trust.yml
+      # Isolated SSH role tests: temp directory tree, real sshd binary used only
+      # for -t/-T on candidate configs (never started), fake reload/visudo.
+      - run: sudo apt-get update && sudo apt-get install -y openssh-server && sudo mkdir -p /run/sshd
+      - run: python3 -m unittest tests/vault_ssh_ca_trust/test_role.py -v
+        env:
+          VAULT_SSH_TEST_SSHD: /usr/sbin/sshd
+      - run: python3 -m unittest tests/vault_ssh_ca_trust/test_role.py -v

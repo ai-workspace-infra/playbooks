@@ -1,0 +1,16 @@
+---
+- name: Execute the selected Vault configuration operation
+  ansible.builtin.command:
+    argv:
+      - '{{ ansible_playbook_python }}'
+      - '{{ role_path }}/files/executor.py'
+    stdin: '{{ vault_config_request | to_json }}'
+  delegate_to: localhost
+  become: false
+  register: vault_config_result
+  changed_when: (vault_config_result.stdout | default('{}', true) | from_json).get('changed', 0) | int > 0
+  no_log: true
+
+- name: Report redacted Vault configuration receipt
+  ansible.builtin.debug:
+    msg: '{{ vault_config_result.stdout | from_json }}'

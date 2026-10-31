@@ -1,0 +1,19 @@
+---
+# Both CA and drop-in changes notify this chain. The live configuration is
+# re-checked before reload so a failed check never reloads sshd.
+- name: Validate live sshd configuration before reload
+  ansible.builtin.command: "{{ vault_ssh_ca_trust_sshd_bin }} -t -f {{ vault_ssh_ca_trust_ssh_dir }}/sshd_config"
+  changed_when: false
+  listen: Reload ssh
+
+- name: Reload ssh service
+  ansible.builtin.service:
+    name: "{{ vault_ssh_ca_trust_service }}"
+    state: reloaded
+  when: vault_ssh_ca_trust_reload_command | length == 0
+  listen: Reload ssh
+
+- name: Reload ssh via test command
+  ansible.builtin.command: "{{ vault_ssh_ca_trust_reload_command }}"
+  when: vault_ssh_ca_trust_reload_command | length > 0
+  listen: Reload ssh

@@ -1,0 +1,18 @@
+---
+# Owner entry for Vault configuration writes (policy/role, SSH CA, KV fields).
+# Request: VAULT_CONFIG_REQUEST (JSON) env; receipt: VAULT_CONFIG_RESULT path.
+- name: Execute a reviewed Vault configuration operation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    vault_config_request: "{{ lookup('ansible.builtin.env', 'VAULT_CONFIG_REQUEST') | from_json }}"
+  roles:
+    - role: vhosts/vault_config_executor
+  post_tasks:
+    - name: Save redacted receipt
+      ansible.builtin.copy:
+        content: "{{ vault_config_result.stdout }}\n"
+        dest: "{{ lookup('ansible.builtin.env', 'VAULT_CONFIG_RESULT') }}"
+        mode: '0600'
+      when: lookup('ansible.builtin.env', 'VAULT_CONFIG_RESULT') | length > 0
