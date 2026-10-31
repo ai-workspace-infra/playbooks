@@ -1,6 +1,6 @@
 # OS 三账户与 K3s/K8s 身份：最小实施设计
 
-状态：**通用规划草案，尚未实施**。本文适用于不同环境、集群和部署批次，由 K3s/K8s 执行 role 参数化复用；GitOps 是权限和资源范围的声明源，Playbooks role 负责认证交付、应用和验收。本文不授予部署、数据迁移、DNS 或权限变更授权。
+状态：**通用三身份 role 与 GitOps RBAC 声明已实现；本次补齐 operator 默认 kubectl 身份入口；目标集群真实认证/允许拒绝验收仍待执行**。本文适用于不同环境和集群，由 K3s/K8s 执行 role 参数化复用；GitOps 是权限和资源范围的声明源，Playbooks role 负责认证交付、应用和验收。本文不授予部署、数据迁移、DNS 或额外权限变更授权。
 
 ## 1. 通用边界与参数
 
@@ -72,7 +72,7 @@ OS 方案参考 [common three-role-design.md](../../common/three-role-design.md)
 
 1. 先核实实际 K3s 支持的认证机制和受控颁发 owner，再选定独立、可过期、可撤销的人员身份；候选为现有受控 OIDC 或由 owner 签发的短期客户端证书。OIDC issuer/audience、CA 信任、签名和有效期必须验证，不能仅声明名称。
 2. 若选客户端证书，分别绑定独立 Kubernetes 用户或组，**不得把 operator/auditor 加入 `system:masters`**。私钥在受控环境生成，只有对应用户可读；CA 私钥不交给 operator 或 auditor。证书撤销能力及轮换方式要按实际 K3s 验证；短有效期和移除绑定用于收敛风险，不假定 CRL 已启用。
-3. 三个 kubeconfig 分别指向各自真实凭据和已验证的集群 CA/API 地址；目录 `0700`、文件 `0600`，并检查父目录、ACL、实际读取与 Unix 用户所有权。不能把管理员 `k3s.yaml` 拷贝给其他用户。
+3. 三个 kubeconfig 分别指向各自真实凭据和已验证的集群 CA/API 地址；目录 `0700`、文件 `0600`，并检查父目录、ACL、实际读取与 Unix 用户所有权。不能把管理员 `k3s.yaml` 拷贝给其他用户。OS `operator` 的 `~/.kube/config` 只可由 K3s identity role 在确认目标不存在或已是受管同目标软链接后指向 `identity-config`；存在不受管文件时停止，不覆盖。这样 `kubectl` 默认使用受限 operator 身份，不通过 OS sudo、K3s 管理 kubeconfig 或 containerd socket 提权。
 4. 不使用长期静态 ServiceAccount token 作为人员登录凭据；也不把 Vault token 或集群私钥提交 Git、打印日志或放入不受保护的 artifact。
 5. 建立签发、有效期、轮换、撤销及凭据遗失处理；身份到期、目标变化、RBAC 或准入变化后，对应验收证据失效并需重验。
 
@@ -179,7 +179,7 @@ Kubernetes RBAC 无原生拒绝规则，权限为各绑定授权的并集；必�
 
 - 保留 Flux 作为线上资源声明 owner；operator 使用审查后的 GitOps PR、固定版本和受控发布入口更新应用。
 - 先交付管理员维护的通用权限声明，再验证 operator 业务范围和 auditor 只读范围可通过 GitOps 独立更新、收敛与撤销；业务调谐不继承基础管理身份。
-- 独立 RBAC 仅提供已声明的状态读取和点名无状态 Deployment 的缩放；不开放原始 Pod 创建、模板 patch 或任意 ServiceAccount 使用。
+- 独立 RBAC 仅提供已声明 namespace 中的运行状态读取和 Deployment 缩放；不开放原始 Pod 创建、工作负载模板 patch、Secret、exec/attach、节点代理、RBAC 或任意 ServiceAccount 使用。OS operator 的默认 kubeconfig 只便利调用这套受限身份，不扩大授权。
 - 测试 Flux 自动对账、HPA 与恢复行为。需要改变 SQL schema、数据库版本或持久状态时遵循新集群规则，不通过 operator 的临时 patch 原地升级。
 
 ### 阶段 B：确需直接创建或更新 workload 时
