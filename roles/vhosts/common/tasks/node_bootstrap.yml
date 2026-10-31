@@ -84,11 +84,26 @@
 - name: Common | establish and verify the three OS identities
   ansible.builtin.include_tasks: os_identity.yml
 
+- name: Common | prepare the declared independent data volume
+  ansible.builtin.include_role:
+    name: web_saas_data_volume
+  when: common_node_require_data_volume | bool
+
+- name: Common | require independent data volume readiness
+  ansible.builtin.assert:
+    that:
+      - web_saas_data_evidence.mounted | default(false) | bool
+      - web_saas_data_evidence.filesystem_uuid | default('') | length > 0
+      - web_saas_data_evidence.mount_path | default('') | length > 0
+    fail_msg: Common bootstrap requires a verified independent data filesystem.
+  when: common_node_require_data_volume | bool
+
 - name: Common | retain verified node bootstrap evidence
   ansible.builtin.set_fact:
     common_node_bootstrap_evidence:
       result: COMMON_NODE_VERIFIED
       node: '{{ common_node_name }}'
       os_identities: OS_IDENTITY_CHECKS_PASSED
+      data_volume: '{{ web_saas_data_evidence if common_node_require_data_volume | bool else {} }}'
       cmdb_instance_id: '{{ cmdb_instance_id | string }}'
       existing_state: '{{ common_existing_node_guard.stdout | from_json }}'
