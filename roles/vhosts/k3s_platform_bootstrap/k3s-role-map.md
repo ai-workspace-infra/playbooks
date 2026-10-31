@@ -4,8 +4,8 @@
 
 ```text
 IaC CMDB + 本次解析到 commit 的 GitOps 期望配置
-  → 入口绑定目标
-  → common：hostname、OS 三账户/组、主机基线
+  → 入口绑定目标并校验身份声明
+  → common：hostname、OS 三账户/组（完整安全基线待接通）
   → web_saas_data_volume：独立数据盘文件系统与挂载证据
   → k3s_platform_bootstrap（只编排）
       → flux_gitops / k3s_identity：输入预检
@@ -13,6 +13,7 @@ IaC CMDB + 本次解析到 commit 的 GitOps 期望配置
       → helm_cli：Helm 客户端
       → flux_controllers：Flux 控制器及 rollout
       → flux_gitops：source/root 交接及独立回执
+      → k3s_identity：等待已声明的 Flux RBAC 就绪与 commit 匹配
       → k3s_identity：三套认证凭据交付及真实允许/拒绝
   → Flux 按 GitOps 依赖调谐 RBAC、ESO/TLS、Vault、DB、监控和业务资源
 ```
@@ -30,6 +31,8 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `k3s_platform_bootstrap` | ✅ Playbooks #903 已合并 | 只编排子 role 及依赖顺序 |
 | `k3s-cluster-server` | ✅ #903 已合并 | K3s 控制面初始化、hostname 校验、API 就绪；不承担插件发布 |
 | `k3s-cluster` | ✅ #903 已删除旧实现 | 两个安装入口已切换到 `k3s-cluster-server` |
+| `common` 节点安全基线 | ❌ 未完成 | 当前 K3s 入口执行 hostname 和 OS 三账户任务；未调用完整安全基线，不能据此认定 auditd、fail2ban、UFW 已就绪 |
+| `web_saas_data_volume` | ❌ 通用化与真实重复执行待验收 | main 仍要求特定生产批次格式及 Linode 卷字段；[Playbooks #910](https://github.com/ai-workspace-infra/playbooks/pull/910) 候选去除批次命名限制，未覆盖跨 provider 交接 |
 | `helm_cli`、`flux_controllers`、`flux_gitops`、`k3s_identity` | ✅ #903 已合并 | 分别负责 Helm 客户端、Flux 控制器、声明交接、三身份交付和验证；真实身份、Vault writer 与 RBAC 仍需目标集群验收 |
 | `k3s` 旧安装器 | ✅ [Playbooks #905](https://github.com/ai-workspace-infra/playbooks/pull/905) 已合并并移除旧实现 | 安装由 server 负责；非默认 CNI 明确拒绝，需另行交付独立的 CNI 能力 |
 | `k3s_platform_addon`、`k3s-addon` | ✅ 已从当前代码及调用方移除 | 平台插件由 GitOps 按环境显式选择；现有发布的 Flux 接管与运行验收仍需逐项验证 |
@@ -68,7 +71,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 
 ## 历史 role 与迁移记录
 
-以下表格记录 #903 完成时的旧实现与处理；后续变化以文首状态表和对应 PR 为准。
+以下表格记录旧实现与各阶段迁移；当前状态以文首状态表和对应 PR 为准。
 
 | 原 role | 实际职责/问题 | 本次处理与后续边界 |
 | --- | --- | --- |
@@ -88,7 +91,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 
 | 入口 | 调用路径 | 范围 |
 | --- | --- | --- |
-| `k3s_platform_bootstrap.yml` / `scripts/pipeline/bootstrap-k3s.sh` | CMDB → common → 独立盘 → bootstrap 子 role DAG | 正常 IaC 交付 |
+| `k3s_platform_bootstrap.yml` / `scripts/pipeline/bootstrap-k3s.sh` | CMDB → common → 独立盘 → bootstrap 子 role DAG | Playbooks owner 入口已实现；Orchestrator 参数交接和端到端验收仍未完成 |
 | `k3s_platform_bootstrap_with_gitops.yml` | bootstrap 子 role DAG | 调用方先完成 common/存储及非敏感输入绑定 |
 | `k3s_identity_bootstrap.yml` | 直接 `k3s_identity` | 已有 master 的独立身份初始化，不重装集群 |
 | `k3s-cluster.yaml`、`setup-k3s-node.yaml`、`init_k3s_cluster_server` | 直接 `k3s-cluster-server` | 仅初始化控制面，目标组统一 `k3s`；不再隐式部署 Registry/Flux/ESO |
