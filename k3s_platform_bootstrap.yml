@@ -51,6 +51,8 @@
           - k3s_identity_api_server | default('') is match('^https://')
           - k3s_identity_tls_dir | default('') | length > 0
           - k3s_identity_checks | default({}) | list | sort == ['auditor', 'operator', 'root']
+          - k3s_identity_rbac_kustomizations | default([]) | length > 0
+          - bootstrap_gitops_sha is match('^[0-9a-f]{40}$')
           - k3s_platform_write_kubeconfig_mode | default('') == '0600'
         fail_msg: Declare Kubernetes identities, RBAC acceptance and Vault writer prerequisites in GitOps before bootstrap.
     - name: Initialize common hostname and OS identities

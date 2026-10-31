@@ -22,11 +22,21 @@ controlled writer policy belongs to its separate reviewed owner operation.
 | `k3s_identity_state_dir` | Private master state, parent must exist |
 | `k3s_identity_certificate_days` | Short certificate lifetime, default 7 days |
 | `k3s_identity_checks` | Explicit root/operator/auditor cases, at least one allow and one deny per role |
+| `k3s_identity_rbac_kustomizations` | Non-empty list of `{name, namespace}` Flux Kustomizations that deliver the reviewed RBAC |
+| `k3s_identity_rbac_revision` | Full GitOps commit SHA; defaults to the current bootstrap GitOps commit |
 | `k3s_platform_kubeconfig_path`, `k3s_platform_install_dir` | Admin API access and helper location |
 
 See [defaults](defaults/main.yml) and [three-role design](docs/three-role-design.md).
 The generator is owned here; `scripts/bootstrap_k3s_identity_keys.py` is the
 thin manual wrapper for the same implementation, not a second issuer.
+
+After Flux handover and before credential issuance, the role waits for each
+declared RBAC Kustomization to be Ready at its current observed generation and
+to report the reviewed commit as its last applied revision. Missing objects,
+stale generations, unhealthy status and old commits fail after the bounded
+retry period. This confirms reconciliation, not effective permissions: the
+real-identity allow/deny probes remain mandatory. The RBAC source must resolve
+to that same commit; use an explicit reviewed revision for a standalone run.
 
 ```bash
 ansible-playbook -i inventory/terraform_cmdb.py k3s_identity_bootstrap.yml \

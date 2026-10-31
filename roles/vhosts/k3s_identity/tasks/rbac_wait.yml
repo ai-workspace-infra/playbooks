@@ -1,0 +1,26 @@
+- name: Wait for each Flux RBAC Kustomization to reconcile the reviewed commit
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - kustomizations.kustomize.toolkit.fluxcd.io
+      - '{{ item.name }}'
+      - --namespace
+      - '{{ item.namespace }}'
+      - -o
+      - json
+  environment:
+    KUBECONFIG: '{{ k3s_platform_kubeconfig_path }}'
+  loop: '{{ k3s_identity_rbac_kustomizations }}'
+  register: k3s_identity_rbac_observed
+  changed_when: false
+  retries: '{{ k3s_identity_rbac_wait_retries | int }}'
+  delay: '{{ k3s_identity_rbac_wait_delay | int }}'
+  until: >-
+    k3s_identity_rbac_observed.rc == 0 and
+    (k3s_identity_rbac_observed.stdout | from_json).status.observedGeneration | default(-1) ==
+      (k3s_identity_rbac_observed.stdout | from_json).metadata.generation and
+    ((k3s_identity_rbac_observed.stdout | from_json).status.lastAppliedRevision | default('')) is
+      match('.*sha1:' ~ k3s_identity_rbac_revision ~ '$') and
+    ((k3s_identity_rbac_observed.stdout | from_json).status.conditions | default([]) |
+      selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0)
