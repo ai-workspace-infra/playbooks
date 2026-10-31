@@ -16,6 +16,15 @@ IaC CMDB remains authoritative for target facts.
 | 4 | `vhosts/flux_gitops` | Hand reviewed declarations to Flux | Fixed checkout/revision for declarative mode; separate handover receipt |
 | 5 | `vhosts/k3s_identity` | Deliver and verify independent Kubernetes identities | Reconciled GitOps RBAC, scoped Vault writer and OS accounts |
 
+`vhosts/common` creates/maps Linux OS users only; it must not install Kubernetes
+client credentials or write any user's `~/.kube/config`. This coordinator invokes
+`vhosts/k3s_identity`, which owns the OS-to-Kubernetes identity mapping and
+kubeconfig paths. In the current contract, only `operator` gets the default
+`~/.kube/config`, linked to that user's restricted `identity-config`; root and
+auditor use their explicit private identity config. The default path is a
+convenience, not an authorization grant: GitOps RBAC remains the permission
+boundary, and the K3s admin kubeconfig is never copied to these accounts.
+
 ```mermaid
 flowchart TD
     CMDB[IaC CMDB + resolved GitOps declaration] --> Common[common: OS identity and baseline]
