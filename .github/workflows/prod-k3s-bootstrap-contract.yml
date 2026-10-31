@@ -6,6 +6,7 @@ on:
       - 'scripts/bootstrap_k3s_identity_keys.*'
       - 'k3s_identity_bootstrap.yml'
       - 'tests/test_k3s_identity_bootstrap.py'
+      - 'tests/test_k3s_identity_rbac_readiness.py'
       - 'tests/fixtures/k3s_identity_syntax_playbook.yml'
       - 'prod_k3s_generation_bootstrap.yml'
       - 'roles/web_saas_data_volume/**'
@@ -44,5 +45,6 @@ jobs:
       - run: python -m unittest discover -s tests -p test_k3s_platform_node_identity.py
       - run: python -m unittest discover -s tests -p test_paused_flux_declarations.py
       - run: python -m unittest discover -s tests -p test_k3s_identity_bootstrap.py
+      - run: python -m unittest discover -s tests -p test_k3s_identity_rbac_readiness.py
       - run: ANSIBLE_ROLES_PATH=roles ansible-playbook -i tests/fixtures/dev_k3s_syntax.yml tests/fixtures/k3s_identity_syntax_playbook.yml --syntax-check
       - run: ANSIBLE_ROLES_PATH=roles ansible-playbook -i tests/fixtures/dev_k3s_syntax.yml prod_k3s_generation_bootstrap.yml --syntax-check

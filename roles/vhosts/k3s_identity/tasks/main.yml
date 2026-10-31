@@ -1,6 +1,9 @@
 - name: Validate independent identity prerequisites
   ansible.builtin.import_tasks: preflight.yml
 
+- name: Wait for declared GitOps RBAC at the reviewed revision
+  ansible.builtin.import_tasks: rbac_wait.yml
+
 - name: Read actual cluster identity before credential delivery
   ansible.builtin.command:
     argv: [kubectl, get, namespace, kube-system, -o, 'jsonpath={.metadata.uid}']

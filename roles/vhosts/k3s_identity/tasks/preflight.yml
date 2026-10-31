@@ -8,6 +8,10 @@
       - k3s_identity_state_dir is match("^/[^.]+$")
       - k3s_identity_checks.keys() | list | sort == ["auditor", "operator", "root"]
       - k3s_identity_checks | length > 0
+      - k3s_identity_rbac_revision is match('^[0-9a-f]{40}$')
+      - k3s_identity_rbac_kustomizations | length > 0
+      - k3s_identity_rbac_wait_retries | int > 0
+      - k3s_identity_rbac_wait_delay | int > 0
     fail_msg: Identity delivery requires a reviewed target, CA and real-identity acceptance contract
 
 - name: Require actual allow and deny cases for each role
@@ -16,3 +20,10 @@
       - k3s_identity_checks[item] | selectattr('allowed', 'equalto', true) | list | length > 0
       - k3s_identity_checks[item] | selectattr('allowed', 'equalto', false) | list | length > 0
   loop: [root, operator, auditor]
+
+- name: Require explicitly declared Flux RBAC dependencies
+  ansible.builtin.assert:
+    that:
+      - item.name | default('') is match('^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$')
+      - item.namespace | default('') is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+  loop: '{{ k3s_identity_rbac_kustomizations }}'
