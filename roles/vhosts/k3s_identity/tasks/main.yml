@@ -33,50 +33,21 @@
     group: root
     mode: '0700'
 
-- name: Generate verify and archive independent client credentials on master
-  ansible.builtin.command:
-    argv:
-      - python3
-      - "{{ k3s_platform_install_dir }}/bootstrap_k3s_identity_keys.py"
-      - --environment
-      - "{{ k3s_identity_environment }}"
-      - --cluster
-      - "{{ k3s_identity_cluster }}"
-      - --cluster-uid
-      - "{{ k3s_identity_cluster_uid }}"
-      - --api-server
-      - "{{ k3s_identity_api_server }}"
-      - --admin-kubeconfig
-      - "{{ k3s_platform_kubeconfig_path }}"
-      - --client-ca
-      - "{{ k3s_identity_tls_dir }}/client-ca.crt"
-      - --client-ca-key
-      - "{{ k3s_identity_tls_dir }}/client-ca.key"
-      - --server-ca
-      - "{{ k3s_identity_tls_dir }}/server-ca.crt"
-      - --state-dir
-      - "{{ k3s_identity_state_dir }}"
-      - --days
-      - "{{ k3s_identity_certificate_days | string }}"
-  environment:
-    VAULT_ADDR: "{{ lookup('env', 'VAULT_ADDR') }}"
-    VAULT_TOKEN: "{{ lookup('env', 'K3S_IDENTITY_VAULT_TOKEN') }}"
-  register: k3s_identity_generation
-  failed_when: false
-  changed_when: k3s_identity_generation.rc == 0 and (k3s_identity_generation.stdout | from_json).created | length > 0
-  no_log: true
-
-- name: Require successful identity issuance and archival
-  ansible.builtin.assert:
-    that:
-      - k3s_identity_generation.rc == 0
-    fail_msg: "Identity bootstrap failed with exit code {{ k3s_identity_generation.rc }}; inspect protected node state, trust and Vault authorization. No credential output is displayed."
+- name: Generate and verify all identities locally
+  ansible.builtin.include_tasks: credential_phase.yml
+  vars:
+    k3s_identity_phase: local
 
 - name: Deliver each independently authenticated identity
   ansible.builtin.include_tasks: identity_user.yml
   loop: [root, operator, auditor]
   loop_control:
     loop_var: k3s_identity_role
+
+- name: Archive verified identities to Vault
+  ansible.builtin.include_tasks: credential_phase.yml
+  vars:
+    k3s_identity_phase: archive
 
 - name: Save real-identity authentication and authorization evidence
   ansible.builtin.copy:

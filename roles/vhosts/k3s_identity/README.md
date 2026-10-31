@@ -52,7 +52,9 @@ ansible-playbook -i inventory/terraform_cmdb.py k3s_identity_bootstrap.yml \
 ## Output, idempotency and rollback
 
 The master generates unique keys/certificates for all three subjects, verifies
-chain/key/subject/expiration, and creates private kubeconfigs. No system:masters
+chain/key/subject/expiration, creates private kubeconfigs, delivers and verifies
+the local identities, then archives the records in Vault. A Vault archival
+failure fails the overall role even if local delivery succeeded. No system:masters
 group is issued. CA private keys stay on the master. KV v2 CAS=0 and read-back
 prevent accidental overwrite; protected local state permits bounded retries.
 Conflicting target/cluster/trust, partial state or expired material fails closed;
