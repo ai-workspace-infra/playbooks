@@ -45,6 +45,11 @@ the former add-master/backup/recovery/upgrade/destroy task files were empty,
 and must not report successful operations. Use separately reviewed owners for
 these capabilities. No automatic downgrade, CA rotation or cleanup is provided.
 
+The retired `k3s` installer also installed Helm and carried an old kube-ovn
+script that could delete running pods. Helm has its own role; third-party CNI
+installation requires a separately reviewed GitOps owner. This role explicitly
+rejects legacy non-default `cni` inputs instead of silently deploying Flannel.
+
 The old implicit local Registry/nerdctl/self-signed CA setup is intentionally
 removed from the two legacy install playbooks; Registry provisioning is a
 separate operation. The old role-generation script and static server vars

@@ -91,13 +91,29 @@ class RoleContracts(unittest.TestCase):
         self.assertIn('initializes the control plane only', result.stdout)
         self.assertNotIn('Verify the OS hostname', result.stdout)
 
+    def test_legacy_nondefault_cni_fails_before_installation(self):
+        result = self.run_role('k3s-cluster-server', phase='preflight.yml',
+                               variables={'cni': 'kubeovn'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('default CNI', result.stdout)
+        self.assertNotIn('Verify the OS hostname', result.stdout)
+
     def test_retired_installer_is_not_a_second_execution_path(self):
         self.assertFalse((ROLES / 'k3s-cluster').exists())
+        self.assertFalse((ROLES / 'k3s').exists())
         self.assertFalse((ROOT / 'scripts/k3s-cluster/init_k3s_cluster_server_role.sh').exists())
         for entry in ('k3s-cluster.yaml', 'setup-k3s-node.yaml', 'init_k3s_cluster_server'):
             play = yaml.safe_load((ROOT / entry).read_text())[0]
             self.assertEqual(play['hosts'], 'k3s')
             self.assertEqual(play['roles'], ['vhosts/k3s-cluster-server'])
+
+    def test_legacy_cluster_entries_never_implicitly_reset(self):
+        for entry in ('init_k3s_cluster_std', 'init_k3s_cluster_with_argo_server'):
+            tasks = yaml.safe_load((ROOT / entry).read_text())[0]['tasks']
+            included = [t.get('include_role', {}).get('name') for t in tasks]
+            self.assertIn('vhosts/k3s-cluster-server', included)
+            self.assertNotIn('k3s', included)
+            self.assertNotIn('k3s-reset', included)
 
 
 if __name__ == '__main__':

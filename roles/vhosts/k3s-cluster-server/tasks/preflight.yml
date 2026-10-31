@@ -2,7 +2,8 @@
   ansible.builtin.assert:
     that:
       - action | default('bootstrap') == 'bootstrap'
-    fail_msg: This role initializes the control plane only; upgrade, destroy, backup and recovery require their own reviewed owner entrypoints.
+      - cni | default('default') == 'default'
+    fail_msg: This role initializes the control plane only with the default CNI; other lifecycle actions and CNI implementations require their own reviewed owner entrypoints.
 
 - name: Verify the OS hostname prepared by common
   ansible.builtin.command:
