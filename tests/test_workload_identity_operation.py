@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -24,7 +25,11 @@ class Owner(unittest.TestCase):
         receipt=Path('/tmp/v6-receipt-verified/v6-bootstrap-receipt.json')
         inventory=Path('/tmp/v6-iac-summary-verified/inventory.json')
         if not all(p.exists() for p in (candidate,receipt,inventory)):self.skipTest('verified candidate files unavailable')
-        op=yaml.safe_load(candidate.read_text());raw=receipt.read_bytes();record=json.loads(raw);record['_raw']=raw
+        op=yaml.safe_load(candidate.read_text());record=json.loads(receipt.read_bytes())
+        record['result']='FLUX_HANDOVER_VERIFIED';record.pop('audit', None)
+        record['common']['os_identities']='OS_IDENTITY_CHECKS_PASSED'
+        raw=json.dumps(record).encode();record['_raw']=raw
+        op['spec']['evidence']['bootstrap']['fileSha256']=hashlib.sha256(raw).hexdigest()
         cmdb=next(iter(json.loads(inventory.read_text()).values()))
         with tempfile.NamedTemporaryFile() as f:
             f.write(b'attested-key');f.flush()

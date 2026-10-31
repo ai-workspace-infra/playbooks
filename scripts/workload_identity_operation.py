@@ -85,9 +85,9 @@ def build_config(operation,cmdb,receipt,hostkeys,mode):
     require(isinstance(records,dict) and set(records)=={name})
     host=records[name]
     require(spec['environment'] in host.get('groups',[]))
-    require(receipt['result']=='PAUSED_BOOTSTRAP_VERIFIED' and receipt['node']==name
+    require(receipt['result']=='FLUX_HANDOVER_VERIFIED' and receipt['node']==name
             and receipt['version']==target['kubernetesVersion'] and receipt['gitops_sha']==spec['evidence']['bootstrap']['gitopsSha']
-            and receipt['audit']['result']=='AUDIT_ALLOW_DENY_VERIFIED'
+            and receipt['common']['os_identities']=='OS_IDENTITY_CHECKS_PASSED'
             and receipt['common']['result']=='COMMON_NODE_VERIFIED' and receipt['common']['node']==name
             and str(receipt['common']['cmdb_instance_id'])==str(host['instance_id']))
     require(host.get('cloud_provider',host.get('host_vars',{}).get('cloud_provider'))==target['provider'])

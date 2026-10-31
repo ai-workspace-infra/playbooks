@@ -215,12 +215,10 @@ reviewed V6 Vault roles and dedicated SSH binding from immutable source files.
 It does not run in CI or fall back to an administrator token. Secrets remain in
 memory and Vault; existing conflicting roles/keys are not overwritten.
 
-Fresh data-mounted clusters create locked Unix `cluster-audit` and a separate
-status-only ServiceAccount. They receive no sudo/runtime group, admin kubeconfig,
-Secrets, pod execution, proxy or write permissions. Live tests use the Unix user
-and a bounded in-memory ServiceAccount token to prove status reads and denied
-secret/proxy/writes (namespace write probe is server-side dry run). Business
-identities remain separate and must be qualified before releases are resumed.
+OS identities are established by `vhosts/common`. Kubernetes identities and
+RBAC are separate: when enabled, `identity_delivery.yml` delivers and verifies
+independent credentials for `root`, `operator`, and `auditor`. Flux handover
+alone is not proof of Kubernetes identity or service acceptance.
 
 ### V6 ESO and TLS prerequisites
 

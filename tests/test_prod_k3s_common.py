@@ -29,6 +29,15 @@ class CommonNodeTests(unittest.TestCase):
         self.assertEqual('web_saas_data_volume',play['roles'][0]['role'])
         self.assertTrue(all(role['when'] == "prod_k3s_bootstrap_phase == 'cluster'" for role in play['roles']))
         self.assertEqual("prod_k3s_bootstrap_phase == 'common'",play['post_tasks'][0]['when'])
+    def test_common_requires_three_os_identities_for_receipt(self):
+        tasks=yaml.safe_load((ROOT/'roles/vhosts/common/tasks/node_bootstrap.yml').read_text())
+        profile=next(i for i,t in enumerate(tasks) if t.get('ansible.builtin.include_tasks')=='os_identity.yml')
+        receipt=next(i for i,t in enumerate(tasks) if 'common_node_bootstrap_evidence' in t.get('ansible.builtin.set_fact',{}))
+        self.assertLess(profile,receipt)
+        self.assertEqual('OS_IDENTITY_CHECKS_PASSED',tasks[receipt]['ansible.builtin.set_fact']['common_node_bootstrap_evidence']['os_identities'])
+        self.assertFalse((ROOT/'roles/vhosts/common/tasks/audit_user.yml').exists())
+        self.assertFalse((ROOT/'roles/vhosts/k3s_platform_bootstrap/tasks/audit_identity.yml').exists())
+
     def test_guard_executes_before_hostname_and_does_not_rebind_volumes(self):
         tasks=yaml.safe_load((ROOT/'roles/vhosts/common/tasks/node_bootstrap.yml').read_text())
         guard=next(i for i,t in enumerate(tasks) if t.get('name')=='Common | verify existing node and persistent-volume affinity before hostname changes')

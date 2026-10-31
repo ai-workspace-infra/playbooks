@@ -81,33 +81,14 @@
       - common_verified_identity.results[1].stdout | trim == common_node_name
       - common_node_name in common_verified_identity.results[2].stdout.split()
 
-- name: Common | establish the independent system audit identity
-  ansible.builtin.include_tasks: audit_user.yml
-
-- name: Common | verify actual audit status read
-  ansible.builtin.command:
-    argv: [runuser, -u, cluster-audit, --, hostname]
-  register: common_audit_hostname
-  changed_when: false
-
-- name: Common | verify audit cannot write system configuration
-  ansible.builtin.command:
-    argv: [runuser, -u, cluster-audit, --, test, -w, /etc]
-  register: common_audit_write
-  changed_when: false
-  failed_when: common_audit_write.rc != 1
-
-- name: Common | require real audit identity allow and deny results
-  ansible.builtin.assert:
-    that:
-      - common_audit_hostname.stdout | trim == common_node_name
-      - common_audit_write.rc == 1
+- name: Common | establish and verify the three OS identities
+  ansible.builtin.include_tasks: os_identity.yml
 
 - name: Common | retain verified node bootstrap evidence
   ansible.builtin.set_fact:
     common_node_bootstrap_evidence:
       result: COMMON_NODE_VERIFIED
       node: '{{ common_node_name }}'
-      system_audit: AUDIT_ALLOW_DENY_VERIFIED
+      os_identities: OS_IDENTITY_CHECKS_PASSED
       cmdb_instance_id: '{{ cmdb_instance_id | string }}'
       existing_state: '{{ common_existing_node_guard.stdout | from_json }}'
