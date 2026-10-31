@@ -26,6 +26,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 
 | 项目 | 当前状态 | 当前责任与缺口 |
 | --- | --- | --- |
+| `vhosts/common` 与独立数据盘 | ✅ [Playbooks #916](https://github.com/ai-workspace-infra/playbooks/pull/916) 已合并；❌ 目标节点盘就绪待验收 | 通用 K3s 入口由 common 调用数据盘 role，挂载及 UUID 验证通过后才发出 common 回执；此前节点的 100 GB 盘未挂载、无文件系统，需实际执行后重新核验 |
 | `k3s_platform_bootstrap` | ✅ Playbooks #903 已合并 | 只编排子 role 及依赖顺序 |
 | `k3s-cluster-server` | ✅ #903 已合并 | K3s 控制面初始化、hostname 校验、API 就绪；不承担插件发布 |
 | `k3s-cluster` | ✅ #903 已删除旧实现 | 两个安装入口已切换到 `k3s-cluster-server` |
@@ -34,7 +35,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `k3s_platform_addon`、`k3s-addon` | ✅ 已从当前代码及调用方移除 | 平台插件由 GitOps 按环境显式选择；现有发布的 Flux 接管与运行验收仍需逐项验证 |
 | cert-manager、reloader、APISIX、ExternalDNS、NGINX Ingress | ✅ [GitOps #681](https://github.com/ai-workspace-infra/gitops/pull/681) 已合并 | 已提供可独立选择的 Flux 模板，未接入任何环境；ExternalDNS 默认 dry-run |
 | ESO、Caddy | ✅ GitOps 已有 V6 HelmRelease 声明；❌ 实际调谐及服务验收待核验 | 不再通过旧 addon role 重复安装 |
-| `k3s-reset` | ❌ 安全边界待修复 | 独立破坏性入口，旧默认值需收敛；#905 移除两个初始化入口的隐式重置 |
+| `k3s-reset` | ❌ 安全边界待修复；[Playbooks #915](https://github.com/ai-workspace-infra/playbooks/pull/915) 待合并 | 空节点无操作修复已在目标节点验证；已安装集群的重置仍需单独验证，不属于初始化依赖 |
 | `k3s_runtime_secret_sync` | ✅ 独立运维入口 | 不属于 bootstrap；通用 KV 同步与环境专用投影仍需梳理 |
 | 三身份与 Flux RBAC | ✅ [GitOps #682](https://github.com/ai-workspace-infra/gitops/pull/682)、[Playbooks #906](https://github.com/ai-workspace-infra/playbooks/pull/906) 已合并；❌ 目标集群验收待执行 | 三身份及 RBAC 依赖已声明；operator 只具备业务读取及扩缩容，工作负载写入需另审准入策略。kubeconfig 使用节点内 loopback，远程访问需另行设计 |
 | Orchestrator → Playbooks | ❌ 参数交接未贯通 | 需传入 GitOps checkout/SHA、资源声明路径、CMDB SHA 和回执路径 |
@@ -109,7 +110,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 
 | 入口 | 调用路径 | 范围 |
 | --- | --- | --- |
-| `k3s_platform_bootstrap.yml` / `scripts/pipeline/bootstrap-k3s.sh` | CMDB → common → 独立盘 → bootstrap 子 role DAG | 正常 IaC 交付 |
+| `k3s_platform_bootstrap.yml` / `scripts/pipeline/bootstrap-k3s.sh` | CMDB → common（调用独立盘 role）→ bootstrap 子 role DAG | 正常 IaC 交付 |
 | `k3s_platform_bootstrap_with_gitops.yml` | bootstrap 子 role DAG | 调用方先完成 common/存储及非敏感输入绑定 |
 | `k3s_identity_bootstrap.yml` | 直接 `k3s_identity` | 已有 master 的独立身份初始化，不重装集群 |
 | `k3s-cluster.yaml`、`setup-k3s-node.yaml`、`init_k3s_cluster_server` | 直接 `k3s-cluster-server` | 仅初始化控制面，目标组统一 `k3s`；不再隐式部署 Registry/Flux/ESO |
