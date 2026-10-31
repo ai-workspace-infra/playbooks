@@ -50,6 +50,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | Role | 唯一能力 | 前置条件 | 输出/验收 |
 | --- | --- | --- | --- |
 | `vhosts/common` 的 `node_bootstrap.yml` | 校验节点身份、建立 OS 三账户并串联声明的独立盘准备 | CMDB 精确节点、受控 SSH 公钥；既有节点和 PV 亲和性检查 | 主线要求盘挂载及 UUID 证据后才产生 `COMMON_NODE_VERIFIED`；不代表完整主机安全基线 |
+| `vhosts/common` 的 OS Vault reader | 以受控 Vault 会话读取三账户公钥 | 明确的 HTTPS Vault、目标环境和只读会话；证书严格校验 | 候选使用 KV v2 HTTPS 接口，无需在 runner 安装 Vault CLI；缺失或拒绝读取时失败 |
 | `web_saas_data_volume` | 核验并准备声明的独立文件系统 | CMDB 实例、卷及设备匹配；空盘初始化需显式授权 | 挂载点、UUID、文件系统证据；不自动重格式化已有文件系统 |
 | `k3s-cluster-server` | 初始化单节点 K3s 控制面 | common 已设置 hostname；要求独立盘时卷证据已通过 | K3s 服务启动及 API `/readyz`；既有安装跳过安装器，不等于已升级 |
 | `k3s_platform_bootstrap` | 按依赖顺序编排子 role | 已完成入口绑定、common 和数据盘角色 | 子 role 顺序执行；失败停止后续执行，不代表业务服务验收 |

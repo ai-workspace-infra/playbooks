@@ -5,25 +5,33 @@
     that:
       - common_os_identity_environment | default('') in ['sit', 'uat', 'prod']
       - lookup('ansible.builtin.env', 'VAULT_ADDR') | length > 0
+      - lookup('ansible.builtin.env', 'VAULT_ADDR') is match('^https://[^/]+/?$')
+      - lookup('ansible.builtin.env', 'VAULT_TOKEN') | length > 0
       - ansible_os_family == 'Debian'
     fail_msg: An explicit environment, VAULT_ADDR and supported Debian host are required.
 
 - name: OS identities | read role-specific public keys from Vault on controller
-  ansible.builtin.command:
-    argv:
-      - vault
-      - kv
-      - get
-      - -mount=kv
-      - -field=authorized_keys
-      - '{{ common_os_identity_environment }}/security/{{ item }}'
+  ansible.builtin.uri:
+    url: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | regex_replace('/+$', '') }}/v1/kv/data/{{ common_os_identity_environment }}/security/{{ item }}"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+    return_content: true
+    status_code: 200
+    validate_certs: true
   delegate_to: localhost
   become: false
   check_mode: false
   changed_when: false
   no_log: true
   loop: [root, operator, auditor]
-  register: common_os_identity_key_results
+  register: common_os_identity_vault_results
+
+- name: OS identities | normalize read-only key records
+  ansible.builtin.set_fact:
+    common_os_identity_key_results: "{{ {'results': (common_os_identity_key_results.results | default([])) + [{'item': item.item, 'stdout': item.json.data.data.authorized_keys, 'stdout_lines': item.json.data.data.authorized_keys.splitlines()}]} }}"
+  loop: '{{ common_os_identity_vault_results.results }}'
+  no_log: true
 
 - name: OS identities | require nonempty public keys
   ansible.builtin.assert:
