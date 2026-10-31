@@ -31,35 +31,35 @@
   no_log: true
   diff: false
 
-- name: Inspect operator's default Kubernetes config path
+- name: Inspect the restricted user's default Kubernetes config path
   ansible.builtin.stat:
-    path: "{{ getent_passwd['operator'][4] }}/.kube/config"
+    path: "{{ getent_passwd[k3s_identity_role][4] }}/.kube/config"
     follow: false
-  register: k3s_identity_operator_default_config
-  when: k3s_identity_role == 'operator'
+  register: k3s_identity_default_config
+  when: k3s_identity_role in ['operator', 'auditor']
 
-- name: Reject an unmanaged operator default kubeconfig
+- name: Reject an unmanaged restricted-user default kubeconfig
   ansible.builtin.assert:
     that:
       - >-
-        not k3s_identity_operator_default_config.stat.exists or
-        (k3s_identity_operator_default_config.stat.islnk | default(false) and
-        k3s_identity_operator_default_config.stat.lnk_target ==
-        getent_passwd['operator'][4] ~ '/.kube/identity-config')
+        not k3s_identity_default_config.stat.exists or
+        (k3s_identity_default_config.stat.islnk | default(false) and
+        k3s_identity_default_config.stat.lnk_target ==
+        getent_passwd[k3s_identity_role][4] ~ '/.kube/identity-config')
     fail_msg: >-
-      operator's ~/.kube/config already exists and is not the common-managed
-      link to its own identity-config; inspect it before changing anything.
-  when: k3s_identity_role == 'operator'
+      The user's ~/.kube/config already exists and is not the role-managed
+      link to that user's identity-config; inspect it before changing anything.
+  when: k3s_identity_role in ['operator', 'auditor']
 
-- name: Make the restricted operator identity the default kubectl config
+- name: Make the restricted user identity the default kubectl config
   ansible.builtin.file:
-    src: "{{ getent_passwd['operator'][4] }}/.kube/identity-config"
-    dest: "{{ getent_passwd['operator'][4] }}/.kube/config"
+    src: "{{ getent_passwd[k3s_identity_role][4] }}/.kube/identity-config"
+    dest: "{{ getent_passwd[k3s_identity_role][4] }}/.kube/config"
     state: link
-    owner: operator
-    group: operator
+    owner: "{{ k3s_identity_role }}"
+    group: "{{ k3s_identity_role }}"
     force: false
-  when: k3s_identity_role == 'operator'
+  when: k3s_identity_role in ['operator', 'auditor']
 
 - name: Verify actual authenticated Kubernetes username
   ansible.builtin.command:
@@ -77,23 +77,23 @@
       - (k3s_identity_whoami.stdout | from_json).status.userInfo.username == k3s_identity_role
       - "'system:masters' not in ((k3s_identity_whoami.stdout | from_json).status.userInfo.groups | default([]))"
 
-- name: Verify operator's default kubectl config uses the restricted identity
+- name: Verify the default kubectl config uses the restricted identity
   ansible.builtin.command:
     argv: [/usr/bin/env, -u, KUBECONFIG, kubectl, auth, whoami, -o, json]
   become: true
-  become_user: operator
+  become_user: "{{ k3s_identity_role }}"
   environment:
-    HOME: "{{ getent_passwd['operator'][4] }}"
-  register: k3s_identity_operator_default_whoami
+    HOME: "{{ getent_passwd[k3s_identity_role][4] }}"
+  register: k3s_identity_default_whoami
   changed_when: false
-  when: k3s_identity_role == 'operator'
+  when: k3s_identity_role in ['operator', 'auditor']
 
-- name: Require operator's default Kubernetes identity to remain non-admin
+- name: Require the default Kubernetes identity to remain non-admin
   ansible.builtin.assert:
     that:
-      - (k3s_identity_operator_default_whoami.stdout | from_json).status.userInfo.username == 'operator'
-      - "'system:masters' not in ((k3s_identity_operator_default_whoami.stdout | from_json).status.userInfo.groups | default([]))"
-  when: k3s_identity_role == 'operator'
+      - (k3s_identity_default_whoami.stdout | from_json).status.userInfo.username == k3s_identity_role
+      - "'system:masters' not in ((k3s_identity_default_whoami.stdout | from_json).status.userInfo.groups | default([]))"
+  when: k3s_identity_role in ['operator', 'auditor']
 
 - name: Validate declared allow and deny cases with actual credentials
   ansible.builtin.command:
