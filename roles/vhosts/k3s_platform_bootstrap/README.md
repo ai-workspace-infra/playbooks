@@ -236,3 +236,26 @@ it on an already initialized cluster or to replace its live Flux graph. A separa
 reviewed transition must reconcile an existing graph while preserving its state.
 Identity-object readiness does not prove Vault allow/deny authorization; that is a
 separate evidence gate before certificate synchronization.
+
+### IaC to K3s pipeline entry
+
+`k3s_platform_bootstrap.yml` consumes IaC's structured CMDB via
+`inventory/terraform_cmdb.py`; its inventory keys must be canonical node names.
+`web_saas` is a business area and `k3s` a runtime group: they may coexist.
+`scripts/pipeline/bootstrap-node.sh` gives explicit `deployment_mode: kubernetes`
+priority over business group routing and invokes `bootstrap-k3s.sh`.
+
+The caller must provide `K3S_GITOPS_CHECKOUT`, resolved `K3S_GITOPS_SHA`,
+checkout-relative `K3S_RESOURCE_MANIFEST`, `K3S_CMDB_SHA256`, `MATRIX_HOST`, and a
+fresh `K3S_BOOTSTRAP_RECEIPT` path. `CMDB_FILE` may override the default input.
+The authenticated Vault session and SSH agent/key are supplied by the authorized
+caller. This entry does not choose environment refs, mutate cloud resources or
+publish DNS. SSH host-key policy follows the authorized caller configuration.
+
+Platform and identity fields are read from the matching GitOps node declaration;
+cloud instance/volume facts remain in CMDB. Missing identity configuration fails
+before common/storage/K3s mutation. A new cluster UID is read from its actual API
+rather than required as a preexisting value. RBAC and Vault writer prerequisites
+must be available before identity acceptance. A Flux receipt alone is not service
+or business acceptance. Existing storage is governed by the data-volume role;
+this entry does not authorize formatting retained disks or changing state.

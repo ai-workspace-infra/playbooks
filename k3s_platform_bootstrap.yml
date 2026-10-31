@@ -1,0 +1,62 @@
+---
+- name: Initialize declared K3s node and hand over to Flux
+  hosts: k3s
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Read this run's GitOps resource declaration on controller
+      ansible.builtin.include_vars:
+        file: '{{ bootstrap_manifest }}'
+        name: bootstrap_declaration
+    - name: Select canonical node by IaC identity
+      ansible.builtin.set_fact:
+        bootstrap_node_candidates: '{{ bootstrap_declaration.hosts | selectattr("name", "equalto", cmdb_name) | list }}'
+    - name: Require one matching node and matching cloud scope
+      ansible.builtin.assert:
+        that:
+          - bootstrap_node_candidates | length == 1
+          - cmdb_instance_id | string is match('^[1-9][0-9]*$')
+          - cmdb_cloud_provider == bootstrap_declaration.global.provider
+          - cmdb_region == bootstrap_node_candidates[0].region
+          - bootstrap_node_candidates[0].host_vars.deployment_mode == 'kubernetes'
+          - bootstrap_node_candidates[0].host_vars.k3s_platform_node_name == cmdb_name
+          - bootstrap_node_candidates[0].host_vars.k3s_platform_flux_bootstrap_mode == 'declarative_active'
+          - data_volume.linode_id | string == cmdb_instance_id | string
+          - data_volume.label == bootstrap_node_candidates[0].volume.label
+    - name: Consume declared platform and identity configuration
+      ansible.builtin.set_fact:
+        '{{ item.key }}': '{{ item.value }}'
+      loop: '{{ bootstrap_node_candidates[0].host_vars | dict2items | selectattr("key", "match", "^k3s_(platform|identity)_") | list }}'
+      no_log: true
+    - name: Bind runtime sources and data device without generating cloud facts
+      ansible.builtin.set_fact:
+        common_os_identity_environment: '{{ bootstrap_declaration.global.environment }}'
+        k3s_platform_git_commit: '{{ bootstrap_gitops_sha }}'
+        k3s_platform_gitops_checkout_path: '{{ bootstrap_gitops_checkout }}'
+        k3s_platform_receipt_path: '{{ bootstrap_receipt }}'
+        web_saas_data_environment: '{{ bootstrap_declaration.global.environment }}'
+        web_saas_data_target_host: '{{ cmdb_name }}'
+        web_saas_data_action: prepare_empty
+        web_saas_data_allow_initialize: true
+        web_saas_data_allow_generation_host: true
+        web_saas_data_expected_volume_id: '{{ data_volume.volume_id }}'
+        web_saas_data_device_path: '{{ data_volume.filesystem_path }}'
+        web_saas_data_filesystem_label: '{{ data_volume.label }}'
+    - name: Require identity configuration before node changes
+      ansible.builtin.assert:
+        that:
+          - k3s_identity_enabled | default(true) | bool
+          - k3s_identity_environment | default('') == bootstrap_declaration.global.environment
+          - k3s_identity_cluster | default('') | length > 0
+          - k3s_identity_api_server | default('') is match('^https://')
+          - k3s_identity_tls_dir | default('') | length > 0
+          - k3s_identity_checks | default({}) | list | sort == ['auditor', 'operator', 'root']
+          - k3s_platform_write_kubeconfig_mode | default('') == '0600'
+        fail_msg: Declare Kubernetes identities, RBAC acceptance and Vault writer prerequisites in GitOps before bootstrap.
+    - name: Initialize common hostname and OS identities
+      ansible.builtin.include_role:
+        name: vhosts/common
+        tasks_from: node_bootstrap.yml
+  roles:
+    - role: web_saas_data_volume
+    - role: vhosts/k3s_platform_bootstrap
