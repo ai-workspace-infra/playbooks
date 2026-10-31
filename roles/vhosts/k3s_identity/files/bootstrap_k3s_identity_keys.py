@@ -163,6 +163,7 @@ def main():
     parser.add_argument('--state-dir', type=Path, required=True)
     parser.add_argument('--days', type=int, default=7)
     args = parser.parse_args()
+    phase = 'preflight'
     try:
         if os.geteuid() != 0:
             raise ValueError('run on the master as root')
@@ -177,11 +178,13 @@ def main():
         if actual != args.cluster_uid or not actual:
             raise ValueError('actual cluster UID differs')
         vault = Vault(os.environ.get('VAULT_ADDR', ''), os.environ.get('VAULT_TOKEN', ''))
+        phase = 'local_issuance'
         directory(args.state_dir)
         with os.fdopen(os.open(args.state_dir / 'bootstrap.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600), 'a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             records = {role: prepare(args, role) for role in ROLES}
             changes = []
+            phase = 'vault_archival'
             for role, record in records.items():
                 if vault.archive(args.environment + '/' + args.cluster + '/' + role, record):
                     changes.append(role)
@@ -189,7 +192,7 @@ def main():
         return 0
     except (OSError, ValueError, KeyError, subprocess.SubprocessError):
         print('Identity bootstrap failed; inspect target, trust, Vault access and protected local state. Existing credentials were not rotated.', file=sys.stderr)
-        return 1
+        return {'preflight': 21, 'local_issuance': 22, 'vault_archival': 23}[phase]
 
 
 if __name__ == '__main__':
