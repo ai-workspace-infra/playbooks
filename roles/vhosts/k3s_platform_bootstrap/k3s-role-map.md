@@ -32,7 +32,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `k3s-cluster` | ✅ #903 已删除旧实现 | 两个安装入口已切换到 `k3s-cluster-server` |
 | `helm_cli`、`flux_controllers`、`flux_gitops`、`k3s_identity` | ✅ #903 已合并 | 分别负责 Helm 客户端、Flux 控制器、声明交接、三身份交付和验证；真实身份、Vault writer 与 RBAC 仍需目标集群验收 |
 | `k3s` 旧安装器 | ✅ [Playbooks #905](https://github.com/ai-workspace-infra/playbooks/pull/905) 已合并并移除旧实现 | 安装由 server 负责；非默认 CNI 明确拒绝，需另行交付独立的 CNI 能力 |
-| `k3s_platform_addon`、`k3s-addon` | ❌ 旧实现和调用方仍存在 | 待目标环境采用 Flux 声明并完成发布身份、调用方和运行验证后退役，当前不属于新 bootstrap 主线 |
+| `k3s_platform_addon`、`k3s-addon` | ✅ 已从当前代码及调用方移除 | 平台插件由 GitOps 按环境显式选择；现有发布的 Flux 接管与运行验收仍需逐项验证 |
 | cert-manager、reloader、APISIX、ExternalDNS、NGINX Ingress | ✅ [GitOps #681](https://github.com/ai-workspace-infra/gitops/pull/681) 已合并 | 已提供可独立选择的 Flux 模板，未接入任何环境；ExternalDNS 默认 dry-run |
 | ESO、Caddy | ✅ GitOps 已有 V6 HelmRelease 声明；❌ 实际调谐及服务验收待核验 | 不再通过旧 addon role 重复安装 |
 | `k3s-reset` | ❌ 安全边界待修复 | 独立破坏性入口，旧默认值需收敛；#905 移除两个初始化入口的隐式重置 |
@@ -76,8 +76,8 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `k3s-cluster-server` | 原 bootstrap 同时安装 K3s/Flux/ESO，写业务 namespace/Vault token Secret；静态 vars 写死目标；其余五个 action 文件为空 | 保留为唯一主线控制面安装 role；替换旧混合 bootstrap，删除空 action、静态 vars、无调用模板与旧生成脚本。只实现初始化，非 bootstrap 的 action 明确拒绝 |
 | `k3s-cluster` | 脚本安装 K3s，随后隐式装 nerdctl/CNI、本地 Registry 和自签 CA；重复安装且夹带额外资源 | 合并控制面能力到 `k3s-cluster-server`；更新两个 playbook 调用方后删除目录。新主线不隐式创建 Registry；此行为变化必须在审查中确认 |
 | `k3s` | 旧脚本混合 K3s/Helm/CNI；meta 自动依赖 common；含固定域名和忽略错误 | K3s 安装统一到 server，调用方切换，旧实现删除。非默认 CNI 明确拒绝，需由独立 GitOps 声明与执行链另行交付 |
-| `k3s_platform_addon` | 直接 Helm 管理 cert-manager/ESO/reloader/Caddy/APISIX/external-dns，默认含业务路由与域名；与 GitOps 资源 owner 重叠 | 本次不接入冷启动主线，也未删除；后续逐资源确认 GitOps 接管及旧消费者退出，停止双重调谐，再清理实现 |
-| `k3s-addon` | 脚本管理 ingress/DNS，meta 自动安装 cert-manager，存在忽略错误与销毁操作 | 存量旧入口冻结；不并入控制面 role。核对旧调用方及实际资源后迁入 GitOps/对应 owner，禁止新主线使用 |
+| `k3s_platform_addon` | 直接 Helm 管理 cert-manager/ESO/reloader/Caddy/APISIX/external-dns，默认含业务路由与域名；与 GitOps 资源 owner 重叠 | 旧实现及入口已移除；环境按需选择 Flux 模板，现有发布的接管另行验证 |
+| `k3s-addon` | 脚本管理 ingress/DNS，meta 自动安装 cert-manager，存在忽略错误与销毁操作 | 旧实现及调用方已移除；Ingress 和 DNS 由经审查的 GitOps/IaC 交付 |
 | `k3s-reset` | 调用重置脚本，旧默认 `cluster_reset=enable`；属于破坏性恢复 | 独立保留，不列入初始化依赖。本次未执行；显式确认、精确范围、备份和恢复验证等防护仍需另行收敛 |
 | `k3s_runtime_secret_sync` | Vault KV 字段 CAS 同步，并包含 dev-registry 投影模式；不是 K3s 安装/RBAC | 保留独立运维入口，不进入 bootstrap。后续拆分通用 KV 同步与环境投影；不能自动扩大路径权限或覆盖业务记录 |
 
@@ -92,7 +92,7 @@ RBAC 必须先就绪才能执行真实身份权限验收；不能让它反向依
 | `k3s_platform_bootstrap_with_gitops.yml` | bootstrap 子 role DAG | 调用方先完成 common/存储及非敏感输入绑定 |
 | `k3s_identity_bootstrap.yml` | 直接 `k3s_identity` | 已有 master 的独立身份初始化，不重装集群 |
 | `k3s-cluster.yaml`、`setup-k3s-node.yaml`、`init_k3s_cluster_server` | 直接 `k3s-cluster-server` | 仅初始化控制面，目标组统一 `k3s`；不再隐式部署 Registry/Flux/ESO |
-| `k3s_platform_addon.yml`、`k3s_reset.yml`、`reconcile_k3s_runtime_secrets.yml` | 保持独立旧入口 | 非新 bootstrap 的依赖，不自动执行 |
+| `k3s_reset.yml`、`reconcile_k3s_runtime_secrets.yml` | 保持独立旧入口 | 非新 bootstrap 的依赖，不自动执行 |
 
 空的 worker role 和入口已移除。独立脚本模拟安装 Flux/ESO 不是本 DAG 验收；
 OrbStack 历史模拟探针不构成拆分后调用链或幂等性的证据。
