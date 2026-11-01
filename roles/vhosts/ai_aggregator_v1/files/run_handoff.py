@@ -35,6 +35,7 @@ def preflight(config):
     iac = Path(config['iac_root']).resolve()
     revision(gitops, config['gitops_sha'])
     revision(iac, config['iac_sha'])
+    revision(ROOT, config['playbooks_sha'])
     manifest = (gitops / config['service_manifest']).resolve()
     require(manifest.is_relative_to(gitops) and manifest.is_file(), 'service declaration must belong to selected GitOps checkout')
     committed = subprocess.check_output(['git', '-C', str(gitops), 'show', config['gitops_sha'] + ':' + str(manifest.relative_to(gitops))])
@@ -108,6 +109,7 @@ def execute(config):
     return {'schema_version': 1, 'result': 'playbook_completed', 'operation': config['operation'],
             'environment': config['environment'], 'hostname': config['hostname'], 'domain': config['domain'],
             'instance_id': host['instance_id'], 'gitops_sha': config['gitops_sha'], 'iac_sha': config['iac_sha'],
+            'playbooks_sha': config['playbooks_sha'],
             'summary_sha256': config['summary_sha256'], 'run_id': os.environ['GITHUB_RUN_ID'],
             'run_attempt': os.environ['GITHUB_RUN_ATTEMPT']}
 
