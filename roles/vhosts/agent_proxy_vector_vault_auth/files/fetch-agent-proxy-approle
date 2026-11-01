@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Fetch a response-wrapped per-host AppRole SecretID over HTTPS with mTLS."""
+import json
+import os
+import ssl
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+import urllib.parse
+from pathlib import Path
+
+
+def required(name):
+    value = os.environ.get(name, "")
+    if not value:
+        raise ValueError("missing " + name)
+    return value
+
+
+def install(path, value):
+    path = Path(path)
+    if not path.is_absolute() or not path.resolve().is_relative_to(Path("/run")):
+        raise ValueError("identity path must be below /run")
+    path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".identity-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(value + "\n")
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def main():
+    try:
+        address = required("VAULT_ADDR").rstrip("/")
+        if not address.startswith("https://"):
+            raise ValueError("Vault address must use HTTPS")
+        issuer_url = required("AGENT_PROXY_ISSUER_URL")
+        parsed = urllib.parse.urlsplit(issuer_url)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+            raise ValueError("invalid issuer URL")
+        context = ssl.create_default_context(cafile=required("AGENT_PROXY_ISSUER_CA_FILE"))
+        context.load_cert_chain(required("AGENT_PROXY_CLIENT_CERT_FILE"), required("AGENT_PROXY_CLIENT_KEY_FILE"))
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+        opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), NoRedirect())
+        issuer_request = urllib.request.Request(issuer_url, data=b"{}", method="POST", headers={"Content-Type": "application/json"})
+        with opener.open(issuer_request, timeout=15) as response:
+            envelope = json.load(response)
+        role_id = envelope["role_id"]
+        wrapping_token = envelope["wrapping_token"]
+        if not all(isinstance(x, str) and x and "\n" not in x for x in (role_id, wrapping_token)):
+            raise ValueError("invalid issuer response")
+        lookup = urllib.request.Request(
+            address + "/v1/sys/wrapping/lookup", data=b"{}", method="POST",
+            headers={"X-Vault-Token": wrapping_token, "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(lookup, timeout=15) as response:
+            metadata = json.load(response)["data"]
+        expected_path = required("AGENT_PROXY_SECRET_ID_CREATION_PATH")
+        if metadata.get("creation_path") != expected_path:
+            raise ValueError("unexpected wrapping creation path")
+        request = urllib.request.Request(
+            address + "/v1/sys/wrapping/unwrap", data=b"{}", method="POST",
+            headers={"X-Vault-Token": wrapping_token, "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=15) as response:
+            secret_id = json.load(response)["data"]["secret_id"]
+        if not isinstance(secret_id, str) or not secret_id or "\n" in secret_id:
+            raise ValueError("invalid unwrapped SecretID")
+        install(required("AGENT_PROXY_ROLE_ID_FILE"), role_id)
+        install(required("AGENT_PROXY_SECRET_ID_FILE"), secret_id)
+        return 0
+    except (OSError, ValueError, KeyError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        print("AppRole identity fetch failed (" + type(exc).__name__ + ")", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
