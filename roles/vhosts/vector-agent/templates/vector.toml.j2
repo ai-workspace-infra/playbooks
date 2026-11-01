@@ -48,6 +48,14 @@ scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', 
 scrape_timeout_secs = 5
 {% endif %}
 
+{% if (vector_caddy_metrics_enabled | default(false) | bool) and (vector_caddy_health_probe_enabled | default(true) | bool) %}
+[sources.caddy_health_probe]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:9115/probe?module=http_2xx&target={{ vector_caddy_metrics_endpoint | default('http://127.0.0.1:2019/metrics') | urlencode }}"]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+scrape_timeout_secs = 10
+{% endif %}
+
 {% set ai_aggregator_remote_inputs = [] %}
 {% if vector_ai_aggregator_enabled | default(false) | bool %}
 {% for target in vector_ai_aggregator_metrics_targets | default([]) %}
@@ -226,6 +234,32 @@ source = '''
 '''
 {% endif %}
 
+{% if (vector_caddy_metrics_enabled | default(false) | bool) and (vector_caddy_health_probe_enabled | default(true) | bool) %}
+[transforms.caddy_health_success]
+type = "filter"
+inputs = ["caddy_health_probe"]
+condition = '.name == "probe_success"'
+
+[transforms.caddy_up_labels]
+type = "remap"
+inputs = ["caddy_health_success"]
+source = '''
+.name = "up"
+.tags.instance = "{{ inventory_hostname }}"
+.tags.host = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.region = {{ obs_region | to_json }}
+.tags.resource_id = {{ obs_resource_id | to_json }}
+.tags.runtime_form = {{ obs_runtime_form | to_json }}
+.tags.resource_key = {{ obs_resource_key | to_json }}
+.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.job = "caddy"
+.tags.service = "caddy"
+'''
+{% endif %}
+
 {% set ssl_targets = blackbox_ssl_targets | default(blackbox_exporter_role_defaults.blackbox_ssl_targets | default([])) %}
 {% for target in ssl_targets %}
 {% set target_id = target.name | regex_replace('[^A-Za-z0-9_]', '_') %}
@@ -302,6 +336,9 @@ type = "prometheus_remote_write"
 {% set remote_inputs = ["add_labels"] %}
 {% if vector_caddy_metrics_enabled | default(false) | bool %}
 {% set _ = remote_inputs.append("add_caddy_labels") %}
+{% endif %}
+{% if (vector_caddy_metrics_enabled | default(false) | bool) and (vector_caddy_health_probe_enabled | default(true) | bool) %}
+{% set _ = remote_inputs.append("caddy_up_labels") %}
 {% endif %}
 {% if vector_xhttp_monitoring_enabled | default(false) | bool %}
 {% set _ = remote_inputs.extend(["xhttp_caddy_labels", "xhttp_event_metrics"]) %}

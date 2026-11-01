@@ -15,6 +15,13 @@ The default is disabled so hosts without Caddy do not receive a failing scrape.
 Set `vector_caddy_metrics_endpoint` only when the local Caddy admin listener
 uses a different loopback address or port.
 
+When Caddy metrics are enabled, Vector also asks the local blackbox exporter
+to probe that endpoint. It maps the actual `probe_success` gauge to `up` with
+the same Caddy job and instance labels. This makes dashboard instance
+selection work and reports a failed HTTP probe as zero. The canonical
+observability playbook installs the local blackbox exporter. Set
+`vector_caddy_health_probe_enabled: false` if a caller does not provide it.
+
 ## Rollback
 
 Set `vector_caddy_metrics_enabled: false` and redeploy the role. The Caddy
