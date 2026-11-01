@@ -2,7 +2,7 @@
 - name: Validate verified workload identity inputs
   ansible.builtin.assert:
     that:
-      - vault_jwt_workload_identity_mode in ['configure', 'refresh', 'verify']
+      - vault_jwt_workload_identity_mode in ['configure', 'inspect', 'refresh', 'verify']
       - vault_jwt_workload_identity_runtime in ['k3s', 'kubernetes']
       - vault_jwt_workload_identity_config is mapping
       - vault_jwt_workload_identity_config.identity is mapping
@@ -14,7 +14,7 @@
       - vault_jwt_workload_identity_config.node_name | length > 0
       - vault_jwt_workload_identity_config.expected_version | length > 0
       - vault_jwt_workload_identity_config.vault_address | length > 0
-      - vault_jwt_workload_identity_mode not in ['configure', 'refresh'] or vault_jwt_workload_identity_config.admin_policy | length > 0
+      - vault_jwt_workload_identity_mode not in ['configure', 'inspect', 'refresh'] or vault_jwt_workload_identity_config.admin_policy | length > 0
     fail_msg: Verified workload identity inputs are required.
   no_log: true
 

@@ -1,7 +1,8 @@
 name: Vault workload identity owner
 description: Configure or verify a workload identity.
 inputs:
-  mode: {required: true, description: configure or verify}
+  mode: {required: true, description: configure, inspect, refresh, or verify}
+  expected-previous-key-sha256: {required: false, description: Comma-separated reviewed SHA-256 fingerprints required for refresh}
   operation-path: {required: true, description: Reviewed identity operation declaration path}
   cmdb: {required: true, description: Verified IaC CMDB file}
   cmdb-sha256: {required: true, description: CMDB checksum from verified receipt}
@@ -31,6 +32,7 @@ runs:
       shell: bash
       env:
         WORKLOAD_MODE: ${{ inputs.mode }}
+        WORKLOAD_EXPECTED_PREVIOUS_KEY_SHA256: ${{ inputs.expected-previous-key-sha256 }}
         WORKLOAD_OPERATION_PATH: ${{ inputs.operation-path }}
         WORKLOAD_CMDB: ${{ inputs.cmdb }}
         WORKLOAD_CMDB_SHA256: ${{ inputs.cmdb-sha256 }}
@@ -49,6 +51,7 @@ runs:
         unset SSH_PRIVATE_KEY
         python3 "${GITHUB_ACTION_PATH}/../../../scripts/workload_identity_operation.py" \
           --mode "$WORKLOAD_MODE" --operation-path "$WORKLOAD_OPERATION_PATH" --cmdb "$WORKLOAD_CMDB" --cmdb-sha256 "$WORKLOAD_CMDB_SHA256" \
+          --expected-previous-key-sha256 "$WORKLOAD_EXPECTED_PREVIOUS_KEY_SHA256" \
           --gitops "$WORKLOAD_GITOPS" --gitops-sha "$WORKLOAD_GITOPS_SHA" \
           --bootstrap-receipt "$WORKLOAD_BOOTSTRAP_RECEIPT" \
           --known-hosts "$WORKLOAD_KNOWN_HOSTS" \

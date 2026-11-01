@@ -25,4 +25,10 @@ class Owner(unittest.TestCase):
             m.build_config({'apiVersion': 'operations.svc.plus/v1alpha1', 'kind': 'VaultWorkloadIdentityOperation',
                 'spec': {'target': {}, 'vault': {}, 'identity': {}, 'environment': 'prod'}}, {}, {}, '', 'release-root')
 
+    def test_refresh_requires_reviewed_fingerprints(self):
+        operation={'apiVersion':'operations.svc.plus/v1alpha1','kind':'VaultWorkloadIdentityOperation',
+          'spec':{'target':{},'vault':{},'identity':{},'environment':'prod'}}
+        with self.assertRaises((ValueError, KeyError)):
+            m.build_config(operation,{}, {}, '', 'refresh', [])
+
 if __name__=='__main__':unittest.main()
