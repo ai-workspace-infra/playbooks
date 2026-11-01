@@ -3,12 +3,10 @@
 import argparse,datetime,hashlib,http.client,ipaddress,json,os,re,socket,subprocess,tempfile
 from pathlib import Path
 import dev_feature_candidate as candidate
-from dev_k3s_bootstrap import validate_cmdb
+from dev_runtime_contract import validate_cmdb
 from dev_ssh_binding import binding as dev_binding,run
 
 ROOT=Path(__file__).resolve().parents[1]
-ROLE='github-actions-playbooks-dev-k3s-bootstrap'
-RECORD='kv/data/CICD/dev/k3s-bootstrap'
 
 def require(value,message):
  if not value:raise ValueError(message)
@@ -117,14 +115,7 @@ def validate_candidate_receipt(receipt,sha,stage,run_id):
   require(isinstance(projection,dict) and isinstance(projection.get('tagged_lane'),dict) and receipt.get('candidate_sha256')==projection['tagged_lane'].get('candidate_sha256'),'tagged candidate fingerprint mismatch')
   candidate.candidate_scope(stage,projection)
   return receipt
- require(receipt.get('schema_version')=='dev-feature-candidate/v1' and receipt.get('result')=='verified','verified control-plane candidate receipt required')
- require(receipt.get('repository')=='ai-workspace-infra/gitops' and receipt.get('stage')==stage and receipt.get('candidate_head')==sha,'candidate receipt target mismatch')
- require(type(receipt.get('candidate_pr')) is int and receipt['candidate_pr']>0,'GitOps PR identity required')
- require(receipt.get('base_ref')=='main' and candidate.SCOPE.SHA.fullmatch(receipt.get('base_sha','')),'main baseline required')
- source=receipt.get('source',{})
- require(source.get('workflow_ref')=='ai-workspace-infra/platform-ops-toolkit/.github/workflows/dev-feature-deploy.yml@refs/heads/main' and str(source.get('run_id'))==str(run_id) and run_id is not None,'same-run protected control-plane receipt required')
- require(receipt.get('checks')=='success' and receipt.get('same_repository') is True and receipt.get('main_ancestry_verified') is True,'control-plane gates not verified')
- return receipt
+ raise ValueError('unsupported candidate receipt schema; tagged Feature Lane candidate required')
 
 def validate_tagged_seed_baseline(seed, candidate_receipt):
  require(seed.get('data_baseline_sha256') == candidate_receipt.get('data_baseline_sha256') and
@@ -137,23 +128,22 @@ def validate_prepare_receipt(receipt,config,observation):
   require(receipt.get(key)==config[key],'prepare proof stale or wrong target: '+key)
  require(receipt.get('instance_id')==config['instance_id'],'prepare instance mismatch')
  registry=receipt.get('registry',{})
- expected_path='kv/sit/platform/ghcr/feature-registry' if config.get('tagged_lane') else 'kv/CICD/dev/ghcr'
+ lane=config.get('tagged_lane')
+ require(isinstance(lane,dict),'tagged SIT lane required')
+ expected_path='kv/sit/platform/ghcr/feature-registry'
  require(registry.get('result')=='configured' and registry.get('namespace')==config['namespace'] and registry.get('source_path')==expected_path and registry.get('secret_name')=='web-saas-registry','fixed Dev registry prepare receipt required')
  mapping=registry.get('oci_mapping',{});binding=mapping.get('binding',{})
  require(mapping.get('schema_version')=='dev-oci-platform/v1' and binding.get('instance_id')==config['instance_id'],'OCI mapping producer required')
  for key in ('candidate_sha','namespace','namespace_uid','node_uid','cluster_uid','manifest_sha256'):
   require(binding.get(key)==config[key],'OCI mapping binding mismatch: '+key)
  require(binding.get('images')==observation['images'] and binding.get('sources')==observation['sources'],'candidate/image/source changed since prepare')
- if config.get('tagged_lane') is not None:
-  require(receipt.get('candidate_sha256')==config['tagged_lane']['candidate_sha256'] and receipt.get('feature_tag')==config['tagged_lane']['feature_tag'] and binding.get('tagged_lane')==config['tagged_lane'],'prepare tagged candidate differs')
+ require(receipt.get('candidate_sha256')==lane['candidate_sha256'] and receipt.get('feature_tag')==lane['feature_tag'] and binding.get('tagged_lane')==lane,'prepare tagged candidate differs')
  if receipt.get('mode')=='rebuild':
   lifecycle=receipt.get('rebuild',{})
   require(candidate.SCOPE.UUID.fullmatch(lifecycle.get('previous_namespace_uid','')) and lifecycle.get('previous_namespace_uid')!=receipt.get('namespace_uid') and lifecycle.get('namespace_deleted') is True and lifecycle.get('persistent_volumes_reclaimed') is True,'verified SIT namespace rebuild evidence required')
  source=binding.get('source',{})
- expected_workflow='feature-lane-deploy.yml' if config.get('tagged_lane') is not None else 'dev-feature-deploy.yml'
- allowed_repos=('ai-workspace-infra/platform-ops-toolkit','ai-workspace-infra/Platform-Orchestrator') if config.get('tagged_lane') is not None else ('ai-workspace-infra/platform-ops-toolkit',)
  repo=source.get('repository')
- require(repo in allowed_repos and source.get('workflow_ref')==repo+'/.github/workflows/'+expected_workflow+'@refs/heads/main' and candidate.SCOPE.SHA.fullmatch(source.get('workflow_sha','')) and source.get('owner_sha')==receipt.get('owner_sha') and str(source.get('run_id'))==str(receipt.get('run_id')) and str(source.get('run_attempt'))==str(receipt.get('run_attempt')),'prepare original GHA producer binding mismatch')
+ require(repo in ('ai-workspace-infra/platform-ops-toolkit','ai-workspace-infra/Platform-Orchestrator') and source.get('workflow_ref')==repo+'/.github/workflows/feature-lane-deploy.yml@refs/heads/main' and candidate.SCOPE.SHA.fullmatch(source.get('workflow_sha','')) and source.get('owner_sha')==receipt.get('owner_sha') and str(source.get('run_id'))==str(receipt.get('run_id')) and str(source.get('run_attempt'))==str(receipt.get('run_attempt')),'prepare original GHA producer binding mismatch')
  records=mapping.get('images',{});require(set(records)==set(observation['images']),'six OCI mappings required')
  for name,image in observation['images'].items():
   row=records[name];expected=observation['sources'][name]
@@ -171,7 +161,8 @@ def execute(a):
  require(hashlib.sha256(a.candidate_receipt.read_bytes()).hexdigest()==a.candidate_sha256,'candidate receipt checksum mismatch')
  verified_candidate=validate_candidate_receipt(json.loads(a.candidate_receipt.read_text()),a.gitops_sha,a.stage,os.environ.get('GITHUB_RUN_ID'))
  cmdb=validate_cmdb(json.loads(a.cmdb.read_text()),a.instance_id)
- projection=verified_candidate.get('projection') if verified_candidate.get('schema_version')=='dev-feature-candidate/v2' else None
+ projection=verified_candidate.get('projection')
+ require(isinstance(projection,dict) and isinstance(projection.get('tagged_lane'),dict),'tagged Feature Lane projection required')
  if projection is not None:
   require(a.target_observation is not None,'same-run provider observation required for tagged lane')
   validate_target_observation(json.loads(a.target_observation.read_text()),a.instance_id,cmdb['dev-k3s-v5']['ip'],a.cmdb_sha256,a.candidate_sha256,datetime.datetime.now(datetime.timezone.utc))

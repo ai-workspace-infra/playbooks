@@ -36,7 +36,7 @@ namespace, candidate_sha, instance_id, node_uid and cluster_uid. The inventory
 must be IaC CMDB, with matching `cmdb_instance_id`. The caller authenticates CMDB,
 GitOps candidate and authorization before invoking this fixed owner. The owner
 rechecks live cluster/node UIDs, namespace stage and one observed lane GitRepository
-at that candidate (SIT commit; UAT main branch). No business credential is an input.
+at that candidate (SIT commit). No business credential is an input.
 There is no fallback into the old production native-init owner.
 
 The entry playbook is `dev_web_saas_seed.yml`; it selects only the caller-projected
@@ -116,7 +116,7 @@ artifact/checksum, CMDB artifact/checksum, stage/phase, GitOps/platform SHA,
 instance_id,node_uid,cluster_uid. Parent must review and authorize the exact new
 job_workflow_ref allowlist entry before any operational use; this PR does not
 change Vault roles/policies. The trusted Toolkit caller remains
-`dev-feature-deploy.yml` on protected main. Seed-admin is not a verified seed.
+`feature-lane-deploy.yml` on protected main. Seed-admin is not a verified seed.
 
 
 Password-bearing CREATE ROLE SQL uses only a management connection with startup

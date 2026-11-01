@@ -7,7 +7,7 @@ import os
 import re
 from pathlib import Path
 import dev_feature_candidate as candidate
-from dev_k3s_bootstrap import validate_cmdb
+from dev_runtime_contract import validate_cmdb
 from dev_ssh_binding import binding, run
 from run_dev_feature_flux import validate_candidate_receipt, validate_prepare_receipt
 from tagged_seed_baseline import validate_receipt_inputs
@@ -45,31 +45,25 @@ def execute(a):
     cmdb = validate_cmdb(read_bound(a.cmdb, a.cmdb_sha256), a.instance_id)
     control = validate_candidate_receipt(read_bound(a.candidate_receipt, a.candidate_sha256),
         a.gitops_sha, a.stage, os.environ.get('GITHUB_RUN_ID'))
-    tagged = control.get('schema_version') == 'dev-feature-candidate/v2'
-    if tagged:
-        # Candidate provenance has already been checked above. Bind the exact
-        # projected baseline and namespace incarnation before considering a
-        # future tagged execution path. This check alone grants no authority.
-        validate_receipt_inputs(control, a.namespace_uid)
-        require(a.prepare_receipt is not None, 'authenticated prepare receipt required')
-        prior = read_bound(a.prepare_receipt, a.prepare_sha256)
-        require_same_run_prepare(prior, os.environ)
-        projection = control['projection']
-        require(projection['tagged_lane'].get('feature_id') == 'sit-test-1483',
-                'tagged seed is authorized only for the reviewed rehearsal')
-        observation = candidate.validate_tree(a.gitops_root, a.gitops_sha, a.stage, False, projection)
-        owner_sha = run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).strip()
-        require(prior.get('owner_sha') == owner_sha, 'prepare and seed owner revisions must match')
-        config = {'instance_id': a.instance_id, 'namespace': observation['namespace'],
-                  'node_uid': a.node_uid, 'cluster_uid': a.cluster_uid, 'namespace_uid': a.namespace_uid,
-                  'candidate_sha': a.gitops_sha, 'platform_sha': a.platform_sha,
-                  'owner_sha': owner_sha, 'manifest_sha256': observation['manifest_sha256'],
-                  'tagged_lane': projection['tagged_lane']}
-        runtime_mapping = validate_prepare_receipt(prior, config, observation)
-    else:
-        require(control.get('schema_version') == 'dev-feature-candidate/v1', 'unknown candidate receipt schema')
-        observation = candidate.validate_tree(a.gitops_root, a.gitops_sha, a.stage)
-        owner_sha = run(['git','-C',str(ROOT),'rev-parse','HEAD']).strip()
+    require(control.get('schema_version') == 'dev-feature-candidate/v2', 'tagged Feature Lane candidate required')
+    validate_receipt_inputs(control, a.namespace_uid)
+    require(a.prepare_receipt is not None, 'authenticated prepare receipt required')
+    prior = read_bound(a.prepare_receipt, a.prepare_sha256)
+    require_same_run_prepare(prior, os.environ)
+    projection = control.get('projection', {})
+    require(isinstance(projection.get('tagged_lane'), dict), 'tagged SIT projection required')
+    require(projection['tagged_lane'].get('feature_id') == 'sit-test-1483',
+            'tagged seed is authorized only for the reviewed rehearsal')
+    observation = candidate.validate_tree(a.gitops_root, a.gitops_sha, a.stage, False, projection)
+    owner_sha = run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).strip()
+    require(prior.get('owner_sha') == owner_sha, 'prepare and seed owner revisions must match')
+    config = {'instance_id': a.instance_id, 'namespace': observation['namespace'],
+              'node_uid': a.node_uid, 'cluster_uid': a.cluster_uid, 'namespace_uid': a.namespace_uid,
+              'candidate_sha': a.gitops_sha, 'platform_sha': a.platform_sha,
+              'owner_sha': owner_sha, 'manifest_sha256': observation['manifest_sha256'],
+              'tagged_lane': projection['tagged_lane']}
+    runtime_mapping = validate_prepare_receipt(prior, config, observation)
+    tagged = True
     require(candidate.SCOPE.SHA.fullmatch(a.platform_sha), 'immutable platform SHA required')
     config = {'phase':a.phase,'stage':a.stage,'namespace':observation['namespace'],
         'candidate_sha':a.gitops_sha,'platform_sha':a.platform_sha,'owner_sha':owner_sha,
