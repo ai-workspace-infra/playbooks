@@ -1,5 +1,48 @@
 # Personal AI Aggregator v1 role
 
+## IaC handoff deployment entry
+
+The composite action `.github/actions/ai-aggregator-deploy` executes this role
+for one host. The calling job must select its protected GitHub Environment,
+checkout this owner at a reviewed SHA, and download the current run's IaC
+summary artifact by the artifact ID returned by `iac-orchestrator.yml`.
+Expected checksums, commits and correlation IDs come from trusted job outputs,
+never from the downloaded payload. This entry does not download or authenticate
+GitHub artifacts itself.
+
+Pass `config-json` with these required fields:
+
+| Fields | Meaning |
+| --- | --- |
+| `operation` | `plan`, `stage` or `activate` |
+| `environment`, `hostname`, `domain` | Exact selected GitOps environment and service target |
+| `gitops_root`, `gitops_sha`, `service_manifest` | Clean pinned GitOps checkout and repository-relative service declaration |
+| `iac_root`, `iac_sha`, `target_manifest`, `correlation_id` | Clean pinned IaC owner checkout and original target selection |
+| `summary_file`, `summary_sha256` | Current-run IaC summary and trusted expected checksum; sibling `inventory.json` is required |
+| `cmdb_file` | CMDB produced by IaC `iac-caller-inventory`; all facts must equal the verified inventory |
+| `ssh_private_key`, `known_hosts` | Prepared runner-private key and independently trusted SSH host keys |
+| `apisix_bundle_dir` | Required for `stage`; validated APISIX configuration bundle |
+
+The job needs Python with PyYAML/Jinja2 and `ansible-playbook` installed.
+`stage` consumes the runtime `VAULT_TOKEN` through the existing role; secrets
+must not be included in `config-json`, summaries, CMDB or receipt files.
+Pass `receipt-file` as an output path and upload it with failure on missing
+files. A successful receipt says `playbook_completed`; it does not assert
+application readiness, inference acceptance or DNS cutover.
+
+The entry validates the full summary with the selected IaC owner, binds it to
+the current run and attempt, and checks the exact GitOps host/domain and CMDB
+before executing Ansible with strict SSH host-key checking. It creates no
+cloud resources, static inventory or CMDB. Both a newly created Akamai host
+and an explicitly selected existing Akamai host must arrive through the same
+verified IaC apply evidence. This entry does not import unmanaged resources or
+accept arbitrary host IP overrides.
+
+Use `plan` first. Retry the same pinned inputs after resolving a failure;
+runtime identity changes require a new IaC receipt. The current role requires
+preinstalled pinned binaries and valid runtime prerequisites, as described
+below. Rollback and OAuth/data migrations remain separate explicit operations.
+
 The GitOps `spec.gateway` selects the entry mode and adapter. New API issues user API tokens and maintains the user, plan, quota and usage ledger. CPA and LiteLLM are its upstream channels.
 
 `spec.new_api.public_models` is the single public model allowlist. Optional
