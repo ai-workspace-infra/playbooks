@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Fetch a response-wrapped per-host AppRole SecretID over pinned SSH."""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+
+def required(name):
+    value = os.environ.get(name, "")
+    if not value:
+        raise ValueError("missing " + name)
+    return value
+
+
+def install(path, value):
+    path = Path(path)
+    if not path.is_absolute() or not path.resolve().is_relative_to(Path("/run")):
+        raise ValueError("identity path must be below /run")
+    path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".identity-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(value + "\n")
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def main():
+    try:
+        address = required("VAULT_ADDR").rstrip("/")
+        if not address.startswith("https://"):
+            raise ValueError("Vault address must use HTTPS")
+        issuer = required("AGENT_PROXY_ISSUER_SSH_TARGET")
+        if issuer.startswith("-") or any(c.isspace() for c in issuer):
+            raise ValueError("invalid issuer target")
+        identity = required("AGENT_PROXY_ISSUER_SSH_IDENTITY")
+        known_hosts = required("AGENT_PROXY_ISSUER_KNOWN_HOSTS")
+        result = subprocess.run(
+            ["/usr/bin/ssh", "-F", "/dev/null", "-T", "-oBatchMode=yes", "-oIdentitiesOnly=yes",
+             "-oClearAllForwardings=yes", "-oPermitLocalCommand=no",
+             "-oStrictHostKeyChecking=yes", "-oUserKnownHostsFile=" + known_hosts,
+             "-oConnectTimeout=10", "-i", identity, "--", issuer],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30, check=True,
+        )
+        envelope = json.loads(result.stdout)
+        role_id = envelope["role_id"]
+        wrapping_token = envelope["wrapping_token"]
+        if not all(isinstance(x, str) and x and "\n" not in x for x in (role_id, wrapping_token)):
+            raise ValueError("invalid issuer response")
+        lookup = urllib.request.Request(
+            address + "/v1/sys/wrapping/lookup", data=b"{}", method="POST",
+            headers={"X-Vault-Token": wrapping_token, "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(lookup, timeout=15) as response:
+            metadata = json.load(response)["data"]
+        expected_path = required("AGENT_PROXY_SECRET_ID_CREATION_PATH")
+        if metadata.get("creation_path") != expected_path:
+            raise ValueError("unexpected wrapping creation path")
+        request = urllib.request.Request(
+            address + "/v1/sys/wrapping/unwrap", data=b"{}", method="POST",
+            headers={"X-Vault-Token": wrapping_token, "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=15) as response:
+            secret_id = json.load(response)["data"]["secret_id"]
+        if not isinstance(secret_id, str) or not secret_id or "\n" in secret_id:
+            raise ValueError("invalid unwrapped SecretID")
+        install(required("AGENT_PROXY_ROLE_ID_FILE"), role_id)
+        install(required("AGENT_PROXY_SECRET_ID_FILE"), secret_id)
+        return 0
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        print("AppRole identity fetch failed (" + type(exc).__name__ + ")", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
