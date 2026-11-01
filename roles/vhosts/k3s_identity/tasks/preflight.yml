@@ -17,12 +17,25 @@
     fail_msg: Identity delivery requires a reviewed target, CA and real-identity acceptance contract
   no_log: true
 
-- name: Require actual allow and deny cases for each role
+- name: Require declared allowed probes for every Kubernetes identity
   ansible.builtin.assert:
     that:
       - k3s_identity_checks[item] | selectattr('allowed', 'equalto', true) | list | length > 0
-      - k3s_identity_checks[item] | selectattr('allowed', 'equalto', false) | list | length > 0
+    fail_msg: Each Kubernetes identity needs at least one declared allowed permission probe
   loop: [root, operator, auditor]
+
+- name: Require declared business boundary allow and deny probes for operator
+  ansible.builtin.assert:
+    that:
+      - k3s_identity_checks.operator | selectattr('allowed', 'equalto', true) | list | length > 0
+      - k3s_identity_checks.operator | selectattr('allowed', 'equalto', false) | list | length > 0
+    fail_msg: Operator acceptance must cover both its allowed business scope and denied cross-scope actions
+
+- name: Reject denied expectations for the cluster-admin root identity
+  ansible.builtin.assert:
+    that:
+      - k3s_identity_checks.root | selectattr('allowed', 'equalto', false) | list | length == 0
+    fail_msg: Root is cluster-admin; its declared authorization probes must assert allowed capabilities only
 
 - name: Require explicitly declared Flux RBAC dependencies
   ansible.builtin.assert:

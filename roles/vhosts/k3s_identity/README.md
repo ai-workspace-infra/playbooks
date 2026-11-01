@@ -27,7 +27,7 @@ credential generation; an expired token fails closed.
 | `k3s_identity_cluster_uid` | Optional expected kube-system UID; absent is bound from the real API |
 | `k3s_identity_state_dir` | Private master state, parent must exist |
 | `k3s_identity_certificate_days` | Short certificate lifetime, default 7 days |
-| `k3s_identity_checks` | Explicit root/operator/auditor cases, at least one allow and one deny per role |
+| `k3s_identity_checks` | Explicit per-role authorization probes: root cluster-admin allow probes; operator business-scope allow and deny probes; auditor read allow probes. Mandatory operator/auditor mutation denials are verified with their actual credentials by the role. |
 | `k3s_identity_rbac_kustomizations` | Non-empty list of `{name, namespace}` Flux Kustomizations that deliver the reviewed RBAC |
 | `k3s_identity_rbac_revision` | Full GitOps commit SHA; defaults to the current bootstrap GitOps commit |
 | `k3s_platform_kubeconfig_path`, `k3s_platform_install_dir` | Admin API access and helper location |
@@ -75,8 +75,11 @@ identity without granting access to the server admin config. Real `kubectl auth 
 match caller-defined allow/deny cases. Secret read access follows the explicit
 per-identity GitOps contract rather than a blanket Playbooks denial; the
 declared auditor role may read Secrets while remaining unable to mutate
-resources. Exec/attach/proxy/token/bind/escalate/impersonation denials remain
-mandatory for non-admin identities, as do auditor write denials. A config/Flux
+resources. Root is cluster-admin, so its acceptance checks prove allowed
+administrative capabilities and do not require an artificial denial case.
+Operator must include declared allow and cross-scope deny probes. Exec/attach/
+proxy/token/bind/escalate/impersonation denials remain mandatory for non-admin
+identities, as do auditor write denials. A config/Flux
 receipt is not real-identity acceptance.
 
 This refactor preserves these probes; RBAC readiness/writer access and live

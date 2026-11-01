@@ -33,7 +33,7 @@ OS 方案参考 [common three-role-design.md](../../common/three-role-design.md)
 | --- | --- | --- | --- |
 | `root` | `root` | 聚焦基础：OS/集群初始化、恢复、Flux CD、GEO、Ingress、身份和权限管理 | 管理配置由 GitOps 声明，使用独立管理主体及明确 ClusterRole；审计危险操作；管理凭据不注入应用。主机 root 保留恢复入口，其实际能力不能被 Kubernetes RBAC 对抗。 |
 | `operator` | `operator` | 聚焦业务：被授权服务的状态、发布和日常维护 | 业务配置及操作范围由 GitOps 动态管理，按 namespace、资源、动作和必要时资源名授权；不授予集群管理员、RBAC 提权、节点代理或直接读取 Secret。 |
-| `auditor` | `auditor` | 聚焦迁移核对、在线分析、审计和安全评审 | 只读范围由 GitOps 动态管理，独立身份可查看授权配置和必要数据；禁止集群/业务状态变更、Secret、exec/attach、proxy、token 签发、模拟及提权；源数据读取另由数据库 owner 授权。 |
+| `auditor` | `auditor` | 聚焦迁移核对、在线分析、审计和安全评审 | 可通过 GitOps 授权查看所有 Kubernetes 资源，包括 Secret；只能读取，禁止集群/业务状态变更、exec/attach、proxy、token 签发、模拟及提权；源数据读取另由数据库 owner 授权。 |
 
 主体是独立的 Kubernetes 身份，不以 Linux 用户名、context 名或 `sudo kubectl` 冒充身份隔离。主体采用三个通用名字，OIDC 或证书的实际映射由固定 GitOps 声明驱动；不同集群与环境使用不同凭据及信任范围。集群身份和凭据版本参与校验，部署批次不参与用户名或 RBAC 名称拼接。
 
@@ -138,7 +138,7 @@ ESO 与 Ingress 均属于平台初始化范围，但由各自的 GitOps 发布�
 | 镜像、配置和发布变更 | 审查管理声明 | 通过 GitOps 改动和已授权发布入口执行；验证实际 revision 和健康 | 拒绝 |
 | workload 模板创建/更新 | 依明确管理范围 | 初期拒绝；准入限制和真实越权拒绝验收通过后再按服务放行 | 拒绝 |
 | StatefulSet、PVC、PV、数据库/Vault 状态变更 | 仅受控管理/恢复阶段 | 初期拒绝；有状态版本/格式转换使用新集群 | 拒绝 |
-| Secret、ServiceAccount token | 仅确需的管理或专用 owner | 直接 get/list/watch、签发 token 初期拒绝 | 拒绝 |
+| Secret、ServiceAccount token | 仅确需的管理或专用 owner | 不允许读取 Secret 或签发 token | 允许读取 Secret 的 get/list/watch；拒绝 token 签发 |
 | exec/attach、节点 proxy、RBAC bind/escalate/impersonate | 管理主体按职责逐项审查 | 初期拒绝 | 拒绝 |
 | RBAC、准入、CRD、namespace、集群管理 | 精确管理权限；高风险动作单独记录 | 拒绝 | 拒绝 |
 | 自身授权范围的 GitOps 变更 | 审查发布三类身份授权 | 可提出需求；不能自行批准扩权或修改线上授权 | 可提出读取需求；不能自行批准扩权或修改线上授权 |
@@ -151,7 +151,7 @@ ESO 与 Ingress 均属于平台初始化范围，但由各自的 GitOps 发布�
 
 ### 5.1 auditor：迁移与安全审计所需的只读范围
 
-目标是“可以查看、不能改变系统或业务状态”。查看必要信息必须有真实权限；不能只创建一个无实际可见性的审计账户，也不能因为标为只读就默认授予所有原始内容。
+目标是“可以查看所有 Kubernetes 资源、不能改变系统或业务状态”。auditor 的显式只读授权包括 Secret；这是敏感读取权限，必须由授权 owner 审查并记录。只读不会隐藏字段，也不等于可以对外披露读取结果。
 
 `auditor` 同时用于业务系统迁移：在明确授权范围内完成源端资产/依赖盘点、配置与 SQL schema 核对、业务数据或文件的只读提取/导出，以及迁移前后完整性和一致性比较。迁移声明需明确源、目标、读取对象、导出位置、有效期及敏感数据处理要求；所需读取由对应数据库、文件或服务 owner 授权，不因 Kubernetes 只读身份自动获得。导出仅写入指定的迁移工作目录或制品位置，不改动源数据或目标业务存储。目标导入和业务写入由 `operator` 执行，初始化、DDL 或恢复等管理步骤由 `root` 执行；同一迁移流程按步骤显式选择身份，不给 auditor 附加写权限。
 
@@ -160,7 +160,7 @@ ESO 与 Ingress 均属于平台初始化范围，但由各自的 GitOps 发布�
 | 确认目标及资源归属 | 明确集群/namespace 的节点、namespace、服务及所需资源状态 | 只授予声明中的 get/list/watch；不授予 nodes/proxy 或任何写入 | K3s/K8s role |
 | 权限安全审查 | 读取授权范围内 Role、RoleBinding、ClusterRole、ClusterRoleBinding 及已审查准入策略定义 | 不允许修改/绑定角色、bind/escalate/impersonate、签发 token 或创建 CSR | K3s/K8s role |
 | workload、存储与配置核对 | 查看迁移相关工作负载、PVC/PV 元数据、镜像版本、配置引用及存储关联的授权信息 | Deployment/Pod spec、ConfigMap、Events 等可能带敏感值；原始对象必须逐类审查，否则只通过脱敏报告读取。不得把子资源或 CLI 列展示当作字段隔离 | K3s/K8s role 与报告 owner |
-| 日志、指标和故障分析 | 授权服务的脱敏日志、指标及运行报告 | 默认不授予任意 pods/log、原始 ConfigMap、全量监控数据或含敏感信息的非资源端点；无 exec/attach/port-forward/proxy | 观测/报告 owner；集群 role 校验调用边界 |
+| 日志、指标和故障分析 | 按全资源只读目标查看 pods/log、ConfigMap、Secret、指标及其他 Kubernetes API 资源 | 不授予 exec/attach/port-forward/proxy、token 签发或任何变更权限；读取结果按敏感信息处理 | 观测/报告 owner；集群 role 校验调用边界 |
 | 迁移源核对与导出 | 按数据库 owner 审查范围读取 schema/迁移版本、对象清单、代表性行、计数/摘要、业务差异及必要只读导出 | 不授予源写入、DDL、超级权限、危险函数或全库秘密读取；需要完整敏感载荷时使用专门受控导出流程，而不是扩大通用 auditor 权限 | 数据库/迁移 role |
 | 迁移目标核验 | 以单独授权的只读目标连接检查已迁移对象和差异 | 不读取 operator 的目标写入凭据，不执行导入、修复、初始化、恢复或 schema 变更 | 数据库/迁移 role |
 | OS 与文件安全分析 | 读取授权系统状态和受控报告，在自己的工作目录保存报告/授权导出 | 不读取 root 凭据、数据库数据目录、运行时 socket；不能写系统目录或目标业务存储 | vhosts/common 与报告 owner |
@@ -204,7 +204,7 @@ Kubernetes 验收至少包含：
 
 - `root`：真实管理主体可执行已声明管理操作；记录其有效权限；恢复入口仍可用。
 - `operator`：在授权 namespace 使用允许的读取/缩放；跨 namespace、RBAC 修改、Secret、节点 proxy、exec 和未放行模板变更均被拒绝。
-- `auditor`：以实际 SSH 用户和独立 Kubernetes 认证读取授权状态；创建/更新/删除、Secret、exec/attach/proxy、TokenRequest、impersonate、bind/escalate 均拒绝。
+- `auditor`：以实际 SSH 用户和独立 Kubernetes 认证读取所有 Kubernetes 资源（包括 Secret）；创建/更新/删除、exec/attach/proxy、TokenRequest、impersonate、bind/escalate 均拒绝。
 - GitOps 动态更新：管理员发布授权变更后，验证 operator 的业务范围及 auditor 的只读范围按 revision 生效；收缩授权后原范围不可访问。operator/auditor 不能自行修改 RBAC、基础调谐配置或执行身份；审计配置更新不引入业务写权限。
 - 数据权限与服务账号：避免通过 Pod、模板、准入例外、继承角色和聚合角色间接越权；核对当前 RBAC 实际组合。
 - 重跑与撤销：相同固定候选幂等；撤销一个身份不影响其他身份；凭据到期/失效后认证被拒绝。
