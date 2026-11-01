@@ -62,13 +62,14 @@ def main():
         if data["certificate"].strip() != pem.strip() or data["token_policies"] != [policy] or not data["token_no_default_policy"]:
             raise ValueError("existing certificate role differs")
     record = request("GET", path)
-    if not record:
-        raise ValueError("certificate KV record is missing")
     fields = {prefix + "_client_cert_pem_b64": base64.b64encode(cert.read_bytes()).decode(), prefix + "_client_key_pem_b64": base64.b64encode(key.read_bytes()).decode()}
-    old = record["data"]["data"]
+    old = record["data"]["data"] if record else {}
     if any(name in old and old[name] != value for name, value in fields.items()):
         raise ValueError("existing certificate KV fields differ")
-    if any(name not in old for name in fields):
+    if not record:
+        request("POST", path, {"options": {"cas": 0}, "data": fields})
+        changed = True
+    elif any(name not in old for name in fields):
         request("PATCH", path, {"options": {"cas": record["data"]["metadata"]["version"]}, "data": fields}, patch=True)
         changed = True
     if not current:

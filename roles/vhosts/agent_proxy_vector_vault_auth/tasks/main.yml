@@ -7,6 +7,10 @@
       - "'..' not in agent_proxy_vector_vault_auth_kv_path.split('/')"
       - agent_proxy_vector_vault_auth_tls_kv_path is match('^kv/data/[^/]+/.+')
       - "'..' not in agent_proxy_vector_vault_auth_tls_kv_path.split('/')"
+      - agent_proxy_vector_vault_auth_cert_kv_path is match('^kv/data/[^/]+/.+')
+      - "'..' not in agent_proxy_vector_vault_auth_cert_kv_path.split('/')"
+      - agent_proxy_vector_vault_auth_cert_kv_path != agent_proxy_vector_vault_auth_tls_kv_path
+      - agent_proxy_vector_vault_auth_cert_kv_path != agent_proxy_vector_vault_auth_kv_path
       - agent_proxy_vector_vault_auth_cert_mount is match('^auth/[a-zA-Z0-9_-]+$')
       - agent_proxy_vector_vault_auth_cert_role | length > 0
       - agent_proxy_vector_vault_auth_client_cert_file is match('^/.+')
@@ -81,7 +85,7 @@
     CERT_AUTH_ROLE: "{{ agent_proxy_vector_vault_auth_cert_role }}"
     CERT_AUTH_POLICY: "{{ agent_proxy_vector_vault_auth_cert_policy }}"
     CERT_FIELD_PREFIX: "{{ agent_proxy_vector_vault_auth_cert_field_prefix }}"
-    CERT_KV_DATA_PATH: "{{ agent_proxy_vector_vault_auth_tls_kv_path }}"
+    CERT_KV_DATA_PATH: "{{ agent_proxy_vector_vault_auth_cert_kv_path }}"
     CLIENT_CERT_FILE: "{{ agent_proxy_vector_vault_auth_client_cert_file }}"
     CLIENT_KEY_FILE: "{{ agent_proxy_vector_vault_auth_client_key_file }}"
   when: lookup('ansible.builtin.env', 'VAULT_TOKEN') | length > 0
