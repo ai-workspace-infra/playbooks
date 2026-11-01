@@ -1,0 +1,37 @@
+vault {
+  address = {{ agent_proxy_vector_vault_auth_vault_addr | to_json }}
+}
+
+auto_auth {
+  method "cert" {
+    mount_path = {{ agent_proxy_vector_vault_auth_cert_mount | to_json }}
+    config = {
+      name = {{ agent_proxy_vector_vault_auth_cert_role | to_json }}
+      client_cert = {{ agent_proxy_vector_vault_auth_client_cert_file | to_json }}
+      client_key = {{ agent_proxy_vector_vault_auth_client_key_file | to_json }}
+      reload = true
+    }
+  }
+  sink "file" {
+    config = {
+      path = {{ (agent_proxy_vector_vault_auth_state_dir ~ '/.vault-token') | to_json }}
+      mode = 0600
+    }
+  }
+}
+
+template_config {
+  exit_on_retry_failure = true
+  static_secret_render_interval = {{ agent_proxy_vector_vault_auth_render_interval | to_json }}
+}
+
+template {
+  source               = {{ (agent_proxy_vector_vault_auth_config_dir ~ '/credentials.ctmpl') | to_json }}
+  destination          = {{ (agent_proxy_vector_vault_auth_state_dir ~ '/credentials.json') | to_json }}
+  perms                = "0600"
+  error_on_missing_key = true
+  exec {
+    command = ["/usr/local/sbin/sync-agent-proxy-vector-auth"]
+    timeout = "30s"
+  }
+}

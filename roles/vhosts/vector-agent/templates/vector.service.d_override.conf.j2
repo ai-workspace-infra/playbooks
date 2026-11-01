@@ -6,6 +6,11 @@
 Wants=xray-exporter-xhttp.service xray-exporter-tcp.service
 After=xray-exporter-xhttp.service xray-exporter-tcp.service
 {% endif %}
+{% if vector_auth_external_file_enabled | default(false) | bool %}
+# Wait until Vault Agent has authenticated and rendered the runtime auth file.
+Requires=vault-agent-agent-proxy-vector-auth.service
+After=vault-agent-agent-proxy-vector-auth.service
+{% endif %}
 
 [Service]
 Environment=VECTOR_THREADS={{ ((xconnect_node_maintenance | default({})).get('vector', {})).get('threads', 1) }}

@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Check read access to the configured observability and TLS KV records."""
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+
+def main() -> int:
+    address = os.environ.get("VAULT_ADDR", "").rstrip("/")
+    paths = [os.environ.get("VAULT_KV_DATA_PATH", ""), os.environ.get("VAULT_TLS_DATA_PATH", "")]
+    token_file = os.environ.get("VAULT_TOKEN_FILE", "/run/vault-agent/agent-proxy-vector-auth/.vault-token")
+    if not address.startswith("https://") or any(not path.startswith("kv/data/") or ".." in path.split("/") for path in paths):
+        print("Vault address or KV v2 data path is invalid", file=sys.stderr)
+        return 2
+    try:
+        token = open(token_file, encoding="utf-8").read().strip()
+        if not token:
+            raise ValueError("empty")
+        request = urllib.request.Request(
+            f"{address}/v1/sys/capabilities-self",
+            data=json.dumps({"paths": paths}).encode(),
+            headers={"X-Vault-Token": token, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            capabilities = json.load(response).get("data", {})
+        if any(capabilities.get(path) != ["read"] for path in paths):
+            print("Vault token scope check failed: expected read on both configured KV data paths", file=sys.stderr)
+            return 1
+        return 0
+    except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):
+        print("Vault token scope check failed; check Vault Agent login and connectivity", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
