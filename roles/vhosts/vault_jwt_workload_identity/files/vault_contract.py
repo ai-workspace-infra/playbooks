@@ -54,7 +54,7 @@ class IdentitySpec:
     def probe_subject(self): return f'system:serviceaccount:{self.namespace}:{self.probe_service_account}'
 
     @property
-    def policy_hcl(self): return 'path "' + self.allowed_path + '" {\n  capabilities = ["read"]\n}\n'
+    def policy_hcl(self): return 'path "' + self.allowed_path + '" {\n  capabilities = ["read"]\n}\npath "auth/token/lookup-self" {\n  capabilities = ["read"]\n}\n'
 
     @property
     def role_config(self):

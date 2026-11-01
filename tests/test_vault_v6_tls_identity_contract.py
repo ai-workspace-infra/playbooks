@@ -87,6 +87,7 @@ class Contract(unittest.TestCase):
         writes=[(method,path,body) for method,path,body,_ in c.calls if method!='GET']
         self.assertEqual([x[1] for x in writes],['sys/capabilities-self','sys/policies/acl/'+SPEC.policy,'sys/auth/'+SPEC.mount,'auth/'+SPEC.mount+'/config','auth/'+SPEC.mount+'/role/'+SPEC.role])
         self.assertEqual(writes[-1][2],SPEC.role_config);self.assertEqual(writes[1][2]['policy'],SPEC.policy_hcl)
+        self.assertIn('path \"auth/token/lookup-self\"', SPEC.policy_hcl)
 
     def test_existing_state_causes_no_write(self):
         for kind in ('mount','policy'):
