@@ -72,9 +72,12 @@ startup files to set KUBECONFIG to the user's own default only when the caller
 has not supplied KUBECONFIG. Other shells and non-interactive callers must set
 KUBECONFIG explicitly. The role verifies the profile and real authenticated
 identity without granting access to the server admin config. Real `kubectl auth whoami` and `can-i` must
-match caller-defined allow/deny cases and mandatory non-admin secret/exec/
-attach/proxy/token/bind/escalate/impersonation denials. Auditor write denials
-are mandatory. A config/Flux receipt is not real-identity acceptance.
+match caller-defined allow/deny cases. Secret read access follows the explicit
+per-identity GitOps contract rather than a blanket Playbooks denial; the
+declared auditor role may read Secrets while remaining unable to mutate
+resources. Exec/attach/proxy/token/bind/escalate/impersonation denials remain
+mandatory for non-admin identities, as do auditor write denials. A config/Flux
+receipt is not real-identity acceptance.
 
 This refactor preserves these probes; RBAC readiness/writer access and live
 three-identity acceptance still require target-cluster evidence. It introduces
