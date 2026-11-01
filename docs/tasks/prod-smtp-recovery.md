@@ -11,7 +11,7 @@ For SMTP-only recovery, use an immutable Playbooks `v*` checkout and set
 Use the reviewed inventory and strict SSH host-key checking, then run:
 
 ```bash
-ansible-playbook -i /path/to/reviewed-inventory.ini repair-web-saas-prod-smtp.yml
+ansible-playbook -i inventory/terraform_cmdb.py repair-web-saas-prod-smtp.yml
 ```
 
 This entrypoint updates only SMTP keys in the existing `services.env`, renders

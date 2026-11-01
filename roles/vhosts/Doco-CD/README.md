@@ -31,7 +31,7 @@ Deploys [Doco-CD](https://doco.cd/latest/Getting-Started/) with Docker Compose.
 cd playbooks
 export VAULT_ADDR=https://vault.svc.plus
 export VAULT_JWT_TOKEN=...
-ansible-playbook -i inventory.ini setup-Doco-CD.yaml
+ansible-playbook -i inventory/terraform_cmdb.py setup-Doco-CD.yaml
 ```
 
 Public GitOps repositories need no Git access token. The role does not provide a

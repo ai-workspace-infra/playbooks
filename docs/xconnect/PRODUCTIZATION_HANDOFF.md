@@ -107,7 +107,7 @@ Provider manifest 必须声明版本、所需系统 capability、snapshot schema
 
 ```bash
 ansible-lint
-ansible-playbook -i inventory.ini xconnect-gateway.yml --syntax-check
+ansible-playbook -i inventory/terraform_cmdb.py xconnect-gateway.yml --syntax-check
 molecule test
 scripts/verify-xconnect-closure.sh
 scripts/check-xconnect-closure-evidence.sh <evidence-dir>

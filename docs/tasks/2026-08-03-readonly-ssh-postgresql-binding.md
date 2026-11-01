@@ -50,7 +50,7 @@ export READONLY_SSH_MANAGE_POSTGRESQL=true
 export READONLY_SSH_POSTGRES_PASSWORD='from-vault'
 export READONLY_SSH_POSTGRES_ADMIN_PASSWORD='from-vault'
 
-ansible-playbook -i inventory.ini create_readonly_ssh_user.yml \
+ansible-playbook -i inventory/terraform_cmdb.py create_readonly_ssh_user.yml \
   --limit console-uat.onwalk.net
 ```
 

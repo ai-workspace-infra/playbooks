@@ -51,7 +51,7 @@
 如果您希望采用**标准（Standard）安全模式**部署（即：允许需要对外提供部分 Web/API 接口的应用如 `XWorkmate Bridge` 通过 HTTPS 暴露到公网，但内部组件互相隔离）。
 
 ```bash
-ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml \
+ansible-playbook -i inventory/terraform_cmdb.py setup-ai-workspace-all-in-one.yml \
   --limit jp-xhttp-contabo.svc.plus \
   --vault-password-file ~/.vault_password
 ```
@@ -66,7 +66,7 @@ ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml \
 
 **执行部署命令：**
 ```bash
-ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml \
+ansible-playbook -i inventory/terraform_cmdb.py setup-ai-workspace-all-in-one.yml \
   --limit jp-xhttp-contabo.svc.plus \
   --vault-password-file ~/.vault_password \
   -e "ai_workspace_security_level=strict"
@@ -119,7 +119,7 @@ ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml \
 **场景：开启 Strict 全局断网防护，但唯独开放 LiteLLM 模型 API 入口供第三方业务端点调用，且通过最严格白名单防护。**
 
 ```bash
-ansible-playbook -i inventory.ini setup-ai-workspace-all-in-one.yml \
+ansible-playbook -i inventory/terraform_cmdb.py setup-ai-workspace-all-in-one.yml \
   --limit jp-xhttp-contabo.svc.plus \
   --vault-password-file ~/.vault_password \
   -e "ai_workspace_security_level=strict" \

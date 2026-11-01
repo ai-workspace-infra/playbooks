@@ -43,15 +43,14 @@ The provider runtimes remain separate sibling roles:
 
 ## Real Deployment
 
-The stack was redeployed with a real run, not dry-run, using the committed inventory from `HEAD`.
+The stack was redeployed with a real run, not dry-run, using the IaC-generated CMDB source.
 
 Command pattern:
 
 ```bash
-tmp_inventory=$(mktemp)
-git show HEAD:inventory.ini > "$tmp_inventory"
-ansible-playbook -i "$tmp_inventory" deploy_xworkmate_bridge_vhosts.yml -l jp-xhttp-contabo.svc.plus
-rm -f "$tmp_inventory"
+AI_WORKSPACE_CMDB_JSON=/path/to/current-cmdb.json \
+  ansible-playbook -i inventory/terraform_cmdb.py \
+  deploy_xworkmate_bridge_vhosts.yml -l jp-xhttp-contabo.svc.plus
 ```
 
 Latest verified real deployment result:

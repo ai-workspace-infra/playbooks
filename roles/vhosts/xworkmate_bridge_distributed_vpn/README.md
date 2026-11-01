@@ -210,8 +210,8 @@ export ACCOUNT_EMAIL=...
 export ACCOUNT_PASSWORD=...
 export BRIDGE_AUTH_TOKEN=...
 
-ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventory.ini vpn-wireguard-over-vless.yml --check --diff
-ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventory.ini vpn-wireguard-over-vless.yml -f 1
+ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventory/terraform_cmdb.py vpn-wireguard-over-vless.yml --check --diff
+ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventory/terraform_cmdb.py vpn-wireguard-over-vless.yml -f 1
 ```
 
 Use `-f 1` for this two-host path when long SSH control sessions are unstable.

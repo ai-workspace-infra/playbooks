@@ -66,7 +66,9 @@ DEFAULT_TF_DIR = os.path.join(
 
 def _from_explicit_file():
     path = os.environ.get("AI_WORKSPACE_CMDB_JSON") or os.environ.get("CMDB_FILE")
-    if path and os.path.isfile(path):
+    if path:
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"CMDB file configured by environment does not exist: {path}")
         with open(path, encoding="utf-8") as fh:
             return json.load(fh)
     return None
@@ -89,7 +91,10 @@ def load_cmdb():
         data = loader()
         if data:
             return data
-    return {}
+    raise FileNotFoundError(
+        "No IaC CMDB found. Set AI_WORKSPACE_CMDB_JSON/CMDB_FILE or "
+        f"provide cmdb.json under AI_WORKSPACE_TF_DIR ({tf_dir})."
+    )
 
 
 def _is_serverless_record(host):
@@ -346,15 +351,19 @@ def build_inventory(cmdb):
 
 def main():
     args = sys.argv[1:]
-    cmdb = load_cmdb()
-
-    if "--host" in args:
-        host_name = args[args.index("--host") + 1] if args.index("--host") + 1 < len(args) else ""
-        print(json.dumps(build_inventory(cmdb)["_meta"]["hostvars"].get(host_name, {})))
-        return
-
-    # 默认与 --list 行为一致
-    print(json.dumps(build_inventory(cmdb), indent=2))
+    try:
+        cmdb = load_cmdb()
+        inventory = build_inventory(cmdb)
+        if not inventory["_meta"]["hostvars"]:
+            raise ValueError("IaC CMDB contains no eligible SSH hosts")
+        if "--host" in args:
+            host_name = args[args.index("--host") + 1] if args.index("--host") + 1 < len(args) else ""
+            print(json.dumps(inventory["_meta"]["hostvars"].get(host_name, {})))
+            return
+        print(json.dumps(inventory, indent=2))
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as exc:
+        print(f"terraform_cmdb: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

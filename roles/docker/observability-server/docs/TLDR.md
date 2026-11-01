@@ -73,7 +73,7 @@ cd /Users/shenlan/workspaces/ai-workspace-infra/playbooks
 
 VAULT_ADDR=https://vault.svc.plus \
 VAULT_TOKEN='<有效token>' \
-ansible-playbook -i inventory.ini deploy_observability_server.yml \
+ansible-playbook -i inventory/terraform_cmdb.py deploy_observability_server.yml \
   -e observability_server_hosts=observability_hosts \
   -l observability_hosts -D -C
 ```
