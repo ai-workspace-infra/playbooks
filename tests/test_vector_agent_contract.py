@@ -29,6 +29,14 @@ class VectorAgentContractTest(unittest.TestCase):
         self.assertNotIn("\nelse if", TEMPLATE)
         self.assertNotIn("\nelse {", TEMPLATE)
 
+    def test_caddy_dashboard_up_comes_from_blackbox_probe_success(self):
+        self.assertIn('[sources.caddy_health_probe]', TEMPLATE)
+        self.assertIn('module=http_2xx&target=', TEMPLATE)
+        self.assertIn('[transforms.caddy_health_success]', TEMPLATE)
+        self.assertIn('condition = \'.name == "probe_success"\'', TEMPLATE)
+        self.assertIn('.name = "up"', TEMPLATE)
+        self.assertIn('remote_inputs.append("caddy_up_labels")', TEMPLATE)
+
 
 if __name__ == "__main__":
     unittest.main()
