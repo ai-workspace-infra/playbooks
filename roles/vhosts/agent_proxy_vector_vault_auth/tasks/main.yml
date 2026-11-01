@@ -1,0 +1,209 @@
+---
+- name: Validate Agent Proxy remote-write Vault auth inputs
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_vector_vault_auth_vault_addr is match('^https://')
+      - agent_proxy_vector_vault_auth_kv_path is match('^kv/data/[^/]+/.+')
+      - "'..' not in agent_proxy_vector_vault_auth_kv_path.split('/')"
+      - agent_proxy_vector_vault_auth_tls_kv_path is match('^kv/data/[^/]+/.+')
+      - "'..' not in agent_proxy_vector_vault_auth_tls_kv_path.split('/')"
+      - agent_proxy_vector_vault_auth_cert_kv_path is match('^kv/data/[^/]+/.+')
+      - "'..' not in agent_proxy_vector_vault_auth_cert_kv_path.split('/')"
+      - agent_proxy_vector_vault_auth_cert_kv_path != agent_proxy_vector_vault_auth_tls_kv_path
+      - agent_proxy_vector_vault_auth_cert_kv_path != agent_proxy_vector_vault_auth_kv_path
+      - agent_proxy_vector_vault_auth_cert_mount is match('^auth/[a-zA-Z0-9_-]+$')
+      - agent_proxy_vector_vault_auth_cert_role | length > 0
+      - agent_proxy_vector_vault_auth_client_cert_file is match('^/.+')
+      - agent_proxy_vector_vault_auth_client_key_file is match('^/.+')
+      - agent_proxy_vector_vault_auth_sha256_amd64 is match('^[0-9a-fA-F]{64}$')
+      - agent_proxy_vector_vault_auth_sha256_arm64 is match('^[0-9a-fA-F]{64}$')
+      - vector_group is defined
+    fail_msg: >-
+      Configure the Vault HTTPS address, exact KV v2 data path, pinned Vault
+      Agent checksums, certificate identity, and Vector group. The certificate
+      and private key must be provisioned by the identity owner.
+
+- name: Select Vault Agent architecture and checksum
+  ansible.builtin.set_fact:
+    agent_proxy_vector_vault_auth_arch: >-
+      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
+    agent_proxy_vector_vault_auth_sha256: >-
+      {{ agent_proxy_vector_vault_auth_sha256_arm64
+         if ansible_architecture in ['aarch64', 'arm64']
+         else agent_proxy_vector_vault_auth_sha256_amd64 }}
+
+- name: Install unzip for pinned Vault Agent binary
+  ansible.builtin.package:
+    name: unzip
+    state: present
+
+- name: Ensure Vector group exists before installing its protected runtime credentials
+  ansible.builtin.group:
+    name: "{{ vector_group }}"
+    state: present
+
+- name: Download pinned Vault Agent archive
+  ansible.builtin.get_url:
+    url: "https://releases.hashicorp.com/vault/{{ agent_proxy_vector_vault_auth_version }}/vault_{{ agent_proxy_vector_vault_auth_version }}_linux_{{ agent_proxy_vector_vault_auth_arch }}.zip"
+    dest: "/var/cache/vault-agent-{{ agent_proxy_vector_vault_auth_version }}-{{ agent_proxy_vector_vault_auth_arch }}.zip"
+    checksum: "sha256:{{ agent_proxy_vector_vault_auth_sha256 }}"
+    mode: '0600'
+
+- name: Install Vault Agent binary
+  ansible.builtin.unarchive:
+    src: "/var/cache/vault-agent-{{ agent_proxy_vector_vault_auth_version }}-{{ agent_proxy_vector_vault_auth_arch }}.zip"
+    dest: /usr/local/bin
+    remote_src: true
+    creates: /usr/local/bin/vault
+
+- name: Ensure Vault Agent and Vector runtime directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ agent_proxy_vector_vault_auth_config_dir }}", owner: root, group: root, mode: '0700' }
+    - { path: "{{ agent_proxy_vector_vault_auth_state_dir }}", owner: root, group: root, mode: '0700' }
+    - { path: "{{ agent_proxy_vector_vault_auth_runtime_dir }}", owner: root, group: "{{ vector_group }}", mode: '0750' }
+
+- name: Install certificate identity bootstrap helper
+  ansible.builtin.copy:
+    src: bootstrap-cert-identity
+    dest: /usr/local/sbin/bootstrap-agent-proxy-cert-identity
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Register node certificate using explicitly supplied bootstrap token
+  ansible.builtin.command: /usr/local/sbin/bootstrap-agent-proxy-cert-identity
+  environment:
+    VAULT_ADDR: "{{ agent_proxy_vector_vault_auth_vault_addr }}"
+    VAULT_TOKEN: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+    CERT_AUTH_MOUNT: "{{ agent_proxy_vector_vault_auth_cert_mount | regex_replace('^auth/', '') }}"
+    CERT_AUTH_ROLE: "{{ agent_proxy_vector_vault_auth_cert_role }}"
+    CERT_AUTH_POLICY: "{{ agent_proxy_vector_vault_auth_cert_policy }}"
+    CERT_FIELD_PREFIX: "{{ agent_proxy_vector_vault_auth_cert_field_prefix }}"
+    CERT_KV_DATA_PATH: "{{ agent_proxy_vector_vault_auth_cert_kv_path }}"
+    CLIENT_CERT_FILE: "{{ agent_proxy_vector_vault_auth_client_cert_file }}"
+    CLIENT_KEY_FILE: "{{ agent_proxy_vector_vault_auth_client_key_file }}"
+  when: lookup('ansible.builtin.env', 'VAULT_TOKEN') | length > 0
+  no_log: true
+  register: agent_proxy_vector_vault_auth_bootstrap_result
+  changed_when: agent_proxy_vector_vault_auth_bootstrap_result.stdout == 'changed'
+
+- name: Inspect provisioned client certificate and key
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ agent_proxy_vector_vault_auth_client_cert_file }}"
+    - "{{ agent_proxy_vector_vault_auth_client_key_file }}"
+  register: agent_proxy_vector_vault_auth_identity_files
+
+- name: Require protected certificate identity files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+      - item.stat.mode == '0600'
+      - item.stat.pw_name == 'root'
+    fail_msg: >-
+      Client certificate and key must be provisioned with root ownership and
+      mode 0600.
+  loop: "{{ agent_proxy_vector_vault_auth_identity_files.results }}"
+
+- name: Configure Vault Agent certificate auth and KV template
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: '0600'
+  loop:
+    - { src: agent.hcl.j2, dest: "{{ agent_proxy_vector_vault_auth_config_dir }}/agent.hcl" }
+    - { src: credentials.ctmpl.j2, dest: "{{ agent_proxy_vector_vault_auth_config_dir }}/credentials.ctmpl" }
+  notify: Restart Vault Agent Agent Proxy Vector auth
+
+- name: Install scoped auth verifier and runtime synchronizer
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: '0750'
+  loop:
+    - { src: verify-agent-proxy-vector-vault-scope, dest: /usr/local/sbin/verify-agent-proxy-vector-vault-scope }
+    - { src: sync-agent-proxy-vector-auth, dest: /usr/local/sbin/sync-agent-proxy-vector-auth }
+    - { src: wait-for-agent-proxy-vector-auth, dest: /usr/local/sbin/wait-for-agent-proxy-vector-auth }
+
+- name: Create Vector secret provider directory
+  ansible.builtin.file:
+    path: /usr/local/libexec
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install Agent Proxy Vector exec secret provider
+  ansible.builtin.copy:
+    src: agent-proxy-vector-secret-provider
+    dest: /usr/local/libexec/agent-proxy-vector-secret-provider
+    owner: root
+    group: "{{ vector_group }}"
+    mode: '0750'
+
+- name: Install Vault Agent and reconciliation systemd units
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - { src: agent-proxy-vector-auth.service.j2, dest: /etc/systemd/system/vault-agent-agent-proxy-vector-auth.service }
+    - { src: verify-scope.service.j2, dest: /etc/systemd/system/vault-agent-agent-proxy-vector-auth-verify.service }
+    - { src: sync.service.j2, dest: /etc/systemd/system/agent-proxy-vector-auth-sync.service }
+    - { src: sync.timer.j2, dest: /etc/systemd/system/agent-proxy-vector-auth-sync.timer }
+  notify: Restart Vault Agent Agent Proxy Vector auth
+
+- name: Apply Vault Agent configuration before validating its refreshed identity
+  ansible.builtin.meta: flush_handlers
+
+- name: Create initial protected Vector credential file before config validation
+  ansible.builtin.file:
+    path: "{{ agent_proxy_vector_vault_auth_file }}"
+    state: touch
+    owner: root
+    group: "{{ vector_group }}"
+    mode: '0640'
+    modification_time: preserve
+    access_time: preserve
+
+- name: Enable Vault Agent and sync timer
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - vault-agent-agent-proxy-vector-auth.service
+    - agent-proxy-vector-auth-sync.timer
+
+- name: Wait for Vault Agent credential render
+  ansible.builtin.wait_for:
+    path: "{{ agent_proxy_vector_vault_auth_state_dir }}/credentials.json"
+    state: present
+    timeout: 60
+
+- name: Verify Vault Agent identity has exact read-only capability
+  ansible.builtin.systemd:
+    name: vault-agent-agent-proxy-vector-auth-verify.service
+    state: started
+  register: agent_proxy_vector_vault_scope_check
+  changed_when: false
+
+- name: Run first Vector credential reconciliation
+  ansible.builtin.systemd:
+    name: agent-proxy-vector-auth-sync.service
+    state: started

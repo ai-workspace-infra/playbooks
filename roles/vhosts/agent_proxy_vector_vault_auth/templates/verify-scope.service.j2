@@ -1,0 +1,19 @@
+[Unit]
+Description=Verify Vault Agent token scope for Vector remote-write credentials
+After=vault-agent-agent-proxy-vector-auth.service
+Requires=vault-agent-agent-proxy-vector-auth.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment="VAULT_ADDR={{ agent_proxy_vector_vault_auth_vault_addr }}"
+Environment="VAULT_KV_DATA_PATH={{ agent_proxy_vector_vault_auth_kv_path }}"
+Environment="VAULT_TLS_DATA_PATH={{ agent_proxy_vector_vault_auth_tls_kv_path }}"
+Environment="VAULT_TOKEN_FILE={{ agent_proxy_vector_vault_auth_state_dir }}/.vault-token"
+ExecStartPre=/usr/bin/test -s {{ agent_proxy_vector_vault_auth_state_dir }}/.vault-token
+ExecStart=/usr/local/sbin/verify-agent-proxy-vector-vault-scope
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadOnlyPaths={{ agent_proxy_vector_vault_auth_state_dir }}

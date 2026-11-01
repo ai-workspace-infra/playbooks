@@ -13,6 +13,8 @@ vector_buffer_max_events: 1000
 # Stable labels on every metric and log let shared backends separate UAT and
 # PROD without relying on host IPs.
 vector_observability_endpoint: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ENDPOINT') | default('https://observability.svc.plus', true) }}"
+vector_auth_external_file_enabled: false
+vector_auth_external_file: /run/vector/remote-write-auth.json
 vector_observability_environment: "{{ environment | default(cmdb_environment | default(lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('unknown', true), true), true) }}"
 vector_observability_provider: "{{ provider | default(cloud_provider | default(cmdb_cloud_provider | default('unknown', true), true), true) }}"
 vector_observability_region: "{{ region | default(cmdb_region | default(cloud_region | default(provider_region | default(logical_region | default('unknown', true), true), true), true), true) }}"

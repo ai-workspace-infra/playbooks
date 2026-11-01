@@ -219,11 +219,20 @@
       when:
         - (observability_deployment_mode | default('ansible')) != 'fluxcd'
 
+    - name: Include shared Agent Proxy remote-write Vault sync role
+      ansible.builtin.include_role:
+        name: vhosts/agent_proxy_vector_vault_auth
+      when:
+        - "'agent_proxy' in group_names"
+        - agent_proxy_vault_cert_auth_enabled | default(false) | bool
+        - (observability_deployment_mode | default('ansible')) != 'fluxcd'
+
     - name: Include vector-agent role
       ansible.builtin.import_role:
         name: vhosts/vector-agent
       vars:
         vector_xhttp_monitoring_enabled: "{{ vector_xray_exporter_enabled | bool }}"
+        vector_auth_external_file_enabled: "{{ 'agent_proxy' in group_names and (agent_proxy_vault_cert_auth_enabled | default(false) | bool) }}"
       tags:
         - vector_agent
 

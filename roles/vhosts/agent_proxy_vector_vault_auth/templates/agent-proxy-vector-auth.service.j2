@@ -1,0 +1,28 @@
+[Unit]
+Description=Vault Agent for Agent Proxy Vector remote-write credentials
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+Environment="AGENT_PROXY_VECTOR_VAULT_RENDERED={{ agent_proxy_vector_vault_auth_state_dir }}/credentials.json"
+Environment="AGENT_PROXY_VECTOR_AUTH_FILE={{ agent_proxy_vector_vault_auth_file }}"
+Environment="VECTOR_CONFIG=/etc/vector/vector.toml"
+Environment="VECTOR_GROUP={{ vector_group }}"
+ExecStart=/usr/local/bin/vault agent -config={{ agent_proxy_vector_vault_auth_config_dir }}/agent.hcl
+ExecStartPost=/usr/local/sbin/wait-for-agent-proxy-vector-auth
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+RuntimeDirectory=vault-agent/agent-proxy-vector-auth vector
+RuntimeDirectoryMode=0750
+ExecStartPre=/usr/bin/chmod 0700 {{ agent_proxy_vector_vault_auth_state_dir }}
+ExecStartPre=/usr/bin/chgrp {{ vector_group }} {{ agent_proxy_vector_vault_auth_runtime_dir }}
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths={{ agent_proxy_vector_vault_auth_state_dir }} {{ agent_proxy_vector_vault_auth_runtime_dir }}
+
+[Install]
+WantedBy=multi-user.target

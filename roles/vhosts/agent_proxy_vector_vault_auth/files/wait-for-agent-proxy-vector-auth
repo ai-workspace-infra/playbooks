@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""Wait for Vault Agent to render credentials before dependent Vector starts."""
+import os
+import sys
+import time
+from pathlib import Path
+
+credential_file = Path(os.environ.get(
+    "AGENT_PROXY_VECTOR_VAULT_RENDERED",
+    "/run/vault-agent/agent-proxy-vector-auth/credentials.json",
+))
+deadline = time.monotonic() + 120
+while time.monotonic() < deadline:
+    if credential_file.is_file() and credential_file.stat().st_size > 0:
+        raise SystemExit(0)
+    time.sleep(1)
+print("Vault Agent did not render Agent Proxy credentials before timeout", file=sys.stderr)
+raise SystemExit(1)

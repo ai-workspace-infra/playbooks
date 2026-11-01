@@ -1,0 +1,19 @@
+[Unit]
+Description=Reconcile Vector remote-write credentials from Vault Agent output
+After=network-online.target vault-agent-agent-proxy-vector-auth.service
+Wants=network-online.target
+Requires=vault-agent-agent-proxy-vector-auth.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment="AGENT_PROXY_VECTOR_VAULT_RENDERED={{ agent_proxy_vector_vault_auth_state_dir }}/credentials.json"
+Environment="AGENT_PROXY_VECTOR_AUTH_FILE={{ agent_proxy_vector_vault_auth_file }}"
+Environment="VECTOR_CONFIG=/etc/vector/vector.toml"
+Environment="VECTOR_GROUP={{ vector_group }}"
+ExecStart=/usr/local/sbin/sync-agent-proxy-vector-auth
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths={{ agent_proxy_vector_vault_auth_runtime_dir }}
