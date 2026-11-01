@@ -34,7 +34,8 @@ class HandoffTests(unittest.TestCase):
                         'deploy_matrix': [dict(target_id='target', host=self.hostname, **self.host)]}
         self.config = {'operation': 'plan', 'environment': 'uat', 'hostname': self.hostname,
                        'domain': 'gateway.example.net', 'gitops_root': str(self.root), 'iac_root': str(self.root),
-                       'gitops_sha': 'a' * 40, 'iac_sha': 'b' * 40, 'service_manifest': 'service.yaml',
+                       'gitops_sha': 'a' * 40, 'iac_sha': 'b' * 40, 'playbooks_sha': 'c' * 40,
+                       'service_manifest': 'service.yaml',
                        'summary_file': str(self.root / 'summary.json'), 'cmdb_file': str(self.root / 'cmdb.json'),
                        'target_manifest': 'iac/targets/target.yaml', 'correlation_id': '20:2:aggregator'}
         self.manifest = json.dumps({'kind': 'PersonalAIAggregator', 'metadata': {'environment': 'uat'},
@@ -60,6 +61,11 @@ class HandoffTests(unittest.TestCase):
 
     def test_valid_current_run_uses_owner_verifier(self):
         self.assertEqual(self.preflight()[1], self.host)
+
+    def test_owner_source_sha_is_required(self):
+        self.config.pop('playbooks_sha')
+        with self.assertRaises(KeyError):
+            self.preflight()
 
     def test_stale_attempt_and_cross_environment_rejected(self):
         for key, value in [('environment', 'prod'), ('run_attempt', '1')]:

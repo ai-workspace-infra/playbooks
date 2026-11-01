@@ -18,6 +18,7 @@ Pass `config-json` with these required fields:
 | `environment`, `hostname`, `domain` | Exact selected GitOps environment and service target |
 | `gitops_root`, `gitops_sha`, `service_manifest` | Clean pinned GitOps checkout and repository-relative service declaration |
 | `iac_root`, `iac_sha`, `target_manifest`, `correlation_id` | Clean pinned IaC owner checkout and original target selection |
+| `playbooks_sha` | Exact Playbooks checkout SHA; the owner verifies and records it in the receipt |
 | `summary_file`, `summary_sha256` | Current-run IaC summary and trusted expected checksum; sibling `inventory.json` is required |
 | `cmdb_file` | CMDB produced by IaC `iac-caller-inventory`; all facts must equal the verified inventory |
 | `ssh_private_key`, `known_hosts` | Prepared runner-private key and independently trusted SSH host keys |
