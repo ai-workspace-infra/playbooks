@@ -4,7 +4,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import subprocess
 import types
 import unittest
 from unittest.mock import patch
@@ -17,9 +16,10 @@ loader.exec_module(module)
 
 ENV = {
     "VAULT_ADDR": "https://vault.example",
-    "AGENT_PROXY_ISSUER_SSH_TARGET": "issuer@example",
-    "AGENT_PROXY_ISSUER_SSH_IDENTITY": "/run/test-key",
-    "AGENT_PROXY_ISSUER_KNOWN_HOSTS": "/etc/test-known-hosts",
+    "AGENT_PROXY_ISSUER_URL": "https://issuer.example/v1/secret-id",
+    "AGENT_PROXY_ISSUER_CA_FILE": "/etc/test-ca",
+    "AGENT_PROXY_CLIENT_CERT_FILE": "/etc/test-cert",
+    "AGENT_PROXY_CLIENT_KEY_FILE": "/run/test-key",
     "AGENT_PROXY_SECRET_ID_CREATION_PATH": "auth/approle/role/reader/secret-id",
     "AGENT_PROXY_ROLE_ID_FILE": "/run/test/role-id",
     "AGENT_PROXY_SECRET_ID_FILE": "/run/test/secret-id",
@@ -49,17 +49,18 @@ class IdentityFetchTest(unittest.TestCase):
                     value = {"creation_path": creation_path} if req.full_url.endswith("/lookup") else {"secret_id": "test-secret"}
                     return Response({"data": value})
                 with patch.dict(os.environ, ENV, clear=True), \
-                     patch.object(module.subprocess, "run", return_value=types.SimpleNamespace(stdout=b'{"role_id":"test-role","wrapping_token":"test-wrap"}')) as ssh, \
+                     patch.object(module.ssl, "create_default_context") as context, \
+                     patch.object(module.urllib.request, "build_opener", return_value=types.SimpleNamespace(open=lambda *args, **kwargs: Response({"role_id": "test-role", "wrapping_token": "test-wrap"}))), \
                      patch.object(module.urllib.request, "urlopen", side_effect=request), \
                      patch.object(module, "install") as install:
                     self.assertEqual(module.main(), expected)
                     self.assertEqual(install.call_count, 2 if expected == 0 else 0)
-                    self.assertIn("-oStrictHostKeyChecking=yes", ssh.call_args.args[0])
-                    self.assertIn("-oIdentitiesOnly=yes", ssh.call_args.args[0])
+                    context.assert_called_once_with(cafile=ENV["AGENT_PROXY_ISSUER_CA_FILE"])
+                    context.return_value.load_cert_chain.assert_called_once_with(ENV["AGENT_PROXY_CLIENT_CERT_FILE"], ENV["AGENT_PROXY_CLIENT_KEY_FILE"])
 
     def test_issuer_failure_does_not_install(self):
         with patch.dict(os.environ, ENV, clear=True), \
-             patch.object(module.subprocess, "run", side_effect=subprocess.TimeoutExpired("ssh", 30)), \
+             patch.object(module.ssl, "create_default_context", side_effect=OSError("unavailable")), \
              patch.object(module, "install") as install:
             self.assertEqual(module.main(), 1)
             install.assert_not_called()

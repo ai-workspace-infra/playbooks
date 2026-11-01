@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Fetch a response-wrapped per-host AppRole SecretID over pinned SSH."""
+"""Fetch a response-wrapped per-host AppRole SecretID over HTTPS with mTLS."""
 import json
 import os
-import subprocess
+import ssl
 import sys
 import tempfile
 import urllib.error
 import urllib.request
+import urllib.parse
 from pathlib import Path
 
 
@@ -38,19 +39,19 @@ def main():
         address = required("VAULT_ADDR").rstrip("/")
         if not address.startswith("https://"):
             raise ValueError("Vault address must use HTTPS")
-        issuer = required("AGENT_PROXY_ISSUER_SSH_TARGET")
-        if issuer.startswith("-") or any(c.isspace() for c in issuer):
-            raise ValueError("invalid issuer target")
-        identity = required("AGENT_PROXY_ISSUER_SSH_IDENTITY")
-        known_hosts = required("AGENT_PROXY_ISSUER_KNOWN_HOSTS")
-        result = subprocess.run(
-            ["/usr/bin/ssh", "-F", "/dev/null", "-T", "-oBatchMode=yes", "-oIdentitiesOnly=yes",
-             "-oClearAllForwardings=yes", "-oPermitLocalCommand=no",
-             "-oStrictHostKeyChecking=yes", "-oUserKnownHostsFile=" + known_hosts,
-             "-oConnectTimeout=10", "-i", identity, "--", issuer],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30, check=True,
-        )
-        envelope = json.loads(result.stdout)
+        issuer_url = required("AGENT_PROXY_ISSUER_URL")
+        parsed = urllib.parse.urlsplit(issuer_url)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+            raise ValueError("invalid issuer URL")
+        context = ssl.create_default_context(cafile=required("AGENT_PROXY_ISSUER_CA_FILE"))
+        context.load_cert_chain(required("AGENT_PROXY_CLIENT_CERT_FILE"), required("AGENT_PROXY_CLIENT_KEY_FILE"))
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+        opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), NoRedirect())
+        issuer_request = urllib.request.Request(issuer_url, data=b"{}", method="POST", headers={"Content-Type": "application/json"})
+        with opener.open(issuer_request, timeout=15) as response:
+            envelope = json.load(response)
         role_id = envelope["role_id"]
         wrapping_token = envelope["wrapping_token"]
         if not all(isinstance(x, str) and x and "\n" not in x for x in (role_id, wrapping_token)):
@@ -75,7 +76,7 @@ def main():
         install(required("AGENT_PROXY_ROLE_ID_FILE"), role_id)
         install(required("AGENT_PROXY_SECRET_ID_FILE"), secret_id)
         return 0
-    except (OSError, ValueError, KeyError, subprocess.SubprocessError, urllib.error.URLError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, KeyError, urllib.error.URLError, json.JSONDecodeError) as exc:
         print("AppRole identity fetch failed (" + type(exc).__name__ + ")", file=sys.stderr)
         return 1
 
