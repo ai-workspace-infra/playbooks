@@ -2,7 +2,7 @@
 - name: Validate verified workload identity inputs
   ansible.builtin.assert:
     that:
-      - vault_jwt_workload_identity_mode in ['configure', 'refresh', 'verify', 'release-root', 'release-eso', 'release-identity']
+      - vault_jwt_workload_identity_mode in ['configure', 'refresh', 'verify']
       - vault_jwt_workload_identity_runtime in ['k3s', 'kubernetes']
       - vault_jwt_workload_identity_config is mapping
       - vault_jwt_workload_identity_config.identity is mapping
@@ -31,7 +31,7 @@
   delegate_to: localhost
   become: false
   register: vault_jwt_workload_identity_execution
-  changed_when: vault_jwt_workload_identity_mode in ['configure', 'refresh', 'release-root', 'release-eso', 'release-identity']
+  changed_when: vault_jwt_workload_identity_mode in ['configure', 'refresh']
   no_log: true
 
 - name: Record redacted workload identity result

@@ -36,49 +36,14 @@ def sanitize_mount_diagnostic(stage, diagnostic):
     return safe if len(safe)>1 else None
 
 
-def sanitize_release_diagnostic(stage, diagnostic):
-    allowed={
-        'GitRepository/flux-system/config-prod',
-        'GitRepository/flux-system/vault-prod-config',
-        'GitRepository/flux-system/postgresql-prod-config',
-        'GitRepository/flux-system/ingress-prod-config',
-        'GitRepository/flux-system/observability-prod-config',
-        'GitRepository/flux-system/web-saas-prod-config',
-        'Kustomization/flux-system/prod-k3s-v6',
-        'Kustomization/flux-system/external-secrets',
-        'Kustomization/flux-system/vault-tls-identity',
-        'Kustomization/flux-system/vault-tls-bootstrap',
-        'Kustomization/flux-system/vault-prod',
-        'Kustomization/flux-system/postgresql-prod',
-        'Kustomization/flux-system/ingress-prod',
-        'Kustomization/flux-system/observability-prod',
-        'Kustomization/flux-system/web-saas-prod',
-        'HelmRelease/external-secrets/external-secrets',
-        'HelmRelease/vault-prod/vault-prod',
-        'HelmRelease/postgresql-prod/postgresql-prod',
-        'HelmRelease/ingress-prod/caddy-ingress',
-        'HelmRelease/observability-prod/observability',
-        'HelmRelease/observability-prod/observability-agent',
-        'HelmRelease/observability-prod/datakit',
-        'HelmRelease/web-saas-prod/web-saas',
-    }
-    if (stage!='release_live_gate_order' or not isinstance(diagnostic,dict)
-            or diagnostic.get('operation')!='live_flux_gate_state'):
-        return None
-    active=diagnostic.get('active')
-    if not isinstance(active,list) or any(name not in allowed for name in active) or len(active)!=len(set(active)):
-        return None
-    return {'operation':'live_flux_gate_state','active':sorted(active)}
-
-
 def sanitize_failure_diagnostic(stage, diagnostic):
-    return sanitize_mount_diagnostic(stage,diagnostic) or sanitize_release_diagnostic(stage,diagnostic)
+    return sanitize_mount_diagnostic(stage, diagnostic)
 
 
 def build_config(operation,cmdb,receipt,hostkeys,mode):
     require(operation.get('apiVersion')=='operations.svc.plus/v1alpha1' and operation.get('kind')=='VaultWorkloadIdentityOperation')
     spec=operation['spec'];target=spec['target'];vault=spec['vault'];identity=spec['identity']
-    require(mode in ('configure','verify','release-root','release-eso','release-identity')
+    require(mode in ('configure','verify')
             and spec['environment'] in ('sit','uat','prod'))
     require(target['runtime'] in ('k3s','kubernetes'))
     name=target['node'];records=cmdb.get('hosts',cmdb)
@@ -107,21 +72,19 @@ def build_config(operation,cmdb,receipt,hostkeys,mode):
 
 def main():
     p=argparse.ArgumentParser()
-    for key in ('gitops','gitops-sha','gitops-tag','operation-path','cmdb','cmdb-sha256','bootstrap-receipt','known-hosts','receipt'):
+    for key in ('gitops','gitops-sha','operation-path','cmdb','cmdb-sha256','bootstrap-receipt','known-hosts','receipt'):
         p.add_argument('--'+key,required=True)
-    p.add_argument('--mode',choices=('configure','verify','release-root','release-eso','release-identity'),required=True);a=p.parse_args()
+    p.add_argument('--mode',choices=('configure','verify'),required=True);a=p.parse_args()
     root=Path(a.gitops).resolve();require(re.fullmatch('[0-9a-f]{40}',a.gitops_sha))
     env={k:os.environ[k] for k in ('PATH','HOME','LANG','LC_ALL','TMPDIR','SSH_AUTH_SOCK') if k in os.environ}
     require(bool(env.get('SSH_AUTH_SOCK')))
     require(subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True,env=env).strip()==a.gitops_sha)
-    require(subprocess.check_output(['git','-C',str(root),'rev-parse','refs/tags/'+a.gitops_tag+'^{commit}'],text=True,env=env).strip()==a.gitops_sha)
     require(not subprocess.check_output(['git','-C',str(root),'status','--porcelain','--untracked-files=all'],text=True,env=env).strip())
     operation=(root/a.operation_path).resolve();require(operation.is_relative_to(root) and operation.is_file())
     cmdb_raw=Path(a.cmdb).read_bytes();require(re.fullmatch('[0-9a-f]{64}',a.cmdb_sha256) and hashlib.sha256(cmdb_raw).hexdigest()==a.cmdb_sha256)
     raw=Path(a.bootstrap_receipt).read_bytes();receipt=json.loads(raw);receipt['_raw']=raw
     config=build_config(yaml.safe_load(operation.read_text()),json.loads(cmdb_raw),receipt,a.known_hosts,a.mode)
-    config.update({'gitops_checkout':str(root),'gitops_sha':a.gitops_sha,'gitops_tag':a.gitops_tag,
-                   'release_stage':a.mode.removeprefix('release-') if a.mode.startswith('release-') else ''})
+    config.update({'gitops_checkout':str(root),'gitops_sha':a.gitops_sha})
     require(os.environ.get('VAULT_ADDR')==config['vault_address'])
     fd=os.open(a.receipt,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.close(fd)
     failure_path=a.receipt+'.failure'
@@ -139,14 +102,6 @@ def main():
                      'cluster_service_accounts_read','cluster_oidc_discovery','cluster_token_requests',
                      'cluster_identity_mismatch','administrator_scope','workload_login_and_path_checks',
                      'vault_provision','vault_policy','vault_mount','vault_config','vault_role',
-                     'release_cluster_identity','release_namespace_read','release_nodes_read',
-                     'release_node_receipt_match','release_declaration','release_live_graph_read',
-                     'release_live_graph_mismatch','release_live_gate_order','release_config_source_ready',
-                     'release_root_ready','release_external-secrets_ready','release_identity_service_accounts',
-                     'release_source_revision','release_root_revision','release_live_gate_mismatch',
-                     'release_vault_config_source_ready','release_identity_ready',
-                     'release_source_apply','release_root_apply','release_revision_validation',
-                     'release_post_reconcile_graph',
                      'input_validation'}
             if failure.get('result')=='FAILED' and failure.get('stage') in allowed:
                 stage=failure['stage']
@@ -169,14 +124,7 @@ if __name__=='__main__':
         stages={'owner_execution','cluster_identity','cluster_namespace_read','cluster_nodes_read','cluster_node_receipt_match',
                 'cluster_service_accounts_read','cluster_oidc_discovery','cluster_token_requests','cluster_identity_mismatch',
                 'administrator_scope','workload_login_and_path_checks','vault_provision','vault_policy',
-                'vault_mount','vault_config','vault_role','release_cluster_identity',
-                'release_namespace_read','release_nodes_read','release_node_receipt_match','release_declaration',
-                'release_live_graph_read','release_live_graph_mismatch','release_live_gate_order',
-                'release_config_source_ready','release_root_ready','release_external-secrets_ready',
-                'release_identity_service_accounts','release_source_revision','release_root_revision',
-                'release_live_gate_mismatch','release_vault_config_source_ready','release_identity_ready',
-                'release_source_apply','release_root_apply','release_revision_validation',
-                'release_post_reconcile_graph',
+                'vault_mount','vault_config','vault_role',
                 'input_validation'}
         stage=message.rsplit('stage=',1)[-1]
         if stage not in stages: stage='input_validation'

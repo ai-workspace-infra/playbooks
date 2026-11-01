@@ -35,6 +35,13 @@ class GenericRole(unittest.TestCase):
         self.assertEqual(calls[0],('192.0.2.1','kubernetes','operator','team-a',False))
         self.assertEqual(calls[1],('cluster','node','v1.33.4','example-node','jwt-team'))
 
+    def test_flux_release_is_not_an_identity_operation(self):
+        c = config()
+        c['mode'] = 'release-root'
+        with self.assertRaises(ValueError):
+            m.execute(c, env={'SSH_AUTH_SOCK': 'socket'})
+        self.assertFalse(hasattr(m.remote_kubectl.RemoteKubectl, 'apply_manifest'))
+
     def test_role_tasks_delegate_and_suppress_secrets(self):
         tasks=yaml.safe_load((ROOT/'roles/vhosts/vault_jwt_workload_identity/tasks/main.yml').read_text())
         run=next(t for t in tasks if 'ansible.builtin.command' in t)
