@@ -19,6 +19,7 @@ When `k3s_platform_require_data_mount=true`, the data-volume role must supply
 | `k3s_platform_k3s_version` | Pinned initial installation version |
 | `k3s_platform_k3s_config_path`, `k3s_platform_install_dir` | Config and data paths |
 | `k3s_platform_cluster_cidr`, `k3s_platform_service_cidr` | Cluster networking |
+| `k3s_platform_cluster_dns` | CoreDNS Service IP; must belong to the service CIDR |
 | `k3s_platform_tls_sans`, `k3s_platform_disable_components` | Declared API names and built-in component selection |
 | `k3s_platform_write_kubeconfig_mode` | Must be `0600`; no business/audit access to admin credentials |
 | `k3s_platform_require_data_mount`, `k3s_platform_local_storage_path` | Independent filesystem dependency |
