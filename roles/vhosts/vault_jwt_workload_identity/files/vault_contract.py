@@ -247,6 +247,38 @@ def refresh_signing_keys(client, spec, issuer, public_keys, expected_previous_sh
     return True
 
 
+def inspect_signing_keys(client, spec, issuer, public_keys):
+    """Compare live Vault and cluster key fingerprints without exposing key material."""
+    if not isinstance(issuer, str) or not issuer or not isinstance(public_keys, list) or not public_keys:
+        raise VaultError('verified live issuer and keys required', 'config')
+    mounts = expect(client.request('GET', 'sys/auth'), {200}).get('data', {})
+    if mounts.get(spec.mount + '/', {}).get('type') != 'jwt':
+        raise VaultError('dedicated JWT mount missing or unexpected', 'mount')
+    policy = expect(client.request('GET', 'sys/policies/acl/' + spec.policy), {200}).get('data', {})
+    if policy.get('policy') != spec.policy_hcl:
+        raise VaultError('reader policy differs', 'policy')
+    role = expect(client.request('GET', 'auth/' + spec.mount + '/role/' + spec.role), {200}).get('data', {})
+    fields = ('role_type', 'user_claim', 'bound_subject', 'bound_audiences', 'token_no_default_policy', 'token_type', 'token_policies')
+    if any(role.get(k) != spec.role_config[k] for k in fields) or any(
+            int(role.get(k, 0)) != spec.ttl_seconds
+            for k in ('token_ttl', 'token_max_ttl', 'token_explicit_max_ttl')):
+        raise VaultError('reader role differs', 'role')
+    current = expect(client.request('GET', 'auth/' + spec.mount + '/config'), {200}).get('data', {})
+    old = current.get('jwt_validation_pubkeys')
+    if current.get('bound_issuer') != issuer or not isinstance(old, list) or not old:
+        raise VaultError('issuer or current keys differ', 'config')
+    if any(not isinstance(key, str) or not key for key in public_keys):
+        raise VaultError('invalid verified live public keys', 'config')
+    digest = lambda keys: sorted(hashlib.sha256(key.encode()).hexdigest() for key in keys)
+    return {
+        'result': 'VAULT_WORKLOAD_IDENTITY_TRUST_INSPECTED',
+        'issuer_matches': True,
+        'keys_match': [key.strip() for key in old] == [key.strip() for key in public_keys],
+        'current_key_sha256': digest(old),
+        'target_key_sha256': digest(public_keys),
+    }
+
+
 def _claims(jwt):
     try:
         parts=jwt.split('.')

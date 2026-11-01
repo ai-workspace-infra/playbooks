@@ -1,4 +1,4 @@
-"""Collect V6 JWT trust material only from the pinned authenticated K3s cluster.
+"""Collect JWT trust material only from the pinned authenticated cluster.
 
 The caller owns kubeconfig provenance and must compare the supplied UIDs with an
 independently verified bootstrap receipt. Values returned here include secrets
@@ -32,7 +32,7 @@ def command(*args):
     return result.stdout.strip()
 
 
-def collect(cluster_uid, node_uid, expected_version, node_name, identity, run=command):
+def collect(cluster_uid, node_uid, expected_version, node_name, identity, run=command, include_tokens=True):
     """Return discovery and three TokenRequest values after target verification."""
     if not all(isinstance(x, str) and re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', x)
                for x in (cluster_uid, node_uid)):
@@ -57,14 +57,17 @@ def collect(cluster_uid, node_uid, expected_version, node_name, identity, run=co
                 or node['status']['nodeInfo']['kubeletVersion'] != expected_version
                 or not any(x['type'] == 'Ready' and x['status'] == 'True' for x in node['status']['conditions'])):
             raise ClusterError('node identity or readiness differs from receipt', stage)
-        stage = 'service_accounts_read'
-        for name in (identity.service_account, identity.probe_service_account):
-            account = json.loads(run('get', 'serviceaccount', name, '-n', identity.namespace, '-o', 'json'))
-            if account['metadata']['name'] != name or account['metadata']['namespace'] != identity.namespace:
-                raise ClusterError('service account identity differs', stage)
+        if include_tokens:
+            stage = 'service_accounts_read'
+            for name in (identity.service_account, identity.probe_service_account):
+                account = json.loads(run('get', 'serviceaccount', name, '-n', identity.namespace, '-o', 'json'))
+                if account['metadata']['name'] != name or account['metadata']['namespace'] != identity.namespace:
+                    raise ClusterError('service account identity differs', stage)
         stage = 'oidc_discovery'
         issuer, pems = discovery_contract(run('get', '--raw', '/.well-known/openid-configuration'),
                                            run('get', '--raw', '/openid/v1/jwks'))
+        if not include_tokens:
+            return {'issuer': issuer, 'public_keys': pems}
         def token(name, audience):
             nonlocal stage
             stage = 'token_requests'

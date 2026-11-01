@@ -6,7 +6,7 @@ parameters and has no cluster-generation, namespace, audience, Vault endpoint or
 Kubernetes version defaults. The caller must validate CMDB, node identity,
 host-key attestation and receipt provenance.
 
-`vault_jwt_workload_identity_mode` is `configure`, `refresh`, or `verify` (default `verify`).
+`vault_jwt_workload_identity_mode` is `configure`, `inspect`, `refresh`, or `verify` (default `verify`).
 
 The
 `vault_jwt_workload_identity_config` mapping supplies `host`, `ssh_user`, `known_hosts`,
@@ -15,7 +15,7 @@ The
 service_account, audience, denied_audience, probe_service_account, allowed_path,
 denied_path and optional ttl_seconds. `vault_jwt_workload_identity_runtime`
 selects `k3s` or `kubernetes`; default is `k3s`. Pass an isolated SSH agent and,
-for configure only, a short-lived token with exactly the named admin policy.
+for configure, inspect, or refresh, a short-lived token with exactly the named admin policy.
 
 The role verifies the live cluster/node identifiers before obtaining short-lived
 TokenRequests, binds issuer and published signing keys, and accepts existing
@@ -34,6 +34,14 @@ mount, reader policy, auth config and role first; it creates only missing items
 and leaves exact matching items untouched. Any type or content mismatch blocks
 before writes. The admin token therefore requires read on only this mount's
 config and role plus its existing exact mount and policy scope.
+
+The `inspect` mode reads the current JWT config and compares its validation-key
+fingerprints with the authenticated cluster's live JWKS. It emits SHA-256
+fingerprints and match booleans only; PEM keys, tokens, and credentials are not
+included in output. Use these fingerprints for independent review before refresh.
+The owner command accepts the separately reviewed fingerprint list for `refresh`;
+refresh rejects an absent or malformed list and verifies the live old-key set
+matches it before the write.
 
 The `refresh` role mode is an explicit signing-key replacement for a verified
 existing cluster. Its `expected_previous_key_sha256` input is the reviewed list

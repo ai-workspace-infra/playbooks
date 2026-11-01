@@ -40,11 +40,15 @@ def sanitize_failure_diagnostic(stage, diagnostic):
     return sanitize_mount_diagnostic(stage, diagnostic)
 
 
-def build_config(operation,cmdb,receipt,hostkeys,mode):
+def build_config(operation,cmdb,receipt,hostkeys,mode,expected_previous_key_sha256=None):
     require(operation.get('apiVersion')=='operations.svc.plus/v1alpha1' and operation.get('kind')=='VaultWorkloadIdentityOperation')
     spec=operation['spec'];target=spec['target'];vault=spec['vault'];identity=spec['identity']
-    require(mode in ('configure','verify')
+    require(mode in ('configure','inspect','refresh','verify')
             and spec['environment'] in ('sit','uat','prod'))
+    if mode == 'refresh':
+        require(isinstance(expected_previous_key_sha256, list) and expected_previous_key_sha256
+                and all(isinstance(value, str) and re.fullmatch(r'[0-9a-f]{64}', value)
+                        for value in expected_previous_key_sha256))
     require(target['runtime'] in ('k3s','kubernetes'))
     name=target['node'];records=cmdb.get('hosts',cmdb)
     require(isinstance(records,dict) and set(records)=={name})
@@ -63,18 +67,22 @@ def build_config(operation,cmdb,receipt,hostkeys,mode):
     identity={mapping.get(k,k):v for k,v in identity.items()}
     IdentitySpec(**identity)
     require(Path(hostkeys).is_file() and Path(hostkeys).stat().st_size>0)
-    return {'mode':mode,'runtime':target['runtime'],'host':host.get('ip') or host['ansible_host'],
+    result = {'mode':mode,'runtime':target['runtime'],'host':host.get('ip') or host['ansible_host'],
             'ssh_user':target['sshUser'],'known_hosts':str(Path(hostkeys).resolve()),
             'cluster_uid':receipt['cluster_uid'],'node_uid':receipt['node_uid'],'node_name':name,
             'expected_version':target['kubernetesVersion'],'vault_address':vault['address'],
             'admin_policy':vault['adminPolicy'],'identity':identity}
+    if mode == 'refresh':
+        result['expected_previous_key_sha256'] = sorted(expected_previous_key_sha256)
+    return result
 
 
 def main():
     p=argparse.ArgumentParser()
     for key in ('gitops','gitops-sha','operation-path','cmdb','cmdb-sha256','bootstrap-receipt','known-hosts','receipt'):
         p.add_argument('--'+key,required=True)
-    p.add_argument('--mode',choices=('configure','verify'),required=True);a=p.parse_args()
+    p.add_argument('--mode',choices=('configure','inspect','refresh','verify'),required=True)
+    p.add_argument('--expected-previous-key-sha256', default='');a=p.parse_args()
     root=Path(a.gitops).resolve();require(re.fullmatch('[0-9a-f]{40}',a.gitops_sha))
     env={k:os.environ[k] for k in ('PATH','HOME','LANG','LC_ALL','TMPDIR','SSH_AUTH_SOCK') if k in os.environ}
     require(bool(env.get('SSH_AUTH_SOCK')))
@@ -83,7 +91,9 @@ def main():
     operation=(root/a.operation_path).resolve();require(operation.is_relative_to(root) and operation.is_file())
     cmdb_raw=Path(a.cmdb).read_bytes();require(re.fullmatch('[0-9a-f]{64}',a.cmdb_sha256) and hashlib.sha256(cmdb_raw).hexdigest()==a.cmdb_sha256)
     raw=Path(a.bootstrap_receipt).read_bytes();receipt=json.loads(raw);receipt['_raw']=raw
-    config=build_config(yaml.safe_load(operation.read_text()),json.loads(cmdb_raw),receipt,a.known_hosts,a.mode)
+    fingerprints = [value.strip() for value in a.expected_previous_key_sha256.split(',') if value.strip()]
+    config=build_config(yaml.safe_load(operation.read_text()),json.loads(cmdb_raw),receipt,a.known_hosts,a.mode,
+                        fingerprints if a.mode == 'refresh' else None)
     config.update({'gitops_checkout':str(root),'gitops_sha':a.gitops_sha})
     require(os.environ.get('VAULT_ADDR')==config['vault_address'])
     fd=os.open(a.receipt,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.close(fd)
