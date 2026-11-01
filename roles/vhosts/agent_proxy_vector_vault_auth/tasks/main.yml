@@ -64,6 +64,31 @@
     - { path: "{{ agent_proxy_vector_vault_auth_state_dir }}", owner: root, group: root, mode: '0700' }
     - { path: "{{ agent_proxy_vector_vault_auth_runtime_dir }}", owner: root, group: "{{ vector_group }}", mode: '0750' }
 
+- name: Install certificate identity bootstrap helper
+  ansible.builtin.copy:
+    src: bootstrap-cert-identity
+    dest: /usr/local/sbin/bootstrap-agent-proxy-cert-identity
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Register node certificate using explicitly supplied bootstrap token
+  ansible.builtin.command: /usr/local/sbin/bootstrap-agent-proxy-cert-identity
+  environment:
+    VAULT_ADDR: "{{ agent_proxy_vector_vault_auth_vault_addr }}"
+    VAULT_TOKEN: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+    CERT_AUTH_MOUNT: "{{ agent_proxy_vector_vault_auth_cert_mount | regex_replace('^auth/', '') }}"
+    CERT_AUTH_ROLE: "{{ agent_proxy_vector_vault_auth_cert_role }}"
+    CERT_AUTH_POLICY: "{{ agent_proxy_vector_vault_auth_cert_policy }}"
+    CERT_FIELD_PREFIX: "{{ agent_proxy_vector_vault_auth_cert_field_prefix }}"
+    CERT_KV_DATA_PATH: "{{ agent_proxy_vector_vault_auth_tls_kv_path }}"
+    CLIENT_CERT_FILE: "{{ agent_proxy_vector_vault_auth_client_cert_file }}"
+    CLIENT_KEY_FILE: "{{ agent_proxy_vector_vault_auth_client_key_file }}"
+  when: lookup('ansible.builtin.env', 'VAULT_TOKEN') | length > 0
+  no_log: true
+  register: agent_proxy_vector_vault_auth_bootstrap_result
+  changed_when: agent_proxy_vector_vault_auth_bootstrap_result.stdout == 'changed'
+
 - name: Inspect provisioned client certificate and key
   ansible.builtin.stat:
     path: "{{ item }}"
