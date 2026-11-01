@@ -8,6 +8,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class IdentitySubresourceTest(unittest.TestCase):
+    def test_secret_read_is_governed_by_declared_identity_checks(self):
+        tasks = yaml.safe_load((ROOT / 'roles/vhosts/k3s_identity/tasks/identity_user.yml').read_text())
+        declared = next(t for t in tasks if t.get('name') == 'Validate declared allow and deny cases with actual credentials')
+        mandatory = next(t for t in tasks if t.get('name') == 'Require mandatory sensitive-operation denials under actual non-admin identity')
+        self.assertEqual(declared['loop'], '{{ k3s_identity_checks[k3s_identity_role] }}')
+        self.assertNotIn({'verb': 'get', 'resource': 'secrets'}, mandatory['loop'])
+        self.assertIn({'verb': 'create', 'resource': 'pods/exec'}, mandatory['loop'])
+
     def test_kubectl_receives_subresource_as_option(self):
         tasks = yaml.safe_load((ROOT / 'roles/vhosts/k3s_identity/tasks/identity_user.yml').read_text())
         selected = [t for t in tasks if t.get('name') in (
