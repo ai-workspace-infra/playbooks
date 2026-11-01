@@ -1,0 +1,18 @@
+name: AI Aggregator deployment owner
+description: Deploy one GitOps-declared host from current-run verified IaC CMDB.
+inputs:
+  config-json:
+    description: Non-secret binding and file paths documented in the owner README
+    required: true
+  receipt-file:
+    description: Runner-local completion receipt path
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Deploy the verified AI Aggregator target
+      shell: bash
+      env:
+        AI_AGGREGATOR_HANDOFF: ${{ inputs.config-json }}
+        AI_AGGREGATOR_RECEIPT: ${{ inputs.receipt-file }}
+      run: python3 "$GITHUB_ACTION_PATH/../../../roles/vhosts/ai_aggregator_v1/files/run_handoff.py"
