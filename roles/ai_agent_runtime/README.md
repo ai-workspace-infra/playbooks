@@ -40,7 +40,7 @@ Default Playwright environment:
 Example:
 
 ```bash
-ansible-playbook -i inventory.ini -l jp-xhttp-contabo.svc.plus setup-ai-agent-skills.yml
+ansible-playbook -i inventory/terraform_cmdb.py -l jp-xhttp-contabo.svc.plus setup-ai-agent-skills.yml
 ```
 
 `setup-ai-agent-skills.yml` runs `roles/ai_agent_runtime`, which installs system

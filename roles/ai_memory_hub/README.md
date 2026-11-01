@@ -11,8 +11,8 @@ Required controller environment variables:
 Example, with secrets already made available to the process by the approved Vault/OIDC flow:
 
 ```bash
-ansible-playbook -i inventory.ini deploy_ai_memory_hub.yml \
+ansible-playbook -i inventory/terraform_cmdb.py deploy_ai_memory_hub.yml \
   -e 'target_hosts=<inventory-host-or-group>'
 ```
 
-Dynamic CMDB inventory is supported but not required. The `-e` value selects a host or group already present in whichever inventory you pass with `-i`; static inventory and a scoped one-off inventory are also valid. The playbook has no implicit `localhost` target and rejects broad `all` targeting. The Compose process receives the secrets as environment variables, so restrict access to the Docker daemon and its metadata to trusted operators.
+The IaC-generated CMDB inventory is required. The `-e` value selects a host or group already present in that CMDB; register new targets through IaC before running this role. The playbook has no implicit `localhost` target and rejects broad `all` targeting. The Compose process receives the secrets as environment variables, so restrict access to the Docker daemon and its metadata to trusted operators.

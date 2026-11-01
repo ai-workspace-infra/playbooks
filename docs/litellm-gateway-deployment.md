@@ -464,17 +464,17 @@ chmod 640 /etc/litellm/config.yaml     # 配置文件
 
 ```bash
 # 部署 LiteLLM Gateway
-ansible-playbook -i inventory.ini setup-litellm.yaml
+ansible-playbook -i inventory/terraform_cmdb.py setup-litellm.yaml
 
 # 指定 API Keys 部署
 LITELLM_MASTER_KEY=your-secure-key \
 OPENAI_API_KEY=sk-xxx \
 ANTHROPIC_API_KEY=sk-ant-xxx \
 DEEPSEEK_API_KEY=sk-xxx \
-ansible-playbook -i inventory.ini setup-litellm.yaml
+ansible-playbook -i inventory/terraform_cmdb.py setup-litellm.yaml
 
 # 只部署 Caddy 配置 (不重启 LiteLLM)
-ansible-playbook -i inventory.ini setup-litellm.yaml --tags litellm --start-at-task="Create LiteLLM Caddy fragment"
+ansible-playbook -i inventory/terraform_cmdb.py setup-litellm.yaml --tags litellm --start-at-task="Create LiteLLM Caddy fragment"
 ```
 
 ---

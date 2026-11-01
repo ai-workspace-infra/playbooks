@@ -692,8 +692,8 @@ if [[ "${OVERLAY_SKIP_DEPLOY}" != "1" ]]; then
   begin_step "05.deploy_gateway"
   (
     cd "${ROOT_DIR}"
-    ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventory.ini vpn-wireguard-over-vless.yml --syntax-check "${ansible_syntax_args[@]}"
-    ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventory.ini vpn-wireguard-over-vless.yml "${ansible_deploy_args[@]}"
+    ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventory/terraform_cmdb.py vpn-wireguard-over-vless.yml --syntax-check "${ansible_syntax_args[@]}"
+    ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventory/terraform_cmdb.py vpn-wireguard-over-vless.yml "${ansible_deploy_args[@]}"
   )
   complete_step "05.deploy_gateway" "ok"
 else

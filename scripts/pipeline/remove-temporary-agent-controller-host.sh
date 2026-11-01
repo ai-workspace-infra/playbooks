@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${INPUT_RUN_INFRASTRUCTURE:-false}" == "true" ]]; then
-  inventory_path="../cmdb/inventory.ini"
-else
-  inventory_path="../platform-ops-toolkit/inventory.ini"
+inventory_path="../cmdb/inventory.ini"
+if [[ ! -s "$inventory_path" ]]; then
+  echo "::error::IaC-generated CMDB inventory is missing: $inventory_path" >&2
+  exit 1
 fi
 
 cd playbooks

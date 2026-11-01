@@ -18,7 +18,7 @@ Select `entry_mode: gateway`, `adapter: apisix`, `mode: standalone`, `runtime_co
 Generate the bundle from the gateway component's `contracts/ai-internal-new-api.yaml`, adapting the hostname to the selected environment. The bundle must have Standalone loopback configuration, disabled Admin/Control APIs and the `#END` marker. Existing Prometheus configuration is preserved.
 
 ```bash
-ansible-playbook -i inventory.ini deploy_ai_aggregator.yaml \
+ansible-playbook -i inventory/terraform_cmdb.py deploy_ai_aggregator.yaml \
   -e ai_aggregator_manifest_file=/absolute/path/to/ai-aggregator.yaml \
   -e ai_aggregator_apisix_bundle_dir=/absolute/path/to/rendered/apisix \
   -e ai_aggregator_operation=plan

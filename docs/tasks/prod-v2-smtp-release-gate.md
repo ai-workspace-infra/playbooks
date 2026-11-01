@@ -19,7 +19,7 @@ prove matching or valid credentials.
 Before and after a release, run the independent, non-delivery gate:
 
 ```sh
-ansible-playbook -i /path/to/reviewed-inventory.ini check-prod-v2-smtp.yml
+ansible-playbook -i inventory/terraform_cmdb.py check-prod-v2-smtp.yml
 ```
 
 The normal `pin-prod-v2-doco-release.yml` release path now resolves and persists

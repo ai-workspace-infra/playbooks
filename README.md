@@ -117,19 +117,19 @@ curl -fsSL https://raw.githubusercontent.com/ai-workspace-infra/playbooks/main/s
 ansible --version          # ansible-core ≥ 2.14
 aws --version              # 迁移/备份类 playbook 需要 AWS CLI v2
 
-# 2. 清单：默认 ./inventory.ini（见 ansible.cfg）
-grep -E '^\[' inventory.ini
+# 2. 清单：默认 ./inventory/terraform_cmdb.py（见 ansible.cfg）
+ansible-inventory -i inventory/terraform_cmdb.py --graph
 
 # 3. 连通性
-ansible -i inventory.ini all -m ping
+ansible -i inventory/terraform_cmdb.py all -m ping
 
 # 4. 干跑任意场景
-ansible-playbook -i inventory.ini <playbook>.yml --check --diff
+ansible-playbook -i inventory/terraform_cmdb.py <playbook>.yml --check --diff
 ```
 
-`ansible.cfg` 已固化的默认行为：`inventory = ./inventory.ini`、`host_key_checking = False`、
+`ansible.cfg` 已固化的默认行为：`inventory = ./inventory/terraform_cmdb.py`、`host_key_checking = False`、
 fact 缓存落 `/tmp/ansible_facts`（1h）、开启 `pipelining` 与 `profile_tasks,timer` 回调。
-无需额外 `-i` 也能跑，但**跨仓库调用时请显式带上 `-i inventory.ini`**。
+无需额外 `-i` 也能跑，但**跨仓库调用时请显式带上 `-i inventory/terraform_cmdb.py`**。
 
 ---
 
@@ -145,7 +145,7 @@ fact 缓存落 `/tmp/ansible_facts`（1h）、开启 `pipelining` 与 `profile_t
 | `roles/grafana-dashboard/` | Grafana 面板 JSON 资产（非可执行 role） |
 | `roles/README.md` | 角色分层规划：Ansible role vs. Helm chart 的边界约定 |
 | `group_vars/` `host_vars/` | 全局与主机变量；`group_vars/all/vault_s3.yml` 承载 S3/Vault 凭据 |
-| `inventory/` | 动态清单：`terraform_cmdb.py`（Terraform CMDB）、`hosts.ini` |
+| `inventory/` | 动态清单：`terraform_cmdb.py`（IaC 导出的 CMDB）；仓库不保存静态主机清单 |
 | `vars/` | DNS 记录等数据集（`dns_records_svc_plus.yaml`、`cloudflare_svc_plus_dns.yml`） |
 | `docs/` | 设计文档、迁移记录、任务与用例（`vault-secrets-dataflow-design.md` 等） |
 | `scripts/` | 非 Ansible 的一次性/旁路脚本（安装器、证书轮转、网络排查） |
@@ -395,7 +395,7 @@ export DATABASE_URL=postgres://...
 export FRONTEND_IMAGE=ghcr.io/ai-workspace-services/console:daily-build-2026.10.06-r6
 export STACK_TARGET_HOST=34.81.174.112
 export console_service_sync_dns=true
-ansible-playbook -i inventory.ini deploy_svc_plus_core_services_stack.yml
+ansible-playbook -i inventory/terraform_cmdb.py deploy_svc_plus_core_services_stack.yml
 ```
 
 **栈级变量**
@@ -411,7 +411,7 @@ ansible-playbook -i inventory.ini deploy_svc_plus_core_services_stack.yml
 ```bash
 export STACK_TARGET_HOST=jp-xhttp-contabo.svc.plus
 export STACK_SERVICES=xray-exporter,billing-service,agent,xworkmate-bridge
-ansible-playbook -i inventory.ini -l jp_xhttp_contabo_host deploy_svc_plus_core_services_stack.yml
+ansible-playbook -i inventory/terraform_cmdb.py -l jp_xhttp_contabo_host deploy_svc_plus_core_services_stack.yml
 ```
 
 **各服务的硬依赖**
@@ -425,7 +425,7 @@ ansible-playbook -i inventory.ini -l jp_xhttp_contabo_host deploy_svc_plus_core_
 Console 单独发布并对账 DNS：
 
 ```bash
-ansible-playbook -i inventory.ini deploy_console_svc_plus.yml \
+ansible-playbook -i inventory/terraform_cmdb.py deploy_console_svc_plus.yml \
   -e console_service_sync_dns=true \
   -e FRONTEND_IMAGE=ghcr.io/ai-workspace-services/console:daily-build-2026.10.06-r6
 ```
@@ -516,7 +516,7 @@ ansible-playbook -i inventory.ini deploy_console_svc_plus.yml \
 
 ## 约定
 
-**清单与分组** — `inventory.ini` 按「地域 + 角色」分组：`jp_xhttp_contabo_host`、`us_xhttp_host`、`cn_front_host`、`tky_proxy_host`、`jp_k3s_vultr_host`，以及服务组 `agent_proxy`、`billing_service`、`accounts`、`docs`、`apisix`、`postgresql`、`k3s`、`observability_hosts`、`xray_exporter`。`xworkmate_bridge_distributed` 是 `xworkmate_bridge` + `cn_xworkmate_bridge` 的父组。动态清单走 `inventory/terraform_cmdb.py`。
+**清单与分组** — `inventory/terraform_cmdb.py` 按「地域 + 角色」分组：`jp_xhttp_contabo_host`、`us_xhttp_host`、`cn_front_host`、`tky_proxy_host`、`jp_k3s_vultr_host`，以及服务组 `agent_proxy`、`billing_service`、`accounts`、`docs`、`apisix`、`postgresql`、`k3s`、`observability_hosts`、`xray_exporter`。`xworkmate_bridge_distributed` 是 `xworkmate_bridge` + `cn_xworkmate_bridge` 的父组。动态清单走 `inventory/terraform_cmdb.py`。
 
 **密钥** — 不落静态密钥文件。S3/DB 凭据在运行时经 Vault（`https://vault.svc.plus`）JWT 短期认证取得，仅驻留内存。仓库启用 gitleaks（`.gitleaks.toml` / `.gitleaksignore`）。
 

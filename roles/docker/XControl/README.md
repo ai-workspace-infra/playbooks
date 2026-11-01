@@ -108,6 +108,6 @@ files/
 ## RUN
 
 ```
-ansible-playbook -i inventory.ini deploy_XControl_docker.yaml -e "domain=svc.plus" -D -C -l svc.plus
-ansible-playbook -i inventory.ini deploy_XControl_docker.yaml -e "domain=svc.plus" -D -l svc.plus
+ansible-playbook -i inventory/terraform_cmdb.py deploy_XControl_docker.yaml -e "domain=svc.plus" -D -C -l svc.plus
+ansible-playbook -i inventory/terraform_cmdb.py deploy_XControl_docker.yaml -e "domain=svc.plus" -D -l svc.plus
 ```

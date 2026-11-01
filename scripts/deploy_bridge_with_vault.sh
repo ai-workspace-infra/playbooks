@@ -24,7 +24,7 @@ fi
 # 3. Run Ansible
 echo "[Ansible] Starting dry-run validation..."
 cd "$(dirname "$0")/.."
-ansible-playbook -i inventory.ini deploy_xworkmate_bridge_vhosts.yml \
+ansible-playbook -i inventory/terraform_cmdb.py deploy_xworkmate_bridge_vhosts.yml \
   -l jp-xhttp-contabo.svc.plus \
   -e "INTERNAL_SERVICE_TOKEN=$INTERNAL_TOKEN" \
   -e "xworkmate_bridge_auth_token=$INTERNAL_TOKEN" \

@@ -47,7 +47,7 @@ sudo apt-get install docker.io docker-compose
 证书路径应为 /etc/ssl/onwalk.net.pem，密钥路径应为 /etc/ssl/onwalk.net.key。
 
 3. Ansible 配置文件（如果需要）
-根据需要，你可以创建一个 inventory.ini 文件来指定部署目标主机：
+目标主机必须先登记在 IaC 导出的 CMDB 中。通过动态 inventory 查询并限制目标主机：
 
 ini
 复制代码
@@ -66,12 +66,12 @@ git clone https://your_repository_url.git
 cd ansible-playbook
 
 2. 测试执行
-ansible-playbook -i inventory.ini playbooks/deploy-docker-keycloak.yml -l cn-gateway.svc.plus -D -C
+ansible-playbook -i inventory/terraform_cmdb.py playbooks/deploy-docker-keycloak.yml -l cn-gateway.svc.plus -D -C
 
 2. 执行部署
 执行部署任务时，使用以下命令来运行 Ansible Playbook：
 
-ansible-playbook -i inventory.ini playbooks/deploy-docker-keycloak.yml -l cn-gateway.svc.plus -D
+ansible-playbook -i inventory/terraform_cmdb.py playbooks/deploy-docker-keycloak.yml -l cn-gateway.svc.plus -D
 
 此命令将会启动以下步骤：
 

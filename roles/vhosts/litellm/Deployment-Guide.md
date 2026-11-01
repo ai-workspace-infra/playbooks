@@ -34,13 +34,13 @@ psql "postgresql://litellm:replace-with-strong-password@127.0.0.1:15432/litellm?
 **第四步：部署配置**
 在 Ansible 控制机运行 Playbook 自动化部署（此步骤会自动创建配置模板、环境变量并启动服务）：
 ```bash
-ansible-playbook -i inventory.ini setup-litellm.yaml --limit jp-xhttp-contabo.svc.plus --vault-password-file ~/.vault_password
+ansible-playbook -i inventory/terraform_cmdb.py setup-litellm.yaml --limit jp-xhttp-contabo.svc.plus --vault-password-file ~/.vault_password
 ```
 
 **控制网关公网访问行为（严格白名单模式）：**
 默认情况下，Caddy 网关是放开所有路径访问的（依赖 LiteLLM 内置 Token 认证）。如果您希望开启**严格白名单模式**（拦截除 `/v1/chat/completions` 等官方兼容路径以外的所有请求），请在部署时通过 `-e` 附加参数开启：
 ```bash
-ansible-playbook -i inventory.ini setup-litellm.yaml \
+ansible-playbook -i inventory/terraform_cmdb.py setup-litellm.yaml \
   --limit jp-xhttp-contabo.svc.plus \
   --vault-password-file ~/.vault_password \
   -e "litellm_api_caddy_strict_whitelist=true"

@@ -9,7 +9,7 @@ export READONLY_SSH_LOCK_PASSWORD=true
 export READONLY_SSH_ENABLE_SUDO=true
 export READONLY_SSH_USER_PUBLIC_KEY='你的ssh公钥'
 
-ansible-playbook -i inventory.ini create_readonly_ssh_user.yml --limit jp-xhttp-contabo.svc.plus
+ansible-playbook -i inventory/terraform_cmdb.py create_readonly_ssh_user.yml --limit jp-xhttp-contabo.svc.plus
 
 默认是 `readonly` profile。要创建更实用的“审计用户”，加上：
 

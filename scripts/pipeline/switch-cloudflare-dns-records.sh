@@ -1,18 +1,17 @@
 #!/bin/bash
-if [ "${INPUT_RUN_INFRASTRUCTURE}" = "true" ]; then
-  INVENTORY_PATH="../cmdb/inventory.ini"
-else
-  INVENTORY_PATH="../platform-ops-toolkit/inventory.ini"
+INVENTORY_PATH="../cmdb/inventory.ini"
+if [ ! -s "$INVENTORY_PATH" ]; then
+  echo "::error::IaC-generated CMDB inventory is missing: $INVENTORY_PATH" >&2
+  exit 1
 fi
 cd playbooks
 
 # 记录来源主机集合:
-#   * 走本次 run 生成的 CMDB 时, 里面只有这次 provision 出来的主机, 所以用 'all'
+#   * 走本次 run 生成的 CMDB inventory 时, 里面只有本次交付关联的主机, 所以用 'all'
 #     —— 否则 playbook 会回落到 cloudflare_dns_default_source_hosts 里那四个写死的
 #     生产主机模式(cn_front_host 等), 与 CMDB 的组名(web_saas/debian/database)
 #     一个都匹配不上, 结果一条主机 A 记录都不会生成。
-#   * 走仓库内静态 inventory 时保持默认, 那份 inventory 是全量生产清单, 只应发布
-#     那四类主机。
+#   * 仓库不再保存静态 inventory；常规环境由 IaC 导出 CMDB inventory。
 if [ "${INPUT_RUN_INFRASTRUCTURE}" = "true" ]; then
   SOURCE_HOSTS_ARG=(-e '{"cloudflare_dns_source_hosts": ["all"]}')
 else

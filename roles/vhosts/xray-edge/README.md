@@ -38,7 +38,7 @@ ansible-playbook -i inventory/terraform_cmdb.py deploy_xray_edge.yml \
   -e 'xray_edge_site_filename=edge-existing-site.caddy'
 ```
 
-For a static inventory, select the matching host/group instead, for example `-i inventory.ini -e 'xray_edge_hosts=jp_xhttp_contabo_host'`. For a one-off host that is not already in a configured inventory, use a single-host inline inventory such as `-i '203.0.113.10,' -e 'xray_edge_hosts=203.0.113.10'`; verify the host identity and SSH settings before applying.
+Register each target through IaC so it appears in the generated CMDB, then select the reviewed CMDB host or group with `--limit`. Do not use inline or hand-maintained host inventories.
 
 Run `--syntax-check` before applying. Tags `configure` and `validate` are both included on the candidate-render/combined-validation path so a normal tagged configuration cannot bypass pre-install validation. `--check` performs preflight only because the combined Caddy check requires a temporary remote candidate.
 

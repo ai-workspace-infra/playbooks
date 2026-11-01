@@ -22,5 +22,5 @@ default. No client secret belongs in Git, inventory, or a Compose template.
 Example playbook execution:
 
 ```bash
-ansible-playbook -i inventory.ini playbooks/deploy_grafana_docker.yaml -e "domain=grafana.example.com" -l grafana.example.com
+ansible-playbook -i inventory/terraform_cmdb.py playbooks/deploy_grafana_docker.yaml -e "domain=grafana.example.com" -l grafana.example.com
 ```

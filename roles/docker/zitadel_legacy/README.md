@@ -26,5 +26,5 @@ files/
 
 ## RUN
 
-ansible-playbook -i inventory.ini deploy_zitadel_docker.yaml -e "domain=auth.svc.plus" -D -C -l auth.svc.plus
-ansible-playbook -i inventory.ini deploy_zitadel_docker.yaml -e "domain=auth.svc.plus" -D -l auth.svc.plus
+ansible-playbook -i inventory/terraform_cmdb.py deploy_zitadel_docker.yaml -e "domain=auth.svc.plus" -D -C -l auth.svc.plus
+ansible-playbook -i inventory/terraform_cmdb.py deploy_zitadel_docker.yaml -e "domain=auth.svc.plus" -D -l auth.svc.plus

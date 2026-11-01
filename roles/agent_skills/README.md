@@ -83,13 +83,13 @@ deletion only for controlled rebuilds of `/home/ubuntu/.agents/skills/`.
 Example:
 
 ```bash
-ansible-playbook -i inventory.ini -l jp-xhttp-contabo.svc.plus setup-ai-agent-skills.yml --tags agent_skills
+ansible-playbook -i inventory/terraform_cmdb.py -l jp-xhttp-contabo.svc.plus setup-ai-agent-skills.yml --tags agent_skills
 ```
 
 Bootstrap-only example that keeps the existing local source strict but skips
 quality gate failures from newly installed marketplace skills:
 
 ```bash
-ansible-playbook -i inventory.ini -l jp-xhttp-contabo.svc.plus setup-ai-agent-skills.yml --tags agent_skills \
+ansible-playbook -i inventory/terraform_cmdb.py -l jp-xhttp-contabo.svc.plus setup-ai-agent-skills.yml --tags agent_skills \
   -e agent_skills_quality_gate_fail_on_error=false
 ```

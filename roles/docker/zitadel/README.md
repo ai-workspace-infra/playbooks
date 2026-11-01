@@ -22,7 +22,7 @@ export VAULT_TOKEN=hvs.YOUR_VAULT_TOKEN_HERE  # 或使用 VAULT_SERVER_ROOT_ACCE
 同时支持在执行命令中以 `-e` 额外参数的形式传入 Vault 地址及令牌：
 
 ```bash
-ansible-playbook -i inventory.ini deploy_zitadel_docker.yaml \
+ansible-playbook -i inventory/terraform_cmdb.py deploy_zitadel_docker.yaml \
   -l jp-xhttp-contabo.svc.plus \
   -e "domain=iam.svc.plus" \
   -e "vault_addr=https://vault.svc.plus" \
@@ -42,7 +42,7 @@ ansible-playbook -i inventory.ini deploy_zitadel_docker.yaml \
 export VAULT_ADDR=https://vault.svc.plus
 export VAULT_SERVER_ROOT_ACCESS_TOKEN=hvs.YOUR_VAULT_TOKEN_HERE
 
-ansible-playbook -i inventory.ini deploy_zitadel_docker.yaml \
+ansible-playbook -i inventory/terraform_cmdb.py deploy_zitadel_docker.yaml \
   -l jp-xhttp-contabo.svc.plus \
   -e "domain=iam.svc.plus" \
   -C -D
@@ -54,7 +54,7 @@ ansible-playbook -i inventory.ini deploy_zitadel_docker.yaml \
 export VAULT_ADDR=https://vault.svc.plus
 export VAULT_SERVER_ROOT_ACCESS_TOKEN=hvs.YOUR_VAULT_TOKEN_HERE
 
-ansible-playbook -i inventory.ini deploy_zitadel_docker.yaml \
+ansible-playbook -i inventory/terraform_cmdb.py deploy_zitadel_docker.yaml \
   -l jp-xhttp-contabo.svc.plus \
   -e "domain=iam.svc.plus" \
   -D
