@@ -35,13 +35,6 @@ class RemoteKubectl:
         fixed = {
             ('get', 'namespace', 'kube-system', '-o', 'json'),
             ('get', 'nodes', '-o', 'json'),
-            ('get', 'gitrepositories,kustomizations,helmreleases', '-A', '-o', 'json'),
-            ('get', 'gitrepository', 'config-prod', '-n', 'flux-system', '-o', 'json'),
-            ('get', 'gitrepository', 'vault-prod-config', '-n', 'flux-system', '-o', 'json'),
-            ('get', 'kustomization', 'prod-k3s-v6', '-n', 'flux-system', '-o', 'json'),
-            ('get', 'kustomization', 'external-secrets', '-n', 'flux-system', '-o', 'json'),
-            ('get', 'helmrelease', 'external-secrets', '-n', 'external-secrets', '-o', 'json'),
-            ('get', 'kustomization', 'vault-tls-identity', '-n', 'flux-system', '-o', 'json'),
             ('get', 'serviceaccount', identity.service_account, '-n', identity.namespace, '-o', 'json'),
             ('get', 'serviceaccount', identity.probe_service_account, '-n', identity.namespace, '-o', 'json'),
             ('get', '--raw', '/.well-known/openid-configuration'),
@@ -66,23 +59,4 @@ class RemoteKubectl:
             raise ClusterError('verified host operation failed') from None
         if result.returncode:
             raise ClusterError('verified host operation failed')
-        return result.stdout.strip()
-
-    def apply_manifest(self, manifest):
-        if not isinstance(manifest, str) or not manifest.strip() or len(manifest) > 65536:
-            raise ClusterError('invalid reviewed Flux manifest')
-        command = ['ssh', '-F', '/dev/null', '-o', 'BatchMode=yes',
-                   '-o', 'StrictHostKeyChecking=yes', '-o', 'GlobalKnownHostsFile=/dev/null',
-                   '-o', 'UserKnownHostsFile=' + self.known_hosts,
-                   '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes',
-                   '-o', 'PermitLocalCommand=no', '-o', 'PasswordAuthentication=no',
-                   '-o', 'ConnectTimeout=15', '-l', self.ssh_user, self.host,
-                   shlex.join((*(('env','-u','KUBECONFIG','k3s','kubectl') if self.runtime == 'k3s' else ('kubectl',)), 'apply', '-f', '-'))]
-        try:
-            result = subprocess.run(command, input=manifest, text=True, capture_output=True,
-                                    timeout=45, check=False, env=self.env)
-        except (OSError, subprocess.TimeoutExpired):
-            raise ClusterError('verified Flux apply failed') from None
-        if result.returncode:
-            raise ClusterError('verified Flux apply failed')
         return result.stdout.strip()

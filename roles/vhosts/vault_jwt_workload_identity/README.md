@@ -1,20 +1,12 @@
 # Vault JWT workload identity
 
 This reusable role creates a dedicated Vault JWT authentication mount and
-single-path read policy, verifies a workload's allowed and denied access, or
-releases one reviewed V6 Flux stage. It accepts explicit target and identity
+single-path read policy and verifies a workload's allowed and denied access. It accepts explicit target and identity
 parameters and has no cluster-generation, namespace, audience, Vault endpoint or
 Kubernetes version defaults. The caller must validate CMDB, node identity,
 host-key attestation and receipt provenance.
 
-`vault_jwt_workload_identity_mode` is `configure`, `verify`, `release-root`,
-`release-eso`, or `release-identity` (default `verify`). Release modes require
-the pinned GitOps checkout and immutable tag. They apply only the declared V6
-management source and root, then wait for the exact gate set in that release.
-The PROD environment root is `prod-k3s`; its path remains batch-scoped at
-`environments/clusters/prod-k3s-v6`. The root stage keeps every child paused; the ESO stage enables only ESO; the
-identity stage additionally enables the Vault TLS reader ServiceAccount gate.
-Later stages are intentionally not inferred or enabled by these modes.
+`vault_jwt_workload_identity_mode` is `configure`, `refresh`, or `verify` (default `verify`).
 
 The
 `vault_jwt_workload_identity_config` mapping supplies `host`, `ssh_user`, `known_hosts`,
@@ -35,11 +27,7 @@ service account are refused. Secrets and token values stay in memory; task
 output is suppressed and the result fact contains only redacted status and
 cluster IDs.
 
-The caller owns staged rollout, access to the authenticated Vault endpoint,
-artifact and key attestation, revocation/rollback, and interpretation of a
-partial configure failure. Flux release modes do not change DNS, database
-state, business writers, or service HelmReleases outside the explicitly allowed
-V6 gate set.
+The caller owns access, attestation, revocation and partial failure handling. Flux reconciles GitOps independently.
 
 Configuration is resumable after partial failure: a retry reads the dedicated
 mount, reader policy, auth config and role first; it creates only missing items
