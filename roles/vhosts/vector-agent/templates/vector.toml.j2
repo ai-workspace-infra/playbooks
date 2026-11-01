@@ -40,6 +40,14 @@ endpoints = ["http://127.0.0.1:9256/metrics"]
 scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
 {% endif %}
 
+{% if vector_caddy_metrics_enabled | default(false) | bool %}
+[sources.caddy_metrics]
+type = "prometheus_scrape"
+endpoints = [{{ vector_caddy_metrics_endpoint | default('http://127.0.0.1:2019/metrics') | to_json }}]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+scrape_timeout_secs = 5
+{% endif %}
+
 {% set ai_aggregator_remote_inputs = [] %}
 {% if vector_ai_aggregator_enabled | default(false) | bool %}
 {% for target in vector_ai_aggregator_metrics_targets | default([]) %}
@@ -198,6 +206,26 @@ if exists(.name) && starts_with(string!(.name), "namedprocess_") {
 }
 '''
 
+{% if vector_caddy_metrics_enabled | default(false) | bool %}
+[transforms.add_caddy_labels]
+type = "remap"
+inputs = ["caddy_metrics"]
+source = '''
+.tags.instance = "{{ inventory_hostname }}"
+.tags.host = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.region = {{ obs_region | to_json }}
+.tags.resource_id = {{ obs_resource_id | to_json }}
+.tags.runtime_form = {{ obs_runtime_form | to_json }}
+.tags.resource_key = {{ obs_resource_key | to_json }}
+.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.job = "caddy"
+.tags.service = "caddy"
+'''
+{% endif %}
+
 {% set ssl_targets = blackbox_ssl_targets | default(blackbox_exporter_role_defaults.blackbox_ssl_targets | default([])) %}
 {% for target in ssl_targets %}
 {% set target_id = target.name | regex_replace('[^A-Za-z0-9_]', '_') %}
@@ -272,6 +300,9 @@ max_size = {{ vector_disk_buffer_max_bytes | default(536870912) }}
 [sinks.prometheus_remote]
 type = "prometheus_remote_write"
 {% set remote_inputs = ["add_labels"] %}
+{% if vector_caddy_metrics_enabled | default(false) | bool %}
+{% set _ = remote_inputs.append("add_caddy_labels") %}
+{% endif %}
 {% if vector_xhttp_monitoring_enabled | default(false) | bool %}
 {% set _ = remote_inputs.extend(["xhttp_caddy_labels", "xhttp_event_metrics"]) %}
 {% endif %}
