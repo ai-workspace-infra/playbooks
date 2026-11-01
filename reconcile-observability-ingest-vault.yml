@@ -1,0 +1,13 @@
+---
+- name: Reconcile the observability ingestion Vault identity
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    observability_ingest_vault_identity_address: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') }}"
+    observability_ingest_vault_identity_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+    observability_ingest_vault_identity_gitops_root: "{{ lookup('ansible.builtin.env', 'GITOPS_ROOT') }}"
+    observability_ingest_vault_identity_mount: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_INGEST_VAULT_MOUNT') }}"
+    observability_ingest_vault_identity_apply: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_INGEST_VAULT_APPLY') | default('false', true) | bool }}"
+  roles:
+    - role: vhosts/observability_ingest_vault_identity

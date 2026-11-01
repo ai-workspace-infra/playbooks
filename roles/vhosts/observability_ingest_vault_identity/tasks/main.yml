@@ -1,0 +1,33 @@
+---
+- name: Require reviewed GitOps declarations and Vault authorization
+  ansible.builtin.assert:
+    that:
+      - observability_ingest_vault_identity_address is match('^https://')
+      - observability_ingest_vault_identity_token | length > 0
+      - observability_ingest_vault_identity_gitops_root | length > 0
+      - observability_ingest_vault_identity_mount is match('^[a-zA-Z0-9_-]+$')
+  no_log: true
+
+- name: Load reviewed ingestion policy
+  ansible.builtin.include_vars:
+    file: '{{ observability_ingest_vault_identity_gitops_root }}/security/vault/policies/observability-ingest-reader.yaml'
+    name: observability_ingest_vault_identity_policy
+
+- name: Load reviewed ingestion Kubernetes role
+  ansible.builtin.include_vars:
+    file: '{{ observability_ingest_vault_identity_gitops_root }}/security/vault/workload-identities/observability-ingest-reader.yaml'
+    name: observability_ingest_vault_identity_role
+
+- name: Reconcile ingestion Vault identity from reviewed declarations
+  ansible.builtin.command:
+    argv: ['{{ ansible_playbook_python }}', '{{ role_path }}/files/reconcile.py']
+    stdin: >-
+      {{ {'address': observability_ingest_vault_identity_address,
+          'token': observability_ingest_vault_identity_token,
+          'mount': observability_ingest_vault_identity_mount,
+          'policy': observability_ingest_vault_identity_policy,
+          'role': observability_ingest_vault_identity_role,
+          'apply': observability_ingest_vault_identity_apply | bool} | to_json }}
+  register: observability_ingest_vault_identity_result
+  changed_when: (observability_ingest_vault_identity_result.stdout | from_json).changed | int > 0
+  no_log: true
