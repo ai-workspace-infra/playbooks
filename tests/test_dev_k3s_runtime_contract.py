@@ -17,7 +17,7 @@ def load(name, path):
     return module
 
 
-ADAPTER = load("dev_adapter", "scripts/dev_k3s_bootstrap.py")
+ADAPTER = load("runtime_contract", "scripts/dev_runtime_contract.py")
 VERIFY = load("dev_verify", "roles/vhosts/flux_gitops/files/verify_bootstrap.py")
 SHA = "a" * 40
 
@@ -103,21 +103,6 @@ class Contract(unittest.TestCase):
         with self.assertRaises(ValueError):
             VERIFY.evaluate(*self.resources(), "other-node", SHA)
 
-    def test_reusable_wrapper_is_dev_only_and_immutable(self):
-        path = ROOT / ".github/workflows/dev-k3s-bootstrap.yml"
-        if not path.exists():
-            self.skipTest("wrapper is added after its immutable producer commit")
-        doc = yaml.safe_load(path.read_text())
-        trigger = doc.get("on", doc.get(True))
-        self.assertEqual(set(trigger), {"workflow_call"})
-        self.assertEqual(set(trigger["workflow_call"]["inputs"]), {"cmdb_artifact", "cmdb_sha256", "instance_id", "gitops_sha"})
-        job = doc["jobs"]["bootstrap"]
-        self.assertEqual(job["environment"], "dev")
-        checkout = job["steps"][0]["with"]
-        self.assertEqual(checkout["repository"], "ai-workspace-infra/playbooks")
-        self.assertRegex(checkout["ref"], r"^[0-9a-f]{40}$")
-        self.assertNotIn("secrets", trigger["workflow_call"])
-
     def test_root_and_unbounded_vault_sessions_are_rejected(self):
         valid = {"client_token": "synthetic-unit-value", "token_type": "service", "lease_duration": 300, "policies": ["default", "dev-bootstrap"]}
         self.assertEqual(ADAPTER.validate_session(valid), valid)
@@ -129,14 +114,6 @@ class Contract(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ADAPTER.validate_session({**valid, "lease_duration": ttl})
 
-    def test_single_node_receipt_is_opt_in_not_a_generic_role_change(self):
-        defaults = yaml.safe_load((ROOT / "roles/vhosts/flux_gitops/defaults/main.yml").read_text())
-        self.assertFalse(defaults["k3s_platform_strict_dev_receipt"])
-        tasks = yaml.safe_load((ROOT / "roles/vhosts/flux_gitops/tasks/handover.yml").read_text())
-        observer = next(t for t in tasks if t["name"] == "Verify actual node cluster and observed Flux revision")
-        self.assertEqual(observer["when"], "k3s_platform_strict_dev_receipt | bool")
-        self.assertIn('"k3s_platform_strict_dev_receipt": True', (ROOT / "scripts/dev_k3s_bootstrap.py").read_text())
-
     def test_expected_runtime_k3s_version_and_architecture_are_required(self):
         args = self.resources()
         args[0]["items"][0]["status"]["nodeInfo"] = {"kubeletVersion": "v1.37.1+k3s1", "architecture": "amd64"}
@@ -145,16 +122,6 @@ class Contract(unittest.TestCase):
             with self.assertRaises(ValueError):
                 VERIFY.evaluate(*args, ADAPTER.TARGET, SHA, version, arch)
 
-    def test_source_commit_and_synchronous_role_are_present(self):
-        tasks = (ROOT / "roles/vhosts/flux_gitops/tasks/handover.yml").read_text()
-        self.assertIsInstance(yaml.safe_load(tasks), list)
-        self.assertIn("commit: {{ k3s_platform_git_commit }}", tasks)
-        self.assertNotIn("poll: 0", tasks)
-        self.assertIn("verify_bootstrap.py", tasks)
-        script = (ROOT / "scripts/dev_k3s_bootstrap.py").read_text()
-        self.assertNotIn("StrictHostKeyChecking=no", script)
-        self.assertNotIn("ssh-keyscan", script)
-        self.assertIn('["ssh-add", "-"]', script)
 
 
 if __name__ == "__main__":

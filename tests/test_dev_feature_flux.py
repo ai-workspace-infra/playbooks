@@ -385,12 +385,13 @@ class RegistryProjectionTests(unittest.TestCase):
   import importlib.util
   path=ROOT/'roles/vhosts/k3s_runtime_secret_sync/files/dev_registry.py'
   spec=importlib.util.spec_from_file_location('dev_registry',path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-  obj=module.build('feature-xconnect-referral-sit',{'GHCR_USERNAME':'fixture','GHCR_TOKEN':'synthetic'})
+  lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'a'*64}
+  obj=module.build('feature-sit-test-1483-sit',{'GHCR_USERNAME':'fixture','GHCR_TOKEN':'synthetic'},lane)
   self.assertEqual(obj['metadata']['name'],'web-saas-registry')
   self.assertEqual(obj['type'],'kubernetes.io/dockerconfigjson')
   for ns in ('production','default','flux-system'):
-   with self.assertRaises(ValueError):module.build(ns,{'GHCR_USERNAME':'fixture','GHCR_TOKEN':'synthetic'})
-  with self.assertRaises(ValueError):module.build('web-saas-uat',{})
+   with self.assertRaises(ValueError):module.build(ns,{'GHCR_USERNAME':'fixture','GHCR_TOKEN':'synthetic'},lane)
+  with self.assertRaises(ValueError):module.build('web-saas-uat',{},lane)
 
 class CandidateEvolutionTests(unittest.TestCase):
  def test_seed_owner_rejects_incomplete_tagged_receipt_before_target_or_transport(self):
@@ -436,9 +437,8 @@ class CandidateEvolutionTests(unittest.TestCase):
   import run_dev_feature_flux as owner
   for sha,pr in [('a'*40,605),('b'*40,606)]:
    receipt={'schema_version':'dev-feature-candidate/v1','result':'verified','repository':'ai-workspace-infra/gitops','stage':'sit','candidate_head':sha,'candidate_pr':pr,'base_ref':'main','base_sha':'c'*40,'checks':'success','same_repository':True,'main_ancestry_verified':True,'source':{'workflow_ref':'ai-workspace-infra/platform-ops-toolkit/.github/workflows/dev-feature-deploy.yml@refs/heads/main','run_id':'123'}}
-   self.assertEqual(owner.validate_candidate_receipt(receipt,sha,'sit','123')['candidate_head'],sha)
-   with self.assertRaises(ValueError):owner.validate_candidate_receipt(receipt,'d'*40,'sit','123')
-   with self.assertRaises(ValueError):owner.validate_candidate_receipt(receipt,sha,'sit','different-run')
+   with self.assertRaisesRegex(ValueError,'unsupported candidate receipt schema'):
+    owner.validate_candidate_receipt(receipt,sha,'sit','123')
   docs=Contracts().docs();first=C.validate_documents(docs,'sit')['images']['accounts']
   release_doc=next(x for x in docs if x['metadata']['name']=='web-saas-fullstack-release')
   release=yaml.safe_load(release_doc['data']['release.yaml'])

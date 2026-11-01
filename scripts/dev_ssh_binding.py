@@ -3,9 +3,8 @@ import copy,json,os,re,subprocess,tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from dev_k3s_bootstrap import request,validate_session
+from dev_runtime_contract import request,validate_session
 
-ROLE='github-actions-playbooks-dev-k3s-bootstrap'
 RECORD='kv/data/CICD/dev/k3s-bootstrap'
 
 def require(value,message):
@@ -17,10 +16,10 @@ def run(args,env=None,stdin=None,timeout=1200):
  return p.stdout
 
 @contextmanager
-def binding(cmdb,instance_id,tagged=False,seed=False):
+def binding(cmdb,instance_id,*,tagged,seed=False):
  oidc=request(os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']+'&audience=vault',{'Authorization':'Bearer '+os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})['value']
- require(not seed or tagged, 'seed-specific identity requires tagged SIT')
- role=('github-actions-playbooks-feature-seed-sit' if seed else 'github-actions-playbooks-feature-lane-sit') if tagged else ROLE
+ require(tagged, 'authenticated tagged SIT feature lane required')
+ role='github-actions-playbooks-feature-seed-sit' if seed else 'github-actions-playbooks-feature-lane-sit'
  session=request('https://vault.svc.plus/v1/auth/jwt/login',{'Content-Type':'application/json'},json.dumps({'role':role,'jwt':oidc}).encode())['auth']
  validate_session(session);token=session['client_token'];agent=None
  try:

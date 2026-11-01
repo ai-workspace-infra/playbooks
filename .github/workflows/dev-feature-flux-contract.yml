@@ -3,15 +3,8 @@ on:
   pull_request:
     paths:
       - 'dev_feature_flux.yml'
-      - 'dev_platform_ingress.yml'
-      - 'roles/platform/dev_platform_ingress/**'
       - 'scripts/dev_ssh_binding.py'
-      - 'scripts/dev_platform_candidate.py'
-      - 'scripts/run_dev_platform_ingress.py'
-      - 'tests/test_dev_platform_ingress.py'
       - 'tests/test_dev_ssh_binding.py'
-      - 'tests/fixtures/dev_platform_ingress*'
-      - '.github/workflows/dev-platform-ingress.yml'
       - 'roles/platform/dev_feature_flux/**'
       - 'scripts/dev_feature_candidate.py'
       - 'scripts/dev_feature_baseline_inputs.py'
@@ -40,9 +33,7 @@ jobs:
       - run: python -m unittest discover -s tests -p test_dev_feature_baseline_inputs.py
       - run: python -m unittest discover -s tests -p test_dev_feature_flux.py
       - run: python -m unittest discover -s tests -p test_sit_feature_domain_contract.py
-      - run: python -m unittest discover -s tests -p test_dev_platform_ingress.py
       - run: python -m unittest discover -s tests -p test_dev_ssh_binding.py
       - run: python -m unittest discover -s tests -p test_dev_oci_runtime.py
       - run: python -m unittest discover -s tests -p test_dev_lane_audit.py
       - run: ansible-playbook -i 'localhost,' dev_feature_flux.yml --syntax-check -e dev_feature_target=localhost
-      - run: ANSIBLE_ROLES_PATH=roles ansible-playbook -i tests/fixtures/dev_k3s_syntax.yml dev_platform_ingress.yml --syntax-check -e dev_platform_target=dev-k3s-v5

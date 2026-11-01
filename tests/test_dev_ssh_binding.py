@@ -20,7 +20,7 @@ class SharedBinding(unittest.TestCase):
    calls.append((args,stdin))
    return 'SSH_AUTH_SOCK=/tmp/synthetic-agent; SSH_AGENT_PID=123;' if args==['ssh-agent','-s'] else ''
   with patch.dict(os.environ,{'ACTIONS_ID_TOKEN_REQUEST_URL':'https://token.invalid?x=1','ACTIONS_ID_TOKEN_REQUEST_TOKEN':'synthetic'}),patch.object(S,'request',side_effect=self.request(self.session(),self.secret())),patch.object(S,'run',side_effect=run),patch.object(S.subprocess,'run'):
-   with S.binding(cmdb,'123') as value:
+   with S.binding(cmdb,'123',tagged=True) as value:
     self.assertEqual(value.env['ANSIBLE_HOST_KEY_CHECKING'],'True')
     self.assertIn('StrictHostKeyChecking=yes',value.env['ANSIBLE_SSH_ARGS']);self.assertIn('IdentitiesOnly=yes',value.env['ANSIBLE_SSH_ARGS'])
     for file in value.directory.iterdir():self.assertNotIn('synthetic-private',file.read_text())
@@ -30,5 +30,5 @@ class SharedBinding(unittest.TestCase):
   for session,secret in [(self.session(['root']),self.secret()),(self.session(),dict(self.secret(),INSTANCE_ID='different'))]:
    with patch.dict(os.environ,{'ACTIONS_ID_TOKEN_REQUEST_URL':'https://token.invalid?x=1','ACTIONS_ID_TOKEN_REQUEST_TOKEN':'synthetic'}),patch.object(S,'request',side_effect=self.request(session,secret)),patch.object(S,'run',side_effect=AssertionError('no SSH')):
     with self.assertRaises(ValueError):
-     with S.binding({'dev-k3s-v5':{'ip':'93.184.216.34','host_vars':{}}},'123'):self.fail('must block')
+     with S.binding({'dev-k3s-v5':{'ip':'93.184.216.34','host_vars':{}}},'123',tagged=True):self.fail('must block')
 if __name__=='__main__':unittest.main()

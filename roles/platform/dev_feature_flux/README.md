@@ -35,17 +35,15 @@ owner guards (for example `sit_rebuild_pv_policy_rejected` or
 exception text, Kubernetes stderr, request contents and secret values are never
 copied into the receipt.
 
-SIT uses feature-xconnect-referral-sit and a fixed PR commit. UAT uses web-saas-uat
-and an independent branch-main Source, with initial exact-main candidate checks.
-Later reviewed GitOps main updates reconcile automatically in UAT; a prior
-receipt does not claim future revisions passed tests. Both controllers use only
-the namespace-bound lane-reconciler identity for Kustomize and Helm.
+Only authenticated tagged SIT Feature Lane candidates are accepted. Namespace,
+GitOps path, DNS names, and component images are derived from the verified
+candidate projection and protected run evidence. UAT and other environment
+publishing use their own environment-selected release workflows.
 
-Inputs dev_feature_config/report are produced by the trusted adapter, not passed
-from an arbitrary PR. node/cluster UIDs and protected platform revision must
-match real runtime state before and after writes. Existing namespaces with a
-different owner are rejected. Readiness requires source, namespace Kustomization
-and HelmRelease at the observed revision; business, database identity, Stripe
+Candidate, node/cluster UIDs, and protected platform revision must match actual
+runtime state before and after writes. Existing namespaces with a different
+owner are rejected. Readiness requires source, namespace Kustomization and
+HelmRelease at the observed revision; business, database identity, Stripe
 Sandbox and external TLS acceptance remain separate.
 
 Required namespace app credentials/database admin/runtime identities are owned
@@ -54,21 +52,21 @@ ACME resolver and no copied Secret. Platform Traefik, DNS and public firewall
 changes are distinct infrastructure owner operations. This workflow never reads
 production or shared application Secret values and adds no Vault permission.
 
-`prepare` creates only the fixed namespace/SA/Role/RoleBinding, then invokes the existing `vhosts/k3s_runtime_secret_sync` opt-in Dev registry mode. This reads only `kv/CICD/dev/ghcr` and writes only `web-saas-registry` in the selected fixed lane. The default KV field-sync mode remains unchanged. Secret values stay in controller memory and strict SSH stdin; no artifact contains them.
+`prepare` creates only the candidate-scoped namespace and identities, then reads the dedicated feature-lane registry credential and writes only `web-saas-registry`. Secret values stay in controller memory and strict SSH stdin; no artifact contains them.
 
-For tagged SIT candidates, the previous paragraph's registry source applies only to the legacy lane. The tagged owner uses the separate `github-actions-playbooks-feature-lane-sit` role and `kv/sit/platform/ghcr/feature-registry` (`GHCR_USERNAME`, `GHCR_TOKEN`). It requires GitHub to confirm the credential has exactly `read:packages` before projecting it into the feature namespace. The role must be bound to the protected `feature-lane-deploy.yml` caller and the final immutable Playbooks workflow revision; it is not provisioned by this PR. The tagged candidate must also have a fresh, matching, same-run provider observation. These checks do not prove runtime namespace isolation or authorize database initialization.
+The owner uses the separate `github-actions-playbooks-feature-lane-sit` role and `kv/sit/platform/ghcr/feature-registry` (`GHCR_USERNAME`, `GHCR_TOKEN`). It requires GitHub to confirm the credential has exactly `read:packages` before projecting it into the feature namespace. The role must be bound to the protected `feature-lane-deploy.yml` caller and the final immutable Playbooks workflow revision; it is not provisioned by this PR. The tagged candidate must also have a fresh, matching, same-run provider observation. These checks do not prove runtime namespace isolation or authorize database initialization.
 
 `verify` requires a same-run authenticated `dev-lane-seed/v1` receipt artifact and digest from the fixed database seed owner. It must bind candidate_sha, namespace, the current CMDB-selected instance, node UID and cluster UID, result=verified, schema_initialized=true and database_roles=[xc_accounts_rw,xc_billing_rw]. This interface does not implement schema initialization or accept a caller boolean. The Toolkit caller verifies the artifact producer source/run before passing it. PG readiness/DDL/DB-role preparation must precede full HelmRelease readiness; business must not receive lane_admin.
 
-SIT is fixed commit; UAT is the unique persistent branch-main source. UAT acceptance checks the sampled immutable current main revision and expires after main changes. TLS is a separate exact `/tls` path, enabled only after all three fixed onwalk.net hosts resolve uniquely to the Dev IP and HTTP port 80 responds without redirects. Traefik ACME `dev-http01` owns certificates; no namespace TLS Secret is copied. Platform Traefik resources require a separate reviewed infrastructure owner and are rejected by this feature renderer.
+The current tagged Feature Lane caller runs SIT only. UAT and Prod releases use their own parameter-selected workflows. TLS and public edge changes remain separate reviewed infrastructure owner operations.
 
-Proposed Vault changes (NOT applied): retain bootstrap e460 claim; add the reviewed new Playbooks `dev-feature-flux.yml@<final full SHA>` callee with Toolkit main-only `.github/workflows/dev-feature-deploy.yml@refs/heads/main` caller and environment dev, and add read only `kv/data/CICD/dev/ghcr` to the exact existing Dev role. Keep existing exact `kv/data/CICD/dev/k3s-bootstrap` read; no cloudflare, PROD, wildcard path, secret write or GitHub Secret fallback. Caller infrastructure workflow must merge to main before OIDC authorization. Business SIT candidate remains an unmerged fixed PR commit.
+The active caller is the tagged Feature Lane workflow on protected `main`; it uses the dedicated SIT feature-lane Vault role and registry path. The removed Dev feature workflow no longer has a caller or credential role.
 
 Ordered handoff: prepare namespace+registry → B seed DB-admin only → submit fixed Flux controllers (returns submitted_pending_seed, never PASS) → B wait PG then initialize schema/roles/runtime Secrets → verify six-component readiness with B seed receipt. verify performs no object apply. This breaks the PG/full-Helm readiness dependency cycle.
 
 Candidate evolution does not change this execution owner or its Vault callee claim. `gitops_sha` is fixed for one run, not permanently fixed to PR605. The protected Toolkit main caller resolves the actual PR using GitHub API, verifies same repository/main baseline/current head/ancestry/CI plus build provenance, and uploads a same-run `receipt.json` artifact. It supplies artifact name + SHA256 as `candidate_artifact`/`candidate_sha256`. The owner verifies digest, current run binding, exact checkout HEAD and constrained manifests; it never treats a raw workflow input JSON or a PR-authored receipt as approval.
 
-Candidate receipt v1 fields: `schema_version=dev-feature-candidate/v1`, `result=verified`, `repository=ai-workspace-infra/gitops`, `stage`, positive integer `candidate_pr`, full `candidate_head` matching gitops_sha, `base_ref=main`, full `base_sha`, `checks=success`, `same_repository=true`, `main_ancestry_verified=true`, and `source={workflow_ref: ai-workspace-infra/platform-ops-toolkit/.github/workflows/dev-feature-deploy.yml@refs/heads/main, run_id: <current run>}`. These are public API-verification results from the trusted producer, not self-certified arbitrary caller input. Caller must verify the real producer before invoking this owner. UAT additionally requires checkout SHA equals current origin/main. Component image repositories stay allowlisted and digests may evolve; source repository/SHA, build-run and image-digest annotations and workload IMAGE must agree. Actual release/build provenance is verified by the caller.
+Only the authenticated tagged Feature Lane candidate receipt is accepted by this owner; the retired Dev candidate schema is rejected.
 
 
 Prepare now authenticates immutable OCI bytes using the exact approved Dev GHCR record, verifies each root/index/config SHA256, selects one linux/amd64 child and checks any source/revision labels that exist. Missing labels remain UNKNOWN; source provenance still comes from the authenticated caller build matrix. No config.Env, arbitrary labels, raw blobs or registry tokens appear in outputs. The safe mapping binds all six candidate images/sources, candidate SHA/render digest, namespace, instance, node/cluster UID and original GHA caller/source/run/attempt. Registry projection and mapping must both succeed; a failure cannot leave a successful prepare receipt.

@@ -13,10 +13,8 @@ def verify_readonly_registry(username,token):
   profile=json.load(response)
  if scopes!={'read:packages'} or profile.get('login','').lower()!=username.lower():raise ValueError('tagged registry credential must be read:packages only')
 
-def validate_namespace(namespace,tagged_lane=None):
- if tagged_lane is None:
-  if namespace not in ('feature-xconnect-referral-sit','web-saas-uat'):raise ValueError('Dev namespace required')
-  return None
+def validate_namespace(namespace,tagged_lane):
+ if not isinstance(tagged_lane,dict):raise ValueError('tagged SIT lane required')
  path=Path(__file__).resolve().parents[3]/'platform/dev_feature_flux/files/reconcile.py'
  spec=importlib.util.spec_from_file_location('dev_feature_scope',path)
  scope=importlib.util.module_from_spec(spec);spec.loader.exec_module(scope)
@@ -24,7 +22,7 @@ def validate_namespace(namespace,tagged_lane=None):
  if namespace!=expected:raise ValueError('tagged registry namespace mismatch')
  return feature,tag
 
-def build(namespace,record,tagged_lane=None):
+def build(namespace,record,tagged_lane):
  validate_namespace(namespace,tagged_lane)
  username=record.get('GHCR_USERNAME');token=record.get('GHCR_TOKEN')
  if not isinstance(username,str) or not username or not isinstance(token,str) or not token:raise ValueError('Dev registry fields missing')
@@ -42,9 +40,8 @@ def validate_context(context):
  for key in ('namespace_uid','node_uid','cluster_uid'):
   if not re.fullmatch('[0-9a-f-]{36}',context.get(key,'')):raise ValueError('runtime UID binding required')
  source_context=context.get('source',{})
- repo=source_context.get('repository');allowed=('ai-workspace-infra/platform-ops-toolkit','ai-workspace-infra/Platform-Orchestrator') if lane is not None else ('ai-workspace-infra/platform-ops-toolkit',)
- workflow='feature-lane-deploy.yml' if lane is not None else 'dev-feature-deploy.yml'
- if repo not in allowed or source_context.get('workflow_ref')!=repo+'/.github/workflows/'+workflow+'@refs/heads/main' or not re.fullmatch('[0-9a-f]{40}',source_context.get('workflow_sha','')) or not re.fullmatch('[0-9a-f]{40}',source_context.get('owner_sha','')) or not re.fullmatch('[1-9][0-9]*',str(source_context.get('run_id',''))) or not re.fullmatch('[1-9][0-9]*',str(source_context.get('run_attempt',''))):raise ValueError('prepare GHA source binding required')
+ repo=source_context.get('repository')
+ if not isinstance(lane,dict) or repo not in ('ai-workspace-infra/platform-ops-toolkit','ai-workspace-infra/Platform-Orchestrator') or source_context.get('workflow_ref')!=repo+'/.github/workflows/feature-lane-deploy.yml@refs/heads/main' or not re.fullmatch('[0-9a-f]{40}',source_context.get('workflow_sha','')) or not re.fullmatch('[0-9a-f]{40}',source_context.get('owner_sha','')) or not re.fullmatch('[1-9][0-9]*',str(source_context.get('run_id',''))) or not re.fullmatch('[1-9][0-9]*',str(source_context.get('run_attempt',''))):raise ValueError('prepare GHA source binding required')
  if not re.fullmatch('[0-9a-f]{64}',context.get('manifest_sha256','')):raise ValueError('candidate manifest binding required')
  if not re.fullmatch('[0-9a-f]{40}',context.get('candidate_sha','')):raise ValueError('immutable candidate required')
  images=context.get('images',{});sources=context.get('sources',{})
@@ -63,7 +60,7 @@ def mapping(context,record,inspect=dev_oci.inspect):
   result[component]={**value,'source_repository':source['repository'],'source_sha':source['source_sha'],'build_run_id':source['build_run_id']}
  return {'schema_version':'dev-oci-platform/v1','images':result,'binding':context}
 
-def remote_command(namespace,uid,tagged_lane=None):
+def remote_command(namespace,uid,tagged_lane):
  import shlex
  identity=validate_namespace(namespace,tagged_lane)
  script="""import json,subprocess,sys
@@ -94,8 +91,8 @@ def main():
  context=json.loads(os.environ['DEV_REGISTRY_CONTEXT'])
  if context.get('namespace')!=ns:raise ValueError('registry namespace mismatch')
  validate_context(context)
- source='kv/sit/platform/ghcr/feature-registry' if context.get('tagged_lane') else 'kv/CICD/dev/ghcr'
- path='kv/data/sit/platform/ghcr/feature-registry' if context.get('tagged_lane') else 'kv/data/CICD/dev/ghcr'
+ source='kv/sit/platform/ghcr/feature-registry'
+ path='kv/data/sit/platform/ghcr/feature-registry'
  req=urllib.request.Request('https://vault.svc.plus/v1/'+path,headers={'X-Vault-Token':os.environ['DEV_SYNC_VAULT_TOKEN']})
  with urllib.request.urlopen(req,timeout=20) as response:record=json.load(response)['data']
  if context.get('tagged_lane'):
@@ -105,7 +102,7 @@ def main():
  secret=build(ns,record['data'],context.get('tagged_lane'))
  platform_mapping=mapping(context,record['data'])
  secret['metadata']['annotations']={'delivery.svc.plus/namespace-uid':context['namespace_uid']}
- args=['ssh','-F','/dev/null','-o','StrictHostKeyChecking=yes','-o','GlobalKnownHostsFile=/dev/null','-o','UpdateHostKeys=no','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','UserKnownHostsFile='+os.environ['DEV_REGISTRY_KNOWN_HOSTS'],'-i',os.environ['DEV_REGISTRY_PUBLIC_IDENTITY'],'root@'+host,remote_command(ns,context['namespace_uid'],context.get('tagged_lane'))]
+ args=['ssh','-F','/dev/null','-o','StrictHostKeyChecking=yes','-o','GlobalKnownHostsFile=/dev/null','-o','UpdateHostKeys=no','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','UserKnownHostsFile='+os.environ['DEV_REGISTRY_KNOWN_HOSTS'],'-i',os.environ['DEV_REGISTRY_PUBLIC_IDENTITY'],'root@'+host,remote_command(ns,context['namespace_uid'],context['tagged_lane'])]
  p=subprocess.run(args,input=json.dumps(secret),text=True,capture_output=True,timeout=60)
  if p.returncode or p.stdout.strip()!='secret/web-saas-registry':raise RuntimeError('registry projection failed')
  print(json.dumps({'result':'configured','namespace':ns,'secret_name':'web-saas-registry','source_path':source,'source_version':record['metadata']['version'],'oci_mapping':platform_mapping}))

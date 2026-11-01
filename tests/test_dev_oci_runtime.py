@@ -69,8 +69,9 @@ class OCITests(unittest.TestCase):
 
 class RuntimeTests(unittest.TestCase):
  def fixture(self):
-  config={'namespace':'feature-xconnect-referral-sit','namespace_uid':'3'*36,'candidate_sha':'a'*40,'node_uid':'1'*36,'cluster_uid':'2'*36,'manifest_sha256':'b'*64}
-  context={**config,'instance_id':'109324752','source':{'repository':'ai-workspace-infra/platform-ops-toolkit','workflow_ref':'ai-workspace-infra/platform-ops-toolkit/.github/workflows/dev-feature-deploy.yml@refs/heads/main','workflow_sha':'c'*40,'owner_sha':'d'*40,'run_id':'123','run_attempt':'1'},'images':{},'sources':{}}
+  lane={'feature_id':'sit-test-1483','feature_tag':'smoke-sit-test-1483','candidate_sha256':'f'*64}
+  config={'namespace':'feature-sit-test-1483-sit','tagged_lane':lane,'namespace_uid':'3'*36,'candidate_sha':'a'*40,'node_uid':'1'*36,'cluster_uid':'2'*36,'manifest_sha256':'b'*64}
+  context={**config,'instance_id':'109324752','source':{'repository':'ai-workspace-infra/Platform-Orchestrator','workflow_ref':'ai-workspace-infra/Platform-Orchestrator/.github/workflows/feature-lane-deploy.yml@refs/heads/main','workflow_sha':'c'*40,'owner_sha':'d'*40,'run_id':'123','run_attempt':'1'},'images':{},'sources':{}}
   for i,name in enumerate(G.IMAGES):
    context['images'][name]='ghcr.io/'+G.IMAGES[name]+'@sha256:'+str(i)*64
    context['sources'][name]={'repository':G.SOURCES[name],'source_sha':'e'*40,'build_run_id':'10'}
@@ -81,6 +82,9 @@ class RuntimeTests(unittest.TestCase):
   for name,row in mapping['images'].items():
    annotations={'release.svc.plus/source_repository':row['source_repository'],'release.svc.plus/source_sha':row['source_sha'],'release.svc.plus/image_digest':row['manifest_digest'],'release.svc.plus/build_run_id':row['build_run_id']}
    pods.append({'metadata':{'name':'web-saas-'+name,'uid':'uid-'+name,'namespace':config['namespace'],'labels':{'app.kubernetes.io/instance':'web-saas','app.kubernetes.io/component':name},'annotations':annotations},'spec':{'nodeName':'dev-k3s-v5','containers':[{'name':name,'image':row['image']}]},'status':{'phase':'Running','conditions':[{'type':'Ready','status':'True'}],'containerStatuses':[{'name':name,'ready':True,'state':{'running':{}},'imageID':'docker-pullable://'+row['image'].split('@')[0]+'@'+row['platform_manifest_digest']}]}})
+  for pod in pods:
+   if pod['metadata']['labels']['app.kubernetes.io/component'] in ('billing','content'):
+    pod['spec']['containers'][0]['readinessProbe']={'httpGet':{'path':'/readyz','port':8080}}
   return config,context,{'items':pods}
  def test_amd64_child_and_root_image_ids_are_both_legitimate(self):
   config,_,pods=self.fixture();self.assertEqual(len(R.verify_runtime(config,pods)),6)
@@ -96,7 +100,7 @@ class RuntimeTests(unittest.TestCase):
   with self.assertRaises(ValueError):R.verify_runtime(config,pods)
  def test_prepare_receipt_binding_and_candidate_image_change_invalidates(self):
   config,context,_=self.fixture();mapping=config['runtime_mapping']
-  receipt={**config,'schema_version':'dev-feature-flux/v1','result':'prepared','mode':'prepare','instance_id':'109324752','owner_sha':'d'*40,'run_id':'123','run_attempt':'1','registry':{'result':'configured','namespace':config['namespace'],'source_path':'kv/CICD/dev/ghcr','secret_name':'web-saas-registry','oci_mapping':mapping}}
+  receipt={**config,'feature_tag':config['tagged_lane']['feature_tag'],'candidate_sha256':config['tagged_lane']['candidate_sha256'],'schema_version':'dev-feature-flux/v1','result':'prepared','mode':'prepare','instance_id':'109324752','owner_sha':'d'*40,'run_id':'123','run_attempt':'1','registry':{'result':'configured','namespace':config['namespace'],'source_path':'kv/sit/platform/ghcr/feature-registry','secret_name':'web-saas-registry','oci_mapping':mapping}}
   observation={'images':context['images'],'sources':context['sources']}
   self.assertEqual(adapter.validate_prepare_receipt(receipt,config,observation),mapping)
   observation=copy.deepcopy(observation);observation['images']['accounts']='ghcr.io/ai-workspace-services/accounts@sha256:'+'a'*64
@@ -105,7 +109,7 @@ class RuntimeTests(unittest.TestCase):
   with self.assertRaises(ValueError):adapter.validate_prepare_receipt(receipt,config,{'images':context['images'],'sources':context['sources']})
  def test_receipt_from_previous_instance_cannot_cross_bind(self):
   config,context,_=self.fixture();mapping=config['runtime_mapping']
-  receipt={**config,'schema_version':'dev-feature-flux/v1','result':'prepared','mode':'prepare','instance_id':'109277144','owner_sha':'d'*40,'run_id':'123','run_attempt':'1','registry':{'result':'configured','namespace':config['namespace'],'source_path':'kv/CICD/dev/ghcr','secret_name':'web-saas-registry','oci_mapping':mapping}}
+  receipt={**config,'schema_version':'dev-feature-flux/v1','result':'prepared','mode':'prepare','instance_id':'109277144','owner_sha':'d'*40,'run_id':'123','run_attempt':'1','registry':{'result':'configured','namespace':config['namespace'],'source_path':'kv/sit/platform/ghcr/feature-registry','secret_name':'web-saas-registry','oci_mapping':mapping}}
   with self.assertRaises(ValueError):adapter.validate_prepare_receipt(receipt,config,{'images':context['images'],'sources':context['sources']})
  def test_registry_mapping_rejects_wrong_repo_and_mismatched_source_label(self):
   _,context,_=self.fixture();context['images']['accounts']='ghcr.io/evil/accounts@sha256:'+'a'*64
