@@ -31,3 +31,36 @@ Use `migration_phase=secrets`, then target `init`, then `permissions` on each
 side, with `migration_gitops_dir`, `migration_gitops_sha`, `migration_operation`
 and `migration_ssh_target` supplied explicitly. Vault CLI authentication is
 required locally; no Vault token argument or value is recorded.
+
+## Existing business target
+
+An explicitly declared `target_mode: business` supports a separate operation
+for an existing, unversioned target; `schema_mode` must be
+`unversioned_verified_scope`. It requires 42 unique table names, a target
+Vault path, a distinct existing `staging_key_vault_path`, and a staged
+`listener_secret_name` different from `migration-listener`. The `secrets` phase
+creates or reuses the target database password in its Vault path, reads the
+existing staging key without rotating it, and delivers only the staged Secret.
+It does not change the active listener, its TLS Secret or candidate resources.
+
+The `init` phase is forbidden in business mode. After a separately reviewed
+schema operation, `permissions` requires all 42 declared tables to exist and
+`schema_migrations` to be absent. It refuses elevated, assumable or table-owning
+roles, existing DELETE/TRUNCATE privileges, unsafe non-loopback trust HBA rules,
+and incompatible row-security policies. It grants the declared target scope
+SELECT/INSERT/UPDATE without DELETE; the API still independently verifies
+column/PK/FK and visibility before preview. An existing migration login must
+authenticate using the Vault-managed password before grants; its password is
+not reset. A newly created login uses that same Vault-managed password.
+
+Authentication uses the declared PostgreSQL Service address: a synthetic wrong
+password must fail, the managed password must work, and the observed client
+address must be non-loopback. This prevents local PostgreSQL `trust` rules from
+being mistaken for credential validation. Credentials flow via stdin, not argv.
+An authentication failure after first-time role creation preserves the role and
+reports failure; do not assume that the operation rolled back after commit.
+
+This role does not apply target schema SQL, install migration receipt/sequence
+helpers, enable unversioned listener mode, issue a backup receipt or switch the
+active Secret. Those steps and their validation remain separate. The staged
+Secret and existing encrypted data should be retained for controlled retry.
