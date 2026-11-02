@@ -10,6 +10,15 @@ transaction before the guard and retain its locks through the schema operation.
 The guard adds short lock and statement timeouts; locks can temporarily block
 normal writers, which must be accounted for operationally.
 
+An independently captured target catalog SHA-256 is also checked after the
+table locks: it covers public table and column definitions, constraints,
+indexes, triggers, row policies, function definitions, ownership and ACL fields,
+sequence definitions, and installed extension versions. This detects drift from
+that target observation; it does not establish equivalence to the restore or
+cover every PostgreSQL catalog object, role membership, sequence value or ACL
+semantics. The table locks do not serialize all possible concurrent function,
+role or extension DDL, so administrators must coordinate schema changes.
+
 `compose_transaction` verifies a caller-supplied artifact SHA-256, binds the
 same identity in transaction-local settings, inserts the guard after the SQL's
 single top-level `BEGIN`, and leaves its final `COMMIT` or changes it to
@@ -20,8 +29,8 @@ function does not execute SQL or prove that a caller-selected hash is reviewed.
 This is a SQL generator, not a production executor or backup receipt. It cannot
 verify that a restored database came from the reviewed encrypted archive, that
 the restore remained unchanged, or that schema, sequences, extensions, roles,
-ACLs and object ownership match. It does not pin the SQL artifact, collect
-fingerprints, issue a receipt, perform recovery, or establish a migration API
+ACLs and object ownership match the backup. It does not authenticate the caller's
+SQL hash, collect fingerprints, issue a receipt, perform recovery, or establish a migration API
 backup gate. A separate reviewed owner operation must establish those facts,
 consume the generator in the same transaction as the pinned schema SQL, and
 record outcome before any production execution. Do not supply target data as a

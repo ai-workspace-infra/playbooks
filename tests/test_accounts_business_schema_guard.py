@@ -20,20 +20,20 @@ class GuardTest(unittest.TestCase):
                                   ({'a': (-1, 'a'*64)}, '1', '1'), ({'a': (0, 'bad')}, '1', '1'),
                                   ({'a': (0, 'a'*64)}, '1;SELECT 1', '1')]:
             with self.subTest(rows=rows), self.assertRaises(ValueError):
-                guard.build_guard(rows, system, oid)
+                guard.build_guard(rows, system, oid, "a"*64)
 
     def test_pinned_transaction_boundaries(self):
         rows = {'alpha': (0, 'a'*64)}
         source = b'-- fixture\nBEGIN;\nCREATE TABLE public.example(id int);\nCOMMIT;\n'
         digest = hashlib.sha256(source).hexdigest()
-        composed = guard.compose_transaction(source, digest, rows, '1', '2', dry_run=True)
+        composed = guard.compose_transaction(source, digest, rows, '1', '2', 'a'*64, dry_run=True)
         self.assertTrue(composed.rstrip().endswith('ROLLBACK;'))
         self.assertLess(composed.index('LOCK TABLE'), composed.index('CREATE TABLE'))
         with self.assertRaises(ValueError):
-            guard.compose_transaction(source, 'b'*64, rows, '1', '2', dry_run=True)
+            guard.compose_transaction(source, 'b'*64, rows, '1', '2', 'a'*64, dry_run=True)
         bad = b'BEGIN;\nCOMMIT;\nCOMMIT;\n'
         with self.assertRaises(ValueError):
-            guard.compose_transaction(bad, hashlib.sha256(bad).hexdigest(), rows, '1', '2', dry_run=True)
+            guard.compose_transaction(bad, hashlib.sha256(bad).hexdigest(), rows, '1', '2', 'a'*64, dry_run=True)
 
     def test_guard_with_real_postgres(self):
         dsn = os.environ.get('ACCOUNTS_IDENTITY_TEST_DSN')
@@ -53,14 +53,16 @@ class GuardTest(unittest.TestCase):
             sample = run(name, "SET TIME ZONE 'UTC'; SET DateStyle TO 'ISO, YMD'; SET extra_float_digits TO 3; " + guard.fingerprint_query('alpha') + ';')
             self.assertEqual(sample.returncode, 0, sample.stderr)
             count, digest = sample.stdout.strip().split('|')
-            sql = guard.build_guard({'alpha': (int(count), digest)}, *identity)
+            catalog = run(name, guard.catalog_fingerprint_query() + ';').stdout.strip()
+            self.assertRegex(catalog, r'^[0-9a-f]{64}$')
+            sql = guard.build_guard({'alpha': (int(count), digest)}, *identity, catalog)
             artifact = b'BEGIN;\nCREATE TABLE public.schema_change(id integer);\nCOMMIT;\n'
             artifact_sha = hashlib.sha256(artifact).hexdigest()
-            composed = guard.compose_transaction(artifact, artifact_sha, {'alpha': (int(count), digest)}, *identity, dry_run=True)
+            composed = guard.compose_transaction(artifact, artifact_sha, {'alpha': (int(count), digest)}, *identity, catalog, dry_run=True)
             trial = run(name, composed)
             self.assertEqual(trial.returncode, 0, trial.stderr)
             self.assertEqual(run(name, "SELECT to_regclass('public.schema_change') IS NULL;").stdout.strip(), 't')
-            bad = guard.compose_transaction(artifact, artifact_sha, {'alpha': (int(count)+1, digest)}, *identity, dry_run=False)
+            bad = guard.compose_transaction(artifact, artifact_sha, {'alpha': (int(count)+1, digest)}, *identity, catalog, dry_run=False)
             self.assertNotEqual(run(name, bad).returncode, 0)
             self.assertEqual(run(name, "SELECT to_regclass('public.schema_change') IS NULL;").stdout.strip(), 't')
             ok = run(name, 'BEGIN; ' + sql + " UPDATE public.alpha SET value='changed'; ROLLBACK;")
@@ -84,13 +86,18 @@ class GuardTest(unittest.TestCase):
             finally:
                 _, stderr = holder.communicate(timeout=8)
                 self.assertEqual(holder.returncode, 0, stderr)
-            drift = guard.build_guard({'alpha': (int(count) + 1, digest)}, *identity)
+            drift = guard.build_guard({'alpha': (int(count) + 1, digest)}, *identity, catalog)
             denied = run(name, 'BEGIN; ' + drift + " UPDATE public.alpha SET value='changed'; COMMIT;")
             self.assertNotEqual(denied.returncode, 0)
             self.assertIn('target data differs from restore', denied.stderr)
             self.assertEqual(run(name, 'SELECT value FROM public.alpha;').stdout.strip(), 'fixture')
-            wrong = guard.build_guard({'alpha': (int(count), digest)}, '1', identity[1])
+            wrong = guard.build_guard({'alpha': (int(count), digest)}, '1', identity[1], catalog)
             self.assertNotEqual(run(name, 'BEGIN; ' + wrong + ' COMMIT;').returncode, 0)
+            self.assertEqual(run(name, 'ALTER TABLE public.alpha ADD COLUMN new_field text;').returncode, 0)
+            schema_drift = run(name, 'BEGIN; ' + sql + ' COMMIT;')
+            self.assertNotEqual(schema_drift.returncode, 0)
+            self.assertIn('target catalog differs', schema_drift.stderr)
+            self.assertEqual(run(name, 'ALTER TABLE public.alpha DROP COLUMN new_field;').returncode, 0)
             self.assertEqual(run(name, 'CREATE TABLE public.extra(id integer);').returncode, 0)
             scope = run(name, 'BEGIN; ' + sql + ' COMMIT;')
             self.assertNotEqual(scope.returncode, 0)
