@@ -24,7 +24,7 @@ def run(args, body=None):
 
 def pinned(root, sha):
     root = pathlib.Path(root).resolve(strict=True)
-    if not guard.SHA256.fullmatch(sha + '0'*24) or run(['git', '-C', str(root), 'rev-parse', 'HEAD']) != sha:
+    if not re.fullmatch(r'[0-9a-f]{40}', sha) or run(['git', '-C', str(root), 'rev-parse', 'HEAD']) != sha:
         raise RuntimeError('repository revision differs')
     if run(['git', '-C', str(root), 'status', '--porcelain']):
         raise RuntimeError('repository worktree is not clean')
