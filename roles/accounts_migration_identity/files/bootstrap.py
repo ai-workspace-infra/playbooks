@@ -75,6 +75,8 @@ def main():
    policy='release_initialization_readonly' if role=='source' else 'migration_candidate_access'
    cmd='SELECT' if role=='source' else 'ALL'
    query+="DO $$ BEGIN IF EXISTS(SELECT FROM pg_class WHERE oid=to_regclass('public."+table+"') AND relrowsecurity) AND NOT EXISTS(SELECT FROM pg_policies WHERE schemaname='public' AND tablename='"+table+"' AND policyname='"+policy+"') THEN CREATE POLICY "+policy+" ON public."+table+" FOR "+cmd+" TO "+dbrole+" USING(true)"+('' if role=='source' else ' WITH CHECK(true)')+"; END IF; END $$;\n"
+  if role=='source':
+   query+="DO $$ BEGIN IF EXISTS(SELECT FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relkind IN ('r','p') AND (has_table_privilege('readonly_release',c.oid,'INSERT') OR has_table_privilege('readonly_release',c.oid,'UPDATE') OR has_table_privilege('readonly_release',c.oid,'DELETE') OR has_table_privilege('readonly_release',c.oid,'TRUNCATE'))) THEN RAISE EXCEPTION 'source role has write privileges'; END IF; END $$;\n"
   sql('BEGIN;\n'+query+'COMMIT;')
  print(json.dumps({'role':role,'phase':o.phase,'result':'completed','gitops_sha':o.gitops_sha}))
 if __name__=='__main__':
