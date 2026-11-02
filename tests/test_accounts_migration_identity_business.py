@@ -8,6 +8,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.parse
+import uuid
+import os
 from unittest.mock import patch
 
 import yaml
@@ -24,7 +27,7 @@ def declaration():
         'schema_version': 1, 'kind': 'accounts-migration-bootstrap', 'role': 'target', 'target_mode': 'business',
         'schema_mode': 'unversioned_verified_scope', 'namespace': 'migration-fixture',
         'source_namespace': 'postgres-fixture', 'postgres_pod': 'postgres-fixture-0',
-        'postgres_admin': 'postgres', 'database_host': 'postgres.fixture.svc',
+        'postgres_admin': 'postgres', 'database_host': 'postgres.fixture.svc', 'database_name': 'account',
         'tls_namespace': 'ingress-fixture', 'tls_secret': 'fixture-tls',
         'vault_path': 'kv/test/migration/target', 'staging_key_vault_path': 'kv/test/migration/staging',
         'listener_secret_name': 'migration-listener-business', 'native_job_path': None,
@@ -170,6 +173,62 @@ class BusinessMigrationIdentityTest(unittest.TestCase):
             with patch.object(bootstrap, 'run', side_effect=fake_run), patch.object(bootstrap.subprocess, 'run', side_effect=fake_process), patch.object(sys, 'argv', argv), self.assertRaisesRegex(RuntimeError, 'cannot authenticate'):
                 bootstrap.main()
         self.assertEqual(writes, [])
+
+    def test_business_permissions_against_disposable_postgres(self):
+        dsn = os.environ.get('ACCOUNTS_IDENTITY_TEST_DSN')
+        if not dsn:
+            self.skipTest('dedicated loopback PostgreSQL fixture not configured')
+        parsed = urllib.parse.urlparse(dsn)
+        if parsed.hostname not in ('127.0.0.1', 'localhost') or parsed.username != 'postgres' or parsed.path != '/postgres' or parsed.password:
+            self.fail('requires dedicated loopback postgres fixture without inline credentials')
+        real_run = subprocess.run
+        base = ['psql', '-X', '-v', 'ON_ERROR_STOP=1', '-h', parsed.hostname, '-p', str(parsed.port or 5432), '-U', 'postgres', '-At']
+        name = 'identity_fixture_' + uuid.uuid4().hex
+        c, sha, password = declaration(), 'a' * 40, 'b' * 64
+        c['database_name'] = name
+        stage = base64.b64encode(b'synthetic-staging-key-32-bytes!!').decode()
+
+        def psql(database, query):
+            result = real_run(base + ['-d', database], input=query, text=True, capture_output=True)
+            if result.returncode:
+                raise RuntimeError('isolated PostgreSQL operation failed')
+            return result.stdout.strip()
+
+        if psql('postgres', "SELECT count(*) FROM pg_roles WHERE rolname='accounts_migration';") != '0':
+            self.fail('fixture role already exists; refusing to modify it')
+        psql('postgres', 'CREATE DATABASE "' + name + '";')
+        try:
+            setup = ''.join('CREATE TABLE public."' + table + '"(id integer); ALTER TABLE public."' + table + '" ENABLE ROW LEVEL SECURITY;\n' for table in c['tables'])
+            psql(name, setup)
+
+            def fake_run(args, body=None):
+                if args[0] == 'git':
+                    return sha if args[-1] == 'HEAD' else ''
+                if args[0] == 'vault':
+                    return json.dumps({'data': {'data': {'staging_key': stage}}})
+                if args[0] == 'ssh':
+                    return psql(name, body)
+                raise AssertionError('unexpected command')
+
+            vault = subprocess.CompletedProcess([], 0, stdout=json.dumps({'data': {'data': {'database_password': password}}}), stderr='')
+            with tempfile.TemporaryDirectory() as directory:
+                Path(directory, 'operation.yaml').write_text(yaml.safe_dump(c), encoding='utf-8')
+                argv = ['bootstrap.py', '--gitops', directory, '--gitops-sha', sha, '--operation', 'operation.yaml', '--host', 'fixture-host', '--phase', 'permissions']
+                with patch.object(bootstrap, 'run', side_effect=fake_run), patch.object(bootstrap.subprocess, 'run', return_value=vault), patch.object(bootstrap, 'verify_business_login'), patch.object(sys, 'argv', argv), contextlib.redirect_stdout(io.StringIO()):
+                    bootstrap.main()
+                    before = psql('postgres', "SELECT md5(rolpassword) FROM pg_authid WHERE rolname='accounts_migration';")
+                    bootstrap.main()
+                    after = psql('postgres', "SELECT md5(rolpassword) FROM pg_authid WHERE rolname='accounts_migration';")
+                    self.assertEqual(before, after)
+                    first = c['tables'][0]
+                    psql(name, 'ALTER POLICY migration_candidate_access ON public."' + first + '" USING (false) WITH CHECK (false);')
+                    with self.assertRaises(RuntimeError):
+                        bootstrap.main()
+            report = psql(name, "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND has_table_privilege('accounts_migration',c.oid,'SELECT') AND has_table_privilege('accounts_migration',c.oid,'INSERT') AND has_table_privilege('accounts_migration',c.oid,'UPDATE') AND NOT has_table_privilege('accounts_migration',c.oid,'DELETE') AND c.relowner<>(SELECT oid FROM pg_roles WHERE rolname='accounts_migration');")
+            self.assertEqual(report, '42')
+        finally:
+            psql('postgres', 'DROP DATABASE "' + name + '" WITH (FORCE);')
+            psql('postgres', 'DROP ROLE IF EXISTS accounts_migration;')
 
 
 if __name__ == '__main__':

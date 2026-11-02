@@ -14,7 +14,7 @@ def target_options(c):
  secret=c.get('listener_secret_name','migration-listener')
  if not re.fullmatch(r'[a-z0-9]([-a-z0-9]*[a-z0-9])?',secret) or len(secret)>253:raise RuntimeError('invalid listener Secret name')
  if mode=='business':
-  allowed={'schema_version','kind','role','target_mode','schema_mode','listener_secret_name','staging_key_vault_path','namespace','vault_path','source_namespace','postgres_pod','postgres_admin','database_host','tls_namespace','tls_secret','native_job_path','tables'}
+  allowed={'schema_version','kind','role','target_mode','schema_mode','listener_secret_name','staging_key_vault_path','namespace','vault_path','source_namespace','postgres_pod','postgres_admin','database_host','database_name','tls_namespace','tls_secret','native_job_path','tables'}
   if set(c)!=allowed or type(c.get('schema_version')) is not int or c['schema_version']!=1 or c.get('native_job_path') is not None:raise RuntimeError('business target declaration fields differ from schema')
   vault_path=c.get('vault_path')
   if not isinstance(vault_path,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_./-]*',vault_path) or '..' in vault_path.split('/') or '//' in vault_path:raise RuntimeError('invalid target Vault path')
@@ -22,6 +22,7 @@ def target_options(c):
   if secret=='migration-listener' or not isinstance(path,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_./-]*',path) or '..' in path.split('/') or '//' in path or path==c['vault_path']:raise RuntimeError('business mode requires a separate staged Secret and existing staging-key path')
   host=c.get('database_host')
   if not isinstance(host,str) or len(host)>253 or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]',host) or '..' in host:raise RuntimeError('invalid business database host')
+  if not isinstance(c.get('database_name'),str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,62}',c['database_name']):raise RuntimeError('invalid business database name')
   if c.get('schema_mode')!='unversioned_verified_scope':raise RuntimeError('business mode requires explicit unversioned target scope')
   tables=c.get('tables')
   if not isinstance(tables,list) or len(tables)!=42 or len(set(tables))!=42 or any(not isinstance(t,str) or not re.fullmatch('[a-z_]+',t) for t in tables):raise RuntimeError('business target requires 42 unique explicit table names')
@@ -30,7 +31,7 @@ def target_options(c):
 def verify_business_login(host,c,password):
  # Password is sent only via stdin; the service path must reject a wrong
  # password and must not report a loopback client (which may use trust auth).
- cmd=['kubectl','-n',c['source_namespace'],'exec','-i',c['postgres_pod'],'--','sh','-c','IFS= read -r PGPASSWORD; export PGPASSWORD; exec psql "$@"','sh','-h',c['database_host'],'-U','accounts_migration','-d','account','-X','-v','ON_ERROR_STOP=1','-Atc',"SELECT current_user||'|'||coalesce(host(inet_client_addr()),'')"]
+ cmd=['kubectl','-n',c['source_namespace'],'exec','-i',c['postgres_pod'],'--','sh','-c','IFS= read -r PGPASSWORD; export PGPASSWORD; exec psql "$@"','sh','-h',c['database_host'],'-U','accounts_migration','-d',c['database_name'],'-X','-v','ON_ERROR_STOP=1','-Atc',"SELECT current_user||'|'||coalesce(host(inet_client_addr()),'')"]
  args=['ssh','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes',host,shlex.join(cmd)]
  wrong=subprocess.run(args,input=secrets.token_hex(32)+'\n',capture_output=True,text=True,timeout=20)
  if wrong.returncode==0:raise RuntimeError('database accepted an incorrect migration password')
@@ -49,6 +50,7 @@ def main():
  c=yaml.safe_load(p.read_text());role=c['role'];ns=c['namespace']
  if role not in ['source','target'] or c['kind']!='accounts-migration-bootstrap':raise RuntimeError('unsupported operation')
  mode,listener_secret=target_options(c)
+ db_name=c['database_name'] if mode=='business' else 'account'
  for key in ['namespace','source_namespace','postgres_pod','postgres_admin','tls_namespace','tls_secret']:
   if not re.fullmatch(r'[a-zA-Z0-9_.-]+',c[key]):raise RuntimeError('invalid identifier')
  def remote(args,body=None):return run(['ssh','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes',o.host,shlex.join(args)],body)
@@ -56,7 +58,7 @@ def main():
  def apply_secret(name,data,typ='Opaque'):
   obj={'apiVersion':'v1','kind':'Secret','metadata':{'name':name,'namespace':ns},'type':typ,'data':{k:base64.b64encode(v.encode()).decode() for k,v in data.items()}}
   kube(['apply','-f','-'],json.dumps(obj))
- def sql(query):return remote(['kubectl','-n',c['source_namespace'],'exec','-i',c['postgres_pod'],'--','psql','-U',c['postgres_admin'],'-d','account','-X','-v','ON_ERROR_STOP=1','-At'],query)
+ def sql(query):return remote(['kubectl','-n',c['source_namespace'],'exec','-i',c['postgres_pod'],'--','psql','-U',c['postgres_admin'],'-d',db_name,'-X','-v','ON_ERROR_STOP=1','-At'],query)
  vp=subprocess.run(['vault','kv','get','-format=json',c['vault_path']],capture_output=True,text=True)
  fresh=vp.returncode!=0
  if fresh:
@@ -75,7 +77,7 @@ def main():
   if len(base64.b64decode(stage,validate=True))!=32:raise ValueError()
  except Exception:raise RuntimeError('invalid staging key') from None
  dbrole='readonly_release' if role=='source' else 'accounts_migration'
- dsn='postgresql://'+dbrole+':'+password+'@'+c['database_host']+':5432/account?sslmode=disable'
+ dsn='postgresql://'+dbrole+':'+password+'@'+c['database_host']+':5432/'+db_name+'?sslmode=disable'
  if o.phase=='secrets':
   apply_secret(listener_secret,{'MIGRATION_DSN':dsn,'STAGING_KEY':stage})
   if mode!='business':
@@ -124,9 +126,9 @@ def main():
    query="DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='"+dbrole+"') THEN CREATE ROLE "+dbrole+" LOGIN NOINHERIT PASSWORD '"+password+"'; END IF; END $$;\n"
    query+="ALTER ROLE "+dbrole+" NOINHERIT;\n"
   else:query+="ALTER ROLE "+dbrole+" NOINHERIT PASSWORD '"+password+"';\n"
-  query+="GRANT CONNECT ON DATABASE account TO "+dbrole+";\nGRANT USAGE ON SCHEMA public TO "+dbrole+";\nGRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system() TO "+dbrole+";\n"
+  query+='GRANT CONNECT ON DATABASE "'+db_name+'" TO '+dbrole+';\nGRANT USAGE ON SCHEMA public TO '+dbrole+';\nGRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system() TO '+dbrole+';\n'
   if role=='source':query+="ALTER ROLE readonly_release SET default_transaction_read_only=on;\n"
-  else:query+="GRANT TEMP ON DATABASE account TO accounts_migration;\n"
+  else:query+='GRANT TEMP ON DATABASE "'+db_name+'" TO accounts_migration;\n'
   # Scope is explicit in the reviewed operation, never inferred from live table data.
   for table in c['tables']+['schema_migrations','accounts_controlled_migration_history','system_release_checkpoints']:
    if not re.fullmatch('[a-z_]+',table):raise RuntimeError('invalid table name')
