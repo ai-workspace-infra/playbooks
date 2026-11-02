@@ -102,6 +102,13 @@ class GuardTest(unittest.TestCase):
             scope = run(name, 'BEGIN; ' + sql + ' COMMIT;')
             self.assertNotEqual(scope.returncode, 0)
             self.assertIn('target public table scope differs', scope.stderr)
+            self.assertEqual(run(name, 'DROP TABLE public.extra;').returncode, 0)
+            catalog_now = run(name, guard.catalog_fingerprint_query() + ';').stdout.strip()
+            apply_sql = guard.compose_transaction(artifact, artifact_sha, {'alpha': (int(count), digest)}, *identity, catalog_now, dry_run=False)
+            apply = run(name, apply_sql)
+            self.assertEqual(apply.returncode, 0, apply.stderr)
+            self.assertEqual(run(name, "SELECT to_regclass('public.schema_change') IS NOT NULL;").stdout.strip(), 't')
+            self.assertEqual(run(name, 'SELECT value FROM public.alpha;').stdout.strip(), 'fixture')
         finally:
             self.assertEqual(run('postgres', 'DROP DATABASE "' + name + '" WITH (FORCE);').returncode, 0)
 

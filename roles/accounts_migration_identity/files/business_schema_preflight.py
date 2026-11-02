@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owner-operated rollback-only schema preflight; never writes business data."""
+"""Owner-operated guarded schema preflight and explicit schema-only apply."""
 import argparse
 import hashlib
 import json
@@ -65,11 +65,29 @@ def fingerprints(command):
     return out
 
 
+def verify_archive(path, expected):
+    archive = pathlib.Path(path)
+    if archive.is_symlink() or not archive.is_file() or not guard.SHA256.fullmatch(expected):
+        raise RuntimeError('invalid encrypted backup: ' + archive.name)
+    with archive.open('rb') as f:
+        actual = hashlib.file_digest(f, 'sha256').hexdigest()
+    if actual != expected:
+        raise RuntimeError('encrypted backup checksum differs')
+    return actual
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ('gitops', 'gitops-sha', 'operation', 'accounts', 'accounts-sha', 'sql-sha256', 'backup', 'backup-sha256', 'restore-socket', 'restore-db', 'restore-user', 'host', 'target-system-id', 'target-db-oid', 'receipt'):
         parser.add_argument('--' + key, required=True)
+    parser.add_argument('--apply-schema', action='store_true')
+    parser.add_argument('--confirm-independent-restore', action='store_true')
+    parser.add_argument('--confirm-roles-acl-restore', action='store_true')
+    for key in ('roles-backup', 'roles-backup-sha256', 'schema-acl-backup', 'schema-acl-backup-sha256'):
+        parser.add_argument('--' + key)
     a = parser.parse_args()
+    if a.apply_schema and (not a.confirm_independent_restore or not a.confirm_roles_acl_restore or not all((a.roles_backup, a.roles_backup_sha256, a.schema_acl_backup, a.schema_acl_backup_sha256))):
+        raise RuntimeError('schema apply requires independently verified data, roles and ACL backups')
     root = pinned(a.gitops, a.gitops_sha)
     accounts = pinned(a.accounts, a.accounts_sha)
     operation = (root / a.operation).resolve(strict=True)
@@ -86,13 +104,9 @@ def main():
     if not re.fullmatch(r'[a-z][a-z0-9_]{0,62}', a.restore_db) or not re.fullmatch(r'[a-zA-Z0-9_.-]+', a.restore_user) or a.restore_db == c['database_name']:
         raise RuntimeError('invalid independent restore identity')
     socket = private_socket(a.restore_socket)
-    archive = pathlib.Path(a.backup)
-    if archive.is_symlink() or not archive.is_file() or not guard.SHA256.fullmatch(a.backup_sha256):
-        raise RuntimeError('invalid encrypted backup')
-    with archive.open('rb') as f:
-        actual = hashlib.file_digest(f, 'sha256').hexdigest()
-    if actual != a.backup_sha256:
-        raise RuntimeError('encrypted backup checksum differs')
+    actual = verify_archive(a.backup, a.backup_sha256)
+    roles_sha = verify_archive(a.roles_backup, a.roles_backup_sha256) if a.apply_schema else None
+    acl_sha = verify_archive(a.schema_acl_backup, a.schema_acl_backup_sha256) if a.apply_schema else None
     sql = (accounts / 'sql/compat/target-scope-upgrade.sql').read_bytes()
     local = ['psql', '-X', '-q', '-h', socket, '-U', a.restore_user, '-d', a.restore_db, '-At', '-v', 'ON_ERROR_STOP=1']
     if run(local, "SELECT inet_server_addr() IS NULL AND current_database()=" + "'" + a.restore_db + "';") != 't':
@@ -101,15 +115,27 @@ def main():
     remote_cmd = ['kubectl', '-n', c['source_namespace'], 'exec', '-i', c['postgres_pod'], '--', 'psql', '-X', '-q', '-U', c['postgres_admin'], '-d', c['database_name'], '-At', '-v', 'ON_ERROR_STOP=1']
     remote = ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', a.host, shlex.join(remote_cmd)]
     catalog = run(remote, guard.catalog_fingerprint_query() + ';')
-    statement = guard.compose_transaction(sql, a.sql_sha256, rows, a.target_system_id, a.target_db_oid, catalog, dry_run=True)
-    output = run(remote, statement + "SELECT 'guard_rollback_confirmed';\n")
-    if not output.endswith('guard_rollback_confirmed'):
-        raise RuntimeError('rollback acknowledgement missing')
-    receipt = {'result': 'rollback_preflight_passed', 'gitops_sha': a.gitops_sha, 'accounts_sha': a.accounts_sha, 'sql_sha256': a.sql_sha256, 'encrypted_backup_sha256': actual, 'target_catalog_sha256': catalog, 'table_count': len(rows), 'limitations': ['restore provenance not independently authenticated', 'no role or ACL recovery proof', 'no migration preview or write authorization']}
+    statement = guard.compose_transaction(sql, a.sql_sha256, rows, a.target_system_id, a.target_db_oid, catalog, dry_run=not a.apply_schema)
+    limitations = ['restore provenance relies on operator verification', 'no migration preview or business data write authorization']
+    if not a.apply_schema:
+        limitations.append('roles and ACL restore not checked by this preflight')
+    receipt = {'result': 'indeterminate', 'operation': 'schema_apply' if a.apply_schema else 'rollback_preflight', 'gitops_sha': a.gitops_sha, 'accounts_sha': a.accounts_sha, 'sql_sha256': a.sql_sha256, 'encrypted_backup_sha256': actual, 'roles_backup_sha256': roles_sha, 'schema_acl_backup_sha256': acl_sha, 'target_catalog_sha256': catalog, 'table_count': len(rows), 'limitations': limitations}
     fd = os.open(a.receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, 'w') as f:
-        json.dump(receipt, f, sort_keys=True)
-        f.write('\n')
+    with os.fdopen(fd, 'w+', encoding='utf-8') as f:
+        def persist():
+            f.seek(0)
+            json.dump(receipt, f, sort_keys=True)
+            f.write('\n')
+            f.truncate()
+            f.flush()
+            os.fsync(f.fileno())
+        persist()
+        marker = 'guard_commit_confirmed' if a.apply_schema else 'guard_rollback_confirmed'
+        output = run(remote, statement + "SELECT '" + marker + "';\n")
+        if not output.endswith(marker):
+            raise RuntimeError('transaction acknowledgement missing; inspect target and receipt')
+        receipt['result'] = 'schema_applied' if a.apply_schema else 'rollback_preflight_passed'
+        persist()
     print(json.dumps(receipt, sort_keys=True))
 
 

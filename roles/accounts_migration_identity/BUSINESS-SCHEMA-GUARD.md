@@ -28,19 +28,20 @@ function does not execute SQL or prove that a caller-selected hash is reviewed.
 
 `files/business_schema_preflight.py` connects to a private local restore socket,
 checks the encrypted archive hash and clean pinned Accounts/GitOps revisions,
-collects restore table fingerprints in a read-only snapshot, then sends only a
-guarded rollback transaction to the declared business target over verified SSH.
-It writes a new private receipt only after the rollback succeeds. It has no apply
-mode; it cannot authorize or perform a production schema change or data import.
+collects restore table fingerprints in a read-only snapshot, then sends a
+guarded transaction to the declared business target over verified SSH. It
+reserves a private receipt first; an interrupted outcome stays `indeterminate`.
+Default mode rolls back. Explicit `--apply-schema` requires operator assertions
+of data and roles/ACL restore plus both encrypted backup checksums. It changes
+only the pinned schema SQL and cannot import business data or authorize a plan.
+The confirmation flags are assertions, not automated proof of provenance.
 
-This is a SQL generator and rollback-only preflight, not a production executor or backup receipt. It cannot
+This is a guarded schema operation, not a migration backup receipt. It cannot
 verify that a restored database came from the reviewed encrypted archive, that
 the restore remained unchanged, or that schema, sequences, extensions, roles,
 ACLs and object ownership match the backup. It does not authenticate the caller's
-SQL hash, collect fingerprints, issue a receipt, perform recovery, or establish a migration API
-backup gate. A separate reviewed owner operation must establish those facts,
-consume the generator in the same transaction as the pinned schema SQL, and
-record outcome before any production execution. Do not supply target data as a
+SQL hash, perform recovery, or establish a migration API backup gate. A reviewed
+owner operation must establish those facts before production execution. Do not supply target data as a
 substitute for a verified independent restore.
 
 Regression: `ACCOUNTS_IDENTITY_TEST_DSN=... python -m unittest

@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import urllib.parse
 import uuid
+from unittest.mock import patch
 
 directory = Path(__file__).resolve().parents[1] / 'roles/accounts_migration_identity/files'
 sys.path.insert(0, str(directory))
@@ -16,6 +17,25 @@ spec.loader.exec_module(preflight)
 
 
 class PreflightTest(unittest.TestCase):
+    def test_apply_requires_both_restore_proofs_before_operations(self):
+        argv = ['preflight.py']
+        for key in ('gitops', 'gitops-sha', 'operation', 'accounts', 'accounts-sha', 'sql-sha256', 'backup', 'backup-sha256', 'restore-socket', 'restore-db', 'restore-user', 'host', 'target-system-id', 'target-db-oid', 'receipt'):
+            argv.extend(['--' + key, 'fixture'])
+        argv.append('--apply-schema')
+        with patch.object(sys, 'argv', argv), patch.object(preflight, 'run') as commands, self.assertRaisesRegex(RuntimeError, 'independently verified'):
+            preflight.main()
+        commands.assert_not_called()
+
+    def test_backup_checksum(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory, 'encrypted.cms')
+            path.write_bytes(b'fixture ciphertext')
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            self.assertEqual(preflight.verify_archive(path, digest), digest)
+            with self.assertRaises(RuntimeError):
+                preflight.verify_archive(path, '0' * 64)
+
     def test_socket_requires_private_owner_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(preflight.private_socket(directory), directory)
