@@ -1,0 +1,20 @@
+---
+- name: Validate migration operation inputs
+  ansible.builtin.assert:
+    that:
+      - migration_gitops_dir is defined
+      - migration_gitops_sha is defined
+      - migration_operation is defined
+      - migration_ssh_target is defined
+      - migration_phase in ['secrets', 'init', 'permissions']
+- name: Run approved migration identity operation
+  ansible.builtin.command:
+    argv: >-
+      {{ [ansible_playbook_python, role_path + '/files/bootstrap.py',
+          '--gitops', migration_gitops_dir, '--gitops-sha', migration_gitops_sha,
+          '--operation', migration_operation, '--host', migration_ssh_target,
+          '--phase', migration_phase]
+         + (['--allow-source-credential-rotation']
+            if migration_allow_source_rotation | default(false) | bool else []) }}
+  no_log: true
+  changed_when: true
