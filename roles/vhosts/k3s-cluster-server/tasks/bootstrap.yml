@@ -30,6 +30,7 @@
     src: k3s-config.yaml.j2
     dest: "{{ k3s_platform_k3s_config_path }}"
     mode: "0644"
+  register: k3s_platform_config_rendered
 
 - name: Check whether k3s is already installed
   ansible.builtin.shell: |
@@ -115,7 +116,7 @@
 - name: Ensure k3s service is enabled and started
   ansible.builtin.systemd:
     name: k3s
-    state: started
+    state: "{{ 'restarted' if (k3s_platform_k3s_install_state.stdout | default('missing') == 'installed' and (k3s_platform_config_rendered.changed | default(false) | bool)) else 'started' }}"
     enabled: true
 
 - name: Wait for Kubernetes API readiness
