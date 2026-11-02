@@ -33,6 +33,8 @@
     billing_catalog_seed_url: >-
       https://raw.githubusercontent.com/ai-workspace-services/accounts/{{ accounts_schema_ref }}/scripts/seed-billing-plans.sql
     pg_container_default: web-saas-postgresql
+    pg_k8s_namespace: "{{ lookup('ansible.builtin.env', 'PG_K8S_NAMESPACE') | default('postgresql-prod', true) }}"
+    pg_k8s_pod_default: "{{ lookup('ansible.builtin.env', 'PG_K8S_POD') | default('postgresql-postgresql-0', true) }}"
     # 与 create_databases_and_users.yml 和 web_saas_host_config 用的是同一个
     # 角色名。accounts 和 billing 都经这个角色连库。
     account_pg_user: "{{ lookup('ansible.builtin.env', 'ACCOUNT_PG_USER') | default('account_user', true) }}"
@@ -41,26 +43,42 @@
     # 与 create_databases_and_users.yml 同样的探测方式: 探不到就显式失败,
     # 不静默跳过。跳过等于把"没初始化"伪装成"初始化过了"。
     - name: Detect running Postgres container
-      ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' | grep -E '^web-saas-postgresql$'"
+      ansible.builtin.shell: "docker ps --format '{{ '{{' }}.Names{{ '}}' }}' 2>/dev/null | grep -E '^web-saas-postgresql$'"
       register: detected_pg
       changed_when: false
       failed_when: false
 
-    - name: Fail when the web-saas Postgres container is not running
-      ansible.builtin.fail:
-        msg: >-
-          web-saas-postgresql container not found on {{ inventory_hostname }}.
-          Refusing to report schema initialization as done when no database
-          was reachable.
+    - name: Detect running K3s Postgres pod when Docker container is absent
+      ansible.builtin.command: >-
+        kubectl -n {{ pg_k8s_namespace }} get pod {{ pg_k8s_pod_default }}
+        -o jsonpath={.status.phase}
+      register: detected_k8s_pg
+      changed_when: false
+      failed_when: false
       when: (detected_pg.stdout | default('') | trim) == ''
 
-    - name: Resolve Postgres container name
+    - name: Fail when neither the web-saas Postgres container nor the K3s pod is running
+      ansible.builtin.fail:
+        msg: >-
+          Neither web-saas-postgresql Docker container nor K3s pod
+          {{ pg_k8s_namespace }}/{{ pg_k8s_pod_default }} was found on
+          {{ inventory_hostname }}. Refusing to report schema initialization as
+          done when no database was reachable.
+      when: >-
+        (detected_pg.stdout | default('') | trim) == '' and
+        (detected_k8s_pg.stdout | default('') | trim) != 'Running'
+
+    - name: Resolve Postgres container name and execution prefix
       ansible.builtin.set_fact:
         pg_container: "{{ (detected_pg.stdout | default('') | trim) or pg_container_default }}"
+        pg_exec_prefix: >-
+          {{ ('docker exec -i ' ~ ((detected_pg.stdout | default('') | trim) or pg_container_default))
+             if (detected_pg.stdout | default('') | trim) != ''
+             else ('kubectl -n ' ~ pg_k8s_namespace ~ ' exec -i ' ~ pg_k8s_pod_default ~ ' --') }}
 
     - name: Check whether the account users table is present
       ansible.builtin.command: >-
-        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
+        {{ pg_exec_prefix }} psql -U postgres -d account -tAc
         "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'"
       register: users_table_check
       changed_when: false
@@ -68,15 +86,23 @@
 
     - name: Check whether the account subscriptions table is present
       ansible.builtin.command: >-
-        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
+        {{ pg_exec_prefix }} psql -U postgres -d account -tAc
         "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='subscriptions'"
       register: subscriptions_table_check
       changed_when: false
       failed_when: false
 
+    - name: Check whether the account subscription_records table is present
+      ansible.builtin.command: >-
+        {{ pg_exec_prefix }} psql -U postgres -d account -tAc
+        "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='subscription_records'"
+      register: subscription_records_table_check
+      changed_when: false
+      failed_when: false
+
     - name: Check whether the account database is empty
       ansible.builtin.command: >-
-        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
+        {{ pg_exec_prefix }} psql -U postgres -d account -tAc
         "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'"
       register: public_table_count_check
       changed_when: false
@@ -91,8 +117,15 @@
     - name: Classify the account schema state
       ansible.builtin.set_fact:
         account_schema_is_empty: "{{ (public_table_count_check.stdout | default('0') | trim | int) == 0 }}"
-        account_schema_is_complete: "{{ (users_table_check.stdout | default('') | trim) == '1' and (subscriptions_table_check.stdout | default('') | trim) == '1' }}"
-        account_schema_is_partial: "{{ (public_table_count_check.stdout | default('0') | trim | int) > 0 and not ((users_table_check.stdout | default('') | trim) == '1' and (subscriptions_table_check.stdout | default('') | trim) == '1') }}"
+        account_schema_is_complete: >-
+          {{ (users_table_check.stdout | default('') | trim) == '1' and
+             (subscriptions_table_check.stdout | default('') | trim) == '1' and
+             (subscription_records_table_check.stdout | default('') | trim) == '1' }}
+        account_schema_is_partial: >-
+          {{ (public_table_count_check.stdout | default('0') | trim | int) > 0 and not (
+             (users_table_check.stdout | default('') | trim) == '1' and
+             (subscriptions_table_check.stdout | default('') | trim) == '1' and
+             (subscription_records_table_check.stdout | default('') | trim) == '1') }}
 
     - name: Fetch the account baseline schema matching the deployed ref
       ansible.builtin.get_url:
@@ -107,7 +140,7 @@
     - name: Apply the account baseline schema
       ansible.builtin.shell: >-
         set -o pipefail &&
-        docker exec -i {{ pg_container }} psql -U postgres -d account
+        {{ pg_exec_prefix }} psql -U postgres -d account
         -v ON_ERROR_STOP=1 -f - < /tmp/accounts-schema.sql
       args:
         executable: /bin/bash
@@ -123,13 +156,20 @@
     # Never re-run sql/schema.sql against a non-empty database: that file starts
     # with DROP TABLE ... CASCADE. A partially initialized host therefore gets
     # only this additive repair path. It is deliberately limited to the missing
-    # subscriptions relation that is required by the deployed Accounts service.
-    - name: Repair the missing subscriptions table without touching existing data
+    # subscription/lifecycle relations and columns required by the deployed
+    # Accounts service, executed in a single bounded transaction.
+    - name: Repair the missing subscriptions and subscription_records tables without touching existing data
       ansible.builtin.shell: |
         set -eo pipefail
-        docker exec -i {{ pg_container }} psql -U postgres -d account \
+        {{ pg_exec_prefix }} psql -U postgres -d account \
           -v ON_ERROR_STOP=1 -f - <<'SQL'
+        BEGIN;
+        SET LOCAL lock_timeout = '15s';
+        SET LOCAL statement_timeout = '5min';
+        SELECT pg_advisory_xact_lock(2026092801);
+
         CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+
         CREATE OR REPLACE FUNCTION public.set_updated_at() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
@@ -137,6 +177,29 @@
           RETURN NEW;
         END;
         $$;
+
+        CREATE OR REPLACE FUNCTION public.reject_account_lifecycle_event_mutation() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          RAISE EXCEPTION 'account lifecycle events are immutable'
+            USING ERRCODE = '55000';
+        END;
+        $$;
+
+        ALTER TABLE public.users
+          ADD COLUMN IF NOT EXISTS version bigint DEFAULT 0 NOT NULL,
+          ADD COLUMN IF NOT EXISTS origin_node text DEFAULT 'local'::text NOT NULL,
+          ADD COLUMN IF NOT EXISTS subscription_valid_from timestamptz,
+          ADD COLUMN IF NOT EXISTS subscription_valid_until timestamptz,
+          ADD COLUMN IF NOT EXISTS last_active_at timestamptz,
+          ADD COLUMN IF NOT EXISTS archived_at timestamptz,
+          ADD COLUMN IF NOT EXISTS account_lifecycle_state text DEFAULT 'active'::text NOT NULL,
+          ADD COLUMN IF NOT EXISTS account_lifecycle_changed_at timestamptz,
+          ADD COLUMN IF NOT EXISTS account_lifecycle_actor_type text,
+          ADD COLUMN IF NOT EXISTS account_lifecycle_actor_ref text,
+          ADD COLUMN IF NOT EXISTS account_lifecycle_reason text,
+          ADD COLUMN IF NOT EXISTS account_lifecycle_transition_id uuid;
+
         CREATE TABLE IF NOT EXISTS public.subscriptions (
           uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           user_uuid UUID NOT NULL REFERENCES public.users(uuid) ON DELETE CASCADE,
@@ -157,6 +220,56 @@
           ON public.subscriptions (user_uuid);
         CREATE INDEX IF NOT EXISTS idx_subscriptions_status
           ON public.subscriptions (status);
+
+        CREATE TABLE IF NOT EXISTS public.subscription_records (
+          user_uuid UUID PRIMARY KEY REFERENCES public.users(uuid) ON DELETE CASCADE,
+          subscription_type TEXT NOT NULL DEFAULT '',
+          monthly_quota_bytes BIGINT NOT NULL DEFAULT 0,
+          annual_quota_bytes BIGINT NOT NULL DEFAULT 0,
+          fee_minor BIGINT NOT NULL DEFAULT 0,
+          payment_status TEXT NOT NULL DEFAULT '',
+          note TEXT NOT NULL DEFAULT '',
+          valid_from TIMESTAMPTZ,
+          valid_until TIMESTAMPTZ,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT subscription_records_annual_quota_bytes_check CHECK (annual_quota_bytes >= 0),
+          CONSTRAINT subscription_records_fee_minor_check CHECK (fee_minor >= 0),
+          CONSTRAINT subscription_records_monthly_quota_bytes_check CHECK (monthly_quota_bytes >= 0),
+          CONSTRAINT subscription_records_validity_ck CHECK ((valid_until IS NULL) OR (valid_from IS NULL) OR (valid_until >= valid_from))
+        );
+        CREATE INDEX IF NOT EXISTS subscription_records_validity_idx
+          ON public.subscription_records (valid_until);
+
+        CREATE TABLE IF NOT EXISTS public.subscription_lifecycle_states (
+          account_uuid UUID PRIMARY KEY REFERENCES public.users(uuid),
+          version BIGINT NOT NULL DEFAULT 0,
+          last_change_at TIMESTAMPTZ,
+          operation_id UUID,
+          pending_plan_id TEXT NOT NULL DEFAULT '',
+          effective_at TIMESTAMPTZ,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT subscription_lifecycle_states_check CHECK ((pending_plan_id = '') = (effective_at IS NULL)),
+          CONSTRAINT subscription_lifecycle_states_version_check CHECK (version >= 0)
+        );
+
+        CREATE TABLE IF NOT EXISTS public.account_lifecycle_events (
+          transition_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_uuid UUID NOT NULL REFERENCES public.users(uuid) ON DELETE RESTRICT,
+          from_state TEXT,
+          to_state TEXT NOT NULL,
+          actor_type TEXT NOT NULL,
+          actor_ref TEXT,
+          reason TEXT NOT NULL DEFAULT '',
+          request_id TEXT,
+          metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+          occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT account_lifecycle_events_actor_type_ck CHECK (actor_type = ANY (ARRAY['user', 'admin', 'system', 'service'])),
+          CONSTRAINT account_lifecycle_events_from_state_ck CHECK ((from_state IS NULL) OR (from_state = ANY (ARRAY['active', 'archived', 'self_cancelled', 'reactivation_pending']))),
+          CONSTRAINT account_lifecycle_events_metadata_object_ck CHECK (jsonb_typeof(metadata) = 'object'),
+          CONSTRAINT account_lifecycle_events_state_change_ck CHECK ((from_state IS NULL) OR (from_state <> to_state)),
+          CONSTRAINT account_lifecycle_events_to_state_ck CHECK (to_state = ANY (ARRAY['active', 'archived', 'self_cancelled', 'reactivation_pending']))
+        );
+
         DO $$
         BEGIN
           IF NOT EXISTS (
@@ -172,12 +285,15 @@
           END IF;
         END
         $$;
+
+        COMMIT;
         SQL
       args:
         executable: /bin/bash
       when: >-
-        (users_table_check.stdout | default('') | trim) == '1' and
-        (subscriptions_table_check.stdout | default('') | trim) != '1'
+        (users_table_check.stdout | default('') | trim) == '1' and (
+          (subscriptions_table_check.stdout | default('') | trim) != '1' or
+          (subscription_records_table_check.stdout | default('') | trim) != '1')
       register: subscriptions_repair
 
     - name: Fail closed on an unsupported partial account schema
@@ -193,8 +309,8 @@
     # 灌完或增量修复后必须复验完整性；只验证 users 会再次把部分 schema 当成成功。
     - name: Verify the required account baseline tables are present
       ansible.builtin.command: >-
-        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
-        "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('users','subscriptions')"
+        {{ pg_exec_prefix }} psql -U postgres -d account -tAc
+        "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('users','subscriptions','subscription_records')"
       register: required_tables_verify
       changed_when: false
 
@@ -202,10 +318,10 @@
       ansible.builtin.fail:
         msg: >-
           account baseline is incomplete after initialization/repair: expected
-          users and subscriptions in public schema, got
+          users, subscriptions, and subscription_records in public schema, got
           {{ required_tables_verify.stdout | default('0') | trim }} tables.
           Refusing to report success.
-      when: (required_tables_verify.stdout | default('0') | trim | int) != 2
+      when: (required_tables_verify.stdout | default('0') | trim | int) != 3
 
     # A fresh Accounts schema only contains the runtime fallback plans (Free
     # and Trial). Seed the purchasable catalog before the application starts
@@ -214,7 +330,7 @@
     # paid plan exists so ordinary deployments never overwrite operator edits.
     - name: Check whether the paid billing catalog is already present
       ansible.builtin.command: >-
-        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
+        {{ pg_exec_prefix }} psql -U postgres -d account -tAc
         "SELECT 1 FROM public.billing_plans WHERE plan_id = 'PRO-MONTHLY'"
       register: billing_catalog_check
       changed_when: false
@@ -231,7 +347,7 @@
     - name: Seed the initial paid billing catalog
       ansible.builtin.shell: >-
         set -o pipefail &&
-        docker exec -i {{ pg_container }} psql -U postgres -d account
+        {{ pg_exec_prefix }} psql -U postgres -d account
         -v ON_ERROR_STOP=1 -f - < /tmp/accounts-billing-catalog.sql
       args:
         executable: /bin/bash
@@ -245,7 +361,7 @@
 
     - name: Verify the paid billing catalog is present
       ansible.builtin.command: >-
-        docker exec -i {{ pg_container }} psql -U postgres -d account -tAc
+        {{ pg_exec_prefix }} psql -U postgres -d account -tAc
         "SELECT 1 FROM public.billing_plans WHERE plan_id = 'PRO-MONTHLY'"
       register: billing_catalog_verify
       changed_when: false
@@ -276,7 +392,7 @@
     - name: Hand the account schema to the account role
       ansible.builtin.shell: |
         set -eo pipefail
-        docker exec -i {{ pg_container }} psql -U postgres -d account \
+        {{ pg_exec_prefix }} psql -U postgres -d account \
           -v ON_ERROR_STOP=1 -f - <<'SQL'
         GRANT USAGE, CREATE ON SCHEMA public TO {{ account_pg_user }};
         -- 表在前。serial / identity 的序列归属跟着所属表走, 表一改属主它们
@@ -328,6 +444,7 @@
       args:
         executable: /bin/bash
       changed_when: false
+      when: account_pg_user != 'postgres'
 
     # 复验和灌 schema 那步同一个道理: GRANT 成功不等于应用真的连得上。
     #
@@ -341,11 +458,12 @@
     # 验权限 —— 口令那一面由 create_databases_and_users.yml 经 scram 单独验过。
     - name: Verify the account role can read the account schema
       ansible.builtin.command: >-
-        docker exec -i {{ pg_container }} psql -h 127.0.0.1 -U {{ account_pg_user }}
+        {{ pg_exec_prefix }} psql -h 127.0.0.1 -U {{ account_pg_user }}
         -d account -tAc "SELECT count(*) FROM users"
       register: account_user_access
       changed_when: false
       failed_when: false
+      when: account_pg_user != 'postgres'
 
     - name: Fail when the account role still cannot read the account schema
       ansible.builtin.fail:
@@ -354,7 +472,7 @@
           {{ account_user_access.stderr | default('') | trim }}
           Both accounts and billing connect through this role, so leaving this
           broken means the stack deploys green and then writes nothing.
-      when: account_user_access.rc != 0
+      when: account_pg_user != 'postgres' and account_user_access.rc != 0
 
     - name: Report schema state
       ansible.builtin.debug:
@@ -362,4 +480,4 @@
           account baseline schema
           {{ 'already complete; skipped' if account_schema_is_complete
              else 'applied from ' ~ accounts_schema_url if account_schema_is_empty
-             else 'repaired additively (subscriptions)' }}
+             else 'repaired additively (subscriptions + subscription_records)' }}
