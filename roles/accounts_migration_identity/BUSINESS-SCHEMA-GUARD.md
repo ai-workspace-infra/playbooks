@@ -10,6 +10,13 @@ transaction before the guard and retain its locks through the schema operation.
 The guard adds short lock and statement timeouts; locks can temporarily block
 normal writers, which must be accounted for operationally.
 
+`compose_transaction` verifies a caller-supplied artifact SHA-256, binds the
+same identity in transaction-local settings, inserts the guard after the SQL's
+single top-level `BEGIN`, and leaves its final `COMMIT` or changes it to
+`ROLLBACK` for a dry run. The caller is responsible for obtaining the reviewed
+hash from a trusted source and running PostgreSQL with `ON_ERROR_STOP=1`; this
+function does not execute SQL or prove that a caller-selected hash is reviewed.
+
 This is a SQL generator, not a production executor or backup receipt. It cannot
 verify that a restored database came from the reviewed encrypted archive, that
 the restore remained unchanged, or that schema, sequences, extensions, roles,

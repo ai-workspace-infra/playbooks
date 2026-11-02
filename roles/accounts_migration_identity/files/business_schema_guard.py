@@ -4,6 +4,7 @@
 This module builds SQL only. It is not a backup receipt or an executor. The
 caller must verify backup provenance, target identity and the restored database.
 """
+import hashlib
 import re
 
 IDENTIFIER = re.compile(r'^[a-z_][a-z0-9_]{0,62}$')
@@ -48,5 +49,26 @@ def build_guard(fingerprints, system_identifier, database_oid):
              "DO $$ BEGIN IF (SELECT array_agg(c.relname::text ORDER BY c.relname::text COLLATE \"C\") FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p')) IS DISTINCT FROM ARRAY[" + expected + "]::text[] THEN RAISE EXCEPTION 'target public table scope differs'; END IF; END $$;"]
     for name in names:
         count, digest = fingerprints[name]
-        guard.append('DO $$ DECLARE n bigint; h text; BEGIN ' + fingerprint_query(name).replace('SELECT count(*)::bigint,', 'SELECT count(*)::bigint,', 1).replace(' FROM public.', ' INTO n,h FROM public.', 1) + "; IF n <> " + str(count) + " OR h <> '" + digest + "' THEN RAISE EXCEPTION 'target data differs from restore: " + name + "'; END IF; END $$;")
+        guard.append('DO $$ DECLARE n bigint; h text; BEGIN ' + fingerprint_query(name).replace(' FROM public.', ' INTO n,h FROM public.', 1) + "; IF n <> " + str(count) + " OR h <> '" + digest + "' THEN RAISE EXCEPTION 'target data differs from restore: " + name + "'; END IF; END $$;")
     return '\n'.join(guard) + '\n'
+
+
+def compose_transaction(sql_bytes, expected_sha256, fingerprints, system_identifier, database_oid, *, dry_run):
+    """Compose a pinned SQL artifact with guard; does not validate provenance or execute it."""
+    if not isinstance(sql_bytes, bytes) or not isinstance(expected_sha256, str) or not SHA256.fullmatch(expected_sha256) or hashlib.sha256(sql_bytes).hexdigest() != expected_sha256:
+        raise ValueError('reviewed SQL checksum differs')
+    if type(dry_run) is not bool:
+        raise ValueError('explicit dry-run mode required')
+    try:
+        sql = sql_bytes.decode('utf-8')
+    except UnicodeDecodeError:
+        raise ValueError('SQL must be UTF-8') from None
+    begins = list(re.finditer(r'(?m)^BEGIN;\s*$', sql))
+    ends = list(re.finditer(r'(?m)^COMMIT;\s*$', sql))
+    if len(begins) != 1 or len(ends) != 1 or begins[0].start() >= ends[0].start() or sql[ends[0].end():].strip():
+        raise ValueError('reviewed SQL transaction boundaries differ')
+    checked = build_guard(fingerprints, system_identifier, database_oid)
+    session = ("SELECT set_config('accounts_migration_guard.system_identifier','" + system_identifier + "',true);\n"
+               "SELECT set_config('accounts_migration_guard.database_oid','" + database_oid + "',true);\n")
+    end = 'ROLLBACK;' if dry_run else 'COMMIT;'
+    return sql[:begins[0].end()] + '\n' + session + checked + sql[begins[0].end():ends[0].start()] + end + '\n'

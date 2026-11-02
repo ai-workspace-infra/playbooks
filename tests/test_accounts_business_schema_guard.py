@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -21,6 +22,19 @@ class GuardTest(unittest.TestCase):
             with self.subTest(rows=rows), self.assertRaises(ValueError):
                 guard.build_guard(rows, system, oid)
 
+    def test_pinned_transaction_boundaries(self):
+        rows = {'alpha': (0, 'a'*64)}
+        source = b'-- fixture\nBEGIN;\nCREATE TABLE public.example(id int);\nCOMMIT;\n'
+        digest = hashlib.sha256(source).hexdigest()
+        composed = guard.compose_transaction(source, digest, rows, '1', '2', dry_run=True)
+        self.assertTrue(composed.rstrip().endswith('ROLLBACK;'))
+        self.assertLess(composed.index('LOCK TABLE'), composed.index('CREATE TABLE'))
+        with self.assertRaises(ValueError):
+            guard.compose_transaction(source, 'b'*64, rows, '1', '2', dry_run=True)
+        bad = b'BEGIN;\nCOMMIT;\nCOMMIT;\n'
+        with self.assertRaises(ValueError):
+            guard.compose_transaction(bad, hashlib.sha256(bad).hexdigest(), rows, '1', '2', dry_run=True)
+
     def test_guard_with_real_postgres(self):
         dsn = os.environ.get('ACCOUNTS_IDENTITY_TEST_DSN')
         if not dsn:
@@ -40,6 +54,15 @@ class GuardTest(unittest.TestCase):
             self.assertEqual(sample.returncode, 0, sample.stderr)
             count, digest = sample.stdout.strip().split('|')
             sql = guard.build_guard({'alpha': (int(count), digest)}, *identity)
+            artifact = b'BEGIN;\nCREATE TABLE public.schema_change(id integer);\nCOMMIT;\n'
+            artifact_sha = hashlib.sha256(artifact).hexdigest()
+            composed = guard.compose_transaction(artifact, artifact_sha, {'alpha': (int(count), digest)}, *identity, dry_run=True)
+            trial = run(name, composed)
+            self.assertEqual(trial.returncode, 0, trial.stderr)
+            self.assertEqual(run(name, "SELECT to_regclass('public.schema_change') IS NULL;").stdout.strip(), 't')
+            bad = guard.compose_transaction(artifact, artifact_sha, {'alpha': (int(count)+1, digest)}, *identity, dry_run=False)
+            self.assertNotEqual(run(name, bad).returncode, 0)
+            self.assertEqual(run(name, "SELECT to_regclass('public.schema_change') IS NULL;").stdout.strip(), 't')
             ok = run(name, 'BEGIN; ' + sql + " UPDATE public.alpha SET value='changed'; ROLLBACK;")
             self.assertEqual(ok.returncode, 0, ok.stderr)
             self.assertEqual(run(name, 'SELECT value FROM public.alpha;').stdout.strip(), 'fixture')
