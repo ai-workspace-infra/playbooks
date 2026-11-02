@@ -26,7 +26,14 @@ single top-level `BEGIN`, and leaves its final `COMMIT` or changes it to
 hash from a trusted source and running PostgreSQL with `ON_ERROR_STOP=1`; this
 function does not execute SQL or prove that a caller-selected hash is reviewed.
 
-This is a SQL generator, not a production executor or backup receipt. It cannot
+`files/business_schema_preflight.py` connects to a private local restore socket,
+checks the encrypted archive hash and clean pinned Accounts/GitOps revisions,
+collects restore table fingerprints in a read-only snapshot, then sends only a
+guarded rollback transaction to the declared business target over verified SSH.
+It writes a new private receipt only after the rollback succeeds. It has no apply
+mode; it cannot authorize or perform a production schema change or data import.
+
+This is a SQL generator and rollback-only preflight, not a production executor or backup receipt. It cannot
 verify that a restored database came from the reviewed encrypted archive, that
 the restore remained unchanged, or that schema, sequences, extensions, roles,
 ACLs and object ownership match the backup. It does not authenticate the caller's
