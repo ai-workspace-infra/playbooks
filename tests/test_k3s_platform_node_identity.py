@@ -19,6 +19,8 @@ class K3sPlatformNodeIdentityTests(unittest.TestCase):
         self.assertNotIn('/etc/hosts', install_tasks)
         self.assertIn('k3s_platform_write_kubeconfig_mode: "0600"', defaults)
         self.assertIn('state: absent', install_tasks)
+        self.assertIn('register: k3s_platform_config_rendered', install_tasks)
+        self.assertIn('k3s_platform_config_rendered.changed', install_tasks)
 
 
 if __name__ == '__main__':
