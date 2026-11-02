@@ -39,7 +39,9 @@ def verify_business_login(host,c,password):
  if good.returncode!=0:raise RuntimeError('managed migration credential cannot authenticate')
  parts=good.stdout.strip().split('|')
  try:
-  if len(parts)!=2 or parts[0]!='accounts_migration' or ipaddress.ip_address(parts[1]).is_loopback:raise ValueError()
+  if len(parts)!=2 or parts[0]!='accounts_migration':raise ValueError()
+  addr=ipaddress.ip_address(parts[1]);mapped=addr.ipv4_mapped if isinstance(addr,ipaddress.IPv6Address) else None
+  if addr.is_loopback or addr.is_unspecified or addr.is_multicast or (mapped is not None and (mapped.is_loopback or mapped.is_unspecified or mapped.is_multicast)):raise ValueError()
  except ValueError:raise RuntimeError('migration authentication was not verified over a non-loopback service connection') from None
 
 def main():
@@ -66,7 +68,7 @@ def main():
   material={'database_password':secrets.token_hex(32)}
   if mode!='business':material['staging_key']=base64.b64encode(secrets.token_bytes(32)).decode()
   if role=='target' and mode!='business':material['admin_password']=secrets.token_hex(32)
-  run(['vault','kv','put',c['vault_path'],'-'],json.dumps(material))
+  run(['vault','kv','put']+(['-cas=0'] if mode=='business' else [])+[c['vault_path'],'-'],json.dumps(material))
  else:material=json.loads(vp.stdout)['data']['data']
  password=material['database_password']
  if not re.fullmatch(r'[a-f0-9]{64}',password):raise RuntimeError('unexpected managed password format')

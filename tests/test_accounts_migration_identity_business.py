@@ -55,7 +55,7 @@ class BusinessMigrationIdentityTest(unittest.TestCase):
         bad = subprocess.CompletedProcess([], 1, stdout='', stderr='')
         with patch.object(bootstrap.subprocess, 'run', side_effect=[bad, good]):
             bootstrap.verify_business_login('fixture-host', c, password)
-        for replies in ([good], [bad, bad], [bad, subprocess.CompletedProcess([], 0, stdout='accounts_migration|127.0.0.1\n', stderr='')], [bad, subprocess.CompletedProcess([], 0, stdout='other|10.52.0.12\n', stderr='')]):
+        for replies in ([good], [bad, bad], [bad, subprocess.CompletedProcess([], 0, stdout='accounts_migration|127.0.0.1\n', stderr='')], [bad, subprocess.CompletedProcess([], 0, stdout='accounts_migration|::ffff:127.0.0.1\n', stderr='')], [bad, subprocess.CompletedProcess([], 0, stdout='other|10.52.0.12\n', stderr='')]):
             with self.subTest(replies=replies), patch.object(bootstrap.subprocess, 'run', side_effect=replies), self.assertRaises(RuntimeError):
                 bootstrap.verify_business_login('fixture-host', c, password)
 
@@ -173,6 +173,39 @@ class BusinessMigrationIdentityTest(unittest.TestCase):
             with patch.object(bootstrap, 'run', side_effect=fake_run), patch.object(bootstrap.subprocess, 'run', side_effect=fake_process), patch.object(sys, 'argv', argv), self.assertRaisesRegex(RuntimeError, 'cannot authenticate'):
                 bootstrap.main()
         self.assertEqual(writes, [])
+
+    def test_new_business_vault_path_is_created_with_cas(self):
+        c, sha = declaration(), 'a' * 40
+        key = base64.b64encode(b'synthetic-staging-key-32-bytes!!').decode()
+        writes, applied = [], []
+
+        def fake_run(args, body=None):
+            if args[0] == 'git':
+                return sha if args[-1] == 'HEAD' else ''
+            if args[:3] == ['vault', 'kv', 'put']:
+                writes.append((args, json.loads(body)))
+                return ''
+            if args[0] == 'vault':
+                return json.dumps({'data': {'data': {'staging_key': key}}})
+            if args[0] == 'ssh' and 'get secret' in args[-1]:
+                return json.dumps({'data': {'tls.crt': base64.b64encode(b'cert').decode(), 'tls.key': base64.b64encode(b'key').decode()}})
+            if args[0] == 'ssh' and body:
+                applied.append(json.loads(body))
+                return ''
+            raise AssertionError('unexpected command')
+
+        missing = subprocess.CompletedProcess([], 1, stdout='', stderr='No value found')
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, 'operation.yaml').write_text(yaml.safe_dump(c), encoding='utf-8')
+            argv = ['bootstrap.py', '--gitops', directory, '--gitops-sha', sha, '--operation', 'operation.yaml', '--host', 'fixture-host', '--phase', 'secrets']
+            out = io.StringIO()
+            with patch.object(bootstrap, 'run', side_effect=fake_run), patch.object(bootstrap.subprocess, 'run', return_value=missing), patch.object(sys, 'argv', argv), contextlib.redirect_stdout(out):
+                bootstrap.main()
+        self.assertEqual(len(writes), 1)
+        self.assertIn('-cas=0', writes[0][0])
+        self.assertEqual(set(writes[0][1]), {'database_password'})
+        self.assertEqual(applied[0]['metadata']['name'], 'migration-listener-business')
+        self.assertNotIn(writes[0][1]['database_password'], out.getvalue())
 
     def test_business_permissions_against_disposable_postgres(self):
         dsn = os.environ.get('ACCOUNTS_IDENTITY_TEST_DSN')
