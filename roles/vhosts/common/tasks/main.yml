@@ -38,10 +38,21 @@
   become: true
   when: ansible_os_family != 'Darwin'
 
-- name: Base | harden ssh
-  ansible.builtin.script: files/secure_ssh.sh
-  become: true
+- name: Base | inspect root SSH directory and authorized keys
+  ansible.builtin.stat:
+    path: '{{ item }}'
+  loop: [/root/.ssh, /root/.ssh/authorized_keys]
+  register: common_root_ssh_paths
   when: ansible_os_family != 'Darwin'
+
+- name: Base | enforce existing root SSH path permissions
+  ansible.builtin.file:
+    path: '{{ item.item }}'
+    mode: '{{ "0700" if item.item == "/root/.ssh" else "0600" }}'
+  loop: '{{ common_root_ssh_paths.results }}'
+  when:
+    - ansible_os_family != 'Darwin'
+    - item.stat.exists | default(false)
 
 - name: Base | harden ssh config
   ansible.builtin.import_tasks: harden_ssh.yml
