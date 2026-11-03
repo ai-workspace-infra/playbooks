@@ -46,6 +46,41 @@ class XrayMetricsConfigRepairTests(unittest.TestCase):
         self.assertTrue(patched["policy"]["levels"]["0"]["statsUserUplink"])
         self.assertTrue(patched["policy"]["levels"]["0"]["statsUserDownlink"])
 
+    def test_updates_direct_api_listener_without_duplicate_inbound(self):
+        source = {
+            "api": {"tag": "api", "listen": "127.0.0.1:10087", "services": ["StatsService"]},
+            "inbounds": [
+                {"tag": "api", "listen": "127.0.0.1", "port": 10087,
+                 "protocol": "dokodemo-door", "settings": {"address": "127.0.0.1"}},
+                {"tag": "proxy", "listen": "0.0.0.0", "port": 1443},
+            ],
+            "routing": {"rules": [
+                {"inboundTag": ["api"], "outboundTag": "api", "type": "field"},
+                {"type": "field", "ip": ["geoip:private"], "outboundTag": "blocked"},
+            ]},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps(source), encoding="utf-8")
+            patched, changed = MODULE.patch_config(path, 28081)
+            path.write_text(json.dumps(patched), encoding="utf-8")
+            repeated, changed_again = MODULE.patch_config(path, 28081)
+
+        self.assertTrue(changed)
+        self.assertEqual(patched["api"]["listen"], "127.0.0.1:28081")
+        self.assertEqual([item["tag"] for item in patched["inbounds"]], ["proxy"])
+        self.assertEqual(len(patched["routing"]["rules"]), 1)
+        self.assertFalse(changed_again)
+        self.assertEqual(repeated, patched)
+
+    def test_refuses_non_loopback_direct_api_listener(self):
+        source = {"api": {"listen": "0.0.0.0:10087", "services": ["StatsService"]}}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps(source), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "non-loopback api.listen"):
+                MODULE.patch_config(path, 28081)
+
     def test_is_idempotent_for_already_repaired_config(self):
         source = {
             "inbounds": [{"tag": "api", "listen": "127.0.0.1", "port": 10086,
