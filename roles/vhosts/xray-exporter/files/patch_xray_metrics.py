@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import ipaddress
 import os
 import shutil
 import subprocess
@@ -23,32 +24,6 @@ def patch_config(
         data = json.load(handle)
 
     changed = False
-    inbounds = data.setdefault("inbounds", [])
-    api_inbounds = [item for item in inbounds if item.get("tag") == "api"]
-    if len(api_inbounds) > 1:
-        raise RuntimeError(f"{path}: expected at most one api inbound, found {len(api_inbounds)}")
-
-    if api_inbounds:
-        api_inbound = api_inbounds[0]
-        if api_inbound.get("listen") != "127.0.0.1":
-            raise RuntimeError(f"{path}: refusing to patch non-loopback api inbound")
-        if api_inbound.get("protocol") != "dokodemo-door":
-            raise RuntimeError(f"{path}: refusing to replace non-API inbound tagged api")
-        if api_inbound.get("port") != api_port:
-            changed = True
-            api_inbound["port"] = api_port
-    else:
-        if any(item.get("port") == api_port and item.get("listen") in ("127.0.0.1", "0.0.0.0", "::") for item in inbounds):
-            raise RuntimeError(f"{path}: API port {api_port} is already used by another inbound")
-        inbounds.insert(0, {
-            "listen": "127.0.0.1",
-            "port": api_port,
-            "protocol": "dokodemo-door",
-            "settings": {"address": "127.0.0.1"},
-            "tag": "api",
-        })
-        changed = True
-
     api = data.setdefault("api", {})
     if api.get("tag") != "api":
         api["tag"] = "api"
@@ -57,17 +32,82 @@ def patch_config(
     if "StatsService" not in services:
         services.append("StatsService")
         changed = True
-    if not isinstance(data.get("stats"), dict):
-        data["stats"] = {}
-        changed = True
+
+    api_listen = api.get("listen")
+    inbounds = data.setdefault("inbounds", [])
+    api_inbounds = [item for item in inbounds if item.get("tag") == "api"]
+    if len(api_inbounds) > 1:
+        raise RuntimeError(f"{path}: expected at most one api inbound, found {len(api_inbounds)}")
 
     routing = data.setdefault("routing", {})
     rules = routing.setdefault("rules", [])
     api_rules = [rule for rule in rules if "api" in rule.get("inboundTag", [])]
     if any(rule.get("outboundTag") != "api" for rule in api_rules):
         raise RuntimeError(f"{path}: refusing to overwrite an existing api inbound routing rule")
-    if not api_rules:
-        rules.insert(0, {"inboundTag": ["api"], "outboundTag": "api", "type": "field"})
+
+    if isinstance(api_listen, str) and api_listen.strip():
+        host, separator, _ = api_listen.rpartition(":")
+        host = host.strip("[]")
+        if not separator:
+            raise RuntimeError(f"{path}: API listen address must include a port")
+        try:
+            loopback = host == "localhost" or ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            loopback = False
+        if not loopback:
+            raise RuntimeError(f"{path}: refusing to patch non-loopback api.listen")
+        formatted_host = f"[{host}]" if ":" in host else host
+        new_api_listen = f"{formatted_host}:{api_port}"
+        if api_listen != new_api_listen:
+            api["listen"] = new_api_listen
+            changed = True
+
+        # The direct api.listen mode already hosts the gRPC server. Remove only
+        # the exact loopback inbound/routing pair this role itself generated;
+        # keeping both on the same port makes Xray fail with EADDRINUSE.
+        if api_inbounds:
+            expected_keys = {"listen", "port", "protocol", "settings", "tag"}
+            api_inbound = api_inbounds[0]
+            if (set(api_inbound) != expected_keys
+                    or api_inbound.get("listen") != "127.0.0.1"
+                    or api_inbound.get("protocol") != "dokodemo-door"
+                    or api_inbound.get("settings") != {"address": "127.0.0.1"}):
+                raise RuntimeError(f"{path}: refusing to remove a non-generated api inbound")
+            inbounds.remove(api_inbound)
+            changed = True
+        if api_rules:
+            generated_rule = {"inboundTag": ["api"], "outboundTag": "api", "type": "field"}
+            if any(rule != generated_rule for rule in api_rules):
+                raise RuntimeError(f"{path}: refusing to remove a non-generated api route")
+            rules[:] = [rule for rule in rules if rule != generated_rule]
+            changed = True
+    else:
+        if api_inbounds:
+            api_inbound = api_inbounds[0]
+            if api_inbound.get("listen") != "127.0.0.1":
+                raise RuntimeError(f"{path}: refusing to patch non-loopback api inbound")
+            if api_inbound.get("protocol") != "dokodemo-door":
+                raise RuntimeError(f"{path}: refusing to replace non-API inbound tagged api")
+            if api_inbound.get("port") != api_port:
+                changed = True
+                api_inbound["port"] = api_port
+        else:
+            if any(item.get("port") == api_port and item.get("listen") in ("127.0.0.1", "0.0.0.0", "::") for item in inbounds):
+                raise RuntimeError(f"{path}: API port {api_port} is already used by another inbound")
+            inbounds.insert(0, {
+                "listen": "127.0.0.1",
+                "port": api_port,
+                "protocol": "dokodemo-door",
+                "settings": {"address": "127.0.0.1"},
+                "tag": "api",
+            })
+            changed = True
+        if not api_rules:
+            rules.insert(0, {"inboundTag": ["api"], "outboundTag": "api", "type": "field"})
+            changed = True
+
+    if not isinstance(data.get("stats"), dict):
+        data["stats"] = {}
         changed = True
 
     policy = data.setdefault("policy", {})
