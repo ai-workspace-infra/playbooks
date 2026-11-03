@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Patch Xray metrics API endpoints without touching proxy inbounds."""
+"""Ensure loopback Xray Stats API and exporter endpoints are configured."""
 
 from __future__ import annotations
 
@@ -22,16 +22,70 @@ def patch_config(
     with path.open(encoding="utf-8") as handle:
         data = json.load(handle)
 
-    api_inbounds = [item for item in data.get("inbounds", []) if item.get("tag") == "api"]
-    if len(api_inbounds) != 1:
-        raise RuntimeError(f"{path}: expected exactly one api inbound, found {len(api_inbounds)}")
+    changed = False
+    inbounds = data.setdefault("inbounds", [])
+    api_inbounds = [item for item in inbounds if item.get("tag") == "api"]
+    if len(api_inbounds) > 1:
+        raise RuntimeError(f"{path}: expected at most one api inbound, found {len(api_inbounds)}")
 
-    api_inbound = api_inbounds[0]
-    if api_inbound.get("listen") != "127.0.0.1":
-        raise RuntimeError(f"{path}: refusing to patch non-loopback api inbound")
+    if api_inbounds:
+        api_inbound = api_inbounds[0]
+        if api_inbound.get("listen") != "127.0.0.1":
+            raise RuntimeError(f"{path}: refusing to patch non-loopback api inbound")
+        if api_inbound.get("protocol") != "dokodemo-door":
+            raise RuntimeError(f"{path}: refusing to replace non-API inbound tagged api")
+        if api_inbound.get("port") != api_port:
+            changed = True
+            api_inbound["port"] = api_port
+    else:
+        if any(item.get("port") == api_port and item.get("listen") in ("127.0.0.1", "0.0.0.0", "::") for item in inbounds):
+            raise RuntimeError(f"{path}: API port {api_port} is already used by another inbound")
+        inbounds.insert(0, {
+            "listen": "127.0.0.1",
+            "port": api_port,
+            "protocol": "dokodemo-door",
+            "settings": {"address": "127.0.0.1"},
+            "tag": "api",
+        })
+        changed = True
 
-    changed = api_inbound.get("port") != api_port
-    api_inbound["port"] = api_port
+    api = data.setdefault("api", {})
+    if api.get("tag") != "api":
+        api["tag"] = "api"
+        changed = True
+    services = api.setdefault("services", [])
+    if "StatsService" not in services:
+        services.append("StatsService")
+        changed = True
+    if not isinstance(data.get("stats"), dict):
+        data["stats"] = {}
+        changed = True
+
+    routing = data.setdefault("routing", {})
+    rules = routing.setdefault("rules", [])
+    api_rules = [rule for rule in rules if "api" in rule.get("inboundTag", [])]
+    if any(rule.get("outboundTag") != "api" for rule in api_rules):
+        raise RuntimeError(f"{path}: refusing to overwrite an existing api inbound routing rule")
+    if not api_rules:
+        rules.insert(0, {"inboundTag": ["api"], "outboundTag": "api", "type": "field"})
+        changed = True
+
+    policy = data.setdefault("policy", {})
+    levels = policy.setdefault("levels", {})
+    if not levels:
+        levels["0"] = {}
+        changed = True
+    for level in levels.values():
+        if isinstance(level, dict):
+            for key in ("statsUserUplink", "statsUserDownlink"):
+                if level.get(key) is not True:
+                    level[key] = True
+                    changed = True
+    system = policy.setdefault("system", {})
+    for key in ("statsInboundUplink", "statsInboundDownlink", "statsOutboundUplink", "statsOutboundDownlink"):
+        if system.get(key) is not True:
+            system[key] = True
+            changed = True
 
     if certificate_file is not None or key_file is not None:
         certificates = []
