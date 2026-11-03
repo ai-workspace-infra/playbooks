@@ -22,6 +22,7 @@
       Existing snapshot configuration is enabled but the canonical Vault
       inputs are incomplete; refusing to overwrite {{ xray_exporter_env_file }}.
   when:
-    - xray_exporter_existing_env is defined
-    - (xray_exporter_existing_env.content | b64decode) is search('(?m)^VECTOR_SNAPSHOT_URL="?http')
+    - xray_exporter_env_stat.stat.exists
+    - xray_exporter_env_stat.stat.isreg | default(false)
+    - (xray_exporter_existing_env.content | default('') | b64decode) is search('(?m)^VECTOR_SNAPSHOT_URL="?http')
   no_log: true
