@@ -39,6 +39,7 @@
   when: ansible_os_family != 'Darwin'
 
 - name: Base | inspect root SSH directory and authorized keys
+  tags: [common_ssh_permissions]
   ansible.builtin.stat:
     path: '{{ item }}'
   loop: [/root/.ssh, /root/.ssh/authorized_keys]
@@ -46,6 +47,7 @@
   when: ansible_os_family != 'Darwin'
 
 - name: Base | enforce existing root SSH path permissions
+  tags: [common_ssh_permissions]
   ansible.builtin.file:
     path: '{{ item.item }}'
     mode: '{{ "0700" if item.item == "/root/.ssh" else "0600" }}'
