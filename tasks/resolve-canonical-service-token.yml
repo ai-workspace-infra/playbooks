@@ -1,5 +1,11 @@
----
-- name: Read the one canonical runtime service credential from Vault
+- name: Load the canonical service credential supplied by the installer
+  ansible.builtin.set_fact:
+    canonical_internal_service_token: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') }}"
+  when: lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | length > 0
+  run_once: true
+  no_log: true
+
+- name: Read the canonical runtime service credential from Vault when not injected
   ansible.builtin.command:
     argv:
       - vault
@@ -16,16 +22,19 @@
   changed_when: false
   check_mode: false
   no_log: true
+  when: lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | length == 0
+
+- name: Keep the Vault-resolved credential in memory for the selected hosts
+  ansible.builtin.set_fact:
+    canonical_internal_service_token: "{{ canonical_service_token_read.stdout }}"
+  run_once: true
+  no_log: true
+  when: lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | length == 0
 
 - name: Validate the canonical runtime credential without revealing it
   ansible.builtin.assert:
     that:
-      - canonical_service_token_read.stdout is match('^[A-Za-z0-9._~+/=-]{32,}$')
-    fail_msg: "Vault did not return a valid canonical INTERNAL_SERVICE_TOKEN."
+      - canonical_internal_service_token is match('^[A-Za-z0-9._~+/=-]{32,}$')
+    fail_msg: "No valid canonical INTERNAL_SERVICE_TOKEN was supplied or read from Vault."
   run_once: true
-  no_log: true
-
-- name: Keep the canonical credential in memory for the selected hosts only
-  ansible.builtin.set_fact:
-    canonical_internal_service_token: "{{ canonical_service_token_read.stdout }}"
   no_log: true
