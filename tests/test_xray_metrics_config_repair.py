@@ -13,6 +13,14 @@ SPEC.loader.exec_module(MODULE)
 
 
 class XrayMetricsConfigRepairTests(unittest.TestCase):
+    def test_restart_handler_stops_services_and_guards_stale_socket_cleanup(self):
+        handler = (ROOT / "roles/vhosts/xray-exporter/handlers/restart-xray-services.yml").read_text()
+        self.assertLess(handler.index("Stop Xray services"), handler.index("Remove stale XHTTP Unix socket"))
+        self.assertLess(handler.index("Require Xray processes to stop"), handler.index("Remove stale XHTTP Unix socket"))
+        self.assertLess(handler.index("Remove stale XHTTP Unix socket"), handler.index("Start Xray services"))
+        self.assertIn("xray_exporter_xhttp_socket.stat.issock", handler)
+        self.assertIn("xray_exporter_xhttp_socket.stat.islnk", handler)
+
     def test_adds_loopback_stats_api_and_system_counters(self):
         source = {
             "inbounds": [{"tag": "proxy", "listen": "0.0.0.0", "port": 1443}],

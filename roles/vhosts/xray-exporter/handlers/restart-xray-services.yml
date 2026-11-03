@@ -1,0 +1,57 @@
+---
+- name: Stop Xray services before replacing stale runtime sockets
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+  loop:
+    - xray.service
+    - xray-tcp.service
+
+- name: Verify no Xray process remains before socket cleanup
+  ansible.builtin.command: pgrep -x xray
+  register: xray_exporter_running_processes
+  changed_when: false
+  failed_when: false
+
+- name: Require Xray processes to stop before socket cleanup
+  ansible.builtin.assert:
+    that:
+      - xray_exporter_running_processes.rc == 1
+    fail_msg: "Xray process is still running; refusing to remove its runtime socket."
+
+- name: Inspect XHTTP Unix socket path
+  ansible.builtin.stat:
+    path: /dev/shm/xray.sock
+    follow: false
+  register: xray_exporter_xhttp_socket
+
+- name: Refuse to remove a non-socket XHTTP runtime path
+  ansible.builtin.assert:
+    that:
+      - not xray_exporter_xhttp_socket.stat.exists or
+        (xray_exporter_xhttp_socket.stat.issock and not xray_exporter_xhttp_socket.stat.islnk)
+    fail_msg: "Refusing to remove /dev/shm/xray.sock because it is not a Unix socket."
+
+- name: Remove stale XHTTP Unix socket after confirming both services stopped
+  ansible.builtin.file:
+    path: /dev/shm/xray.sock
+    state: absent
+  when: xray_exporter_xhttp_socket.stat.exists
+
+- name: Start Xray services after config validation and socket cleanup
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    daemon_reload: true
+  loop:
+    - xray.service
+    - xray-tcp.service
+
+- name: Verify Xray services are active after restart
+  ansible.builtin.command: systemctl is-active {{ item }}
+  register: xray_exporter_service_status
+  changed_when: false
+  failed_when: xray_exporter_service_status.stdout != 'active'
+  loop:
+    - xray.service
+    - xray-tcp.service
