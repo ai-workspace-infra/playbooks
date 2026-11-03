@@ -1,10 +1,29 @@
 ---
+- name: Validate GitOps source and runtime Vault session inputs
+  ansible.builtin.assert:
+    that:
+      - vault_github_oidc_request is mapping
+      - vault_github_oidc_request.gitops_root | default('') | length > 0
+      - vault_github_oidc_request.gitops_sha | default('') | length == 40
+      - vault_github_oidc_request.role_name | default('') | length > 0
+      - "'address' not in vault_github_oidc_request"
+      - "'token' not in vault_github_oidc_request"
+      - lookup('env', 'VAULT_ADDR').startswith('https://')
+      - lookup('env', 'VAULT_TOKEN') | length > 0
+      - vault_github_oidc_request.apply is boolean
+    fail_msg: "Provide a clean, SHA-pinned GitOps checkout, one role name, explicit apply mode, and a runtime HTTPS Vault session."
+  no_log: true
+
 - name: Reconcile the selected Vault GitHub OIDC contract
   ansible.builtin.command:
     argv:
       - '{{ ansible_playbook_python }}'
       - '{{ role_path }}/files/reconcile.py'
-    stdin: '{{ vault_github_oidc_request | to_json }}'
+    stdin: >-
+      {{ vault_github_oidc_request | combine({
+        'address': lookup('env', 'VAULT_ADDR'),
+        'token': lookup('env', 'VAULT_TOKEN')
+      }) | to_json }}
   delegate_to: localhost
   become: false
   register: vault_github_oidc_result
