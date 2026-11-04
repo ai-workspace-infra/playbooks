@@ -43,3 +43,11 @@ billable traffic to make the result nonzero.
 On failed validation, stop and retain the protected backup and evidence; do not
 clear counters, delete snapshot stores, refill quota or rewrite financial data.
 Rollback uses reviewed prior configuration, never an automatically generated key.
+
+### Release download retries
+
+`xray_exporter_download_timeout` (60 seconds) controls the socket timeout.
+`xray_exporter_download_retries` (3) and `xray_exporter_download_delay` (5 seconds)
+bound retries for transient TLS/network failures. Exhausted retries fail deployment;
+TLS verification remains enabled. Override these inputs for slow release networks.
+Rollback by restoring the prior role revision.

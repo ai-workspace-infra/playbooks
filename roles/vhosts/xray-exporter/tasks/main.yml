@@ -73,10 +73,15 @@
 - name: Download xray-exporter binary
   ansible.builtin.get_url:
     url: "https://github.com/{{ xray_exporter_release_repository }}/releases/download/{{ xray_exporter_version }}/xray-exporter-linux-{{ xray_exporter_arch }}"
+    timeout: "{{ xray_exporter_download_timeout }}"
     dest: "{{ xray_exporter_binary_path }}"
     mode: '0755'
     owner: "{{ xray_exporter_user }}"
     group: "{{ xray_exporter_group }}"
+  register: xray_exporter_download
+  until: xray_exporter_download is succeeded
+  retries: "{{ xray_exporter_download_retries }}"
+  delay: "{{ xray_exporter_download_delay }}"
   notify: Restart xray-exporters
 
 - name: Ensure xray-exporter snapshot store directory exists
