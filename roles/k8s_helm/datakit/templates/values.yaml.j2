@@ -31,14 +31,17 @@ dkconfig:
       [[inputs.prom]]
         urls = ["{{ datakit_caddy_metrics_url }}"]
         source = "caddy"
-        interval = "30s"
+        interval = "15s"
         measurement_name = "caddy"
         keep_exist_metric_name = true
         election = false
         [inputs.prom.tags]
-          cluster = "{{ k8s_cluster_name | default('default') }}"
-          env = "{{ target_env }}"
-          service = "web-saas-caddy"
+          cluster = "{{ k8s_cluster_name | default('sit-k3s-v6') }}"
+          environment = "{{ target_environment | default('dev') }}"
+          env = "{{ target_env | default('sit') }}"
+          service = "caddy-ingress"
+          instance = "caddy-ingress-caddy"
+          host = "{{ inventory_hostname | default('sit-k3s-v6') }}"
   - name: "postgresql-exporter.conf"
     path: "/usr/local/datakit/conf.d/prom/postgresql-exporter.conf"
     value: |
@@ -50,9 +53,47 @@ dkconfig:
         keep_exist_metric_name = true
         election = false
         [inputs.prom.tags]
-          cluster = "{{ k8s_cluster_name | default('default') }}"
-          env = "{{ target_env }}"
-          db_instance = "web-saas-postgresql"
+          cluster = "{{ k8s_cluster_name | default('sit-k3s-v6') }}"
+          environment = "{{ target_environment | default('dev') }}"
+          env = "{{ target_env | default('sit') }}"
+          service = "postgresql"
+          instance = "prod-postgresql-0"
+          db_instance = "postgresql"
+          host = "{{ inventory_hostname | default('sit-k3s-v6') }}"
+  - name: "kube-state-metrics.conf"
+    path: "/usr/local/datakit/conf.d/prom/kube-state-metrics.conf"
+    value: |
+      [[inputs.prom]]
+        urls = ["{{ datakit_kube_state_metrics_url }}"]
+        source = "kube-state-metrics"
+        interval = "15s"
+        measurement_name = "kube-state-metrics"
+        keep_exist_metric_name = true
+        election = false
+        [inputs.prom.tags]
+          cluster = "{{ k8s_cluster_name | default('sit-k3s-v6') }}"
+          environment = "{{ target_environment | default('dev') }}"
+          env = "{{ target_env | default('sit') }}"
+          service = "kube-state-metrics"
+          host = "{{ inventory_hostname | default('sit-k3s-v6') }}"
+  - name: "node-exporter.conf"
+    path: "/usr/local/datakit/conf.d/prom/node-exporter.conf"
+    value: |
+      [[inputs.prom]]
+        urls = ["{{ datakit_node_exporter_url }}"]
+        source = "node-exporter"
+        interval = "15s"
+        measurement_name = "node-exporter"
+        keep_exist_metric_name = true
+        election = false
+        [inputs.prom.tags]
+          cluster = "{{ k8s_cluster_name | default('sit-k3s-v6') }}"
+          environment = "{{ target_environment | default('dev') }}"
+          env = "{{ target_env | default('sit') }}"
+          service = "node-exporter"
+          instance = "{{ inventory_hostname | default('sit-k3s-v6') }}"
+          nodename = "{{ inventory_hostname | default('sit-k3s-v6') }}"
+          host = "{{ inventory_hostname | default('sit-k3s-v6') }}"
 
 resources:
   requests:
