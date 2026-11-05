@@ -140,8 +140,24 @@
          | default(true, true) | bool }}
   pre_tasks:
 
+    - name: Read the local installer inputs before deploying roles
+      ansible.builtin.set_fact:
+        canonical_internal_service_token: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') }}"
+        agent_allowed_emails: "{{ lookup('ansible.builtin.env', 'AGENT_CUSTOM_EMAILS') | from_json }}"
+      when: agent_proxy_local_installer | default(false) | bool
+      no_log: true
+
+    - name: Require runtime credentials for the local installer
+      ansible.builtin.assert:
+        that:
+          - canonical_internal_service_token | length > 0
+          - agent_controller_url | length > 0
+        fail_msg: "Local installation requires an Accounts URL and runtime service credential."
+      when: agent_proxy_local_installer | default(false) | bool
+
     - name: Resolve canonical snapshot service token before any role mutation
       ansible.builtin.include_tasks: tasks/resolve-canonical-service-token.yml
+      when: not (agent_proxy_local_installer | default(false) | bool)
 
     - name: Bind the canonical token to the agent Accounts client
       ansible.builtin.set_fact:
@@ -158,7 +174,9 @@
         return_content: true
       register: existing_agent_proxy_secrets
       failed_when: false
-      when: vault_token | length > 0
+      when:
+        - not (agent_proxy_local_installer | default(false) | bool)
+        - vault_token | length > 0
       delegate_to: localhost
       run_once: true
 
@@ -189,7 +207,8 @@
             xray_uuid: "{{ xray_uuid }}"
         status_code: [200, 204]
         return_content: false
-      when: 
+      when:
+        - not (agent_proxy_local_installer | default(false) | bool)
         - vault_token | length > 0
         - (((existing_agent_proxy_secrets.json | default({})).get('data', {})).get('data', {})).get('xray_uuid', '') != xray_uuid
       delegate_to: localhost
