@@ -1,0 +1,2459 @@
+{
+  "title": "Caddy",
+  "description": "Caddy HTTP server monitoring.",
+  "uid": "fed94ifiv8h6oc",
+  "dashboardExtend": {
+    "groupUnfoldStatus": {
+      "Summary": true,
+      "Detailed metrics": true,
+      "Heatmaps": true
+    }
+  },
+  "main": {
+    "vars": [
+      {
+        "name": "Environment",
+        "seq": 0,
+        "code": "environment",
+        "hide": 0,
+        "multiple": true,
+        "includeStar": true,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "query",
+          "starMeaning": ".*",
+          "refresh": 1
+        },
+        "datasource": "dataflux",
+        "type": "PROMQL_QUERY",
+        "definition": {
+          "tag": "",
+          "field": "",
+          "value": "label_values(caddy_config_last_reload_successful,environment)",
+          "metric": "caddy_config_last_reload_successful",
+          "object": "",
+          "defaultVal": {
+            "label": "",
+            "value": ""
+          }
+        }
+      },
+      {
+        "name": "Cluster",
+        "seq": 1,
+        "code": "cluster",
+        "hide": 0,
+        "multiple": true,
+        "includeStar": true,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "query",
+          "starMeaning": ".*",
+          "refresh": 1
+        },
+        "datasource": "dataflux",
+        "type": "PROMQL_QUERY",
+        "definition": {
+          "tag": "",
+          "field": "",
+          "value": "label_values(caddy_config_last_reload_successful{environment=~\"#{environment}\"},cluster)",
+          "metric": "caddy_config_last_reload_successful{environment=~\"#{environment}\"}",
+          "object": "",
+          "defaultVal": {
+            "label": "",
+            "value": ""
+          }
+        }
+      },
+      {
+        "name": "Service",
+        "seq": 2,
+        "code": "service",
+        "hide": 0,
+        "multiple": true,
+        "includeStar": true,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "query",
+          "starMeaning": ".*",
+          "refresh": 1
+        },
+        "datasource": "dataflux",
+        "type": "PROMQL_QUERY",
+        "definition": {
+          "tag": "",
+          "field": "",
+          "value": "label_values(caddy_config_last_reload_successful{environment=~\"#{environment}\",cluster=~\"#{cluster}\"},service)",
+          "metric": "caddy_config_last_reload_successful{environment=~\"#{environment}\"",
+          "object": "",
+          "defaultVal": {
+            "label": "",
+            "value": ""
+          }
+        }
+      },
+      {
+        "name": "Instance",
+        "seq": 3,
+        "code": "instance",
+        "hide": 0,
+        "multiple": true,
+        "includeStar": true,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "query",
+          "starMeaning": ".*",
+          "refresh": 1
+        },
+        "datasource": "dataflux",
+        "type": "PROMQL_QUERY",
+        "definition": {
+          "tag": "",
+          "field": "",
+          "value": "label_values(caddy_config_last_reload_successful{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\"},instance)",
+          "metric": "caddy_config_last_reload_successful{environment=~\"#{environment}\"",
+          "object": "",
+          "defaultVal": {
+            "label": "",
+            "value": ""
+          }
+        }
+      },
+      {
+        "name": "Interval",
+        "seq": 4,
+        "code": "interval",
+        "hide": 0,
+        "multiple": false,
+        "includeStar": false,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "interval",
+          "options": [
+            {
+              "selected": false,
+              "text": "30s",
+              "value": "30s"
+            },
+            {
+              "selected": false,
+              "text": "1m",
+              "value": "1m"
+            },
+            {
+              "selected": false,
+              "text": "5m",
+              "value": "5m"
+            },
+            {
+              "selected": true,
+              "text": "10m",
+              "value": "10m"
+            },
+            {
+              "selected": false,
+              "text": "15m",
+              "value": "15m"
+            },
+            {
+              "selected": false,
+              "text": "30m",
+              "value": "30m"
+            },
+            {
+              "selected": false,
+              "text": "1h",
+              "value": "1h"
+            }
+          ],
+          "refresh": 2
+        },
+        "datasource": "custom",
+        "type": "CUSTOM_LIST",
+        "definition": {
+          "value": "30s,1m,5m,10m,15m,30m,1h",
+          "defaultVal": {
+            "label": "10m",
+            "value": "10m"
+          }
+        }
+      }
+    ],
+    "charts": [
+      {
+        "name": "Requests in flight",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 0,
+          "y": 2.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "The number of requests currently being handled by the server.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(caddy_http_requests_in_flight{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"})",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Total requests",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 4,
+          "y": 2.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Total requests handled in the selected time range.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "throughput",
+              "reqps"
+            ],
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(increase(caddy_http_requests_total{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}]))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Requests per second",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 8,
+          "y": 2.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Rate of requests handled per second in the selected time range.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "throughput",
+              "reqps"
+            ],
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(rate(caddy_http_requests_total{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}]))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Median request duration",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 12,
+          "y": 2.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Median round-trip request duration for the selected time range.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "time",
+              "s"
+            ],
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "histogram_quantile(0.5, sum(rate(caddy_http_request_duration_seconds_bucket{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (le))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Median response duration",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 16,
+          "y": 2.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Median time-to-first-byte response duration for the selected time range.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "time",
+              "s"
+            ],
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "histogram_quantile(0.5, sum(rate(caddy_http_response_duration_seconds_bucket{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (le))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Total middleware errors",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 20,
+          "y": 2.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "A number of middleware errors encountered while handling requests in the selected time range.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(increase(caddy_http_request_errors_total{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}]))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Median request size",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 0,
+          "y": 11.9,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Median request (estimated) size in bytes in the selected time range. Includes body.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "digital",
+              "B"
+            ],
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "histogram_quantile(0.5, sum(rate(caddy_http_request_size_bytes_bucket{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (le))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Median response size",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 4,
+          "y": 11.9,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Median returned response body size in bytes in the selected time range.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "digital",
+              "B"
+            ],
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "histogram_quantile(0.5, sum(rate(caddy_http_response_size_bytes_bucket{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (le))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Total requests size",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 8,
+          "y": 11.9,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Sum of the sizes of all received requests in the selected time range.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "digital",
+              "B"
+            ],
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(increase(caddy_http_request_size_bytes_sum{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}]))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Total responses size",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 12,
+          "y": 11.9,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Sum of sizes of all response bodies in the selected time range.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "digital",
+              "B"
+            ],
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(increase(caddy_http_response_size_bytes_sum{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}]))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "4xx response percentage",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 16,
+          "y": 11.9,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Percentage of responses with 4xx status code in all responses.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "percent",
+              "percent_decimal"
+            ],
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(increase(caddy_http_response_duration_seconds_count{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\",code=~\"4..\"}[#{interval}])) / sum(increase(caddy_http_response_duration_seconds_count{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}]))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "5xx response percentage",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 20,
+          "y": 11.9,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Percentage of responses with 4xx status code in all responses.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "percent",
+              "percent_decimal"
+            ],
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(increase(caddy_http_response_duration_seconds_count{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\",code=~\"5..\"}[#{interval}])) / sum(increase(caddy_http_response_duration_seconds_count{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}]))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Caddy configuration loaded",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 0,
+          "y": 21.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "1 means the active Caddy configuration loaded successfully.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#999999",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#999999",
+                "operation": ">="
+              }
+            ],
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "min(caddy_config_last_reload_successful{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"})",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Caddy upstreams healthy",
+        "type": "singlestat",
+        "group": {
+          "name": "Summary"
+        },
+        "pos": {
+          "x": 4,
+          "y": 21.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "1 means every reported Caddy reverse proxy upstream is healthy.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#999999",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#999999",
+                "operation": ">="
+              }
+            ],
+            "direction": "auto",
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": false,
+            "extend": {
+              "appearance": {
+                "graphMode": "none",
+                "colorMode": "value",
+                "fieldColorMode": "fixed",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "min(caddy_reverse_proxy_upstreams_healthy{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"})",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Rate of requests by HTTP method (stacked)",
+        "type": "sequence",
+        "group": {
+          "name": "Detailed metrics"
+        },
+        "pos": {
+          "x": 0,
+          "y": 2.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "bottom",
+            "showLine": true,
+            "lineType": "linear",
+            "connectNulls": false,
+            "openStack": true,
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "time",
+              "ms"
+            ],
+            "levels": [
+              {
+                "title": "Level 1",
+                "value": 0,
+                "bgColor": "green"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "lineWidth": 1,
+                "fillOpacity": 20,
+                "gradientMode": "none",
+                "pointMode": "auto",
+                "pointSize": 5,
+                "axisPlacement": "auto",
+                "axisColorMode": "text",
+                "axisCenteredZero": false,
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "drawStyle": "line",
+                "spanNulls": false,
+                "stackingGroup": "A",
+                "fieldColorMode": "palette-classic",
+                "thresholdsMode": "absolute",
+                "thresholdsStyleMode": "off",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "legend": {
+                "displayMode": "list"
+              },
+              "tooltip": {
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(rate(caddy_http_request_duration_seconds_count{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (method)",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "HTTP status breakdown",
+        "type": "pie",
+        "group": {
+          "name": "Detailed metrics"
+        },
+        "pos": {
+          "x": 12,
+          "y": 2.4,
+          "w": 6,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "right",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "pie",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "time",
+              "ms"
+            ],
+            "slimit": 10,
+            "showPercent": false,
+            "showLabel": false,
+            "showLabelValue": false,
+            "legendValueOpen": true,
+            "legendValuePercentOpen": true,
+            "mainMeasurementQueryCode": "A",
+            "mainMeasurementLimit": 10,
+            "extend": {
+              "appearance": {
+                "fieldColorMode": "palette-classic",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "pieType": "pie",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "legend": {
+                "displayMode": "table"
+              },
+              "tooltip": {
+                "mode": "single",
+                "sort": "none"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "pie",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(increase(caddy_http_request_duration_seconds_count{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (code)",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "HTTP method breakdown",
+        "type": "pie",
+        "group": {
+          "name": "Detailed metrics"
+        },
+        "pos": {
+          "x": 18,
+          "y": 2.4,
+          "w": 6,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "right",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "pie",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "time",
+              "ms"
+            ],
+            "slimit": 10,
+            "showPercent": false,
+            "showLabel": false,
+            "showLabelValue": false,
+            "legendValueOpen": true,
+            "legendValuePercentOpen": true,
+            "mainMeasurementQueryCode": "A",
+            "mainMeasurementLimit": 10,
+            "extend": {
+              "appearance": {
+                "fieldColorMode": "palette-classic",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ],
+                "reduceValues": false,
+                "pieType": "pie",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "legend": {
+                "displayMode": "table"
+              },
+              "tooltip": {
+                "mode": "single",
+                "sort": "none"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "pie",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(increase(caddy_http_request_duration_seconds_count{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (method)",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Request duration percentiles",
+        "type": "sequence",
+        "group": {
+          "name": "Detailed metrics"
+        },
+        "pos": {
+          "x": 0,
+          "y": 21.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "bottom",
+            "showLine": true,
+            "lineType": "linear",
+            "connectNulls": false,
+            "openStack": false,
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "time",
+              "s"
+            ],
+            "levels": [
+              {
+                "title": "Level 1",
+                "value": 0,
+                "bgColor": "green"
+              },
+              {
+                "title": "Level 2",
+                "value": 80,
+                "bgColor": "red"
+              }
+            ],
+            "alias": [
+              {
+                "alias": "0.99",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              },
+              {
+                "alias": "0.95",
+                "key": "promql_2",
+                "name": "promql_2",
+                "queryCode": "B"
+              },
+              {
+                "alias": "0.90",
+                "key": "promql_3",
+                "name": "promql_3",
+                "queryCode": "C"
+              },
+              {
+                "alias": "0.75",
+                "key": "promql_4",
+                "name": "promql_4",
+                "queryCode": "D"
+              },
+              {
+                "alias": "0.5",
+                "key": "promql_5",
+                "name": "promql_5",
+                "queryCode": "E"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "lineWidth": 1,
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "pointMode": "auto",
+                "pointSize": 5,
+                "axisPlacement": "auto",
+                "axisColorMode": "text",
+                "axisCenteredZero": false,
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "drawStyle": "line",
+                "spanNulls": false,
+                "stackingGroup": "A",
+                "fieldColorMode": "palette-classic",
+                "thresholdsMode": "absolute",
+                "thresholdsStyleMode": "off",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "legend": {
+                "displayMode": "list"
+              },
+              "tooltip": {
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "0.99",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "histogram_quantile(0.99, sum(rate(caddy_http_request_duration_seconds_bucket{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (le))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          },
+          {
+            "name": "0.95",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "histogram_quantile(0.95, sum(rate(caddy_http_request_duration_seconds_bucket{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (le))",
+              "code": "B",
+              "type": "promql",
+              "promqlCode": 2
+            },
+            "extend": {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          },
+          {
+            "name": "0.90",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "histogram_quantile(0.90, sum(rate(caddy_http_request_duration_seconds_bucket{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (le))",
+              "code": "C",
+              "type": "promql",
+              "promqlCode": 3
+            },
+            "extend": {
+              "refId": "C",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          },
+          {
+            "name": "0.75",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "histogram_quantile(0.75, sum(rate(caddy_http_request_duration_seconds_bucket{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (le))",
+              "code": "D",
+              "type": "promql",
+              "promqlCode": 4
+            },
+            "extend": {
+              "refId": "D",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          },
+          {
+            "name": "0.5",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "histogram_quantile(0.5, sum(rate(caddy_http_request_duration_seconds_bucket{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (le))",
+              "code": "E",
+              "type": "promql",
+              "promqlCode": 5
+            },
+            "extend": {
+              "refId": "E",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Data transfer rate",
+        "type": "sequence",
+        "group": {
+          "name": "Detailed metrics"
+        },
+        "pos": {
+          "x": 12,
+          "y": 21.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "bottom",
+            "showLine": true,
+            "lineType": "linear",
+            "connectNulls": false,
+            "openStack": true,
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "digital",
+              "B"
+            ],
+            "levels": [
+              {
+                "title": "Level 1",
+                "value": 0,
+                "bgColor": "green"
+              }
+            ],
+            "alias": [
+              {
+                "alias": "request",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              },
+              {
+                "alias": "response",
+                "key": "promql_2",
+                "name": "promql_2",
+                "queryCode": "B"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "lineWidth": 1,
+                "fillOpacity": 20,
+                "gradientMode": "none",
+                "pointMode": "auto",
+                "pointSize": 5,
+                "axisPlacement": "auto",
+                "axisColorMode": "text",
+                "axisCenteredZero": false,
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "drawStyle": "line",
+                "spanNulls": false,
+                "stackingGroup": "A",
+                "fieldColorMode": "palette-classic",
+                "thresholdsMode": "absolute",
+                "thresholdsStyleMode": "off",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "legend": {
+                "displayMode": "list"
+              },
+              "tooltip": {
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "request",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(rate(caddy_http_request_size_bytes_sum{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}]))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          },
+          {
+            "name": "response",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "-sum(rate(caddy_http_response_size_bytes_sum{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}]))",
+              "code": "B",
+              "type": "promql",
+              "promqlCode": 2
+            },
+            "extend": {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Rate of 4xx and 5xx responses",
+        "type": "sequence",
+        "group": {
+          "name": "Detailed metrics"
+        },
+        "pos": {
+          "x": 0,
+          "y": 40.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "bottom",
+            "showLine": true,
+            "lineType": "linear",
+            "connectNulls": false,
+            "openStack": false,
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "time",
+              "ms"
+            ],
+            "levels": [
+              {
+                "title": "Level 1",
+                "value": 0,
+                "bgColor": "green"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "lineWidth": 1,
+                "fillOpacity": 20,
+                "gradientMode": "none",
+                "pointMode": "auto",
+                "pointSize": 5,
+                "axisPlacement": "auto",
+                "axisColorMode": "text",
+                "axisCenteredZero": false,
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "drawStyle": "line",
+                "spanNulls": false,
+                "stackingGroup": "A",
+                "fieldColorMode": "palette-classic",
+                "thresholdsMode": "absolute",
+                "thresholdsStyleMode": "off",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "legend": {
+                "displayMode": "list"
+              },
+              "tooltip": {
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(rate(caddy_http_request_duration_seconds_count{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\",code=~\"4..|5..\"}[#{interval}])) by (code)",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Middleware error rate",
+        "type": "sequence",
+        "group": {
+          "name": "Detailed metrics"
+        },
+        "pos": {
+          "x": 12,
+          "y": 40.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": false,
+            "legendPostion": "bottom",
+            "showLine": true,
+            "lineType": "linear",
+            "connectNulls": false,
+            "openStack": false,
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "levels": [
+              {
+                "title": "Level 1",
+                "value": 0,
+                "bgColor": "green"
+              },
+              {
+                "title": "Level 2",
+                "value": 80,
+                "bgColor": "red"
+              }
+            ],
+            "alias": [
+              {
+                "alias": "errors",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "lineWidth": 1,
+                "fillOpacity": 20,
+                "gradientMode": "none",
+                "pointMode": "auto",
+                "pointSize": 5,
+                "axisPlacement": "auto",
+                "axisColorMode": "text",
+                "axisCenteredZero": false,
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "drawStyle": "line",
+                "spanNulls": false,
+                "stackingGroup": "A",
+                "fieldColorMode": "palette-classic",
+                "thresholdsMode": "absolute",
+                "thresholdsStyleMode": "off",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "legend": {
+                "displayMode": "list"
+              },
+              "tooltip": {
+                "mode": "single",
+                "sort": "none"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "errors",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "rate(caddy_http_request_errors_total{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Request duration heatmap",
+        "type": "heatmap",
+        "group": {
+          "name": "Heatmaps"
+        },
+        "pos": {
+          "x": 0,
+          "y": 2.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Round-trip request duration heatmap.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": true,
+            "unitType": "global",
+            "globalUnit": [
+              "time",
+              "ms"
+            ],
+            "alias": [
+              {
+                "alias": "{{le}}",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "tooltip": {
+                "mode": "single"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{le}}",
+            "type": "heatmap",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(increase(caddy_http_request_duration_seconds_bucket{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (le)",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Request size heatmap",
+        "type": "heatmap",
+        "group": {
+          "name": "Heatmaps"
+        },
+        "pos": {
+          "x": 12,
+          "y": 2.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": true,
+            "alias": [
+              {
+                "alias": "{{le}}",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "tooltip": {
+                "mode": "single"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{le}}",
+            "type": "heatmap",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(increase(caddy_http_request_size_bytes_bucket{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (le)",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Response duration heatmap",
+        "type": "heatmap",
+        "group": {
+          "name": "Heatmaps"
+        },
+        "pos": {
+          "x": 0,
+          "y": 21.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Response time-to-first-byte heatmap.",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": true,
+            "unitType": "global",
+            "globalUnit": [
+              "time",
+              "ms"
+            ],
+            "alias": [
+              {
+                "alias": "{{le}}",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "tooltip": {
+                "mode": "single"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{le}}",
+            "type": "heatmap",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(increase(caddy_http_response_duration_seconds_bucket{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (le)",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Response size heatmap",
+        "type": "heatmap",
+        "group": {
+          "name": "Heatmaps"
+        },
+        "pos": {
+          "x": 12,
+          "y": 21.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": true,
+            "alias": [
+              {
+                "alias": "{{le}}",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "tooltip": {
+                "mode": "single"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{le}}",
+            "type": "heatmap",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(increase(caddy_http_response_size_bytes_bucket{environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=~\"#{service}\",instance=~\"#{instance}\"}[#{interval}])) by (le)",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      }
+    ],
+    "groups": [
+      {
+        "name": "Summary"
+      },
+      {
+        "name": "Detailed metrics"
+      },
+      {
+        "name": "Heatmaps"
+      }
+    ],
+    "type": "template"
+  }
+}

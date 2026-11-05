@@ -1,0 +1,1785 @@
+{
+  "title": "PostgreSQL 统一监控概览",
+  "description": "PostgreSQL exporter 监控概览。缺失的指标显示为无数据；实例级面板不受数据库筛选影响，指标可用性取决于 exporter 配置和 PostgreSQL 版本。",
+  "tags": [
+    "postgres"
+  ],
+  "uid": "postgres-unified-overview",
+  "dashboardExtend": {
+    "groupUnfoldStatus": {
+      "概览": true,
+      "详细指标": true,
+      "热力图": true
+    }
+  },
+  "main": {
+    "vars": [
+      {
+        "name": "环境",
+        "seq": 0,
+        "code": "environment",
+        "hide": 0,
+        "multiple": true,
+        "includeStar": true,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "query",
+          "starMeaning": ".*",
+          "refresh": 1,
+          "sort": 1
+        },
+        "datasource": "dataflux",
+        "type": "PROMQL_QUERY",
+        "definition": {
+          "tag": "",
+          "field": "",
+          "value": "label_values(pg_stat_database_numbackends{environment!=\"\"}, environment)",
+          "metric": "pg_stat_database_numbackends{environment!=\"\"}",
+          "object": "",
+          "defaultVal": {
+            "label": "",
+            "value": ""
+          }
+        }
+      },
+      {
+        "name": "集群",
+        "seq": 1,
+        "code": "cluster",
+        "hide": 0,
+        "multiple": true,
+        "includeStar": true,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "query",
+          "starMeaning": ".*",
+          "refresh": 1,
+          "sort": 1
+        },
+        "datasource": "dataflux",
+        "type": "PROMQL_QUERY",
+        "definition": {
+          "tag": "",
+          "field": "",
+          "value": "label_values(pg_stat_database_numbackends{environment=~\"#{environment}\",environment!=\"\" ,cluster!=\"\"}, cluster)",
+          "metric": "pg_stat_database_numbackends{environment=~\"#{environment}\"",
+          "object": "",
+          "defaultVal": {
+            "label": "",
+            "value": ""
+          }
+        }
+      },
+      {
+        "name": "服务",
+        "seq": 2,
+        "code": "service",
+        "hide": 0,
+        "multiple": true,
+        "includeStar": true,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "query",
+          "starMeaning": ".*",
+          "refresh": 1,
+          "sort": 1
+        },
+        "datasource": "dataflux",
+        "type": "PROMQL_QUERY",
+        "definition": {
+          "tag": "",
+          "field": "",
+          "value": "label_values(pg_stat_database_numbackends{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\" ,service!=\"\"}, service)",
+          "metric": "pg_stat_database_numbackends{environment=~\"#{environment}\"",
+          "object": "",
+          "defaultVal": {
+            "label": "",
+            "value": ""
+          }
+        }
+      },
+      {
+        "name": "实例",
+        "seq": 3,
+        "code": "instance",
+        "hide": 0,
+        "multiple": true,
+        "includeStar": true,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "query",
+          "starMeaning": ".*",
+          "refresh": 1,
+          "sort": 1
+        },
+        "datasource": "dataflux",
+        "type": "PROMQL_QUERY",
+        "definition": {
+          "tag": "",
+          "field": "",
+          "value": "label_values(pg_stat_database_numbackends{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\" ,instance!=\"\"}, instance)",
+          "metric": "pg_stat_database_numbackends{environment=~\"#{environment}\"",
+          "object": "",
+          "defaultVal": {
+            "label": "",
+            "value": ""
+          }
+        }
+      },
+      {
+        "name": "数据库",
+        "seq": 4,
+        "code": "datname",
+        "hide": 0,
+        "multiple": true,
+        "includeStar": true,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "query",
+          "starMeaning": ".*",
+          "refresh": 1,
+          "sort": 1
+        },
+        "datasource": "dataflux",
+        "type": "PROMQL_QUERY",
+        "definition": {
+          "tag": "",
+          "field": "",
+          "value": "label_values(pg_stat_database_numbackends{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\" ,datname!=\"\"}, datname)",
+          "metric": "pg_stat_database_numbackends{environment=~\"#{environment}\"",
+          "object": "",
+          "defaultVal": {
+            "label": "",
+            "value": ""
+          }
+        }
+      }
+    ],
+    "charts": [
+      {
+        "name": "PostgreSQL 可用性 (pg_up)",
+        "type": "singlestat",
+        "group": {
+          "name": "概览"
+        },
+        "pos": {
+          "x": 0,
+          "y": 2.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "所选实例的 exporter 数据库连接状态；不受数据库筛选影响。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  50
+                ],
+                "bgColor": "green",
+                "fontColor": "#999999",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  50,
+                  80
+                ],
+                "bgColor": "yellow",
+                "fontColor": "#999999",
+                "operation": "between"
+              },
+              {
+                "value": [
+                  80
+                ],
+                "bgColor": "red",
+                "fontColor": "#999999",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "{{instance}}",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "scientificNotation": true,
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": true,
+            "extend": {
+              "appearance": {
+                "fieldColorMode": "thresholds",
+                "thresholdsMode": "absolute",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ]
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{instance}}",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "pg_up{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "dataflux"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "活跃后端连接数",
+        "type": "singlestat",
+        "group": {
+          "name": "概览"
+        },
+        "pos": {
+          "x": 4,
+          "y": 2.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "所选数据库的后端连接数总和。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  50
+                ],
+                "bgColor": "green",
+                "fontColor": "#999999",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  50,
+                  80
+                ],
+                "bgColor": "yellow",
+                "fontColor": "#999999",
+                "operation": "between"
+              },
+              {
+                "value": [
+                  80
+                ],
+                "bgColor": "red",
+                "fontColor": "#999999",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "Connections",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "scientificNotation": true,
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": true,
+            "extend": {
+              "appearance": {
+                "fieldColorMode": "thresholds",
+                "thresholdsMode": "absolute",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ]
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "Connections",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(pg_stat_database_numbackends{environment=~\"#{environment}\",environment!=\"\", cluster=~\"#{cluster}\",cluster!=\"\", service=~\"#{service}\",service!=\"\", instance=~\"#{instance}\",instance!=\"\", datname=~\"#{datname}\",datname!=\"\"})",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "dataflux"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "缓存命中率",
+        "type": "singlestat",
+        "group": {
+          "name": "概览"
+        },
+        "pos": {
+          "x": 8,
+          "y": 2.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "所选数据库缓存命中次数占缓存命中与磁盘读取总次数的比例。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "percent",
+              "percent"
+            ],
+            "levels": [
+              {
+                "value": [
+                  90
+                ],
+                "bgColor": "red",
+                "fontColor": "#999999",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  90,
+                  98
+                ],
+                "bgColor": "yellow",
+                "fontColor": "#999999",
+                "operation": "between"
+              },
+              {
+                "value": [
+                  98
+                ],
+                "bgColor": "green",
+                "fontColor": "#999999",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "Hit Ratio",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": true,
+            "extend": {
+              "appearance": {
+                "fieldColorMode": "thresholds",
+                "thresholdsMode": "absolute",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ]
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "Hit Ratio",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(rate(pg_stat_database_blks_hit{environment=~\"#{environment}\",environment!=\"\", cluster=~\"#{cluster}\",cluster!=\"\", service=~\"#{service}\",service!=\"\", instance=~\"#{instance}\",instance!=\"\", datname=~\"#{datname}\",datname!=\"\"}[5m])) / (sum(rate(pg_stat_database_blks_hit{environment=~\"#{environment}\",environment!=\"\", cluster=~\"#{cluster}\",cluster!=\"\", service=~\"#{service}\",service!=\"\", instance=~\"#{instance}\",instance!=\"\", datname=~\"#{datname}\",datname!=\"\"}[5m])) + sum(rate(pg_stat_database_blks_read{environment=~\"#{environment}\",environment!=\"\", cluster=~\"#{cluster}\",cluster!=\"\", service=~\"#{service}\",service!=\"\", instance=~\"#{instance}\",instance!=\"\", datname=~\"#{datname}\",datname!=\"\"}[5m]))) * 100",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "dataflux"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "每秒提交事务数",
+        "type": "singlestat",
+        "group": {
+          "name": "概览"
+        },
+        "pos": {
+          "x": 12,
+          "y": 2.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "所选数据库每秒提交事务的速率总和。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "throughput",
+              "ops"
+            ],
+            "alias": [
+              {
+                "alias": "Commits/s",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": true,
+            "extend": {
+              "appearance": {
+                "fieldColorMode": "palette-classic",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ]
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "Commits/s",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(rate(pg_stat_database_xact_commit{environment=~\"#{environment}\",environment!=\"\", cluster=~\"#{cluster}\",cluster!=\"\", service=~\"#{service}\",service!=\"\", instance=~\"#{instance}\",instance!=\"\", datname=~\"#{datname}\",datname!=\"\"}[5m]))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "dataflux"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "每秒回滚事务数",
+        "type": "singlestat",
+        "group": {
+          "name": "概览"
+        },
+        "pos": {
+          "x": 16,
+          "y": 2.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "所选数据库每秒回滚事务的速率总和。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "throughput",
+              "ops"
+            ],
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#999999",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#999999",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "Rollbacks/s",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "showLineAxis": true,
+            "extend": {
+              "appearance": {
+                "fieldColorMode": "thresholds",
+                "thresholdsMode": "absolute",
+                "reduceCalcs": [
+                  "lastNotNull"
+                ]
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "Rollbacks/s",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(rate(pg_stat_database_xact_rollback{environment=~\"#{environment}\",environment!=\"\", cluster=~\"#{cluster}\",cluster!=\"\", service=~\"#{service}\",service!=\"\", instance=~\"#{instance}\",instance!=\"\", datname=~\"#{datname}\",datname!=\"\"}[5m]))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "dataflux"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "每秒事务数 (TPS)",
+        "type": "singlestat",
+        "group": {
+          "name": "概览"
+        },
+        "pos": {
+          "x": 20,
+          "y": 2.4,
+          "w": 4,
+          "h": 9.6
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "每秒提交与回滚事务的速率之和。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "maxPointCount": 100,
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "custom",
+              "none"
+            ],
+            "direction": "horizontal",
+            "mainMeasurementQueryCode": "A",
+            "color": "rgb(31, 120, 193)",
+            "sequenceChartType": "line",
+            "showLineAxis": true,
+            "extend": {
+              "appearance": {
+                "graphMode": "area",
+                "colorMode": "none",
+                "fieldColorMode": "fixed",
+                "fixedColor": "rgb(31, 120, 193)",
+                "thresholdsMode": "absolute",
+                "textMode": "auto",
+                "reduceCalcs": [
+                  "mean"
+                ],
+                "reduceValues": false,
+                "justifyMode": "auto"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(irate(pg_stat_database_xact_commit{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\",datname=~\"#{datname}\",datname!=\"\"}[5m])) + sum(irate(pg_stat_database_xact_rollback{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\",datname=~\"#{datname}\",datname!=\"\"}[5m]))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "uid": "dataflux"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "各数据库活跃后端连接数",
+        "type": "sequence",
+        "group": {
+          "name": "详细指标"
+        },
+        "pos": {
+          "x": 0,
+          "y": 2.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "按数据库和实例展示当前后端连接数。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "showLine": true,
+            "lineType": "smooth",
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "alias": [
+              {
+                "alias": "{{datname}} ({{instance}})",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "scientificNotation": true,
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "fillOpacity": 10,
+                "drawStyle": "line"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{datname}} ({{instance}})",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "pg_stat_database_numbackends{environment=~\"#{environment}\",environment!=\"\", cluster=~\"#{cluster}\",cluster!=\"\", service=~\"#{service}\",service!=\"\", instance=~\"#{instance}\",instance!=\"\", datname=~\"#{datname}\",datname!=\"\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "dataflux"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "数据库磁盘大小",
+        "type": "sequence",
+        "group": {
+          "name": "详细指标"
+        },
+        "pos": {
+          "x": 12,
+          "y": 2.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "按数据库和实例展示数据库大小；依赖 exporter 提供 pg_database_size_bytes，缺失时显示无数据。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "showLine": true,
+            "lineType": "smooth",
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "digital",
+              "B"
+            ],
+            "alias": [
+              {
+                "alias": "{{datname}} ({{instance}})",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "fillOpacity": 10,
+                "drawStyle": "line"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{datname}} ({{instance}})",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "pg_database_size_bytes{environment=~\"#{environment}\",environment!=\"\", cluster=~\"#{cluster}\",cluster!=\"\", service=~\"#{service}\",service!=\"\", instance=~\"#{instance}\",instance!=\"\", datname=~\"#{datname}\",datname!=\"\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "dataflux"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "数据行操作速率",
+        "type": "sequence",
+        "group": {
+          "name": "详细指标"
+        },
+        "pos": {
+          "x": 0,
+          "y": 21.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "展示所选数据库读取、返回、插入、更新和删除的数据行每秒速率。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "right",
+            "legendValues": [
+              "max",
+              "min"
+            ],
+            "showLine": true,
+            "lineType": "linear",
+            "connectNulls": true,
+            "openStack": false,
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "title": "Level 1",
+                "value": 0,
+                "bgColor": "green"
+              },
+              {
+                "title": "Level 2",
+                "value": 80,
+                "bgColor": "red"
+              }
+            ],
+            "alias": [
+              {
+                "alias": "fetched",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              },
+              {
+                "alias": "returned",
+                "key": "promql_2",
+                "name": "promql_2",
+                "queryCode": "B"
+              },
+              {
+                "alias": "inserted",
+                "key": "promql_3",
+                "name": "promql_3",
+                "queryCode": "C"
+              },
+              {
+                "alias": "updated",
+                "key": "promql_4",
+                "name": "promql_4",
+                "queryCode": "D"
+              },
+              {
+                "alias": "deleted",
+                "key": "promql_5",
+                "name": "promql_5",
+                "queryCode": "E"
+              }
+            ],
+            "scientificNotation": true,
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "pointMode": "never",
+                "pointSize": 5,
+                "axisPlacement": "auto",
+                "axisColorMode": "text",
+                "axisCenteredZero": false,
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "drawStyle": "line",
+                "spanNulls": true,
+                "stackingGroup": "A",
+                "fieldColorMode": "palette-classic",
+                "thresholdsMode": "absolute",
+                "thresholdsStyleMode": "off",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "legend": {
+                "displayMode": "table"
+              },
+              "tooltip": {
+                "mode": "multi",
+                "sort": "none"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "fetched",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(irate(pg_stat_database_tup_fetched{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\",datname=~\"#{datname}\",datname!=\"\"}[5m]))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "uid": "dataflux"
+              }
+            }
+          },
+          {
+            "name": "returned",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(irate(pg_stat_database_tup_returned{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\",datname=~\"#{datname}\",datname!=\"\"}[5m]))",
+              "code": "B",
+              "type": "promql",
+              "promqlCode": 2
+            },
+            "extend": {
+              "refId": "B",
+              "datasource": {
+                "uid": "dataflux"
+              }
+            }
+          },
+          {
+            "name": "inserted",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(irate(pg_stat_database_tup_inserted{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\",datname=~\"#{datname}\",datname!=\"\"}[5m]))",
+              "code": "C",
+              "type": "promql",
+              "promqlCode": 3
+            },
+            "extend": {
+              "refId": "C",
+              "datasource": {
+                "uid": "dataflux"
+              }
+            }
+          },
+          {
+            "name": "updated",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(irate(pg_stat_database_tup_updated{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\",datname=~\"#{datname}\",datname!=\"\"}[5m]))",
+              "code": "D",
+              "type": "promql",
+              "promqlCode": 4
+            },
+            "extend": {
+              "refId": "D",
+              "datasource": {
+                "uid": "dataflux"
+              }
+            }
+          },
+          {
+            "name": "deleted",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(irate(pg_stat_database_tup_deleted{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\",datname=~\"#{datname}\",datname!=\"\"}[5m]))",
+              "code": "E",
+              "type": "promql",
+              "promqlCode": 5
+            },
+            "extend": {
+              "refId": "E",
+              "datasource": {
+                "uid": "dataflux"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "冲突与死锁",
+        "type": "sequence",
+        "group": {
+          "name": "详细指标"
+        },
+        "pos": {
+          "x": 12,
+          "y": 21.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "展示所选数据库冲突和死锁的累计计数总和。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "bottom",
+            "showLine": true,
+            "lineType": "linear",
+            "connectNulls": true,
+            "openStack": false,
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "colors": [
+              {
+                "key": "deadlocks",
+                "name": "deadlocks",
+                "color": "light-red"
+              }
+            ],
+            "levels": [
+              {
+                "title": "Level 1",
+                "value": 0,
+                "bgColor": "green"
+              },
+              {
+                "title": "Level 2",
+                "value": 80,
+                "bgColor": "red"
+              }
+            ],
+            "alias": [
+              {
+                "alias": "deadlocks",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              },
+              {
+                "alias": "conflicts",
+                "key": "promql_2",
+                "name": "promql_2",
+                "queryCode": "B"
+              }
+            ],
+            "min": 0,
+            "scientificNotation": true,
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "pointMode": "never",
+                "pointSize": 5,
+                "axisPlacement": "auto",
+                "axisColorMode": "text",
+                "axisCenteredZero": false,
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "drawStyle": "line",
+                "spanNulls": true,
+                "stackingGroup": "A",
+                "fieldColorMode": "palette-classic",
+                "thresholdsMode": "absolute",
+                "thresholdsStyleMode": "off",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "legend": {
+                "displayMode": "list"
+              },
+              "tooltip": {
+                "mode": "multi",
+                "sort": "none"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "deadlocks",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(pg_stat_database_deadlocks{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\",datname=~\"#{datname}\",datname!=\"\"})",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "uid": "dataflux"
+              }
+            }
+          },
+          {
+            "name": "conflicts",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(pg_stat_database_conflicts{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\",datname=~\"#{datname}\",datname!=\"\"})",
+              "code": "B",
+              "type": "promql",
+              "promqlCode": 2
+            },
+            "extend": {
+              "refId": "B",
+              "datasource": {
+                "uid": "dataflux"
+              },
+              "editorMode": "code"
+            }
+          }
+        ]
+      },
+      {
+        "name": "各数据库缓存命中率",
+        "type": "sequence",
+        "group": {
+          "name": "详细指标"
+        },
+        "pos": {
+          "x": 0,
+          "y": 40.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "按数据库展示缓存命中率。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "bottom",
+            "showLine": true,
+            "lineType": "linear",
+            "connectNulls": true,
+            "openStack": false,
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "percent",
+              "percent"
+            ],
+            "levels": [
+              {
+                "title": "Level 1",
+                "value": 0,
+                "bgColor": "green"
+              },
+              {
+                "title": "Level 2",
+                "value": 80,
+                "bgColor": "red"
+              }
+            ],
+            "alias": [
+              {
+                "alias": "{{datname}} - cache hit rate",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "min": 0,
+            "max": 100,
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "pointMode": "never",
+                "pointSize": 5,
+                "axisPlacement": "auto",
+                "axisColorMode": "text",
+                "axisCenteredZero": false,
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "drawStyle": "line",
+                "spanNulls": true,
+                "stackingGroup": "A",
+                "fieldColorMode": "palette-classic",
+                "thresholdsMode": "absolute",
+                "thresholdsStyleMode": "off",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "legend": {
+                "displayMode": "list"
+              },
+              "tooltip": {
+                "mode": "multi",
+                "sort": "none"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{datname}} - cache hit rate",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "round(sum by (datname) (rate(pg_stat_database_blks_hit{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\",datname=~\"#{datname}\",datname!=\"\"}[5m])) / (sum by (datname)(rate(pg_stat_database_blks_hit{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\",datname=~\"#{datname}\",datname!=\"\"}[5m])) + sum by (datname)(rate(pg_stat_database_blks_read{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\",datname=~\"#{datname}\",datname!=\"\"}[5m])))*100,0.001)",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "uid": "dataflux"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "缓冲区（实例级）",
+        "type": "sequence",
+        "group": {
+          "name": "详细指标"
+        },
+        "pos": {
+          "x": 12,
+          "y": 40.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "实例级指标，不受数据库筛选影响。PostgreSQL 17 移除了部分旧版 bgwriter 指标；checkpointer 指标需要可选采集器。指标缺失不等于 0。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": false,
+            "legendPostion": "bottom",
+            "legendValues": [
+              "max",
+              "min"
+            ],
+            "showLine": true,
+            "lineType": "linear",
+            "connectNulls": true,
+            "openStack": false,
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "title": "Level 1",
+                "value": 0,
+                "bgColor": "green"
+              },
+              {
+                "title": "Level 2",
+                "value": 80,
+                "bgColor": "red"
+              }
+            ],
+            "alias": [
+              {
+                "alias": "buffers_alloc",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              },
+              {
+                "alias": "buffers_backend_fsync",
+                "key": "promql_2",
+                "name": "promql_2",
+                "queryCode": "B"
+              },
+              {
+                "alias": "buffers_backend",
+                "key": "promql_3",
+                "name": "promql_3",
+                "queryCode": "C"
+              },
+              {
+                "alias": "buffers_clean",
+                "key": "promql_4",
+                "name": "promql_4",
+                "queryCode": "D"
+              },
+              {
+                "alias": "buffers_checkpoint",
+                "key": "promql_5",
+                "name": "promql_5",
+                "queryCode": "E"
+              },
+              {
+                "alias": "Checkpointer buffers written (PG17+, optional collector)",
+                "key": "promql_6",
+                "name": "promql_6",
+                "queryCode": "F"
+              }
+            ],
+            "min": 0,
+            "scientificNotation": true,
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "pointMode": "never",
+                "pointSize": 5,
+                "axisPlacement": "auto",
+                "axisColorMode": "text",
+                "axisCenteredZero": false,
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "drawStyle": "line",
+                "spanNulls": true,
+                "stackingGroup": "A",
+                "fieldColorMode": "palette-classic",
+                "thresholdsMode": "absolute",
+                "thresholdsStyleMode": "off",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "legend": {
+                "displayMode": "table"
+              },
+              "tooltip": {
+                "mode": "multi",
+                "sort": "none"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "buffers_alloc",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "irate(pg_stat_bgwriter_buffers_alloc_total{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\"}[5m])",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "uid": "dataflux"
+              }
+            }
+          },
+          {
+            "name": "buffers_backend_fsync",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "irate(pg_stat_bgwriter_buffers_backend_fsync_total{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\"}[5m])",
+              "code": "B",
+              "type": "promql",
+              "promqlCode": 2
+            },
+            "extend": {
+              "refId": "B",
+              "datasource": {
+                "uid": "dataflux"
+              }
+            }
+          },
+          {
+            "name": "buffers_backend",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "irate(pg_stat_bgwriter_buffers_backend_total{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\"}[5m])",
+              "code": "C",
+              "type": "promql",
+              "promqlCode": 3
+            },
+            "extend": {
+              "refId": "C",
+              "datasource": {
+                "uid": "dataflux"
+              }
+            }
+          },
+          {
+            "name": "buffers_clean",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "irate(pg_stat_bgwriter_buffers_clean_total{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\"}[5m])",
+              "code": "D",
+              "type": "promql",
+              "promqlCode": 4
+            },
+            "extend": {
+              "refId": "D",
+              "datasource": {
+                "uid": "dataflux"
+              }
+            }
+          },
+          {
+            "name": "buffers_checkpoint",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "irate(pg_stat_bgwriter_buffers_checkpoint_total{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\"}[5m])",
+              "code": "E",
+              "type": "promql",
+              "promqlCode": 5
+            },
+            "extend": {
+              "refId": "E",
+              "datasource": {
+                "uid": "dataflux"
+              }
+            }
+          },
+          {
+            "name": "Checkpointer buffers written (PG17+, optional collector)",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "irate(pg_stat_checkpointer_buffers_written_total{environment=~\"#{environment}\",environment!=\"\",cluster=~\"#{cluster}\",cluster!=\"\",service=~\"#{service}\",service!=\"\",instance=~\"#{instance}\",instance!=\"\"}[5m])",
+              "code": "F",
+              "type": "promql",
+              "promqlCode": 6
+            },
+            "extend": {
+              "refId": "F"
+            }
+          }
+        ]
+      },
+      {
+        "name": "连接数样本随时间的分布",
+        "type": "heatmap",
+        "group": {
+          "name": "热力图"
+        },
+        "pos": {
+          "x": 0,
+          "y": 2.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "每个时间桶内，所选数据库和实例的后端连接数样本分布；颜色表示样本数量，不是请求延迟分布，也不是连接事件数。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": true,
+            "alias": [
+              {
+                "alias": "{{datname}} ({{instance}})",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "tooltip": {
+                "mode": "single"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{datname}} ({{instance}})",
+            "type": "heatmap",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "pg_stat_database_numbackends{environment=~\"#{environment}\",environment!=\"\", cluster=~\"#{cluster}\",cluster!=\"\", service=~\"#{service}\",service!=\"\", instance=~\"#{instance}\",instance!=\"\", datname=~\"#{datname}\",datname!=\"\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "dataflux"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "数据库大小样本随时间的分布",
+        "type": "heatmap",
+        "group": {
+          "name": "热力图"
+        },
+        "pos": {
+          "x": 12,
+          "y": 2.4,
+          "w": 12,
+          "h": 19.1
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "每个时间桶内，所选数据库和实例的数据库大小样本分布；颜色表示样本数量，不是请求延迟分布，也不是容量上限。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "showLegend": true,
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": true,
+            "unitType": "global",
+            "globalUnit": [
+              "digital",
+              "B"
+            ],
+            "alias": [
+              {
+                "alias": "{{datname}} ({{instance}})",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "tooltip": {
+                "mode": "single"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{datname}} ({{instance}})",
+            "type": "heatmap",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "pg_database_size_bytes{environment=~\"#{environment}\",environment!=\"\", cluster=~\"#{cluster}\",cluster!=\"\", service=~\"#{service}\",service!=\"\", instance=~\"#{instance}\",instance!=\"\", datname=~\"#{datname}\",datname!=\"\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            },
+            "extend": {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "dataflux"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "groups": [
+      {
+        "name": "概览"
+      },
+      {
+        "name": "详细指标"
+      },
+      {
+        "name": "热力图"
+      }
+    ],
+    "type": "template"
+  }
+}
