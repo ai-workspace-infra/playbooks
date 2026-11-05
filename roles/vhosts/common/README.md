@@ -88,3 +88,17 @@ runs this common profile and emits its bound receipt, while disk initialization
 is disabled and storage/K3s roles are skipped. `phase=cluster` continues those
 roles only after the same common checks. V6 callers must select common after
 an IaC apply; plan remains read-only without host preparation.
+
+## Local Agent Proxy bootstrap profile
+
+`tasks_from: agent_proxy_bootstrap.yml` is called only by the local
+`deploy_xray_proxy_server.yml` installer path. It requires the explicit
+`common_agent_proxy_hostname` and `common_os_identity_environment`, rejects
+hosts with existing K3s state, applies the three OS identity profile, persists
+the hostname across cloud-init, removes a public-address-to-`localhost` entry,
+and verifies `/etc/hostname` plus local resolution. The installer derives the
+hostname from `AGENT_OS_HOSTNAME` or the Agent ID, and derives the Vault
+environment from `VAULT_ENV_PATH` or the environment segment of
+`INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH`. It does not invoke the full common OS,
+firewall, package, or SSH hardening baseline. The Agent service runtime user
+remains unchanged and requires a separate staged rootless migration.

@@ -55,6 +55,17 @@
     agent_id: >-
       {{ lookup('ansible.builtin.env', 'AGENT_ID')
          | default(hostvars[inventory_hostname].get('agent_id', inventory_hostname), true) }}
+    common_agent_proxy_hostname: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_OS_HOSTNAME')
+         | default(agent_id, true) }}
+    common_os_identity_environment: >-
+      {{ lookup('ansible.builtin.env', 'VAULT_ENV_PATH')
+         | default(
+             (lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH').split('/')[2]
+              if lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH')
+                 is match('^kv/data/(sit|uat|prod)/.+$') else ''),
+             true
+           ) }}
     agent_resource_class: >-
       {{ lookup('ansible.builtin.env', 'AGENT_RESOURCE_CLASS')
          | default(hostvars[inventory_hostname].get('xconnect_resource_class', ''), true) }}
@@ -405,6 +416,14 @@
         - agent_proxy_operation == 'deploy'
         - agent_controller_ip | length > 0
         - agent_controller_host | length > 0
+
+    - name: Apply the common hostname and OS identity profile for local Agent Proxy installs
+      ansible.builtin.include_role:
+        name: vhosts/common
+        tasks_from: agent_proxy_bootstrap.yml
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
 
   roles:
     - role: roles/vhosts/caddy
