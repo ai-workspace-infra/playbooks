@@ -23,6 +23,9 @@
       - common_agent_proxy_k3s_state.results | selectattr('stat.exists') | list | length == 0
     fail_msg: Refusing to rename a host with existing K3s state; use the CMDB-bound node bootstrap profile.
 
+- name: Common | apply SSH hardening before checking role key access
+  ansible.builtin.import_tasks: harden_ssh.yml
+
 - name: Common | establish and verify the three OS identities
   ansible.builtin.include_tasks: os_identity.yml
 
