@@ -22,22 +22,34 @@ datakit_dataway_url: "{{ lookup('ansible.builtin.env', 'DATAKIT_DATAWAY_URL') | 
 
 # DataKit 默认配置
 datakit_global_tags: "cluster={{ k8s_cluster_name | default('default') }},env={{ target_env | default('') }}"
-datakit_default_inputs: "statsd,dk,cpu,disk,diskio,mem,swap,system,hostobject,net,host_processes,container,kubernetesprometheus,opentelemetry,prom"
+datakit_default_inputs: "statsd,dk,cpu,disk,diskio,mem,swap,system,hostobject,net,container,kubernetesprometheus,opentelemetry,prom"
 datakit_log_level: "info"
 
 # Restrict stdout/stderr collection to DEV/SIT business namespaces. Adjust only
 # through an explicit non-production inventory variable when the lane changes.
 datakit_business_log_namespace_selector: "namespace:feature-*"
-datakit_caddy_metrics_namespace: "feature-xconnect-referral-sit"
-datakit_caddy_metrics_service: "web-saas-caddy-metrics"
-datakit_caddy_metrics_port: 9180
+datakit_caddy_metrics_namespace: "ingress-sit"
+datakit_caddy_metrics_service: "caddy-ingress-caddy"
+datakit_caddy_metrics_port: 80
 datakit_caddy_metrics_url: "http://{{ datakit_caddy_metrics_service }}.{{ datakit_caddy_metrics_namespace }}:{{ datakit_caddy_metrics_port }}/metrics"
 
 # Existing DEV/SIT PostgreSQL exporter scrape is retained alongside Caddy.
-datakit_postgresql_metrics_namespace: "feature-xconnect-referral-sit"
-datakit_postgresql_metrics_service: "web-saas-postgresql-exporter"
+datakit_postgresql_metrics_namespace: "postgresql-sit"
+datakit_postgresql_metrics_service: "postgresql-postgresql-exporter"
 datakit_postgresql_metrics_port: 9187
 datakit_postgresql_metrics_url: "http://{{ datakit_postgresql_metrics_service }}.{{ datakit_postgresql_metrics_namespace }}:{{ datakit_postgresql_metrics_port }}/metrics"
+
+# Kube-State-Metrics scrape
+datakit_kube_state_metrics_namespace: "observability-sit"
+datakit_kube_state_metrics_service: "observability-agent-state"
+datakit_kube_state_metrics_port: 8080
+datakit_kube_state_metrics_url: "http://{{ datakit_kube_state_metrics_service }}.{{ datakit_kube_state_metrics_namespace }}:{{ datakit_kube_state_metrics_port }}/metrics"
+
+# Node-Exporter scrape
+datakit_node_exporter_namespace: "observability-sit"
+datakit_node_exporter_service: "observability-agent"
+datakit_node_exporter_port: 9100
+datakit_node_exporter_url: "http://{{ datakit_node_exporter_service }}.{{ datakit_node_exporter_namespace }}:{{ datakit_node_exporter_port }}/metrics"
 
 # OpenTelemetry 采集模块配置
 datakit_enable_opentelemetry: true
