@@ -5,6 +5,52 @@
   run_once: true
   no_log: true
 
+- name: Validate direct Vault API inputs for the local installer
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.env', 'VAULT_ADDR') | length > 0
+      - lookup('ansible.builtin.env', 'VAULT_TOKEN') | length > 0
+      - lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH') is match('^kv/data/[A-Za-z0-9._/-]+$')
+      - "'..' not in lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH').split('/')"
+    fail_msg: "The local installer requires VAULT_ADDR, VAULT_TOKEN, and a valid INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH."
+  run_once: true
+  no_log: true
+  when:
+    - lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | length == 0
+    - canonical_internal_service_token | default('') | length == 0
+    - agent_proxy_local_installer | default(false) | bool
+
+- name: Read canonical runtime service credential from Vault KV v2 API for the local installer
+  ansible.builtin.uri:
+    url: >-
+      {{ lookup('ansible.builtin.env', 'VAULT_ADDR') | regex_replace('/+$', '')
+         }}/v1/{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH') | trim('/') }}
+    method: GET
+    headers:
+      X-Vault-Token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+    status_code: 200
+    return_content: true
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: canonical_service_token_vault_response
+  changed_when: false
+  no_log: true
+  when:
+    - lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | length == 0
+    - canonical_internal_service_token | default('') | length == 0
+    - agent_proxy_local_installer | default(false) | bool
+
+- name: Keep the Vault API credential in memory for the local installer
+  ansible.builtin.set_fact:
+    canonical_internal_service_token: "{{ canonical_service_token_vault_response.json.data.data.INTERNAL_SERVICE_TOKEN }}"
+  run_once: true
+  no_log: true
+  when:
+    - lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | length == 0
+    - agent_proxy_local_installer | default(false) | bool
+    - canonical_service_token_vault_response is succeeded
+
 - name: Read the canonical runtime service credential from Vault when not injected
   ansible.builtin.command:
     argv:
@@ -22,14 +68,20 @@
   changed_when: false
   check_mode: false
   no_log: true
-  when: lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | length == 0
+  when:
+    - lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | length == 0
+    - canonical_internal_service_token | default('') | length == 0
+    - not (agent_proxy_local_installer | default(false) | bool)
 
 - name: Keep the Vault-resolved credential in memory for the selected hosts
   ansible.builtin.set_fact:
     canonical_internal_service_token: "{{ canonical_service_token_read.stdout }}"
   run_once: true
   no_log: true
-  when: lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | length == 0
+  when:
+    - lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | length == 0
+    - canonical_internal_service_token | default('') | length == 0
+    - not (agent_proxy_local_installer | default(false) | bool)
 
 - name: Validate the canonical runtime credential without revealing it
   ansible.builtin.assert:
