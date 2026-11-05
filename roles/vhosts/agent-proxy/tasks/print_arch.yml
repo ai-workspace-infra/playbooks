@@ -1,0 +1,19 @@
+---
+- name: Map supported XConnect installer architecture
+  ansible.builtin.set_fact:
+    agent_proxy_runtime_arch: >-
+      {{ 'amd64' if ansible_architecture in ['x86_64', 'amd64']
+         else 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else '' }}
+
+- name: Require a supported XConnect installer architecture
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_runtime_arch | length > 0
+    fail_msg: "Unsupported target architecture: {{ ansible_architecture }}"
+
+- name: Report the target runtime artifact architecture
+  ansible.builtin.debug:
+    msg:
+      architecture: "{{ ansible_architecture }}"
+      go_arch: "{{ agent_proxy_runtime_arch }}"
+      runtime_bundle: "artifact-{{ agent_proxy_runtime_arch }}.tar.gz"

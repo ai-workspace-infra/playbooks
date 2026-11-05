@@ -1,0 +1,470 @@
+---
+- name: Ensure Agent Proxy monitoring prerequisites are installed
+  ansible.builtin.package:
+    name:
+      - jq
+      - logrotate
+    state: present
+  become: true
+  when:
+    - ansible_os_family != 'Darwin'
+    - xray_enabled | bool
+
+- name: Configure Xray access log rotation
+  ansible.builtin.template:
+    src: xray-access.logrotate.j2
+    dest: /etc/logrotate.d/xray-access
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - ansible_os_family != 'Darwin'
+    - xray_enabled | bool
+    - xray_access_logrotate_enabled | bool
+
+- name: Ensure logrotate timer is enabled and running
+  ansible.builtin.systemd:
+    name: logrotate.timer
+    enabled: true
+    state: started
+  when:
+    - ansible_os_family != 'Darwin'
+    - xray_enabled | bool
+    - xray_access_logrotate_enabled | bool
+
+- name: Ensure journald drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - ansible_os_family != 'Darwin'
+    - xray_enabled | bool
+    - xray_journald_retention_enabled | bool
+
+- name: Configure bounded journald retention for Agent Proxy hosts
+  ansible.builtin.template:
+    src: xray-journald-retention.conf.j2
+    dest: /etc/systemd/journald.conf.d/90-xconnect-log-limits.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart systemd-journald
+  when:
+    - ansible_os_family != 'Darwin'
+    - xray_enabled | bool
+    - xray_journald_retention_enabled | bool
+
+- name: Map Go architecture
+  ansible.builtin.set_fact:
+    agent_proxy_go_arch: >-
+      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
+    agent_proxy_release_arch: >-
+      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else
+         'amd64' if ansible_architecture in ['x86_64', 'amd64'] else '' }}
+  when: agent_proxy_build_on_target | bool
+
+- name: Map release artifact architecture when build is disabled
+  ansible.builtin.set_fact:
+    agent_proxy_release_arch: >-
+      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
+  when: not (agent_proxy_build_on_target | bool)
+
+- name: Ensure agent build prerequisites are installed
+  ansible.builtin.apt:
+    name:
+      - git
+      - curl
+      - ca-certificates
+      - tar
+    state: present
+    update_cache: true
+  when: agent_proxy_build_on_target | bool
+
+- name: Check installed Go version
+  ansible.builtin.command: "{{ agent_proxy_go_bin }} version"
+  register: agent_proxy_go_version_check
+  changed_when: false
+  failed_when: false
+  when: agent_proxy_build_on_target | bool
+
+- name: Download Go toolchain archive
+  ansible.builtin.get_url:
+    url: "https://go.dev/dl/go{{ agent_proxy_go_version }}.linux-{{ agent_proxy_go_arch }}.tar.gz"
+    dest: "/tmp/go{{ agent_proxy_go_version }}.linux-{{ agent_proxy_go_arch }}.tar.gz"
+    mode: "0644"
+  when:
+    - agent_proxy_build_on_target | bool
+    - agent_proxy_go_version_check.rc != 0 or ('go' ~ agent_proxy_go_version) not in agent_proxy_go_version_check.stdout
+
+- name: Remove previous Go installation
+  ansible.builtin.file:
+    path: "{{ agent_proxy_go_root }}"
+    state: absent
+  when:
+    - agent_proxy_build_on_target | bool
+    - agent_proxy_go_version_check.rc != 0 or ('go' ~ agent_proxy_go_version) not in agent_proxy_go_version_check.stdout
+
+- name: Install Go toolchain
+  ansible.builtin.unarchive:
+    src: "/tmp/go{{ agent_proxy_go_version }}.linux-{{ agent_proxy_go_arch }}.tar.gz"
+    dest: "/usr/local"
+    remote_src: true
+  when:
+    - agent_proxy_build_on_target | bool
+    - agent_proxy_go_version_check.rc != 0 or ('go' ~ agent_proxy_go_version) not in agent_proxy_go_version_check.stdout
+
+- name: Create agent directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0755"
+  loop:
+    - "{{ agent_proxy_app_dir }}"
+    - "{{ agent_proxy_config_dir }}"
+    - "{{ agent_proxy_data_dir }}"
+    - "{{ xray_template_dir }}"
+
+- name: Clone agent.svc.plus repository
+  ansible.builtin.git:
+    repo: "{{ agent_proxy_repo_url }}"
+    dest: "{{ agent_proxy_app_dir }}"
+    version: "{{ agent_proxy_repo_version }}"
+    update: true
+    # Release tags in this managed checkout may have been repointed historically.
+    # Force the fetch so stale local tags cannot block an immutable deployment.
+    force: true
+  notify: Restart agent-proxy
+  when: agent_proxy_manage_source_checkout | bool
+  register: agent_proxy_clone_res
+  ignore_errors: true
+
+- name: Fallback to main branch if specified version is not found
+  ansible.builtin.git:
+    repo: "{{ agent_proxy_repo_url }}"
+    dest: "{{ agent_proxy_app_dir }}"
+    version: main
+    update: true
+    force: true
+  notify: Restart agent-proxy
+  when:
+    - agent_proxy_manage_source_checkout | bool
+    - agent_proxy_clone_res is failed
+
+- name: Build agent.svc.plus binary
+  ansible.builtin.command: >-
+    {{ agent_proxy_go_bin }} build -o {{ agent_proxy_binary_path }} {{ agent_proxy_build_target }}
+  args:
+    chdir: "{{ agent_proxy_app_dir }}"
+  environment:
+    GOROOT: "{{ agent_proxy_go_root }}"
+    PATH: "{{ agent_proxy_go_root }}/bin:{{ ansible_env.PATH }}"
+    GOTOOLCHAIN: local
+  notify: Restart agent-proxy
+  when: agent_proxy_build_on_target | bool
+
+- name: Deploy prebuilt agent binary from control machine
+  ansible.builtin.copy:
+    src: "{{ agent_proxy_binary_src }}"
+    dest: "{{ agent_proxy_binary_path }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0755"
+  notify: Restart agent-proxy
+  when:
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_binary_src | length > 0
+
+- name: Map the local Agent release artifact architecture
+  ansible.builtin.set_fact:
+    agent_proxy_release_arch: >-
+      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
+  when:
+    - agent_proxy_local_installer | default(false) | bool
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_binary_src | length == 0
+
+- name: Download the verified Agent release for local installer deployment
+  ansible.builtin.import_tasks: download_local_release.yml
+  when:
+    - agent_proxy_local_installer | default(false) | bool
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_binary_src | length == 0
+
+- name: Download prebuilt agent binary from GitHub Release
+  ansible.builtin.get_url:
+    url: "{{ agent_proxy_release_asset_url }}"
+    dest: "{{ agent_proxy_binary_path }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0755"
+  notify: Restart agent-proxy
+  when:
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_binary_src | length == 0
+    - not (agent_proxy_local_installer | default(false) | bool)
+    - agent_proxy_release_tag | length > 0
+
+- name: Check Agent Proxy binary before rename migration
+  ansible.builtin.stat:
+    path: "{{ agent_proxy_binary_path }}"
+  register: agent_proxy_binary_stat
+  when: not (agent_proxy_build_on_target | bool)
+
+- name: Check legacy agent binary for rename migration
+  ansible.builtin.stat:
+    path: "{{ agent_proxy_legacy_binary_path }}"
+  register: agent_proxy_legacy_binary_stat
+  when:
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_legacy_binary_path != agent_proxy_binary_path
+
+- name: Migrate legacy agent binary to the Agent Proxy path
+  ansible.builtin.copy:
+    src: "{{ agent_proxy_legacy_binary_path }}"
+    dest: "{{ agent_proxy_binary_path }}"
+    remote_src: true
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0755"
+  notify: Restart agent-proxy
+  when:
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_binary_src | length == 0
+    - not agent_proxy_binary_stat.stat.exists
+    - agent_proxy_legacy_binary_stat.stat.exists
+    - not agent_proxy_legacy_binary_stat.stat.isdir
+
+- name: Check existing agent binary on target host
+  ansible.builtin.stat:
+    path: "{{ agent_proxy_binary_path }}"
+  register: agent_proxy_binary_stat
+
+- name: Assert target host already has agent binary when build is disabled
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_binary_stat.stat.exists
+      - not agent_proxy_binary_stat.stat.isdir
+    fail_msg: >-
+      {{ agent_proxy_binary_path }} does not exist on the target host.
+      This role is configured to avoid clone/build on target. Provide
+      agent_proxy_binary_src, or set agent_proxy_release_tag so the role
+      can download {{ agent_proxy_release_asset_name }}, or enable
+      agent_proxy_build_on_target.
+  when: not (agent_proxy_build_on_target | bool)
+
+- name: Ensure agent binary permissions
+  ansible.builtin.file:
+    path: "{{ agent_proxy_binary_path }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0755"
+
+- name: Install or upgrade the pinned Xray runtime
+  ansible.builtin.import_tasks: install_xray.yml
+
+- name: Deploy agent configuration
+  ansible.builtin.template:
+    src: agent-config.yaml.j2
+    dest: "{{ agent_proxy_config_path }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0600"
+  notify: Restart agent-proxy
+
+- name: Ensure Xray access log directory exists
+  ansible.builtin.file:
+    path: "{{ xray_access_log_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: xray_enabled | bool
+
+- name: Ensure shared Xray access log group exists
+  ansible.builtin.group:
+    name: "{{ xray_access_log_group }}"
+    state: present
+  when: xray_enabled | bool
+
+- name: Create dedicated XHTTP Xray system group
+  ansible.builtin.group:
+    name: "{{ xray_xhttp_service_group }}"
+    system: true
+  when: xray_enabled | bool
+
+- name: Create dedicated XHTTP Xray system account
+  ansible.builtin.user:
+    name: "{{ xray_xhttp_service_user }}"
+    group: "{{ xray_xhttp_service_group }}"
+    system: true
+    create_home: false
+    shell: "/usr/sbin/nologin"
+  notify: Restart Xray services
+  when: xray_enabled | bool
+
+- name: Grant XHTTP Xray service access to the shared log group
+  ansible.builtin.user:
+    name: "{{ xray_xhttp_service_user }}"
+    groups:
+      - "{{ xray_access_log_group }}"
+    append: true
+  notify: Restart Xray services
+  when: xray_enabled | bool
+
+- name: Grant TCP Xray service access to the shared log group
+  ansible.builtin.user:
+    name: "{{ xray_tcp_service_user }}"
+    groups:
+      - "{{ xray_access_log_group }}"
+    append: true
+  notify: Restart Xray services
+  when: xray_enabled | bool
+
+- name: Ensure Xray access log is writable by both Xray services
+  ansible.builtin.file:
+    path: "{{ xray_access_log_path }}"
+    state: touch
+    owner: root
+    group: "{{ xray_access_log_group }}"
+    mode: "0660"
+    access_time: preserve
+    modification_time: preserve
+  when: xray_enabled | bool
+
+# The agent snapshots templates at startup. Reload it when either template
+# changes so the next controller sync cannot restore an older in-memory policy.
+- name: Deploy XHTTP template
+  ansible.builtin.template:
+    src: xray.xhttp.template.json.j2
+    dest: "{{ xray_template_dir }}/xray.xhttp.template.json"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0644"
+  notify: Restart agent-proxy
+  when: xray_enabled | bool
+  tags:
+    - xray-runtime-config
+
+- name: Deploy TCP template
+  ansible.builtin.template:
+    src: xray.tcp.template.json.j2
+    dest: "{{ xray_template_dir }}/xray.tcp.template.json"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0644"
+  notify: Restart agent-proxy
+  when: xray_enabled | bool
+  tags:
+    - xray-runtime-config
+
+- name: Deploy Xray systemd services
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/etc/systemd/system/{{ item.unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { src: xray.service.j2, unit: xray.service }
+    - { src: xray-tcp.service.j2, unit: xray-tcp.service }
+  when: xray_enabled | bool
+  notify: Restart Xray services
+  tags:
+    - xray-runtime-config
+
+- name: Install agent systemd service
+  ansible.builtin.template:
+    src: agent-proxy.service.j2
+    dest: "/etc/systemd/system/{{ agent_proxy_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart agent-proxy
+
+- name: Stop legacy agent systemd service after rename
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  loop: "{{ agent_proxy_legacy_service_names | default([agent_proxy_legacy_service_name]) }}"
+  when:
+    - item | length > 0
+    - item != agent_proxy_service_name
+  failed_when: false
+
+- name: Enable and start agent-proxy
+  ansible.builtin.systemd:
+    name: "{{ agent_proxy_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Register agent-proxy with Accounts controller
+  ansible.builtin.uri:
+    url: "{{ agent_controller_url | regex_replace('/+$', '') }}/api/agent-server/v1/status"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ agent_api_token }}"
+      X-Agent-ID: "{{ agent_id }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      agentId: "{{ agent_id }}"
+      healthy: true
+      message: "agent-proxy deployment registration"
+      xray:
+        running: true
+        nodeId: "{{ agent_id }}"
+        statsEnabled: true
+    status_code: 204
+    timeout: "{{ agent_http_timeout | regex_replace('[^0-9]', '') | int }}"
+  register: agent_registration_probe
+  until: agent_registration_probe.status | default(0) == 204
+  retries: 5
+  delay: 5
+  no_log: true
+
+- name: Wait for agent-generated Xray runtime configuration
+  ansible.builtin.wait_for:
+    path: "{{ item }}"
+    timeout: 60
+  loop:
+    - "{{ xray_config_path }}"
+    - "{{ xray_tcp_config_path }}"
+  when:
+    - xray_enabled | bool
+    - agent_proxy_wait_for_runtime_config | bool
+
+- name: Validate Xray configuration before starting services
+  ansible.builtin.command: "{{ xray_binary_path }} run -test -config {{ item }}"
+  environment:
+    XRAY_LOCATION_ASSET: "/usr/local/share/xray/"
+  changed_when: false
+  loop:
+    - "{{ xray_config_path }}"
+    - "{{ xray_tcp_config_path }}"
+  when:
+    - xray_enabled | bool
+    - agent_proxy_wait_for_runtime_config | bool
+
+- name: Enable and start Xray services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - xray.service
+    - xray-tcp.service
+  when:
+    - xray_enabled | bool
+    - agent_proxy_wait_for_runtime_config | bool
+
+- name: Apply installer network baseline
+  ansible.builtin.import_tasks: network_baseline.yml

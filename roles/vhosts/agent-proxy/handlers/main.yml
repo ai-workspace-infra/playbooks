@@ -18,3 +18,21 @@
   ansible.builtin.systemd:
     name: systemd-journald
     state: restarted
+
+- name: Reload Caddy configuration
+  ansible.builtin.systemd:
+    name: caddy
+    state: reloaded
+    daemon_reload: true
+
+- name: Reload UFW
+  ansible.builtin.command:
+    cmd: ufw reload
+  changed_when: false
+
+- name: Restart fq qdisc helper
+  ansible.builtin.systemd:
+    name: apply-fq-qdisc.service
+    state: restarted
+    enabled: true
+    daemon_reload: true
