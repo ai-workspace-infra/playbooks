@@ -112,8 +112,18 @@
         state: started
         enabled: true
 
+    - name: K3s | Link kubeconfig to default location
+      ansible.builtin.shell: |
+        mkdir -p /root/.kube
+        cp /etc/rancher/k3s/k3s.yaml /root/.kube/config
+        chmod 600 /root/.kube/config
+        echo 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml' > /etc/profile.d/k3s.sh
+      changed_when: false
+
     - name: K3s | Wait for node ready
       ansible.builtin.command: kubectl wait --for=condition=Ready node --all --timeout=60s
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       changed_when: false
 
     - name: FluxCD | Download and install flux binary
@@ -135,6 +145,8 @@
     - name: FluxCD | Install Flux controllers in flux-system
       ansible.builtin.shell: |
         flux install --components=source-controller,kustomize-controller,helm-controller,notification-controller
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       changed_when: false
 
     - name: External Secrets Operator | Install ESO via Helm
@@ -146,6 +158,8 @@
           --create-namespace \
           --set installCRDs=true \
           --wait --timeout=120s
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       changed_when: false
 
     - name: Namespaces | Create SIT namespaces
@@ -153,6 +167,8 @@
         for ns in postgresql-sit observability-sit platform-mcp-sit web-saas-sit ingress-sit; do
           kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
         done
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       changed_when: false
 
     - name: Secrets | Generate and inject local SIT secrets
@@ -193,6 +209,8 @@
         kubectl create secret generic infra-mcp-auth -n platform-mcp-sit \
           --from-literal=mcp-service-token="$MCP_TOKEN" \
           --from-literal=grafana-service-account-token="" --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       changed_when: false
 
     - name: GitOps | Apply SIT Root Flux Kustomization and Source
@@ -224,4 +242,6 @@
           path: {{ gitops_root_path }}
           prune: false
         EOF
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       changed_when: false
