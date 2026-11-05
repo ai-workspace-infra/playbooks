@@ -1,0 +1,96 @@
+- name: Common | validate local Agent Proxy hostname and OS identity environment
+  ansible.builtin.assert:
+    that:
+      - common_agent_proxy_hostname | length <= 253
+      - common_agent_proxy_hostname is match('^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$')
+      - common_os_identity_environment | default('') in ['sit', 'uat', 'prod']
+      - ansible_os_family == 'Debian'
+    fail_msg: The local Agent Proxy bootstrap requires an explicit hostname, Vault environment, and Debian host.
+
+- name: Common | inspect local Agent Proxy host for existing K3s state
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - /etc/rancher/k3s/k3s.yaml
+    - /usr/local/bin/k3s
+    - /usr/bin/k3s
+  register: common_agent_proxy_k3s_state
+
+- name: Common | refuse hostname change on a K3s-managed host
+  ansible.builtin.assert:
+    that:
+      - common_agent_proxy_k3s_state.results | selectattr('stat.exists') | list | length == 0
+    fail_msg: Refusing to rename a host with existing K3s state; use the CMDB-bound node bootstrap profile.
+
+- name: Common | establish and verify the three OS identities
+  ansible.builtin.include_tasks: os_identity.yml
+
+- name: Common | preserve Agent Proxy hostname across cloud-init boots
+  ansible.builtin.file:
+    path: /etc/cloud/cloud.cfg.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Common | persist Agent Proxy hostname ownership
+  ansible.builtin.copy:
+    dest: /etc/cloud/cloud.cfg.d/99-xconnect-agent-hostname.cfg
+    owner: root
+    group: root
+    mode: '0644'
+    content: "preserve_hostname: true\n"
+
+- name: Common | synchronize running and persistent Agent Proxy hostname
+  ansible.builtin.hostname:
+    name: '{{ common_agent_proxy_hostname }}'
+
+- name: Common | persist the canonical Agent Proxy hostname
+  ansible.builtin.copy:
+    dest: /etc/hostname
+    owner: root
+    group: root
+    mode: '0644'
+    content: "{{ common_agent_proxy_hostname }}\n"
+
+- name: Common | remove an incorrect public address mapping to localhost
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^[[:space:]]*{{ ansible_default_ipv4.address | regex_escape }}[[:space:]]+localhost([[:space:]]|$)'
+    state: absent
+  when: ansible_default_ipv4.address is defined
+
+- name: Common | resolve the canonical Agent Proxy hostname locally
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^[[:space:]]*127\.0\.1\.1[[:space:]]+'
+    line: '127.0.1.1 {{ common_agent_proxy_hostname }}'
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Common | read actual Agent Proxy hostname and local resolution
+  ansible.builtin.command:
+    argv: '{{ item }}'
+  loop:
+    - [hostname]
+    - [cat, /etc/hostname]
+    - [getent, hosts, '{{ common_agent_proxy_hostname }}']
+  register: common_agent_proxy_identity
+  changed_when: false
+
+- name: Common | require consistent Agent Proxy hostname and local resolution
+  ansible.builtin.assert:
+    that:
+      - common_agent_proxy_identity.results[0].stdout | trim == common_agent_proxy_hostname
+      - common_agent_proxy_identity.results[1].stdout | trim == common_agent_proxy_hostname
+      - common_agent_proxy_hostname in common_agent_proxy_identity.results[2].stdout.split()
+
+- name: Common | retain verified local Agent Proxy bootstrap evidence
+  ansible.builtin.set_fact:
+    common_agent_proxy_bootstrap_evidence:
+      result: COMMON_AGENT_PROXY_HOST_VERIFIED
+      hostname: '{{ common_agent_proxy_hostname }}'
+      os_identities: OS_IDENTITY_CHECKS_PASSED
