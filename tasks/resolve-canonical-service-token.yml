@@ -48,8 +48,9 @@
   no_log: true
   when:
     - lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | length == 0
+    - canonical_internal_service_token | default('') | length == 0
     - agent_proxy_local_installer | default(false) | bool
-    - canonical_service_token_vault_response is succeeded
+    - canonical_service_token_vault_response is not skipped
 
 - name: Read the canonical runtime service credential from Vault when not injected
   ansible.builtin.command:
