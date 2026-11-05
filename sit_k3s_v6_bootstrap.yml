@@ -1,0 +1,227 @@
+---
+- name: Bootstrap SIT K3s cluster on 172.237.9.58
+  hosts: sit
+  become: true
+  gather_facts: true
+  vars:
+    sit_node_ip: "172.237.9.58"
+    gitops_repo_url: "https://github.com/ai-workspace-infra/gitops.git"
+    gitops_branch: "feature/dev-k3s-v6-single-node"
+    gitops_root_path: "./environments/clusters/sit-k3s-v6"
+
+  pre_tasks:
+    - name: Safety Gate | Enforce single allowed SIT host and deny prod
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == sit_node_ip or ansible_default_ipv4.address == sit_node_ip
+          - "'prod' not in group_names"
+          - "'prod_k3s' not in group_names"
+        fail_msg: "CRITICAL: Operation is ONLY permitted on SIT host {{ sit_node_ip }}!"
+
+    - name: Safety Gate | Check absence of production marker
+      ansible.builtin.stat:
+        path: /etc/prod-marker
+      register: prod_marker
+    - ansible.builtin.assert:
+        that: not prod_marker.stat.exists
+        fail_msg: "CRITICAL: /etc/prod-marker found! Aborting to protect production!"
+
+  tasks:
+    - name: OS Tuning | Disable swap
+      ansible.builtin.command: swapoff -a
+      changed_when: false
+
+    - name: OS Tuning | Configure kernel parameters
+      ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: true
+      loop:
+        - { key: "net.ipv4.ip_forward", value: "1" }
+        - { key: "fs.inotify.max_user_instances", value: "8192" }
+        - { key: "net.core.somaxconn", value: "1024" }
+
+    - name: Base Packages | Install prerequisites
+      ansible.builtin.apt:
+        name:
+          - curl
+          - git
+          - jq
+          - openssl
+          - tar
+          - ca-certificates
+        state: present
+        update_cache: true
+
+    - name: OS Tripartite Identities | Create operator and auditor groups
+      ansible.builtin.group:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - operator
+        - auditor
+
+    - name: OS Tripartite Identities | Create operator and auditor users
+      ansible.builtin.user:
+        name: "{{ item }}"
+        group: "{{ item }}"
+        shell: /bin/bash
+        create_home: true
+        password_lock: true
+        state: present
+      loop:
+        - operator
+        - auditor
+
+    - name: OS Tripartite Identities | Configure operator bounded sudo
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/vhosts-common-operator
+        owner: root
+        group: root
+        mode: '0440'
+        content: "operator ALL=(root) NOPASSWD: /usr/bin/systemctl is-system-running\n"
+        validate: '/usr/sbin/visudo -cf %s'
+
+    - name: K3s | Create configuration directory
+      ansible.builtin.file:
+        path: /etc/rancher/k3s
+        state: directory
+        mode: '0755'
+
+    - name: K3s | Write k3s config
+      ansible.builtin.copy:
+        dest: /etc/rancher/k3s/config.yaml
+        mode: '0644'
+        content: |
+          disable:
+            - traefik
+          write-kubeconfig-mode: "0644"
+
+    - name: K3s | Install k3s
+      ansible.builtin.shell: |
+        if ! which k3s >/dev/null 2>&1; then
+          curl -sfL https://get.k3s.io | sh -
+        fi
+      args:
+        creates: /usr/local/bin/k3s
+
+    - name: K3s | Ensure k3s service is active
+      ansible.builtin.systemd:
+        name: k3s
+        state: started
+        enabled: true
+
+    - name: K3s | Wait for node ready
+      ansible.builtin.command: kubectl wait --for=condition=Ready node --all --timeout=60s
+      changed_when: false
+
+    - name: FluxCD | Download and install flux binary
+      ansible.builtin.shell: |
+        if ! which flux >/dev/null 2>&1; then
+          curl -s https://fluxcd.io/install.sh | bash
+        fi
+      args:
+        creates: /usr/local/bin/flux
+
+    - name: Helm | Download and install helm binary
+      ansible.builtin.shell: |
+        if ! which helm >/dev/null 2>&1; then
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        fi
+      args:
+        creates: /usr/local/bin/helm
+
+    - name: FluxCD | Install Flux controllers in flux-system
+      ansible.builtin.shell: |
+        flux install --components=source-controller,kustomize-controller,helm-controller,notification-controller
+      changed_when: false
+
+    - name: External Secrets Operator | Install ESO via Helm
+      ansible.builtin.shell: |
+        helm repo add external-secrets https://charts.external-secrets.io || true
+        helm repo update
+        helm upgrade --install external-secrets external-secrets/external-secrets \
+          --namespace external-secrets \
+          --create-namespace \
+          --set installCRDs=true \
+          --wait --timeout=120s
+      changed_when: false
+
+    - name: Namespaces | Create SIT namespaces
+      ansible.builtin.shell: |
+        for ns in postgresql-sit observability-sit platform-mcp-sit web-saas-sit ingress-sit; do
+          kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
+        done
+      changed_when: false
+
+    - name: Secrets | Generate and inject local SIT secrets
+      ansible.builtin.shell: |
+        # 1. PostgreSQL Admin, Operator, Auditor, and Runtime Passwords
+        PG_ADMIN_PW=$(openssl rand -hex 16)
+        PG_OP_PW=$(openssl rand -hex 16)
+        PG_AUD_PW=$(openssl rand -hex 16)
+        PG_RUNTIME_PW=$(openssl rand -hex 16)
+        GRAFANA_PW=$(openssl rand -hex 16)
+        JWT_SECRET=$(openssl rand -hex 32)
+        MCP_TOKEN=$(openssl rand -hex 24)
+
+        # In postgresql-sit
+        kubectl create secret generic postgresql-admin -n postgresql-sit \
+          --from-literal=password="$PG_ADMIN_PW" --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create secret generic postgresql-operator -n postgresql-sit \
+          --from-literal=password="$PG_OP_PW" --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create secret generic postgresql-auditor -n postgresql-sit \
+          --from-literal=password="$PG_AUD_PW" --dry-run=client -o yaml | kubectl apply -f -
+
+        # In observability-sit
+        kubectl create secret generic grafana-admin -n observability-sit \
+          --from-literal=password="$GRAFANA_PW" --dry-run=client -o yaml | kubectl apply -f -
+
+        # In web-saas-sit
+        DB_URL="postgresql://postgres:${PG_ADMIN_PW}@postgresql-postgresql.postgresql-sit.svc.cluster.local:5432/account?sslmode=disable"
+        kubectl create secret generic accounts-db-runtime -n web-saas-sit \
+          --from-literal=POSTGRES_PASSWORD="$PG_ADMIN_PW" \
+          --from-literal=DATABASE_URL="$DB_URL" --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create secret generic billing-db-runtime -n web-saas-sit \
+          --from-literal=DATABASE_URL="$DB_URL" --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create secret generic web-saas-secrets -n web-saas-sit \
+          --from-literal=JWT_SECRET="$JWT_SECRET" \
+          --from-literal=SESSION_SECRET="$JWT_SECRET" --dry-run=client -o yaml | kubectl apply -f -
+
+        # In platform-mcp-sit
+        kubectl create secret generic infra-mcp-auth -n platform-mcp-sit \
+          --from-literal=mcp-service-token="$MCP_TOKEN" \
+          --from-literal=grafana-service-account-token="" --dry-run=client -o yaml | kubectl apply -f -
+      changed_when: false
+
+    - name: GitOps | Apply SIT Root Flux Kustomization and Source
+      ansible.builtin.shell: |
+        kubectl apply -f - << 'EOF'
+        apiVersion: source.toolkit.fluxcd.io/v1
+        kind: GitRepository
+        metadata:
+          name: config-sit
+          namespace: flux-system
+        spec:
+          interval: 1m
+          url: {{ gitops_repo_url }}
+          ref:
+            branch: {{ gitops_branch }}
+        ---
+        apiVersion: kustomize.toolkit.fluxcd.io/v1
+        kind: Kustomization
+        metadata:
+          name: sit-k3s
+          namespace: flux-system
+        spec:
+          interval: 5m
+          wait: false
+          timeout: 15m
+          sourceRef:
+            kind: GitRepository
+            name: config-sit
+          path: {{ gitops_root_path }}
+          prune: false
+        EOF
+      changed_when: false
