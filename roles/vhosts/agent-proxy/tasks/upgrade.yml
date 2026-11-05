@@ -1,0 +1,50 @@
+---
+- name: Require a verified Agent release source for binary-only upgrade
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_binary_src | length > 0 or agent_proxy_local_installer | default(false) | bool
+    fail_msg: "Binary-only upgrade requires a verified Agent release source."
+
+- name: Map Agent release artifact architecture
+  ansible.builtin.set_fact:
+    agent_proxy_release_arch: >-
+      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else
+         'amd64' if ansible_architecture in ['x86_64', 'amd64'] else '' }}
+
+- name: Ensure Agent binary directory exists
+  ansible.builtin.file:
+    path: "{{ agent_proxy_binary_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Upgrade the Agent binary from a caller-staged artifact
+  ansible.builtin.copy:
+    src: "{{ agent_proxy_binary_src }}"
+    dest: "{{ agent_proxy_binary_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart agent-proxy
+  when: agent_proxy_binary_src | length > 0
+
+- name: Download the verified Agent release for binary-only upgrade
+  ansible.builtin.import_tasks: download_local_release.yml
+  when:
+    - agent_proxy_binary_src | length == 0
+    - agent_proxy_local_installer | default(false) | bool
+
+- name: Upgrade Caddy binary when it is older and has no Layer 4 module
+  ansible.builtin.include_role:
+    name: roles/vhosts/caddy
+    tasks_from: upgrade_binary.yml
+
+- name: Install or upgrade the pinned Xray runtime
+  ansible.builtin.import_tasks: install_xray.yml
+
+- name: Apply Agent and Xray binary upgrades
+  ansible.builtin.meta: flush_handlers
+
+- name: Apply installer network baseline
+  ansible.builtin.import_tasks: network_baseline.yml

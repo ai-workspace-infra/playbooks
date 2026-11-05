@@ -1,11 +1,18 @@
 ---
 # Agent Proxy deployment defaults
 
+agent_proxy_operation: deploy
+agent_proxy_standalone: false
+agent_proxy_open_stunnel_5443: "{{ lookup('ansible.builtin.env', 'AGENT_PROXY_OPEN_STUNNEL_5443') | default(false, true) | bool }}"
+agent_proxy_observability_enabled: "{{ lookup('ansible.builtin.env', 'AGENT_PROXY_OBSERVABILITY_ENABLED') | default(false, true) | bool }}"
 agent_proxy_repo_url: "https://github.com/x-evor/agent.svc.plus.git"
 agent_proxy_repo_version: "main"
 agent_proxy_app_dir: "/opt/agent-proxy"
 agent_proxy_manage_source_checkout: false
 agent_proxy_binary_src: ""
+agent_proxy_local_release_repo: "ai-workspace-xstream/xconnect-edge-agent"
+agent_proxy_local_release_requested_tag: "{{ lookup('ansible.builtin.env', 'AGENT_RELEASE_TAG') | default('latest', true) }}"
+agent_proxy_local_release_stage_path: "/var/cache/agent-proxy/xconnect-edge-agent"
 agent_proxy_release_repo: "x-evor/agent.svc.plus"
 agent_proxy_release_tag: ""
 agent_proxy_release_base_url: "https://github.com/{{ agent_proxy_release_repo }}/releases/download"
@@ -89,6 +96,7 @@ xray_sync_interval: "5m"
 xray_uuid: "00000000-0000-0000-0000-000000000000"
 xray_config_path: "/usr/local/etc/xray/config.json"
 xray_tcp_config_path: "/usr/local/etc/xray/tcp-config.json"
+xray_standalone_uuid_path: "/usr/local/etc/xray/standalone.uuid"
 xray_template_dir: "/usr/local/etc/xray/templates"
 xray_access_log_path: "/var/log/xray/access.log"
 xray_access_log_group: "xray-access"

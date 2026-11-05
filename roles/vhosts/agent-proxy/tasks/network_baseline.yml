@@ -1,0 +1,84 @@
+---
+- name: Persist low-latency TCP kernel settings
+  ansible.builtin.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/99-agent-lowlatency.conf
+    state: present
+    reload: true
+  loop:
+    - { name: net.ipv4.tcp_congestion_control, value: bbr }
+    - { name: net.core.default_qdisc, value: fq }
+    - { name: net.ipv4.tcp_fastopen, value: "3" }
+    - { name: net.core.somaxconn, value: "8192" }
+    - { name: net.ipv4.tcp_max_syn_backlog, value: "8192" }
+    - { name: net.core.netdev_max_backlog, value: "16384" }
+    - { name: net.core.rmem_max, value: "67108864" }
+    - { name: net.core.wmem_max, value: "67108864" }
+    - { name: net.ipv4.tcp_rmem, value: "4096 87380 33554432" }
+    - { name: net.ipv4.tcp_wmem, value: "4096 65536 33554432" }
+    - { name: net.ipv4.tcp_mtu_probing, value: "1" }
+  when: ansible_os_family == 'Debian'
+  tags: [configure]
+
+- name: Check whether UFW is installed
+  ansible.builtin.command: ufw status
+  register: agent_proxy_ufw_status
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == 'Debian'
+  tags: [validate]
+
+- name: Allow XConnect and optional colocated stunnel ports in active UFW
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - allow
+      - "{{ item }}/tcp"
+  loop: >-
+    {{ [80, 443, 1443] + ([5443] if agent_proxy_open_stunnel_5443 | bool else []) }}
+  register: agent_proxy_ufw_allow
+  changed_when: "'Skipping adding existing rule' not in (agent_proxy_ufw_allow.stdout | default(''))"
+  when:
+    - ansible_os_family == 'Debian'
+    - agent_proxy_ufw_status.rc | default(1) == 0
+    - "'Status: active' in (agent_proxy_ufw_status.stdout | default(''))"
+  notify: Reload UFW
+  tags: [configure]
+
+- name: Install persistent fq qdisc helper
+  ansible.builtin.copy:
+    src: apply-fq-qdisc.sh
+    dest: /usr/local/sbin/apply-fq-qdisc.sh
+    owner: root
+    group: root
+    mode: "0755"
+  when: ansible_os_family == 'Debian'
+  tags: [install, configure]
+
+- name: Ensure iproute2 is installed for fq qdisc management
+  ansible.builtin.package:
+    name: iproute2
+    state: present
+  when: ansible_os_family == 'Debian'
+  tags: [install]
+
+- name: Install persistent fq qdisc systemd unit
+  ansible.builtin.template:
+    src: apply-fq-qdisc.service.j2
+    dest: /etc/systemd/system/apply-fq-qdisc.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: ansible_os_family == 'Debian'
+  notify: Restart fq qdisc helper
+  tags: [configure]
+
+- name: Enable and apply fq qdisc helper
+  ansible.builtin.systemd:
+    name: apply-fq-qdisc.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: ansible_os_family == 'Debian'
+  tags: [configure]

@@ -1,0 +1,89 @@
+---
+- name: Validate the requested XConnect Agent release
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_release_arch in ['amd64', 'arm64']
+      - agent_proxy_local_release_requested_tag == 'latest' or agent_proxy_local_release_requested_tag is match('^v[A-Za-z0-9._-]+$')
+    fail_msg: "The target architecture or AGENT_RELEASE_TAG is unsupported."
+
+- name: Resolve XConnect Agent GitHub release metadata
+  ansible.builtin.uri:
+    url: >-
+      {{ 'https://api.github.com/repos/' ~ agent_proxy_local_release_repo ~ '/releases/latest'
+         if agent_proxy_local_release_requested_tag == 'latest'
+         else 'https://api.github.com/repos/' ~ agent_proxy_local_release_repo ~ '/releases/tags/' ~ agent_proxy_local_release_requested_tag }}
+    method: GET
+    return_content: true
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: agent_proxy_local_release_response
+  retries: 3
+  delay: 2
+  until: agent_proxy_local_release_response.status | default(0) == 200
+
+- name: Select the architecture-specific XConnect Agent release asset
+  ansible.builtin.set_fact:
+    agent_proxy_local_release_asset_name: "xconnect-edge-agent-linux-{{ agent_proxy_release_arch }}"
+    agent_proxy_local_release_tag: "{{ agent_proxy_local_release_response.json.tag_name }}"
+  run_once: true
+
+- name: Require the selected release asset and its SHA-256 digest
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_local_release_tag | length > 0
+      - agent_proxy_local_release_requested_tag == 'latest' or agent_proxy_local_release_tag == agent_proxy_local_release_requested_tag
+      - agent_proxy_local_release_response.json.assets | selectattr('name', 'equalto', agent_proxy_local_release_asset_name) | list | length == 1
+    fail_msg: "The requested XConnect Agent release does not contain the expected architecture asset."
+  run_once: true
+
+- name: Select verified XConnect Agent asset metadata
+  ansible.builtin.set_fact:
+    agent_proxy_local_release_asset: >-
+      {{ agent_proxy_local_release_response.json.assets
+         | selectattr('name', 'equalto', agent_proxy_local_release_asset_name)
+         | first }}
+  run_once: true
+
+- name: Validate immutable release tag, HTTPS asset URL, and SHA-256 digest
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_local_release_tag == agent_proxy_local_release_response.json.tag_name
+      - agent_proxy_local_release_asset.browser_download_url is match('^https://github[.]com/')
+      - agent_proxy_local_release_asset.digest is match('^sha256:[0-9a-f]{64}$')
+    fail_msg: "The XConnect Agent release asset metadata is incomplete or unverifiable."
+  run_once: true
+
+- name: Ensure verified Agent release staging directory exists
+  ansible.builtin.file:
+    path: "{{ agent_proxy_local_release_stage_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Download the verified XConnect Agent release binary
+  ansible.builtin.get_url:
+    url: "{{ agent_proxy_local_release_asset.browser_download_url }}"
+    dest: "{{ agent_proxy_local_release_stage_path }}"
+    checksum: "{{ agent_proxy_local_release_asset.digest }}"
+    owner: root
+    group: root
+    mode: "0700"
+    timeout: 300
+
+- name: Install the verified XConnect Agent release binary
+  ansible.builtin.copy:
+    src: "{{ agent_proxy_local_release_stage_path }}"
+    dest: "{{ agent_proxy_binary_path }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart agent-proxy
+
+- name: Remove staged XConnect Agent binary
+  ansible.builtin.file:
+    path: "{{ agent_proxy_local_release_stage_path }}"
+    state: absent

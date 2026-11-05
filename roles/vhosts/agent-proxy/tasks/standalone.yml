@@ -1,0 +1,210 @@
+---
+- name: Require a standalone node domain
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_primary_domains | length == 1
+      - agent_proxy_primary_domains[0] is match('^[A-Za-z0-9.-]+$')
+    fail_msg: "Standalone Xray requires exactly one public node domain."
+
+- name: Apply installer network baseline before public certificate issuance
+  ansible.builtin.import_tasks: network_baseline.yml
+
+- name: Gather existing service facts for standalone migration
+  ansible.builtin.service_facts:
+
+- name: Stop and disable managed Agent services in standalone mode
+  ansible.builtin.systemd:
+    name: "{{ item }}.service"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  loop:
+    - xconnect-edge-agent
+    - agent-svc-plus
+    - agent-proxy
+  when: (item ~ '.service') in ansible_facts.services
+  failed_when: false
+
+- name: Select standalone certificate paths
+  ansible.builtin.set_fact:
+    agent_tls_cert_path: >-
+      {{ '/etc/caddy/tls/agent-proxy.crt' if vault_agent_tls_enabled | bool else
+         '/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/'
+         ~ agent_proxy_primary_domains[0] ~ '/' ~ agent_proxy_primary_domains[0] ~ '.crt' }}
+    agent_tls_key_path: >-
+      {{ '/etc/caddy/tls/agent-proxy.key' if vault_agent_tls_enabled | bool else
+         '/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/'
+         ~ agent_proxy_primary_domains[0] ~ '/' ~ agent_proxy_primary_domains[0] ~ '.key' }}
+
+- name: Ensure standalone Xray directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ xray_config_path | dirname }}"
+    - "{{ xray_template_dir }}"
+    - "{{ xray_access_log_path | dirname }}"
+
+- name: Read existing standalone UUID file
+  ansible.builtin.slurp:
+    src: "{{ xray_standalone_uuid_path }}"
+  register: xray_standalone_uuid_existing
+  failed_when: false
+  changed_when: false
+
+- name: Generate standalone UUID when it has not been created yet
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - "import uuid; print(uuid.uuid4())"
+  register: xray_standalone_uuid_generated
+  changed_when: true
+  when: xray_standalone_uuid_existing.content is not defined
+
+- name: Persist standalone UUID for stable client links
+  ansible.builtin.copy:
+    content: >-
+      {{ (xray_standalone_uuid_existing.content | b64decode | trim)
+         if xray_standalone_uuid_existing.content is defined
+         else (xray_standalone_uuid_generated.stdout | trim) }}
+    dest: "{{ xray_standalone_uuid_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Load standalone UUID into role state
+  ansible.builtin.slurp:
+    src: "{{ xray_standalone_uuid_path }}"
+  register: xray_standalone_uuid_file
+  changed_when: false
+
+- name: Set standalone UUID for Xray templates
+  ansible.builtin.set_fact:
+    xray_uuid: "{{ xray_standalone_uuid_file.content | b64decode | trim }}"
+    agent_proxy_standalone: true
+
+- name: Validate persisted standalone UUID
+  ansible.builtin.assert:
+    that:
+      - xray_uuid is match('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+    fail_msg: "The persisted standalone UUID file is invalid."
+
+- name: Ensure Caddy site fragment directory exists
+  ansible.builtin.file:
+    path: "{{ caddy_config_dir | default('/etc/caddy', true) }}/conf.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render standalone Caddy site
+  ansible.builtin.template:
+    src: standalone.Caddyfile.j2
+    dest: "{{ caddy_config_dir | default('/etc/caddy', true) }}/conf.d/{{ agent_proxy_primary_domains[0] }}.caddy"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload Caddy configuration
+
+- name: Reload Caddy with standalone routes
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Caddy TLS material before starting Xray TCP
+  ansible.builtin.wait_for:
+    path: "{{ item }}"
+    state: present
+    timeout: 120
+  loop:
+    - "{{ agent_tls_cert_path }}"
+    - "{{ agent_tls_key_path }}"
+
+- name: Install or upgrade the pinned Xray runtime
+  ansible.builtin.import_tasks: install_xray.yml
+
+- name: Ensure shared Xray access log group exists
+  ansible.builtin.group:
+    name: "{{ xray_access_log_group }}"
+    state: present
+
+- name: Ensure standalone Xray service accounts exist
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    group: "{{ item.group }}"
+    groups: "{{ xray_access_log_group }}"
+    append: true
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+  loop:
+    - { name: "{{ xray_xhttp_service_user }}", group: "{{ xray_xhttp_service_group }}" }
+    - { name: "{{ xray_tcp_service_user }}", group: "{{ xray_tcp_service_user }}" }
+
+- name: Ensure Xray access log is writable by standalone services
+  ansible.builtin.file:
+    path: "{{ xray_access_log_path }}"
+    state: touch
+    owner: root
+    group: "{{ xray_access_log_group }}"
+    mode: "0660"
+    access_time: preserve
+    modification_time: preserve
+
+- name: Render standalone Xray config templates
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { src: xray.xhttp.template.json.j2, dest: "{{ xray_config_path }}" }
+    - { src: xray.tcp.template.json.j2, dest: "{{ xray_tcp_config_path }}" }
+  notify: Restart Xray services
+
+- name: Install standalone Xray systemd services
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/etc/systemd/system/{{ item.unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { src: xray.service.j2, unit: xray.service }
+    - { src: xray-tcp.service.j2, unit: xray-tcp.service }
+  notify: Restart Xray services
+
+- name: Validate standalone Xray configurations
+  ansible.builtin.command:
+    argv:
+      - "{{ xray_binary_path }}"
+      - run
+      - -test
+      - -config
+      - "{{ item }}"
+  environment:
+    XRAY_LOCATION_ASSET: /usr/local/share/xray/
+  changed_when: false
+  loop:
+    - "{{ xray_config_path }}"
+    - "{{ xray_tcp_config_path }}"
+
+- name: Enable and start standalone Xray services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - xray.service
+    - xray-tcp.service
+
+- name: Print standalone import links
+  ansible.builtin.debug:
+    msg:
+      xhttp: "vless://{{ xray_uuid }}@{{ agent_proxy_primary_domains[0] }}:443?encryption=none&security=tls&sni={{ agent_proxy_primary_domains[0] }}&fp=chrome&type=xhttp&path=%2Fsplit#{{ agent_proxy_primary_domains[0] }}-xhttp"
+      tcp: "vless://{{ xray_uuid }}@{{ agent_proxy_primary_domains[0] }}:1443?encryption=none&flow=xtls-rprx-vision&security=tls&sni={{ agent_proxy_primary_domains[0] }}&fp=chrome&type=tcp#{{ agent_proxy_primary_domains[0] }}-tcp"
+

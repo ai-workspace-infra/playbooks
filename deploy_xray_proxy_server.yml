@@ -8,9 +8,17 @@
     ansible.builtin.apt:
       lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
   gather_facts: true
-  become: true
+  become: "{{ (agent_proxy_operation | default('deploy')) != 'print-arch' }}"
   vars:
-
+    agent_proxy_operation: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_PROXY_OPERATION')
+         | default('deploy', true) }}
+    agent_proxy_observability_enabled: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_PROXY_OBSERVABILITY_ENABLED')
+         | default(false, true) | bool }}
+    agent_team_id: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_TEAM_ID')
+         | default(hostvars[inventory_hostname].get('xconnect_team_id', ''), true) }}
     vault_env_path: "{{ lookup('env', 'VAULT_ENV_PATH') | default('uat', true) }}"
     vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default('', true) }}"
     vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('', true) }}"
@@ -47,6 +55,9 @@
     agent_id: >-
       {{ lookup('ansible.builtin.env', 'AGENT_ID')
          | default(hostvars[inventory_hostname].get('agent_id', inventory_hostname), true) }}
+    agent_resource_class: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_RESOURCE_CLASS')
+         | default(hostvars[inventory_hostname].get('xconnect_resource_class', ''), true) }}
     agent_tls_cert_name: >-
       {{ lookup('ansible.builtin.env', 'AGENT_TLS_CERT_NAME')
          | default(agent_id, true) }}
@@ -140,12 +151,118 @@
          | default(true, true) | bool }}
   pre_tasks:
 
+    - name: Validate requested installer operation before role execution
+      ansible.builtin.assert:
+        that:
+          - agent_proxy_operation in ['deploy', 'standalone', 'upgrade', 'print-arch']
+        fail_msg: "AGENT_PROXY_OPERATION must be deploy, standalone, upgrade, or print-arch."
+
+    - name: Require deployment operation when observability installation is enabled
+      ansible.builtin.assert:
+        that:
+          - agent_proxy_operation == 'deploy'
+        fail_msg: "Observability installation is only supported with deploy."
+      when: agent_proxy_observability_enabled | bool
+
     - name: Read the local installer inputs before deploying roles
       ansible.builtin.set_fact:
         canonical_internal_service_token: "{{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') }}"
-        agent_allowed_emails: "{{ lookup('ansible.builtin.env', 'AGENT_CUSTOM_EMAILS') | from_json }}"
-      when: agent_proxy_local_installer | default(false) | bool
+        agent_allowed_emails_raw: "{{ lookup('ansible.builtin.env', 'AGENT_CUSTOM_EMAILS') | default('[]', true) | from_json }}"
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
       no_log: true
+
+    - name: Validate the local installer email audience
+      ansible.builtin.set_fact:
+        agent_allowed_emails: "{{ agent_allowed_emails_raw | map('trim') | map('lower') | unique | list }}"
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
+
+    - name: Require valid local installer node scope and allowlist
+      ansible.builtin.assert:
+        that:
+          - agent_resource_class in ['', 'shared', 'free', 'plus', 'pro', 'custom', 'team']
+          - agent_team_id | default('') | length == 0 or agent_resource_class == 'team'
+          - agent_proxy_primary_domains | length == 1
+          - agent_proxy_primary_domains[0] is match('^[A-Za-z0-9.-]+$')
+          - agent_allowed_emails_raw is sequence
+          - agent_allowed_emails_raw is not string
+          - agent_allowed_emails_raw | select('match', '^[^\s@]+@[^\s@]+\.[^\s@]+$') | list | length == agent_allowed_emails_raw | length
+          - agent_resource_class != 'custom' or agent_allowed_emails | length > 0
+        fail_msg: "The local installer requires a valid node scope and email audience."
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
+
+    - name: Require a node domain for standalone deployment
+      ansible.builtin.assert:
+        that:
+          - agent_proxy_primary_domains | length == 1
+          - agent_proxy_primary_domains[0] is match('^[A-Za-z0-9.-]+$')
+        fail_msg: "Standalone installation requires one valid node domain."
+      when: agent_proxy_operation == 'standalone'
+
+    - name: Resolve the local installer runtime credential path
+      ansible.builtin.set_fact:
+        installer_service_token_path: >-
+          {{ lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH')
+             | default('', true) | trim('/') }}
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
+        - canonical_internal_service_token | default('') | length == 0
+
+    - name: Require an explicit KV v2 runtime credential path
+      ansible.builtin.assert:
+        that:
+          - installer_service_token_path is match('^kv/data/[A-Za-z0-9._/-]+$')
+          - "'..' not in installer_service_token_path.split('/')"
+          - vault_addr | length > 0
+          - vault_token | length > 0
+        fail_msg: "A valid Vault address, token, and KV v2 runtime credential path are required."
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
+        - canonical_internal_service_token | default('') | length == 0
+
+    - name: Read runtime credential from Vault for local installer
+      ansible.builtin.uri:
+        url: "{{ vault_addr | regex_replace('/+$', '') }}/v1/{{ installer_service_token_path }}"
+        method: GET
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        status_code: 200
+        return_content: true
+      register: installer_service_token_response
+      delegate_to: localhost
+      become: false
+      run_once: true
+      no_log: true
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
+        - canonical_internal_service_token | default('') | length == 0
+
+    - name: Keep Vault runtime credential in memory for local installer
+      ansible.builtin.set_fact:
+        canonical_internal_service_token: "{{ installer_service_token_response.json.data.data.INTERNAL_SERVICE_TOKEN }}"
+      no_log: true
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
+        - installer_service_token_response is defined
+
+    - name: Validate local runtime credential without revealing it
+      ansible.builtin.assert:
+        that:
+          - canonical_internal_service_token is match('^[A-Za-z0-9._~+/=-]{32,}$')
+        fail_msg: "Vault did not return a valid runtime service credential."
+      no_log: true
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
 
     - name: Require runtime credentials for the local installer
       ansible.builtin.assert:
@@ -153,15 +270,20 @@
           - canonical_internal_service_token | length > 0
           - agent_controller_url | length > 0
         fail_msg: "Local installation requires an Accounts URL and runtime service credential."
-      when: agent_proxy_local_installer | default(false) | bool
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
 
     - name: Resolve canonical snapshot service token before any role mutation
       ansible.builtin.include_tasks: tasks/resolve-canonical-service-token.yml
-      when: not (agent_proxy_local_installer | default(false) | bool)
+      when:
+        - agent_proxy_operation == 'deploy'
+        - not (agent_proxy_local_installer | default(false) | bool)
 
     - name: Bind the canonical token to the agent Accounts client
       ansible.builtin.set_fact:
         agent_api_token: "{{ canonical_internal_service_token }}"
+      when: agent_proxy_operation == 'deploy'
       no_log: true
 
     - name: Try to read agent-proxy secrets from Vault
@@ -175,6 +297,7 @@
       register: existing_agent_proxy_secrets
       failed_when: false
       when:
+        - agent_proxy_operation == 'deploy'
         - not (agent_proxy_local_installer | default(false) | bool)
         - vault_token | length > 0
       delegate_to: localhost
@@ -193,6 +316,7 @@
             {{ 9999999999999999999999999 | random | to_uuid }}
           {%- endif -%}
       run_once: true
+      when: agent_proxy_operation == 'deploy'
 
     - name: Securely write XRAY_UUID to Vault KV if generated
       ansible.builtin.uri:
@@ -208,6 +332,7 @@
         status_code: [200, 204]
         return_content: false
       when:
+        - agent_proxy_operation == 'deploy'
         - not (agent_proxy_local_installer | default(false) | bool)
         - vault_token | length > 0
         - (((existing_agent_proxy_secrets.json | default({})).get('data', {})).get('data', {})).get('xray_uuid', '') != xray_uuid
@@ -216,6 +341,7 @@
       no_log: true
     - name: Gather service facts
       ansible.builtin.service_facts:
+      when: agent_proxy_operation == 'deploy'
 
     - name: Pin controller hostname to this run's web-saas host before DNS cutover
       ansible.builtin.lineinfile:
@@ -226,12 +352,22 @@
         create: true
         mode: "0644"
       when:
+        - agent_proxy_operation == 'deploy'
         - agent_controller_ip | length > 0
         - agent_controller_host | length > 0
 
   roles:
-    - roles/vhosts/caddy
+    - role: roles/vhosts/caddy
+      when: agent_proxy_operation in ['deploy', 'standalone']
     - role: roles/vhosts/vault-agent-tls
-      when: vault_agent_tls_enabled | bool
-    - roles/vhosts/tky-proxy
+      when:
+        - agent_proxy_operation in ['deploy', 'standalone']
+        - vault_agent_tls_enabled | bool
+    - role: roles/vhosts/tky-proxy
+      when: agent_proxy_operation == 'deploy'
     - roles/vhosts/agent-proxy
+
+- import_playbook: deploy_observability_agent.yml
+  when:
+    - lookup('ansible.builtin.env', 'AGENT_PROXY_OBSERVABILITY_ENABLED') | default(false, true) | bool
+    - lookup('ansible.builtin.env', 'AGENT_PROXY_OPERATION') | default('deploy', true) == 'deploy'

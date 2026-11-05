@@ -1,0 +1,20 @@
+{{ agent_proxy_primary_domains[0] }} {
+{% if vault_agent_tls_enabled | bool %}
+    tls {{ agent_tls_cert_path }} {{ agent_tls_key_path }}
+{% endif %}
+    @xhttp {
+        path /split /split/*
+    }
+    @xhttp_root path /split
+    rewrite @xhttp_root /split/
+    handle @xhttp {
+        uri query -x_padding
+        reverse_proxy unix//dev/shm/xray.sock {
+            flush_interval -1
+            transport http {
+                versions h2c 2
+            }
+        }
+    }
+    respond "Standalone Xray Node"
+}

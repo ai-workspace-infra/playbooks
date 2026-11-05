@@ -1,0 +1,63 @@
+---
+- name: Check current Caddy binary before binary-only upgrade
+  ansible.builtin.command: caddy version
+  register: caddy_upgrade_version
+  changed_when: false
+  failed_when: false
+
+- name: Require an existing Caddy service for binary-only upgrade
+  ansible.builtin.assert:
+    that:
+      - caddy_upgrade_version.rc == 0
+    fail_msg: "Binary-only upgrade requires an existing Caddy binary; use deploy to install a node."
+
+- name: Check whether the current Caddy build includes Layer 4
+  ansible.builtin.command: caddy list-modules
+  register: caddy_upgrade_modules
+  changed_when: false
+  failed_when: false
+
+- name: Select the checksum-pinned Caddy package architecture
+  ansible.builtin.set_fact:
+    caddy_package_arch: "{{ caddy_package_arch_map[ansible_facts['architecture']] | default('') }}"
+    caddy_current_version: "{{ caddy_upgrade_version.stdout.split()[0] | regex_replace('^v', '') }}"
+
+- name: Require supported Caddy architecture metadata
+  ansible.builtin.assert:
+    that:
+      - caddy_package_arch | length > 0
+      - caddy_package_arch in caddy_package_sha512
+      - caddy_current_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+    fail_msg: "No verified Caddy package metadata is available for this host."
+
+- name: Download pinned Caddy package when upgrade is safe and needed
+  ansible.builtin.get_url:
+    url: "https://github.com/caddyserver/caddy/releases/download/v{{ caddy_package_version }}/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb"
+    dest: "/tmp/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb"
+    checksum: "sha512:{{ caddy_package_sha512[caddy_package_arch] }}"
+    mode: "0644"
+  when:
+    - "'layer4' not in (caddy_upgrade_modules.stdout | default(''))"
+    - caddy_current_version is version(caddy_package_version, '<')
+
+- name: Upgrade the official Caddy package without changing configuration
+  ansible.builtin.apt:
+    deb: "/tmp/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb"
+    state: present
+  when:
+    - "'layer4' not in (caddy_upgrade_modules.stdout | default(''))"
+    - caddy_current_version is version(caddy_package_version, '<')
+  notify: Restart caddy after binary upgrade
+
+- name: Remove the staged Caddy package after upgrade
+  ansible.builtin.file:
+    path: "/tmp/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb"
+    state: absent
+  when:
+    - "'layer4' not in (caddy_upgrade_modules.stdout | default(''))"
+    - caddy_current_version is version(caddy_package_version, '<')
+
+- name: Preserve a Caddy build that has the Layer 4 module
+  ansible.builtin.debug:
+    msg: "Keeping the installed Layer 4 Caddy build to avoid removing its configured protocol support."
+  when: "'layer4' in (caddy_upgrade_modules.stdout | default(''))"
