@@ -309,6 +309,13 @@
       no_log: true
       when: agent_proxy_vault_tls_response is defined
 
+    - name: Ensure the Caddy service group exists before installing its certificate
+      ansible.builtin.group:
+        name: caddy
+        system: true
+        state: present
+      when: agent_proxy_vault_tls_response is defined
+
     - name: Create Caddy TLS directory for the Vault certificate
       ansible.builtin.file:
         path: /etc/caddy/tls
