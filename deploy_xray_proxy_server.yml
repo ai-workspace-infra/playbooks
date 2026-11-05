@@ -61,8 +61,10 @@
     agent_tls_cert_name: >-
       {{ lookup('ansible.builtin.env', 'AGENT_TLS_CERT_NAME')
          | default(agent_id, true) }}
-    agent_tls_source_cert_path: "{{ agent_domain_tls_dir }}/current/fullchain.pem"
-    agent_tls_source_key_path: "{{ agent_domain_tls_dir }}/current/key.pem"
+    agent_tls_cert_path: /etc/caddy/tls/agent-proxy.crt
+    agent_tls_key_path: /etc/caddy/tls/agent-proxy.key
+    agent_tls_source_cert_path: "{{ agent_tls_cert_path }}"
+    agent_tls_source_key_path: "{{ agent_tls_key_path }}"
     agent_controller_url: >-
       {{ lookup('ansible.builtin.env', 'AGENT_CONTROLLER_URL')
          | default(hostvars[inventory_hostname].get('agent_controller_url', ''), true) }}
@@ -105,20 +107,13 @@
     agent_proxy_legacy_domain: >-
       {{ lookup('ansible.builtin.env', 'AGENT_PROXY_LEGACY_DOMAIN')
          | default(hostvars[inventory_hostname].get('agent_proxy_legacy_domain', ''), true) }}
-    vault_agent_tls_enabled: >-
-      {{ hostvars[inventory_hostname].get('vault_agent_tls_enabled',
-         lookup('ansible.builtin.env', 'AGENT_PROXY_VAULT_TLS_ENABLED') | default(false, true)) | bool }}
     vault_agent_tls_secret_path: >-
       {{ hostvars[inventory_hostname].get('vault_tls_secret_path',
          lookup('ansible.builtin.env', 'VAULT_TLS_SECRET_PATH') | default('', true)) }}
     vault_agent_tls_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('', true) }}"
-    vault_agent_tls_stage_dir: >-
-      {{ lookup('ansible.builtin.env', 'VAULT_AGENT_TLS_STAGE_DIR')
-         | default('/var/lib/vault-agent/tls', true) }}
     agent_domain_tls_dir: >-
-      {{ vault_agent_tls_stage_dir if vault_agent_tls_enabled else
-         (lookup('ansible.builtin.env', 'AGENT_DOMAIN_TLS_DIR')
-          | default(hostvars[inventory_hostname].get('agent_domain_tls_dir', '/etc/xcontrol/tls/' ~ agent_tls_cert_name), true)) }}
+      {{ lookup('ansible.builtin.env', 'AGENT_DOMAIN_TLS_DIR')
+         | default(hostvars[inventory_hostname].get('agent_domain_tls_dir', '/etc/xcontrol/tls/' ~ agent_tls_cert_name), true) }}
     agent_billing_enabled: >-
       {{ lookup('ansible.builtin.env', 'AGENT_BILLING_ENABLED')
          | default(true, true) | bool }}
@@ -274,6 +269,61 @@
         - agent_proxy_operation == 'deploy'
         - agent_proxy_local_installer | default(false) | bool
 
+    - name: Read the requested public TLS certificate from Vault
+      ansible.builtin.uri:
+        url: "{{ vault_addr | regex_replace('/+$', '') }}/v1/{{ vault_agent_tls_secret_path }}"
+        method: GET
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        status_code: 200
+        return_content: true
+      register: agent_proxy_vault_tls_response
+      delegate_to: localhost
+      become: false
+      run_once: true
+      no_log: true
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
+        - vault_addr | length > 0
+        - vault_token | length > 0
+        - vault_agent_tls_secret_path is match('^kv/data/[A-Za-z0-9._/-]+$')
+
+    - name: Validate the public TLS certificate fields from Vault
+      ansible.builtin.assert:
+        that:
+          - agent_proxy_vault_tls_response.json.data.data.tls_fullchain_pem_b64 | default('') | length > 0
+          - agent_proxy_vault_tls_response.json.data.data.tls_key_pem_b64 | default('') | length > 0
+        fail_msg: "Vault certificate record must include tls_fullchain_pem_b64 and tls_key_pem_b64."
+      no_log: true
+      when: agent_proxy_vault_tls_response is defined
+
+    - name: Create Caddy TLS directory for the Vault certificate
+      ansible.builtin.file:
+        path: /etc/caddy/tls
+        state: directory
+        owner: root
+        group: caddy
+        mode: "0750"
+      when: agent_proxy_vault_tls_response is defined
+
+    - name: Install the Vault certificate and key for Caddy and Xray
+      ansible.builtin.copy:
+        content: "{{ item.content | b64decode }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: caddy
+        mode: "{{ item.mode }}"
+      loop:
+        - content: "{{ agent_proxy_vault_tls_response.json.data.data.tls_fullchain_pem_b64 }}"
+          dest: /etc/caddy/tls/agent-proxy.crt
+          mode: "0644"
+        - content: "{{ agent_proxy_vault_tls_response.json.data.data.tls_key_pem_b64 }}"
+          dest: /etc/caddy/tls/agent-proxy.key
+          mode: "0640"
+      no_log: true
+      when: agent_proxy_vault_tls_response is defined
+
     - name: Resolve canonical snapshot service token before any role mutation
       ansible.builtin.include_tasks: tasks/resolve-canonical-service-token.yml
       when:
@@ -359,12 +409,14 @@
   roles:
     - role: roles/vhosts/caddy
       when: agent_proxy_operation in ['deploy', 'standalone']
-    - role: roles/vhosts/vault-agent-tls
-      when:
-        - agent_proxy_operation in ['deploy', 'standalone']
-        - vault_agent_tls_enabled | bool
     - role: roles/vhosts/tky-proxy
       when: agent_proxy_operation == 'deploy'
+      vars:
+        agent_tls_source_cert_path: "{{ agent_domain_tls_dir }}/current/fullchain.pem"
+        agent_tls_source_key_path: "{{ agent_domain_tls_dir }}/current/key.pem"
+        agent_tls_cert_path: /etc/caddy/tls/agent-proxy.crt
+        agent_tls_key_path: /etc/caddy/tls/agent-proxy.key
+        agent_proxy_tls_source_from_vault: true
     - roles/vhosts/agent-proxy
 
 - import_playbook: deploy_observability_agent.yml
