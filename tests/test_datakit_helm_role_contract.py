@@ -17,6 +17,10 @@ class TestDataKitHelmRoleContract(unittest.TestCase):
         self.assertIn("datakit_kube_state_metrics_url", content)
         self.assertIn("datakit_node_exporter_url", content)
         self.assertNotIn("host_processes", content, "host_processes should be excluded to prevent trial quota exhaustion")
+        self.assertIn("datakit_edition:", content)
+        self.assertIn("hk-commercial", content)
+        self.assertIn("bj-free", content)
+        self.assertIn("datakit_vault_path:", content)
 
     def test_template_values_renders_all_four_configs_in_dkconfig(self):
         self.assertTrue(os.path.exists(self.template_file), f"Template file not found: {self.template_file}")
