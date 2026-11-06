@@ -16,9 +16,11 @@ datakit_vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default(''
 datakit_vault_jwt_token: "{{ lookup('ansible.builtin.env', 'VAULT_JWT_TOKEN') | default('', true) }}"
 datakit_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default('', true) }}"
 # 观测云版本选择与 Vault 凭据分流: 'bj-free' (北京免费体验版) | 'hk-commercial' (香港商业生产版)
+# 领域类别标志：固定归属可观测性 (observability) 大类
+datakit_vault_category: "observability"
 # 默认按环境自动分流：prod 自动使用 hk-commercial，非 prod (dev/sit) 使用 bj-free
 datakit_edition: "{{ 'hk-commercial' if (target_env | default('dev')) == 'prod' else 'bj-free' }}"
-datakit_vault_path: "datakit/{{ datakit_edition }}"
+datakit_vault_path: "{{ datakit_vault_category }}/datakit/{{ datakit_edition }}"
 
 # DataWay 回退配置 (如果从 Vault 读取)
 datakit_dataway_url: "{{ lookup('ansible.builtin.env', 'DATAKIT_DATAWAY_URL') | default('', true) }}"
