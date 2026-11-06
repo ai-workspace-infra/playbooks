@@ -25,7 +25,7 @@ class TestDataKitHelmRoleContract(unittest.TestCase):
         self.assertIn("datakit_vault_path:", content)
         self.assertIn("{{ datakit_vault_category }}/datakit/{{ datakit_edition }}", content)
 
-    def test_template_values_renders_all_four_configs_in_dkconfig(self):
+    def test_template_values_renders_all_six_configs_in_dkconfig(self):
         self.assertTrue(os.path.exists(self.template_file), f"Template file not found: {self.template_file}")
         with open(self.template_file, "r", encoding="utf-8") as f:
             content = f.read()
@@ -33,10 +33,17 @@ class TestDataKitHelmRoleContract(unittest.TestCase):
         self.assertIn("postgresql-exporter.conf", content)
         self.assertIn("kube-state-metrics.conf", content)
         self.assertIn("node-exporter.conf", content)
+        self.assertIn("cadvisor.conf", content)
+        self.assertIn("kubelet.conf", content)
         self.assertIn("measurement_name = \"caddy\"", content)
         self.assertIn("measurement_name = \"postgresql\"", content)
         self.assertIn("measurement_name = \"kube-state-metrics\"", content)
         self.assertIn("measurement_name = \"node-exporter\"", content)
+        self.assertIn("measurement_name = \"cadvisor\"", content)
+        self.assertIn("measurement_name = \"kubelet\"", content)
+        self.assertIn("job = \"kube-state-metrics\"", content)
+        self.assertIn("job = \"cadvisor\"", content)
+        self.assertIn("job = \"kubelet\"", content)
 
 if __name__ == "__main__":
     unittest.main()
