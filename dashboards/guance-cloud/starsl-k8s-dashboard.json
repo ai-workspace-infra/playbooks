@@ -194,7 +194,7 @@
         "name": "节点内存比例",
         "type": "toplist",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 0,
@@ -310,7 +310,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"^#{Node}$\",container!=\"POD\"}) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"^#{Node}$\"})",
+              "q": "sum(container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"#{Node}\",container!=\"POD\"}) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"#{Node}\"})",
               "code": "C",
               "type": "promql",
               "promqlCode": 1
@@ -331,7 +331,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"^#{Node}$\"})",
+              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"#{Node}\"})",
               "code": "A",
               "type": "promql",
               "promqlCode": 2
@@ -352,7 +352,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"^#{Node}$\"})",
+              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"#{Node}\"})",
               "code": "B",
               "type": "promql",
               "promqlCode": 3
@@ -372,7 +372,7 @@
         "name": "节点CPU比例",
         "type": "toplist",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 4,
@@ -488,7 +488,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"^#{Node}$\",container!=\"POD\"}[2m])) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"^#{Node}$\"})",
+              "q": "sum (irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"#{Node}\",container!=\"POD\"}[2m])) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"#{Node}\"})",
               "code": "C",
               "type": "promql",
               "promqlCode": 1
@@ -509,7 +509,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"^#{Node}$\"})",
+              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"#{Node}\"})",
               "code": "A",
               "type": "promql",
               "promqlCode": 2
@@ -530,7 +530,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"^#{Node}$\"})",
+              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"#{Node}\"})",
               "code": "B",
               "type": "promql",
               "promqlCode": 3
@@ -550,7 +550,7 @@
         "name": "节点与Pod",
         "type": "toplist",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 8,
@@ -686,7 +686,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "count((kube_pod_info{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
+              "q": "count((kube_pod_info{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
               "code": "B",
               "type": "promql",
               "promqlCode": 2
@@ -706,7 +706,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"pods\", unit=\"integer\",node=~\"^#{Node}$\"})",
+              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"pods\", unit=\"integer\",node=~\"#{Node}\"})",
               "code": "C",
               "type": "promql",
               "promqlCode": 3
@@ -725,7 +725,7 @@
         "name": "命名空间资源统计",
         "type": "table",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 11,
@@ -746,8 +746,7 @@
             "fixedTime": "",
             "legendPostion": "none",
             "lineType": "linear",
-            "stackType": "time",
-            "chartType": "line",
+            "chartType": "table",
             "isTimeInterval": false,
             "unitType": "global",
             "globalUnit": [
@@ -838,7 +837,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "count((kube_pod_info{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (namespace)",
+              "q": "count((kube_pod_info{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (namespace)",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -895,10 +894,10 @@
         ]
       },
       {
-        "name": "#{NameSpace}：网络总览（可关联节点与命名空间）",
+        "name": "网络总览 (可关联节点与命名空间)",
         "type": "sequence",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 16,
@@ -1010,7 +1009,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (irate(container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}[2m]))*8",
+              "q": "sum (irate(container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}[2m]))*8",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -1031,7 +1030,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (irate(container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}[2m]))*8",
+              "q": "sum (irate(container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}[2m]))*8",
               "code": "B",
               "type": "promql",
               "promqlCode": 2
@@ -1051,7 +1050,7 @@
         "name": "节点内存信息",
         "type": "toplist",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 0,
@@ -1173,7 +1172,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"^#{Node}$\"})",
+              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"#{Node}\"})",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -1193,7 +1192,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"^#{Node}$\",container!=\"POD\"})",
+              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"#{Node}\",container!=\"POD\"})",
               "code": "C",
               "type": "promql",
               "promqlCode": 2
@@ -1213,7 +1212,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
+              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
               "code": "D",
               "type": "promql",
               "promqlCode": 3
@@ -1233,7 +1232,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
+              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
               "code": "B",
               "type": "promql",
               "promqlCode": 4
@@ -1252,7 +1251,7 @@
         "name": "节点CPU核数",
         "type": "toplist",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 4,
@@ -1374,7 +1373,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"^#{Node}$\"})",
+              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"#{Node}\"})",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -1394,7 +1393,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",id=\"/\",node=~\"^#{Node}$\"}[2m]))",
+              "q": "sum (irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",id=\"/\",node=~\"#{Node}\"}[2m]))",
               "code": "C",
               "type": "promql",
               "promqlCode": 2
@@ -1414,7 +1413,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
+              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
               "code": "D",
               "type": "promql",
               "promqlCode": 3
@@ -1434,7 +1433,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
+              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
               "code": "B",
               "type": "promql",
               "promqlCode": 4
@@ -1453,7 +1452,7 @@
         "name": "节点存储信息",
         "type": "toplist",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 8,
@@ -1576,7 +1575,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_fs_usage_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"^#{Node}$\"}) / sum (container_fs_limit_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"^#{Node}$\"})",
+              "q": "sum (container_fs_usage_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"#{Node}\"}) / sum (container_fs_limit_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"#{Node}\"})",
               "code": "C",
               "type": "promql",
               "promqlCode": 1
@@ -1596,7 +1595,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_fs_usage_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"^#{Node}$\"})",
+              "q": "sum (container_fs_usage_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"#{Node}\"})",
               "code": "A",
               "type": "promql",
               "promqlCode": 2
@@ -1616,7 +1615,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_fs_limit_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"^#{Node}$\"})",
+              "q": "sum (container_fs_limit_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"#{Node}\"})",
               "code": "B",
               "type": "promql",
               "promqlCode": 3
@@ -1635,7 +1634,7 @@
         "name": "",
         "type": "singlestat",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 0,
@@ -1881,10 +1880,10 @@
         ]
       },
       {
-        "name": "内存使用量【#{Node}】",
+        "name": "节点内存使用量",
         "type": "sequence",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 0,
@@ -2008,7 +2007,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"^#{Node}$\"})",
+              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"#{Node}\"})",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -2029,7 +2028,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"^#{Node}$\",container!=\"POD\"})",
+              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"#{Node}\",container!=\"POD\"})",
               "code": "C",
               "type": "promql",
               "promqlCode": 2
@@ -2049,7 +2048,7 @@
             "datasource": "dataflux",
             "disabled": true,
             "query": {
-              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
+              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
               "code": "D",
               "type": "promql",
               "promqlCode": 3
@@ -2069,7 +2068,7 @@
             "datasource": "dataflux",
             "disabled": true,
             "query": {
-              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
+              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
               "code": "B",
               "type": "promql",
               "promqlCode": 4
@@ -2085,10 +2084,10 @@
         ]
       },
       {
-        "name": "CPU使用核【#{Node}】",
+        "name": "节点CPU使用核",
         "type": "sequence",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 8,
@@ -2212,7 +2211,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"^#{Node}$\"})",
+              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"#{Node}\"})",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -2233,7 +2232,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",id=\"/\",node=~\"^#{Node}$\"}[2m]))",
+              "q": "sum (irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",id=\"/\",node=~\"#{Node}\"}[2m]))",
               "code": "C",
               "type": "promql",
               "promqlCode": 2
@@ -2253,7 +2252,7 @@
             "datasource": "dataflux",
             "disabled": true,
             "query": {
-              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
+              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
               "code": "D",
               "type": "promql",
               "promqlCode": 3
@@ -2273,7 +2272,7 @@
             "datasource": "dataflux",
             "disabled": true,
             "query": {
-              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
+              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
               "code": "B",
               "type": "promql",
               "promqlCode": 4
@@ -2289,10 +2288,10 @@
         ]
       },
       {
-        "name": "Pod数与节点数【#{Node}】",
+        "name": "Pod数与节点上限",
         "type": "sequence",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 16,
@@ -2435,7 +2434,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "count((kube_pod_info{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
+              "q": "count((kube_pod_info{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))",
               "code": "B",
               "type": "promql",
               "promqlCode": 2
@@ -2456,7 +2455,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"pods\", unit=\"integer\",node=~\"^#{Node}$\"})",
+              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"pods\", unit=\"integer\",node=~\"#{Node}\"})",
               "code": "C",
               "type": "promql",
               "promqlCode": 3
@@ -2472,10 +2471,10 @@
         ]
       },
       {
-        "name": "#{Node}：节点CPU明细",
+        "name": "节点CPU明细",
         "type": "sequence",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 0,
@@ -2584,7 +2583,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"^#{Node}$\",container!=\"POD\"}[2m]))by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"^#{Node}$\"})by (node)*100",
+              "q": "sum (irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"#{Node}\",container!=\"POD\"}[2m]))by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"#{Node}\"})by (node)*100",
               "code": "I",
               "type": "promql",
               "promqlCode": 1
@@ -2600,10 +2599,10 @@
         ]
       },
       {
-        "name": "#{Node}：节点内存明细",
+        "name": "节点内存明细",
         "type": "sequence",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 8,
@@ -2705,7 +2704,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"^#{Node}$\",container!=\"POD\"})by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"^#{Node}$\"})by (node)*100",
+              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"#{Node}\",container!=\"POD\"})by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"#{Node}\"})by (node)*100",
               "code": "I",
               "type": "promql",
               "promqlCode": 1
@@ -2721,10 +2720,10 @@
         ]
       },
       {
-        "name": "#{Node}：节点网络总览",
+        "name": "节点网络总览",
         "type": "sequence",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 16,
@@ -2833,7 +2832,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (irate(container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"^#{Node}$\"}[2m]))by (node) *8",
+              "q": "sum (irate(container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"#{Node}\"}[2m]))by (node) *8",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -2853,7 +2852,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (irate(container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"^#{Node}$\"}[2m]))by (node) *8",
+              "q": "sum (irate(container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"#{Node}\"}[2m]))by (node) *8",
               "code": "B",
               "type": "promql",
               "promqlCode": 2
@@ -2869,10 +2868,10 @@
         ]
       },
       {
-        "name": "#{Node}：节点信息明细",
+        "name": "节点信息明细",
         "type": "table",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 0,
@@ -2893,8 +2892,7 @@
             "fixedTime": "",
             "legendPostion": "none",
             "lineType": "linear",
-            "stackType": "time",
-            "chartType": "line",
+            "chartType": "table",
             "isTimeInterval": false,
             "unitType": "custom",
             "units": [
@@ -3225,7 +3223,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "count((kube_pod_info{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (node)",
+              "q": "count((kube_pod_info{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (node)",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -3245,7 +3243,7 @@
             "datasource": "dataflux",
             "disabled": true,
             "query": {
-              "q": "kube_node_status_condition{cluster=~\"#{cluster}\",environment=~\"#{environment}\",status=\"true\",node=~\"^#{Node}$\"}  == 1",
+              "q": "kube_node_status_condition{cluster=~\"#{cluster}\",environment=~\"#{environment}\",status=\"true\",node=~\"#{Node}\"}  == 1",
               "code": "B",
               "type": "promql",
               "promqlCode": 2
@@ -3264,7 +3262,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"^#{Node}$\",container!=\"POD\"}[2m])) by (node)",
+              "q": "sum (irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"#{Node}\",container!=\"POD\"}[2m])) by (node)",
               "code": "I",
               "type": "promql",
               "promqlCode": 3
@@ -3283,7 +3281,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"^#{Node}$\"} - 0",
+              "q": "kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"#{Node}\"} - 0",
               "code": "C",
               "type": "promql",
               "promqlCode": 4
@@ -3302,7 +3300,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (node)",
+              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (node)",
               "code": "E",
               "type": "promql",
               "promqlCode": 5
@@ -3321,7 +3319,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (node)",
+              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (node)",
               "code": "F",
               "type": "promql",
               "promqlCode": 6
@@ -3340,7 +3338,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"^#{Node}$\",container!=\"POD\"}) by (node)",
+              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"#{Node}\",container!=\"POD\"}) by (node)",
               "code": "J",
               "type": "promql",
               "promqlCode": 7
@@ -3359,7 +3357,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"^#{Node}$\"}) by (node) - 0",
+              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"#{Node}\"}) by (node) - 0",
               "code": "D",
               "type": "promql",
               "promqlCode": 8
@@ -3378,7 +3376,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (node)",
+              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (node)",
               "code": "G",
               "type": "promql",
               "promqlCode": 9
@@ -3397,7 +3395,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (node)",
+              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (node)",
               "code": "H",
               "type": "promql",
               "promqlCode": 10
@@ -3416,7 +3414,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_fs_usage_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"^#{Node}$\"}) by (node)",
+              "q": "sum (container_fs_usage_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"#{Node}\"}) by (node)",
               "code": "K",
               "type": "promql",
               "promqlCode": 11
@@ -3435,7 +3433,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_fs_limit_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"^#{Node}$\"}) by (node)",
+              "q": "sum (container_fs_limit_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"#{Node}\"}) by (node)",
               "code": "L",
               "type": "promql",
               "promqlCode": 12
@@ -3455,7 +3453,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"^#{Node}$\",container!=\"POD\"})by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"^#{Node}$\"})by (node)",
+              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"#{Node}\",container!=\"POD\"})by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"#{Node}\"})by (node)",
               "code": "M",
               "type": "promql",
               "promqlCode": 13
@@ -3475,7 +3473,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"^#{Node}$\"})by (node)",
+              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"#{Node}\"})by (node)",
               "code": "N",
               "type": "promql",
               "promqlCode": 14
@@ -3495,7 +3493,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"^#{Node}$\"})by (node)",
+              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\", node=~\"#{Node}\"})by (node)",
               "code": "O",
               "type": "promql",
               "promqlCode": 15
@@ -3515,7 +3513,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"^#{Node}$\",container!=\"POD\"}[2m]))by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"^#{Node}$\"})by (node)",
+              "q": "sum (irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",container!=\"\",node=~\"#{Node}\",container!=\"POD\"}[2m]))by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"#{Node}\"})by (node)",
               "code": "P",
               "type": "promql",
               "promqlCode": 16
@@ -3535,7 +3533,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"^#{Node}$\"})by (node)",
+              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"#{Node}\"})by (node)",
               "code": "Q",
               "type": "promql",
               "promqlCode": 17
@@ -3555,7 +3553,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"^#{Node}$\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"^#{Node}$\"})by (node)",
+              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",node=~\"#{Node}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1)))by (node) / sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\", node=~\"#{Node}\"})by (node)",
               "code": "R",
               "type": "promql",
               "promqlCode": 18
@@ -3575,7 +3573,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_fs_usage_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"^#{Node}$\"})by (node) / sum (container_fs_limit_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"^#{Node}$\"})by (node)",
+              "q": "sum (container_fs_usage_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"#{Node}\"})by (node) / sum (container_fs_limit_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",device=~\"^/dev/.*$\",id=\"/\",node=~\"#{Node}\"})by (node)",
               "code": "S",
               "type": "promql",
               "promqlCode": 19
@@ -3595,7 +3593,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"pods\", unit=\"integer\",node=~\"^#{Node}$\"})by (node)",
+              "q": "sum(kube_node_status_allocatable{cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"pods\", unit=\"integer\",node=~\"#{Node}\"})by (node)",
               "code": "T",
               "type": "promql",
               "promqlCode": 20
@@ -3614,7 +3612,7 @@
         "name": "PVC存储使用情况",
         "type": "table",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 0,
@@ -3635,8 +3633,7 @@
             "fixedTime": "",
             "legendPostion": "none",
             "lineType": "linear",
-            "stackType": "time",
-            "chartType": "line",
+            "chartType": "table",
             "isTimeInterval": false,
             "unitType": "custom",
             "units": [
@@ -3894,7 +3891,7 @@
         "name": "各命名空间CPU使用核(>0.5)",
         "type": "sequence",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 6,
@@ -4020,7 +4017,7 @@
         "name": "命名空间WSS内存使用(>1G)",
         "type": "sequence",
         "group": {
-          "name": "节点资源总览：所选节点:【#{Node}】"
+          "name": "节点资源总览"
         },
         "pos": {
           "x": 15,
@@ -4143,10 +4140,10 @@
         ]
       },
       {
-        "name": "#{Node}：Pod资源明细(可关联节点)",
+        "name": "Pod资源明细 (节点与容器资源画像)",
         "type": "table",
         "group": {
-          "name": "Pod资源总览：所选Pod:【#{Pod}】"
+          "name": "Pod资源总览"
         },
         "pos": {
           "x": 0,
@@ -4167,8 +4164,7 @@
             "fixedTime": "",
             "legendPostion": "none",
             "lineType": "linear",
-            "stackType": "time",
-            "chartType": "line",
+            "chartType": "table",
             "isTimeInterval": false,
             "unitType": "custom",
             "units": [
@@ -4309,7 +4305,7 @@
               "/流入|流出/"
             ],
             "scientificNotation": true,
-            "mainMeasurementQueryCode": "A",
+            "mainMeasurementQueryCode": "Q",
             "mainMeasurementSort": "top",
             "extend": {
               "appearance": {
@@ -4528,7 +4524,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}[2m])) by (container, pod,node,namespace) / (sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\",resource=\"cpu\",unit=\"core\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container, pod,node,namespace))",
+              "q": "sum(irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}[2m])) by (container, pod,node,namespace) / (sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\",resource=\"cpu\",unit=\"core\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container, pod,node,namespace))",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -4549,7 +4545,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}[2m])) by (container, pod,node,namespace)",
+              "q": "sum(irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}[2m])) by (container, pod,node,namespace)",
               "code": "Q",
               "type": "promql",
               "promqlCode": 2
@@ -4568,7 +4564,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",pod=~\"#{Pod}\",container =~\"#{Container}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container,pod,node,namespace)",
+              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",pod=~\"#{Pod}\",container =~\"#{Container}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container,pod,node,namespace)",
               "code": "B",
               "type": "promql",
               "promqlCode": 3
@@ -4587,7 +4583,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",pod=~\"#{Pod}\",container =~\"#{Container}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container,pod,node,namespace)",
+              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",pod=~\"#{Pod}\",container =~\"#{Container}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container,pod,node,namespace)",
               "code": "C",
               "type": "promql",
               "promqlCode": 4
@@ -4607,7 +4603,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}) by (container, pod,node,namespace)/ sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\",resource=\"memory\",unit=\"byte\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container, pod,node,namespace)",
+              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}) by (container, pod,node,namespace)/ sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\",resource=\"memory\",unit=\"byte\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container, pod,node,namespace)",
               "code": "I",
               "type": "promql",
               "promqlCode": 5
@@ -4628,7 +4624,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}) by (container, pod,node,namespace)",
+              "q": "sum (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}) by (container, pod,node,namespace)",
               "code": "D",
               "type": "promql",
               "promqlCode": 6
@@ -4648,7 +4644,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_memory_rss{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}) by (container, pod,node,namespace)/ sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\",resource=\"memory\",unit=\"byte\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container, pod,node,namespace)",
+              "q": "sum (container_memory_rss{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}) by (container, pod,node,namespace)/ sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\",resource=\"memory\",unit=\"byte\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container, pod,node,namespace)",
               "code": "L",
               "type": "promql",
               "promqlCode": 7
@@ -4669,7 +4665,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum (container_memory_rss{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}) by (container, pod,node,namespace)",
+              "q": "sum (container_memory_rss{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}) by (container, pod,node,namespace)",
               "code": "K",
               "type": "promql",
               "promqlCode": 8
@@ -4688,7 +4684,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",pod=~\"#{Pod}\",container =~\"#{Container}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container,pod,node,namespace)",
+              "q": "sum((kube_pod_container_resource_requests{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",pod=~\"#{Pod}\",container =~\"#{Container}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container,pod,node,namespace)",
               "code": "E",
               "type": "promql",
               "promqlCode": 9
@@ -4708,7 +4704,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",pod=~\"#{Pod}\",container =~\"#{Container}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container,pod,node,namespace)",
+              "q": "sum((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",pod=~\"#{Pod}\",container =~\"#{Container}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container,pod,node,namespace)",
               "code": "F",
               "type": "promql",
               "promqlCode": 10
@@ -4727,7 +4723,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(container_fs_usage_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}) by (container,pod,node,namespace)",
+              "q": "sum(container_fs_usage_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}) by (container,pod,node,namespace)",
               "code": "J",
               "type": "promql",
               "promqlCode": 11
@@ -4747,7 +4743,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "kube_pod_container_status_restarts_total{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",namespace=~\"#{NameSpace}\"} * on(pod,namespace) group_left(node) kube_pod_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}",
+              "q": "sum(kube_pod_container_status_restarts_total{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container=~\"#{Container}\",container!=\"\",container!=\"POD\",namespace=~\"#{NameSpace}\"} * on(pod,namespace) group_left(node) kube_pod_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}) by (container, pod, node, namespace)",
               "code": "H",
               "type": "promql",
               "promqlCode": 12
@@ -4767,7 +4763,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "time() - kube_pod_created{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",namespace=~\"#{NameSpace}\"} * on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",namespace=~\"#{NameSpace}\",container =~\"#{Container}\"}",
+              "q": "sum((time() - (kube_pod_created{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",namespace=~\"#{NameSpace}\"} * on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",namespace=~\"#{NameSpace}\",container=~\"#{Container}\"})) * on(pod,namespace) group_left(node) kube_pod_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}) by (container, pod, node, namespace)",
               "code": "R",
               "type": "promql",
               "promqlCode": 13
@@ -4787,7 +4783,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(container_fs_limit_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}) by (container,pod,node,namespace)",
+              "q": "sum(container_fs_limit_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}) by (container,pod,node,namespace)",
               "code": "S",
               "type": "promql",
               "promqlCode": 14
@@ -4807,7 +4803,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(sum(irate(container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",namespace=~\"#{NameSpace}\",container =~\"#{Container}\"}) by(pod,namespace) *8",
+              "q": "sum(irate(container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}[2m])) by (pod,node,namespace) * on(pod,namespace) group_right(node) sum(kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",namespace=~\"#{NameSpace}\",container=~\"#{Container}\"}) by (container,pod,namespace) * 8",
               "code": "T",
               "type": "promql",
               "promqlCode": 15
@@ -4827,7 +4823,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(sum(irate(container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",namespace=~\"#{NameSpace}\",container =~\"#{Container}\"}) by(pod,namespace) *8",
+              "q": "sum(irate(container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}[2m])) by (pod,node,namespace) * on(pod,namespace) group_right(node) sum(kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",namespace=~\"#{NameSpace}\",container=~\"#{Container}\"}) by (container,pod,namespace) * 8",
               "code": "U",
               "type": "promql",
               "promqlCode": 16
@@ -4847,7 +4843,7 @@
         "name": "Pod容器CPU使用率(最大100%可关联节点)",
         "type": "sequence",
         "group": {
-          "name": "Pod资源总览：所选Pod:【#{Pod}】"
+          "name": "Pod资源总览"
         },
         "pos": {
           "x": 0,
@@ -4949,7 +4945,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "max(irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}[2m])) by (container, pod) / (max((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\",resource=\"cpu\",unit=\"core\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container, pod)) * 100",
+              "q": "max(irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}[2m])) by (container, pod) / (max((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\",resource=\"cpu\",unit=\"core\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container, pod)) * 100",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -4969,7 +4965,7 @@
         "name": "Pod容器内存使用率(可关联节点)",
         "type": "sequence",
         "group": {
-          "name": "Pod资源总览：所选Pod:【#{Pod}】"
+          "name": "Pod资源总览"
         },
         "pos": {
           "x": 8,
@@ -5078,7 +5074,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "max (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}) by (container, pod)/ max((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\",resource=\"memory\",unit=\"byte\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container, pod) * 100",
+              "q": "max (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}) by (container, pod)/ max((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\",resource=\"memory\",unit=\"byte\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container, pod) * 100",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -5099,7 +5095,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "max (container_memory_rss{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}) by (container, pod)/ max((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\",resource=\"memory\",unit=\"byte\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container, pod) * 100",
+              "q": "max (container_memory_rss{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}) by (container, pod)/ max((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\",resource=\"memory\",unit=\"byte\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container, pod) * 100",
               "code": "B",
               "type": "promql",
               "promqlCode": 2
@@ -5119,7 +5115,7 @@
         "name": "Pod每秒网络带宽 (可关联节点)",
         "type": "sequence",
         "group": {
-          "name": "Pod资源总览：所选Pod:【#{Pod}】"
+          "name": "Pod资源总览"
         },
         "pos": {
           "x": 16,
@@ -5228,7 +5224,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "max(max(irate(container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",namespace=~\"#{NameSpace}\",container =~\"#{Container}\"}) by(pod,namespace) *8",
+              "q": "max(max(irate(container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",namespace=~\"#{NameSpace}\",container =~\"#{Container}\"}) by(pod,namespace) *8",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -5249,7 +5245,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "max(max(irate(container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",namespace=~\"#{NameSpace}\",container =~\"#{Container}\"}) by(pod,namespace) *8",
+              "q": "max(max(irate(container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",namespace=~\"#{NameSpace}\",container =~\"#{Container}\"}) by(pod,namespace) *8",
               "code": "B",
               "type": "promql",
               "promqlCode": 2
@@ -5269,7 +5265,7 @@
             "datasource": "dataflux",
             "disabled": true,
             "query": {
-              "q": "sum(sum(irate(container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\",pod=~\".*#{Container}.*\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\"}) by(pod,namespace) *8",
+              "q": "sum(sum(irate(container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\",pod=~\".*#{Container}.*\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\"}) by(pod,namespace) *8",
               "code": "C",
               "type": "promql",
               "promqlCode": 3
@@ -5289,7 +5285,7 @@
             "datasource": "dataflux",
             "disabled": true,
             "query": {
-              "q": "sum(sum(irate(container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\",pod=~\".*#{Container}.*\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\"}) by(pod,namespace) *8",
+              "q": "sum(sum(irate(container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\",pod=~\".*#{Container}.*\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\"}) by(pod,namespace) *8",
               "code": "D",
               "type": "promql",
               "promqlCode": 4
@@ -5309,7 +5305,7 @@
         "name": "Pod容器CPU核使用",
         "type": "sequence",
         "group": {
-          "name": "Pod资源总览：所选Pod:【#{Pod}】"
+          "name": "Pod资源总览"
         },
         "pos": {
           "x": 0,
@@ -5428,7 +5424,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "max(irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}[2m])) by (container, pod,node,namespace)",
+              "q": "max(irate(container_cpu_usage_seconds_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}[2m])) by (container, pod,node,namespace)",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -5449,7 +5445,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "max(max((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",pod=~\"#{Pod}\",container =~\"#{Container}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container,pod,node,namespace)) by(container)",
+              "q": "max(max((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"cpu\", unit=\"core\",pod=~\"#{Pod}\",container =~\"#{Container}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container,pod,node,namespace)) by(container)",
               "code": "B",
               "type": "promql",
               "promqlCode": 2
@@ -5469,7 +5465,7 @@
         "name": "Pod容器WSS内存使用(可关联节点)",
         "type": "sequence",
         "group": {
-          "name": "Pod资源总览：所选Pod:【#{Pod}】"
+          "name": "Pod资源总览"
         },
         "pos": {
           "x": 8,
@@ -5588,7 +5584,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "max (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}) by (container, pod,node,namespace)",
+              "q": "max (container_memory_working_set_bytes{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}) by (container, pod,node,namespace)",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -5609,7 +5605,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "max(max((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",pod=~\"#{Pod}\",container =~\"#{Container}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container,pod,node,namespace)) by(container)",
+              "q": "max(max((kube_pod_container_resource_limits{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",resource=\"memory\", unit=\"byte\",pod=~\"#{Pod}\",container =~\"#{Container}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"} and on(cluster,environment,namespace,pod,uid) max by(cluster,environment,namespace,pod,uid)(kube_pod_status_phase{job=\"kube-state-metrics\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",phase=~\"Pending|Running|Unknown\"} == 1))) by (container,pod,node,namespace)) by(container)",
               "code": "B",
               "type": "promql",
               "promqlCode": 2
@@ -5629,7 +5625,7 @@
         "name": "Pod容器RSS内存使用(可关联节点)",
         "type": "sequence",
         "group": {
-          "name": "Pod资源总览：所选Pod:【#{Pod}】"
+          "name": "Pod资源总览"
         },
         "pos": {
           "x": 16,
@@ -5731,7 +5727,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "max (container_memory_rss{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}) by (container, pod,node,namespace)",
+              "q": "max (container_memory_rss{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",container =~\"#{Container}\",container !=\"\",container!=\"POD\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}) by (container, pod,node,namespace)",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -5751,7 +5747,7 @@
         "name": "微服务(容器名)资源统计",
         "type": "table",
         "group": {
-          "name": "微服务(容器名)资源总览：所选微服务:【#{Container}】"
+          "name": "微服务(容器名)资源总览"
         },
         "pos": {
           "x": 0,
@@ -5772,8 +5768,7 @@
             "fixedTime": "",
             "legendPostion": "none",
             "lineType": "linear",
-            "stackType": "time",
-            "chartType": "line",
+            "chartType": "table",
             "isTimeInterval": false,
             "unitType": "custom",
             "units": [
@@ -6282,7 +6277,7 @@
         "name": "微服务(容器名)平均CPU使用率(最大100%)",
         "type": "sequence",
         "group": {
-          "name": "微服务(容器名)资源总览：所选微服务:【#{Container}】"
+          "name": "微服务(容器名)资源总览"
         },
         "pos": {
           "x": 0,
@@ -6404,7 +6399,7 @@
         "name": "微服务(容器名)平均内存使用率",
         "type": "sequence",
         "group": {
-          "name": "微服务(容器名)资源总览：所选微服务:【#{Container}】"
+          "name": "微服务(容器名)资源总览"
         },
         "pos": {
           "x": 8,
@@ -6552,7 +6547,7 @@
         "name": "微服务(容器名)每秒网络带宽 (可关联节点)",
         "type": "sequence",
         "group": {
-          "name": "微服务(容器名)资源总览：所选微服务:【#{Container}】"
+          "name": "微服务(容器名)资源总览"
         },
         "pos": {
           "x": 16,
@@ -6673,7 +6668,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(sum(irate(container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",namespace=~\"#{NameSpace}\",container =~\"#{Container}\"}) by(container) *8",
+              "q": "sum(sum(irate(container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",namespace=~\"#{NameSpace}\",container =~\"#{Container}\"}) by(container) *8",
               "code": "A",
               "type": "promql",
               "promqlCode": 1
@@ -6694,7 +6689,7 @@
             "datasource": "dataflux",
             "disabled": false,
             "query": {
-              "q": "sum(sum(irate(container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",namespace=~\"#{NameSpace}\",container =~\"#{Container}\"}) by(container) *8",
+              "q": "sum(sum(irate(container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\"}[2m])) by(pod,namespace)* on(pod,namespace) group_right kube_pod_container_info{cluster=~\"#{cluster}\",environment=~\"#{environment}\",namespace=~\"#{NameSpace}\",container =~\"#{Container}\"}) by(container) *8",
               "code": "B",
               "type": "promql",
               "promqlCode": 2
@@ -6715,7 +6710,7 @@
             "datasource": "dataflux",
             "disabled": true,
             "query": {
-              "q": "sum (rate (container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\",pod=~\".*#{Container}.*\"}[2m])) by(pod,namespace)",
+              "q": "sum (rate (container_network_receive_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\",pod=~\".*#{Container}.*\"}[2m])) by(pod,namespace)",
               "code": "C",
               "type": "promql",
               "promqlCode": 3
@@ -6735,7 +6730,7 @@
             "datasource": "dataflux",
             "disabled": true,
             "query": {
-              "q": "- sum (rate (container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"^#{Node}$\",namespace=~\"#{NameSpace}\",pod=~\".*#{Container}.*\"}[2m])) by(pod,namespace)",
+              "q": "- sum (rate (container_network_transmit_bytes_total{job=\"cadvisor\",cluster=~\"#{cluster}\",environment=~\"#{environment}\",pod=~\"#{Pod}\",node=~\"#{Node}\",namespace=~\"#{NameSpace}\",pod=~\".*#{Container}.*\"}[2m])) by(pod,namespace)",
               "code": "D",
               "type": "promql",
               "promqlCode": 4
@@ -6754,7 +6749,7 @@
         "name": "微服务(容器名)整体CPU使用核",
         "type": "sequence",
         "group": {
-          "name": "微服务(容器名)资源总览：所选微服务:【#{Container}】"
+          "name": "微服务(容器名)资源总览"
         },
         "pos": {
           "x": 0,
@@ -6914,7 +6909,7 @@
         "name": "微服务(容器名)整体内存使用量",
         "type": "sequence",
         "group": {
-          "name": "微服务(容器名)资源总览：所选微服务:【#{Container}】"
+          "name": "微服务(容器名)资源总览"
         },
         "pos": {
           "x": 8,
@@ -7101,7 +7096,7 @@
         "name": "微服务(容器名)Pod数",
         "type": "sequence",
         "group": {
-          "name": "微服务(容器名)资源总览：所选微服务:【#{Container}】"
+          "name": "微服务(容器名)资源总览"
         },
         "pos": {
           "x": 16,
@@ -7223,13 +7218,13 @@
     ],
     "groups": [
       {
-        "name": "节点资源总览：所选节点:【#{Node}】"
+        "name": "节点资源总览"
       },
       {
-        "name": "Pod资源总览：所选Pod:【#{Pod}】"
+        "name": "Pod资源总览"
       },
       {
-        "name": "微服务(容器名)资源总览：所选微服务:【#{Container}】"
+        "name": "微服务(容器名)资源总览"
       }
     ],
     "type": "template"
