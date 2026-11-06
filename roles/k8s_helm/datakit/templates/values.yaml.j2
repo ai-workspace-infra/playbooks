@@ -75,6 +75,7 @@ dkconfig:
           environment = "{{ target_environment | default('dev') }}"
           env = "{{ target_env | default('sit') }}"
           service = "kube-state-metrics"
+          job = "kube-state-metrics"
           host = "{{ inventory_hostname | default('sit-k3s-v6') }}"
   - name: "node-exporter.conf"
     path: "/usr/local/datakit/conf.d/prom/node-exporter.conf"
@@ -91,8 +92,54 @@ dkconfig:
           environment = "{{ target_environment | default('dev') }}"
           env = "{{ target_env | default('sit') }}"
           service = "node-exporter"
-          instance = "{{ inventory_hostname | default('sit-k3s-v6') }}"
+          job = "node-exporter"
+          node = "{{ inventory_hostname | default('sit-k3s-v6') }}"
           nodename = "{{ inventory_hostname | default('sit-k3s-v6') }}"
+          instance = "{{ inventory_hostname | default('sit-k3s-v6') }}"
+          host = "{{ inventory_hostname | default('sit-k3s-v6') }}"
+  - name: "cadvisor.conf"
+    path: "/usr/local/datakit/conf.d/prom/cadvisor.conf"
+    value: |
+      [[inputs.prom]]
+        urls = ["https://127.0.0.1:10250/metrics/cadvisor"]
+        source = "cadvisor"
+        interval = "15s"
+        measurement_name = "cadvisor"
+        keep_exist_metric_name = true
+        insecure_skip_verify = true
+        election = false
+        [inputs.prom.auth]
+          type = "bearer_token"
+          token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        [inputs.prom.tags]
+          cluster = "{{ k8s_cluster_name | default('sit-k3s-v6') }}"
+          environment = "{{ target_environment | default('dev') }}"
+          env = "{{ target_env | default('sit') }}"
+          service = "cadvisor"
+          job = "cadvisor"
+          node = "{{ inventory_hostname | default('sit-k3s-v6') }}"
+          host = "{{ inventory_hostname | default('sit-k3s-v6') }}"
+  - name: "kubelet.conf"
+    path: "/usr/local/datakit/conf.d/prom/kubelet.conf"
+    value: |
+      [[inputs.prom]]
+        urls = ["https://127.0.0.1:10250/metrics"]
+        source = "kubelet"
+        interval = "15s"
+        measurement_name = "kubelet"
+        keep_exist_metric_name = true
+        insecure_skip_verify = true
+        election = false
+        [inputs.prom.auth]
+          type = "bearer_token"
+          token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        [inputs.prom.tags]
+          cluster = "{{ k8s_cluster_name | default('sit-k3s-v6') }}"
+          environment = "{{ target_environment | default('dev') }}"
+          env = "{{ target_env | default('sit') }}"
+          service = "kubelet"
+          job = "kubelet"
+          node = "{{ inventory_hostname | default('sit-k3s-v6') }}"
           host = "{{ inventory_hostname | default('sit-k3s-v6') }}"
 
 resources:
