@@ -20,7 +20,10 @@ class TestDataKitHelmRoleContract(unittest.TestCase):
         self.assertIn("datakit_edition:", content)
         self.assertIn("hk-commercial", content)
         self.assertIn("bj-free", content)
+        self.assertIn("datakit_vault_category:", content)
+        self.assertIn("observability", content)
         self.assertIn("datakit_vault_path:", content)
+        self.assertIn("{{ datakit_vault_category }}/datakit/{{ datakit_edition }}", content)
 
     def test_template_values_renders_all_four_configs_in_dkconfig(self):
         self.assertTrue(os.path.exists(self.template_file), f"Template file not found: {self.template_file}")
