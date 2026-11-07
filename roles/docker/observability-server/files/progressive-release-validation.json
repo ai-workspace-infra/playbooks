@@ -1,0 +1,1232 @@
+{
+  "uid": "progressive-release-validation",
+  "title": "Progressive Release Validation",
+  "description": "Blackbox endpoint health and Flagger signals. Dashboard is observational and does not itself gate rollout. Requires progressive-release-probes with bounded service and route labels.",
+  "tags": [
+    "blackbox",
+    "flagger",
+    "release"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_METRICS",
+        "label": "Metrics datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      },
+      {
+        "name": "environment",
+        "type": "custom",
+        "query": "prod,sit",
+        "current": {
+          "text": "prod",
+          "value": "prod"
+        }
+      },
+      {
+        "name": "cluster",
+        "type": "textbox",
+        "query": ".*",
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        }
+      },
+      {
+        "name": "namespace",
+        "type": "textbox",
+        "query": "web-saas-prod",
+        "current": {
+          "text": "web-saas-prod",
+          "value": "web-saas-prod"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Probe gate · all 10 checks",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "Probe status only. Missing series yields NO DATA; this does not represent Flagger promotion.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min(probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}) and (count(probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}) == 10)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Failing endpoint checks",
+      "type": "stat",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "NO DATA means the collector or all probes are absent.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(1 - probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"})",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 3,
+      "title": "Observed probes",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "Expected 10 distinct targets per selected environment and cluster.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"})",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "title": "Console · /healthz",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"console\",route=\"/healthz\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Console · /login",
+      "type": "stat",
+      "gridPos": {
+        "x": 4,
+        "y": 3,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"console\",route=\"/login\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Console · /panel/agent",
+      "type": "stat",
+      "gridPos": {
+        "x": 8,
+        "y": 3,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"console\",route=\"/panel/agent\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "title": "Accounts · /healthz",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 3,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"accounts\",route=\"/healthz\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 8,
+      "title": "Accounts · /readyz",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 3,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"accounts\",route=\"/readyz\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 9,
+      "title": "Accounts · /api/ping",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"accounts\",route=\"/api/ping\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 10,
+      "title": "Accounts · /api/billing/plans",
+      "type": "stat",
+      "gridPos": {
+        "x": 4,
+        "y": 7,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"accounts\",route=\"/api/billing/plans\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 11,
+      "title": "Billing · /healthz",
+      "type": "stat",
+      "gridPos": {
+        "x": 8,
+        "y": 7,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"billing\",route=\"/healthz\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 12,
+      "title": "Billing · /readyz",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 7,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"billing\",route=\"/readyz\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 13,
+      "title": "Billing · /api/ping",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 7,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"billing\",route=\"/api/ping\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 14,
+      "title": "Flagger candidate weight",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "Requires Flagger weight metrics to be scraped. No data is not evidence of promotion.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "flagger_canary_weight{namespace=~\"$namespace\"}",
+          "legendFormat": "{{name}}",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 15,
+      "title": "Flagger failed checks",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "Requires Flagger metrics. Validate metric names and labels against the deployed controller.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "flagger_canary_failed_checks{namespace=~\"$namespace\"}",
+          "legendFormat": "{{name}}",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 16,
+      "title": "Top 10 endpoint details · probe status",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "One row per configured target. A missing row is not a successful check.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "{{service}} {{route}}",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 17,
+      "title": "Observed HTTP status",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "Status expected by each Blackbox module must be configured in the scrape contract.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_http_status_code{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "{{service}} {{route}}",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 18,
+      "title": "Probe duration · p95",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "p95 of synthetic probe durations, not application request latency.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, probe_duration_seconds{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}[$__range])",
+          "legendFormat": "{{service}} {{route}}",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 19,
+      "title": "Probe freshness · seconds",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "Missing series or stale samples block promotion; this panel reports age only.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - timestamp(probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"})",
+          "legendFormat": "{{service}} {{route}}",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 20,
+      "title": "Candidate request samples",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 33,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_METRICS}"
+      },
+      "description": "Candidate samples require matching stored labels. NO DATA is not zero; validate against deployed Flagger query.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (exported_service) (increase(traefik_service_requests_total{exported_service=~\".*-canary-80(@kubernetescrd)?\",environment=~\"$environment\",cluster=~\"$cluster\"}[$__rate_interval]))",
+          "legendFormat": "{{exported_service}}",
+          "instant": false,
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

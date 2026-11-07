@@ -259,3 +259,26 @@ curl -i https://observability.svc.plus/mcp/grafana
    确认对应 MCP 容器已启动且监听在正确的内网端口（`docker ps | grep mcp`）。
 3. **Grafana MCP 鉴权失败**：
    确认是否在 Grafana 中创建了拥有只读权限的 Service Account Token，并在 Vault/group_vars 中配置了 `observability_mcp_grafana_service_account_token`。
+
+### Progressive release validation dashboard
+
+The `progressive-release-validation.json` asset is provisioned by the existing
+file-discovery task. Select a Prometheus-compatible datasource and one cluster
+and environment. The ten endpoint panels and details table use the same
+`probe_success` series; missing or stale probes display `NO DATA`. The probe
+summary is descriptive and does not control Flagger.
+
+The collector must supply `job="progressive-release-probes"`, `environment`,
+`cluster`, `service` (`console`, `accounts`, `billing`) and a bounded `route`
+label for each of the ten listed routes. Configure Blackbox modules to accept
+the appropriate response, including the unauthenticated login redirect for
+`/panel/agent`; never count absent series as success. Probe duration quantiles
+are computed from synthetic probe samples, not application request latency.
+The Flagger and candidate traffic panels require controller and Traefik metrics
+with the labels shown in their queries; until those are scraped they show no
+data. Billing has no inferred Canary status.
+
+This asset does not install an exporter, configure targets or modify release
+promotion. Verify scrape identity, one series per route, actual response
+contracts, no-data handling, and candidate traffic in SIT before production
+use. Remove this file from the bundle to roll back its provisioning.
