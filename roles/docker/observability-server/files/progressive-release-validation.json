@@ -1,14 +1,15 @@
 {
   "uid": "progressive-release-validation",
   "title": "Progressive Release Validation",
-  "description": "Blackbox endpoint health and Flagger signals. Dashboard is observational and does not itself gate rollout. Requires progressive-release-probes with bounded service and route labels.",
+  "description": "Service \u00d7 API status matrix for progressive releases (PROD / SIT). Evaluates Blackbox endpoint health, response codes, latencies, freshness, and Flagger candidate traffic.",
   "tags": [
     "blackbox",
     "flagger",
-    "release"
+    "release",
+    "saas"
   ],
   "schemaVersion": 39,
-  "version": 1,
+  "version": 3,
   "editable": true,
   "timezone": "browser",
   "refresh": "30s",
@@ -23,72 +24,120 @@
         "label": "Metrics datasource",
         "type": "datasource",
         "query": "prometheus",
-        "current": {}
+        "current": {
+          "selected": true,
+          "text": "VictoriaMetrics",
+          "value": "P4169E866C3094E38"
+        }
       },
       {
         "name": "environment",
+        "label": "Environment",
         "type": "custom",
         "query": "prod,sit",
         "current": {
-          "text": "prod",
-          "value": "prod"
+          "selected": true,
+          "text": "sit",
+          "value": "sit"
         }
       },
       {
         "name": "cluster",
+        "label": "Cluster",
         "type": "textbox",
-        "query": ".*",
+        "query": "SIT-K3S-V6",
         "current": {
-          "text": ".*",
-          "value": ".*"
+          "selected": true,
+          "text": "SIT-K3S-V6",
+          "value": "SIT-K3S-V6"
         }
       },
       {
         "name": "namespace",
+        "label": "Namespace",
         "type": "textbox",
-        "query": "web-saas-prod",
+        "query": "web-saas-sit",
         "current": {
-          "text": "web-saas-prod",
-          "value": "web-saas-prod"
+          "selected": true,
+          "text": "web-saas-sit",
+          "value": "web-saas-sit"
         }
       }
     ]
   },
   "panels": [
     {
-      "id": 1,
-      "title": "Probe gate · all 10 checks",
-      "type": "stat",
+      "id": 101,
+      "title": "",
+      "type": "text",
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 8,
+        "w": 6,
+        "h": 3
+      },
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"background: #111217; border: 1px solid #22252b; border-radius: 6px; padding: 14px 18px; height: 100%; display: flex; flex-direction: column; justify-content: center;\">\n  <div style=\"color: #9fa7b3; font-size: 13px; font-weight: 500; text-transform: capitalize;\">Environment</div>\n  <div style=\"color: #ffffff; font-size: 26px; font-weight: 700; letter-spacing: 0.5px; margin-top: 4px; text-transform: uppercase;\">$environment</div>\n</div>"
+      }
+    },
+    {
+      "id": 102,
+      "title": "",
+      "type": "text",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 9,
+        "h": 3
+      },
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"background: #111217; border: 1px solid #22252b; border-radius: 6px; padding: 14px 18px; height: 100%; display: flex; align-items: center; gap: 14px;\">\n  <div style=\"font-size: 24px; border: 1px solid #333842; border-radius: 6px; padding: 6px 8px; line-height: 1;\">\ud83d\udcc5</div>\n  <div>\n    <div style=\"color: #9fa7b3; font-size: 13px; font-weight: 500;\">Observation window</div>\n    <div style=\"color: #ffffff; font-size: 16px; font-weight: 600; margin-top: 3px;\">Last 15 minutes ($__from:date:HH:mm \u2013 $__to:date:HH:mm UTC)</div>\n  </div>\n</div>"
+      }
+    },
+    {
+      "id": 1,
+      "title": "Probe gate \u00b7 all 10 checks",
+      "type": "stat",
+      "gridPos": {
+        "x": 15,
+        "y": 0,
+        "w": 9,
         "h": 3
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "Probe status only. Missing series yields NO DATA; this does not represent Flagger promotion.",
+      "description": "Release gate status across all 10 Blackbox endpoint checks. All must be 200/307 and healthy.",
       "targets": [
         {
           "refId": "A",
           "expr": "min(probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}) and (count(probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}) == 10)",
-          "legendFormat": "",
+          "legendFormat": "Gate Status",
           "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
+          "noValue": "BLOCKED (NO DATA)",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "PASSED  (10/10 checks healthy)",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "BLOCKED  (endpoint checks failed)",
+                  "color": "red"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -115,147 +164,96 @@
         },
         "colorMode": "background",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "value"
       }
     },
     {
-      "id": 2,
-      "title": "Failing endpoint checks",
-      "type": "stat",
-      "gridPos": {
-        "x": 8,
-        "y": 0,
-        "w": 8,
-        "h": 3
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_METRICS}"
-      },
-      "description": "NO DATA means the collector or all probes are absent.",
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(1 - probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"})",
-          "legendFormat": "",
-          "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {}
-    },
-    {
-      "id": 3,
-      "title": "Observed probes",
-      "type": "stat",
-      "gridPos": {
-        "x": 16,
-        "y": 0,
-        "w": 8,
-        "h": 3
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_METRICS}"
-      },
-      "description": "Expected 10 distinct targets per selected environment and cluster.",
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "count(probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"})",
-          "legendFormat": "",
-          "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {}
-    },
-    {
-      "id": 4,
-      "title": "Console · /healthz",
-      "type": "stat",
+      "id": 103,
+      "title": "",
+      "type": "text",
       "gridPos": {
         "x": 0,
         "y": 3,
-        "w": 4,
+        "w": 7,
+        "h": 1
+      },
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"background: #1a365d; border: 1px solid #2b6cb0; color: #ebf8ff; font-weight: 700; text-align: center; padding: 4px; border-radius: 4px; font-size: 13px;\">\n  Console <span style=\"font-size: 11px; opacity: 0.85; font-weight: 400;\">(console.svc.plus)</span>\n</div>"
+      }
+    },
+    {
+      "id": 104,
+      "title": "",
+      "type": "text",
+      "gridPos": {
+        "x": 7,
+        "y": 3,
+        "w": 10,
+        "h": 1
+      },
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"background: #322659; border: 1px solid #6b46c1; color: #faf5ff; font-weight: 700; text-align: center; padding: 4px; border-radius: 4px; font-size: 13px;\">\n  Accounts <span style=\"font-size: 11px; opacity: 0.85; font-weight: 400;\">(accounts.svc.plus)</span>\n</div>"
+      }
+    },
+    {
+      "id": 105,
+      "title": "",
+      "type": "text",
+      "gridPos": {
+        "x": 17,
+        "y": 3,
+        "w": 7,
+        "h": 1
+      },
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"background: #744210; border: 1px solid #d69e2e; color: #fffff0; font-weight: 700; text-align: center; padding: 4px; border-radius: 4px; font-size: 13px;\">\n  Billing <span style=\"font-size: 11px; opacity: 0.85; font-weight: 400;\">(billing.svc.plus)</span>\n</div>"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Console \u00b7 /healthz",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 2,
         "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "description": "Expected 200 OK",
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"console\",route=\"/healthz\"}",
-          "legendFormat": "",
+          "expr": "probe_success{job=\"progressive-release-probes\",service=\"console\",route=\"/healthz\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "Status",
           "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "PASS",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "FAIL",
+                  "color": "red"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -282,43 +280,51 @@
         },
         "colorMode": "background",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "value"
       }
     },
     {
       "id": 5,
-      "title": "Console · /login",
+      "title": "Console \u00b7 /login",
       "type": "stat",
       "gridPos": {
-        "x": 4,
-        "y": 3,
-        "w": 4,
+        "x": 2,
+        "y": 4,
+        "w": 2,
         "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "description": "Expected 200 OK",
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"console\",route=\"/login\"}",
-          "legendFormat": "",
+          "expr": "probe_success{job=\"progressive-release-probes\",service=\"console\",route=\"/login\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "Status",
           "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "PASS",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "FAIL",
+                  "color": "red"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -345,43 +351,51 @@
         },
         "colorMode": "background",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "value"
       }
     },
     {
       "id": 6,
-      "title": "Console · /panel/agent",
+      "title": "Console \u00b7 /panel/agent",
       "type": "stat",
       "gridPos": {
-        "x": 8,
-        "y": 3,
-        "w": 4,
+        "x": 4,
+        "y": 4,
+        "w": 3,
         "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "description": "Expected 307 Redirect",
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"console\",route=\"/panel/agent\"}",
-          "legendFormat": "",
+          "expr": "probe_success{job=\"progressive-release-probes\",service=\"console\",route=\"/panel/agent\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "Status",
           "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "PASS",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "FAIL",
+                  "color": "red"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -408,43 +422,51 @@
         },
         "colorMode": "background",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "value"
       }
     },
     {
       "id": 7,
-      "title": "Accounts · /healthz",
+      "title": "Accounts \u00b7 /healthz",
       "type": "stat",
       "gridPos": {
-        "x": 12,
-        "y": 3,
-        "w": 4,
+        "x": 7,
+        "y": 4,
+        "w": 2,
         "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "description": "Expected 200 OK",
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"accounts\",route=\"/healthz\"}",
-          "legendFormat": "",
+          "expr": "probe_success{job=\"progressive-release-probes\",service=\"accounts\",route=\"/healthz\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "Status",
           "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "PASS",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "FAIL",
+                  "color": "red"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -471,43 +493,51 @@
         },
         "colorMode": "background",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "value"
       }
     },
     {
       "id": 8,
-      "title": "Accounts · /readyz",
+      "title": "Accounts \u00b7 /readyz",
       "type": "stat",
       "gridPos": {
-        "x": 16,
-        "y": 3,
-        "w": 8,
+        "x": 9,
+        "y": 4,
+        "w": 2,
         "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "description": "Expected 200 OK",
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"accounts\",route=\"/readyz\"}",
-          "legendFormat": "",
+          "expr": "probe_success{job=\"progressive-release-probes\",service=\"accounts\",route=\"/readyz\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "Status",
           "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "PASS",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "FAIL",
+                  "color": "red"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -534,43 +564,51 @@
         },
         "colorMode": "background",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "value"
       }
     },
     {
       "id": 9,
-      "title": "Accounts · /api/ping",
+      "title": "Accounts \u00b7 /api/ping",
       "type": "stat",
       "gridPos": {
-        "x": 0,
-        "y": 7,
-        "w": 4,
+        "x": 11,
+        "y": 4,
+        "w": 3,
         "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "description": "Expected 200 OK",
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"accounts\",route=\"/api/ping\"}",
-          "legendFormat": "",
+          "expr": "probe_success{job=\"progressive-release-probes\",service=\"accounts\",route=\"/api/ping\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "Status",
           "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "PASS",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "FAIL",
+                  "color": "red"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -597,43 +635,51 @@
         },
         "colorMode": "background",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "value"
       }
     },
     {
       "id": 10,
-      "title": "Accounts · /api/billing/plans",
+      "title": "Accounts \u00b7 /api/billing/plans",
       "type": "stat",
       "gridPos": {
-        "x": 4,
-        "y": 7,
-        "w": 4,
+        "x": 14,
+        "y": 4,
+        "w": 3,
         "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "description": "Expected 200 OK",
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"accounts\",route=\"/api/billing/plans\"}",
-          "legendFormat": "",
+          "expr": "probe_success{job=\"progressive-release-probes\",service=\"accounts\",route=\"/api/billing/plans\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "Status",
           "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "PASS",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "FAIL",
+                  "color": "red"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -660,43 +706,51 @@
         },
         "colorMode": "background",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "value"
       }
     },
     {
       "id": 11,
-      "title": "Billing · /healthz",
+      "title": "Billing \u00b7 /healthz",
       "type": "stat",
       "gridPos": {
-        "x": 8,
-        "y": 7,
-        "w": 4,
+        "x": 17,
+        "y": 4,
+        "w": 2,
         "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "description": "Expected 200 OK",
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"billing\",route=\"/healthz\"}",
-          "legendFormat": "",
+          "expr": "probe_success{job=\"progressive-release-probes\",service=\"billing\",route=\"/healthz\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "Status",
           "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "PASS",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "FAIL",
+                  "color": "red"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -723,43 +777,51 @@
         },
         "colorMode": "background",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "value"
       }
     },
     {
       "id": 12,
-      "title": "Billing · /readyz",
+      "title": "Billing \u00b7 /readyz",
       "type": "stat",
       "gridPos": {
-        "x": 12,
-        "y": 7,
-        "w": 4,
+        "x": 19,
+        "y": 4,
+        "w": 2,
         "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "description": "Expected 200 OK",
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"billing\",route=\"/readyz\"}",
-          "legendFormat": "",
+          "expr": "probe_success{job=\"progressive-release-probes\",service=\"billing\",route=\"/readyz\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "Status",
           "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "PASS",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "FAIL",
+                  "color": "red"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -786,43 +848,51 @@
         },
         "colorMode": "background",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "value"
       }
     },
     {
       "id": 13,
-      "title": "Billing · /api/ping",
+      "title": "Billing \u00b7 /api/ping",
       "type": "stat",
       "gridPos": {
-        "x": 16,
-        "y": 7,
-        "w": 8,
+        "x": 21,
+        "y": 4,
+        "w": 3,
         "h": 4
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "1 = successful probe; 0 = failure; missing or stale series = NO DATA. Probe configuration defines allowed HTTP status.",
+      "description": "Expected 200 OK",
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\",service=\"billing\",route=\"/api/ping\"}",
-          "legendFormat": "",
+          "expr": "probe_success{job=\"progressive-release-probes\",service=\"billing\",route=\"/api/ping\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "Status",
           "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "PASS",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "FAIL",
+                  "color": "red"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -849,7 +919,22 @@
         },
         "colorMode": "background",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 106,
+      "title": "",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 1
+      },
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"border-bottom: 1px solid #333842; padding-bottom: 4px; margin-top: 4px;\">\n  <span style=\"color: #ffffff; font-size: 16px; font-weight: 700;\">Flagger (Progressive Release)</span>\n</div>"
       }
     },
     {
@@ -858,7 +943,7 @@
       "type": "timeseries",
       "gridPos": {
         "x": 0,
-        "y": 11,
+        "y": 9,
         "w": 12,
         "h": 7
       },
@@ -866,43 +951,45 @@
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "Requires Flagger weight metrics to be scraped. No data is not evidence of promotion.",
+      "description": "Candidate traffic weight (%) for progressive rollouts. 0% indicates Primary 100%.",
       "targets": [
         {
           "refId": "A",
           "expr": "flagger_canary_weight{namespace=~\"$namespace\"}",
-          "legendFormat": "{{name}}",
+          "legendFormat": "{{name}} candidate weight (%)",
           "instant": false,
-          "range": true,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
           "color": {
-            "mode": "thresholds"
+            "mode": "palette-classic"
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15
           }
         },
         "overrides": []
       },
-      "options": {}
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 15,
@@ -910,7 +997,7 @@
       "type": "timeseries",
       "gridPos": {
         "x": 12,
-        "y": 11,
+        "y": 9,
         "w": 12,
         "h": 7
       },
@@ -918,93 +1005,278 @@
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "Requires Flagger metrics. Validate metric names and labels against the deployed controller.",
+      "description": "Consecutive failed canary iterations before automatic rollback.",
       "targets": [
         {
           "refId": "A",
           "expr": "flagger_canary_failed_checks{namespace=~\"$namespace\"}",
-          "legendFormat": "{{name}}",
+          "legendFormat": "{{name}} failed checks",
           "instant": false,
-          "range": true,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
           "color": {
-            "mode": "thresholds"
+            "mode": "palette-classic"
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15
           }
         },
         "overrides": []
       },
-      "options": {}
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 107,
+      "title": "",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 1
+      },
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"border-bottom: 1px solid #333842; padding-bottom: 4px; display: flex; justify-content: space-between; align-items: center;\">\n  <div style=\"display: flex; align-items: center; gap: 8px;\">\n    <span style=\"color: #ffffff; font-size: 16px; font-weight: 700;\">Top 10 Endpoint Details</span>\n    <span style=\"background: #2b6cb0; color: #ebf8ff; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px;\">LIVE PROBES</span>\n  </div>\n  <div style=\"color: #9fa7b3; font-size: 12px;\">10/10 checks configured \u2022 Evaluated continuously</div>\n</div>"
+      }
     },
     {
       "id": 16,
-      "title": "Top 10 endpoint details · probe status",
+      "title": "Top 10 endpoint details \u00b7 probe status",
       "type": "table",
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 17,
         "w": 24,
-        "h": 8
+        "h": 9
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "One row per configured target. A missing row is not a successful check.",
+      "description": "Comprehensive matrix of service, endpoint, status code, latency, freshness and validation result.",
       "targets": [
         {
           "refId": "A",
           "expr": "probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}",
           "legendFormat": "{{service}} {{route}}",
           "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
+          "range": false
+        },
+        {
+          "refId": "B",
+          "expr": "probe_http_status_code{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+          "legendFormat": "{{service}} {{route}}",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "C",
+          "expr": "quantile_over_time(0.95, probe_duration_seconds{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}[$__range])",
+          "legendFormat": "{{service}} {{route}}",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "D",
+          "expr": "time() - timestamp(probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"})",
+          "legendFormat": "{{service}} {{route}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "instance",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "__name__": true,
+              "__name__ 1": true,
+              "__name__ 2": true,
+              "__name__ 3": true,
+              "cluster": true,
+              "cluster 1": true,
+              "cluster 2": true,
+              "cluster 3": true,
+              "environment": true,
+              "environment 1": true,
+              "environment 2": true,
+              "environment 3": true,
+              "job": true,
+              "job 1": true,
+              "job 2": true,
+              "job 3": true,
+              "service 1": true,
+              "service 2": true,
+              "service 3": true,
+              "route 1": true,
+              "route 2": true,
+              "route 3": true,
+              "instance": true
+            },
+            "renameByName": {
+              "service": "Service",
+              "route": "Endpoint (GET)",
+              "Value #A": "Result",
+              "Value #B": "Observed HTTP",
+              "Value #C": "p95 Latency",
+              "Value #D": "Freshness (age)"
+            },
+            "indexByName": {
+              "Service": 0,
+              "Endpoint (GET)": 1,
+              "Observed HTTP": 2,
+              "p95 Latency": 3,
+              "Freshness (age)": 4,
+              "Result": 5
+            }
           }
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Result"
+            },
+            "properties": [
               {
-                "color": "red",
-                "value": null
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "\u2714 PASS",
+                        "color": "green"
+                      },
+                      "0": {
+                        "text": "\u2716 FAIL",
+                        "color": "red"
+                      }
+                    }
+                  }
+                ]
               },
               {
-                "color": "green",
-                "value": 1
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Observed HTTP"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 200
+                    },
+                    {
+                      "color": "blue",
+                      "value": 300
+                    },
+                    {
+                      "color": "red",
+                      "value": 400
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95 Latency"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Freshness (age)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
               }
             ]
           }
-        },
-        "overrides": []
+        ]
       },
       "options": {
         "showHeader": true,
@@ -1015,201 +1287,48 @@
       }
     },
     {
-      "id": 17,
-      "title": "Observed HTTP status",
-      "type": "table",
+      "id": 108,
+      "title": "",
+      "type": "text",
       "gridPos": {
         "x": 0,
         "y": 26,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_METRICS}"
-      },
-      "description": "Status expected by each Blackbox module must be configured in the scrape contract.",
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "probe_http_status_code{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}",
-          "legendFormat": "{{service}} {{route}}",
-          "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
+        "w": 16,
+        "h": 3
       },
       "options": {
-        "showHeader": true,
-        "cellHeight": "sm"
-      }
-    },
-    {
-      "id": 18,
-      "title": "Probe duration · p95",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 12,
-        "y": 26,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_METRICS}"
-      },
-      "description": "p95 of synthetic probe durations, not application request latency.",
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "quantile_over_time(0.95, probe_duration_seconds{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}[$__range])",
-          "legendFormat": "{{service}} {{route}}",
-          "instant": false,
-          "range": true,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {}
-    },
-    {
-      "id": 19,
-      "title": "Probe freshness · seconds",
-      "type": "table",
-      "gridPos": {
-        "x": 0,
-        "y": 33,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_METRICS}"
-      },
-      "description": "Missing series or stale samples block promotion; this panel reports age only.",
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "time() - timestamp(probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"})",
-          "legendFormat": "{{service}} {{route}}",
-          "instant": true,
-          "range": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm"
+        "mode": "html",
+        "content": "<div style=\"background: #111217; border: 1px solid #22252b; border-left: 4px solid #3274d9; border-radius: 6px; padding: 14px 18px; height: 100%; display: flex; align-items: center; gap: 14px;\">\n  <div style=\"color: #5794f2; font-size: 22px; line-height: 1;\">\u2139\ufe0f</div>\n  <div style=\"color: #d8d9da; font-size: 13px; line-height: 1.5;\">\n    <strong>Gate rule:</strong> The release is <span style=\"background: #c4162a; color: #ffffff; padding: 1px 6px; border-radius: 3px; font-weight: 700; font-size: 11px;\">BLOCKED</span> if any endpoint is failed, stale (exceeds freshness), missing samples (NO DATA), or if the candidate request sample is insufficient.\n  </div>\n</div>"
       }
     },
     {
       "id": 20,
-      "title": "Candidate request samples",
-      "type": "timeseries",
+      "title": "Candidate sample",
+      "type": "stat",
       "gridPos": {
-        "x": 12,
-        "y": 33,
-        "w": 12,
-        "h": 7
+        "x": 16,
+        "y": 26,
+        "w": 8,
+        "h": 3
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_METRICS}"
       },
-      "description": "Candidate samples require matching stored labels. NO DATA is not zero; validate against deployed Flagger query.",
+      "description": "Total canary candidate requests observed in observation window. Minimum requirement: 10,000 samples.",
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (exported_service) (increase(traefik_service_requests_total{exported_service=~\".*-canary-80(@kubernetescrd)?\",environment=~\"$environment\",cluster=~\"$cluster\"}[$__rate_interval]))",
-          "legendFormat": "{{exported_service}}",
-          "instant": false,
-          "range": true,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_METRICS}"
-          }
+          "expr": "sum(increase(traefik_service_requests_total{exported_service=~\".*-canary-80(@kubernetescrd)?\",environment=~\"$environment\",cluster=~\"$cluster\"}[$__range]))",
+          "legendFormat": "Samples",
+          "instant": true,
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "noValue": "NO DATA",
-          "color": {
-            "mode": "thresholds"
-          },
+          "noValue": "0  (insufficient, < 10,000)",
+          "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1219,14 +1338,278 @@
               },
               {
                 "color": "green",
-                "value": 1
+                "value": 10000
               }
             ]
-          }
+          },
+          "unit": "short"
         },
         "overrides": []
       },
-      "options": {}
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 200,
+      "title": "Technical Diagnostics & Time Series Trends",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": true,
+      "panels": [
+        {
+          "id": 2,
+          "title": "Failing endpoint checks",
+          "type": "stat",
+          "gridPos": {
+            "x": 0,
+            "y": 30,
+            "w": 6,
+            "h": 4
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "description": "NO DATA means the collector or all probes are absent.",
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(1 - probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"})",
+              "legendFormat": "",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "NO DATA",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {}
+        },
+        {
+          "id": 3,
+          "title": "Observed probes",
+          "type": "stat",
+          "gridPos": {
+            "x": 6,
+            "y": 30,
+            "w": 6,
+            "h": 4
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "description": "Expected 10 distinct targets per selected environment and cluster.",
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "count(probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"})",
+              "legendFormat": "",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "NO DATA",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 10
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {}
+        },
+        {
+          "id": 17,
+          "title": "Observed HTTP status",
+          "type": "table",
+          "gridPos": {
+            "x": 12,
+            "y": 30,
+            "w": 12,
+            "h": 4
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "description": "Status expected by each Blackbox module must be configured in the scrape contract.",
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "probe_http_status_code{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}",
+              "legendFormat": "{{service}} {{route}}",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "NO DATA",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm"
+          }
+        },
+        {
+          "id": 18,
+          "title": "Probe duration \u00b7 p95",
+          "type": "timeseries",
+          "gridPos": {
+            "x": 0,
+            "y": 34,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "description": "p95 of synthetic probe durations, not application request latency.",
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "quantile_over_time(0.95, probe_duration_seconds{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"}[$__range])",
+              "legendFormat": "{{service}} {{route}}",
+              "instant": false,
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "NO DATA",
+              "unit": "s",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "lineWidth": 2
+              }
+            },
+            "overrides": []
+          },
+          "options": {}
+        },
+        {
+          "id": 19,
+          "title": "Probe freshness \u00b7 seconds",
+          "type": "table",
+          "gridPos": {
+            "x": 12,
+            "y": 34,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_METRICS}"
+          },
+          "description": "Missing series or stale samples block promotion; this panel reports age only.",
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "time() - timestamp(probe_success{job=\"progressive-release-probes\",environment=~\"$environment\",cluster=~\"$cluster\"})",
+              "legendFormat": "{{service}} {{route}}",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "NO DATA",
+              "unit": "s",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 60
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm"
+          }
+        }
+      ]
     }
   ]
 }
