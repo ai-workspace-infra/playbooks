@@ -1,0 +1,50 @@
+---
+# ==============================================================================
+# Playbook: Deploy Personal AI Aggregator v1
+# (Caddy + New API + CPA / CLIProxyAPI + APISIX / Kong / Direct Route)
+# ==============================================================================
+- name: Plan or stage the personal AI aggregator
+  hosts: "{{ ai_aggregator_hosts | default('ai_aggregator_cpa:ai_aggregator_gateway', true) }}"
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Validate manifest file parameter
+      ansible.builtin.assert:
+        that:
+          - ai_aggregator_manifest_file is defined
+          - ai_aggregator_manifest_file | length > 0
+        fail_msg: >-
+          ai_aggregator_manifest_file must be specified.
+          Example: -e ai_aggregator_manifest_file=/path/to/topology/ai-aggregator.yaml
+      tags: [always]
+  vars:
+    ai_aggregator_operation: "{{ ai_aggregator_op | default(ai_aggregator_operation | default('plan')) }}"
+  roles:
+    - role: roles/vhosts/ai_aggregator_v1
+      tags: [ai_aggregator, plan_stage]
+      when: ai_aggregator_operation != 'activate'
+
+# Activation is deliberately split into ordered plays.
+# CPA instances must be started and verified before gateway services;
+# Caddy is reloaded last after configuration validation.
+- name: Activate CPA instances first
+  hosts: "{{ ai_aggregator_cpa_hosts | default(ai_aggregator_hosts | default('ai_aggregator_cpa', true), true) }}"
+  become: true
+  gather_facts: true
+  vars:
+    ai_aggregator_operation: "{{ ai_aggregator_op | default(ai_aggregator_operation | default('plan')) }}"
+  roles:
+    - role: roles/vhosts/ai_aggregator_v1
+      tags: [ai_aggregator, activate_cpa]
+      when: ai_aggregator_operation == 'activate'
+
+- name: Activate gateway services after CPA instances
+  hosts: "{{ ai_aggregator_gateway_hosts | default(ai_aggregator_hosts | default('ai_aggregator_gateway', true), true) }}"
+  become: true
+  gather_facts: true
+  vars:
+    ai_aggregator_operation: "{{ ai_aggregator_op | default(ai_aggregator_operation | default('plan')) }}"
+  roles:
+    - role: roles/vhosts/ai_aggregator_v1
+      tags: [ai_aggregator, activate_gateway]
+      when: ai_aggregator_operation == 'activate'
