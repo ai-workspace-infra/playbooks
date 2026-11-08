@@ -49,6 +49,17 @@
   ansible.builtin.systemd:
     daemon_reload: true
 
+- name: Ensure parent CPA data directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: "{{ ai_aggregator_service_group }}"
+    mode: '0755'
+  loop:
+    - /var/lib/ai-aggregator
+    - /var/lib/ai-aggregator/cpa
+
 - name: Initialize node-local CPA OAuth directories
   ansible.builtin.file:
     path: "{{ item.local_auth_dir }}"
@@ -57,7 +68,7 @@
     group: "{{ ai_aggregator_service_group }}"
     mode: '0700'
   loop: "{{ ai_aggregator_local_cpas }}"
-  when: ai_aggregator_adapter == 'apisix'
+  when: item.local_auth_dir is defined
 
 - name: Reload systemd after local authentication staging
   ansible.builtin.systemd:

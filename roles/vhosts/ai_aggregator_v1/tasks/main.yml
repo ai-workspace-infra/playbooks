@@ -14,8 +14,12 @@
   ansible.builtin.assert:
     that:
       - ai_aggregator_entry_mode in ['gateway', 'direct-new-api']
-      - ai_aggregator_entry_mode == 'direct-new-api' or ai_aggregator_adapter in ['apisix', 'kong']
+      - ai_aggregator_entry_mode == 'direct-new-api' or ai_aggregator_adapter in ['apisix', 'kong', 'caddy-ingress', 'k3s-ingress']
       - ai_aggregator_manifest.spec.gateway.client_token_source | default('new-api') == 'new-api'
+
+- name: "Deploy via K3s Ingress / Cluster Caddy (Default: Reuses Ingress, New API + CPA core services)"
+  ansible.builtin.include_tasks: ingress-k3s.yml
+  when: ai_aggregator_adapter in ['caddy-ingress', 'k3s-ingress'] or (ai_aggregator_manifest.spec.nodes | default([]) | selectattr('caddy_mode', 'defined') | selectattr('caddy_mode', 'equalto', 'reuse-existing') | list | length > 0 and ai_aggregator_adapter not in ['kong', 'apisix'])
 
 - name: Deploy APISIX Standalone from GitOps files
   ansible.builtin.include_tasks: apisix.yml

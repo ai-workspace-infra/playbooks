@@ -1,0 +1,243 @@
+---
+- name: Validate K3s ingress and core service topology
+  ansible.builtin.assert:
+    that:
+      - ai_aggregator_operation in ['plan', 'stage', 'activate']
+      - ai_aggregator_spec.entrypoint.domain | length > 0
+      - ai_aggregator_spec.new_api.port | int > 0
+
+- name: Select declared nodes for this host
+  ansible.builtin.set_fact:
+    ai_aggregator_local_nodes: "{{ ai_aggregator_spec.nodes | selectattr('inventory_host', 'equalto', inventory_hostname) | list }}"
+    ai_aggregator_local_cpas: >-
+      {{ ai_aggregator_spec.cpa_instances | default([])
+         | selectattr('node', 'in', (ai_aggregator_spec.nodes | selectattr('inventory_host', 'equalto', inventory_hostname) | map(attribute='id') | list))
+         | list }}
+
+- name: Report the K3s Ingress and core services plan
+  ansible.builtin.debug:
+    msg:
+      ingress: "Reusing cluster Caddy / K3s Ingress (ingressClassName: {{ ai_aggregator_ingress_class | default('traefik-ingress') }}) in namespace {{ ai_aggregator_k8s_namespace | default('ingress-sit') }}"
+      domain: "{{ ai_aggregator_spec.entrypoint.domain }}"
+      alias_domains: "{{ ai_aggregator_spec.entrypoint.alias_domains | default([]) }}"
+      tls_secret: "{{ ai_aggregator_spec.entrypoint.tls_secret | default('shared-observability-tls' if 'svc.plus' in ai_aggregator_spec.entrypoint.domain else 'console-tls') }}"
+      core_services:
+        new_api: "enabled (port {{ ai_aggregator_spec.new_api.port | default(3000) }})"
+        cpa: "enabled ({{ ai_aggregator_local_cpas | length }} instances)"
+      optional_components:
+        apisix: "{{ ai_aggregator_apisix_enabled | default(false) }}"
+        litellm: "{{ ai_aggregator_litellm_enabled | default(false) }}"
+  when: ai_aggregator_operation == 'plan'
+
+- name: Stage core service directories and configuration
+  when: ai_aggregator_operation in ['stage', 'activate']
+  block:
+    - name: Ensure AI Aggregator service group exists
+      ansible.builtin.group:
+        name: "{{ ai_aggregator_service_group }}"
+        system: true
+
+    - name: Ensure AI Aggregator root directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: "{{ ai_aggregator_service_group }}"
+        mode: '0755'
+      loop:
+        - "{{ ai_aggregator_root }}"
+        - "{{ ai_aggregator_root }}/new-api"
+        - "{{ ai_aggregator_root }}/cpa"
+        - "{{ ai_aggregator_root }}/cliproxyapi"
+
+    - name: Ensure volatile runtime directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: "{{ ai_aggregator_service_group }}"
+        mode: '0750'
+      loop:
+        - "{{ ai_aggregator_runtime_root }}"
+        - "{{ ai_aggregator_runtime_root }}/new-api"
+        - "{{ ai_aggregator_runtime_root }}/cpa"
+
+    - name: Check whether runtime environment exists
+      ansible.builtin.stat:
+        path: "{{ ai_aggregator_runtime_root }}/new-api/environment"
+      register: ai_aggregator_env_stat
+
+    - name: Initialize default runtime environment for SQLite single-node operation
+      ansible.builtin.copy:
+        dest: "{{ ai_aggregator_runtime_root }}/new-api/environment"
+        content: |
+          SQL_DSN={{ ai_aggregator_root }}/new-api/new-api.db
+          PORT={{ ai_aggregator_spec.new_api.port | default(3000) }}
+        owner: root
+        group: root
+        mode: '0600'
+      when: not ai_aggregator_env_stat.stat.exists
+
+    - name: Check if CLIProxyAPI binary exists
+      ansible.builtin.stat:
+        path: "{{ ai_aggregator_cliproxyapi_binary }}"
+      register: ai_aggregator_cpa_stat
+
+    - name: Install CLIProxyAPI binary
+      when: not ai_aggregator_cpa_stat.stat.exists
+      block:
+        - name: Check cached binary at /tmp/cli-proxy-api
+          ansible.builtin.stat:
+            path: /tmp/cli-proxy-api
+          register: ai_aggregator_cpa_tmp_stat
+
+        - name: Copy cached CLIProxyAPI binary to target location
+          ansible.builtin.command:
+            cmd: "cp -f /tmp/cli-proxy-api {{ ai_aggregator_cliproxyapi_binary }}"
+          when: ai_aggregator_cpa_tmp_stat.stat.exists
+
+        - name: Ensure CLIProxyAPI permissions
+          ansible.builtin.file:
+            path: "{{ ai_aggregator_cliproxyapi_binary }}"
+            owner: root
+            group: root
+            mode: '0755'
+
+        - name: Download CLIProxyAPI release binary if cache missing
+          ansible.builtin.unarchive:
+            src: https://github.com/router-for-me/CLIProxyAPI/releases/download/v8.0.61/CLIProxyAPI_8.0.61_linux_amd64.tar.gz
+            dest: "{{ ai_aggregator_root }}"
+            remote_src: true
+            include: [cli-proxy-api]
+            owner: root
+            group: root
+            mode: '0755'
+          when: not ai_aggregator_cpa_tmp_stat.stat.exists
+
+        - name: Link cli-proxy-api to cliproxyapi
+          ansible.builtin.file:
+            src: "{{ ai_aggregator_root }}/cli-proxy-api"
+            dest: "{{ ai_aggregator_cliproxyapi_binary }}"
+            state: link
+          when: not ai_aggregator_cpa_tmp_stat.stat.exists
+
+    - name: Check if New API binary exists
+      ansible.builtin.stat:
+        path: "{{ ai_aggregator_spec.new_api.start_command | default(ai_aggregator_new_api_binary) }}"
+      register: ai_aggregator_new_api_stat
+
+    - name: Install New API binary
+      when: not ai_aggregator_new_api_stat.stat.exists
+      block:
+        - name: Check cached binary at /tmp/new-api
+          ansible.builtin.stat:
+            path: /tmp/new-api
+          register: ai_aggregator_new_api_tmp_stat
+
+        - name: Copy cached New API binary to target location
+          ansible.builtin.command:
+            cmd: "cp -f /tmp/new-api {{ ai_aggregator_spec.new_api.start_command | default(ai_aggregator_new_api_binary) }}"
+          when: ai_aggregator_new_api_tmp_stat.stat.exists
+
+        - name: Ensure New API permissions
+          ansible.builtin.file:
+            path: "{{ ai_aggregator_spec.new_api.start_command | default(ai_aggregator_new_api_binary) }}"
+            owner: root
+            group: root
+            mode: '0755'
+
+        - name: Download New API binary if cache missing
+          ansible.builtin.get_url:
+            url: https://github.com/QuantumNous/new-api/releases/download/v1.0.0-rc.49/new-api-v1.0.0-rc.49
+            dest: "{{ ai_aggregator_spec.new_api.start_command | default(ai_aggregator_new_api_binary) }}"
+            owner: root
+            group: root
+            mode: '0755'
+          when: not ai_aggregator_new_api_tmp_stat.stat.exists
+
+    - name: Stage CPA instance configurations
+      ansible.builtin.include_tasks: cpa.yml
+      when:
+        - ai_aggregator_cpa_enabled | default(true) | bool
+        - ai_aggregator_local_cpas | length > 0
+
+    - name: Render New API systemd service unit
+      ansible.builtin.template:
+        src: new-api.service.j2
+        dest: /etc/systemd/system/new-api.service
+        owner: root
+        group: root
+        mode: '0644'
+      when: ai_aggregator_new_api_enabled | default(true) | bool
+
+    - name: Check K3s server auto-manifests directory
+      ansible.builtin.stat:
+        path: "{{ ai_aggregator_k3s_manifests_dir | default('/var/lib/rancher/k3s/server/manifests') }}"
+      register: ai_aggregator_k3s_manifests_stat
+
+    - name: Deploy Ingress and Service to K3s cluster manifests
+      ansible.builtin.template:
+        src: ai-aggregator-ingress.yaml.j2
+        dest: "{{ ai_aggregator_k3s_manifests_dir | default('/var/lib/rancher/k3s/server/manifests') }}/ai-aggregator-ingress.yaml"
+        owner: root
+        group: root
+        mode: '0644'
+      when: ai_aggregator_k3s_manifests_stat.stat.exists
+
+- name: Activate CPA instances
+  when:
+    - ai_aggregator_operation == 'activate'
+    - ai_aggregator_cpa_enabled | default(true) | bool
+    - ai_aggregator_local_cpas | length > 0
+  tags: [activate_cpa]
+  block:
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Activate CPA instances
+      ansible.builtin.include_tasks: activate-cpa.yml
+
+- name: Activate New API and Ingress services
+  when:
+    - ai_aggregator_operation == 'activate'
+    - ai_aggregator_new_api_enabled | default(true) | bool
+  tags: [activate_gateway]
+  block:
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Start and enable New API service
+      ansible.builtin.systemd:
+        name: new-api.service
+        enabled: true
+        state: started
+
+    - name: Wait for New API to become healthy on port {{ ai_aggregator_spec.new_api.port | default(3000) }}
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ ai_aggregator_spec.new_api.port | default(3000) }}/api/status"
+        status_code: [200, 404]
+        return_content: false
+      register: ai_aggregator_new_api_health
+      until: ai_aggregator_new_api_health.status in [200, 404]
+      retries: 10
+      delay: 2
+
+    - name: Verify K3s Ingress and Services are deployed
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/k3s
+          - kubectl
+          - get
+          - ingress,ingressroute,svc,endpoints
+          - -n
+          - "{{ ai_aggregator_k8s_namespace | default('ingress-sit') }}"
+          - -l
+          - app.kubernetes.io/part-of=ai-aggregator
+      register: ai_aggregator_k8s_verify
+      changed_when: false
+
+    - name: Display K3s Ingress and Service status
+      ansible.builtin.debug:
+        var: ai_aggregator_k8s_verify.stdout_lines

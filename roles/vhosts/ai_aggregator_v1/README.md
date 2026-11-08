@@ -87,3 +87,14 @@ This mode changes the Caddy route only. `stage` writes `ai-aggregator.caddy.cand
 Use a New API user token for `/v1/models` and a minimum inference request, then confirm the same user's usage record in New API. OpenAI uses Bearer authentication; Anthropic's `x-api-key` and the legacy `apikey` header are normalized by the gateway. Missing/invalid tokens must be rejected. Never store user tokens or OAuth bundles in Git, unit files, CI output or artifacts.
 
 An unauthenticated 401 proves the rejection path only. APISIX/Kong cutover requires an authorized request and a rollback check on the target host.
+
+## Associated Playbooks & Cross-References
+
+| Component | Path / Reference | Description |
+| --- | --- | --- |
+| Entry Playbook | [`deploy_ai_aggregator_v1.yml`](../../deploy_ai_aggregator_v1.yml) | Top-level entrypoint for stage, activate, and ingress routing |
+| Base Desktop Role | [`roles/vhosts/ai_desktop`](../ai_desktop/README.md) | Minimal desktop & WebRTC runtime for CPA nodes |
+| Monitoring & Observability | [`docs/ai-aggregator-observability.md`](../../docs/ai-aggregator-observability.md) | Metrics, Vector scrape, Blackbox probes & Grafana dashboard |
+| GitOps Topology Contract | `topology/<env>/selfhost/ai-aggregator.yaml` | Declarative topology specification |
+| Whitepaper & Specs | [AI Gateway 统一入口设计与任务](file:///Users/shenlan/workspaces/isolated/referral-2026-knowledge/content/04-infra-platform/apisix/ai-gateway-unified-entrypoint.zh.md)<br>[CPA 人工 OAuth TLDR](file:///Users/shenlan/workspaces/isolated/referral-2026-knowledge/content/04-infra-platform/apisix/ai-aggregator-cpa-oauth-tldr.zh.md)<br>[AI Aggregator v1 架构与实施交付契约](file:///Users/shenlan/workspaces/isolated/referral-2026-knowledge/content/02-iac-devops/ansible/ai-aggregator-v1-architecture-and-delivery.zh.md) | Historical & current architectural baselines |
+

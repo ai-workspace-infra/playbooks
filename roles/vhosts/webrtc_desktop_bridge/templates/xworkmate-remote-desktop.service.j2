@@ -1,0 +1,25 @@
+[Unit]
+Description=XWorkmate WebRTC Remote Desktop Server
+After=network.target xrdp.service
+
+[Service]
+Type=simple
+User={{ webrtc_desktop_bridge_user }}
+Group={{ webrtc_desktop_bridge_user }}
+Environment="XRD_LISTEN={{ webrtc_desktop_bridge_listen }}"
+{% if webrtc_desktop_bridge_display | length > 0 %}
+Environment="XRD_DISPLAY={{ webrtc_desktop_bridge_display }}"
+Environment="DISPLAY={{ webrtc_desktop_bridge_display }}"
+{% endif %}
+{% if webrtc_desktop_bridge_token_file | length > 0 %}
+Environment="XRD_TOKEN_FILE={{ webrtc_desktop_bridge_token_file }}"
+{% endif %}
+{% if webrtc_desktop_bridge_token | length > 0 %}
+Environment="XRD_TOKEN={{ webrtc_desktop_bridge_token }}"
+{% endif %}
+ExecStart={{ webrtc_desktop_bridge_binary_dest }}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

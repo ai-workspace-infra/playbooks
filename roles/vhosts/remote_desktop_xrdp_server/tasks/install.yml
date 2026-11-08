@@ -20,6 +20,16 @@
     - Restart xrdp
     - Restart xrdp sesman
 
+- name: Configure XRDP listen address and port
+  ansible.builtin.lineinfile:
+    path: /etc/xrdp/xrdp.ini
+    regexp: '^port='
+    line: "{{ ('port=tcp://' + (xfce_rdp_listen_address | string) + ':' + (xfce_rdp_port | string)) if (xfce_rdp_listen_address | string | length > 0) else ('port=' + (xfce_rdp_port | string)) }}"
+    state: present
+  become: true
+  notify:
+    - Restart xrdp
+
 - name: Check whether XRDP service units are available
   ansible.builtin.stat:
     path: "{{ item }}"
