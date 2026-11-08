@@ -45,3 +45,15 @@ capture/input runtime role without starting a second standalone desktop
 server; signaling remains the responsibility of xworkmate-bridge. The
 explicit `ai_desktop_webrtc_enabled` switch can also prepare those dependencies
 alongside XRDP.
+
+## Associated Roles & Playbooks
+
+| Component | Path / Reference | Description |
+| --- | --- | --- |
+| Entry Playbook | [`deploy_ai_desktop.yml`](../../deploy_ai_desktop.yml) | Deploys AI desktop & node monitoring on CPA nodes |
+| IceWM Role | [`roles/vhosts/icewm_desktop_minimal`](../icewm_desktop_minimal/README.md) | Ultra-lightweight IceWM (< 20MB RSS) with Chrome/Chromium |
+| WebRTC Bridge | [`roles/vhosts/webrtc_desktop_bridge`](../webrtc_desktop_bridge/README.md) | WebRTC remote desktop runtime dependencies |
+| XRDP Server | [`roles/vhosts/remote_desktop_xrdp_server`](../remote_desktop_xrdp_server/README.md) | XRDP server stack with local-only listening |
+| Upstream Aggregator | [`roles/vhosts/ai_aggregator_v1`](../ai_aggregator_v1/README.md) | AI Aggregator gateway consuming CPA instances |
+| Architecture Guide | [`docs/setup-ai-workspace-all-in-one.md`](../../docs/setup-ai-workspace-all-in-one.md) | Security networking and remote desktop isolation guide |
+

@@ -14,3 +14,10 @@ Set `icewm_desktop_browser: chromium` to stay entirely on distribution
 packages. The default `chrome` downloads the official amd64 Google Chrome
 package from `icewm_desktop_chrome_download_url`; pin it with
 `icewm_desktop_chrome_checksum` in production.
+
+## Associated References
+
+- Parent AI Desktop Role: [`roles/vhosts/ai_desktop`](../ai_desktop/README.md)
+- Remote Desktop Server: [`roles/vhosts/remote_desktop_xrdp_server`](../remote_desktop_xrdp_server/README.md)
+- WebRTC Bridge Runtime: [`roles/vhosts/webrtc_desktop_bridge`](../webrtc_desktop_bridge/README.md)
+

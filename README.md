@@ -299,6 +299,7 @@ Runbook：[`roles/vhosts/xworkmate_bridge_distributed_vpn/README.md`](roles/vhos
 | `docs_service` | docs.svc.plus |
 | `billing-service` | 计费服务（依赖 `DATABASE_URL`） |
 | `agent-proxy` | Agent Proxy（上游实现为 agent.svc.plus） |
+| `ai_aggregator_v1` | Personal AI Aggregator v1 聚合网关（Caddy/K3s Ingress、New API 控制面、LiteLLM 渠道、CPA 单账号 OAuth 矩阵） |
 | `xcontrol_server` / `docker/XControl` | XControl 控制端 |
 | `web_saas_host_config` | web-saas 宿主机配置，部署权交给 Doco-CD |
 | `nextjs` / `docker/neurapress` / `modern_it_history` | 站点类应用 |
@@ -324,6 +325,9 @@ Runbook：[`roles/vhosts/xworkmate_bridge_distributed_vpn/README.md`](roles/vhos
 | `azure_dev_desktop_lifecycle` / `gcp_dev_desktop_lifecycle` | Azure / GCP 上的实例生命周期 |
 | `cloud_vm_request_validate` | 申请参数校验（创建前置闸门） |
 | `cloud_vm_inventory_emit` | 创建后回写 Ansible 清单 |
+| `ai_desktop` | 极简 AI 桌面编排基础（支持 IceWM / XFCE、XRDP / WebRTC、单账号隔离） |
+| `icewm_desktop_minimal` | 超轻量 IceWM 桌面环境与 Chrome 浏览器（内存 < 20MB） |
+| `webrtc_desktop_bridge` | WebRTC 远程桌面视频流采集与信令桥接运行时 |
 | `xfce_desktop_minimal_runtime` / `gnome_xrdp_minimal` / `plasma_xrdp_minimal` | 最小化桌面运行时 |
 | `remote_desktop_xrdp_server` | XRDP 远程桌面服务端 |
 
@@ -360,6 +364,7 @@ Stripe 新环境套餐初始化：[`docs/tldr-stripe-billing-catalog.md`](docs/t
 | --- | --- |
 | `bootstrap_cloud_dev_desktop.yml` | 单入口完成 create → bootstrap → verify |
 | `destroy_cloud_dev_desktop.yml` | 销毁桌面基础设施 |
+| `deploy_ai_desktop.yml` | 极简 AI 桌面（IceWM / XFCE + XRDP / WebRTC，供 CPA/CodeAgent 调试） |
 | `gnome_xrdp_minimal.yaml` / `plasma_xrdp_minimal.yaml` / `setup-xfce-xrdp.yaml` | 最小桌面 + XRDP |
 
 控制面仓库通过 `../playbooks` 相对路径调用上述入口。
@@ -490,10 +495,12 @@ ansible-playbook -i inventory/terraform_cmdb.py deploy_console_svc_plus.yml \
 `migrate` 走 extract → load 两阶段；`dynamic_inventory.yml` 用于在运行期动态加入迁移主机。
 另有 `setup-macos-migration-google-drive-sync.yml`（Obsidian Vault → Google Drive）。
 
-### AI Workspace
+### AI Workspace 与 AI 聚合网关
 
 | Playbook | 场景 |
 | --- | --- |
+| `deploy_ai_aggregator_v1.yml` | Personal AI Aggregator v1 声明式聚合网关交付（Caddy/K3s Ingress、New API 控制面、LiteLLM 渠道、CPA 实例矩阵；[文档](docs/ai-aggregator-observability.md) 与 [Role 说明](roles/vhosts/ai_aggregator_v1/README.md)） |
+| `deploy_ai_desktop.yml` | 极简 AI 桌面与基础监控部署（[Role 说明](roles/vhosts/ai_desktop/README.md)） |
 | `setup-ai-workspace-all-in-one.yml` | 一体化部署（[文档](docs/setup-ai-workspace-all-in-one.md)） |
 | `setup-ai-workspace-preflight.yml` | 运行模式校验（前置闸门） |
 | `setup-ai-workspace-runtime.yml` / `setup-ai-workspace-rootless.yml` | 运行时 / rootless 模式 |
@@ -502,7 +509,7 @@ ansible-playbook -i inventory/terraform_cmdb.py deploy_console_svc_plus.yml \
 | `deploy_QMD.yml` / `deploy_x_memory_hub.yml` | 扩展记忆组件 |
 | `setup-xworkspace-console.yaml` / `xworkspace_console_macos.yml` | XWorkspace 控制台（含 macOS launchd plist） |
 
-参考：[`docs/ai-workspace-runtime-delivery-plan.md`](docs/ai-workspace-runtime-delivery-plan.md)
+参考：[`docs/ai-workspace-runtime-delivery-plan.md`](docs/ai-workspace-runtime-delivery-plan.md)、[`docs/ai-aggregator-observability.md`](docs/ai-aggregator-observability.md)、[`docs/setup-ai-workspace-all-in-one.md`](docs/setup-ai-workspace-all-in-one.md)
 
 ### 平台组件与其他
 
