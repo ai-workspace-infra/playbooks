@@ -42,10 +42,17 @@ spec:
   ingressClassName: {{ ai_aggregator_ingress_class | default('traefik-ingress') }}
   tls:
     - hosts:
-        - {{ ai_aggregator_spec.entrypoint.domain | default('ai.sit.onwalk.net') }}
-      secretName: {{ ai_aggregator_tls_secret | default('console-tls') }}
+        - {{ ai_aggregator_spec.entrypoint.domain | default('ai.svc.plus') }}
+      secretName: {{ ai_aggregator_spec.entrypoint.tls_secret | default('shared-observability-tls' if 'svc.plus' in (ai_aggregator_spec.entrypoint.domain | default('ai.svc.plus')) else 'console-tls') }}
+{% if ai_aggregator_spec.entrypoint.alias_domains is defined %}
+{% for alias in ai_aggregator_spec.entrypoint.alias_domains %}
+    - hosts:
+        - {{ alias }}
+      secretName: {{ 'shared-observability-tls' if 'svc.plus' in alias else 'console-tls' }}
+{% endfor %}
+{% endif %}
   rules:
-    - host: {{ ai_aggregator_spec.entrypoint.domain | default('ai.sit.onwalk.net') }}
+    - host: {{ ai_aggregator_spec.entrypoint.domain | default('ai.svc.plus') }}
       http:
         paths:
           - path: /
@@ -55,6 +62,20 @@ spec:
                 name: ai-aggregator-new-api
                 port:
                   number: {{ ai_aggregator_spec.new_api.port | default(3000) }}
+{% if ai_aggregator_spec.entrypoint.alias_domains is defined %}
+{% for alias in ai_aggregator_spec.entrypoint.alias_domains %}
+    - host: {{ alias }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-aggregator-new-api
+                port:
+                  number: {{ ai_aggregator_spec.new_api.port | default(3000) }}
+{% endfor %}
+{% endif %}
 ---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
@@ -69,10 +90,35 @@ spec:
     - web
     - websecure
   routes:
-    - match: Host(`{{ ai_aggregator_spec.entrypoint.domain | default('ai.sit.onwalk.net') }}`)
+    - match: Host(`{{ ai_aggregator_spec.entrypoint.domain | default('ai.svc.plus') }}`)
       kind: Rule
       services:
         - name: ai-aggregator-new-api
           port: {{ ai_aggregator_spec.new_api.port | default(3000) }}
   tls:
-    secretName: {{ ai_aggregator_tls_secret | default('console-tls') }}
+    secretName: {{ ai_aggregator_spec.entrypoint.tls_secret | default('shared-observability-tls' if 'svc.plus' in (ai_aggregator_spec.entrypoint.domain | default('ai.svc.plus')) else 'console-tls') }}
+{% if ai_aggregator_spec.entrypoint.alias_domains is defined %}
+{% for alias in ai_aggregator_spec.entrypoint.alias_domains %}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ai-aggregator-alias-{{ loop.index }}-routes
+  namespace: {{ ai_aggregator_k8s_namespace | default('ingress-sit') }}
+  labels:
+    app.kubernetes.io/name: ai-aggregator-routes
+    app.kubernetes.io/part-of: ai-aggregator
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`{{ alias }}`)
+      kind: Rule
+      services:
+        - name: ai-aggregator-new-api
+          port: {{ ai_aggregator_spec.new_api.port | default(3000) }}
+  tls:
+    secretName: {{ 'shared-observability-tls' if 'svc.plus' in alias else 'console-tls' }}
+{% endfor %}
+{% endif %}

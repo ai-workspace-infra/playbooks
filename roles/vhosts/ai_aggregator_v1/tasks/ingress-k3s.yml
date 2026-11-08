@@ -19,7 +19,8 @@
     msg:
       ingress: "Reusing cluster Caddy / K3s Ingress (ingressClassName: {{ ai_aggregator_ingress_class | default('traefik-ingress') }}) in namespace {{ ai_aggregator_k8s_namespace | default('ingress-sit') }}"
       domain: "{{ ai_aggregator_spec.entrypoint.domain }}"
-      tls_secret: "{{ ai_aggregator_tls_secret | default('console-tls') }}"
+      alias_domains: "{{ ai_aggregator_spec.entrypoint.alias_domains | default([]) }}"
+      tls_secret: "{{ ai_aggregator_spec.entrypoint.tls_secret | default('shared-observability-tls' if 'svc.plus' in ai_aggregator_spec.entrypoint.domain else 'console-tls') }}"
       core_services:
         new_api: "enabled (port {{ ai_aggregator_spec.new_api.port | default(3000) }})"
         cpa: "enabled ({{ ai_aggregator_local_cpas | length }} instances)"
