@@ -78,6 +78,79 @@
     - ai_desktop_addon_enabled | bool
     - ai_desktop_addon_grok_enabled | bool
 
+# Official immutable artifact; no remote installer or interactive login.
+- name: Validate Antigravity artifact for host architecture
+  ansible.builtin.assert:
+    that:
+      - ansible_architecture in ai_desktop_addon_agy_artifacts
+      - ai_desktop_addon_agy_version | length > 0
+    fail_msg: "No pinned Antigravity CLI artifact is configured for {{ ansible_architecture }}."
+  when:
+    - ai_desktop_addon_enabled | bool
+    - ai_desktop_addon_agy_enabled | bool
+
+- name: Create Antigravity artifact cache
+  ansible.builtin.file:
+    path: "/var/cache/ai-desktop-addon/agy/{{ ai_desktop_addon_agy_version }}-{{ ansible_architecture }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when:
+    - ai_desktop_addon_enabled | bool
+    - ai_desktop_addon_agy_enabled | bool
+
+- name: Download and verify pinned Antigravity archive
+  ansible.builtin.get_url:
+    url: "{{ ai_desktop_addon_agy_artifacts[ansible_architecture].url }}"
+    checksum: "sha512:{{ ai_desktop_addon_agy_artifacts[ansible_architecture].sha512 }}"
+    dest: "/var/cache/ai-desktop-addon/agy/{{ ai_desktop_addon_agy_version }}-{{ ansible_architecture }}/cli.tar.gz"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when:
+    - ai_desktop_addon_enabled | bool
+    - ai_desktop_addon_agy_enabled | bool
+
+- name: Extract Antigravity CLI
+  ansible.builtin.unarchive:
+    src: "/var/cache/ai-desktop-addon/agy/{{ ai_desktop_addon_agy_version }}-{{ ansible_architecture }}/cli.tar.gz"
+    dest: "/var/cache/ai-desktop-addon/agy/{{ ai_desktop_addon_agy_version }}-{{ ansible_architecture }}"
+    remote_src: true
+    include: [antigravity]
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when:
+    - ai_desktop_addon_enabled | bool
+    - ai_desktop_addon_agy_enabled | bool
+
+- name: Install Antigravity CLI
+  ansible.builtin.copy:
+    src: "/var/cache/ai-desktop-addon/agy/{{ ai_desktop_addon_agy_version }}-{{ ansible_architecture }}/antigravity"
+    dest: "{{ ai_desktop_addon_agy_bin_path }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when:
+    - ai_desktop_addon_enabled | bool
+    - ai_desktop_addon_agy_enabled | bool
+
+- name: Verify Antigravity CLI version
+  ansible.builtin.command:
+    argv: ["{{ ai_desktop_addon_agy_bin_path }}", "--version"]
+  register: ai_desktop_addon_agy_check
+  changed_when: false
+  failed_when: ai_desktop_addon_agy_check.rc != 0 or ai_desktop_addon_agy_version not in ai_desktop_addon_agy_check.stdout
+  when:
+    - ai_desktop_addon_enabled | bool
+    - ai_desktop_addon_agy_enabled | bool
+
 # 5. 网络与凭据工具：HashiCorp Vault CLI
 - name: Check if Vault binary exists
   ansible.builtin.command:
