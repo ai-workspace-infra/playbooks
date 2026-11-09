@@ -1,0 +1,11 @@
+---
+- name: Check whether the declared previous Xray service account remains
+  ansible.builtin.command:
+    argv: [getent, passwd, "{{ xray_legacy_service_user }}"]
+  register: xray_legacy_account_lookup
+  changed_when: false
+  failed_when: xray_legacy_account_lookup.rc not in [0, 2]
+
+- name: Retire the previous Xray account when it is still present
+  ansible.builtin.include_tasks: retire_legacy_xray_account_present.yml
+  when: xray_legacy_account_lookup.rc == 0

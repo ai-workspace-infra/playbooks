@@ -155,7 +155,51 @@
     tky_proxy_disable_legacy_xconnect_gateway: >-
       {{ lookup('ansible.builtin.env', 'TKY_PROXY_DISABLE_LEGACY_GATEWAY')
          | default(true, true) | bool }}
+    xconnect_gitops_config: "{{ lookup('ansible.builtin.env', 'XCONNECT_GITOPS_CONFIG') | default('', true) }}"
   pre_tasks:
+
+    - name: Load explicitly supplied local GitOps topology
+      ansible.builtin.set_fact:
+        xconnect_local_topology: "{{ lookup('ansible.builtin.file', xconnect_gitops_config) | from_yaml }}"
+      when:
+        - agent_proxy_local_installer | default(false) | bool
+        - xconnect_gitops_config | length > 0
+
+    - name: Resolve the local installer node identity from GitOps topology
+      ansible.builtin.set_fact:
+        xconnect_local_node_matches: >-
+          {{ xconnect_local_topology.spec.pools
+             | selectattr('entrypoint.fqdn', 'equalto', agent_proxy_primary_domains[0])
+             | map(attribute='nodes') | flatten
+             | selectattr('id', 'equalto', agent_id) | list }}
+      when:
+        - agent_proxy_local_installer | default(false) | bool
+        - xconnect_gitops_config | length > 0
+
+    - name: Require an enabled local installer node and declared Xray identity
+      ansible.builtin.assert:
+        that:
+          - xconnect_local_topology.metadata.environment == 'prod'
+          - xconnect_local_node_matches | length == 1
+          - xconnect_local_node_matches[0].enabled | bool
+          - xconnect_local_node_matches[0].service_identities.xray_xhttp.user | length > 0
+          - xconnect_local_node_matches[0].service_identities.xray_xhttp.group | length > 0
+          - xconnect_local_node_matches[0].service_identities.xray_xhttp.account_managed is boolean
+          - xconnect_local_node_matches[0].service_identities.xray_xhttp.previous_user | default('') | length == 0 or xconnect_local_node_matches[0].service_identities.xray_xhttp.previous_user | default('') != xconnect_local_node_matches[0].service_identities.xray_xhttp.user
+        fail_msg: "The local GitOps topology must uniquely declare this enabled node and its Xray identity."
+      when:
+        - agent_proxy_local_installer | default(false) | bool
+        - xconnect_gitops_config | length > 0
+
+    - name: Apply the local GitOps Xray service identity
+      ansible.builtin.set_fact:
+        xray_xhttp_service_user: "{{ xconnect_local_node_matches[0].service_identities.xray_xhttp.user }}"
+        xray_xhttp_service_group: "{{ xconnect_local_node_matches[0].service_identities.xray_xhttp.group }}"
+        xray_xhttp_service_account_managed: "{{ xconnect_local_node_matches[0].service_identities.xray_xhttp.account_managed | bool }}"
+        xray_legacy_service_user: "{{ xconnect_local_node_matches[0].service_identities.xray_xhttp.previous_user | default('') }}"
+      when:
+        - agent_proxy_local_installer | default(false) | bool
+        - xconnect_gitops_config | length > 0
 
     - name: Validate requested installer operation before role execution
       ansible.builtin.assert:

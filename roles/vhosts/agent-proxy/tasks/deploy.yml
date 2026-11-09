@@ -295,7 +295,9 @@
   ansible.builtin.group:
     name: "{{ xray_xhttp_service_group }}"
     system: true
-  when: xray_enabled | bool
+  when:
+    - xray_enabled | bool
+    - xray_xhttp_service_account_managed | bool
 
 - name: Create dedicated XHTTP Xray system account
   ansible.builtin.user:
@@ -305,7 +307,9 @@
     create_home: false
     shell: "/usr/sbin/nologin"
   notify: Restart Xray services
-  when: xray_enabled | bool
+  when:
+    - xray_enabled | bool
+    - xray_xhttp_service_account_managed | bool
 
 - name: Grant XHTTP Xray service access to the shared log group
   ansible.builtin.user:
@@ -315,6 +319,22 @@
     append: true
   notify: Restart Xray services
   when: xray_enabled | bool
+
+- name: Require existing unmanaged XHTTP service account
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ xray_xhttp_service_user }}"
+  when:
+    - xray_enabled | bool
+    - not (xray_xhttp_service_account_managed | bool)
+
+- name: Require existing unmanaged XHTTP service group
+  ansible.builtin.getent:
+    database: group
+    key: "{{ xray_xhttp_service_group }}"
+  when:
+    - xray_enabled | bool
+    - not (xray_xhttp_service_account_managed | bool)
 
 - name: Grant TCP Xray service access to the shared log group
   ansible.builtin.user:
@@ -465,6 +485,14 @@
   when:
     - xray_enabled | bool
     - agent_proxy_wait_for_runtime_config | bool
+
+- name: Flush service handlers before retiring the legacy Xray account
+  ansible.builtin.meta: flush_handlers
+  when: xray_legacy_service_user | length > 0
+
+- name: Retire the legacy Xray service account after successful cutover
+  ansible.builtin.import_tasks: retire_legacy_xray_account.yml
+  when: xray_legacy_service_user | length > 0
 
 - name: Apply installer network baseline
   ansible.builtin.import_tasks: network_baseline.yml

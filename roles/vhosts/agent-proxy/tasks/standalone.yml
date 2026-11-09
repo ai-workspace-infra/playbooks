@@ -142,6 +142,7 @@
   loop:
     - { name: "{{ xray_xhttp_service_user }}", group: "{{ xray_xhttp_service_group }}" }
     - { name: "{{ xray_tcp_service_user }}", group: "{{ xray_tcp_service_user }}" }
+  when: xray_xhttp_service_account_managed | bool or item.name == xray_tcp_service_user
 
 - name: Ensure Xray access log is writable by standalone services
   ansible.builtin.file:
@@ -201,6 +202,14 @@
   loop:
     - xray.service
     - xray-tcp.service
+
+- name: Flush service handlers before retiring the legacy Xray account
+  ansible.builtin.meta: flush_handlers
+  when: xray_legacy_service_user | length > 0
+
+- name: Retire the legacy Xray service account after successful cutover
+  ansible.builtin.import_tasks: retire_legacy_xray_account.yml
+  when: xray_legacy_service_user | length > 0
 
 - name: Print standalone import links
   ansible.builtin.debug:

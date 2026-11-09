@@ -23,6 +23,8 @@ this role contains its host changes.
 - `agent_allowed_emails`: normalized list for the managed local-installer path; an empty list remains empty.
 - `vault_agent_tls_enabled`, `vault_agent_tls_secret_path`, `VAULT_ADDR`, and `VAULT_TOKEN`: optional Vault TLS delivery inputs. Secrets remain in Ansible memory or the protected Vault Agent token file.
 - `xray_version` and `xray_release_sha256`: checksum-pinned Xray release inputs from role defaults.
+- `xray_xhttp_service_user`, `xray_xhttp_service_group`, and `xray_xhttp_service_account_managed`: select the XHTTP service identity and effective group; an existing operator account can be used without changing its login shell, primary group, or home. The role adds only the `xray-access` supplemental group.
+- `xray_legacy_service_user`: optional account to retire after the Xray unit has restarted successfully under the replacement identity. The role requires no remaining old-user processes or files outside its home, archives the home under `/var/backups/xray-service-account`, then removes the account and home.
 
 ## Preconditions and evidence
 
@@ -37,6 +39,11 @@ The role validates Xray configuration before starting Xray, registers managed
 Agent status with Accounts, and relies on Ansible task results plus systemd
 state for service evidence. Re-running an operation converges the same
 configuration; `upgrade` does not render or overwrite configuration files.
+The local installer may pass `XCONNECT_GITOPS_CONFIG`; when supplied, the
+entry playbook resolves the single enabled node by entrypoint and node ID and
+applies its declared Xray service identity and optional `previous_user`
+migration. Without this explicit input, the existing defaults remain in
+effect.
 
 ## Example
 
@@ -54,6 +61,8 @@ ansible-playbook deploy_xray_proxy_server.yml \
 
 Re-run `deploy` with the previous verified Agent artifact and the previous
 Playbooks commit. The operation does not delete Xray configuration or
-credentials. For `standalone`, switch to a reviewed managed deployment before
-enabling Accounts registration; DNS changes remain owned by IaC and are not
-performed by this role.
+credentials. When `xray_legacy_service_user` is declared, its home is archived
+under `/var/backups/xray-service-account` before account removal; restore that
+archive and the prior unit identity as part of a rollback. For `standalone`,
+switch to a reviewed managed deployment before enabling Accounts registration;
+DNS changes remain owned by IaC and are not performed by this role.
