@@ -60,13 +60,23 @@
 - name: Install global npm packages for AI Desktop
   ansible.builtin.command:
     cmd: "npm install -g {{ item }}"
-  loop: "{{ ai_desktop_addon_npm_packages }}"
+  loop: "{{ ai_desktop_addon_npm_packages + ([ai_desktop_addon_grok_npm_package ~ '@' ~ ai_desktop_addon_grok_version] if (ai_desktop_addon_grok_enabled | bool) else []) }}"
   register: ai_desktop_addon_npm_install
   changed_when: "'added' in ai_desktop_addon_npm_install.stdout or 'updated' in ai_desktop_addon_npm_install.stdout"
   become: true
   when:
     - ai_desktop_addon_enabled | bool
-    - ai_desktop_addon_npm_packages | length > 0
+    - (ai_desktop_addon_npm_packages | length > 0) or (ai_desktop_addon_grok_enabled | bool)
+
+- name: Verify Grok CLI is runnable
+  ansible.builtin.command:
+    cmd: grok --version
+  register: ai_desktop_addon_grok_check
+  changed_when: false
+  become: true
+  when:
+    - ai_desktop_addon_enabled | bool
+    - ai_desktop_addon_grok_enabled | bool
 
 # 5. 网络与凭据工具：HashiCorp Vault CLI
 - name: Check if Vault binary exists

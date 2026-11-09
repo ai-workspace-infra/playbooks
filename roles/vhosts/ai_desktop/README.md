@@ -46,12 +46,23 @@ server; signaling remains the responsibility of xworkmate-bridge. The
 explicit `ai_desktop_webrtc_enabled` switch can also prepare those dependencies
 alongside XRDP.
 
+## Agent CLIs
+
+With `ai_desktop_desktop_type: icewm`, the IceWM role depends on
+[`ai_desktop_addon`](../ai_desktop_addon/README.md), which installs the Agent
+CLIs (`claude`, `codex`, `gemini`, `opencode`, `grok`), Node.js, the `vault`
+CLI and the per-account CPA `auth/` directories (`0700`). The default `xfce`
+desktop does not pull it in; include the role explicitly when needed. It still
+never writes credentials: account OAuth login is done by an operator inside the
+desktop or an SSH session.
+
 ## Associated Roles & Playbooks
 
 | Component | Path / Reference | Description |
 | --- | --- | --- |
 | Entry Playbook | [`deploy_ai_desktop.yml`](../../deploy_ai_desktop.yml) | Deploys AI desktop & node monitoring on CPA nodes |
 | IceWM Role | [`roles/vhosts/icewm_desktop_minimal`](../icewm_desktop_minimal/README.md) | Ultra-lightweight IceWM (< 20MB RSS) with Chrome/Chromium |
+| AI Desktop Addon | [`roles/vhosts/ai_desktop_addon`](../ai_desktop_addon/README.md) | Agent CLIs (claude, codex, gemini, opencode, grok), Node.js, vault CLI and CPA auth directory baseline; pulled in by the IceWM role |
 | WebRTC Bridge | [`roles/vhosts/webrtc_desktop_bridge`](../webrtc_desktop_bridge/README.md) | WebRTC remote desktop runtime dependencies |
 | XRDP Server | [`roles/vhosts/remote_desktop_xrdp_server`](../remote_desktop_xrdp_server/README.md) | XRDP server stack with local-only listening |
 | Upstream Aggregator | [`roles/vhosts/ai_aggregator_v1`](../ai_aggregator_v1/README.md) | AI Aggregator gateway consuming CPA instances |
