@@ -37,7 +37,7 @@
 
 ### Antigravity（`agy`）
 
-安装 Google 官方 Antigravity CLI 1.5.3，按 CPU 架构从官方发布存储下载并校验固定 SHA-512，再安装至 `/usr/local/bin/agy`。上游入口：[官方安装文档](https://antigravity.google/docs/getting-started?tab=cli)。`ai_desktop_addon_agy_enabled: false` 可跳过；升级必须同时核验并更新版本、两个制品 URL 和摘要。系统路径由 root 持有，用户登录和自动更新不由本 role 执行；跳过安装不会卸载已有二进制。回退时重新部署先前经验证的版本或恢复先前二进制。
+安装 Google 官方 Antigravity CLI 1.5.3，按 CPU 架构从官方发布存储下载并校验固定 SHA-512，再安装至 `/usr/local/bin/agy`。上游入口：[官方安装文档](https://antigravity.google/docs/getting-started?tab=cli)。`ai_desktop_addon_agy_enabled: false` 可跳过；升级必须同时核验并更新版本、两个制品 URL 和摘要。各安装任务带 `agy` 标签，可用于单独执行（入口必须显式包含该 role）；系统路径由 root 持有，用户登录和自动更新不由本 role 执行；跳过安装不会卸载已有二进制。回退时重新部署先前经验证的版本或恢复先前二进制。
 
 ## CPA 账号矩阵与登录
 
