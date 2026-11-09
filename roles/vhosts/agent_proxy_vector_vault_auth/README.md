@@ -13,8 +13,8 @@ client certificate and grant only the configured KV path and token lifecycle
 permissions. The endpoint must preserve or securely forward the validated
 client certificate through any TLS-terminating reverse proxy.
 
-The observability data path and the Caddy TLS data path are read-only runtime
-inputs. `AGENT_PROXY_CERT_VAULT_PATH` is a separate per-node KV v2 API data
+Pass the monitoring and Caddy TLS paths from the reviewed GitOps declarations.
+Both are read-only runtime inputs and must be distinct. `AGENT_PROXY_CERT_VAULT_PATH` is a separate per-node KV v2 API data
 path used only by the bootstrap token to write the client identity; for example
 `kv/data/CICD/agent-proxy/<node>/client-identity`. It must differ from both
 read paths. The runtime certificate role is not granted write access to it.

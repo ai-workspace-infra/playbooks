@@ -7,6 +7,7 @@
       - "'..' not in agent_proxy_vector_vault_auth_kv_path.split('/')"
       - agent_proxy_vector_vault_auth_tls_kv_path is match('^kv/data/[^/]+/.+')
       - "'..' not in agent_proxy_vector_vault_auth_tls_kv_path.split('/')"
+      - agent_proxy_vector_vault_auth_kv_path != agent_proxy_vector_vault_auth_tls_kv_path
       - agent_proxy_vector_vault_auth_cert_kv_path is match('^kv/data/[^/]+/.+')
       - "'..' not in agent_proxy_vector_vault_auth_cert_kv_path.split('/')"
       - agent_proxy_vector_vault_auth_cert_kv_path != agent_proxy_vector_vault_auth_tls_kv_path
@@ -19,7 +20,7 @@
       - agent_proxy_vector_vault_auth_sha256_arm64 is match('^[0-9a-fA-F]{64}$')
       - vector_group is defined
     fail_msg: >-
-      Configure the Vault HTTPS address, exact KV v2 data path, pinned Vault
+      Configure the Vault HTTPS address, separate monitoring and TLS KV v2 paths, pinned Vault
       Agent checksums, certificate identity, and Vector group. The certificate
       and private key must be provisioned by the identity owner.
 
