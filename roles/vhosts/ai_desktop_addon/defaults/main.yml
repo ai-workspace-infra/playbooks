@@ -1,0 +1,64 @@
+---
+ai_desktop_addon_enabled: true
+
+# 浏览器规范：保留 /usr/bin/google-chrome-stable，彻底移除已禁用的 /usr/local/bin/chromium 包装脚本
+ai_desktop_addon_enforce_chrome: true
+ai_desktop_addon_remove_chromium_wrapper: true
+ai_desktop_addon_chromium_wrapper_path: /usr/local/bin/chromium
+ai_desktop_addon_chrome_path: /usr/bin/google-chrome-stable
+
+# 系统基础与工具依赖
+ai_desktop_addon_system_packages:
+  - python3
+  - python3-pip
+  - python3-venv
+  - xdotool
+  - xclip
+  - curl
+  - jq
+  - unzip
+  - git
+  - ca-certificates
+
+# 核心运行时：Node.js LTS (用于驱动 npm 全局 CLI)
+ai_desktop_addon_nodejs_enabled: true
+ai_desktop_addon_nodejs_major_version: 22
+
+# Agent CLI 与 CodeAgent 工具 (npm 全局包)
+ai_desktop_addon_npm_packages:
+  - "@anthropic-ai/claude-code"
+  - "@openai/codex"
+  - "@google/gemini-cli"
+  - opencode-ai
+
+# Vault CLI 安装控制
+ai_desktop_addon_install_vault_cli: true
+ai_desktop_addon_vault_version: "1.18.2"
+
+# Antigravity (agy) CLI 路径与配置 (若存在本地打包制品或二进制，预留部署路径)
+ai_desktop_addon_agy_enabled: true
+ai_desktop_addon_agy_bin_path: /usr/local/bin/agy
+
+# Grok CLI (当前上游尚未提供官方受信任 npm 发布包，作为契约插槽保留，待官方制品审核锁定)
+ai_desktop_addon_grok_enabled: false
+
+# CPA 隔离目录规范矩阵（验证与确保所有 CPA 账号的本地 auth 目录存在并具备 0700 最小权限）
+ai_desktop_addon_cpa_root: /var/lib/ai-aggregator/cpa
+ai_desktop_addon_cpa_group: ai-aggregator
+ai_desktop_addon_cpa_matrix:
+  - id: cpa-claude-01
+    user: ai-cpa-cpa-claude-01
+    provider: anthropic
+    cli: claude
+  - id: cpa-codex-01
+    user: ai-cpa-cpa-codex-01
+    provider: openai
+    cli: codex
+  - id: cpa-antigravity-01
+    user: ai-cpa-cpa-antigravity-01
+    provider: google
+    cli: antigravity
+  - id: cpa-grok-01
+    user: ai-cpa-cpa-grok-01
+    provider: xai
+    cli: grok
