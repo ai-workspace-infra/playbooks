@@ -164,6 +164,33 @@ spec:
 {% endif %}
 ---
 apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-https
+  namespace: {{ ai_aggregator_k8s_namespace | default('ingress-sit') }}
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ai-aggregator-http-redirect
+  namespace: {{ ai_aggregator_k8s_namespace | default('ingress-sit') }}
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`{{ ai_aggregator_spec.entrypoint.domain | default('ai.svc.plus') }}`){% if ai_aggregator_spec.entrypoint.alias_domains is defined %}{% for alias in ai_aggregator_spec.entrypoint.alias_domains %} || Host(`{{ alias }}`){% endfor %}{% endif %}{% if ai_aggregator_spec.desktop is defined and (ai_aggregator_spec.desktop.enabled | default(true) | bool) %} || Host(`{{ ai_aggregator_spec.desktop.domain | default('desktop.svc.plus') }}`){% if ai_aggregator_spec.desktop.alias_domains is defined %}{% for alias in ai_aggregator_spec.desktop.alias_domains %} || Host(`{{ alias }}`){% endfor %}{% endif %}{% endif %}
+      kind: Rule
+      middlewares:
+        - name: redirect-to-https
+      services:
+        - name: ai-aggregator-new-api
+          port: {{ ai_aggregator_spec.new_api.port | default(3000) }}
+---
+apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: ai-aggregator-routes
@@ -173,7 +200,6 @@ metadata:
     app.kubernetes.io/part-of: ai-aggregator
 spec:
   entryPoints:
-    - web
     - websecure
   routes:
     - match: Host(`{{ ai_aggregator_spec.entrypoint.domain | default('ai.svc.plus') }}`)
@@ -195,7 +221,6 @@ metadata:
     app.kubernetes.io/part-of: ai-aggregator
 spec:
   entryPoints:
-    - web
     - websecure
   routes:
     - match: Host(`{{ ai_aggregator_spec.entrypoint.api_domain }}`)
@@ -219,7 +244,6 @@ metadata:
     app.kubernetes.io/part-of: ai-aggregator
 spec:
   entryPoints:
-    - web
     - websecure
   routes:
     - match: Host(`{{ alias }}`)
@@ -243,7 +267,6 @@ metadata:
     app.kubernetes.io/part-of: ai-aggregator
 spec:
   entryPoints:
-    - web
     - websecure
   routes:
     - match: Host(`{{ ai_aggregator_spec.desktop.domain | default('desktop.svc.plus') }}`)
@@ -266,7 +289,6 @@ metadata:
     app.kubernetes.io/part-of: ai-aggregator
 spec:
   entryPoints:
-    - web
     - websecure
   routes:
     - match: Host(`{{ alias }}`)
