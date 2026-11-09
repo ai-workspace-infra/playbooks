@@ -50,12 +50,64 @@
 | `cpa-antigravity-01` | `ai-cpa-cpa-antigravity-01` | `antigravity` | `/var/lib/ai-aggregator/cpa/cpa-antigravity-01/auth` |
 | `cpa-grok-01` | `ai-cpa-cpa-grok-01` | `grok` | `/var/lib/ai-aggregator/cpa/cpa-grok-01/auth` |
 
-登录流程：
+## 4 个 CPA 账号登录向导（TL;DR）
 
-1. 通过 AI Desktop 桌面或 SSH 进入节点。
-2. 运行对应 CLI 的登录命令（如 `claude login`、`codex login`；`grok` 首次启动会唤起浏览器授权）。
-3. 在桌面内的 Chrome 完成授权，回调后的凭据位置及格式需按 CPA 的登录流程核验，不能假定普通 CLI 登录自动写入 CPA 目录。
-4. 服务器或 CI 场景可改用 `XAI_API_KEY` 等环境变量，但必须由 Vault 在运行时注入，不得写入 Git、inventory 或 systemd unit。
+> **先搞清楚一件事**：CPA 的凭据只来自 **CPA 自己的 OAuth 登录**
+> （`cliproxyapi --xxx-login`），写入 `config.yaml` 里的 `auth-dir`。
+> 原生 CLI（`claude login`、`codex login`、`grok`）的登录结果在各自的
+> `~/.claude`、`~/.codex` 等目录，**不会**进入 CPA 的 `auth/`，两者不通用。
+
+### 通用步骤
+
+1. SSH 到节点：`ssh root@<host>`。
+2. 以该实例的专属用户，用该实例的配置运行登录命令（配置里的 `auth-dir` 决定写到哪）：
+
+   ```bash
+   ID=cpa-codex-01   # 换成要登录的实例
+   runuser -u ai-cpa-$ID -- /opt/ai-aggregator/cliproxyapi/cliproxyapi \
+     --config /opt/ai-aggregator/cpa/$ID/config.yaml <LOGIN_FLAG> --no-browser
+   ```
+
+3. 终端会打印授权 URL。在 **AI Desktop 里的 Chrome**（桌面 `:1`）打开并授权：
+   回调地址是 `localhost`，浏览器和 CPA 在同一台机器上，所以能直接回调。
+4. 授权成功后确认出现凭据文件，并让实例重新加载：
+
+   ```bash
+   ls -l /var/lib/ai-aggregator/cpa/$ID/auth/
+   systemctl restart cliproxyapi-$ID     # 如果实例没有自动热加载
+   ```
+
+> 回调端口是固定的（Codex `1455`、Claude `54545`）。如果你在 **自己电脑的浏览器**
+> 里授权而不是桌面里，需要先转发端口：
+> `ssh -L 1455:127.0.0.1:1455 -L 54545:127.0.0.1:54545 root@<host>`。
+
+### 四个账号一览
+
+| 实例 | 登录参数（`<LOGIN_FLAG>`） | 回调端口 | 状态 |
+| :--- | :--- | :--- | :--- |
+| `cpa-codex-01` | `--codex-login` | `1455` | 参数来自上游文档，首次使用前先核对 |
+| `cpa-claude-01` | `--claude-login` | `54545` | 同上 |
+| `cpa-antigravity-01` | `--antigravity-login` | 以终端打印为准 | 同上 |
+| `cpa-grok-01` | **未确认** | - | 上游文档没有 `--grok-login`，见下 |
+
+核对参数是否存在（不要在生产实例上直接试，先看帮助）：
+
+```bash
+cd /tmp && timeout 8 /opt/ai-aggregator/cliproxyapi/cliproxyapi --help 2>&1 | grep -i login
+```
+
+### Grok 怎么办
+
+目前没有确认的 CPA Grok 登录方式。`grok`（`@xai-official/grok`）是独立的原生 CLI，
+可以用来在桌面里单独使用 xAI 账号（首次运行会打开浏览器），但它的登录结果不会写入
+`cpa-grok-01` 的 `auth/`。要让 CPA 代理 Grok，需要先确认该 CPA 版本支持的 Grok 接入方式，
+再补到这里。**不要猜测或手工拷贝凭据文件。**
+
+### 安全注意
+
+- 用实例专属用户运行，`auth/` 才会是 `0700` 且属主正确；用 root 运行可能写出 root 属主的文件，实例进程未必能读取。
+- 同一个账号只在一个节点登录；不要把 `auth/` 里的文件拷到别处、打包进 CI 或贴进日志。
+- 登录 URL 里带一次性参数，不要发到公开渠道。
 
 ## 变量
 
