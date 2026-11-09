@@ -5,8 +5,10 @@ uses `icewm-session` and provides the desktop plumbing, terminal, file
 manager, Google Chrome on amd64 (or Chromium when selected/fallback), and
 optional XRDP or WebRTC runtime access needed for setup and CLI debugging.
 
-It does not install XFCE, office software, Wine, video players, media suites,
-AI runtimes, or monitoring agents. The configuration is intentionally small:
+It does not itself install XFCE, office software, Wine, video players, media
+suites, or monitoring agents. AI Agent CLIs and runtimes come from its
+dependency role [`ai_desktop_addon`](../ai_desktop_addon/README.md) (declared in
+`meta/main.yml`), which runs before this role. The configuration is intentionally small:
 IceWM preferences, application menu, and key bindings are generated for the
 AI Desktop user instead of copying a complete desktop theme.
 
