@@ -37,8 +37,7 @@
 
 ### Antigravity（`agy`）
 
-目前**没有**安装任务。`ai_desktop_addon_agy_enabled` 和
-`ai_desktop_addon_agy_bin_path` 只是预留变量，待确定受信任的制品来源后再补。
+安装 Google 官方 Antigravity CLI 1.5.3，按 CPU 架构从官方发布存储下载并校验固定 SHA-512，再安装至 `/usr/local/bin/agy`。上游入口：[官方安装文档](https://antigravity.google/docs/getting-started?tab=cli)。`ai_desktop_addon_agy_enabled: false` 可跳过；升级必须同时核验并更新版本、两个制品 URL 和摘要。各安装任务带 `agy` 标签，可用于单独执行（入口必须显式包含该 role）；系统路径由 root 持有，用户登录和自动更新不由本 role 执行；跳过安装不会卸载已有二进制。回退时重新部署先前经验证的版本或恢复先前二进制。
 
 ## CPA 账号矩阵与登录
 
@@ -55,7 +54,7 @@
 
 1. 通过 AI Desktop 桌面或 SSH 进入节点。
 2. 运行对应 CLI 的登录命令（如 `claude login`、`codex login`；`grok` 首次启动会唤起浏览器授权）。
-3. 在桌面内的 Chrome 完成授权，回调后凭据写入该实例的 `auth/` 目录。
+3. 在桌面内的 Chrome 完成授权，回调后的凭据位置及格式需按 CPA 的登录流程核验，不能假定普通 CLI 登录自动写入 CPA 目录。
 4. 服务器或 CI 场景可改用 `XAI_API_KEY` 等环境变量，但必须由 Vault 在运行时注入，不得写入 Git、inventory 或 systemd unit。
 
 ## 变量
@@ -68,6 +67,9 @@
 | `ai_desktop_addon_nodejs_enabled` | `true` | 是否安装 Node.js |
 | `ai_desktop_addon_nodejs_major_version` | `22` | Node.js 主版本 |
 | `ai_desktop_addon_npm_packages` | claude-code、codex、gemini-cli、opencode-ai | 全局 npm 包 |
+| `ai_desktop_addon_agy_enabled` | `true` | 是否安装 Antigravity CLI |
+| `ai_desktop_addon_agy_version` | `1.5.3` | 固定制品版本 |
+| `ai_desktop_addon_agy_artifacts` | Linux amd64/arm64 | 固定 URL 和 SHA-512 |
 | `ai_desktop_addon_grok_enabled` | `true` | 是否安装 Grok CLI |
 | `ai_desktop_addon_grok_npm_package` | `@xai-official/grok` | Grok CLI 包名 |
 | `ai_desktop_addon_grok_version` | `1.0.77` | Grok CLI 固定版本 |
