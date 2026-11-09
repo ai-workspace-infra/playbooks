@@ -26,6 +26,37 @@ subsets:
     ports:
       - name: http
         port: {{ ai_aggregator_spec.new_api.port | default(3000) }}
+{% if ai_aggregator_spec.desktop is defined and (ai_aggregator_spec.desktop.enabled | default(true) | bool) %}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-desktop-remote-desktop
+  namespace: {{ ai_aggregator_k8s_namespace | default('ingress-sit') }}
+  labels:
+    app.kubernetes.io/name: remote-desktop
+    app.kubernetes.io/part-of: ai-aggregator
+spec:
+  ports:
+    - name: http
+      port: {{ ai_aggregator_spec.desktop.port | default(8090) }}
+      targetPort: {{ ai_aggregator_spec.desktop.port | default(8090) }}
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: ai-desktop-remote-desktop
+  namespace: {{ ai_aggregator_k8s_namespace | default('ingress-sit') }}
+  labels:
+    app.kubernetes.io/name: remote-desktop
+    app.kubernetes.io/part-of: ai-aggregator
+subsets:
+  - addresses:
+      - ip: {{ ansible_default_ipv4.address | default(ansible_host | default('172.237.9.58')) }}
+    ports:
+      - name: http
+        port: {{ ai_aggregator_spec.desktop.port | default(8090) }}
+{% endif %}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -44,12 +75,29 @@ spec:
     - hosts:
         - {{ ai_aggregator_spec.entrypoint.domain | default('ai.svc.plus') }}
       secretName: {{ ai_aggregator_spec.entrypoint.tls_secret | default('shared-observability-tls' if 'svc.plus' in (ai_aggregator_spec.entrypoint.domain | default('ai.svc.plus')) else 'console-tls') }}
+{% if ai_aggregator_spec.entrypoint.api_domain is defined %}
+    - hosts:
+        - {{ ai_aggregator_spec.entrypoint.api_domain }}
+      secretName: {{ 'shared-observability-tls' if 'svc.plus' in ai_aggregator_spec.entrypoint.api_domain else 'console-tls' }}
+{% endif %}
 {% if ai_aggregator_spec.entrypoint.alias_domains is defined %}
 {% for alias in ai_aggregator_spec.entrypoint.alias_domains %}
     - hosts:
         - {{ alias }}
       secretName: {{ 'shared-observability-tls' if 'svc.plus' in alias else 'console-tls' }}
 {% endfor %}
+{% endif %}
+{% if ai_aggregator_spec.desktop is defined and (ai_aggregator_spec.desktop.enabled | default(true) | bool) %}
+    - hosts:
+        - {{ ai_aggregator_spec.desktop.domain | default('desktop.svc.plus') }}
+      secretName: {{ 'shared-observability-tls' if 'svc.plus' in (ai_aggregator_spec.desktop.domain | default('desktop.svc.plus')) else 'console-tls' }}
+{% if ai_aggregator_spec.desktop.alias_domains is defined %}
+{% for alias in ai_aggregator_spec.desktop.alias_domains %}
+    - hosts:
+        - {{ alias }}
+      secretName: {{ 'shared-observability-tls' if 'svc.plus' in alias else 'console-tls' }}
+{% endfor %}
+{% endif %}
 {% endif %}
   rules:
     - host: {{ ai_aggregator_spec.entrypoint.domain | default('ai.svc.plus') }}
@@ -62,6 +110,18 @@ spec:
                 name: ai-aggregator-new-api
                 port:
                   number: {{ ai_aggregator_spec.new_api.port | default(3000) }}
+{% if ai_aggregator_spec.entrypoint.api_domain is defined %}
+    - host: {{ ai_aggregator_spec.entrypoint.api_domain }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-aggregator-new-api
+                port:
+                  number: {{ ai_aggregator_spec.new_api.port | default(3000) }}
+{% endif %}
 {% if ai_aggregator_spec.entrypoint.alias_domains is defined %}
 {% for alias in ai_aggregator_spec.entrypoint.alias_domains %}
     - host: {{ alias }}
@@ -75,6 +135,32 @@ spec:
                 port:
                   number: {{ ai_aggregator_spec.new_api.port | default(3000) }}
 {% endfor %}
+{% endif %}
+{% if ai_aggregator_spec.desktop is defined and (ai_aggregator_spec.desktop.enabled | default(true) | bool) %}
+    - host: {{ ai_aggregator_spec.desktop.domain | default('desktop.svc.plus') }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-desktop-remote-desktop
+                port:
+                  number: {{ ai_aggregator_spec.desktop.port | default(8090) }}
+{% if ai_aggregator_spec.desktop.alias_domains is defined %}
+{% for alias in ai_aggregator_spec.desktop.alias_domains %}
+    - host: {{ alias }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-desktop-remote-desktop
+                port:
+                  number: {{ ai_aggregator_spec.desktop.port | default(8090) }}
+{% endfor %}
+{% endif %}
 {% endif %}
 ---
 apiVersion: traefik.io/v1alpha1
@@ -97,6 +183,29 @@ spec:
           port: {{ ai_aggregator_spec.new_api.port | default(3000) }}
   tls:
     secretName: {{ ai_aggregator_spec.entrypoint.tls_secret | default('shared-observability-tls' if 'svc.plus' in (ai_aggregator_spec.entrypoint.domain | default('ai.svc.plus')) else 'console-tls') }}
+{% if ai_aggregator_spec.entrypoint.api_domain is defined %}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ai-aggregator-api-routes
+  namespace: {{ ai_aggregator_k8s_namespace | default('ingress-sit') }}
+  labels:
+    app.kubernetes.io/name: ai-aggregator-routes
+    app.kubernetes.io/part-of: ai-aggregator
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`{{ ai_aggregator_spec.entrypoint.api_domain }}`)
+      kind: Rule
+      services:
+        - name: ai-aggregator-new-api
+          port: {{ ai_aggregator_spec.new_api.port | default(3000) }}
+  tls:
+    secretName: {{ 'shared-observability-tls' if 'svc.plus' in ai_aggregator_spec.entrypoint.api_domain else 'console-tls' }}
+{% endif %}
 {% if ai_aggregator_spec.entrypoint.alias_domains is defined %}
 {% for alias in ai_aggregator_spec.entrypoint.alias_domains %}
 ---
@@ -121,4 +230,52 @@ spec:
   tls:
     secretName: {{ 'shared-observability-tls' if 'svc.plus' in alias else 'console-tls' }}
 {% endfor %}
+{% endif %}
+{% if ai_aggregator_spec.desktop is defined and (ai_aggregator_spec.desktop.enabled | default(true) | bool) %}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ai-desktop-routes
+  namespace: {{ ai_aggregator_k8s_namespace | default('ingress-sit') }}
+  labels:
+    app.kubernetes.io/name: ai-desktop-routes
+    app.kubernetes.io/part-of: ai-aggregator
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`{{ ai_aggregator_spec.desktop.domain | default('desktop.svc.plus') }}`)
+      kind: Rule
+      services:
+        - name: ai-desktop-remote-desktop
+          port: {{ ai_aggregator_spec.desktop.port | default(8090) }}
+  tls:
+    secretName: {{ 'shared-observability-tls' if 'svc.plus' in (ai_aggregator_spec.desktop.domain | default('desktop.svc.plus')) else 'console-tls' }}
+{% if ai_aggregator_spec.desktop.alias_domains is defined %}
+{% for alias in ai_aggregator_spec.desktop.alias_domains %}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ai-desktop-alias-{{ loop.index }}-routes
+  namespace: {{ ai_aggregator_k8s_namespace | default('ingress-sit') }}
+  labels:
+    app.kubernetes.io/name: ai-desktop-routes
+    app.kubernetes.io/part-of: ai-aggregator
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`{{ alias }}`)
+      kind: Rule
+      services:
+        - name: ai-desktop-remote-desktop
+          port: {{ ai_aggregator_spec.desktop.port | default(8090) }}
+  tls:
+    secretName: {{ 'shared-observability-tls' if 'svc.plus' in alias else 'console-tls' }}
+{% endfor %}
+{% endif %}
 {% endif %}
