@@ -22,6 +22,21 @@ selection work and reports a failed HTTP probe as zero. The canonical
 observability playbook installs the local blackbox exporter. Set
 `vector_caddy_health_probe_enabled: false` if a caller does not provide it.
 
+## Agent Proxy node identity
+
+On hosts in the `agent_proxy` inventory group, `agent.id` in
+`/etc/agent/account-agent.yaml` is the canonical node identity. The Vector
+systemd override runs `vector-agent-domain-env` before every Vector start or
+restart; it writes only `AGENT_PROXY_DOMAIN=<agent.id>` to a protected runtime
+environment file. The Vector `instance`, `node`, and `service_domain` labels
+use that value. `host` retains the OS/inventory hostname, while `job`,
+`service`, and `component` identify the collector or application source.
+
+Reapplying or upgrading this role reinstalls the helper, refreshes the systemd
+override, validates the rendered Vector configuration, and restarts Vector
+through its handler. A missing or invalid `agent.id` fails before Vector starts.
+Duplicate IDs in one selected target set are rejected by the role preflight.
+
 ## Rollback
 
 Set `vector_caddy_metrics_enabled: false` and redeploy the role. The Caddy

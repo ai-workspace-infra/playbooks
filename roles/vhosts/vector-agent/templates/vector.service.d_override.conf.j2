@@ -14,6 +14,12 @@ After=vault-agent-agent-proxy-vector-auth.service
 
 [Service]
 Environment=VECTOR_THREADS={{ ((xconnect_node_maintenance | default({})).get('vector', {})).get('threads', 2) }}
+{% if 'agent_proxy' in (group_names | default([])) %}
+# Derive the node identity locally from the Agent config. The helper emits only
+# AGENT_PROXY_DOMAIN (agent.id); API credentials never enter the process env.
+ExecStartPre=/usr/local/libexec/vector-agent-domain-env /etc/agent/account-agent.yaml
+EnvironmentFile=/run/vector/agent-domain.env
+{% endif %}
 User=root
 Group=root
 LimitNOFILE={{ vector_limit_nofile | default(524288) }}

@@ -19,6 +19,7 @@ class JournalRenderTests(unittest.TestCase):
                            urlencode=lambda v: quote(str(v), safe=''))
         template = env.from_string((ROOT / 'roles/vhosts/vector-agent/templates/vector.toml.j2').read_text())
         result = template.render(groups={}, inventory_hostname='edge.example.test',
+                                 vector_observability_node_identity='node.example.test',
                                  vector_observability_environment='uat',
                                  vector_observability_provider='test',
                                  vector_observability_service_domain='edge.example.test',
@@ -37,7 +38,9 @@ class JournalRenderTests(unittest.TestCase):
                          ['xconnect-edge-agent.service', 'xray.service'])
         self.assertIn('system_journal', config['transforms']['process_logs']['inputs'])
         self.assertIn('process_logs', config['sinks']['victorialogs']['inputs'])
-        self.assertIn('.instance = "edge.example.test"', config['transforms']['process_logs']['source'])
+        self.assertIn('.instance = "node.example.test"', config['transforms']['process_logs']['source'])
+        self.assertIn('.node = "node.example.test"', config['transforms']['process_logs']['source'])
+        self.assertIn('.host = "edge.example.test"', config['transforms']['process_logs']['source'])
 
     def test_existing_file_only_path_is_preserved(self):
         config = self.render(False)
@@ -68,6 +71,7 @@ class JournalRenderTests(unittest.TestCase):
         rendered = env.get_template('xhttp-monitoring.toml.j2').render(
             vector_xhttp_monitoring_enabled=True, vector_xhttp_create_sink=True,
             vector_xhttp_add_xray_scrape=True, inventory_hostname='edge.example.test',
+            vector_observability_node_identity='node.example.test',
             vector_observability_environment='uat', vector_observability_provider='test',
             vector_observability_service_domain='edge.example.test',
             xhttp_monitoring_vault={'json': {'data': {'data': {'user': 'fixture', 'password': 'fixture'}}}})
@@ -76,6 +80,12 @@ class JournalRenderTests(unittest.TestCase):
             self.assertEqual(config['sources'][f'xray_{transport}_metrics']['endpoints'],
                              [f'http://127.0.0.1:{port}/scrape'])
             self.assertIn(f'add_xray_{transport}_labels', config['sinks']['prometheus_remote']['inputs'])
+            labels = config['transforms'][f'add_xray_{transport}_labels']['source']
+            self.assertIn('.tags.instance = "node.example.test"', labels)
+            self.assertIn('.tags.host = "edge.example.test"', labels)
+        caddy_labels = config['transforms']['xhttp_caddy_labels']['source']
+        self.assertIn('.tags.instance = "node.example.test"', caddy_labels)
+        self.assertIn('.tags.host = "edge.example.test"', caddy_labels)
 
 
 if __name__ == '__main__':

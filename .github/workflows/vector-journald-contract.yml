@@ -4,7 +4,11 @@ on:
     paths:
       - roles/vhosts/vector-agent/defaults/main.yml
       - roles/vhosts/vector-agent/templates/vector.toml.j2
+      - roles/vhosts/vector-agent/templates/vector.service.d_override.conf.j2
+      - roles/vhosts/vector-agent/files/vector-agent-domain-env
+      - roles/vhosts/vector-agent/tasks/main.yml
       - tests/test_vector_journald_render.py
+      - tests/test_vector_agent_domain_env.py
       - .github/workflows/vector-journald-contract.yml
 permissions:
   contents: read
@@ -17,4 +21,6 @@ jobs:
         with:
           python-version: '3.12'
       - run: python3 -m pip install 'jinja2==3.1.6'
-      - run: python3 -B -m unittest discover -s tests -p test_vector_journald_render.py -v
+      - run: |
+          python3 -B -m unittest discover -s tests -p test_vector_journald_render.py -v
+          python3 -B -m unittest discover -s tests -p test_vector_agent_domain_env.py -v

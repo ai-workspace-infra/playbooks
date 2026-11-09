@@ -1,4 +1,38 @@
 ---
+- name: Install the minimal Agent identity environment helper
+  ansible.builtin.copy:
+    src: vector-agent-domain-env
+    dest: /usr/local/libexec/vector-agent-domain-env
+    owner: root
+    group: root
+    mode: '0750'
+  when: "'agent_proxy' in (group_names | default([]))"
+
+- name: Read the canonical identity from this Agent configuration
+  ansible.builtin.command:
+    argv:
+      - /usr/local/libexec/vector-agent-domain-env
+      - --print
+      - /etc/agent/account-agent.yaml
+  register: vector_agent_config_identity
+  changed_when: false
+  when: "'agent_proxy' in (group_names | default([]))"
+
+- name: Require a valid business identity for Agent Proxy telemetry
+  ansible.builtin.assert:
+    that:
+      - vector_agent_config_identity.stdout | trim | length > 0
+      - vector_agent_config_identity.stdout is match('^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$')
+    fail_msg: >-
+      Agent Proxy telemetry requires a valid account-agent.yaml agent.id.
+  when: "'agent_proxy' in (group_names | default([]))"
+
+- name: Bind Vector labels to the target's canonical Agent ID
+  ansible.builtin.set_fact:
+    vector_observability_node_identity: "{{ vector_agent_config_identity.stdout }}"
+    vector_observability_service_domain: "{{ vector_agent_config_identity.stdout }}"
+  when: "'agent_proxy' in (group_names | default([]))"
+
 - name: Resolve canonical Vault credentials before any Vector changes
   ansible.builtin.include_tasks: '{{ playbook_dir }}/tasks/resolve-canonical-service-token.yml'
   when: vector_billing_ingest_enabled | default(false) | bool
