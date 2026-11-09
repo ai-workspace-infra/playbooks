@@ -183,6 +183,7 @@
           - xconnect_local_node_matches | length == 1
           - xconnect_local_node_matches[0].enabled | bool
           - xconnect_local_node_matches[0].service_identities.xray_xhttp.user | length > 0
+          - xconnect_local_node_matches[0].service_identities.xray_xhttp.group | length > 0
           - xconnect_local_node_matches[0].service_identities.xray_xhttp.account_managed is boolean
           - xconnect_local_node_matches[0].service_identities.xray_xhttp.previous_user | default('') | length == 0 or xconnect_local_node_matches[0].service_identities.xray_xhttp.previous_user | default('') != xconnect_local_node_matches[0].service_identities.xray_xhttp.user
         fail_msg: "The local GitOps topology must uniquely declare this enabled node and its Xray identity."
@@ -193,6 +194,7 @@
     - name: Apply the local GitOps Xray service identity
       ansible.builtin.set_fact:
         xray_xhttp_service_user: "{{ xconnect_local_node_matches[0].service_identities.xray_xhttp.user }}"
+        xray_xhttp_service_group: "{{ xconnect_local_node_matches[0].service_identities.xray_xhttp.group }}"
         xray_xhttp_service_account_managed: "{{ xconnect_local_node_matches[0].service_identities.xray_xhttp.account_managed | bool }}"
         xray_legacy_service_user: "{{ xconnect_local_node_matches[0].service_identities.xray_xhttp.previous_user | default('') }}"
       when:

@@ -328,6 +328,14 @@
     - xray_enabled | bool
     - not (xray_xhttp_service_account_managed | bool)
 
+- name: Require existing unmanaged XHTTP service group
+  ansible.builtin.getent:
+    database: group
+    key: "{{ xray_xhttp_service_group }}"
+  when:
+    - xray_enabled | bool
+    - not (xray_xhttp_service_account_managed | bool)
+
 - name: Grant TCP Xray service access to the shared log group
   ansible.builtin.user:
     name: "{{ xray_tcp_service_user }}"
