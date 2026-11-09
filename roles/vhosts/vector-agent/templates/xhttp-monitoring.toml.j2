@@ -18,7 +18,8 @@ scrape_interval_secs = 15
 type = "remap"
 inputs = ["xhttp_caddy_metrics"]
 source = '''
-.tags.instance = {{ inventory_hostname | to_json }}
+.tags.instance = {{ vector_observability_node_identity | to_json }}
+.tags.node = {{ vector_observability_node_identity | to_json }}
 .tags.host = {{ inventory_hostname | to_json }}
 .tags.environment = {{ vector_observability_environment | to_json }}
 .tags.env = {{ vector_observability_environment | to_json }}
@@ -55,7 +56,7 @@ if unit == "caddy.service" {
 if unit == "init.scope" && starts_with(message, "Started ") && contains(downcase(message), "xray") { kind = "xray_started" }
 if kind == "" { abort }
 # Retain bounded dimensions only, never session paths, email or client IP.
-. = {"event": kind, "value": 1, "instance": {{ inventory_hostname | to_json }}, "environment": {{ vector_observability_environment | to_json }}}
+. = {"event": kind, "value": 1, "instance": {{ vector_observability_node_identity | to_json }}, "node": {{ vector_observability_node_identity | to_json }}, "host": {{ inventory_hostname | to_json }}, "environment": {{ vector_observability_environment | to_json }}}
 '''
 
 [transforms.xhttp_event_metrics]

@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""Write only the Agent Proxy's canonical node identity for Vector."""
+
+import os
+from pathlib import Path
+import re
+import sys
+import tempfile
+import argparse
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--print", action="store_true", dest="print_only")
+    parser.add_argument("config")
+    parser.add_argument("--output", default="/run/vector/agent-domain.env")
+    args = parser.parse_args()
+    config_path = args.config
+
+    try:
+        text = Path(config_path).read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"cannot read Agent config: {exc}", file=sys.stderr)
+        return 1
+
+    in_agent = False
+    identity = ""
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if re.match(r"^agent:\s*(?:#.*)?$", line):
+            in_agent = True
+            continue
+        if in_agent and re.match(r"^[^\s#][^:]*:", line):
+            break
+        match = re.match(r"^  id:\s*(.*?)\s*(?:#.*)?$", line)
+        if in_agent and match:
+            identity = match.group(1).strip().strip("\"'")
+            break
+
+    if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?", identity):
+        print("Agent config must contain a valid agent.id", file=sys.stderr)
+        return 1
+
+    if args.print_only:
+        print(identity)
+        return 0
+
+    target = Path(args.output)
+    target.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".agent-domain.", dir=target.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            output.write(f"AGENT_PROXY_DOMAIN={identity}\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

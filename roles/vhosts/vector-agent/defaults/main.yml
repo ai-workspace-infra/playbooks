@@ -21,7 +21,10 @@ vector_observability_region: "{{ region | default(cmdb_region | default(cloud_re
 vector_observability_project_id: "{{ project_id | default(cmdb_project_id | default(account | default('', true), true), true) }}"
 vector_observability_resource_id: "{{ resource_id | default(cmdb_resource_id | default(instance_id | default(cmdb_instance_id | default(inventory_hostname, true), true), true), true) }}"
 vector_observability_runtime_form: "{{ runtime_form | default(cmdb_runtime_form | default('', true), true) }}"
-vector_observability_service_domain: "{{ observability_service_domain | default(inventory_hostname, true) }}"
+# AGENT_PROXY_DOMAIN is passed by the installer from account-agent.yaml's
+# agent.id. It is required on Agent Proxy nodes; hostname remains origin only.
+vector_observability_node_identity: "{{ agent_proxy_domain | default(lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN') | default(observability_service_domain | default(inventory_hostname, true), true), true) }}"
+vector_observability_service_domain: "{{ vector_observability_node_identity | default(observability_service_domain | default(inventory_hostname, true), true) }}"
 vector_node_metrics_enabled: true
 vector_process_metrics_enabled: true
 # Caddy metrics are opt-in because not every Vector host runs Caddy.

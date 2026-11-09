@@ -69,7 +69,8 @@ scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', 
 type = "remap"
 inputs = ["ai_aggregator_{{ target_id }}_metrics"]
 source = '''
-.tags.instance = "{{ inventory_hostname }}"
+.tags.instance = "{{ vector_observability_node_identity }}"
+.tags.node = "{{ vector_observability_node_identity }}"
 .tags.host = "{{ inventory_hostname }}"
 .tags.environment = "{{ vector_observability_environment }}"
 .tags.env = "{{ vector_observability_environment }}"
@@ -78,7 +79,7 @@ source = '''
 .tags.resource_id = {{ obs_resource_id | to_json }}
 .tags.runtime_form = {{ obs_runtime_form | to_json }}
 .tags.resource_key = {{ obs_resource_key | to_json }}
-.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.service_domain = "{{ vector_observability_node_identity }}"
 .tags.job = "ai-aggregator"
 .tags.service = "ai-aggregator"
 .tags.component = "{{ target.name }}"
@@ -98,7 +99,8 @@ scrape_timeout_secs = 5
 type = "remap"
 inputs = ["ai_aggregator_{{ target_id }}_probe"]
 source = '''
-.tags.instance = "{{ inventory_hostname }}"
+.tags.instance = "{{ vector_observability_node_identity }}"
+.tags.node = "{{ vector_observability_node_identity }}"
 .tags.host = "{{ inventory_hostname }}"
 .tags.environment = "{{ vector_observability_environment }}"
 .tags.env = "{{ vector_observability_environment }}"
@@ -107,7 +109,7 @@ source = '''
 .tags.resource_id = {{ obs_resource_id | to_json }}
 .tags.runtime_form = {{ obs_runtime_form | to_json }}
 .tags.resource_key = {{ obs_resource_key | to_json }}
-.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.service_domain = "{{ vector_observability_node_identity }}"
 .tags.job = "ai-aggregator-probe"
 .tags.service = "ai-aggregator-probe"
 .tags.component = "{{ target.name }}"
@@ -125,7 +127,8 @@ scrape_timeout_secs = 20
 type = "remap"
 inputs = ["ai_aggregator_caddy_public_probe"]
 source = '''
-.tags.instance = "{{ inventory_hostname }}"
+.tags.instance = "{{ vector_observability_node_identity }}"
+.tags.node = "{{ vector_observability_node_identity }}"
 .tags.host = "{{ inventory_hostname }}"
 .tags.environment = "{{ vector_observability_environment }}"
 .tags.env = "{{ vector_observability_environment }}"
@@ -134,7 +137,7 @@ source = '''
 .tags.resource_id = {{ obs_resource_id | to_json }}
 .tags.runtime_form = {{ obs_runtime_form | to_json }}
 .tags.resource_key = {{ obs_resource_key | to_json }}
-.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.service_domain = "{{ vector_observability_node_identity }}"
 .tags.job = "ai-aggregator-probe"
 .tags.service = "ai-aggregator-probe"
 .tags.component = "caddy-public"
@@ -160,7 +163,8 @@ scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', 
 type = "remap"
 inputs = ["postgres_metrics"]
 source = '''
-.tags.instance = "{{ inventory_hostname }}"
+.tags.instance = "{{ vector_observability_node_identity }}"
+.tags.node = "{{ vector_observability_node_identity }}"
 .tags.host = "{{ inventory_hostname }}"
 .tags.job = "postgres"
 .tags.service = "postgres"
@@ -171,7 +175,7 @@ source = '''
 .tags.resource_id = {{ obs_resource_id | to_json }}
 .tags.runtime_form = {{ obs_runtime_form | to_json }}
 .tags.resource_key = {{ obs_resource_key | to_json }}
-.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.service_domain = "{{ vector_observability_node_identity }}"
 '''
 {% endif %}
 
@@ -186,7 +190,8 @@ source = '''
 type = "remap"
 inputs = {{ base_metric_inputs | to_json }}
 source = '''
-.tags.instance = "{{ inventory_hostname }}"
+.tags.instance = "{{ vector_observability_node_identity }}"
+.tags.node = "{{ vector_observability_node_identity }}"
 .tags.host = "{{ inventory_hostname }}"
 .tags.environment = "{{ vector_observability_environment }}"
 .tags.env = "{{ vector_observability_environment }}"
@@ -201,7 +206,7 @@ source = '''
 {% if vector_observability_logical_project | default('') | length > 0 %}
 .tags.logical_project = {{ vector_observability_logical_project | to_json }}
 {% endif %}
-.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.service_domain = "{{ vector_observability_node_identity }}"
 .tags.job = "vector"
 .tags.service = "vector"
 if exists(.name) && starts_with(string!(.name), "node_") {
@@ -219,7 +224,8 @@ if exists(.name) && starts_with(string!(.name), "namedprocess_") {
 type = "remap"
 inputs = ["caddy_metrics"]
 source = '''
-.tags.instance = "{{ inventory_hostname }}"
+.tags.instance = "{{ vector_observability_node_identity }}"
+.tags.node = "{{ vector_observability_node_identity }}"
 .tags.host = "{{ inventory_hostname }}"
 .tags.environment = "{{ vector_observability_environment }}"
 .tags.env = "{{ vector_observability_environment }}"
@@ -228,7 +234,7 @@ source = '''
 .tags.resource_id = {{ obs_resource_id | to_json }}
 .tags.runtime_form = {{ obs_runtime_form | to_json }}
 .tags.resource_key = {{ obs_resource_key | to_json }}
-.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.service_domain = "{{ vector_observability_node_identity }}"
 .tags.job = "caddy"
 .tags.service = "caddy"
 '''
@@ -245,7 +251,8 @@ type = "remap"
 inputs = ["caddy_health_success"]
 source = '''
 .name = "up"
-.tags.instance = "{{ inventory_hostname }}"
+.tags.instance = "{{ vector_observability_node_identity }}"
+.tags.node = "{{ vector_observability_node_identity }}"
 .tags.host = "{{ inventory_hostname }}"
 .tags.environment = "{{ vector_observability_environment }}"
 .tags.env = "{{ vector_observability_environment }}"
@@ -254,7 +261,7 @@ source = '''
 .tags.resource_id = {{ obs_resource_id | to_json }}
 .tags.runtime_form = {{ obs_runtime_form | to_json }}
 .tags.resource_key = {{ obs_resource_key | to_json }}
-.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.service_domain = "{{ vector_observability_node_identity }}"
 .tags.job = "caddy"
 .tags.service = "caddy"
 '''
@@ -273,7 +280,8 @@ scrape_timeout_secs = 20
 type = "remap"
 inputs = ["blackbox_{{ target_id }}_ssl"]
 source = '''
-.tags.instance = "{{ inventory_hostname }}"
+.tags.instance = "{{ vector_observability_node_identity }}"
+.tags.node = "{{ vector_observability_node_identity }}"
 .tags.host = "{{ inventory_hostname }}"
 .tags.job = "blackbox"
 .tags.service = "blackbox"
@@ -291,7 +299,7 @@ source = '''
 .tags.resource_id = {{ obs_resource_id | to_json }}
 .tags.runtime_form = {{ obs_runtime_form | to_json }}
 .tags.resource_key = {{ obs_resource_key | to_json }}
-.tags.service_domain = "{{ vector_observability_service_domain }}"
+.tags.service_domain = "{{ vector_observability_node_identity }}"
 .tags.name = "{{ target.name }}"
 .tags.target = "{{ target.url }}"
 '''
@@ -430,7 +438,8 @@ if is_string(.message) {
   if contains(string!(.message), "{{ xconnect_vector_policy.get('reverse_proxy_drop_substring', 'http.handlers.reverse_proxy') }}") { abort }
   .message = truncate(string!(.message), {{ xconnect_vector_policy.get('log_message_max_bytes', 4096) | int }})
 }
-.instance = "{{ inventory_hostname }}"
+.instance = "{{ vector_observability_node_identity }}"
+.node = "{{ vector_observability_node_identity }}"
 .host = "{{ inventory_hostname }}"
 .environment = "{{ vector_observability_environment }}"
 .env = "{{ vector_observability_environment }}"
@@ -439,9 +448,9 @@ if is_string(.message) {
 .resource_id = {{ obs_resource_id | to_json }}
 .runtime_form = {{ obs_runtime_form | to_json }}
 .resource_key = {{ obs_resource_key | to_json }}
-.service = "{{ vector_observability_service_domain }}"
+.service = "{{ vector_observability_node_identity }}"
 .job = "system_logs"
-.service_domain = "{{ vector_observability_service_domain }}"
+.service_domain = "{{ vector_observability_node_identity }}"
 .source_type = "system_logs"
 '''
 
@@ -460,7 +469,8 @@ inputs = ["docker_logs"]
 source = '''
 .host = "{{ inventory_hostname }}"
 .source_type = "docker_logs"
-.instance = "{{ inventory_hostname }}"
+.instance = "{{ vector_observability_node_identity }}"
+.node = "{{ vector_observability_node_identity }}"
 .environment = "{{ vector_observability_environment }}"
 .env = "{{ vector_observability_environment }}"
 .provider = "{{ vector_observability_provider }}"
@@ -468,7 +478,7 @@ source = '''
 .resource_id = {{ obs_resource_id | to_json }}
 .runtime_form = {{ obs_runtime_form | to_json }}
 .resource_key = {{ obs_resource_key | to_json }}
-.service_domain = "{{ vector_observability_service_domain }}"
+.service_domain = "{{ vector_observability_node_identity }}"
 
 # Application services emit JSON slog/Node records. Promote the structured
 # fields so VictoriaLogs and Grafana can correlate logs with OTel spans.
