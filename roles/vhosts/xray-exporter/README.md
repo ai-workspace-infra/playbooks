@@ -47,7 +47,9 @@ Rollback uses reviewed prior configuration, never an automatically generated key
 ### Release download retries
 
 `xray_exporter_download_timeout` (60 seconds) controls the socket timeout.
-`xray_exporter_download_retries` (3) and `xray_exporter_download_delay` (5 seconds)
-bound retries for transient TLS/network failures. Exhausted retries fail deployment;
-TLS verification remains enabled. Override these inputs for slow release networks.
+`xray_exporter_download_retries` (6) and `xray_exporter_download_delay` (15 seconds)
+bound retries for transient TLS/network failures such as GitHub release asset
+HTTP 5xx responses. Exhausted retries fail deployment; TLS verification remains
+enabled and `get_url` replaces the destination only after a successful download.
+Override these inputs for slow release networks.
 Rollback by restoring the prior role revision.
