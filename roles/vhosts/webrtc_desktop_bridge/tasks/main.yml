@@ -9,6 +9,41 @@
       The extracted WebRTC bridge currently supports only Debian X11 and
       GStreamer runtime.
 
+- name: Validate externally managed desktop authorization token
+  when: webrtc_desktop_bridge_service_enabled | bool
+  block:
+    - name: Reject legacy inline token configuration
+      ansible.builtin.assert:
+        that:
+          - webrtc_desktop_bridge_token | default('') | length == 0
+          - webrtc_desktop_bridge_token_file | length > 0
+        fail_msg: "Provision a separate token file and remove the legacy inline token variable."
+      no_log: true
+
+    - name: Inspect token file metadata
+      ansible.builtin.stat:
+        path: "{{ webrtc_desktop_bridge_token_file }}"
+        follow: false
+      register: webrtc_desktop_bridge_token_stat
+      become: true
+
+    - name: Require a private service-owned token file
+      ansible.builtin.assert:
+        that:
+          - webrtc_desktop_bridge_token_stat.stat.exists
+          - webrtc_desktop_bridge_token_stat.stat.isreg | default(false)
+          - webrtc_desktop_bridge_token_stat.stat.pw_name | default('') == webrtc_desktop_bridge_user
+          - webrtc_desktop_bridge_token_stat.stat.mode | default('') == '0600'
+          - webrtc_desktop_bridge_token_stat.stat.size | default(0) | int > 0
+        fail_msg: "Provision a service-owned 0600 token file before enabling the bridge."
+
+    - name: Verify service identity can read a nonempty token file
+      ansible.builtin.command:
+        argv: [test, -r, "{{ webrtc_desktop_bridge_token_file }}"]
+      changed_when: false
+      become: true
+      become_user: "{{ webrtc_desktop_bridge_user }}"
+
 - name: Install WebRTC desktop bridge runtime packages
   ansible.builtin.apt:
     name: "{{ webrtc_desktop_bridge_packages }}"
@@ -24,25 +59,6 @@
   when:
     - webrtc_desktop_bridge_service_enabled | bool
   block:
-    - name: Ensure xworkmate-remote-desktop config directory exists
-      ansible.builtin.file:
-        path: "{{ webrtc_desktop_bridge_token_file | dirname }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-      become: true
-
-    - name: Ensure authorization token file exists
-      ansible.builtin.copy:
-        content: "{{ webrtc_desktop_bridge_token }}\n"
-        dest: "{{ webrtc_desktop_bridge_token_file }}"
-        owner: "{{ webrtc_desktop_bridge_user }}"
-        group: "{{ webrtc_desktop_bridge_user }}"
-        mode: "0600"
-      become: true
-      when: webrtc_desktop_bridge_token | length > 0
-
     - name: Install xworkmate-remote-desktop binary
       ansible.builtin.copy:
         src: "{{ webrtc_desktop_bridge_binary_local_path }}"
