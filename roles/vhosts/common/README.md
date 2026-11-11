@@ -1,5 +1,19 @@
 # Common vhost configuration
 
+## Explicit operator K3s sudo profile (OPS host)
+
+`tasks_from: operator_k3s_sudo.yml`, invoked by `common_operator_k3s_sudo.yml`
+(default target `sit-k3s-v6`, the current OPS host), installs
+`/etc/sudoers.d/operator-k3s` (0440, `visudo -cf` validated) allowing
+`operator` passwordless sudo on exactly `common_operator_k3s_sudo_commands`
+(default `/usr/local/bin/{k3s,ctr,kubectl,flux}`); no `ALL`, no wildcards. It
+asserts each binary is a root-owned non-writable file and verifies that an
+unlisted command still requires a password. These binaries are root-equivalent
+on the node: this is an owner-approved exception to the operator rules below,
+limited to the OPS host. Use `sudo flux --kubeconfig /etc/rancher/k3s/k3s.yaml ...`
+(root has no `~/.kube/config`); `sudo kubectl` reads the K3s kubeconfig itself.
+Rollback: remove `/etc/sudoers.d/operator-k3s`.
+
 ## Explicit OS identity profile
 
 `tasks_from: os_identity.yml` reads the `authorized_keys` fields from Vault KV v2

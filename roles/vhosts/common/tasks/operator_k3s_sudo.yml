@@ -1,0 +1,74 @@
+---
+# Explicit entrypoint (tasks_from: operator_k3s_sudo.yml): passwordless sudo for
+# the OS `operator` on a bounded list of K3s/GitOps client binaries. Not
+# included from main.yml. Target hosts are limited by the caller playbook
+# (common_operator_k3s_sudo.yml, default: the SIT OPS host sit-k3s-v6).
+#
+# SECURITY: kubectl/k3s/ctr/flux as root are root-equivalent on the node
+# (privileged pods, containerd control, root kubeconfig). This is a deliberate,
+# owner-approved exception to the three-role design for the OPS host only.
+- name: Operator K3s sudo | require Linux, an explicit opt-in and absolute binaries
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family != 'Darwin'
+      - common_operator_k3s_sudo_enabled | bool
+      - common_operator_k3s_sudo_user is match('^[a-z_][a-z0-9_-]*$')
+      - common_operator_k3s_sudo_commands | length > 0
+      - common_operator_k3s_sudo_commands | select('match', '^/[A-Za-z0-9_./-]+$') | list | length == common_operator_k3s_sudo_commands | length
+      - common_operator_k3s_sudo_commands | select('search', '\\*|ALL|\\.\\.|\\s') | list | length == 0
+    fail_msg: operator_k3s_sudo needs an opt-in, a valid user and absolute, wildcard-free command paths.
+
+- name: Operator K3s sudo | require the target user to exist
+  ansible.builtin.command:
+    argv: [getent, passwd, '{{ common_operator_k3s_sudo_user }}']
+  changed_when: false
+  check_mode: false
+
+- name: Operator K3s sudo | resolve each allowed binary on the host
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: true
+  loop: '{{ common_operator_k3s_sudo_commands }}'
+  register: common_operator_k3s_sudo_bins
+
+- name: Operator K3s sudo | require root-owned, non-writable binaries
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+      - item.stat.uid == 0
+      - not item.stat.wgrp and not item.stat.woth
+    fail_msg: '{{ item.item }} is missing or not a root-owned, non-writable regular file.'
+  loop: '{{ common_operator_k3s_sudo_bins.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Operator K3s sudo | install the bounded sudoers drop-in
+  ansible.builtin.template:
+    src: operator-k3s.sudoers.j2
+    dest: '{{ common_operator_k3s_sudo_file }}'
+    owner: root
+    group: root
+    mode: '0440'
+    validate: '/usr/sbin/visudo -cf %s'
+
+- name: Operator K3s sudo | validate the complete sudo configuration
+  ansible.builtin.command:
+    argv: [/usr/sbin/visudo, -c]
+  changed_when: false
+  check_mode: false
+
+- name: Operator K3s sudo | verify each command is allowed without a password
+  ansible.builtin.command:
+    argv: [runuser, -u, '{{ common_operator_k3s_sudo_user }}', --, sudo, -n, -l, '{{ item }}']
+  loop: '{{ common_operator_k3s_sudo_commands }}'
+  changed_when: false
+  check_mode: false
+
+- name: Operator K3s sudo | verify an unlisted command still needs a password
+  ansible.builtin.command:
+    argv: [runuser, -u, '{{ common_operator_k3s_sudo_user }}', --, sudo, -n, /usr/bin/id]
+  register: common_operator_k3s_sudo_negative
+  changed_when: false
+  check_mode: false
+  failed_when: common_operator_k3s_sudo_negative.rc == 0

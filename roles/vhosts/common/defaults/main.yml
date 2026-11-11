@@ -121,3 +121,14 @@ common_readonly_ssh_user_postgresql_default_privilege_owners:
 # Explicit fresh-node profile; business domain aliases must not become node names.
 common_node_name: '{{ k3s_platform_node_name | default(inventory_hostname, true) }}'
 common_node_require_data_volume: false
+
+# Explicit profile tasks_from: operator_k3s_sudo.yml (see README). Off unless
+# the caller playbook opts in; the caller limits hosts (default: sit-k3s-v6).
+common_operator_k3s_sudo_enabled: false
+common_operator_k3s_sudo_user: operator
+common_operator_k3s_sudo_file: /etc/sudoers.d/operator-k3s
+common_operator_k3s_sudo_commands:
+  - /usr/local/bin/k3s
+  - /usr/local/bin/ctr
+  - /usr/local/bin/kubectl
+  - /usr/local/bin/flux
