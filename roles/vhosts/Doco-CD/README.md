@@ -2,6 +2,10 @@
 
 Deploys [Doco-CD](https://doco.cd/latest/Getting-Started/) with Docker Compose.
 
+This role is the only Doco-CD deployment path: Doco-CD is a single-host Docker
+Compose tool, so there is no Helm chart for it (the former
+`open-platform/charts/doco-cd` in ai-workspace-infra/artifacts was removed).
+
 ## Inputs
 
 - `doco_cd_git_access_token`: **optional** Git access token, only needed for
@@ -31,8 +35,10 @@ Deploys [Doco-CD](https://doco.cd/latest/Getting-Started/) with Docker Compose.
 cd playbooks
 export VAULT_ADDR=https://vault.svc.plus
 export VAULT_JWT_TOKEN=...
-ansible-playbook -i inventory/terraform_cmdb.py setup-Doco-CD.yaml
+ansible-playbook -i inventory/terraform_cmdb.py setup-Doco-CD.yaml -e doco_cd_hosts=<host-or-group>
 ```
+
+`setup-Doco-CD.yaml` has no default hosts; `doco_cd_hosts` is required.
 
 Public GitOps repositories need no Git access token. The role does not provide a
 placeholder credential or store Vault authentication values in the repository.
