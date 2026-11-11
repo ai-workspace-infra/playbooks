@@ -1,0 +1,93 @@
+---
+# Included by os_identity.yml after the auditor account exists and its deny
+# probes passed. journald access comes from the declared supplementary group
+# (common_os_identity_read_groups); this file verifies it and publishes a
+# redacted, auditor-readable view of the Vector configuration. The original
+# Vector files keep their owner/mode (vector.toml stays 0600) because they can
+# carry inline sink credentials.
+- name: Auditor read access | verify journald is readable without the per-user hint
+  ansible.builtin.command:
+    argv: [runuser, -u, auditor, --, journalctl, --quiet, --no-pager, --lines=1, --output=cat]
+  register: common_auditor_journal_probe
+  changed_when: false
+  failed_when: >-
+    common_auditor_journal_probe.rc != 0
+    or 'not seeing messages' in common_auditor_journal_probe.stderr
+    or 'insufficient permissions' in common_auditor_journal_probe.stderr
+  when: "'systemd-journal' in common_os_identity_read_groups.get('auditor', [])"
+
+- name: Auditor read access | keep the shared management parent traversable
+  ansible.builtin.file:
+    path: /var/lib/vhosts-common
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Auditor read access | create the root-owned auditor view root
+  ansible.builtin.file:
+    path: '{{ common_auditor_vector_view_dir | dirname }}'
+    state: directory
+    owner: root
+    group: auditor
+    mode: '0750'
+
+- name: Auditor read access | ensure the helper directory exists
+  ansible.builtin.file:
+    path: '{{ common_auditor_vector_view_helper | dirname }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Auditor read access | install the Vector configuration redaction helper
+  ansible.builtin.copy:
+    src: auditor-vector-view
+    dest: '{{ common_auditor_vector_view_helper }}'
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Auditor read access | install the refresh service and path watcher
+  ansible.builtin.template:
+    src: '{{ item }}.j2'
+    dest: '/etc/systemd/system/{{ item }}'
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - vhosts-common-auditor-vector-view.service
+    - vhosts-common-auditor-vector-view.path
+  register: common_auditor_view_units
+
+- name: Auditor read access | enable the Vector configuration watcher
+  ansible.builtin.systemd_service:
+    name: vhosts-common-auditor-vector-view.path
+    enabled: true
+    state: started
+    daemon_reload: '{{ common_auditor_view_units.changed }}'
+
+- name: Auditor read access | render the redacted view now
+  ansible.builtin.command:
+    argv:
+      - '{{ common_auditor_vector_view_helper }}'
+      - '{{ common_auditor_vector_view_source_dir }}'
+      - '{{ common_auditor_vector_view_dir }}'
+      - auditor
+  register: common_auditor_view_render
+  changed_when: "'changed' in common_auditor_view_render.stdout_lines"
+  when: not ansible_check_mode
+
+- name: Auditor read access | verify auditor can list and read the redacted view
+  ansible.builtin.command:
+    argv: [runuser, -u, auditor, --, test, -r, '{{ common_auditor_vector_view_dir }}', -a, -x, '{{ common_auditor_vector_view_dir }}']
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Auditor read access | verify auditor cannot write the redacted view
+  ansible.builtin.command:
+    argv: [runuser, -u, auditor, --, test, -w, '{{ common_auditor_vector_view_dir }}']
+  register: common_auditor_view_write_probe
+  changed_when: false
+  failed_when: common_auditor_view_write_probe.rc != 1
+  when: not ansible_check_mode

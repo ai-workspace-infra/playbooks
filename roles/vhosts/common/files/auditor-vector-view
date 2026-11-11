@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Publish a redacted, auditor-readable copy of the Vector configuration.
+#   auditor-vector-view <source-dir> <view-dir> <reader-group>
+# The source files keep their own owner/mode (vector.toml is 0600 and may hold
+# inline sink credentials). Copies are root:<reader-group> 0640. A copy that
+# still looks like it contains a credential after redaction is withheld
+# (fail closed). Prints "changed" when the published view changed.
+set -euo pipefail
+
+src=${1:?source dir}
+dst=${2:?view dir}
+group=${3:?reader group}
+keys='authorization|token|password|passwd|secret|api_?key|access_?key|private_?key|credentials?'
+
+umask 077
+changed=0
+install -d -o root -g "$group" -m 0750 "$dst"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+redact() {
+  sed -E \
+    -e "s/((${keys})[[:space:]]*[=:][[:space:]]*)\"[^\"]*\"/\\1\"<redacted>\"/Ig" \
+    -e "s/((${keys})[[:space:]]*[=:][[:space:]]*)'[^']*'/\\1'<redacted>'/Ig" \
+    -e "s/((${keys})[[:space:]]*[=:][[:space:]]*)([^\"'[:space:]<][^[:space:]]*)/\\1<redacted>/Ig" \
+    -e 's#(://)[^/@[:space:]"]+@#\1<redacted>@#g' \
+    -e 's/(Bearer[[:space:]]+)[^"[:space:]]+/\1<redacted>/Ig'
+}
+
+leaks() {
+  grep -Eiq "(${keys})[[:space:]]*[=:][[:space:]]*[\"']?[^\"'<[:space:]]" "$1" ||
+    grep -Eq '://[^/@[:space:]"<]+@' "$1"
+}
+
+if [ -d "$src" ]; then
+  while IFS= read -r -d '' file; do
+    rel=${file#"$src"/}
+    out="$work/$rel"
+    mkdir -p "$(dirname "$out")"
+    redact <"$file" >"$out"
+    if leaks "$out"; then
+      printf '# withheld: %s still matched a credential pattern after redaction\n' "$rel" >"$out"
+    fi
+  done < <(find "$src" -maxdepth 2 -type f \( -name '*.toml' -o -name '*.yaml' -o -name '*.yml' \) -print0)
+fi
+
+# Publish new/changed files.
+while IFS= read -r -d '' new; do
+  rel=${new#"$work"/}
+  target="$dst/$rel"
+  if ! cmp -s "$new" "$target" 2>/dev/null; then
+    install -D -o root -g "$group" -m 0640 "$new" "$target"
+    changed=1
+  fi
+done < <(find "$work" -type f -print0)
+
+# Drop copies whose source no longer exists.
+while IFS= read -r -d '' old; do
+  rel=${old#"$dst"/}
+  if [ ! -e "$work/$rel" ]; then
+    rm -f -- "$old"
+    changed=1
+  fi
+done < <(find "$dst" -type f -print0)
+find "$dst" -mindepth 1 -type d -empty -delete
+
+# install -D creates intermediate directories with the default mode; align them.
+find "$dst" -mindepth 1 -type d -exec chown root:"$group" {} + -exec chmod 0750 {} +
+
+if [ "$changed" -eq 1 ]; then echo changed; fi
