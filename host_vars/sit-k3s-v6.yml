@@ -1,0 +1,15 @@
+---
+# sit-k3s-v6 temporarily also holds the OPS role (CMDB roles: [sit, ops],
+# roles_temporary). Applied by common_os_identities.yml (vhosts/common os_identity).
+
+# OPS role: passwordless sudo for operator on the K3s/GitOps client binaries
+# (see roles/vhosts/common/defaults common_operator_k3s_sudo_commands).
+common_operator_k3s_sudo_enabled: true
+
+# Legacy operator/auditor accounts pre-date the ownership markers; adopt them.
+common_os_identity_adopt_existing: true
+# Leftover kept on purpose (owner decision pending): operator's `sudo` group
+# membership and its existing password are NOT removed by this role.
+common_os_identity_preserve_groups:
+  operator: [sudo]
+common_os_identity_preserve_password: [operator]
