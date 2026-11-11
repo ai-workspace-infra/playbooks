@@ -2,8 +2,10 @@
 
 ## Explicit operator K3s sudo profile (OPS host)
 
-`tasks_from: operator_k3s_sudo.yml`, invoked by `common_operator_k3s_sudo.yml`
-(default target `sit-k3s-v6`, the current OPS host), installs
+Included by `os_identity.yml` (run `common_os_identities.yml`) on hosts that set
+`common_operator_k3s_sudo_enabled: true` in host/group vars (today only
+`host_vars/sit-k3s-v6.yml`, the temporary OPS host); there is no separate entry
+playbook. It installs
 `/etc/sudoers.d/operator-k3s` (0440, `visudo -cf` validated) allowing
 `operator` passwordless sudo on exactly `common_operator_k3s_sudo_commands`
 (default `/usr/local/bin/{k3s,ctr,kubectl,flux}`); no `ALL`, no wildcards. It
