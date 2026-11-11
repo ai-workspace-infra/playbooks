@@ -8,3 +8,26 @@ pathPrefix: /
 storage:
   mountPath: /usr/share/nginx/html
   hostPath: /mnt/data/website/
+
+replicaCount: 1
+# Workload autoscaling (helpers: templates/_autoscaling.tpl, canonical in
+# oci/charts/library/workload-autoscaling). VPA renders only where the VPA API exists.
+vpa:
+  enabled: true
+  updateMode: InPlaceOrRecreate
+  minReplicas: 1
+  controlledValues: RequestsAndLimits
+  minAllowed:
+    cpu: 10m
+    memory: 32Mi
+  maxAllowed:
+    cpu: "1"
+    memory: 1Gi
+# HPA template, disabled by default. When enabled with CPU/memory targets the VPA
+# switches to recommendations only (updateMode Off) and `replicas` is omitted.
+hpa:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
