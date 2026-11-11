@@ -122,9 +122,9 @@ common_readonly_ssh_user_postgresql_default_privilege_owners:
 common_node_name: '{{ k3s_platform_node_name | default(inventory_hostname, true) }}'
 common_node_require_data_volume: false
 
-# Explicit profile tasks_from: operator_k3s_sudo.yml (see README). Off unless
-# the caller playbook opts in; the caller limits hosts (default: sit-k3s-v6).
-common_operator_k3s_sudo_enabled: false  # set true in host_vars for OPS hosts; applied by os_identity.yml
+# OPS-role operator K3s sudo (operator_k3s_sudo.yml, included by os_identity.yml).
+# Host/group vars only toggle it; the command list below is the single definition.
+common_operator_k3s_sudo_enabled: false
 common_operator_k3s_sudo_user: operator
 common_operator_k3s_sudo_file: /etc/sudoers.d/operator-k3s
 common_operator_k3s_sudo_commands:
