@@ -47,7 +47,7 @@ class Reader(unittest.TestCase):
             self.addCleanup(server.shutdown)
             tasks = yaml.safe_load((ROOT/'roles/vhosts/common/tasks/os_identity.yml').read_text())[:5]
             play = root/'play.yml'
-            play.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False, 'vars': {'ansible_os_family': 'Debian', 'common_os_identity_environment': 'prod'}, 'tasks': tasks}]))
+            play.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False, 'vars': {'ansible_os_family': 'Debian', 'common_os_identity_environment': 'prod', 'common_os_identity_key_source': 'http'}, 'tasks': tasks}]))
             env = dict(os.environ, VAULT_ADDR=f'https://localhost:{server.server_port}', VAULT_TOKEN='test-reader', SSL_CERT_FILE=str(root/'cert.pem'), NO_PROXY='localhost,127.0.0.1')
             def run():
                 return subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(play)], cwd=ROOT, env=env, capture_output=True, text=True, timeout=40)
