@@ -95,6 +95,12 @@
   register: common_os_identity_markers
   loop: [operator, auditor]
 
+- name: OS identities | record accounts explicitly adopted on this host
+  ansible.builtin.set_fact:
+    common_os_identity_adopted: >-
+      {{ (common_os_identity_users.results | selectattr('rc', 'equalto', 0) | map(attribute='item') | list)
+         if common_os_identity_adopt_existing | bool else [] }}
+
 - name: OS identities | check existing role groups
   ansible.builtin.command:
     argv: [getent, group, '{{ item }}']
@@ -120,13 +126,15 @@
 - name: OS identities | reject unmanaged sudoers collision
   ansible.builtin.assert:
     that:
-      - not common_os_identity_sudoers.stat.exists or (common_os_identity_markers.results[0].stat.exists and common_os_identity_markers.results[0].stat.isreg and common_os_identity_markers.results[0].stat.uid == 0 and common_os_identity_markers.results[0].stat.mode == '0600')
+      - not common_os_identity_sudoers.stat.exists or 'operator' in common_os_identity_adopted or (common_os_identity_markers.results[0].stat.exists and common_os_identity_markers.results[0].stat.isreg and common_os_identity_markers.results[0].stat.uid == 0 and common_os_identity_markers.results[0].stat.mode == '0600')
     fail_msg: Existing sudoers entry is not associated with a trusted common-managed operator.
 
 - name: OS identities | reject pre-existing unmanaged accounts
   ansible.builtin.assert:
     that:
-      - item.0.rc == 2 or (item.1.stat.exists and item.1.stat.isreg and item.1.stat.uid == 0 and item.1.stat.mode == '0600')
+      - >-
+        item.0.rc == 2 or item.0.item in common_os_identity_adopted
+        or (item.1.stat.exists and item.1.stat.isreg and item.1.stat.uid == 0 and item.1.stat.mode == '0600')
     fail_msg: Existing account lacks a trusted common ownership marker; inspect before changing it.
   loop: '{{ common_os_identity_users.results | zip(common_os_identity_markers.results) | list }}'
   loop_control:
@@ -135,7 +143,7 @@
 - name: OS identities | reject unmanaged role group or home collisions
   ansible.builtin.assert:
     that:
-      - ((item.0.rc == 2 or (item.0.item == 'operator' and item.0.rc == 0 and item.0.stdout.split(':')[-1] == '')) and not item.1.stat.exists) or (item.2.stat.exists and item.2.stat.isreg and item.2.stat.uid == 0 and item.2.stat.mode == '0600')
+      - item.0.item in common_os_identity_adopted or ((item.0.rc == 2 or (item.0.item == 'operator' and item.0.rc == 0 and item.0.stdout.split(':')[-1] == '')) and not item.1.stat.exists) or (item.2.stat.exists and item.2.stat.isreg and item.2.stat.uid == 0 and item.2.stat.mode == '0600')
     fail_msg: Existing group or home lacks a trusted common ownership marker.
   loop: '{{ common_os_identity_existing_groups.results | zip(common_os_identity_homes.results, common_os_identity_markers.results) | list }}'
   loop_control:
@@ -153,7 +161,8 @@
 - name: OS identities | reject unexpected group membership
   ansible.builtin.assert:
     that:
-      - item.stdout.split() == [item.item.item]
+      - item.stdout.split()[0] == item.item.item
+      - item.stdout.split() | difference([item.item.item] + common_os_identity_preserve_groups.get(item.item.item, [])) | length == 0
     fail_msg: Managed account has unexpected groups; inspect before changing it.
   loop: '{{ common_os_identity_groups.results }}'
   when: not item.skipped | default(false)
@@ -181,12 +190,17 @@
   changed_when: false
 
 - name: OS identities | require public-key access and disabled password access
+  vars:
+    # Newer OpenSSH prints `sshd -T` keywords in CamelCase; compare case-insensitively.
+    common_os_identity_sshd_lines: "{{ item.stdout_lines | map('lower') | list }}"
   ansible.builtin.assert:
     that:
-      - "'pubkeyauthentication yes' in item.stdout_lines"
-      - "'passwordauthentication no' in item.stdout_lines"
-      - "'kbdinteractiveauthentication no' in item.stdout_lines"
-      - "item.item != 'root' or 'permitrootlogin without-password' in item.stdout_lines or 'permitrootlogin prohibit-password' in item.stdout_lines"
+      - "'pubkeyauthentication yes' in common_os_identity_sshd_lines"
+      - "'passwordauthentication no' in common_os_identity_sshd_lines"
+      - "'kbdinteractiveauthentication no' in common_os_identity_sshd_lines"
+      - >-
+        item.item != 'root' or 'permitrootlogin without-password' in common_os_identity_sshd_lines
+        or 'permitrootlogin prohibit-password' in common_os_identity_sshd_lines
     fail_msg: SSH policy is not compatible with the requested role access; resolve before account changes.
   loop: '{{ common_os_identity_sshd_policy.results }}'
   loop_control:
@@ -225,8 +239,10 @@
     # a runtime socket.
     shell: /bin/bash
     create_home: true
-    password_lock: true
-    groups: ''
+    # Adopted legacy accounts may keep an explicitly listed password or group
+    # (common_os_identity_preserve_password / _preserve_groups); default: none.
+    password_lock: "{{ omit if item.item in common_os_identity_preserve_password else true }}"
+    groups: "{{ common_os_identity_preserve_groups.get(item.item, []) | join(',') }}"
     append: false
     state: present
   loop: '{{ common_os_identity_users.results }}'
@@ -253,6 +269,10 @@
     mode: '0440'
     content: "operator ALL=(root) NOPASSWD: /usr/bin/systemctl is-system-running\n"
     validate: '/usr/sbin/visudo -cf %s'
+
+- name: OS identities | add the OPS-host K3s client sudo drop-in when declared for this host
+  ansible.builtin.include_tasks: operator_k3s_sudo.yml
+  when: common_operator_k3s_sudo_enabled | bool
 
 - name: OS identities | verify operator can use the bounded sudo command
   ansible.builtin.command:

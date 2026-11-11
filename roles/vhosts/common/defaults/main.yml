@@ -124,7 +124,7 @@ common_node_require_data_volume: false
 
 # Explicit profile tasks_from: operator_k3s_sudo.yml (see README). Off unless
 # the caller playbook opts in; the caller limits hosts (default: sit-k3s-v6).
-common_operator_k3s_sudo_enabled: false
+common_operator_k3s_sudo_enabled: false  # set true in host_vars for OPS hosts; applied by os_identity.yml
 common_operator_k3s_sudo_user: operator
 common_operator_k3s_sudo_file: /etc/sudoers.d/operator-k3s
 common_operator_k3s_sudo_commands:
@@ -136,3 +136,13 @@ common_operator_k3s_sudo_commands:
 # os_identity.yml public-key source: "http" (Vault API with VAULT_TOKEN, default)
 # or "vault-cli" (the controller's existing `vault` CLI login; no token export).
 common_os_identity_key_source: http
+
+# Explicit adoption of pre-existing operator/auditor accounts that lack the
+# root-owned ownership marker. Enable per host only after inspection; the role
+# then writes the 0600 markers instead of failing. Default: refuse.
+common_os_identity_adopt_existing: false
+# Per-account supplementary groups an adopted legacy account may keep, e.g.
+#   {operator: [sudo]}. Anything else still fails the group assertion.
+common_os_identity_preserve_groups: {}
+# Accounts whose existing password state is left untouched (no lock/unlock).
+common_os_identity_preserve_password: []

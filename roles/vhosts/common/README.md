@@ -118,3 +118,17 @@ environment from `VAULT_ENV_PATH` or the environment segment of
 `INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH`. It does not invoke the full common OS,
 firewall, package, or SSH hardening baseline. The Agent service runtime user
 remains unchanged and requires a separate staged rootless migration.
+
+### Declarative operator permissions (os_identity.yml)
+
+`common_os_identities.yml` is the single managed path for operator sudo:
+
+- every host: `/etc/sudoers.d/vhosts-common-operator` → `systemctl is-system-running` only;
+- OPS-role hosts (`common_operator_k3s_sudo_enabled: true` in host/group vars, currently
+  `host_vars/sit-k3s-v6.yml`, temporary): also `/etc/sudoers.d/operator-k3s` for the
+  full-path k3s/ctr/kubectl/flux binaries (NOPASSWD, no wildcards).
+
+Pre-existing accounts without ownership markers still fail unless the host sets
+`common_os_identity_adopt_existing: true`, which then writes the root-owned 0600
+markers. `common_os_identity_preserve_groups` / `common_os_identity_preserve_password`
+list legacy groups/password state an adopted account may keep (default: none).
