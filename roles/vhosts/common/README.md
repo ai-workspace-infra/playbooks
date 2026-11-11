@@ -23,6 +23,8 @@ the three OS accounts. Invoke `common_os_identities.yml` with an explicit
 the controller needs `vault`, `ssh-keygen`, Vault authentication and the
 `ansible.posix` collection. The profile fails on unmanaged user, group or home
 collisions, missing public keys, or incompatible SSH authentication policy.
+Set `common_os_identity_key_source=vault-cli` to read the public keys with the
+controller's existing `vault` CLI login instead of exporting `VAULT_TOKEN`.
 
 It uses the `operator` and `auditor` groups as their respective primary groups.
 An existing empty `operator` group may be reused; unexpected members, unmanaged
