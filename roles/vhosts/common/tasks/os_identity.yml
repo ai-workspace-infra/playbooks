@@ -6,11 +6,37 @@
       - common_os_identity_environment | default('') in ['sit', 'uat', 'prod']
       - lookup('ansible.builtin.env', 'VAULT_ADDR') | length > 0
       - lookup('ansible.builtin.env', 'VAULT_ADDR') is match('^https://[^/]+/?$')
-      - lookup('ansible.builtin.env', 'VAULT_TOKEN') | length > 0
+      - common_os_identity_key_source in ['http', 'vault-cli']
+      - common_os_identity_key_source == 'vault-cli' or lookup('ansible.builtin.env', 'VAULT_TOKEN') | length > 0
       - ansible_os_family == 'Debian'
-    fail_msg: An explicit environment, VAULT_ADDR and supported Debian host are required.
+    fail_msg: >-
+      An explicit environment, VAULT_ADDR, Vault authentication (VAULT_TOKEN, or the
+      vault CLI login with common_os_identity_key_source=vault-cli) and a supported Debian host are required.
+
+- name: OS identities | read role-specific public keys with the controller vault CLI login
+  ansible.builtin.command:
+    argv: [vault, kv, get, -field=authorized_keys, 'kv/{{ common_os_identity_environment }}/security/{{ item }}']
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+  no_log: true
+  loop: [root, operator, auditor]
+  register: common_os_identity_cli_results
+  when: common_os_identity_key_source == 'vault-cli'
+
+- name: OS identities | normalize vault CLI key records
+  ansible.builtin.set_fact:
+    common_os_identity_key_results:
+      results: >-
+        {{ (common_os_identity_key_results.results | default([]))
+           + [{'item': item.item, 'stdout': item.stdout, 'stdout_lines': item.stdout.splitlines()}] }}
+  loop: '{{ common_os_identity_cli_results.results | default([]) }}'
+  no_log: true
+  when: common_os_identity_key_source == 'vault-cli'
 
 - name: OS identities | read role-specific public keys from Vault on controller
+  when: common_os_identity_key_source == 'http'
   ansible.builtin.uri:
     url: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | regex_replace('/+$', '') }}/v1/kv/data/{{ common_os_identity_environment }}/security/{{ item }}"
     method: GET
@@ -28,6 +54,7 @@
   register: common_os_identity_vault_results
 
 - name: OS identities | normalize read-only key records
+  when: common_os_identity_key_source == 'http'
   ansible.builtin.set_fact:
     common_os_identity_key_results: "{{ {'results': (common_os_identity_key_results.results | default([])) + [{'item': item.item, 'stdout': item.json.data.data.authorized_keys, 'stdout_lines': item.json.data.data.authorized_keys.splitlines()}]} }}"
   loop: '{{ common_os_identity_vault_results.results }}'
