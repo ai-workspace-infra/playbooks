@@ -146,3 +146,19 @@ common_os_identity_adopt_existing: false
 common_os_identity_preserve_groups: {}
 # Accounts whose existing password state is left untouched (no lock/unlock).
 common_os_identity_preserve_password: []
+
+# Read-only supplementary groups per managed OS identity (os_identity.yml).
+# auditor -> systemd-journal lets `journalctl` read every unit's journal without
+# sudo. `adm` (/var/log/*, including auth.log) is intentionally not granted.
+# Groups missing on a host are skipped; membership is authoritative
+# (append: false), so removing a group here revokes it on the next run.
+common_os_identity_read_groups:
+  auditor: [systemd-journal]
+# auditor_read_access.yml: verify journald access and publish a redacted,
+# auditor-readable view (root:auditor 0750/0640) of the Vector configuration.
+# The source files keep their mode; vector.toml stays 0600 because it can carry
+# inline sink credentials. A path unit refreshes the view when the source changes.
+common_auditor_read_access_enabled: true
+common_auditor_vector_view_source_dir: "{{ vector_config_dir | default('/etc/vector') }}"
+common_auditor_vector_view_dir: /var/lib/vhosts-common/auditor-view/vector
+common_auditor_vector_view_helper: /usr/local/libexec/vhosts-common-auditor-vector-view

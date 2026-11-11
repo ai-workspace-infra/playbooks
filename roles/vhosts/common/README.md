@@ -36,7 +36,8 @@ authorized keys without deleting existing keys, preserves root, and uses
 root-owned markers for safe reruns. The initial
 operator sudo rule permits only `systemctl is-system-running`; other runtime and
 cluster permissions belong to their owners and are not implicitly granted. The
-auditor gets no sudo or supplementary groups. This profile checks bounded OS
+auditor gets no sudo; its only supplementary groups are the read-only ones in
+`common_os_identity_read_groups` (default `systemd-journal`, see below). This profile checks bounded OS
 allow/deny conditions; actual SSH login and broader filesystem/ACL access still
 need independent verification. Shared keys allow their holder to log in as each
 authorized role and do not provide per-person separation.
@@ -134,3 +135,39 @@ Pre-existing accounts without ownership markers still fail unless the host sets
 `common_os_identity_adopt_existing: true`, which then writes the root-owned 0600
 markers. `common_os_identity_preserve_groups` / `common_os_identity_preserve_password`
 list legacy groups/password state an adopted account may keep (default: none).
+
+### Auditor read access: journald and redacted Vector configuration
+
+`os_identity.yml` ends with `auditor_read_access.yml`
+(`common_auditor_read_access_enabled`, default `true`) so the read-only
+`auditor` used by inspection tools can read logs and collector configuration
+without sudo:
+
+- **journald**: `common_os_identity_read_groups` (default
+  `{auditor: [systemd-journal]}`) is merged into the account's authoritative
+  supplementary groups (`append: false`) and into the unexpected-group guard.
+  Groups missing on a host are skipped; deleting an entry revokes it on the next
+  run. `adm` (all of `/var/log`, including `auth.log`) is not granted. The task
+  verifies `journalctl` as auditor no longer prints the per-user hint.
+  Journald storage settings are unchanged.
+- **Vector configuration**: the source files under
+  `common_auditor_vector_view_source_dir` (default `vector_config_dir` or
+  `/etc/vector`) keep their owner and mode; `vector.toml` stays `vector:vector
+  0600` because it can contain inline sink credentials (basic auth, Bearer
+  headers, URL userinfo). Instead, the helper
+  `common_auditor_vector_view_helper` publishes redacted copies of `*.toml`,
+  `*.yaml` and `*.yml` (never `secrets.json` or template backups) to
+  `common_auditor_vector_view_dir` (default
+  `/var/lib/vhosts-common/auditor-view/vector`, `root:auditor` 0750/0640). Values
+  of credential-like keys and URL userinfo become `<redacted>`; a copy that
+  still matches a credential pattern after redaction is withheld. The
+  `vhosts-common-auditor-vector-view.path` unit re-renders the view whenever the
+  Vector role rewrites the directory.
+
+Verify as auditor: `journalctl -u vector -n 5 --no-pager`,
+`ls -l /var/lib/vhosts-common/auditor-view/vector`, and
+`head -n 40 /var/lib/vhosts-common/auditor-view/vector/vector.toml`; reading
+`/etc/vector/vector.toml` directly must still fail. Rollback: set
+`common_auditor_read_access_enabled: false` and `common_os_identity_read_groups:
+{}`, rerun, then disable the path unit and remove the view directory. The K3s
+kubeconfig for auditor belongs to the K3s identity role, not this profile.

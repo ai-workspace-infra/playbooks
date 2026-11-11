@@ -162,7 +162,10 @@
   ansible.builtin.assert:
     that:
       - item.stdout.split()[0] == item.item.item
-      - item.stdout.split() | difference([item.item.item] + common_os_identity_preserve_groups.get(item.item.item, [])) | length == 0
+      - >-
+        item.stdout.split() | difference([item.item.item]
+        + common_os_identity_preserve_groups.get(item.item.item, [])
+        + common_os_identity_read_groups.get(item.item.item, [])) | length == 0
     fail_msg: Managed account has unexpected groups; inspect before changing it.
   loop: '{{ common_os_identity_groups.results }}'
   when: not item.skipped | default(false)
@@ -230,6 +233,21 @@
     state: present
   loop: [operator, auditor]
 
+- name: OS identities | check declared read-only supplementary groups
+  ansible.builtin.command:
+    argv: [getent, group, '{{ item }}']
+  register: common_os_identity_read_group_lookup
+  check_mode: false
+  changed_when: false
+  failed_when: common_os_identity_read_group_lookup.rc not in [0, 2]
+  loop: "{{ common_os_identity_read_groups.values() | flatten | unique }}"
+
+- name: OS identities | keep only read-only groups that exist on this host
+  ansible.builtin.set_fact:
+    common_os_identity_read_groups_present: >-
+      {{ common_os_identity_read_group_lookup.results | selectattr('rc', 'equalto', 0)
+         | map(attribute='item') | list }}
+
 - name: OS identities | create role accounts without passwords or supplementary groups
   ansible.builtin.user:
     name: '{{ item.item }}'
@@ -241,8 +259,14 @@
     create_home: true
     # Adopted legacy accounts may keep an explicitly listed password or group
     # (common_os_identity_preserve_password / _preserve_groups); default: none.
+    # Declared read-only groups (common_os_identity_read_groups, e.g. auditor ->
+    # systemd-journal) are added when present on the host. append: false keeps
+    # membership authoritative, so removing a declared group revokes it.
     password_lock: "{{ omit if item.item in common_os_identity_preserve_password else true }}"
-    groups: "{{ common_os_identity_preserve_groups.get(item.item, []) | join(',') }}"
+    groups: >-
+      {{ (common_os_identity_preserve_groups.get(item.item, [])
+          + (common_os_identity_read_groups.get(item.item, []) | intersect(common_os_identity_read_groups_present)))
+         | unique | join(',') }}
     append: false
     state: present
   loop: '{{ common_os_identity_users.results }}'
@@ -346,3 +370,7 @@
   register: common_os_identity_sudo_probe
   changed_when: false
   failed_when: common_os_identity_sudo_probe.rc != 1
+
+- name: OS identities | grant auditor read-only journald and redacted Vector configuration
+  ansible.builtin.include_tasks: auditor_read_access.yml
+  when: common_auditor_read_access_enabled | bool
