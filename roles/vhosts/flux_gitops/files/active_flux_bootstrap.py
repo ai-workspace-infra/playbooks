@@ -5,6 +5,7 @@ import datetime
 import json
 from pathlib import Path
 import socket
+import stat
 import subprocess
 import time
 import yaml
@@ -23,6 +24,19 @@ def ready(obj):
         for c in status.get('conditions', []))
 
 
+def check_data(mode, volume_uuid, path='/data'):
+    """/data is either an independent ext4 volume or an allocated root-owned directory."""
+    if mode == 'volume':
+        if run('findmnt', '-nro', 'TARGET,UUID,FSTYPE', '--mountpoint', path).split() != [path, volume_uuid, 'ext4']:
+            raise ValueError('independent data volume differs')
+        return volume_uuid
+    st = Path(path).lstat()
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != 0 or st.st_mode & 0o022:
+        raise ValueError('allocated data directory must be a root-owned directory without group/other write')
+    # Evidence is the backing filesystem of the directory (normally the system disk).
+    return run('findmnt', '-nro', 'UUID', '--target', path)
+
+
 def entrypoints(docs, namespace, source, root):
     keys = {('GitRepository', namespace, source), ('Kustomization', namespace, root)}
     selected = [d for d in docs if (d['kind'], d['metadata'].get('namespace'), d['metadata']['name']) in keys]
@@ -33,15 +47,18 @@ def entrypoints(docs, namespace, source, root):
 
 def main():
     p = argparse.ArgumentParser()
-    for key in ('bundle', 'root', 'source', 'namespace', 'node', 'version', 'commit', 'volume-uuid'):
+    for key in ('bundle', 'root', 'source', 'namespace', 'node', 'version', 'commit'):
         p.add_argument('--' + key, required=True)
+    p.add_argument('--data-mode', choices=('volume', 'directory'), default='volume')
+    p.add_argument('--volume-uuid', default='')
     a = p.parse_args()
+    if a.data_mode == 'volume' and not a.volume_uuid:
+        raise ValueError('--volume-uuid is required for an independent data volume')
     docs = list(yaml.safe_load_all(Path(a.bundle).read_text()))
     entries = entrypoints(docs, a.namespace, a.source, a.root)
     if socket.gethostname() != a.node:
         raise ValueError('OS hostname differs from the selected node')
-    if run('findmnt', '-nro', 'TARGET,UUID,FSTYPE', '--mountpoint', '/data').split() != ['/data', a.volume_uuid, 'ext4']:
-        raise ValueError('independent data volume differs')
+    data = check_data(a.data_mode, a.volume_uuid)
     run('kubectl', 'apply', '-f', '-', input=yaml.safe_dump_all(entries))
     deadline = time.monotonic() + 600
     while True:
@@ -69,7 +86,7 @@ def main():
     cluster = json.loads(run('kubectl', 'get', 'namespace', 'kube-system', '-o', 'json'))
     print(json.dumps({'result': 'FLUX_HANDOVER_VERIFIED', 'gitops_sha': a.commit,
                       'node': a.node, 'version': a.version, 'node_uid': node['metadata']['uid'],
-                      'cluster_uid': cluster['metadata']['uid'], 'volume_uuid': a.volume_uuid,
+                      'cluster_uid': cluster['metadata']['uid'], 'data_mode': a.data_mode, 'volume_uuid': data,
                       'source_revision': revision,
                       'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat()}))
 

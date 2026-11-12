@@ -148,6 +148,14 @@
 - name: Hand active declarations to Flux without applying business workloads
   when: k3s_platform_flux_bootstrap_mode == 'declarative_active'
   block:
+    - name: Ensure the allocated data directory exists (directory data mode)
+      ansible.builtin.file:
+        path: /data
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: k3s_platform_data_mode == 'directory'
     - name: Install active bootstrap entrypoint and verifier
       ansible.builtin.copy:
         src: active_flux_bootstrap.py
@@ -177,8 +185,10 @@
           - "{{ k3s_platform_k3s_version }}"
           - --commit
           - "{{ k3s_platform_git_commit }}"
+          - --data-mode
+          - "{{ k3s_platform_data_mode }}"
           - --volume-uuid
-          - "{{ web_saas_data_evidence.filesystem_uuid }}"
+          - "{{ (web_saas_data_evidence | default({})).filesystem_uuid | default('') if k3s_platform_data_mode == 'volume' else '' }}"
       environment:
         KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
       register: k3s_platform_active_receipt
