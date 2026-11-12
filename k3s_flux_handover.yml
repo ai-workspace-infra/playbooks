@@ -1,0 +1,31 @@
+# Hand an existing K3s node's root GitOps graph to Flux (declarative_active).
+# Host matching and environment come from the GitOps resource declaration;
+# the Flux graph (root/source/path/refs) comes from the reviewed GitOps checkout.
+# Inputs (-e): k3s_identity_manifest, k3s_identity_gitops_sha (= checkout HEAD),
+#   k3s_platform_gitops_checkout_path, k3s_platform_flux_root_name,
+#   k3s_platform_flux_source_name, k3s_platform_flux_root_path,
+#   k3s_platform_git_url, optional k3s_platform_data_mode (volume|directory).
+- name: Hand the reviewed GitOps root to Flux on an existing K3s node
+  hosts: k3s
+  become: true
+  gather_facts: false
+  vars:
+    k3s_platform_flux_bootstrap_mode: declarative_active
+    k3s_platform_receipt_path: "/tmp/flux-handover-{{ inventory_hostname }}.json"
+  pre_tasks:
+    - name: Bind host inputs from the GitOps resource declaration
+      ansible.builtin.include_role:
+        name: vhosts/k3s_identity
+        tasks_from: from_declaration.yml
+    - name: Bind the non-root SSH user's become password from Vault
+      ansible.builtin.include_role:
+        name: vhosts/common
+        tasks_from: become_from_vault.yml
+      vars:
+        common_become_environment: '{{ k3s_identity_environment }}'
+    - name: Pin the handover commit to the reviewed declaration commit
+      ansible.builtin.set_fact:
+        k3s_platform_git_commit: '{{ k3s_identity_gitops_sha }}'
+        common_node_bootstrap_evidence: "{{ common_node_bootstrap_evidence | default({'result': 'NOT_COLLECTED_IN_HANDOVER'}) }}"
+  roles:
+    - role: vhosts/flux_gitops
