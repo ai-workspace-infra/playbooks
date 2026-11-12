@@ -53,7 +53,7 @@ def build(checkout, commit, root_path, root_name, source_name, namespace, git_ur
     if runner("git", "-C", str(checkout), "status", "--porcelain", "--untracked-files=all"):
         raise ValueError("bootstrap checkout must be clean")
     root_dir = inside(checkout, root_path)
-    docs = documents(runner("kubectl", "kustomize", str(root_dir)), state)
+    docs = documents(runner("kubectl", "kustomize", "--load-restrictor", "LoadRestrictionsNone", str(root_dir)), state)
     indexed = {}
 
     def add(items):
@@ -88,7 +88,12 @@ def build(checkout, commit, root_path, root_name, source_name, namespace, git_ur
                 annotations = source["metadata"].get("annotations", {})
                 if annotations.get("kustomize.toolkit.fluxcd.io/ssa") != "IfNotPresent":
                     raise ValueError("bootstrap source must not overwrite its run-specific commit pin")
-                source["spec"]["ref"] = {"commit": commit}
+                if kind == "tag":
+                    resolved = runner("git", "-C", str(checkout), "rev-parse", "refs/tags/" + value + "^{commit}")
+                    if resolved != commit:
+                        raise ValueError("bootstrap tag does not resolve to the reviewed commit")
+                else:
+                    source["spec"]["ref"] = {"commit": commit}
             continue
         if set(ref) == {"commit"}:
             resolved = ref["commit"]
