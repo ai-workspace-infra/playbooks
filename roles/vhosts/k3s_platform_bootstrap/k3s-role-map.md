@@ -139,7 +139,7 @@ K3s/Flux bootstrap 或正式流水线回执；完整安全基线、数据盘 UUI
 | --- | --- | --- |
 | `k3s_platform_bootstrap.yml` / `scripts/pipeline/bootstrap-k3s.sh` | CMDB → common（调用独立盘 role）→ bootstrap 子 role DAG | 正常 IaC 交付 |
 | `k3s_platform_bootstrap_with_gitops.yml` | bootstrap 子 role DAG | 调用方先完成 common/存储及非敏感输入绑定 |
-| `k3s_identity_bootstrap.yml` | 直接 `k3s_identity` | 已有 master 的独立身份初始化，不重装集群 |
+| `k3s_identity_bootstrap.yml` | GitOps 声明 → `k3s_identity` | 已有 master 的独立身份初始化，不重装集群 |
 | `k3s-cluster.yaml`、`setup-k3s-node.yaml`、`init_k3s_cluster_server` | 直接 `k3s-cluster-server` | 仅初始化控制面，目标组统一 `k3s`；不再隐式部署 Registry/Flux/ESO |
 | `k3s_reset.yml`、`reconcile_k3s_runtime_secrets.yml` | 保持独立旧入口 | 非新 bootstrap 的依赖，不自动执行 |
 
