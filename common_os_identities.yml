@@ -1,8 +1,19 @@
 ---
+# Non-root SSH users (e.g. operator) get their become password from Vault
+# before any privileged task, so facts are gathered only after it is bound.
 - name: Configure explicit OS identities
   hosts: all
   become: true
-  gather_facts: true
+  gather_facts: false
+  pre_tasks:
+    - name: Bind the non-root SSH user's become password from Vault
+      ansible.builtin.include_role:
+        name: vhosts/common
+        tasks_from: become_from_vault.yml
+      vars:
+        common_become_environment: '{{ common_os_identity_environment }}'
+    - name: Gather facts with the bound become password
+      ansible.builtin.setup:
   tasks:
     - name: Apply vhosts/common OS identity profile
       ansible.builtin.include_role:
