@@ -45,9 +45,14 @@ class Reader(unittest.TestCase):
             thread.start()
             self.addCleanup(server.server_close)
             self.addCleanup(server.shutdown)
-            tasks = yaml.safe_load((ROOT/'roles/vhosts/common/tasks/os_identity.yml').read_text())[:5]
+            tasks = yaml.safe_load((ROOT/'roles/vhosts/common/tasks/os_identity.yml').read_text())
+            # Keep the read path only: the assert, the vault-cli and http readers and their normalizers.
+            tasks = tasks[:[i for i, t in enumerate(tasks) if t.get('name') == 'OS identities | normalize read-only key records'][0] + 1]
+            # Bind the key source from role defaults (defined once) instead of restating it.
+            defaults = yaml.safe_load((ROOT/'roles/vhosts/common/defaults/main.yml').read_text())
+            self.assertEqual(defaults['common_os_identity_key_source'], 'http')
             play = root/'play.yml'
-            play.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False, 'vars': {'ansible_os_family': 'Debian', 'common_os_identity_environment': 'prod'}, 'tasks': tasks}]))
+            play.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False, 'vars': {'ansible_os_family': 'Debian', 'common_os_identity_environment': 'prod', 'common_os_identity_key_source': defaults['common_os_identity_key_source']}, 'tasks': tasks}]))
             env = dict(os.environ, VAULT_ADDR=f'https://localhost:{server.server_port}', VAULT_TOKEN='test-reader', SSL_CERT_FILE=str(root/'cert.pem'), NO_PROXY='localhost,127.0.0.1')
             def run():
                 return subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(play)], cwd=ROOT, env=env, capture_output=True, text=True, timeout=40)
