@@ -82,6 +82,25 @@ class Graph(unittest.TestCase):
         with self.assertRaises(ValueError):
             STAGED.build(self.repo, SHA, './cluster', 'generation-root', 'bootstrap', 'flux-system', URL, self.runner, state='active')
 
+    def test_active_root_preserves_only_a_tag_at_the_reviewed_commit(self):
+        for item in self.docs:
+            item["spec"]["suspend"] = False
+        root_source = self.docs[0]
+        root_source["metadata"]["annotations"] = {"kustomize.toolkit.fluxcd.io/ssa": "IfNotPresent"}
+        ref = {"tag": "sit-k3s-v6-contabo-r1"}
+        root_source["spec"]["ref"] = ref
+        args = (self.repo, SHA, "./cluster", "generation-root", "bootstrap", "flux-system", URL)
+        result = STAGED.build(*args, self.runner, state="active")
+        self.assertEqual(ref, result[0]["spec"]["ref"])
+
+        def wrong_tag(*argv):
+            if argv[-1] == "refs/tags/sit-k3s-v6-contabo-r1^{commit}":
+                return "b" * 40
+            return self.runner(*argv)
+
+        with self.assertRaisesRegex(ValueError, "tag does not resolve"):
+            STAGED.build(*args, wrong_tag, state="active")
+
     def test_unit_cannot_share_source_or_escape_checkout(self):
         unit = self.docs[-1]
         unit["spec"]["sourceRef"]["name"] = "unit-a-config"
