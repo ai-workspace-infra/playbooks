@@ -1,0 +1,60 @@
+---
+# Read the SSH user's sudo (become) password from Vault on the controller and
+# hand it to Ansible, so a non-root operator account can run privileged steps
+# non-interactively. Skipped for root. The value never leaves no_log tasks.
+# Record: kv/<environment>/security/become/<ssh user>, field `password`.
+- name: Become from Vault | skip for root
+  ansible.builtin.set_fact:
+    common_become_user: "{{ ansible_user | default(lookup('ansible.builtin.env', 'USER')) }}"
+
+- name: Become from Vault | require an explicit environment and Vault endpoint
+  when: common_become_user != 'root'
+  ansible.builtin.assert:
+    that:
+      - common_become_environment | default('') in ['sit', 'uat', 'prod']
+      - lookup('ansible.builtin.env', 'VAULT_ADDR') is match('^https://[^/]+/?$')
+      - common_os_identity_key_source in ['http', 'vault-cli']
+      - common_os_identity_key_source == 'vault-cli' or lookup('ansible.builtin.env', 'VAULT_TOKEN') | length > 0
+    fail_msg: Non-root become needs common_become_environment, VAULT_ADDR and Vault authentication.
+
+- name: Become from Vault | read with the controller vault CLI login
+  when: common_become_user != 'root' and common_os_identity_key_source == 'vault-cli'
+  ansible.builtin.command:
+    argv: [vault, kv, get, -field=password, 'kv/{{ common_become_environment }}/security/become/{{ common_become_user }}']
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+  no_log: true
+  register: common_become_cli
+
+- name: Become from Vault | read over HTTPS
+  when: common_become_user != 'root' and common_os_identity_key_source == 'http'
+  ansible.builtin.uri:
+    url: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | regex_replace('/+$', '') }}/v1/kv/data/{{ common_become_environment }}/security/become/{{ common_become_user }}"
+    headers:
+      X-Vault-Token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') }}"
+    return_content: true
+    status_code: 200
+    validate_certs: true
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+  no_log: true
+  register: common_become_http
+
+- name: Become from Vault | bind the become password
+  when: common_become_user != 'root'
+  ansible.builtin.set_fact:
+    ansible_become_password: >-
+      {{ common_become_cli.stdout if common_os_identity_key_source == 'vault-cli'
+         else common_become_http.json.data.data.password }}
+  no_log: true
+
+- name: Become from Vault | require a nonempty password
+  when: common_become_user != 'root'
+  ansible.builtin.assert:
+    that: [ansible_become_password | length > 0]
+    fail_msg: The Vault become record has an empty password field.
+  no_log: true
