@@ -7,7 +7,7 @@ runtime SSH key supplied by Vault. The Toolkit remains responsible for UAT
 eligibility, operator confirmations, job ordering, and DNS cutover approval.
 
 The role accepts `observability_operation` values `data_migrate`,
-`verify_store`, `verify_target`, `verify_mcp`, `post_dns_cutover`, or
+`verify_store`, `verify_target`, `post_dns_cutover`, or
 `verify_local_grafana`, or `xconnect_remote_observation`, and requires
 `observability_operations_environment: uat`. Data mutation behavior is
 preserved: source snapshots are version checked; target restore retains the

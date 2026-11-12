@@ -5,13 +5,6 @@
 - import_playbook: deploy_observability_server.yml
   vars:
     observability_server_hosts: all
-    # The first open-platform deployment is infrastructure-only. Keep the
-    # core observability stack deployable before the optional Grafana MCP
-    # credentials have been migrated. Normal deployments keep MCP enabled
-    # and retain the role's strict Vault credential checks.
-    observability_mcp_enabled: >-
-      {{ not (lookup('ansible.builtin.env', 'OPEN_PLATFORM_DEPLOY_ONLY')
-      | default('false', true) | bool) }}
     # A legacy host-level Blackbox Exporter may already own 127.0.0.1:9115
     # while the split service unit is bootstrapped on the same machine.
     observability_blackbox_host_port: >-

@@ -91,35 +91,6 @@ if [[ "${playbook}" == "setup-open-platform-domain.yml" || "${playbook}" == "dep
   extra_args+=( -e "vault_admin_addr=${OPEN_PLATFORM_LOCAL_VAULT_ADDR}" )
 fi
 
-# MCP adapters are an optional layer over the four core observability services.
-# Accept none, all, or a comma-separated selection from the orchestration input.
-if [[ "${playbook}" == "deploy_observability_domain.yml" ]]; then
-  selected="${OPEN_PLATFORM_MCP_SERVICES:-none}"
-  case "${selected}" in
-    ,*|*,|*,,*|*[[:space:]]*) echo "Invalid OPEN_PLATFORM_MCP_SERVICES=${selected}" >&2; exit 2 ;;
-  esac
-  if [[ "${selected}" == all ]]; then
-    selected="grafana,victoriametrics,victorialogs,victoriatraces"
-  elif [[ "${selected}" == none || -z "${selected}" ]]; then
-    selected=""
-  fi
-  IFS=',' read -r -a selected_items <<< "${selected}"
-  declare -A selected_set=()
-  for item in "${selected_items[@]}"; do
-    [[ -z "${item}" ]] && continue
-    case "${item}" in grafana|victoriametrics|victorialogs|victoriatraces) ;; *) echo "Unsupported MCP service: ${item}" >&2; exit 2 ;; esac
-    [[ -z "${selected_set[${item}]+x}" ]] || { echo "Duplicate MCP service: ${item}" >&2; exit 2; }
-    selected_set["${item}"]=1
-  done
-  mcp_enabled=false
-  for component in grafana victoriametrics victorialogs victoriatraces; do
-    value=false
-    [[ -n "${selected_set[${component}]+x}" ]] && value=true
-    [[ "${value}" == true ]] && mcp_enabled=true
-    extra_args+=( -e "observability_mcp_${component}_enabled=${value}" )
-  done
-  extra_args+=( -e "observability_mcp_enabled=${mcp_enabled}" )
-fi
 
 echo "Bootstrapping ${MATRIX_HOST} with ${playbook}"
 if [[ "${playbook}" == "setup-agent-proxy-domain.yml" ]]; then

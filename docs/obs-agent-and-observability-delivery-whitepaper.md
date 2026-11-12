@@ -178,6 +178,9 @@ spec:
 为了实现从 AI 运维助手 / Agent 对基础设施的可观测性双向闭环，落地了 `Infrastructure-MCP-Server`，支持标准 MCP 协议访问指标、日志与链路数据。
 
 ### 1. 后端适配矩阵 (`config.json`)
+
+MCP 后端统一挂在 `mcp.svc.plus` 下，与 `observability.svc.plus` 分开部署，每条路由都要求 Bearer `MCP_SERVICE_TOKEN`。`observability.svc.plus/mcp/*` 已下线。
+
 ```json
 {
   "server": {
@@ -189,28 +192,32 @@ spec:
       "name": "observability-grafana",
       "capability": "observability",
       "transport": "streamable-http",
-      "url": "https://observability.svc.plus/mcp/v1/grafana/mcp",
+      "url": "https://mcp.svc.plus/v1/grafana/mcp",
+      "bearer_token_env": "MCP_SERVICE_TOKEN",
       "enabled": true
     },
     {
       "name": "observability-metrics",
       "capability": "observability",
       "transport": "streamable-http",
-      "url": "https://observability.svc.plus/mcp/v1/metrics/mcp",
+      "url": "https://mcp.svc.plus/v1/metrics/mcp",
+      "bearer_token_env": "MCP_SERVICE_TOKEN",
       "enabled": true
     },
     {
       "name": "observability-logs",
       "capability": "observability",
       "transport": "streamable-http",
-      "url": "https://observability.svc.plus/mcp/v1/logs/mcp",
+      "url": "https://mcp.svc.plus/v1/logs/mcp",
+      "bearer_token_env": "MCP_SERVICE_TOKEN",
       "enabled": true
     },
     {
       "name": "observability-traces",
       "capability": "observability",
       "transport": "streamable-http",
-      "url": "https://observability.svc.plus/mcp/v1/traces/mcp",
+      "url": "https://mcp.svc.plus/v1/traces/mcp",
+      "bearer_token_env": "MCP_SERVICE_TOKEN",
       "enabled": true
     }
   ]

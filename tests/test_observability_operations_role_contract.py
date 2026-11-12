@@ -24,11 +24,11 @@ class ObservabilityOperationsRoleTests(unittest.TestCase):
         self.assertIn("data_migrate", rendered)
         self.assertIn("verify_store", rendered)
         self.assertIn("verify_target", rendered)
-        self.assertIn("verify_mcp", rendered)
+        self.assertNotIn("verify_mcp", rendered)
 
     def test_migration_scripts_are_colocated_and_no_longer_depend_on_toolkit_paths(self):
         scripts = list((ROLE / "files").glob("observability_*.sh"))
-        self.assertEqual(len(scripts), 6)
+        self.assertEqual(len(scripts), 5)
         migrate = (ROLE / "files/observability_data_migrate.sh").read_text()
         self.assertIn('"${script_dir}/observability_data_source_stage.sh"', migrate)
         self.assertIn('"${script_dir}/observability_data_target_restore.sh"', migrate)
