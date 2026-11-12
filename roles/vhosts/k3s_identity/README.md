@@ -43,10 +43,15 @@ stale generations, unhealthy status and old commits fail after the bounded
 retry period. This confirms reconciliation, not effective permissions: the
 real-identity allow/deny probes remain mandatory. The RBAC source must resolve
 to that same commit; use an explicit reviewed revision for a standalone run.
+The standalone entry reads every `k3s_identity_*` / `k3s_platform_*` input from
+that GitOps resource declaration (host matched by inventory name) and binds the
+RBAC revision to `k3s_identity_gitops_sha`; there is no separate vars file.
 
 ```bash
 ansible-playbook -i inventory/terraform_cmdb.py k3s_identity_bootstrap.yml \
-  --limit '<selected-master>' -e @/secure/path/reviewed-identity-vars.yml
+  --limit '<selected-master>' \
+  -e k3s_identity_manifest=<gitops-checkout>/resources/<project>/<env>/<provider>/<host>.yaml \
+  -e k3s_identity_gitops_sha=<reviewed-gitops-commit>
 ```
 
 ## Output, idempotency and rollback

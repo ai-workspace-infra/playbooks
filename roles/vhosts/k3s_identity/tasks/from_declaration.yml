@@ -1,0 +1,44 @@
+# Bind k3s_identity inputs from the reviewed GitOps resource declaration.
+# Inputs (controller side): k3s_identity_manifest (path inside a GitOps checkout)
+# and k3s_identity_gitops_sha (the 40-hex commit of that checkout).
+# The host is matched by its inventory name; no address is read from GitOps.
+- name: Require the declaration source and reviewed revision
+  ansible.builtin.assert:
+    that:
+      - k3s_identity_manifest | default('') | length > 0
+      - k3s_identity_gitops_sha | default('') is match('^[0-9a-f]{40}$')
+    fail_msg: Pass -e k3s_identity_manifest=<gitops>/resources/... -e k3s_identity_gitops_sha=<commit>
+
+- name: Read the GitOps resource declaration on the controller
+  ansible.builtin.include_vars:
+    file: '{{ k3s_identity_manifest }}'
+    name: k3s_identity_declaration
+  delegate_to: localhost
+  become: false
+
+- name: Select this host's declaration by inventory name
+  ansible.builtin.set_fact:
+    k3s_identity_candidates: '{{ k3s_identity_declaration.hosts | default([]) | selectattr("name", "equalto", inventory_hostname) | list }}'
+
+- name: Require exactly one declared host
+  ansible.builtin.assert:
+    that:
+      - k3s_identity_candidates | length == 1
+    fail_msg: '{{ inventory_hostname }} must appear exactly once under hosts[] in {{ k3s_identity_manifest }}'
+
+- name: Consume declared platform and identity configuration
+  ansible.builtin.set_fact:
+    '{{ item.key }}': '{{ item.value }}'
+  loop: '{{ k3s_identity_candidates[0].host_vars | dict2items | selectattr("key", "match", "^k3s_(platform|identity)_") | list }}'
+  no_log: true
+
+- name: Bind the RBAC revision to the declaration commit
+  ansible.builtin.set_fact:
+    k3s_identity_rbac_revision: '{{ k3s_identity_gitops_sha }}'
+
+- name: Require declared environment and Vault writer role
+  ansible.builtin.assert:
+    that:
+      - k3s_identity_environment | default('') == k3s_identity_declaration.global.environment
+      - k3s_identity_vault_writer_role | default('') is match('^github-actions-platform-ops-toolkit-' ~ k3s_identity_environment ~ '-')
+    fail_msg: The declaration must set k3s_identity_environment equal to global.environment and an environment-scoped writer role
