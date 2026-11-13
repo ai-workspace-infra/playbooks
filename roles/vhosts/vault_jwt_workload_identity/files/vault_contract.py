@@ -156,7 +156,17 @@ def provision(client, spec, issuer, public_keys):
         raise VaultError('dedicated JWT config state could not be read', 'config') from None
     if status == 200:
         current_data = (current or {}).get('data', {})
-        if any(current_data.get(key) != value for key, value in expected_config.items()):
+        def matches_config_value(key, actual, expected):
+            if key != 'jwt_validation_pubkeys':
+                return actual == expected
+            if (not isinstance(actual, list) or not isinstance(expected, list)
+                    or any(not isinstance(value, str) or not value.strip() for value in actual + expected)):
+                return False
+            # Vault may serialize PEM values with boundary whitespace; compare the
+            # key material while preserving key order and every non-whitespace byte.
+            return [value.strip() for value in actual] == [value.strip() for value in expected]
+        if any(not matches_config_value(key, current_data.get(key), value)
+               for key, value in expected_config.items()):
             raise VaultError('dedicated JWT config exists with unreviewed content', 'config')
     elif status == 404:
         config_missing = True
