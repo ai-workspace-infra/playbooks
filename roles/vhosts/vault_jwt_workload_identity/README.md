@@ -29,6 +29,12 @@ cluster IDs.
 
 The caller owns access, attestation, revocation and partial failure handling. Flux reconciles GitOps independently.
 
+For the `k3s` runtime, a non-root SSH user invokes only the role's fixed
+read/TokenRequest command allowlist through `sudo -n k3s kubectl`; the host must
+grant that exact non-interactive command. It does not make the root kubeconfig
+readable to the operator. The `kubernetes` runtime uses the caller's normal
+`kubectl` identity without sudo.
+
 Configuration is resumable after partial failure: a retry reads the dedicated
 mount, reader policy, auth config and role first; it creates only missing items
 and leaves exact matching items untouched. Any type or content mismatch blocks

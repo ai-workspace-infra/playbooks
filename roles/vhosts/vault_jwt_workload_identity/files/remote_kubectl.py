@@ -45,7 +45,15 @@ class RemoteKubectl:
         }
         if tuple(args) not in fixed:
             raise ClusterError('kubectl operation outside identity allowlist')
-        executable = ('env', '-u', 'KUBECONFIG', 'k3s', 'kubectl') if self.runtime == 'k3s' else ('kubectl',)
+        if self.runtime == 'k3s':
+            # K3s keeps its administrator kubeconfig root-only.  A non-root
+            # operator must use the host's explicitly granted, non-interactive
+            # k3s sudo rule; never widen kubeconfig file permissions or fall
+            # back to the operator's unrelated Kubernetes identity.
+            executable = (('sudo', '-n', 'k3s', 'kubectl') if self.ssh_user != 'root'
+                          else ('env', '-u', 'KUBECONFIG', 'k3s', 'kubectl'))
+        else:
+            executable = ('kubectl',)
         remote = shlex.join((*executable, *args))
         command = ['ssh', '-F', '/dev/null', '-o', 'BatchMode=yes',
                    '-o', 'StrictHostKeyChecking=yes', '-o', 'GlobalKnownHostsFile=/dev/null',
