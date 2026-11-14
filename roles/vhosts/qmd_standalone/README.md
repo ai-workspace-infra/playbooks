@@ -11,7 +11,7 @@ Baseline: [ai-workspace-services/knowledge#400](https://github.com/ai-workspace-
 ## 输入
 
 - `qmd_standalone_collections`：`name -> {path, pattern, context, push}`，`push: true` 进入 Spoke Outbox。
-- `qmd_standalone_hub_url`（`https://`）、`qmd_standalone_hub_token_file`（0600，带外提供）、`qmd_standalone_hub_transport`（`https|tunnel|auto`）。
+- `qmd_standalone_hub_url`（`https://`）、`qmd_standalone_hub_token_file`（0600，带外提供）、`qmd_standalone_hub_transport`（`https|tunnel|auto`）。 未提供 token 文件时，`qmd-spoke-sync` 回退读取 `qmd login --hub <url>` 保存的按 Hub 域名区分的凭据（`~/.config/qmd/credentials.json`，0600；`QMD_CREDENTIALS_FILE` 可覆盖）。
 - `qmd_standalone_hub_tunnel_ssh` / `qmd_standalone_hub_tunnel_target` / `qmd_standalone_hub_ssh_key`：HTTPS 不可达时的受限 SSH 端口转发兜底。
 - `qmd_standalone_sync_link`：调度器使用的固定路径（例如 `/workspace/qmd-sync/sync.sh`）。
 

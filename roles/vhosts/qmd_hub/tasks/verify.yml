@@ -35,7 +35,23 @@
     - { path: "/", headers: {} }
     - { path: "/api/v1/sync/auth", headers: { Authorization: "Bearer invalid-qmd-hub-probe" } }
     - { path: "/api/v1/sync/auth", headers: { Cookie: "xc_session=invalid-qmd-hub-probe" } }
+    - { path: "/api/v1/auth/whoami", headers: {} }
+    - { path: "/api/v1/auth/whoami", headers: { Authorization: "Bearer invalid-qmd-hub-probe" } }
   when: qmd_hub_sync_enabled | bool
+
+# Runs on the Hub so the token never leaves the host (header fed to curl on stdin).
+- name: Sync API whoami identifies the machine sync token (qmd login --token-stdin)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    printf 'Authorization: Bearer %s\n' "$(cat {{ qmd_hub_etc_dir }}/sync-token)" \
+      | curl -fsS -H @- "http://{{ qmd_hub_sync_listen_host }}:{{ qmd_hub_sync_listen_port }}/api/v1/auth/whoami"
+  args:
+    executable: /bin/bash
+  become: true
+  register: qmd_hub_whoami
+  changed_when: false
+  failed_when: qmd_hub_whoami.rc != 0 or '"static_token"' not in qmd_hub_whoami.stdout
+  when: qmd_hub_sync_enabled | bool and not ansible_check_mode
 
 - name: Run initial ingest (records fence in L2)
   ansible.builtin.command: "{{ qmd_hub_root }}/bin/qmd-hub-ingest all"
