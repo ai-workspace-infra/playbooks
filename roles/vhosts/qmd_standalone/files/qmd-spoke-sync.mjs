@@ -48,7 +48,8 @@ async function api(method, path, body, { raw = false, retries = 3 } = {}) {
     } catch (e) { if (i + 1 >= retries) throw e; log(`retry ${i + 1} ${method} ${path}: ${e.message}`); await sleep(2000 * (i + 1)); }
   }
 }
-async function healthy() { try { const r = await fetch(`${BASE}/api/v1/sync/health`, { signal: AbortSignal.timeout(10000) }); return r.ok; } catch { return false; } }
+// Authenticated probe: the public ingress (forwardAuth) answers 401 on every path without the token.
+async function healthy() { try { const r = await fetch(`${BASE}/api/v1/sync/health`, { headers: { authorization: `Bearer ${TOKEN}` }, signal: AbortSignal.timeout(10000) }); return r.ok; } catch { return false; } }
 async function openTunnel() {
   const port = 18182 + Math.floor(Math.random() * 500);
   tunnel = spawn("ssh", ["-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-o", "ConnectTimeout=15", "-o", "IdentitiesOnly=yes", "-i", env.QMD_HUB_SSH_KEY, "-L", `127.0.0.1:${port}:${env.QMD_HUB_TUNNEL_TARGET}`, env.QMD_HUB_TUNNEL_SSH], { stdio: "ignore" });

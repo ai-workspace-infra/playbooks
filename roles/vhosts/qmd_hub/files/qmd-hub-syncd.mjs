@@ -1,14 +1,22 @@
 #!/usr/bin/env node
 // qmd-hub-syncd — Hub-Spoke Delta Sync API (zero dependencies).
 // Managed by Ansible role qmd_hub. Served behind Traefik TLS (https://<hub>/api/v1/sync/*).
-//   GET  /api/v1/sync/health                         (no auth)
+//   GET  /api/v1/sync/health                         (no auth; host-local probe only — the
+//                                                     public ingress requires auth on every path)
+//   ANY  /api/v1/sync/auth                           -> 204 | 401 (Traefik forwardAuth target)
 //   POST /api/v1/sync/plan    {origin, manifest}     -> {need:[[collection,path]], remove:n}
 //   POST /api/v1/sync/put     {origin, files:[{collection,path,sha256,content_b64}]}
 //   POST /api/v1/sync/commit  {origin, manifest}     -> {fence, new}
 //   GET  /api/v1/sync/changes?since_fence=N&exclude_origin=o -> {changes, max_fence}
 //   GET  /api/v1/sync/file?origin=&collection=&path= -> raw markdown (X-Content-Sha256)
 //   GET  /api/v1/sync/events                         -> SSE "fence" events
-// manifest = {<collection>: {<path>: <sha256>}}. Auth: Authorization: Bearer <token file>.
+//   GET  /                                           -> authenticated status page (humans)
+// manifest = {<collection>: {<path>: <sha256>}}.
+// Auth (same model as ai-desktop-lab/xworkmate-remote-desktop):
+//   1. static machine token (Spoke sync token file), constant-time compare;
+//   2. accounts.svc.plus session: Bearer token or `xc_session` cookie (domain .svc.plus),
+//      introspected via GET {ACCOUNTS_URL}/api/auth/session, cached by sha256(token),
+//      then filtered by QMD_HUB_ALLOWED_EMAILS / QMD_HUB_ALLOWED_ROLES.
 import { createServer } from "node:http";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -23,6 +31,12 @@ const HOST = process.env.QMD_HUB_SYNC_HOST || "127.0.0.1";
 const PORT = Number(process.env.QMD_HUB_SYNC_PORT || 8182);
 const TOKEN = readFileSync(process.env.QMD_HUB_SYNC_TOKEN_FILE || "/etc/qmd-hub/sync-token", "utf8").trim();
 const MAX_BODY = 32 * 1024 * 1024;
+const ACCOUNTS_URL = (process.env.QMD_HUB_ACCOUNTS_URL || "").replace(/\/+$/, "");
+const LOGIN_URL = process.env.QMD_HUB_LOGIN_URL || "";
+const ALLOWED_EMAILS = (process.env.QMD_HUB_ALLOWED_EMAILS || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+const ALLOWED_ROLES = (process.env.QMD_HUB_ALLOWED_ROLES || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+const AUTH_CACHE_MS = Number(process.env.QMD_HUB_AUTH_CACHE_SECONDS || 60) * 1000;
+const SESSION_COOKIE = "xc_session";
 if (TOKEN.length < 32) throw new Error("sync token too short");
 
 const SLUG = /^[a-z0-9][a-z0-9._-]{0,62}$/;
@@ -31,11 +45,52 @@ const okPath = (p) => typeof p === "string" && p.length <= 1024 && p.endsWith(".
 const sha = (b) => createHash("sha256").update(b).digest("hex");
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
-function authorized(req) {
-  const h = req.headers.authorization || "";
-  if (!h.startsWith("Bearer ")) return false;
-  const a = Buffer.from(h.slice(7).trim()); const b = Buffer.from(TOKEN);
-  return a.length === b.length && timingSafeEqual(a, b);
+function requestToken(req) {
+  const h = (req.headers.authorization || "").trim();
+  if (/^bearer\s+/i.test(h)) { const t = h.replace(/^bearer\s+/i, "").trim(); if (t) return t; }
+  for (const part of (req.headers.cookie || "").split(";")) {
+    const i = part.indexOf("="); if (i < 0) continue;
+    if (part.slice(0, i).trim() === SESSION_COOKIE) { const v = decodeURIComponent(part.slice(i + 1).trim()); if (v) return v; }
+  }
+  return "";
+}
+const authCache = new Map();
+async function authenticate(req) {
+  const tok = requestToken(req);
+  if (!tok) return { status: 401, error: "authentication required" };
+  const a = Buffer.from(tok), b = Buffer.from(TOKEN);
+  if (a.length === b.length && timingSafeEqual(a, b)) return { status: 200, id: { method: "static_token" } };
+  if (!ACCOUNTS_URL) return { status: 401, error: "invalid token" };
+  const key = sha(tok); const hit = authCache.get(key);
+  let id = hit && hit.exp > Date.now() ? hit.id : null;
+  if (!id) {
+    let r;
+    try {
+      r = await fetch(`${ACCOUNTS_URL}/api/auth/session`, { headers: { authorization: `Bearer ${tok}`, cookie: `${SESSION_COOKIE}=${encodeURIComponent(tok)}`, accept: "application/json" }, signal: AbortSignal.timeout(5000) });
+    } catch { return { status: 503, error: "accounts service unreachable" }; }
+    if (r.status === 401) return { status: 401, error: "invalid or expired accounts session" };
+    if (r.status === 403) return { status: 403, error: "accounts access denied" };
+    if (r.status !== 200) return { status: 502, error: `accounts returned HTTP ${r.status}` };
+    const u = (await r.json().catch(() => ({}))).user;
+    if (!u || (!u.id && !u.email)) return { status: 502, error: "empty accounts user" };
+    if (u.active === false || (u.archivedAt && String(u.archivedAt).trim())) return { status: 403, error: "account inactive" };
+    const roles = [...new Set([u.role, ...(u.roles || [])].filter(Boolean).map((x) => String(x).trim().toLowerCase()))];
+    id = { method: "accounts_session", userId: u.id || "", email: String(u.email || "").trim().toLowerCase(), name: u.name || u.username || u.email || "", roles };
+    if (authCache.size > 256) for (const [k, v] of authCache) if (v.exp <= Date.now()) authCache.delete(k);
+    authCache.set(key, { id, exp: Date.now() + AUTH_CACHE_MS });
+  }
+  if (ALLOWED_EMAILS.length && !ALLOWED_EMAILS.includes(id.email)) return { status: 403, error: "account email is not allowed" };
+  if (ALLOWED_ROLES.length && !id.roles.some((r) => ALLOWED_ROLES.includes(r))) return { status: 403, error: "account role is not allowed" };
+  return { status: 200, id };
+}
+function deny(req, res, a) {
+  const html = (req.headers.accept || "").includes("text/html");
+  const headers = { "www-authenticate": 'Bearer realm="qmd-hub"', "cache-control": "no-store" };
+  if (html) {
+    res.writeHead(a.status, { ...headers, "content-type": "text/html; charset=utf-8" });
+    return res.end(`<!doctype html><title>QMD Hub</title><p>QMD Hub requires a svc.plus account session (${a.status}).</p>${LOGIN_URL ? `<p><a href="${LOGIN_URL}">Sign in with accounts.svc.plus</a></p>` : ""}`);
+  }
+  return send(res, a.status, { error: a.error, login_url: LOGIN_URL || undefined }, headers);
 }
 function send(res, code, obj, headers = {}) {
   const body = typeof obj === "string" ? obj : JSON.stringify(obj);
@@ -91,9 +146,17 @@ const server = createServer(async (req, res) => {
   const p = url.pathname.replace(/^\/api\/v1\/sync/, "");
   const t0 = Date.now();
   try {
+    // host-local liveness probe (the public ingress puts forwardAuth in front of every path)
+    if (url.pathname === "/api/v1/sync/health" && req.method === "GET" && !req.headers["x-forwarded-host"]) return send(res, 200, { ok: true, service: "qmd-hub-syncd" });
+    const a = await authenticate(req);
+    if (a.status !== 200) return deny(req, res, a);
+    const who = { "x-auth-method": a.id.method, ...(a.id.email ? { "x-auth-email": a.id.email } : {}) };
+    if (url.pathname === "/api/v1/sync/auth") { res.writeHead(204, { "cache-control": "no-store", ...who }); return res.end(); }
+    if (url.pathname === "/" && req.method === "GET") {
+      return send(res, 200, { service: "qmd-hub", identity: a.id, max_fence: await maxFence(), api: "/api/v1/sync/" });
+    }
+    if (url.pathname === "/api/v1/sync/health" && req.method === "GET") return send(res, 200, { ok: true, service: "qmd-hub-syncd", identity: a.id.method });
     if (!url.pathname.startsWith("/api/v1/sync/")) return send(res, 404, { error: "not found" });
-    if (p === "/health" && req.method === "GET") return send(res, 200, { ok: true, service: "qmd-hub-syncd" });
-    if (!authorized(req)) return send(res, 401, { error: "unauthorized" }, { "www-authenticate": "Bearer" });
 
     if (p === "/plan" && req.method === "POST") {
       const { origin, manifest } = await body(req); checkManifest(origin, manifest);

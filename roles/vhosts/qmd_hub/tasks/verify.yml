@@ -25,10 +25,16 @@
   until: qmd_hub_sync_health.status == 200
   when: qmd_hub_sync_enabled | bool
 
-- name: Sync API rejects missing bearer token
+- name: Sync API rejects missing and invalid credentials
   ansible.builtin.uri:
-    url: "http://{{ qmd_hub_sync_listen_host }}:{{ qmd_hub_sync_listen_port }}/api/v1/sync/changes?since_fence=0"
+    url: "http://{{ qmd_hub_sync_listen_host }}:{{ qmd_hub_sync_listen_port }}{{ item.path }}"
+    headers: "{{ item.headers }}"
     status_code: 401
+  loop:
+    - { path: "/api/v1/sync/changes?since_fence=0", headers: {} }
+    - { path: "/", headers: {} }
+    - { path: "/api/v1/sync/auth", headers: { Authorization: "Bearer invalid-qmd-hub-probe" } }
+    - { path: "/api/v1/sync/auth", headers: { Cookie: "xc_session=invalid-qmd-hub-probe" } }
   when: qmd_hub_sync_enabled | bool
 
 - name: Run initial ingest (records fence in L2)

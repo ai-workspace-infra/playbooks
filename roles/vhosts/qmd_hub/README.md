@@ -13,7 +13,7 @@ Baseline: [ai-workspace-services/knowledge#400](https://github.com/ai-workspace-
 | L1 热层 | `ai-workspace-lab/qmd`（固定 commit）单体 QMD + SQLite（FTS5），`qmd mcp --http` | `127.0.0.1:8181`（`/mcp` `/query` `/search` Bearer） |
 | L2 权威轻元数据 | 专用 PostgreSQL 17 + pgvector 集群（仅 127.0.0.1），fence 日志 `qmd_hub_changes`，QMD PG backend（`qmd pg/memory/tier`） | `127.0.0.1:5433`，库 `qmd_memory` |
 | L3 冷归档 | `qmd-hub-archive.timer` 每日一次，rclone `copy --ignore-existing`，只上传新 `.md`，不原地改 | `gdrive` / `s3` / `none` |
-| Hub-Spoke Delta Sync | `qmd-hub-syncd`（零依赖 Node）：`/plan` `/put` `/commit` `/changes?since_fence` `/file` `/events`(SSE) | 仅绑定 CNI 网桥 `10.42.0.1:8182`；对外经 Traefik TLS（`https://qmd.svc.plus`，GitOps 声明） |
+| Hub-Spoke Delta Sync | `qmd-hub-syncd`（零依赖 Node）：`/plan` `/put` `/commit` `/changes?since_fence` `/file` `/events`(SSE)，`/auth` 供 Traefik forwardAuth；对外域名所有路径未认证一律 401 | 仅绑定 CNI 网桥 `10.42.0.1:8182`；对外经 Traefik TLS（`https://qmd.svc.plus`，GitOps 声明） |
 
 它不管理 k3s、Flux、Ingress/DNS（由 GitOps/IaC 声明），也不读取或分发任何个人凭据。
 
@@ -48,3 +48,10 @@ Baseline: [ai-workspace-services/knowledge#400](https://github.com/ai-workspace-
 - Hub 侧集中 Embedding 未启用：主机无 GPU/内存余量，未配置 `QMD_EMBED_API_*`，当前为 BM25（FTS5 / PG FTS），向量片段不随增量下发。
 - 同步 token 为单一共享 token（未按 Spoke 区分）；冲突策略为“每个 origin 只写自己的命名空间、同 key 以最高 fence 为准”，未实现跨 origin 合并。
 - L3 走 rclone，不复用 qmd `tier l3`（其 L3 交接依赖 box 的 `.archive`/UploadFile 流程）。
+
+## 入口认证（与 desktop.svc.plus 同一模式，共享 PROD accounts.svc.plus）
+
+- 对外 `https://qmd.svc.plus` 每条路径（含 `/health`）先经 Traefik forwardAuth → `qmd-hub-syncd /api/v1/sync/auth`；未认证 401（浏览器 `Accept: text/html` 时 401 页附 `qmd_hub_login_url` 登录链接）。
+- 人类：PROD `accounts.svc.plus`（`prod-k3s-v6.svc.plus` 提供）会话 —— `Authorization: Bearer <session>` 或 `xc_session` cookie（域 `.svc.plus`），跨集群调用 `{{ qmd_hub_accounts_url }}/api/auth/session` 校验，结果缓存 `qmd_hub_auth_cache_seconds`；并按 `qmd_hub_allowed_roles` / `qmd_hub_allowed_emails` 限定。
+- 机器：Spoke 同步 token（Hub 本机 0600 `sync-token`）照常有效，后端对每个请求再次校验同一凭据。
+- 不需要在 accounts 侧注册 OAuth client/回调（与 xworkmate-remote-desktop 一样只调用会话校验端点）。

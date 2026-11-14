@@ -27,14 +27,16 @@ for odir in "$DATA"/*/; do
         done )
   done
 done > "$tmp"
-origins_sql="$(printf "'%s'," "${scanned[@]:-__none__}")"; origins_sql="${origins_sql%,}"
+# Compare against the journal of every origin in scope, including origins whose
+# directory was removed entirely (their paths become 'delete' rows).
+if [ "$scope" = all ]; then origin_filter="true"; else origin_filter="origin = '$scope'"; fi
 new="$(psql_hub <<SQL
 BEGIN;
 CREATE TEMP TABLE cur(origin text, collection text, path text, sha256 text, bytes bigint) ON COMMIT DROP;
 \copy cur FROM '$tmp'
 CREATE TEMP TABLE latest ON COMMIT DROP AS
   SELECT DISTINCT ON (origin, collection, path) origin, collection, path, sha256, op
-  FROM qmd_hub_changes WHERE origin = ANY(ARRAY[$origins_sql])
+  FROM qmd_hub_changes WHERE $origin_filter
   ORDER BY origin, collection, path, fence DESC;
 WITH up AS (
   INSERT INTO qmd_hub_changes(origin, collection, path, sha256, bytes, op)
