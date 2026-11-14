@@ -136,11 +136,17 @@ def adapt(model):
     _, job, base = HOSTS[uid]
     result = rewrite_queries(copy.deepcopy(model), job)
     variables = [v for v in result['templating']['list'] if v['name'] not in ('cluster', 'environment')]
-    datasource = 'victoriametrics' if uid == 'StarsL-JOB-node' else '${DS_METRICS}'
+    existing_ds = None
+    for v in model.get('templating', {}).get('list', []):
+        if v.get('name') in ('cluster', 'environment', 'instance') and isinstance(v.get('datasource'), dict):
+            existing_ds = v['datasource'].get('uid')
+            if existing_ds:
+                break
+    datasource = existing_ds or ('victoriametrics' if uid == 'StarsL-JOB-node' else '${DS_METRICS}')
     def variable(name, query):
         return {'name': name, 'label': name, 'type': 'query', 'datasource': {'type': 'prometheus', 'uid': datasource},
                 'query': {'query': query, 'refId': name}, 'definition': query, 'refresh': 1,
-                'current': {}, 'options': [], 'includeAll': False, 'multi': False}
+                'current': {'text': 'All', 'value': '$__all'}, 'options': [], 'includeAll': True, 'multi': False, 'allValue': '.*'}
     prefix = [v for v in variables if v['type'] == 'datasource']
     rest = [v for v in variables if v['type'] != 'datasource']
     for var in rest:
@@ -149,6 +155,48 @@ def adapt(model):
     for var in prefix:
         if var['name'] == 'DS_METRICS':
             var['current'] = {'text': 'VictoriaMetrics', 'value': 'victoriametrics'}
+    if uid == 'process-exporter-with-tree':
+        total_query = 'query_result(count(count by (instance) (namedprocess_namegroup_num_procs{job="process-exporter",' + SCOPE + '})))'
+        total_var = next((v for v in rest if v.get('name') == 'total'), None)
+        if total_var is None:
+            total_var = {
+                'name': 'total', 'label': '主机数', 'type': 'query',
+                'datasource': {'type': 'prometheus', 'uid': datasource},
+                'query': {'query': total_query, 'refId': 'PrometheusVariableQueryEditor-VariableQuery', 'qryType': 3},
+                'definition': total_query, 'refresh': 1,
+                'current': {}, 'options': [], 'includeAll': False, 'multi': False,
+                'hide': 2, 'regex': '/{} (.*) .*/', 'skipUrlSync': False, 'sort': 0,
+                'tagValuesQuery': '', 'tagsQuery': '', 'useTags': False
+            }
+            idx = next((i for i, v in enumerate(rest) if v.get('name') == 'instance'), len(rest) - 1)
+            rest.insert(idx + 1, total_var)
+        else:
+            total_var.update({
+                'label': '主机数', 'hide': 2, 'includeAll': False, 'multi': False,
+                'regex': '/{} (.*) .*/', 'query': {'query': total_query, 'refId': 'PrometheusVariableQueryEditor-VariableQuery', 'qryType': 3},
+                'definition': total_query, 'current': {}, 'options': [], 'refresh': 1
+            })
+        for v in rest:
+            if v.get('name') == 'instance':
+                v['label'] = 'Node / AGENT_PROXY_DOMAIN'
+                v['sort'] = 5
+                v['allFormat'] = 'glob'
+                v['multiFormat'] = 'regex values'
+                v['datasource'] = {'type': 'prometheus', 'uid': datasource}
+                inst_q = v.get('query')
+                if isinstance(inst_q, dict):
+                    inst_query_str = inst_q.get('query', '')
+                else:
+                    inst_query_str = inst_q or ''
+                if not v.get('definition'):
+                    v['definition'] = inst_query_str
+                if not isinstance(inst_q, dict):
+                    v['query'] = {'qryType': 1, 'query': inst_query_str, 'refId': 'PrometheusVariableQueryEditor-VariableQuery'}
+    elif uid == 'StarsL-JOB-node':
+        for v in rest:
+            if v.get('name') == 'instance':
+                v['label'] = 'Node / AGENT_PROXY_DOMAIN'
+                v['sort'] = 5
     result['templating']['list'] = [*prefix,
         variable('cluster', 'label_values(' + base + '{job="' + job + '"},cluster)'),
         variable('environment', 'label_values(' + base + '{job="' + job + '",cluster=~"${cluster:regex}"},environment)'), *rest]
@@ -286,6 +334,15 @@ def render(playbooks_root, gitops_root=None, manifest_path=None):
         models = [json.loads(value) for value in cm['data'].values() if json.loads(value).get('uid') in HOSTS]
         stars = yaml.safe_load((target / 'starsl-k8s-dashboard.yaml').read_text())
         models += [json.loads(value) for value in stars['data'].values()]
+        sit_target = Path(gitops_root).resolve() / 'services/sit-k3s-v6/observability-sit'
+        sit_path = sit_target / 'source-grafana-general-0.yaml'
+        if sit_path.exists():
+            sit_cm = yaml.safe_load(sit_path.read_text())
+            for key, value in sit_cm['data'].items():
+                model = json.loads(value)
+                if model.get('uid') in HOSTS:
+                    sit_cm['data'][key] = model_text(adapt(model))
+            files[sit_path] = yaml.safe_dump(sit_cm, sort_keys=False, allow_unicode=True)
     if manifest_path:
         files[Path(manifest_path).resolve()] = yaml.safe_dump(manifest(models), sort_keys=False, allow_unicode=True)
     return files

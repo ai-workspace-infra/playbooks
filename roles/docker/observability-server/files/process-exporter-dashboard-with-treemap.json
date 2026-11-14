@@ -1317,10 +1317,14 @@
         },
         "definition": "label_values(namedprocess_namegroup_num_procs{job=\"process-exporter\"},cluster)",
         "refresh": 1,
-        "current": {},
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
         "options": [],
-        "includeAll": false,
-        "multi": false
+        "includeAll": true,
+        "multi": false,
+        "allValue": ".*"
       },
       {
         "name": "environment",
@@ -1336,30 +1340,69 @@
         },
         "definition": "label_values(namedprocess_namegroup_num_procs{job=\"process-exporter\",cluster=~\"${cluster:regex}\"},environment)",
         "refresh": 1,
-        "current": {},
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
         "options": [],
-        "includeAll": false,
-        "multi": false
+        "includeAll": true,
+        "multi": false,
+        "allValue": ".*"
       },
       {
         "current": {},
         "datasource": {
-          "uid": "$DS_METRICS"
+          "type": "prometheus",
+          "uid": "${DS_METRICS}"
         },
-        "definition": "",
+        "definition": "label_values(namedprocess_namegroup_cpu_seconds_total{job=\"process-exporter\",cluster=~\"${cluster:regex}\",environment=~\"${environment:regex}\"},instance)",
         "hide": 0,
         "includeAll": false,
         "multi": false,
         "name": "instance",
         "options": [],
-        "query": "label_values(namedprocess_namegroup_cpu_seconds_total{job=\"process-exporter\",cluster=~\"${cluster:regex}\",environment=~\"${environment:regex}\"},instance)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(namedprocess_namegroup_cpu_seconds_total{job=\"process-exporter\",cluster=~\"${cluster:regex}\",environment=~\"${environment:regex}\"},instance)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
         "refresh": 1,
         "regex": "",
+        "skipUrlSync": false,
+        "sort": 5,
+        "tagValuesQuery": "",
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false,
+        "label": "Node / AGENT_PROXY_DOMAIN",
+        "allFormat": "glob",
+        "multiFormat": "regex values"
+      },
+      {
+        "name": "total",
+        "label": "主机数",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_METRICS}"
+        },
+        "query": {
+          "query": "query_result(count(count by (instance) (namedprocess_namegroup_num_procs{job=\"process-exporter\",cluster=~\"${cluster:regex}\",environment=~\"${environment:regex}\"})))",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery",
+          "qryType": 3
+        },
+        "definition": "query_result(count(count by (instance) (namedprocess_namegroup_num_procs{job=\"process-exporter\",cluster=~\"${cluster:regex}\",environment=~\"${environment:regex}\"})))",
+        "refresh": 1,
+        "current": {},
+        "options": [],
+        "includeAll": false,
+        "multi": false,
+        "hide": 2,
+        "regex": "/{} (.*) .*/",
         "skipUrlSync": false,
         "sort": 0,
         "tagValuesQuery": "",
         "tagsQuery": "",
-        "type": "query",
         "useTags": false
       }
     ]
