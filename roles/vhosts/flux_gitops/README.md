@@ -20,6 +20,13 @@ issue Kubernetes identities, apply business workloads or change DNS.
 | `k3s_platform_receipt_path` | Public controller receipt destination, required in active mode |
 | `k3s_platform_strict_dev_receipt` | Optional stricter single-node generated-mode observer; false by default |
 
+Root source ref (active mode): a declared `branch` (default `main`) is kept so
+Flux watches the branch, provided its tip is the reviewed commit (otherwise the
+root is pinned to that commit); release tags of child sources are configuration
+inside the branch (e.g. the `contabo-vps` overlay GitRepository tag patch), so
+advancing a release is a reviewed commit on `main` plus its immutable tag, not a
+root re-pin. A declared root `tag` must resolve to the reviewed commit.
+
 Full inputs and runtime credential lookups: [defaults](defaults/main.yml).
 `tasks/preflight.yml` is the read-only preparation phase: validate contract,
 render declared graph on the controller and resolve runtime authentication.
