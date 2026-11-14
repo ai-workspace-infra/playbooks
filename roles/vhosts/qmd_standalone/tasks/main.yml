@@ -1,0 +1,147 @@
+---
+- name: Validate QMD standalone inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.system == 'Linux' or ansible_facts.os_family == 'Darwin'
+      - qmd_standalone_version is match('^[0-9a-f]{40}$')
+      - qmd_standalone_origin is match('^[a-z0-9][a-z0-9._-]{0,62}$')
+      - qmd_standalone_origin != 'hub'
+    fail_msg: "Pinned 40-char commit and a lowercase origin slug (not 'hub') are required."
+
+- name: Create Spoke directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - "{{ qmd_standalone_root }}"
+    - "{{ qmd_standalone_root }}/bin"
+    - "{{ qmd_standalone_root }}/config"
+    - "{{ qmd_standalone_root }}/cache/qmd"
+    - "{{ qmd_standalone_root }}/notes"
+    - "{{ qmd_standalone_root }}/mirror"
+    - "{{ qmd_standalone_source_dir | dirname }}"
+
+- name: Restrict Spoke state directory
+  ansible.builtin.file:
+    path: "{{ qmd_standalone_root }}/state"
+    state: directory
+    mode: "0700"
+
+- name: Checkout pinned QMD source (ai-workspace-lab/qmd)
+  ansible.builtin.git:
+    repo: "{{ qmd_standalone_source_repo }}"
+    dest: "{{ qmd_standalone_source_dir }}"
+    version: "{{ qmd_standalone_version }}"
+    force: true
+  register: qmd_standalone_checkout
+
+- name: Inspect QMD build output
+  ansible.builtin.stat:
+    path: "{{ qmd_standalone_source_dir }}/dist/cli/qmd.js"
+  register: qmd_standalone_dist
+
+- name: Install QMD dependencies and build
+  ansible.builtin.shell: |
+    set -euo pipefail
+    npm install --no-audit --no-fund
+    npm run build
+  args:
+    chdir: "{{ qmd_standalone_source_dir }}"
+    executable: /bin/bash
+  environment:
+    PATH: "{{ (qmd_standalone_node_path ~ ':') if qmd_standalone_node_path else '' }}{{ ansible_env.PATH }}"
+    NODE_LLAMA_CPP_SKIP_DOWNLOAD: "true"
+  when: qmd_standalone_checkout.changed or not qmd_standalone_dist.stat.exists
+
+- name: Install QMD wrapper and collection config
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ qmd_standalone_root }}/{{ item.dest }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { src: qmd.sh.j2, dest: bin/qmd, mode: "0755" }
+    - { src: index.yml.j2, dest: config/index.yml, mode: "0640" }
+
+- name: Configure Hub sync
+  when: qmd_standalone_hub_url | length > 0
+  block:
+    - name: Require an https Hub URL
+      ansible.builtin.assert:
+        that: qmd_standalone_hub_url is match('^https://')
+        fail_msg: "qmd_standalone_hub_url must be https://"
+
+    - name: Install sync environment
+      ansible.builtin.template:
+        src: sync.env.j2
+        dest: "{{ qmd_standalone_root }}/sync.env"
+        mode: "0600"
+
+    - name: Install two-way sync client
+      ansible.builtin.copy:
+        src: qmd-spoke-sync.mjs
+        dest: "{{ qmd_standalone_root }}/bin/qmd-spoke-sync.mjs"
+        mode: "0755"
+
+    - name: Install single sync command
+      ansible.builtin.copy:
+        dest: "{{ qmd_standalone_sync_command }}"
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          # Managed by Ansible role qmd_standalone: push + pull in one command.
+          {% if qmd_standalone_node_path %}export PATH={{ qmd_standalone_node_path }}:$PATH
+          {% endif %}export QMD_SPOKE_ENV={{ qmd_standalone_root }}/sync.env
+          exec node {{ qmd_standalone_root }}/bin/qmd-spoke-sync.mjs "$@"
+
+    - name: Inspect Hub token file (metadata only)
+      ansible.builtin.stat:
+        path: "{{ qmd_standalone_hub_token_file }}"
+      register: qmd_standalone_token
+
+    - name: Require a private Hub token file
+      ansible.builtin.assert:
+        that:
+          - qmd_standalone_token.stat.exists
+          - qmd_standalone_token.stat.mode == '0600'
+          - qmd_standalone_token.stat.size > 0
+        fail_msg: "Provision {{ qmd_standalone_hub_token_file }} (0600) with the Hub sync token before syncing."
+
+    - name: Link sync command to the scheduler-facing path
+      ansible.builtin.file:
+        src: "{{ qmd_standalone_sync_command }}"
+        dest: "{{ qmd_standalone_sync_link }}"
+        state: link
+        force: true
+      when: qmd_standalone_sync_link | length > 0
+
+    - name: Inspect tunnel key when the SSH fallback is configured
+      ansible.builtin.stat:
+        path: "{{ qmd_standalone_hub_ssh_key }}"
+      register: qmd_standalone_key
+      when: qmd_standalone_hub_tunnel_ssh | length > 0
+
+    - name: Require the tunnel key (its .pub goes to qmd_hub_spoke_authorized_keys)
+      ansible.builtin.assert:
+        that: qmd_standalone_key.stat.exists and qmd_standalone_key.stat.mode == '0600'
+        fail_msg: "Create {{ qmd_standalone_hub_ssh_key }} (0600) and register its .pub on the Hub."
+      when: qmd_standalone_hub_tunnel_ssh | length > 0
+
+- name: Index local collections
+  ansible.builtin.command: "{{ qmd_standalone_root }}/bin/qmd update"
+  register: qmd_standalone_update
+  changed_when: "'0 new, 0 updated' not in qmd_standalone_update.stdout"
+  when: not ansible_check_mode
+
+- name: QMD status
+  ansible.builtin.command: "{{ qmd_standalone_root }}/bin/qmd status"
+  register: qmd_standalone_status
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Show Spoke summary
+  ansible.builtin.debug:
+    msg:
+      - "qmd wrapper: {{ qmd_standalone_root }}/bin/qmd"
+      - "sync: {{ (qmd_standalone_sync_link or qmd_standalone_sync_command) if qmd_standalone_hub_url else 'standalone (no hub)' }}"
+      - "{{ (qmd_standalone_status.stdout_lines | default([]))[:8] }}"

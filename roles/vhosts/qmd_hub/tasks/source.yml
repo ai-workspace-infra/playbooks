@@ -1,0 +1,33 @@
+---
+- name: Checkout pinned QMD source (ai-workspace-lab/qmd)
+  ansible.builtin.git:
+    repo: "{{ qmd_hub_source_repo }}"
+    dest: "{{ qmd_hub_root }}/src/qmd"
+    version: "{{ qmd_hub_version }}"
+    force: true
+  become: true
+  become_user: "{{ qmd_hub_user }}"
+  register: qmd_hub_checkout
+
+- name: Inspect QMD build output
+  ansible.builtin.stat:
+    path: "{{ qmd_hub_root }}/src/qmd/dist/cli/qmd.js"
+  register: qmd_hub_dist
+
+- name: Install QMD dependencies and build
+  ansible.builtin.shell: |
+    set -euo pipefail
+    npm install --no-audit --no-fund
+    npm run build
+  args:
+    chdir: "{{ qmd_hub_root }}/src/qmd"
+    executable: /bin/bash
+  environment:
+    HOME: "{{ qmd_hub_root }}"
+    PATH: "{{ qmd_hub_root }}/runtime/node/bin:/usr/local/bin:/usr/bin:/bin"
+    NODE_LLAMA_CPP_SKIP_DOWNLOAD: "true"
+    npm_config_cache: "{{ qmd_hub_root }}/cache/npm"
+  become: true
+  become_user: "{{ qmd_hub_user }}"
+  when: qmd_hub_checkout.changed or not qmd_hub_dist.stat.exists
+  notify: Restart qmd-hub

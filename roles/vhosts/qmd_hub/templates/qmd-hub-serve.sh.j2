@@ -1,0 +1,8 @@
+#!/bin/sh
+# Starts the QMD HTTP MCP/REST server. The bearer token is read from a 0600
+# file at start-up and never written to the unit or logs.
+set -eu
+QMD_MCP_TOKEN="$(cat {{ qmd_hub_etc_dir }}/mcp-token)"
+export QMD_MCP_TOKEN
+export QMD_MCP_HOST={{ qmd_hub_listen_host }}
+exec {{ qmd_hub_root }}/bin/qmd mcp --http --host {{ qmd_hub_listen_host }} --port {{ qmd_hub_listen_port }}

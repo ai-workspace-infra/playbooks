@@ -1,0 +1,51 @@
+#!/bin/bash
+# qmd-hub-archive — daily L3 cold archive (run by qmd-hub-archive.timer).
+# Policy: only NEW Markdown objects are uploaded (rclone copy --ignore-existing);
+# existing archive objects are never edited in place. Each run snapshots the
+# content of changes with fence > last archived fence into
+#   raw/YYYY/MM/DD/<origin>/<collection>/<path-with-__>.<sha8>.md
+# plus a run manifest manifests/YYYY/MM/DD/run-<from>-<to>.md.
+# Files matching secret patterns are quarantined, not uploaded.
+. /opt/qmd-hub/bin/qmd-hub-lib.sh
+mkdir -p "$STATE"
+exec 9>"$STATE/archive.lock"; flock -n 9 || { log "archive already running"; exit 0; }
+status() { printf '%s\t%s\n' "$(date -Is)" "$*" > "$STATE/archive.status"; log "archive: $*"; }
+if [ "${QMD_HUB_ARCHIVE_BACKEND:-none}" = none ]; then status "disabled"; exit 0; fi
+conf="$QMD_HUB_ETC/rclone.conf"
+if [ ! -s "$conf" ]; then
+  status "credentials-missing: provide $conf (0600, owner $(id -un)) with remote [$QMD_HUB_ARCHIVE_REMOTE] for backend $QMD_HUB_ARCHIVE_BACKEND"
+  exit 0
+fi
+last="$(psql_hub -c 'SELECT coalesce(max(to_fence),0) FROM qmd_hub_archive_runs WHERE status = '"'"'uploaded'"'")"
+max="$(psql_hub -c 'SELECT coalesce(max(fence),0) FROM qmd_hub_changes')"
+if [ "$max" -le "$last" ]; then status "nothing-new fence=$max"; exit 0; fi
+day="$(TZ=Asia/Shanghai date +%Y/%m/%d)"
+stage="$QMD_HUB_ROOT/archive-staging/run-$last-$max"; rm -rf "$stage"; mkdir -p "$stage/raw/$day" "$stage/manifests/$day"
+quar="$QMD_HUB_ROOT/quarantine"; mkdir -p "$quar"
+manifest="$stage/manifests/$day/run-$last-$max.md"
+{ echo "# QMD Hub archive run $last..$max"; echo; echo "- host: $(hostname)"; echo "- at: $(date -Is)"; echo; echo "| fence | origin | collection | path | sha256 | op | object |"; echo "|---|---|---|---|---|---|---|"; } > "$manifest"
+n=0; q=0
+while IFS=$'\t' read -r fence origin coll path sha op; do
+  obj="-"
+  if [ "$op" = upsert ]; then
+    src="$DATA/$origin/$coll/$path"
+    if [ -f "$src" ] && [ "$(sha256sum -- "$src" | cut -d' ' -f1)" = "$sha" ]; then
+      if grep -Eq -- '-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9]{32,}' "$src"; then
+        cp -- "$src" "$quar/$(echo "$origin--$coll--$path" | tr '/' '_').$sha"; q=$((q+1)); obj="quarantined"
+      else
+        obj="raw/$day/$origin/$coll/$(echo "$path" | sed 's#/#__#g; s#\.md$##').${sha:0:8}.md"
+        mkdir -p "$stage/$(dirname "$obj")"; cp -- "$src" "$stage/$obj"; n=$((n+1))
+      fi
+    else
+      obj="superseded"
+    fi
+  fi
+  echo "| $fence | $origin | $coll | $path | ${sha:0:12} | $op | $obj |" >> "$manifest"
+done < <(psql_hub -F $'\t' -c "SELECT fence, origin, collection, path, sha256, op FROM qmd_hub_changes WHERE fence > $last AND fence <= $max ORDER BY fence")
+if rclone --config "$conf" copy --ignore-existing --checksum "$stage" "$QMD_HUB_ARCHIVE_REMOTE:$QMD_HUB_ARCHIVE_PATH" >"$STATE/archive-rclone.log" 2>&1; then
+  psql_hub -c "INSERT INTO qmd_hub_archive_runs(from_fence, to_fence, objects, quarantined, status) VALUES ($last, $max, $n, $q, 'uploaded')"
+  rm -rf "$stage"; status "uploaded fence=$last..$max objects=$n quarantined=$q"
+else
+  psql_hub -c "INSERT INTO qmd_hub_archive_runs(from_fence, to_fence, objects, quarantined, status) VALUES ($last, $max, $n, $q, 'failed')"
+  status "upload-failed fence=$last..$max (see $STATE/archive-rclone.log)"; exit 1
+fi

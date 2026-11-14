@@ -1,0 +1,22 @@
+---
+# ==============================================================================
+# Playbook: QMD standalone / Spoke — Level-1 (QMD + SQLite + sync) for a single
+# user, optionally paired with a QMD Hub for two-way asynchronous sync.
+# Baseline: ai-workspace-services/knowledge#400
+#   docs/reference/platform-delivery/architecture/QMD单体运行与分布式异步同步架构规范.md
+# ==============================================================================
+- name: Deploy QMD standalone Spoke
+  hosts: "{{ target_hosts | mandatory }}"
+  become: false
+  gather_facts: true
+  pre_tasks:
+    - name: Require one explicit host or inventory group
+      ansible.builtin.assert:
+        that:
+          - target_hosts is match('^[A-Za-z0-9_.-]+$')
+          - target_hosts != 'all'
+        fail_msg: "Pass -e target_hosts=<inventory-host-or-group>."
+      tags: [always]
+  roles:
+    - role: roles/vhosts/qmd_standalone
+      tags: [qmd_standalone]

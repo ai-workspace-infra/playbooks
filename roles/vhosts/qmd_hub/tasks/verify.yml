@@ -1,0 +1,53 @@
+---
+- name: Wait for qmd-hub health endpoint
+  ansible.builtin.uri:
+    url: "http://{{ qmd_hub_listen_host }}:{{ qmd_hub_listen_port }}/health"
+    status_code: 200
+  register: qmd_hub_health
+  retries: 20
+  delay: 3
+  until: qmd_hub_health.status == 200
+
+- name: Require bearer token on /query
+  ansible.builtin.uri:
+    url: "http://{{ qmd_hub_listen_host }}:{{ qmd_hub_listen_port }}/query"
+    method: POST
+    body_format: json
+    body: { searches: [{ type: lex, query: "qmd" }] }
+    status_code: 401
+
+- name: Sync API health on the CNI bridge
+  ansible.builtin.uri:
+    url: "http://{{ qmd_hub_sync_listen_host }}:{{ qmd_hub_sync_listen_port }}/api/v1/sync/health"
+  register: qmd_hub_sync_health
+  retries: 10
+  delay: 3
+  until: qmd_hub_sync_health.status == 200
+  when: qmd_hub_sync_enabled | bool
+
+- name: Sync API rejects missing bearer token
+  ansible.builtin.uri:
+    url: "http://{{ qmd_hub_sync_listen_host }}:{{ qmd_hub_sync_listen_port }}/api/v1/sync/changes?since_fence=0"
+    status_code: 401
+  when: qmd_hub_sync_enabled | bool
+
+- name: Run initial ingest (records fence in L2)
+  ansible.builtin.command: "{{ qmd_hub_root }}/bin/qmd-hub-ingest all"
+  become: true
+  become_user: "{{ qmd_hub_user }}"
+  register: qmd_hub_ingest
+  changed_when: "'new=0' not in qmd_hub_ingest.stdout"
+
+- name: QMD status
+  ansible.builtin.command: "{{ qmd_hub_root }}/bin/qmd status"
+  become: true
+  become_user: "{{ qmd_hub_user }}"
+  register: qmd_hub_status
+  changed_when: false
+
+- name: Show QMD Hub summary
+  ansible.builtin.debug:
+    msg:
+      - "listener: {{ qmd_hub_listen_host }}:{{ qmd_hub_listen_port }} (token-protected /mcp /query /search)"
+      - "ingest: {{ qmd_hub_ingest.stdout }}"
+      - "{{ qmd_hub_status.stdout_lines[:12] }}"

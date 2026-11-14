@@ -1,0 +1,60 @@
+---
+- name: Install hub environment (non-secret)
+  ansible.builtin.template:
+    src: hub.env.j2
+    dest: "{{ qmd_hub_etc_dir }}/hub.env"
+    owner: root
+    group: "{{ qmd_hub_group }}"
+    mode: "0640"
+  notify: Restart qmd-hub
+
+- name: Install wrappers
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ qmd_hub_root }}/bin/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - { src: qmd.sh.j2, dest: qmd }
+    - { src: qmd-hub-serve.sh.j2, dest: qmd-hub-serve }
+  notify: Restart qmd-hub
+
+- name: Install hub sync/archive scripts
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ qmd_hub_root }}/bin/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop: [qmd-hub-lib.sh, qmd-hub-ingest, qmd-hub-changes, qmd-hub-note, qmd-hub-archive, qmd-hub-syncd.mjs]
+  register: qmd_hub_scripts
+
+- name: Install Spoke SSH keys (tunnel-only fallback to the sync API; no shell/pty)
+  ansible.builtin.copy:
+    dest: "{{ qmd_hub_root }}/.ssh/authorized_keys"
+    owner: "{{ qmd_hub_user }}"
+    group: "{{ qmd_hub_group }}"
+    mode: "0600"
+    content: |
+      # Managed by Ansible role qmd_hub (qmd_hub_spoke_authorized_keys)
+      {% for k in qmd_hub_spoke_authorized_keys %}
+      restrict,port-forwarding,permitopen="{{ qmd_hub_sync_listen_host }}:{{ qmd_hub_sync_listen_port }}",command="/usr/bin/false" {{ k }}
+      {% endfor %}
+
+- name: Install qmd-hub systemd unit
+  ansible.builtin.template:
+    src: qmd-hub.service.j2
+    dest: "/etc/systemd/system/{{ qmd_hub_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart qmd-hub
+
+- name: Enable and start qmd-hub
+  ansible.builtin.systemd:
+    name: "{{ qmd_hub_service_name }}.service"
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: not ansible_check_mode

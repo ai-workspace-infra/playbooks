@@ -1,0 +1,13 @@
+#!/bin/bash
+# qmd-hub-changes <since_fence> [exclude_origin]
+# Delta API (SSH transport): TSV rows "fence origin collection path sha256 op"
+# for fence > since_fence, then a final line "#max_fence <n>".
+. /opt/qmd-hub/bin/qmd-hub-lib.sh
+since="${1:-0}"; excl="${2:-}"
+[[ "$since" =~ ^[0-9]+$ ]] || { echo "since_fence must be an integer" >&2; exit 2; }
+[[ -z "$excl" || "$excl" =~ ^[a-z0-9][a-z0-9._-]{0,62}$ ]] || { echo "invalid origin" >&2; exit 2; }
+psql_hub -F $'\t' -v since="$since" -v excl="$excl" <<'SQL'
+SELECT fence, origin, collection, path, sha256, op FROM qmd_hub_changes
+WHERE fence > :since AND origin <> :'excl' ORDER BY fence;
+SQL
+echo "#max_fence $(psql_hub -c 'SELECT coalesce(max(fence),0) FROM qmd_hub_changes')"

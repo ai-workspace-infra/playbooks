@@ -1,0 +1,32 @@
+---
+- name: Install qmd-hub-syncd unit
+  ansible.builtin.template:
+    src: qmd-hub-syncd.service.j2
+    dest: /etc/systemd/system/qmd-hub-syncd.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: qmd_hub_syncd_unit
+
+- name: Allow only the pod network to reach the sync API on the CNI bridge
+  ansible.builtin.command:
+    argv: [ufw, allow, proto, tcp, from, "{{ qmd_hub_sync_allow_from }}", to,
+           "{{ qmd_hub_sync_listen_host }}", port, "{{ qmd_hub_sync_listen_port }}",
+           comment, qmd-hub-syncd]
+  register: qmd_hub_ufw
+  changed_when: "'Skipping' not in qmd_hub_ufw.stdout"
+  when: not ansible_check_mode
+
+- name: Enable and (re)start qmd-hub-syncd
+  ansible.builtin.systemd:
+    name: qmd-hub-syncd.service
+    enabled: true
+    state: "{{ 'restarted' if qmd_hub_syncd_unit.changed else 'started' }}"
+    daemon_reload: true
+  when: not ansible_check_mode
+
+- name: Restart syncd when its script changes
+  ansible.builtin.systemd:
+    name: qmd-hub-syncd.service
+    state: restarted
+  when: not ansible_check_mode and (qmd_hub_scripts.changed | default(false))

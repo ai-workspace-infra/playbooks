@@ -1,0 +1,58 @@
+---
+# QMD Hub: Level-4 enterprise persistence (QMD L1 + PG L2 + archive L3) that
+# also acts as the Hub-Spoke centre. Baseline:
+# ai-workspace-services/knowledge#400
+# docs/reference/platform-delivery/architecture/QMD单体运行与分布式异步同步架构规范.md
+
+qmd_hub_user: qmdhub
+qmd_hub_group: qmdhub
+qmd_hub_root: /opt/qmd-hub
+qmd_hub_etc_dir: /etc/qmd-hub
+qmd_hub_service_name: qmd-hub
+
+# Source: the ai-workspace-lab fork, pinned commit (public repo, HTTPS, no deploy key).
+qmd_hub_source_repo: https://github.com/ai-workspace-lab/qmd.git
+qmd_hub_version: 917637d9fea7e7ecaf31d745837983c24eebf202
+
+# Isolated Node runtime under qmd_hub_root (does not touch system node/npm).
+qmd_hub_node_version: v24.22.1
+qmd_hub_node_arch: linux-x64
+
+# HTTP MCP / REST (/health, /query, /search, /mcp). Loopback only by default;
+# a bearer token is always generated on the host (0600, never leaves the host).
+qmd_hub_listen_host: 127.0.0.1
+qmd_hub_listen_port: 8181
+
+# L2: dedicated local PostgreSQL 17 + pgvector cluster (loopback only). It is
+# independent of any in-cluster PostgreSQL managed by GitOps.
+qmd_hub_pg_enabled: true
+qmd_hub_pg_version: "17"
+qmd_hub_pg_cluster: qmdhub
+qmd_hub_pg_port: 5433
+qmd_hub_pg_database: qmd_memory
+qmd_hub_pg_role: qmdhub
+qmd_hub_pg_shared_buffers: 64MB
+qmd_hub_pg_max_connections: 20
+qmd_hub_namespace: qmd-hub
+
+# L3: daily archive. Backend gdrive|s3 via rclone; "none" disables the timer.
+# Credentials are NOT managed here: provide {{ qmd_hub_etc_dir }}/rclone.conf
+# (owner qmd_hub_user, mode 0600) with remote `qmd_hub_archive_remote`.
+qmd_hub_archive_backend: gdrive
+qmd_hub_archive_remote: qmd-archive
+qmd_hub_archive_path: ai-workspace-archive/qmd-hub/{{ inventory_hostname }}
+qmd_hub_archive_on_calendar: "*-*-* 03:00:00"
+
+# Spokes: public keys allowed to push/pull as qmd_hub_user over SSH (restricted).
+qmd_hub_spoke_authorized_keys: []
+
+qmd_hub_memory_max: 768M
+
+# Delta Sync API (qmd-hub-syncd). Binds the CNI bridge address so only the
+# in-cluster Traefik (TLS termination for qmd_hub_public_host) can reach it;
+# it is never bound on the public interface. Bearer token: sync-token (0600).
+qmd_hub_sync_enabled: true
+qmd_hub_sync_listen_host: 10.42.0.1
+qmd_hub_sync_listen_port: 8182
+qmd_hub_sync_allow_from: 10.42.0.0/16
+qmd_hub_public_host: qmd.svc.plus

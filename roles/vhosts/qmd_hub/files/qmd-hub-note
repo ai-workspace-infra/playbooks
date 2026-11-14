@@ -1,0 +1,10 @@
+#!/bin/bash
+# qmd-hub-note <relative/path.md>   (body from stdin)
+# Hub-originated write: stores a Markdown note under origin "hub" and ingests it,
+# so Spokes receive it on their next pull.
+. /opt/qmd-hub/bin/qmd-hub-lib.sh
+rel="${1:?usage: qmd-hub-note <relative/path.md>}"
+[[ "$rel" =~ ^[A-Za-z0-9._/-]+\.md$ && "$rel" != *..* ]] || { echo "invalid path" >&2; exit 2; }
+dest="$DATA/hub/notes/$rel"; mkdir -p "$(dirname "$dest")"
+cat > "$dest.tmp" && mv "$dest.tmp" "$dest"
+exec /opt/qmd-hub/bin/qmd-hub-ingest hub

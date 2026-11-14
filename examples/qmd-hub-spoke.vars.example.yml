@@ -1,0 +1,27 @@
+# Example host_vars for the QMD Hub-Spoke pair (roles qmd_hub / qmd_standalone).
+# Targets must come from the CMDB inventory or a verified single-use inventory;
+# no secrets here — tokens/passwords are 0600 files generated on the Hub.
+#
+# Hub (Level-4 enterprise + Hub-Spoke centre):
+#   ansible-playbook -i <inventory> deploy_qmd_hub.yml -e target_hosts=<hub-host> --check --diff
+#   ansible-playbook -i <inventory> deploy_qmd_hub.yml -e target_hosts=<hub-host>
+qmd_hub_example:
+  qmd_hub_version: 917637d9fea7e7ecaf31d745837983c24eebf202
+  qmd_hub_pg_enabled: true
+  qmd_hub_archive_backend: gdrive          # gdrive | s3 | none
+  qmd_hub_archive_remote: qmd-archive      # [qmd-archive] in /etc/qmd-hub/rclone.conf (0600, qmdhub)
+  qmd_hub_sync_listen_host: 10.42.0.1      # CNI bridge; Traefik terminates TLS for qmd.svc.plus
+  qmd_hub_public_host: qmd.svc.plus
+  qmd_hub_spoke_authorized_keys:
+    - "ssh-ed25519 AAAA... qmd-spoke@<spoke>"   # tunnel-only fallback key
+
+# Spoke (Level-1 QMD + SQLite + sync):
+#   ansible-playbook -i <inventory> deploy_qmd_standalone.yml -e target_hosts=<spoke-host>
+qmd_standalone_example:
+  qmd_standalone_origin: my-laptop
+  qmd_standalone_hub_url: https://qmd.svc.plus
+  qmd_standalone_hub_token_file: ~/qmd-spoke/hub-token    # 0600, copied out of band
+  qmd_standalone_hub_transport: auto
+  qmd_standalone_hub_tunnel_ssh: qmdhub@<hub-host>
+  qmd_standalone_collections:
+    notes: { path: ~/qmd-spoke/notes, pattern: "**/*.md", context: Local notes, push: true }
