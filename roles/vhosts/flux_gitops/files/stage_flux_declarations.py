@@ -20,6 +20,15 @@ def command(*argv):
     return result.stdout.strip()
 
 
+def branch_tip(runner, checkout, branch):
+    for ref in ("refs/remotes/origin/" + branch, "refs/heads/" + branch):
+        try:
+            return runner("git", "-C", str(checkout), "rev-parse", "--verify", "--quiet", ref + "^{commit}")
+        except ValueError:
+            continue
+    return None
+
+
 def inside(checkout, relative):
     path = (checkout / relative).resolve()
     if not path.is_relative_to(checkout) or path == checkout or not path.is_dir():
@@ -92,8 +101,13 @@ def build(checkout, commit, root_path, root_name, source_name, namespace, git_ur
                     resolved = runner("git", "-C", str(checkout), "rev-parse", "refs/tags/" + value + "^{commit}")
                     if resolved != commit:
                         raise ValueError("bootstrap tag does not resolve to the reviewed commit")
-                else:
-                    source["spec"]["ref"] = {"commit": commit}
+                elif kind == "branch":
+                    # Flux watches the declared branch (e.g. main); release tags of
+                    # child sources are configuration inside that branch. Keep the
+                    # branch only when its tip is the reviewed commit; otherwise pin.
+                    tip = branch_tip(runner, checkout, value)
+                    if tip != commit:
+                        source["spec"]["ref"] = {"commit": commit}
             continue
         if set(ref) == {"commit"}:
             resolved = ref["commit"]

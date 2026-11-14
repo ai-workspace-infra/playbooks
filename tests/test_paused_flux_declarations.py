@@ -75,12 +75,26 @@ class Graph(unittest.TestCase):
         self.docs[4]['spec']['ref'] = {'branch': 'main'}
         result = STAGED.build(self.repo, SHA, './cluster', 'generation-root', 'bootstrap', 'flux-system', URL, self.runner, state='active')
         sources = {item['metadata']['name']: item for item in result if item['kind'] == 'GitRepository'}
-        self.assertEqual({'commit': SHA}, sources['bootstrap']['spec']['ref'])
+        self.assertEqual({'branch': 'main'}, sources['bootstrap']['spec']['ref'])
         self.assertEqual({'tag': 'v1.2.3'}, sources['unit-a-config']['spec']['ref'])
         self.assertEqual({'branch': 'main'}, sources['unit-b-config']['spec']['ref'])
         del self.docs[0]['metadata']['annotations']
         with self.assertRaises(ValueError):
             STAGED.build(self.repo, SHA, './cluster', 'generation-root', 'bootstrap', 'flux-system', URL, self.runner, state='active')
+
+    def test_active_root_branch_is_pinned_when_tip_is_not_the_reviewed_commit(self):
+        for item in self.docs:
+            item["spec"]["suspend"] = False
+        self.docs[0]["metadata"]["annotations"] = {"kustomize.toolkit.fluxcd.io/ssa": "IfNotPresent"}
+        self.docs[0]["spec"]["ref"] = {"branch": "main"}
+
+        def moved(*argv):
+            if argv[0] == "git" and "--verify" in argv:
+                return "b" * 40
+            return self.runner(*argv)
+
+        result = STAGED.build(self.repo, SHA, "./cluster", "generation-root", "bootstrap", "flux-system", URL, moved, state="active")
+        self.assertEqual({"commit": SHA}, result[0]["spec"]["ref"])
 
     def test_active_root_preserves_only_a_tag_at_the_reviewed_commit(self):
         for item in self.docs:
