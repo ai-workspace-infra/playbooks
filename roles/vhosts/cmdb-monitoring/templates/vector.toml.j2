@@ -5,14 +5,30 @@ type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:19100/metrics"]
 scrape_interval_secs = 30
 
+{% if cmdb_monitoring_process_exporter_enabled is defined and cmdb_monitoring_process_exporter_enabled %}
+[sources.process]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:{{ cmdb_monitoring_process_port | default('19256') }}/metrics"]
+scrape_interval_secs = 30
+{% endif %}
+
 [transforms.labels]
 type = "remap"
-inputs = ["node"]
+inputs = [
+  "node",
+{% if cmdb_monitoring_process_exporter_enabled is defined and cmdb_monitoring_process_exporter_enabled %}
+  "process",
+{% endif %}
+]
 source = '''
 .tags.instance = {{ cmdb_monitoring_instance | to_json }}
 .tags.host = {{ cmdb_monitoring_instance | to_json }}
 .tags.job = "node-exporter"
 .tags.service = "node-exporter"
+if exists(.name) && starts_with(string!(.name), "namedprocess_") {
+  .tags.job = "process-exporter"
+  .tags.service = "process-exporter"
+}
 .tags.provider = {{ cmdb_monitoring_provider | to_json }}
 .tags.project_id = {{ cmdb_monitoring_project_id | to_json }}
 {% if cmdb_monitoring_logical_project | length > 0 %}

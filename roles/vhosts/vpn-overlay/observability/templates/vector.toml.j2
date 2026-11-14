@@ -8,14 +8,35 @@ type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:19100/metrics"]
 scrape_interval_secs = 15
 
+{% if xconnect_observability_process_metrics_enabled is not defined or xconnect_observability_process_metrics_enabled %}
+[sources.process_metrics]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:{{ xconnect_observability_process_port | default('19256') }}/metrics"]
+scrape_interval_secs = 15
+{% endif %}
+
 [transforms.add_xconnect_labels]
 type = "remap"
-inputs = ["internal_metrics", "node_metrics"]
+inputs = [
+  "internal_metrics",
+  "node_metrics",
+{% if xconnect_observability_process_metrics_enabled is not defined or xconnect_observability_process_metrics_enabled %}
+  "process_metrics",
+{% endif %}
+]
 source = '''
 .tags.role = "{{ xconnect_observability_role }}"
 .tags.environment = "{{ xconnect_observability_environment }}"
 .tags.instance = "{{ xconnect_observability_instance }}"
 .tags.job = "xconnect"
+if exists(.name) && starts_with(string!(.name), "node_") {
+  .tags.job = "node-exporter"
+  .tags.service = "node-exporter"
+}
+if exists(.name) && starts_with(string!(.name), "namedprocess_") {
+  .tags.job = "process-exporter"
+  .tags.service = "process-exporter"
+}
 '''
 
 [sinks.prometheus_remote]
