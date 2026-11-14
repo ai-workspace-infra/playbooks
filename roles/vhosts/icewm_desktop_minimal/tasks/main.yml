@@ -146,22 +146,110 @@
     - icewm_desktop_enabled | bool
     - icewm_desktop_manage_user | bool
 
-- name: Ensure IceWM user configuration directory exists
+- name: Ensure system IceWM configuration directories exist
   ansible.builtin.file:
-    path: "/home/{{ icewm_desktop_user }}/.icewm"
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/X11/icewm
+    - /etc/X11/icewm/taskbar
+    - /usr/share/icewm
+    - /usr/share/icewm/icons
+    - /usr/share/icewm/taskbar
+  become: true
+  when: icewm_desktop_enabled | bool
+
+- name: Install Google Chrome taskbar icons for IceWM
+  ansible.builtin.copy:
+    src: "/usr/share/icons/hicolor/{{ item }}/apps/google-chrome.png"
+    dest: "/usr/share/icewm/icons/google-chrome_{{ item }}.png"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - 16x16
+    - 32x32
+  become: true
+  when:
+    - icewm_desktop_enabled | bool
+    - icewm_desktop_browser == 'chrome'
+    - ansible_architecture in ['x86_64', 'amd64']
+    - not ansible_check_mode
+
+- name: Install AI Desktop XWorkTech wallpaper
+  ansible.builtin.copy:
+    src: xworktech-wallpaper.png
+    dest: /usr/share/icewm/xworktech-wallpaper.png
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: icewm_desktop_enabled | bool
+
+- name: Install system-wide AI Desktop IceWM taskbar start logo
+  ansible.builtin.copy:
+    src: taskbar/icewm.xpm
+    dest: "{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - /usr/share/icewm/taskbar/icewm.xpm
+    - /usr/share/icewm/taskbar/start.xpm
+    - /usr/share/icewm/taskbar/debian.xpm
+    - /etc/X11/icewm/taskbar/icewm.xpm
+  become: true
+  when: icewm_desktop_enabled | bool
+
+- name: Install system-wide AI Desktop IceWM configuration
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/X11/icewm/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - preferences
+    - prefoverride
+    - toolbar
+    - keys
+    - menu
+  become: true
+  when: icewm_desktop_enabled | bool
+
+- name: Sync system default IceWM toolbar shortcuts
+  ansible.builtin.template:
+    src: toolbar.j2
+    dest: /usr/share/icewm/toolbar
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: icewm_desktop_enabled | bool
+
+- name: Ensure IceWM user configuration directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
     state: directory
     owner: "{{ icewm_desktop_user }}"
     group: "{{ icewm_desktop_user }}"
     mode: "0755"
+  loop:
+    - "/home/{{ icewm_desktop_user }}/.icewm"
+    - "/home/{{ icewm_desktop_user }}/.icewm/taskbar"
   become: true
   when:
     - icewm_desktop_enabled | bool
     - icewm_desktop_manage_user | bool
 
-- name: Install AI Desktop IceWM preferences
-  ansible.builtin.template:
-    src: preferences.j2
-    dest: "/home/{{ icewm_desktop_user }}/.icewm/preferences"
+- name: Install user AI Desktop IceWM taskbar start logo
+  ansible.builtin.copy:
+    src: taskbar/icewm.xpm
+    dest: "/home/{{ icewm_desktop_user }}/.icewm/taskbar/icewm.xpm"
     owner: "{{ icewm_desktop_user }}"
     group: "{{ icewm_desktop_user }}"
     mode: "0644"
@@ -170,25 +258,19 @@
     - icewm_desktop_enabled | bool
     - icewm_desktop_manage_user | bool
 
-- name: Install AI Desktop IceWM key bindings
+- name: Install user AI Desktop IceWM configuration
   ansible.builtin.template:
-    src: keys.j2
-    dest: "/home/{{ icewm_desktop_user }}/.icewm/keys"
+    src: "{{ item }}.j2"
+    dest: "/home/{{ icewm_desktop_user }}/.icewm/{{ item }}"
     owner: "{{ icewm_desktop_user }}"
     group: "{{ icewm_desktop_user }}"
     mode: "0644"
-  become: true
-  when:
-    - icewm_desktop_enabled | bool
-    - icewm_desktop_manage_user | bool
-
-- name: Install AI Desktop IceWM application menu
-  ansible.builtin.template:
-    src: menu.j2
-    dest: "/home/{{ icewm_desktop_user }}/.icewm/menu"
-    owner: "{{ icewm_desktop_user }}"
-    group: "{{ icewm_desktop_user }}"
-    mode: "0644"
+  loop:
+    - preferences
+    - prefoverride
+    - toolbar
+    - keys
+    - menu
   become: true
   when:
     - icewm_desktop_enabled | bool

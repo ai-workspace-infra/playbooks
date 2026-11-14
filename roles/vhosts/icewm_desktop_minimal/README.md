@@ -9,8 +9,13 @@ It does not itself install XFCE, office software, Wine, video players, media
 suites, or monitoring agents. AI Agent CLIs and runtimes come from its
 dependency role [`ai_desktop_addon`](../ai_desktop_addon/README.md) (declared in
 `meta/main.yml`), which runs before this role. The configuration is intentionally small:
-IceWM preferences, application menu, and key bindings are generated for the
-AI Desktop user instead of copying a complete desktop theme.
+IceWM preferences, preference overrides (`prefoverride`), single-desktop bottom
+panel toolbar (`终端 ｜ 文件浏览器 ｜ Web浏览器（Chrome）`, with virtual desktop
+switching disabled), application menu, key bindings, XWorkTech start menu logo
+(`taskbar/icewm.xpm`), and wallpaper (`xworktech-wallpaper.png`) are installed
+system-wide under `/etc/X11/icewm/` and `/usr/share/icewm/` (and into the
+user's `~/.icewm/` when `icewm_desktop_manage_user` is enabled) instead of
+copying a complete desktop theme.
 
 Set `icewm_desktop_browser: chromium` to stay entirely on distribution
 packages. The default `chrome` downloads the official amd64 Google Chrome
