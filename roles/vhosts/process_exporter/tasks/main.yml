@@ -5,25 +5,25 @@
     shell: /usr/sbin/nologin
     create_home: false
   when:
-    - inventory_hostname in groups[group]
+    - inventory_hostname in groups.get(group, [inventory_hostname])
     - not ansible_check_mode
 
 - name: Check if process-exporter binary already exists
   ansible.builtin.stat:
     path: /usr/local/bin/process-exporter
   register: process_exporter_bin_check
-  when: inventory_hostname in groups[group]
+  when: inventory_hostname in groups.get(group, [inventory_hostname])
 
 - name: Download process-exporter archive
   ansible.builtin.get_url:
     url: >-
       https://github.com/ncabatoff/process-exporter/releases/download/v{{
       process_exporter_version | default('0.7.10') }}/process-exporter-{{
-      process_exporter_version | default('0.7.10') }}.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}.tar.gz
+      process_exporter_version | default('0.7.10') }}.linux-{{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}.tar.gz
     dest: /tmp/process-exporter.tar.gz
     mode: "0644"
   when:
-    - inventory_hostname in groups[group]
+    - inventory_hostname in groups.get(group, [inventory_hostname])
     - not ansible_check_mode
     - not (process_exporter_bin_check.stat.exists | default(false))
 
@@ -32,21 +32,21 @@
     src: /tmp/process-exporter.tar.gz
     dest: /tmp
     remote_src: true
-    creates: "/tmp/process-exporter-{{ process_exporter_version | default('0.7.10') }}.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+    creates: "/tmp/process-exporter-{{ process_exporter_version | default('0.7.10') }}.linux-{{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}"
   when:
-    - inventory_hostname in groups[group]
+    - inventory_hostname in groups.get(group, [inventory_hostname])
     - not ansible_check_mode
     - not (process_exporter_bin_check.stat.exists | default(false))
 
 - name: Install process-exporter binary
   ansible.builtin.copy:
-    src: "/tmp/process-exporter-{{ process_exporter_version | default('0.7.10') }}.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}/process-exporter"
+    src: "/tmp/process-exporter-{{ process_exporter_version | default('0.7.10') }}.linux-{{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}/process-exporter"
     dest: /usr/local/bin/process-exporter
     mode: '0755'
     remote_src: true
   register: process_exporter_bin_install
   when:
-    - inventory_hostname in groups[group]
+    - inventory_hostname in groups.get(group, [inventory_hostname])
     - not ansible_check_mode
     - not (process_exporter_bin_check.stat.exists | default(false))
   become: true
@@ -56,16 +56,16 @@
     path: /tmp/process-exporter.tar.gz
     state: absent
   when:
-    - inventory_hostname in groups[group]
+    - inventory_hostname in groups.get(group, [inventory_hostname])
     - not ansible_check_mode
     - not (process_exporter_bin_check.stat.exists | default(false))
 
 - name: Cleanup extracted process-exporter directory
   ansible.builtin.file:
-    path: "/tmp/process-exporter-{{ process_exporter_version | default('0.7.10') }}.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+    path: "/tmp/process-exporter-{{ process_exporter_version | default('0.7.10') }}.linux-{{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}"
     state: absent
   when:
-    - inventory_hostname in groups[group]
+    - inventory_hostname in groups.get(group, [inventory_hostname])
     - not (process_exporter_bin_check.stat.exists | default(false))
 
 - name: Deploy process-exporter config
@@ -76,24 +76,45 @@
     group: process_exporter
     mode: '0644'
   register: process_exporter_config_template
-  when: inventory_hostname in groups[group]
+  when: inventory_hostname in groups.get(group, [inventory_hostname])
 
 - name: Check whether node-exporter is available for combined metrics service
   ansible.builtin.stat:
-    path: /opt/metrics-agent/node_exporter
-  register: process_exporter_node_binary
-  when: inventory_hostname in groups[group]
+    path: "{{ item }}"
+  loop:
+    - /opt/metrics-agent/node_exporter
+    - /usr/local/bin/xconnect-node-exporter
+    - /usr/local/bin/node_exporter
+  register: process_exporter_node_candidates
+  when: inventory_hostname in groups.get(group, [inventory_hostname])
+
+- name: Resolve effective node-exporter binary and textfile dir
+  ansible.builtin.set_fact:
+    process_exporter_node_bin_effective: >-
+      {{ (process_exporter_node_candidates.results | default([])
+          | selectattr('stat.exists', 'defined')
+          | selectattr('stat.exists', 'equalto', true)
+          | map(attribute='item') | list | first) | default('', true) }}
+    process_exporter_textfile_dir_effective: >-
+      {{ '/var/lib/xconnect-node-exporter'
+         if ((process_exporter_node_candidates.results | default([])
+              | selectattr('stat.exists', 'defined')
+              | selectattr('stat.exists', 'equalto', true)
+              | map(attribute='item') | list | first | default('')) == '/usr/local/bin/xconnect-node-exporter')
+         else '/var/lib/node_exporter' }}
+  when: inventory_hostname in groups.get(group, [inventory_hostname])
 
 - name: Check whether split metrics service files exist
   ansible.builtin.stat:
     path: "/etc/systemd/system/{{ item }}"
   loop:
     - node-exporter.service
+    - xconnect-node-exporter.service
     - process-exporter.service
   register: process_exporter_split_units
   when:
-    - inventory_hostname in groups[group]
-    - process_exporter_node_binary.stat.exists | default(false)
+    - inventory_hostname in groups.get(group, [inventory_hostname])
+    - (process_exporter_node_bin_effective | default('') | length > 0)
 
 - name: Create process-exporter service
   ansible.builtin.template:
@@ -104,8 +125,8 @@
     mode: '0644'
   register: process_exporter_unit_template
   when:
-    - inventory_hostname in groups[group]
-    - not (process_exporter_node_binary.stat.exists | default(false))
+    - inventory_hostname in groups.get(group, [inventory_hostname])
+    - not (process_exporter_node_bin_effective | default('') | length > 0)
 
 - name: Install combined metrics supervisor
   ansible.builtin.copy:
@@ -116,8 +137,8 @@
     mode: "0755"
   register: combined_metrics_supervisor_copy
   when:
-    - inventory_hostname in groups[group]
-    - process_exporter_node_binary.stat.exists | default(false)
+    - inventory_hostname in groups.get(group, [inventory_hostname])
+    - (process_exporter_node_bin_effective | default('') | length > 0)
     - not ansible_check_mode
 
 - name: Install combined metrics service
@@ -129,8 +150,8 @@
     mode: "0644"
   register: combined_metrics_unit_template
   when:
-    - inventory_hostname in groups[group]
-    - process_exporter_node_binary.stat.exists | default(false)
+    - inventory_hostname in groups.get(group, [inventory_hostname])
+    - (process_exporter_node_bin_effective | default('') | length > 0)
 
 - name: Stop split metrics services after consolidation
   ansible.builtin.systemd:
@@ -142,8 +163,8 @@
   loop_control:
     label: "{{ item.item | default('') }}"
   when:
-    - inventory_hostname in groups[group]
-    - process_exporter_node_binary.stat.exists | default(false)
+    - inventory_hostname in groups.get(group, [inventory_hostname])
+    - (process_exporter_node_bin_effective | default('') | length > 0)
     - item.stat is defined and item.stat.exists
   failed_when: false
 
@@ -153,10 +174,11 @@
     state: absent
   loop:
     - node-exporter.service
+    - xconnect-node-exporter.service
     - process-exporter.service
   when:
-    - inventory_hostname in groups[group]
-    - process_exporter_node_binary.stat.exists | default(false)
+    - inventory_hostname in groups.get(group, [inventory_hostname])
+    - (process_exporter_node_bin_effective | default('') | length > 0)
 
 - name: Enable and start combined metrics service
   ansible.builtin.systemd:
@@ -171,8 +193,8 @@
          else 'started' }}
     daemon_reload: "{{ combined_metrics_unit_template.changed | default(false) }}"
   when:
-    - inventory_hostname in groups[group]
-    - process_exporter_node_binary.stat.exists | default(false)
+    - inventory_hostname in groups.get(group, [inventory_hostname])
+    - (process_exporter_node_bin_effective | default('') | length > 0)
     - not ansible_check_mode
 
 - name: Enable and start process-exporter
@@ -187,6 +209,6 @@
          else 'started' }}
     daemon_reload: "{{ process_exporter_unit_template.changed | default(false) }}"
   when:
-    - inventory_hostname in groups[group]
+    - inventory_hostname in groups.get(group, [inventory_hostname])
     - not ansible_check_mode
-    - not (process_exporter_node_binary.stat.exists | default(false))
+    - not (process_exporter_node_bin_effective | default('') | length > 0)

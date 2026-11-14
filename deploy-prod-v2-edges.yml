@@ -117,3 +117,14 @@
         enabled: true
         daemon_reload: true
       loop: [xray, xray-tcp, xray-exporter-xhttp, xray-exporter-tcp]
+    - name: Deploy host metrics exporters and vector agent
+      ansible.builtin.include_role:
+        name: "{{ item }}"
+      loop:
+        - vhosts/node_exporter
+        - vhosts/process_exporter
+        - vhosts/vector-agent
+      vars:
+        group: v2_edges
+        vector_observability_node_identity: "{{ inventory_hostname }}"
+        vector_observability_environment: prod

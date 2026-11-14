@@ -7,14 +7,14 @@ After=network-online.target
 Type=simple
 User=root
 ExecStart=/usr/local/bin/metrics-supervisor.py \
-  --node-binary /opt/metrics-agent/node_exporter \
+  --node-binary {{ process_exporter_node_bin_effective | default('/opt/metrics-agent/node_exporter') }} \
   --node-user nobody \
   --node-listen 127.0.0.1:9100 \
-  --textfile-dir /var/lib/node_exporter \
+  --textfile-dir {{ process_exporter_textfile_dir_effective | default('/var/lib/node_exporter') }} \
   --process-binary /usr/local/bin/process-exporter \
   --process-user process_exporter \
   --process-config /etc/process-exporter.yml \
-  --process-listen 127.0.0.1:9256
+  --process-listen {{ process_exporter_bind_addr | default('127.0.0.1') }}:{{ process_exporter_port | default('9256') }}
 Restart=always
 RestartSec=2
 NoNewPrivileges=yes

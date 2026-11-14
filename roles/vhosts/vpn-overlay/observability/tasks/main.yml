@@ -64,6 +64,81 @@
     state: restarted
     daemon_reload: true
 
+- name: Check if xconnect process-exporter binary already exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/xconnect-process-exporter
+  register: xconnect_process_exporter_bin_check
+  when: xconnect_observability_process_metrics_enabled | default(true) | bool
+
+- name: Download process exporter archive
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/ncabatoff/process-exporter/releases/download/v{{ xconnect_observability_process_exporter_version }}/process-exporter-{{ xconnect_observability_process_exporter_version }}.linux-{{ xconnect_observability_arch }}.tar.gz
+    dest: /tmp/xconnect-process-exporter.tar.gz
+    mode: '0644'
+  when:
+    - xconnect_observability_process_metrics_enabled | default(true) | bool
+    - not (xconnect_process_exporter_bin_check.stat.exists | default(false))
+
+- name: Extract process exporter archive
+  ansible.builtin.unarchive:
+    src: /tmp/xconnect-process-exporter.tar.gz
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/process-exporter-{{ xconnect_observability_process_exporter_version }}.linux-{{ xconnect_observability_arch }}/process-exporter"
+  when:
+    - xconnect_observability_process_metrics_enabled | default(true) | bool
+    - not (xconnect_process_exporter_bin_check.stat.exists | default(false))
+
+- name: Install process exporter binary
+  ansible.builtin.copy:
+    src: "/tmp/process-exporter-{{ xconnect_observability_process_exporter_version }}.linux-{{ xconnect_observability_arch }}/process-exporter"
+    dest: /usr/local/bin/xconnect-process-exporter
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0755'
+  when:
+    - xconnect_observability_process_metrics_enabled | default(true) | bool
+    - not (xconnect_process_exporter_bin_check.stat.exists | default(false))
+
+- name: Clean temporary process exporter files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/xconnect-process-exporter.tar.gz
+    - "/tmp/process-exporter-{{ xconnect_observability_process_exporter_version }}.linux-{{ xconnect_observability_arch }}"
+  when:
+    - xconnect_observability_process_metrics_enabled | default(true) | bool
+    - not (xconnect_process_exporter_bin_check.stat.exists | default(false))
+
+- name: Install XConnect process exporter config
+  ansible.builtin.template:
+    src: xconnect-process-exporter.yml.j2
+    dest: /etc/xconnect-process-exporter.yml
+    owner: root
+    group: root
+    mode: '0644'
+  when: xconnect_observability_process_metrics_enabled | default(true) | bool
+
+- name: Install XConnect process exporter service
+  ansible.builtin.template:
+    src: xconnect-process-exporter.service.j2
+    dest: /etc/systemd/system/xconnect-process-exporter.service
+    owner: root
+    group: root
+    mode: '0644'
+  when: xconnect_observability_process_metrics_enabled | default(true) | bool
+
+- name: Enable XConnect process exporter
+  ansible.builtin.systemd:
+    name: xconnect-process-exporter
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  when: xconnect_observability_process_metrics_enabled | default(true) | bool
+
 - name: Download Vector package
   ansible.builtin.get_url:
     url: "https://github.com/vectordotdev/vector/releases/download/v{{ xconnect_observability_vector_version }}/vector_{{ xconnect_observability_vector_version }}-1_{{ xconnect_observability_arch }}.deb"

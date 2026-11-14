@@ -1,0 +1,17 @@
+[Unit]
+Description=XConnect Prometheus process exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/xconnect-process-exporter --config.path /etc/xconnect-process-exporter.yml --web.listen-address=127.0.0.1:{{ xconnect_observability_process_port | default('19256') }}
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
