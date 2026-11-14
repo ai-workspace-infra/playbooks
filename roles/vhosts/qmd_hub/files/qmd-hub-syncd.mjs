@@ -11,6 +11,10 @@
 //   GET  /api/v1/sync/file?origin=&collection=&path= -> raw markdown (X-Content-Sha256)
 //   GET  /api/v1/sync/events                         -> SSE "fence" events
 //   GET  /                                           -> authenticated status page (humans)
+//   GET  /api/v1/auth/whoami (alias /api/v1/sync/whoami) -> {identity, accounts_url} for
+//        `qmd login` / `qmd whoami`; unauthenticated callers get the usual 401 whose JSON
+//        body advertises {login_url, accounts_url} so a custom-domain Hub tells the CLI
+//        which account service to sign in against (no anonymous path is added).
 // manifest = {<collection>: {<path>: <sha256>}}.
 // Auth (same model as ai-desktop-lab/xworkmate-remote-desktop):
 //   1. static machine token (Spoke sync token file), constant-time compare;
@@ -90,7 +94,7 @@ function deny(req, res, a) {
     res.writeHead(a.status, { ...headers, "content-type": "text/html; charset=utf-8" });
     return res.end(`<!doctype html><title>QMD Hub</title><p>QMD Hub requires a svc.plus account session (${a.status}).</p>${LOGIN_URL ? `<p><a href="${LOGIN_URL}">Sign in with accounts.svc.plus</a></p>` : ""}`);
   }
-  return send(res, a.status, { error: a.error, login_url: LOGIN_URL || undefined }, headers);
+  return send(res, a.status, { error: a.error, login_url: LOGIN_URL || undefined, accounts_url: ACCOUNTS_URL || undefined }, headers);
 }
 function send(res, code, obj, headers = {}) {
   const body = typeof obj === "string" ? obj : JSON.stringify(obj);
@@ -156,6 +160,9 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { service: "qmd-hub", identity: a.id, max_fence: await maxFence(), api: "/api/v1/sync/" });
     }
     if (url.pathname === "/api/v1/sync/health" && req.method === "GET") return send(res, 200, { ok: true, service: "qmd-hub-syncd", identity: a.id.method });
+    if ((url.pathname === "/api/v1/auth/whoami" || url.pathname === "/api/v1/sync/whoami") && req.method === "GET") {
+      return send(res, 200, { service: "qmd-hub", identity: a.id, accounts_url: ACCOUNTS_URL || undefined });
+    }
     if (!url.pathname.startsWith("/api/v1/sync/")) return send(res, 404, { error: "not found" });
 
     if (p === "/plan" && req.method === "POST") {

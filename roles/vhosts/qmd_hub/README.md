@@ -33,7 +33,7 @@ Baseline: [ai-workspace-services/knowledge#400](https://github.com/ai-workspace-
 
 ## 输出 / 验收证据
 
-`tasks/verify.yml`：`/health` 200、无 token `/query` 401、同步 API `/health` 200 与无 token 401、首次 `qmd-hub-ingest`、`qmd status`。
+`tasks/verify.yml`：`/health` 200、无 token `/query` 401、同步 API `/health` 200 与无 token 401（含 `/api/v1/auth/whoami`）、Hub 本机用 sync token 调 whoami 得到 `static_token`、首次 `qmd-hub-ingest`、`qmd status`。
 `qmd pg status` 应显示 `PostgreSQL 17.x · +pg_trgm +pgvector`。
 
 ## 幂等、重试与回退
@@ -54,4 +54,5 @@ Baseline: [ai-workspace-services/knowledge#400](https://github.com/ai-workspace-
 - 对外 `https://qmd.svc.plus` 每条路径（含 `/health`）先经 Traefik forwardAuth → `qmd-hub-syncd /api/v1/sync/auth`；未认证 401（浏览器 `Accept: text/html` 时 401 页附 `qmd_hub_login_url` 登录链接）。
 - 人类：PROD `accounts.svc.plus`（`prod-k3s-v6.svc.plus` 提供）会话 —— `Authorization: Bearer <session>` 或 `xc_session` cookie（域 `.svc.plus`），跨集群调用 `{{ qmd_hub_accounts_url }}/api/auth/session` 校验，结果缓存 `qmd_hub_auth_cache_seconds`；并按 `qmd_hub_allowed_roles` / `qmd_hub_allowed_emails` 限定。
 - 机器：Spoke 同步 token（Hub 本机 0600 `sync-token`）照常有效，后端对每个请求再次校验同一凭据。
+- CLI 登录（`qmd login`，ai-workspace-lab/qmd）：`GET /api/v1/auth/whoami`（别名 `/api/v1/sync/whoami`）在认证后返回 `{identity, accounts_url}`，供 `qmd login` 校验会话/机器 token 与 `qmd whoami` 展示身份；未认证仍为 401，其 JSON 体附 `login_url` 与 `accounts_url`，让自定义域名 Hub 告知 CLI 应向哪个账户服务登录。未新增任何匿名路径，同步 token 通道不变。
 - 不需要在 accounts 侧注册 OAuth client/回调（与 xworkmate-remote-desktop 一样只调用会话校验端点）。

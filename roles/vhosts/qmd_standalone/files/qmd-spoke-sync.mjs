@@ -21,7 +21,19 @@ for (const l of readFileSync(envFile, "utf8").split("\n")) { const m = l.match(/
 const args = new Set(process.argv.slice(2));
 const transportArg = [...args].find((a) => a.startsWith("--transport="))?.split("=")[1] || env.QMD_HUB_TRANSPORT || "auto";
 const ROOT = env.QMD_SPOKE_ROOT, ORIGIN = env.QMD_SPOKE_ORIGIN, STATE = join(ROOT, "state"), MIRROR = join(ROOT, "mirror"), QMD = join(ROOT, "bin", "qmd");
-const TOKEN = readFileSync(env.QMD_HUB_TOKEN_FILE, "utf8").trim();
+// Bearer credential: QMD_HUB_TOKEN_FILE (machine sync token, 0600) when present, else the
+// `qmd login` profile for this Hub (<qmd config>/credentials.json, keyed by Hub origin).
+function loadToken() {
+  if (env.QMD_HUB_TOKEN_FILE && existsSync(env.QMD_HUB_TOKEN_FILE)) return readFileSync(env.QMD_HUB_TOKEN_FILE, "utf8").trim();
+  const cfgDir = process.env.QMD_CONFIG_DIR || join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "qmd");
+  const credFile = env.QMD_CREDENTIALS_FILE || process.env.QMD_CREDENTIALS_FILE || join(cfgDir, "credentials.json");
+  try {
+    const p = JSON.parse(readFileSync(credFile, "utf8")).profiles?.[new URL(env.QMD_HUB_URL).origin.toLowerCase()];
+    if (p?.token) return String(p.token).trim();
+  } catch { /* fall through */ }
+  throw new Error(`no Hub credential: set QMD_HUB_TOKEN_FILE or run \`qmd login --hub ${env.QMD_HUB_URL}\``);
+}
+const TOKEN = loadToken();
 mkdirSync(STATE, { recursive: true, mode: 0o700 }); mkdirSync(MIRROR, { recursive: true });
 const log = (m) => { const l = `${new Date().toISOString()} ${m}`; console.error(l); appendFileSync(join(STATE, "sync.log"), l + "\n"); };
 const sha = (b) => createHash("sha256").update(b).digest("hex");
