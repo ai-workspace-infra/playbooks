@@ -1,0 +1,38 @@
+---
+- name: Install archive units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [qmd-hub-archive.service, qmd-hub-archive.timer]
+  when: qmd_hub_archive_backend != 'none'
+
+- name: Enable daily archive timer
+  ansible.builtin.systemd:
+    name: qmd-hub-archive.timer
+    enabled: "{{ qmd_hub_archive_backend != 'none' }}"
+    state: "{{ 'started' if qmd_hub_archive_backend != 'none' else 'stopped' }}"
+    daemon_reload: true
+  when: not ansible_check_mode and qmd_hub_archive_backend != 'none'
+
+- name: Inspect archive credentials (metadata only)
+  ansible.builtin.stat:
+    path: "{{ qmd_hub_etc_dir }}/rclone.conf"
+  register: qmd_hub_rclone_conf
+
+- name: Report archive readiness
+  ansible.builtin.debug:
+    msg: >-
+      L3 archive backend={{ qmd_hub_archive_backend }}:
+      {{ 'credentials present' if (qmd_hub_rclone_conf.stat.exists | default(false)) else
+         'configured, credentials missing -> provide ' ~ qmd_hub_etc_dir ~ '/rclone.conf (owner ' ~ qmd_hub_user ~ ', 0600) with remote [' ~ qmd_hub_archive_remote ~ ']' }}
+
+- name: Require private archive credentials when present
+  ansible.builtin.assert:
+    that:
+      - qmd_hub_rclone_conf.stat.pw_name == qmd_hub_user
+      - qmd_hub_rclone_conf.stat.mode == '0600'
+    fail_msg: "rclone.conf must be owned by {{ qmd_hub_user }} with mode 0600."
+  when: qmd_hub_rclone_conf.stat.exists | default(false)

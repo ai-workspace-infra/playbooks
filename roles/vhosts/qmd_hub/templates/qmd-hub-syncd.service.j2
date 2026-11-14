@@ -1,0 +1,35 @@
+[Unit]
+Description=QMD Hub Delta Sync API (Hub-Spoke push/pull/SSE)
+After=network-online.target k3s.service{% if qmd_hub_pg_enabled | bool %} postgresql@{{ qmd_hub_pg_version }}-{{ qmd_hub_pg_cluster }}.service{% endif %}
+
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ qmd_hub_user }}
+Group={{ qmd_hub_group }}
+WorkingDirectory={{ qmd_hub_root }}
+Environment=QMD_HUB_ROOT={{ qmd_hub_root }}
+Environment=QMD_HUB_SYNC_HOST={{ qmd_hub_sync_listen_host }}
+Environment=QMD_HUB_SYNC_PORT={{ qmd_hub_sync_listen_port }}
+Environment=QMD_HUB_SYNC_TOKEN_FILE={{ qmd_hub_etc_dir }}/sync-token
+Environment=QMD_HUB_ACCOUNTS_URL={{ qmd_hub_accounts_url }}
+Environment=QMD_HUB_LOGIN_URL={{ qmd_hub_login_url }}
+Environment="QMD_HUB_ALLOWED_ROLES={{ qmd_hub_allowed_roles }}"
+Environment="QMD_HUB_ALLOWED_EMAILS={{ qmd_hub_allowed_emails }}"
+Environment=QMD_HUB_AUTH_CACHE_SECONDS={{ qmd_hub_auth_cache_seconds }}
+Environment=PATH={{ qmd_hub_root }}/runtime/node/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart={{ qmd_hub_root }}/runtime/node/bin/node {{ qmd_hub_root }}/bin/qmd-hub-syncd.mjs
+# cni0 only exists once k3s is up; keep retrying the bind.
+Restart=always
+RestartSec=5
+MemoryMax=256M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ qmd_hub_root }}
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

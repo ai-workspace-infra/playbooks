@@ -1,0 +1,95 @@
+---
+# Dedicated PostgreSQL {{ qmd_hub_pg_version }} cluster for the Hub L2 layer. It
+# only listens on 127.0.0.1 and does not touch any in-cluster (GitOps) database.
+- name: Install postgresql-common first
+  ansible.builtin.apt:
+    name: postgresql-common
+    state: present
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Do not auto-create a Debian "main" cluster
+  ansible.builtin.lineinfile:
+    path: /etc/postgresql-common/createcluster.conf
+    regexp: '^#?\s*create_main_cluster\s*='
+    line: "create_main_cluster = false"
+
+- name: Install PostgreSQL and pgvector
+  ansible.builtin.apt:
+    name:
+      - "postgresql-{{ qmd_hub_pg_version }}"
+      - "postgresql-{{ qmd_hub_pg_version }}-pgvector"
+    state: present
+    install_recommends: false
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Create dedicated PostgreSQL cluster
+  ansible.builtin.command:
+    argv:
+      - pg_createcluster
+      - "{{ qmd_hub_pg_version }}"
+      - "{{ qmd_hub_pg_cluster }}"
+      - --port
+      - "{{ qmd_hub_pg_port }}"
+      - --
+      - --auth-local=peer
+      - --auth-host=scram-sha-256
+    creates: "/etc/postgresql/{{ qmd_hub_pg_version }}/{{ qmd_hub_pg_cluster }}/postgresql.conf"
+
+- name: Configure dedicated cluster (loopback only, small footprint)
+  ansible.builtin.copy:
+    dest: "/etc/postgresql/{{ qmd_hub_pg_version }}/{{ qmd_hub_pg_cluster }}/conf.d/50-qmd-hub.conf"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+    content: |
+      # Managed by Ansible role qmd_hub
+      listen_addresses = '127.0.0.1'
+      port = {{ qmd_hub_pg_port }}
+      shared_buffers = {{ qmd_hub_pg_shared_buffers }}
+      max_connections = {{ qmd_hub_pg_max_connections }}
+      password_encryption = scram-sha-256
+  register: qmd_hub_pg_conf
+  when: not ansible_check_mode
+
+- name: Start and enable dedicated cluster
+  ansible.builtin.systemd:
+    name: "postgresql@{{ qmd_hub_pg_version }}-{{ qmd_hub_pg_cluster }}.service"
+    state: "{{ 'restarted' if (qmd_hub_pg_conf.changed | default(false)) else 'started' }}"
+    enabled: true
+  when: not ansible_check_mode
+
+- name: Create role, database and extensions; set password from host-local file
+  ansible.builtin.shell: |
+    set -euo pipefail
+    P="runuser -u postgres -- psql -X -q -At -v ON_ERROR_STOP=1 -p {{ qmd_hub_pg_port }}"
+    $P -d postgres -c "SELECT 1 FROM pg_roles WHERE rolname='{{ qmd_hub_pg_role }}'" | grep -q 1 \
+      || $P -d postgres -c "CREATE ROLE {{ qmd_hub_pg_role }} LOGIN"
+    $P -d postgres -c "SELECT 1 FROM pg_database WHERE datname='{{ qmd_hub_pg_database }}'" | grep -q 1 \
+      || $P -d postgres -c "CREATE DATABASE {{ qmd_hub_pg_database }} OWNER {{ qmd_hub_pg_role }}"
+    $P -d {{ qmd_hub_pg_database }} -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+    pw="$(cat {{ qmd_hub_etc_dir }}/pg-password)"
+    printf "ALTER ROLE {{ qmd_hub_pg_role }} PASSWORD '%s';\n" "$pw" | $P -d postgres
+  args:
+    executable: /bin/bash
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Install L2 fence/archive schema
+  ansible.builtin.copy:
+    src: schema.sql
+    dest: "{{ qmd_hub_root }}/state/schema.sql"
+    owner: "{{ qmd_hub_user }}"
+    group: "{{ qmd_hub_group }}"
+    mode: "0600"
+
+- name: Apply L2 fence/archive schema
+  ansible.builtin.command:
+    argv: [psql, -X, -q, -v, ON_ERROR_STOP=1, -h, /var/run/postgresql, -p, "{{ qmd_hub_pg_port }}",
+           -d, "{{ qmd_hub_pg_database }}", -f, "{{ qmd_hub_root }}/state/schema.sql"]
+  become: true
+  become_user: "{{ qmd_hub_user }}"
+  changed_when: false
+  when: not ansible_check_mode

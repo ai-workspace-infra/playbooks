@@ -1,0 +1,133 @@
+---
+- name: Validate QMD Hub inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'Debian'
+      - ansible_facts.architecture == 'x86_64'
+      - qmd_hub_version is match('^[0-9a-f]{40}$')
+      - qmd_hub_archive_backend in ['gdrive', 's3', 'none']
+      - qmd_hub_listen_host in ['127.0.0.1', '::1']
+      - qmd_hub_listen_port | int > 1024
+      - qmd_hub_pg_port | int > 1024
+      - qmd_hub_spoke_authorized_keys is sequence
+      - qmd_hub_sync_listen_host is match('^[0-9.]+$')
+      - qmd_hub_accounts_url == '' or qmd_hub_accounts_url is match('^https://')
+      - qmd_hub_accounts_url == '' or (qmd_hub_allowed_roles | length > 0) or (qmd_hub_allowed_emails | length > 0)
+      - qmd_hub_sync_listen_host not in [ansible_default_ipv4.address | default('')]
+    fail_msg: >-
+      qmd_hub supports Debian x86_64, a pinned 40-char commit, archive backend
+      gdrive|s3|none and a loopback listener (expose via SSH tunnel only).
+
+- name: Check listener ports are free or already owned by the Hub user
+  ansible.builtin.shell: |
+    set -o pipefail
+    for port in {{ qmd_hub_listen_port }} {{ qmd_hub_sync_listen_port }}; do
+      for pid in $(ss -Hltnp "sport = :$port" | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u); do
+        u="$(ps -o user= -p "$pid" | tr -d ' ')"
+        [ "$u" = "{{ qmd_hub_user }}" ] || echo "port $port pid $pid user $u"
+      done
+    done
+  args:
+    executable: /bin/bash
+  register: qmd_hub_port_owner
+  changed_when: false
+  check_mode: false
+
+- name: Refuse to take over a port used by another service
+  ansible.builtin.assert:
+    that: qmd_hub_port_owner.stdout | trim | length == 0
+    fail_msg: "Hub port held by another service: {{ qmd_hub_port_owner.stdout }}"
+
+- name: Install QMD Hub OS packages
+  ansible.builtin.apt:
+    name: "{{ ['git', 'rsync', 'xz-utils', 'ca-certificates', 'build-essential', 'python3']
+              + (['rclone'] if qmd_hub_archive_backend != 'none' else []) }}"
+    state: present
+    install_recommends: false
+    update_cache: true
+    cache_valid_time: 3600
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Create QMD Hub system group
+  ansible.builtin.group:
+    name: "{{ qmd_hub_group }}"
+    system: true
+
+- name: Create QMD Hub system user (key-only, no password)
+  ansible.builtin.user:
+    name: "{{ qmd_hub_user }}"
+    group: "{{ qmd_hub_group }}"
+    system: true
+    home: "{{ qmd_hub_root }}"
+    create_home: false
+    shell: /bin/bash
+    password: "!"
+    password_lock: true
+
+- name: Create QMD Hub directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default(qmd_hub_user) }}"
+    group: "{{ qmd_hub_group }}"
+    mode: "{{ item.mode | default('0750') }}"
+  loop:
+    - { path: "{{ qmd_hub_root }}" }
+    - { path: "{{ qmd_hub_root }}/bin", owner: root, mode: "0755" }
+    - { path: "{{ qmd_hub_root }}/runtime", owner: root, mode: "0755" }
+    - { path: "{{ qmd_hub_root }}/src" }
+    - { path: "{{ qmd_hub_root }}/config" }
+    - { path: "{{ qmd_hub_root }}/cache" }
+    - { path: "{{ qmd_hub_root }}/cache/qmd" }
+    - { path: "{{ qmd_hub_root }}/data" }
+    - { path: "{{ qmd_hub_root }}/data/origins" }
+    - { path: "{{ qmd_hub_root }}/data/origins/hub" }
+    - { path: "{{ qmd_hub_root }}/data/origins/hub/notes" }
+    - { path: "{{ qmd_hub_root }}/state", mode: "0700" }
+    - { path: "{{ qmd_hub_root }}/mem", mode: "0700" }
+    - { path: "{{ qmd_hub_root }}/.ssh", mode: "0700" }
+    - { path: "{{ qmd_hub_etc_dir }}", owner: root, mode: "0750" }
+
+- name: Inspect existing QMD Hub installation
+  ansible.builtin.stat:
+    path: "{{ qmd_hub_root }}/bin"
+  register: qmd_hub_installed
+
+- name: Stop check mode after preflight on a first install
+  ansible.builtin.debug:
+    msg: >-
+      First install: --check validated inputs, port, packages, user and directories.
+      Later tasks need the created user/directories; run without --check to apply.
+  when: ansible_check_mode and not qmd_hub_installed.stat.exists
+
+- name: End check-mode run on first install
+  ansible.builtin.meta: end_host
+  when: ansible_check_mode and not qmd_hub_installed.stat.exists
+
+- name: Install isolated Node runtime
+  ansible.builtin.include_tasks: runtime.yml
+
+- name: Install pinned QMD source
+  ansible.builtin.include_tasks: source.yml
+
+- name: Provision host-local secrets (generated on the host, never displayed)
+  ansible.builtin.include_tasks: secrets.yml
+
+- name: Provision local PostgreSQL L2
+  ansible.builtin.include_tasks: postgres.yml
+  when: qmd_hub_pg_enabled | bool
+
+- name: Install QMD Hub configuration, scripts and units
+  ansible.builtin.include_tasks: service.yml
+
+- name: Configure Delta Sync API
+  ansible.builtin.include_tasks: syncd.yml
+  when: qmd_hub_sync_enabled | bool
+
+- name: Configure daily L3 archive
+  ansible.builtin.include_tasks: archive.yml
+
+- name: Verify QMD Hub
+  ansible.builtin.include_tasks: verify.yml
+  when: not ansible_check_mode

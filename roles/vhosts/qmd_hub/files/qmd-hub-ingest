@@ -1,0 +1,78 @@
+#!/bin/bash
+# qmd-hub-ingest [origin|all]
+# Scan data/origins/<origin>/<collection>/**.md, record content changes in PG
+# (qmd_hub_changes, global monotonically increasing fence), regenerate the hub
+# QMD collection config and run `qmd update`. Idempotent: unchanged content
+# produces no new fence. Prints "fence=<max_fence> new=<rows>".
+. /opt/qmd-hub/bin/qmd-hub-lib.sh
+scope="${1:-all}"
+[[ "$scope" =~ ^[a-z0-9][a-z0-9._-]{0,62}$ ]] || { echo "invalid origin" >&2; exit 2; }
+mkdir -p "$STATE"
+exec 9>"$STATE/ingest.lock"; flock -w 600 9
+tmp="$(mktemp "$STATE/manifest.XXXXXX")"; trap 'rm -f "$tmp"' EXIT
+scanned=()
+for odir in "$DATA"/*/; do
+  [ -d "$odir" ] || continue
+  o="$(basename "$odir")"
+  [[ "$o" =~ ^[a-z0-9][a-z0-9._-]{0,62}$ ]] || { log "skip invalid origin dir $o"; continue; }
+  [ "$scope" = all ] || [ "$o" = "$scope" ] || continue
+  scanned+=("$o")
+  for cdir in "$odir"*/; do
+    [ -d "$cdir" ] || continue
+    c="$(basename "$cdir")"
+    ( cd "$cdir" && find . -type f -name '*.md' -not -path '*/.qmd-rsync-*' -printf '%P\n' \
+      | LC_ALL=C sort | while IFS= read -r p; do
+          case "$p" in *$'\t'*) continue;; esac
+          printf '%s\t%s\t%s\t%s\t%s\n' "$o" "$c" "$p" "$(sha256sum -- "$p" | cut -d' ' -f1)" "$(stat -c %s -- "$p")"
+        done )
+  done
+done > "$tmp"
+# Compare against the journal of every origin in scope, including origins whose
+# directory was removed entirely (their paths become 'delete' rows).
+if [ "$scope" = all ]; then origin_filter="true"; else origin_filter="origin = '$scope'"; fi
+new="$(psql_hub <<SQL
+BEGIN;
+CREATE TEMP TABLE cur(origin text, collection text, path text, sha256 text, bytes bigint) ON COMMIT DROP;
+\copy cur FROM '$tmp'
+CREATE TEMP TABLE latest ON COMMIT DROP AS
+  SELECT DISTINCT ON (origin, collection, path) origin, collection, path, sha256, op
+  FROM qmd_hub_changes WHERE $origin_filter
+  ORDER BY origin, collection, path, fence DESC;
+WITH up AS (
+  INSERT INTO qmd_hub_changes(origin, collection, path, sha256, bytes, op)
+  SELECT c.origin, c.collection, c.path, c.sha256, c.bytes, 'upsert'
+  FROM cur c LEFT JOIN latest l USING (origin, collection, path)
+  WHERE l.path IS NULL OR l.op = 'delete' OR l.sha256 <> c.sha256
+  ORDER BY c.origin, c.collection, c.path RETURNING 1
+), del AS (
+  INSERT INTO qmd_hub_changes(origin, collection, path, sha256, bytes, op)
+  SELECT l.origin, l.collection, l.path, l.sha256, 0, 'delete'
+  FROM latest l LEFT JOIN cur c USING (origin, collection, path)
+  WHERE l.op = 'upsert' AND c.path IS NULL
+  ORDER BY l.origin, l.collection, l.path RETURNING 1
+)
+SELECT (SELECT count(*) FROM up) + (SELECT count(*) FROM del);
+COMMIT;
+SQL
+)"
+# Regenerate the hub collection config from the origin tree.
+cfg="$QMD_HUB_ROOT/config/index.yml"
+{
+  echo "# Managed by qmd-hub-ingest; regenerated on every ingest."
+  echo "collections:"
+  for odir in "$DATA"/*/; do
+    [ -d "$odir" ] || continue; o="$(basename "$odir")"
+    [[ "$o" =~ ^[a-z0-9][a-z0-9._-]{0,62}$ ]] || continue
+    for cdir in "$odir"*/; do
+      [ -d "$cdir" ] || continue; c="$(basename "$cdir")"
+      echo "  ${o}--${c}:"
+      echo "    path: ${cdir%/}"
+      echo "    pattern: \"**/*.md\""
+      echo "    context:"
+      echo "      \"\": QMD Hub replica of origin ${o}, collection ${c}."
+    done
+  done
+} > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
+"$QMD_HUB_ROOT/bin/qmd" update >"$STATE/last-update.log" 2>&1 || { log "qmd update failed, see $STATE/last-update.log"; exit 1; }
+max="$(psql_hub -c 'SELECT coalesce(max(fence),0) FROM qmd_hub_changes')"
+echo "fence=$max new=${new:-0}"

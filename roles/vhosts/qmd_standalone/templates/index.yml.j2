@@ -1,0 +1,16 @@
+# Managed by Ansible role qmd_standalone
+collections:
+{% for name, c in qmd_standalone_collections | dictsort %}
+  {{ name }}:
+    path: {{ c.path }}
+    pattern: {{ (c.pattern | default('**/*.md')) | to_json }}
+    context:
+      "": {{ (c.context | default('')) | to_json }}
+{% endfor %}
+{% if qmd_standalone_hub_url %}
+  hub-mirror:
+    path: {{ qmd_standalone_root }}/mirror
+    pattern: "**/*.md"
+    context:
+      "": "Read-only replica pulled from the QMD Hub (other origins, by fence)."
+{% endif %}

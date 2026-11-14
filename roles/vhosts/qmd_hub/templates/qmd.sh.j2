@@ -1,0 +1,18 @@
+#!/bin/sh
+# QMD Hub CLI wrapper (managed by Ansible role qmd_hub). Isolated config/index.
+export HOME={{ qmd_hub_root }}
+export PATH={{ qmd_hub_root }}/runtime/node/bin:/usr/local/bin:/usr/bin:/bin
+export QMD_CONFIG_DIR={{ qmd_hub_root }}/config
+export XDG_CACHE_HOME={{ qmd_hub_root }}/cache
+export INDEX_PATH={{ qmd_hub_root }}/cache/qmd/index.sqlite
+export QMD_NAMESPACE={{ qmd_hub_namespace }}
+export MEM_HOME={{ qmd_hub_root }}/mem
+{% if qmd_hub_pg_enabled | bool %}
+if [ -r {{ qmd_hub_etc_dir }}/pg-password ]; then
+  export QMD_BACKEND=pg
+  export QMD_PG_SSL=disable
+  QMD_PG_URL="postgresql://{{ qmd_hub_pg_role }}:$(cat {{ qmd_hub_etc_dir }}/pg-password)@127.0.0.1:{{ qmd_hub_pg_port }}/{{ qmd_hub_pg_database }}"
+  export QMD_PG_URL
+fi
+{% endif %}
+exec {{ qmd_hub_root }}/src/qmd/bin/qmd "$@"

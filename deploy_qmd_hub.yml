@@ -1,0 +1,23 @@
+---
+# ==============================================================================
+# Playbook: QMD Hub — Level-4 enterprise persistence (L1 QMD + L2 PG/pgvector +
+# L3 Drive/S3 archive) acting as the Hub-Spoke centre.
+# Baseline: ai-workspace-services/knowledge#400
+#   docs/reference/platform-delivery/architecture/QMD单体运行与分布式异步同步架构规范.md
+#   docs/reference/qmd-monolithic-engine-distributed-async-sync-spec.zh.md
+# ==============================================================================
+- name: Deploy QMD Hub
+  hosts: "{{ target_hosts | mandatory }}"
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Require one explicit host or inventory group
+      ansible.builtin.assert:
+        that:
+          - target_hosts is match('^[A-Za-z0-9_.-]+$')
+          - target_hosts not in ['all', 'localhost', '127.0.0.1']
+        fail_msg: "Pass -e target_hosts=<inventory-host-or-group>."
+      tags: [always]
+  roles:
+    - role: roles/vhosts/qmd_hub
+      tags: [qmd_hub]

@@ -1,0 +1,30 @@
+---
+- name: Inspect installed Node runtime
+  ansible.builtin.stat:
+    path: "{{ qmd_hub_root }}/runtime/node-{{ qmd_hub_node_version }}-{{ qmd_hub_node_arch }}/bin/node"
+  register: qmd_hub_node_bin
+
+- name: Download Node runtime with published checksum
+  ansible.builtin.get_url:
+    url: "https://nodejs.org/dist/{{ qmd_hub_node_version }}/node-{{ qmd_hub_node_version }}-{{ qmd_hub_node_arch }}.tar.xz"
+    dest: "{{ qmd_hub_root }}/runtime/node-{{ qmd_hub_node_version }}-{{ qmd_hub_node_arch }}.tar.xz"
+    checksum: "sha256:https://nodejs.org/dist/{{ qmd_hub_node_version }}/SHASUMS256.txt"
+    mode: "0644"
+  when: not qmd_hub_node_bin.stat.exists
+
+- name: Unpack Node runtime
+  ansible.builtin.unarchive:
+    src: "{{ qmd_hub_root }}/runtime/node-{{ qmd_hub_node_version }}-{{ qmd_hub_node_arch }}.tar.xz"
+    dest: "{{ qmd_hub_root }}/runtime"
+    remote_src: true
+    owner: root
+    group: root
+  when: not qmd_hub_node_bin.stat.exists and not ansible_check_mode
+
+- name: Point runtime/node at the pinned Node version
+  ansible.builtin.file:
+    src: "{{ qmd_hub_root }}/runtime/node-{{ qmd_hub_node_version }}-{{ qmd_hub_node_arch }}"
+    dest: "{{ qmd_hub_root }}/runtime/node"
+    state: link
+    force: true
+  when: not ansible_check_mode

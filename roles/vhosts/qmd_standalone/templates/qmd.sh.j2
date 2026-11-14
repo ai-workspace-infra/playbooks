@@ -1,0 +1,9 @@
+#!/bin/sh
+# QMD Spoke wrapper (managed by Ansible role qmd_standalone). Isolated config/index.
+{% if qmd_standalone_node_path %}
+export PATH={{ qmd_standalone_node_path }}:$PATH
+{% endif %}
+export QMD_CONFIG_DIR={{ qmd_standalone_root }}/config
+export XDG_CACHE_HOME={{ qmd_standalone_root }}/cache
+export INDEX_PATH={{ qmd_standalone_root }}/cache/qmd/index.sqlite
+exec {{ qmd_standalone_source_dir }}/bin/qmd "$@"

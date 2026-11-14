@@ -1,0 +1,35 @@
+---
+# QMD standalone / Spoke — Level-1 (QMD + SQLite + sync). Runs as the login
+# user (no root). Baseline: ai-workspace-services/knowledge#400
+# docs/reference/platform-delivery/architecture/QMD单体运行与分布式异步同步架构规范.md
+qmd_standalone_home: "{{ ansible_env.HOME }}"
+qmd_standalone_root: "{{ qmd_standalone_home }}/qmd-spoke"
+qmd_standalone_source_repo: https://github.com/ai-workspace-lab/qmd.git
+qmd_standalone_version: 917637d9fea7e7ecaf31d745837983c24eebf202
+qmd_standalone_source_dir: "{{ qmd_standalone_home }}/.local/src/qmd"
+# Node >= 22 must already be on PATH (the role does not install system packages).
+qmd_standalone_node_path: ""
+
+# name -> { path, pattern, context, push }. push=true adds it to the Spoke Outbox.
+qmd_standalone_collections:
+  notes:
+    path: "{{ qmd_standalone_root }}/notes"
+    pattern: "**/*.md"
+    context: Local non-secret notes.
+    push: true
+
+# Optional read-only git sources refreshed (ff-only) before each sync.
+qmd_standalone_git_sources: []
+
+# Hub pairing (Hub-Spoke). Empty qmd_standalone_hub_url = pure standalone.
+qmd_standalone_origin: "{{ inventory_hostname | regex_replace('[^a-z0-9._-]', '-') | lower }}"
+qmd_standalone_hub_url: ""            # e.g. https://qmd.svc.plus
+# Bearer token for the Hub sync API; provisioned out of band (0600), never in Git.
+qmd_standalone_hub_token_file: "{{ qmd_standalone_root }}/hub-token"
+# https | tunnel | auto (auto = https, then restricted SSH port-forward if configured)
+qmd_standalone_hub_transport: auto
+qmd_standalone_hub_tunnel_ssh: ""     # e.g. qmdhub@<hub-host> (tunnel-only key)
+qmd_standalone_hub_tunnel_target: 10.42.0.1:8182
+qmd_standalone_hub_ssh_key: "{{ qmd_standalone_home }}/.ssh/qmd-spoke_ed25519"
+qmd_standalone_sync_command: "{{ qmd_standalone_root }}/bin/qmd-spoke-sync"
+qmd_standalone_sync_link: ""
