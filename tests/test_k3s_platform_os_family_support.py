@@ -75,6 +75,17 @@ class K3sPlatformOsFamilySupportTest(unittest.TestCase):
         jail = fail2ban.split('- name: Fail2ban | Deploy jail.local configuration')[1]
         self.assertIn('common_fail2ban_installable | bool', jail)
 
+
+    def test_instance_identity_pattern_is_provider_owned(self):
+        self.assertIn('bootstrap_instance_id_patterns:', self.playbook)
+        self.assertIn("akamai-cloud: '^[1-9][0-9]*$'", self.playbook)
+        self.assertIn('bootstrap_instance_id_pattern_default', self.playbook)
+        self.assertIn(
+            'cmdb_instance_id | string is match(bootstrap_instance_id_patterns.get(',
+            self.playbook,
+        )
+        self.assertNotIn("- cmdb_instance_id | string is match('^[1-9][0-9]*$')", self.playbook)
+
     def test_preflight_rejects_overlapping_cluster_networks(self):
         self.assertIn('Verify the declared cluster networks are distinct and internally consistent', self.preflight)
         self.assertIn('k3s_platform_cluster_dns', self.preflight)

@@ -3,6 +3,14 @@
   hosts: k3s
   become: true
   gather_facts: true
+  vars:
+    # Instance identity format is provider-owned: Akamai/Linode uses a numeric
+    # id, UCloud UHost and most other providers use a prefixed string id
+    # (uhost-...). Keep the numeric guard where it is meaningful instead of
+    # forcing one provider's format onto every platform.
+    bootstrap_instance_id_patterns:
+      akamai-cloud: '^[1-9][0-9]*$'
+    bootstrap_instance_id_pattern_default: '^[A-Za-z][A-Za-z0-9._-]{2,63}$'
   pre_tasks:
     - name: Read this run's GitOps resource declaration on controller
       ansible.builtin.include_vars:
@@ -15,7 +23,8 @@
       ansible.builtin.assert:
         that:
           - bootstrap_node_candidates | length == 1
-          - cmdb_instance_id | string is match('^[1-9][0-9]*$')
+          - cmdb_instance_id | string | length > 0
+          - cmdb_instance_id | string is match(bootstrap_instance_id_patterns.get(bootstrap_declaration.global.provider, bootstrap_instance_id_pattern_default))
           - cmdb_cloud_provider == bootstrap_declaration.global.provider
           - cmdb_region == bootstrap_node_candidates[0].region
           - bootstrap_node_candidates[0].host_vars.deployment_mode == 'kubernetes'
