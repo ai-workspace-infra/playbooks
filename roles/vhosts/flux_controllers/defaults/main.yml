@@ -2,3 +2,36 @@ k3s_platform_flux_version: "2.9.6"
 k3s_platform_flux_namespace: "flux-system"
 k3s_platform_kubeconfig_path: /etc/rancher/k3s/k3s.yaml
 k3s_platform_install_dir: /opt/rancher/k3s
+
+# Resource bounds enforced on the Flux controllers after installation and
+# rollout. Memory limits stay within the reviewed 256-512Mi range so a small
+# k3s node keeps headroom for workloads; requests track steady-state usage.
+k3s_platform_flux_controller_resources:
+  source-controller:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  kustomize-controller:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  helm-controller:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+  notification-controller:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

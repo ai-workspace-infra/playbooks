@@ -35,3 +35,7 @@
     kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/notification-controller --timeout=300s
   args:
     executable: /bin/bash
+
+- name: Apply the declared flux controller resource bounds
+  ansible.builtin.import_tasks: limits.yml
+  tags: [flux_limits]

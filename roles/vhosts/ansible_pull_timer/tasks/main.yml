@@ -1,0 +1,115 @@
+---
+- name: Validate the scheduled ansible-pull inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_pull_repo_url | length > 0
+      - ansible_pull_playbook | length > 0
+      - ansible_pull_checkout_dir | length > 0
+      - ansible_pull_timer_name | length > 0
+    fail_msg: >-
+      ansible_pull_timer requires the repository, playbook, checkout directory
+      and timer name inputs
+  tags: [ansible_pull_timer, validate]
+
+- name: Ensure git is available for the scheduled pull
+  ansible.builtin.package:
+    name: git
+    state: present
+  when: ansible_pull_timer_manage_prerequisites | bool
+  tags: [ansible_pull_timer, install]
+
+- name: Probe for an existing ansible-pull executable
+  ansible.builtin.command:
+    argv: [bash, -lc, "command -v ansible-pull || true"]
+  register: ansible_pull_timer_probe
+  changed_when: false
+  tags: [ansible_pull_timer, validate]
+
+- name: Install ansible-core when the host cannot run ansible-pull
+  ansible.builtin.package:
+    name: ansible-core
+    state: present
+  when:
+    - ansible_pull_timer_manage_prerequisites | bool
+    - ansible_pull_timer_probe.stdout | trim | length == 0
+  tags: [ansible_pull_timer, install]
+
+- name: Resolve the ansible-pull executable path
+  ansible.builtin.command:
+    argv: [bash, -lc, "command -v ansible-pull"]
+  register: ansible_pull_timer_resolved
+  changed_when: false
+  failed_when: false
+  tags: [ansible_pull_timer, validate]
+
+- name: Require a usable ansible-pull executable
+  ansible.builtin.assert:
+    that:
+      - ansible_pull_timer_resolved.rc == 0
+      - ansible_pull_timer_resolved.stdout | trim | length > 0
+    fail_msg: >-
+      ansible-pull is unavailable and could not be installed; install
+      ansible-core on this host before scheduling the convergence
+  tags: [ansible_pull_timer, validate]
+
+- name: Bind the resolved ansible-pull executable
+  ansible.builtin.set_fact:
+    ansible_pull_executable: "{{ ansible_pull_timer_resolved.stdout | trim }}"
+  tags: [ansible_pull_timer, configure]
+
+- name: Ensure the ansible-pull checkout directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_pull_checkout_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  tags: [ansible_pull_timer, install]
+
+- name: Template the scheduled ansible-pull service unit
+  ansible.builtin.template:
+    src: ansible-pull.service.j2
+    dest: "/etc/systemd/system/{{ ansible_pull_timer_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd manager configuration
+  tags: [ansible_pull_timer, configure]
+
+- name: Template the scheduled ansible-pull timer unit
+  ansible.builtin.template:
+    src: ansible-pull.timer.j2
+    dest: "/etc/systemd/system/{{ ansible_pull_timer_name }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd manager configuration
+  tags: [ansible_pull_timer, configure]
+
+- name: Enable and start the scheduled ansible-pull timer
+  ansible.builtin.systemd:
+    name: "{{ ansible_pull_timer_name }}.timer"
+    enabled: true
+    state: "{{ ansible_pull_timer_state }}"
+    daemon_reload: true
+  tags: [ansible_pull_timer, configure]
+
+- name: Read back the active timer schedule
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - list-timers
+      - --all
+      - --no-pager
+      - "{{ ansible_pull_timer_name }}.timer"
+  register: ansible_pull_timer_list
+  changed_when: false
+  tags: [ansible_pull_timer, validate]
+
+- name: Assert the timer is scheduled
+  ansible.builtin.assert:
+    that:
+      - ansible_pull_timer_name ~ '.timer' in ansible_pull_timer_list.stdout
+    fail_msg: >-
+      the scheduled timer is not active: {{ ansible_pull_timer_list.stdout }}
+  tags: [ansible_pull_timer, validate]
