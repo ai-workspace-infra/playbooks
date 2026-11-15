@@ -1,0 +1,25 @@
+---
+# Schedule a recurring `ansible-pull` convergence on a host.
+#
+# Defaults target the Flux controller resource-limit convergence introduced by
+# `pull_flux_controller_limits.yml`; override the playbook/repo inputs to reuse
+# the timer for another pull-mode convergence entrypoint.
+ansible_pull_timer_name: ansible-pull-flux-limits
+ansible_pull_timer_description: Converge Flux controller resource limits (ansible-pull)
+ansible_pull_timer_state: started
+# Install git/ansible-core when the host cannot run ansible-pull yet.
+ansible_pull_timer_manage_prerequisites: true
+
+# ansible-pull invocation
+ansible_pull_repo_url: https://github.com/ai-workspace-infra/playbooks.git
+ansible_pull_checkout: main
+ansible_pull_playbook: pull_flux_controller_limits.yml
+ansible_pull_checkout_dir: /var/lib/ansible-pull/playbooks
+ansible_pull_inventory: "localhost,"
+ansible_pull_kubeconfig: /etc/rancher/k3s/k3s.yaml
+ansible_pull_path: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ansible_pull_timeout_sec: 900
+
+# systemd timer cadence
+ansible_pull_schedule: "*-*-* 00/6:17:00"
+ansible_pull_randomized_delay_sec: 300
