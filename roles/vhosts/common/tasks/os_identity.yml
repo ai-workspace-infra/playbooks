@@ -8,10 +8,11 @@
       - lookup('ansible.builtin.env', 'VAULT_ADDR') is match('^https://[^/]+/?$')
       - common_os_identity_key_source in ['http', 'vault-cli']
       - common_os_identity_key_source == 'vault-cli' or lookup('ansible.builtin.env', 'VAULT_TOKEN') | length > 0
-      - ansible_os_family == 'Debian'
+      - ansible_os_family in (common_os_identity_supported_families | default(['Debian', 'RedHat']))
     fail_msg: >-
       An explicit environment, VAULT_ADDR, Vault authentication (VAULT_TOKEN, or the
-      vault CLI login with common_os_identity_key_source=vault-cli) and a supported Debian host are required.
+      vault CLI login with common_os_identity_key_source=vault-cli) and a host in a
+      supported OS family ({{ (common_os_identity_supported_families | default(['Debian', 'RedHat'])) | join(', ') }}) are required.
 
 - name: OS identities | read role-specific public keys with the controller vault CLI login
   ansible.builtin.command:

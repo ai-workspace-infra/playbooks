@@ -3,6 +3,14 @@
   hosts: k3s
   become: true
   gather_facts: true
+  vars:
+    # Instance identity format is provider-owned: Akamai/Linode uses a numeric
+    # id, UCloud UHost and most other providers use a prefixed string id
+    # (uhost-...). Keep the numeric guard where it is meaningful instead of
+    # forcing one provider's format onto every platform.
+    bootstrap_instance_id_patterns:
+      akamai-cloud: '^[1-9][0-9]*$'
+    bootstrap_instance_id_pattern_default: '^[A-Za-z][A-Za-z0-9._-]{2,63}$'
   pre_tasks:
     - name: Read this run's GitOps resource declaration on controller
       ansible.builtin.include_vars:
@@ -15,15 +23,24 @@
       ansible.builtin.assert:
         that:
           - bootstrap_node_candidates | length == 1
-          - cmdb_instance_id | string is match('^[1-9][0-9]*$')
+          - cmdb_instance_id | string | length > 0
+          - cmdb_instance_id | string is match(bootstrap_instance_id_patterns.get(bootstrap_declaration.global.provider, bootstrap_instance_id_pattern_default))
           - cmdb_cloud_provider == bootstrap_declaration.global.provider
           - cmdb_region == bootstrap_node_candidates[0].region
           - bootstrap_node_candidates[0].host_vars.deployment_mode == 'kubernetes'
           - bootstrap_node_candidates[0].host_vars.k3s_platform_node_name == cmdb_name
           - bootstrap_node_candidates[0].host_vars.k3s_platform_flux_bootstrap_mode == 'declarative_active'
+          - bootstrap_node_candidates[0].host_vars.k3s_platform_data_mode | default('volume') in ['volume', 'directory']
+    - name: Bind the declared data mode before any storage assertion
+      ansible.builtin.set_fact:
+        bootstrap_node_data_mode: '{{ bootstrap_node_candidates[0].host_vars.k3s_platform_data_mode | default("volume") }}'
+    - name: Require the declared independent data volume when the node uses volume mode
+      ansible.builtin.assert:
+        that:
           - data_volume.linode_id | string == cmdb_instance_id | string
           - data_volume.label == bootstrap_node_candidates[0].volume.label
           - bootstrap_node_candidates[0].volume.filesystem_label | default('') is match('^[A-Za-z0-9_-]{1,16}$')
+      when: bootstrap_node_data_mode == 'volume'
     - name: Consume declared platform and identity configuration
       ansible.builtin.set_fact:
         '{{ item.key }}': '{{ item.value }}'
@@ -40,8 +57,8 @@
         web_saas_data_action: prepare_empty
         web_saas_data_allow_initialize: true
         web_saas_data_allow_generation_host: true
-        web_saas_data_expected_volume_id: '{{ data_volume.volume_id }}'
-        web_saas_data_device_path: '{{ data_volume.filesystem_path }}'
+        web_saas_data_expected_volume_id: '{{ data_volume.volume_id | default("") }}'
+        web_saas_data_device_path: '{{ data_volume.filesystem_path | default("") }}'
         web_saas_data_filesystem_label: '{{ bootstrap_node_candidates[0].volume.filesystem_label }}'
     - name: Require identity configuration before node changes
       ansible.builtin.assert:
@@ -65,6 +82,6 @@
         name: vhosts/common
         tasks_from: node_bootstrap.yml
       vars:
-        common_node_require_data_volume: true
+        common_node_require_data_volume: '{{ bootstrap_node_data_mode == "volume" }}'
   roles:
     - role: vhosts/k3s_platform_bootstrap

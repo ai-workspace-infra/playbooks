@@ -17,3 +17,20 @@
       - k3s_control_plane_hostname.stdout | trim == k3s_platform_node_name
       - k3s_platform_write_kubeconfig_mode == '0600'
     fail_msg: Run vhosts/common to establish the declared OS hostname; admin kubeconfig must remain private.
+
+- name: Verify the declared cluster networks are distinct and internally consistent
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_cluster_cidr | length > 0
+      - k3s_platform_service_cidr | length > 0
+      - k3s_platform_cluster_dns | length > 0
+      - k3s_platform_cluster_cidr != k3s_platform_service_cidr
+      # Planning convention: each cluster owns adjacent /16 Pod and Service
+      # networks, and CoreDNS is the .10 address inside the Service /16.
+      - k3s_platform_cluster_dns.split('.')[0:2] == k3s_platform_service_cidr.split('.')[0:2]
+      - (k3s_platform_service_cidr.split('/')[1] | int) == 16
+    fail_msg: >-
+      Cluster, Service and CoreDNS networks must be explicitly declared, distinct,
+      and follow the planned per-cluster /16 pair with CoreDNS as .10 inside the
+      Service network. Do not rely on the K3s defaults (10.42.0.0/16 /
+      10.43.0.0/16) and do not reuse another live cluster's networks.

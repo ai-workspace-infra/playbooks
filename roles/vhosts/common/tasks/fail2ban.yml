@@ -24,14 +24,39 @@
   become: true
   when: ansible_os_family == 'Debian'
 
+- name: Fail2ban | probe the configured repositories (non-Debian)
+  ansible.builtin.command:
+    argv: [dnf, -q, list, --available, fail2ban]
+  register: common_fail2ban_probe
+  changed_when: false
+  failed_when: false
+  become: true
+  when: ansible_os_family != 'Debian'
+
+- name: Fail2ban | record whether the package can be installed on this host
+  ansible.builtin.set_fact:
+    common_fail2ban_installable: "{{ (ansible_os_family == 'Debian') or ((common_fail2ban_probe.rc | default(1)) == 0) }}"
+
+- name: Fail2ban | explain the skipped installation
+  ansible.builtin.debug:
+    msg: >-
+      fail2ban is not available in the configured repositories on
+      {{ ansible_distribution }} {{ ansible_distribution_version }}; enable EPEL
+      (or an equivalent reviewed source) before this hardening control is claimed.
+      The package install, jail configuration and service stay unmanaged here.
+  when: not (common_fail2ban_installable | bool)
+
 - name: Fail2ban | Install Fail2ban package (non-Debian)
   ansible.builtin.package:
     name: fail2ban
     state: present
   become: true
-  when: ansible_os_family != 'Debian'
+  when:
+    - ansible_os_family != 'Debian'
+    - common_fail2ban_installable | bool
 
 - name: Fail2ban | Deploy jail.local configuration
+  when: common_fail2ban_installable | bool
   ansible.builtin.copy:
     dest: /etc/fail2ban/jail.local
     mode: "0644"
@@ -55,4 +80,6 @@
     state: started
     enabled: true
   become: true
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - common_fail2ban_installable | bool
