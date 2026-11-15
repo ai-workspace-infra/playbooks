@@ -53,8 +53,14 @@ class CommonNodeTests(unittest.TestCase):
 
     def test_volume_cloud_and_filesystem_labels_are_distinct(self):
         play=yaml.safe_load((ROOT/'k3s_platform_bootstrap.yml').read_text())[0]
+        # Node identity is validated for every data mode; the volume label rules
+        # belong to the volume-mode gate so directory mode does not need a volume.
         identity=next(t for t in play['pre_tasks'] if t.get('name')=='Require one matching node and matching cloud scope')
-        rules=identity['ansible.builtin.assert']['that']
+        identity_rules=identity['ansible.builtin.assert']['that']
+        self.assertFalse(any('data_volume' in rule for rule in identity_rules))
+        volume=next(t for t in play['pre_tasks'] if t.get('name')=='Require the declared independent data volume when the node uses volume mode')
+        self.assertEqual(volume['when'], "bootstrap_node_data_mode == 'volume'")
+        rules=volume['ansible.builtin.assert']['that']
         self.assertIn('data_volume.label == bootstrap_node_candidates[0].volume.label', rules)
         self.assertTrue(any('volume.filesystem_label' in rule and '{1,16}' in rule for rule in rules))
         bind=next(t for t in play['pre_tasks'] if t.get('name')=='Bind runtime sources and data device without generating cloud facts')
