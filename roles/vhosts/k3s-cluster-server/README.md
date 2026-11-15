@@ -55,3 +55,26 @@ The old implicit local Registry/nerdctl/self-signed CA setup is intentionally
 removed from the two legacy install playbooks; Registry provisioning is a
 separate operation. The old role-generation script and static server vars
 are removed so they cannot recreate the retired implementation.
+
+## Supported platforms
+
+The initializer validates the OS family before it installs anything and then
+installs the family-specific dependency list from vars/main.yml:
+
+| OS family | Validated target | OpenSSH client package | Notes |
+| --- | --- | --- | --- |
+| Debian | Debian 13 (trixie) | openssh-client | Reference platform for PROD-K3S-V6 |
+| RedHat | Rocky Linux 10.x (RHEL 10 family) | openssh-clients | dnf; no ufw; firewalld handled by vhosts/common |
+
+Anything else fails the platform assertion instead of installing a guessed
+package set. Adding a family means adding its dependency names and a contract
+test, not loosening the assertion.
+
+The K3s data path has two declared modes (k3s_platform_data_mode):
+
+- volume (default): k3s_platform_require_data_mount=true, an independent
+  filesystem is mounted at /data and its UUID is asserted.
+- directory: /data is an allocated root-owned directory on the system disk.
+  The bootstrap creates it, K3s still uses /data/k3s/storage, and the mount
+  assertion is skipped by design. Capacity and root-disk growth must be
+  reviewed by the change that selects this mode.

@@ -1,12 +1,16 @@
+- name: Require a supported bootstrap platform before installing dependencies
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family in k3s_platform_supported_os_families
+    fail_msg: >-
+      Unsupported OS family {{ ansible_os_family }} ({{ ansible_distribution }}
+      {{ ansible_distribution_version }}). Validated bootstrap families are
+      {{ k3s_platform_supported_os_families | join(', ') }}; add the family and
+      its dependency names to vars/main.yml before extending support.
+
 - name: Install bootstrap dependencies
   ansible.builtin.package:
-    name:
-      - curl
-      - git
-      - openssh-client
-      - ca-certificates
-      - python3-pip
-      - tar
+    name: '{{ k3s_platform_bootstrap_packages[ansible_os_family] }}'
     state: present
 
 - name: Ensure k3s config directory exists
