@@ -1,0 +1,22 @@
+---
+# ansible-pull entrypoint: converge the Flux controller resource bounds declared
+# in roles/vhosts/flux_controllers without re-running the cluster bootstrap.
+#
+# Run on the target k3s host as the system administrator:
+#
+#   sudo ansible-pull -U https://github.com/ai-workspace-infra/playbooks.git \
+#     -d /var/lib/ansible-pull/playbooks -i localhost, \
+#     pull_flux_controller_limits.yml
+#
+# The role reads the admin kubeconfig from `k3s_platform_kubeconfig_path`
+# (default: /etc/rancher/k3s/k3s.yaml), so the pull must run as the user that
+# can read it.
+- name: Converge Flux controller resource limits
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Apply the declared Flux controller resource bounds
+      ansible.builtin.import_role:
+        name: vhosts/flux_controllers
+        tasks_from: limits.yml
