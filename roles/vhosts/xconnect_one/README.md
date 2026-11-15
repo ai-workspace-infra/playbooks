@@ -10,7 +10,7 @@ off, foreign overlay release is off, and the role verifies that the exact host
 default route is unchanged after the join. Enable those features explicitly
 per node only after the overlay handshake and private connectivity pass.
 
-`xconnect_one_environment` accepts `uat`, `prod`, or `shared`. Use `shared`
+`xconnect_one_environment` accepts `sit`, `uat`, `prod`, or `shared`. Use `shared`
 for shared-service nodes such as the Vault cluster; this only namespaces local
 state/configuration paths and telemetry labels, and does not reuse UAT/PROD
 network credentials.
@@ -47,3 +47,27 @@ continue to use the host's normal resolver while the declared private suffixes
 go to the Gateway DNS forwarder. It points `/etc/resolv.conf` at the
 `systemd-resolved` stub by default; set `xconnect_one_dns_manage_resolv_conf`
 to `false` when the host owns resolver configuration elsewhere.
+
+## Vault KV invitation handoff
+
+Zero issues a short-lived, single-use, device-bound invitation. The enrollment
+orchestrator writes its complete join URI to the KV v2 field `join_uri`.
+For each device set `xconnect_one_invite_vault_path` to
+`<environment>/services/xconnect/one-invites/<device-id>` and, if needed,
+`xconnect_one_invite_vault_mount` to the KV v2 mount name (default `kv`).
+The selected environment and device ID must match the path. An already joined
+device does not read Vault or consume another invitation.
+
+The controller executes the Vault read using the configured Vault connection and
+short-lived identity. Grant it read access to the exact device record only.
+The CLI artifact must support `join --invite-file`. The role validates the field,
+stages it on the target in a protected transient
+file, and removes that file after the join attempt. The issuer owns expiry,
+revocation, replacement, and cleanup of the KV record. A consumed or expired
+invitation needs a new Zero-issued invitation. Vault KV storage does not itself
+make the invitation single-use or revoke it.
+
+The Vault writer, OIDC role, ACL, record retention and cleanup workflow must
+be provisioned and verified separately before using this option. This role
+does not issue invitations or write to Vault. Existing invite URI and file
+inputs remain available, and must not be combined with a Vault path.

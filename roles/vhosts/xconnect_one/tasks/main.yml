@@ -3,7 +3,7 @@
   ansible.builtin.assert:
     that:
       - xconnect_one_enabled | bool
-      - xconnect_one_environment in ['uat', 'prod', 'shared']
+      - xconnect_one_environment in ['sit', 'uat', 'prod', 'shared']
       - xconnect_one_binary_source | trim | length > 0
       - (xconnect_one_device_id | trim) is match('^[a-z0-9][a-z0-9._-]{0,127}$')
       - xconnect_one_device_name | trim | length > 0
@@ -135,6 +135,41 @@
     path: "{{ xconnect_one_state_dir }}/state.json"
   register: xconnect_one_existing_state
 
+- name: Validate Vault invitation source for an unjoined device
+  ansible.builtin.assert:
+    that:
+      - xconnect_one_invite_vault_path is match('^' ~ xconnect_one_environment ~ '/services/xconnect/one-invites/[a-z0-9][a-z0-9._-]{0,127}$')
+      - xconnect_one_invite_vault_path.split('/')[-1] == xconnect_one_device_id
+      - xconnect_one_invite_vault_mount | trim | length > 0
+      - xconnect_one_invite_uri | trim | length == 0
+      - xconnect_one_invite_file_source | trim | length == 0
+    fail_msg: Vault invite path must match the environment and device, and be the only invite source.
+  when:
+    - not xconnect_one_existing_state.stat.exists
+    - xconnect_one_invite_vault_path | trim | length > 0
+
+- name: Read the device invitation from Vault KV v2
+  community.hashi_vault.vault_kv2_get:
+    engine_mount_point: "{{ xconnect_one_invite_vault_mount }}"
+    path: "{{ xconnect_one_invite_vault_path }}"
+  delegate_to: localhost
+  become: false
+  register: xconnect_one_vault_invite
+  no_log: true
+  when:
+    - not xconnect_one_existing_state.stat.exists
+    - xconnect_one_invite_vault_path | trim | length > 0
+
+- name: Validate the Vault invitation value
+  ansible.builtin.assert:
+    that:
+      - (xconnect_one_vault_invite.secret.join_uri | default('') | trim) is match('^xconnect://join/')
+    fail_msg: Vault record must contain a valid join_uri.
+  no_log: true
+  when:
+    - not xconnect_one_existing_state.stat.exists
+    - xconnect_one_invite_vault_path | trim | length > 0
+
 # A joined node re-runs without an invitation, so a re-run never needs or
 # consumes a new one-use invite.
 - name: Require an invitation only for a node that has not joined yet
@@ -143,13 +178,14 @@
       - >-
         xconnect_one_existing_state.stat.exists or
         (xconnect_one_invite_file_source | trim | length > 0) or
+        (xconnect_one_invite_vault_path | trim | length > 0) or
         ((xconnect_one_invite_uri | trim) is match('^xconnect://join/'))
     fail_msg: This node has not joined XConnect and no one-use invitation was provided.
   no_log: true
 
 - name: Write short-lived XConnect One invite file
   ansible.builtin.copy:
-    content: "{{ xconnect_one_invite_uri }}\n"
+    content: "{{ xconnect_one_vault_invite.secret.join_uri if (xconnect_one_invite_vault_path | trim | length > 0) else xconnect_one_invite_uri }}\n"
     dest: "{{ xconnect_one_invite_path }}"
     owner: root
     group: root
@@ -173,7 +209,25 @@
 
 - name: Join XConnect One with protected invite file
   block:
-    - name: Join the signed XConnect Zero network
+    - name: Join using the protected Vault invitation file
+      ansible.builtin.command:
+        argv:
+          - "{{ xconnect_one_binary_path }}"
+          - join
+          - --state-dir
+          - "{{ xconnect_one_state_dir }}"
+          - --device-id
+          - "{{ xconnect_one_device_id }}"
+          - --name
+          - "{{ xconnect_one_device_name }}"
+          - --invite-file
+          - "{{ xconnect_one_invite_path }}"
+      register: xconnect_one_vault_join
+      failed_when: false
+      no_log: true
+      when: xconnect_one_invite_vault_path | trim | length > 0
+
+    - name: Join the signed XConnect Zero network with a legacy invitation
       ansible.builtin.shell: >-
         set -eu;
         exec {{ xconnect_one_binary_path | quote }} join
@@ -183,8 +237,14 @@
         "$(cat {{ xconnect_one_invite_path | quote }})"
       args:
         executable: /bin/sh
-      register: xconnect_one_join
+      register: xconnect_one_legacy_join
       failed_when: false
+      no_log: true
+      when: xconnect_one_invite_vault_path | trim | length == 0
+
+    - name: Select the enrollment result
+      ansible.builtin.set_fact:
+        xconnect_one_join: "{{ xconnect_one_vault_join if (xconnect_one_invite_vault_path | trim | length > 0) else xconnect_one_legacy_join }}"
       no_log: true
 
     # The join result stays hidden (it carries the invitation), but its error
