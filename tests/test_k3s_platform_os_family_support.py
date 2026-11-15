@@ -65,7 +65,7 @@ class K3sPlatformOsFamilySupportTest(unittest.TestCase):
 
     def test_os_identity_accepts_both_families(self):
         os_identity = (ROOT / 'roles' / 'vhosts' / 'common' / 'tasks' / 'os_identity.yml').read_text()
-        self.assertIn('ansible_os_family in common_os_identity_supported_families', os_identity)
+        self.assertIn('ansible_os_family in (common_os_identity_supported_families', os_identity)
         self.assertNotIn("ansible_os_family == 'Debian'", os_identity)
 
     def test_fail2ban_does_not_hard_fail_without_the_package(self):
