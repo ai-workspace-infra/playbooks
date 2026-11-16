@@ -1,0 +1,51 @@
+---
+# Orchestration Playbook: P7 Platform DNS Cutover & Incremental Parity
+# Dynamic Execution:
+#   - Declarative Facts (Hosts, Users, Target Domains, DNS Aliases) loaded from GitOps manifests
+#   - Sensitive Credentials (SSH Keys, DB Passwords, Cloudflare Tokens) dynamically read from Vault KV
+#   - Zero hardcoding of IPs, passwords, tokens, or domain names
+#   - Automation Steps:
+#     1. Preflight assertion on Source & Target node readiness
+#     2. Second-level final incremental catch-up sync (PostgreSQL)
+#     3. Cutover public DNS records to Target Host (152.32.131.48)
+#     4. Post-cutover public DNS propagation validation & HTTPS probe
+
+- name: Orchestrate P7 Platform DNS Cutover & Final Cutover Verification
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    source_gitops_manifest: "{{ lookup('ansible.builtin.env', 'SOURCE_GITOPS_MANIFEST') | default(playbook_dir + '/../gitops-canary-samples/resources/svc.plus/prod/akamai/prod-k3s-v6.yaml', true) }}"
+    target_gitops_manifest: "{{ lookup('ansible.builtin.env', 'TARGET_GITOPS_MANIFEST') | default(playbook_dir + '/../gitops-canary-samples/resources/svc.plus/prod/ulighthost/prod-k3s-v6-ulhost.yaml', true) }}"
+    vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+    vault_token_file: "{{ lookup('ansible.builtin.env', 'HOME') + '/.vault-token' }}"
+
+  tasks:
+    - name: Validate GitOps declarative manifest files exist
+      ansible.builtin.assert:
+        that:
+          - source_gitops_manifest is file
+          - target_gitops_manifest is file
+        fail_msg: "Required GitOps declarative manifest files not found."
+
+    - name: Execute P7 DNS Cutover Script
+      ansible.builtin.command:
+        argv:
+          - /opt/homebrew/Cellar/ansible/14.3.1/libexec/bin/python
+          - "{{ playbook_dir }}/scripts/execute_dns_cutover_p7.py"
+          - "--source-manifest"
+          - "{{ source_gitops_manifest }}"
+          - "--target-manifest"
+          - "{{ target_gitops_manifest }}"
+      environment:
+        VAULT_ADDR: "{{ vault_addr }}"
+        VAULT_TOKEN: "{{ lookup('ansible.builtin.file', vault_token_file, errors='ignore') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN'), true) }}"
+        CLOUDFLARE_API_TOKEN: "{{ lookup('ansible.builtin.env', 'CLOUDFLARE_API_TOKEN', default='') }}"
+        CLOUDFLARE_DNS_API_TOKEN: "{{ lookup('ansible.builtin.env', 'CLOUDFLARE_DNS_API_TOKEN', default='') }}"
+        SOURCE_GITOPS_MANIFEST: "{{ source_gitops_manifest }}"
+        TARGET_GITOPS_MANIFEST: "{{ target_gitops_manifest }}"
+      register: p7_cutover_result
+
+    - name: Output P7 DNS Cutover Result Summary
+      ansible.builtin.debug:
+        msg: "{{ p7_cutover_result.stdout_lines }}"

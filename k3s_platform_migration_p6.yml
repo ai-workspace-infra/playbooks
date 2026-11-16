@@ -1,0 +1,44 @@
+---
+# Orchestration Playbook: P6 Platform Data Migration under Strict No-DNS-Cutover Constraint
+# Dynamic Execution:
+#   - Declarative Facts (Hosts, Users, Domains, Cutover contract) loaded from GitOps manifests
+#   - Sensitive Credentials (SSH Keys, Unseal Keys, Passwords) loaded dynamically from Vault KV paths
+#   - Zero hardcoding of IP addresses, passwords, tokens, or domain names
+
+- name: Orchestrate P6 Platform Migration (Submariner/WireGuard + Data Recovery)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    source_gitops_manifest: "{{ lookup('ansible.builtin.env', 'SOURCE_GITOPS_MANIFEST') | default(playbook_dir + '/../gitops-canary-samples/resources/svc.plus/prod/akamai/prod-k3s-v6.yaml', true) }}"
+    target_gitops_manifest: "{{ lookup('ansible.builtin.env', 'TARGET_GITOPS_MANIFEST') | default(playbook_dir + '/../gitops-canary-samples/resources/svc.plus/prod/ulighthost/prod-k3s-v6-ulhost.yaml', true) }}"
+    vault_addr: "{{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}"
+    vault_token_file: "{{ lookup('ansible.builtin.env', 'HOME') + '/.vault-token' }}"
+
+  tasks:
+    - name: Validate GitOps declarative manifest files exist
+      ansible.builtin.assert:
+        that:
+          - source_gitops_manifest is file
+          - target_gitops_manifest is file
+        fail_msg: "Required GitOps declarative manifest files not found."
+
+    - name: Execute P6 Migration Pipeline (GitOps Declarative + Vault KV Secrets)
+      ansible.builtin.command:
+        argv:
+          - /opt/homebrew/Cellar/ansible/14.3.1/libexec/bin/python
+          - "{{ playbook_dir }}/scripts/execute_migration_p6.py"
+          - "--source-manifest"
+          - "{{ source_gitops_manifest }}"
+          - "--target-manifest"
+          - "{{ target_gitops_manifest }}"
+      environment:
+        VAULT_ADDR: "{{ vault_addr }}"
+        VAULT_TOKEN: "{{ lookup('ansible.builtin.file', vault_token_file, errors='ignore') | default(lookup('ansible.builtin.env', 'VAULT_TOKEN'), true) }}"
+        SOURCE_GITOPS_MANIFEST: "{{ source_gitops_manifest }}"
+        TARGET_GITOPS_MANIFEST: "{{ target_gitops_manifest }}"
+      register: p6_migration_result
+
+    - name: Output Migration Pipeline Summary
+      ansible.builtin.debug:
+        msg: "{{ p6_migration_result.stdout_lines }}"

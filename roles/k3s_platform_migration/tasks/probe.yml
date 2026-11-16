@@ -1,0 +1,27 @@
+---
+- name: Run DNS, HTTPS, PostgreSQL TCP, and Vault cutover probe
+  ansible.builtin.command:
+    argv: >-
+      {{
+        [
+          ansible_playbook_python,
+          role_path + '/files/probe_cutover.py',
+          '--target-manifest', k3s_platform_migration_target_manifest,
+          '--mode', k3s_platform_migration_probe_mode,
+          '--json'
+        ]
+        + (['--dns-server', k3s_platform_migration_dns_server]
+           if (k3s_platform_migration_dns_server | length > 0) else [])
+        + (['--require-pg-dns'] if (k3s_platform_migration_require_pg_dns | bool) else [])
+      }}
+  environment: "{{ k3s_platform_migration_env }}"
+  register: k3s_platform_migration_probe_cmd
+  changed_when: false
+
+- name: Record structured probe result
+  ansible.builtin.set_fact:
+    k3s_platform_migration_probe_result: "{{ k3s_platform_migration_probe_cmd.stdout | from_json }}"
+
+- name: Display cutover probe summary
+  ansible.builtin.debug:
+    var: k3s_platform_migration_probe_result
