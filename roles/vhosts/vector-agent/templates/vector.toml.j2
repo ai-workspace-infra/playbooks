@@ -56,6 +56,38 @@ scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', 
 scrape_timeout_secs = 10
 {% endif %}
 
+{% if vector_haproxy_metrics_enabled | default(false) | bool %}
+[sources.haproxy_metrics]
+type = "prometheus_scrape"
+endpoints = [{{ vector_haproxy_metrics_endpoint | default('http://127.0.0.1:8404/metrics') | to_json }}]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+scrape_timeout_secs = 5
+{% endif %}
+
+{% if (vector_haproxy_metrics_enabled | default(false) | bool) and (vector_haproxy_health_probe_enabled | default(true) | bool) %}
+[sources.haproxy_health_probe]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:9115/probe?module=http_2xx&target={{ vector_haproxy_metrics_endpoint | default('http://127.0.0.1:8404/metrics') | urlencode }}"]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+scrape_timeout_secs = 10
+{% endif %}
+
+{% if vector_fluxgate_metrics_enabled | default(false) | bool %}
+[sources.fluxgate_metrics]
+type = "prometheus_scrape"
+endpoints = [{{ vector_fluxgate_metrics_endpoint | default('http://127.0.0.1:9102/metrics') | to_json }}]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+scrape_timeout_secs = 5
+{% endif %}
+
+{% if (vector_fluxgate_metrics_enabled | default(false) | bool) and (vector_fluxgate_health_probe_enabled | default(true) | bool) %}
+[sources.fluxgate_health_probe]
+type = "prometheus_scrape"
+endpoints = ["http://127.0.0.1:9115/probe?module=http_2xx&target={{ vector_fluxgate_metrics_endpoint | default('http://127.0.0.1:9102/metrics') | urlencode }}"]
+scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+scrape_timeout_secs = 10
+{% endif %}
+
 {% set ai_aggregator_remote_inputs = [] %}
 {% if vector_ai_aggregator_enabled | default(false) | bool %}
 {% for target in vector_ai_aggregator_metrics_targets | default([]) %}
@@ -237,6 +269,7 @@ source = '''
 .tags.service_domain = "{{ vector_observability_node_identity }}"
 .tags.job = "caddy"
 .tags.service = "caddy"
+.tags.proxy_engine = "caddy"
 '''
 {% endif %}
 
@@ -264,6 +297,107 @@ source = '''
 .tags.service_domain = "{{ vector_observability_node_identity }}"
 .tags.job = "caddy"
 .tags.service = "caddy"
+.tags.proxy_engine = "caddy"
+'''
+{% endif %}
+
+{% if vector_haproxy_metrics_enabled | default(false) | bool %}
+[transforms.add_haproxy_labels]
+type = "remap"
+inputs = ["haproxy_metrics"]
+source = '''
+.tags.instance = "{{ vector_observability_node_identity }}"
+.tags.node = "{{ vector_observability_node_identity }}"
+.tags.host = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.region = {{ obs_region | to_json }}
+.tags.resource_id = {{ obs_resource_id | to_json }}
+.tags.runtime_form = {{ obs_runtime_form | to_json }}
+.tags.resource_key = {{ obs_resource_key | to_json }}
+.tags.service_domain = "{{ vector_observability_node_identity }}"
+.tags.job = "haproxy"
+.tags.service = "haproxy"
+.tags.proxy_engine = "haproxy"
+'''
+{% endif %}
+
+{% if (vector_haproxy_metrics_enabled | default(false) | bool) and (vector_haproxy_health_probe_enabled | default(true) | bool) %}
+[transforms.haproxy_health_success]
+type = "filter"
+inputs = ["haproxy_health_probe"]
+condition = '.name == "probe_success"'
+
+[transforms.haproxy_up_labels]
+type = "remap"
+inputs = ["haproxy_health_success"]
+source = '''
+.name = "up"
+.tags.instance = "{{ vector_observability_node_identity }}"
+.tags.node = "{{ vector_observability_node_identity }}"
+.tags.host = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.region = {{ obs_region | to_json }}
+.tags.resource_id = {{ obs_resource_id | to_json }}
+.tags.runtime_form = {{ obs_runtime_form | to_json }}
+.tags.resource_key = {{ obs_resource_key | to_json }}
+.tags.service_domain = "{{ vector_observability_node_identity }}"
+.tags.job = "haproxy"
+.tags.service = "haproxy"
+.tags.proxy_engine = "haproxy"
+'''
+{% endif %}
+
+{% if vector_fluxgate_metrics_enabled | default(false) | bool %}
+[transforms.add_fluxgate_labels]
+type = "remap"
+inputs = ["fluxgate_metrics"]
+source = '''
+.tags.instance = "{{ vector_observability_node_identity }}"
+.tags.node = "{{ vector_observability_node_identity }}"
+.tags.host = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.region = {{ obs_region | to_json }}
+.tags.resource_id = {{ obs_resource_id | to_json }}
+.tags.runtime_form = {{ obs_runtime_form | to_json }}
+.tags.resource_key = {{ obs_resource_key | to_json }}
+.tags.service_domain = "{{ vector_observability_node_identity }}"
+.tags.job = "fluxgate"
+.tags.service = "fluxgate"
+.tags.proxy_engine = "fluxgate"
+'''
+{% endif %}
+
+{% if (vector_fluxgate_metrics_enabled | default(false) | bool) and (vector_fluxgate_health_probe_enabled | default(true) | bool) %}
+[transforms.fluxgate_health_success]
+type = "filter"
+inputs = ["fluxgate_health_probe"]
+condition = '.name == "probe_success"'
+
+[transforms.fluxgate_up_labels]
+type = "remap"
+inputs = ["fluxgate_health_success"]
+source = '''
+.name = "up"
+.tags.instance = "{{ vector_observability_node_identity }}"
+.tags.node = "{{ vector_observability_node_identity }}"
+.tags.host = "{{ inventory_hostname }}"
+.tags.environment = "{{ vector_observability_environment }}"
+.tags.env = "{{ vector_observability_environment }}"
+.tags.provider = "{{ vector_observability_provider }}"
+.tags.region = {{ obs_region | to_json }}
+.tags.resource_id = {{ obs_resource_id | to_json }}
+.tags.runtime_form = {{ obs_runtime_form | to_json }}
+.tags.resource_key = {{ obs_resource_key | to_json }}
+.tags.service_domain = "{{ vector_observability_node_identity }}"
+.tags.job = "fluxgate"
+.tags.service = "fluxgate"
+.tags.proxy_engine = "fluxgate"
 '''
 {% endif %}
 
@@ -347,6 +481,18 @@ type = "prometheus_remote_write"
 {% endif %}
 {% if (vector_caddy_metrics_enabled | default(false) | bool) and (vector_caddy_health_probe_enabled | default(true) | bool) %}
 {% set _ = remote_inputs.append("caddy_up_labels") %}
+{% endif %}
+{% if vector_haproxy_metrics_enabled | default(false) | bool %}
+{% set _ = remote_inputs.append("add_haproxy_labels") %}
+{% endif %}
+{% if (vector_haproxy_metrics_enabled | default(false) | bool) and (vector_haproxy_health_probe_enabled | default(true) | bool) %}
+{% set _ = remote_inputs.append("haproxy_up_labels") %}
+{% endif %}
+{% if vector_fluxgate_metrics_enabled | default(false) | bool %}
+{% set _ = remote_inputs.append("add_fluxgate_labels") %}
+{% endif %}
+{% if (vector_fluxgate_metrics_enabled | default(false) | bool) and (vector_fluxgate_health_probe_enabled | default(true) | bool) %}
+{% set _ = remote_inputs.append("fluxgate_up_labels") %}
 {% endif %}
 {% if vector_xhttp_monitoring_enabled | default(false) | bool %}
 {% set _ = remote_inputs.extend(["xhttp_caddy_labels", "xhttp_event_metrics"]) %}

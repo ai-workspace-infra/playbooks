@@ -1,0 +1,9 @@
+---
+- name: Provision HAProxy 3.0 reverse proxy vhosts
+  when: haproxy_enabled | default(true) | bool
+  block:
+    - name: Install HAProxy package
+      ansible.builtin.include_tasks: install.yml
+
+    - name: Configure HAProxy vhosts and metrics
+      ansible.builtin.include_tasks: configure.yml

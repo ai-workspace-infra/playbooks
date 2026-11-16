@@ -1,0 +1,13 @@
+---
+- name: Require Debian or Ubuntu for HAProxy package installation
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
+    fail_msg: "HAProxy vhost role currently supports Debian/Ubuntu only."
+
+- name: Ensure HAProxy package is installed
+  ansible.builtin.apt:
+    name: haproxy
+    state: present
+    update_cache: true
+  become: true

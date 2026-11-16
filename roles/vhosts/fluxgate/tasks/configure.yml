@@ -1,0 +1,80 @@
+---
+- name: Ensure Fluxgate directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ fluxgate_config_dir }}"
+    - "{{ fluxgate_config_dir }}/conf.d"
+    - "{{ fluxgate_tls_dir }}"
+  become: true
+
+- name: Copy TLS cert and key into Fluxgate TLS directory
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ fluxgate_tls_dir }}/{{ item.dest }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { src: "{{ fluxgate_source_cert_path }}", dest: "agent-proxy.crt", mode: "0644" }
+    - { src: "{{ fluxgate_source_key_path }}", dest: "agent-proxy.key", mode: "0600" }
+  become: true
+  notify: Restart fluxgate
+
+- name: Render global Fluxgatefile
+  ansible.builtin.template:
+    src: Fluxgatefile.j2
+    dest: "{{ fluxgate_config_dir }}/Fluxgatefile"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart fluxgate
+
+- name: Render XConnect Fluxgate vhost config
+  ansible.builtin.template:
+    src: xconnect.conf.j2
+    dest: "{{ fluxgate_config_dir }}/conf.d/jp-xconnect.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart fluxgate
+
+- name: Validate Fluxgate configuration before switching
+  ansible.builtin.command:
+    argv:
+      - "{{ fluxgate_binary_dest }}"
+      - validate
+      - --config
+      - "{{ fluxgate_config_dir }}/Fluxgatefile"
+  changed_when: false
+
+- name: Stop and disable competing ingress services when taking over 80/443
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - caddy
+    - haproxy
+  failed_when: false
+  become: true
+  when: fluxgate_replace_caddy | default(false) | bool
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+
+- name: Enable and start Fluxgate service
+  ansible.builtin.systemd:
+    name: fluxgate
+    state: started
+    enabled: true
+  become: true

@@ -1,0 +1,19 @@
+[Unit]
+Description=Fluxgate Lightweight HTTP/HTTPS Reverse Proxy (Pingora)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre={{ fluxgate_binary_dest }} validate --config {{ fluxgate_config_dir }}/Fluxgatefile
+ExecStart={{ fluxgate_binary_dest }} run --config {{ fluxgate_config_dir }}/Fluxgatefile
+Restart=on-failure
+RestartSec=3s
+LimitNOFILE=1048576
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+TimeoutStopSec=20s
+
+[Install]
+WantedBy=multi-user.target

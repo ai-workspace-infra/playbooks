@@ -1,0 +1,47 @@
+---
+- name: Check existing Fluxgate binary
+  ansible.builtin.stat:
+    path: "{{ fluxgate_binary_dest }}"
+  register: fluxgate_bin_stat
+
+- name: Install Fluxgate binary from local CI artifact path
+  ansible.builtin.copy:
+    src: "{{ fluxgate_binary_src }}"
+    dest: "{{ fluxgate_binary_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: fluxgate_binary_src | default('', true) | length > 0
+  notify: Restart fluxgate
+
+- name: Download pre-built Fluxgate release binary
+  ansible.builtin.get_url:
+    url: "{{ fluxgate_download_url }}"
+    dest: "{{ fluxgate_binary_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when:
+    - fluxgate_binary_src | default('', true) | length == 0
+    - fluxgate_download_url | default('', true) | length > 0
+  notify: Restart fluxgate
+
+- name: Require Fluxgate binary to be present on target host
+  ansible.builtin.stat:
+    path: "{{ fluxgate_binary_dest }}"
+  register: fluxgate_bin_after
+  failed_when: not fluxgate_bin_after.stat.exists
+
+- name: Install Fluxgate systemd service unit
+  ansible.builtin.template:
+    src: fluxgate.service.j2
+    dest: /etc/systemd/system/fluxgate.service
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify:
+    - Reload systemd
+    - Restart fluxgate

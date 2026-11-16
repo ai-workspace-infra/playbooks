@@ -1,0 +1,9 @@
+---
+- name: Provision Fluxgate Pingora reverse proxy vhosts
+  when: fluxgate_enabled | default(true) | bool
+  block:
+    - name: Install Fluxgate release binary and systemd unit
+      ansible.builtin.include_tasks: install.yml
+
+    - name: Configure Fluxgate vhosts and metrics
+      ansible.builtin.include_tasks: configure.yml

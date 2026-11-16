@@ -1,0 +1,34 @@
+{{ fluxgate_vhosts | join(' ') }} {
+    tls {{ fluxgate_tls_dir }}/agent-proxy.crt {{ fluxgate_tls_dir }}/agent-proxy.key
+
+    handle_path /xray-exporter/xhttp/* {
+        reverse_proxy {{ fluxgate_exporter_xhttp_upstream }}
+    }
+
+    handle_path /xray-exporter/tcp/* {
+        reverse_proxy {{ fluxgate_exporter_tcp_upstream }}
+    }
+
+    @xhttp {
+        path /split /split/*
+    }
+
+    @xhttp_root path /split
+    rewrite @xhttp_root /split/
+
+    handle @xhttp {
+{% if fluxgate_strip_x_padding | default(true) | bool %}
+        uri query -x_padding
+{% endif %}
+
+        reverse_proxy unix/{{ fluxgate_xhttp_unix_socket }} {
+            flush_interval -1
+
+            transport http {
+                versions h2c 2
+            }
+        }
+    }
+
+    respond "{{ fluxgate_default_response }}"
+}
