@@ -36,6 +36,12 @@
       "id": "timeseries",
       "name": "Time series",
       "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
     }
   ],
   "annotations": {
@@ -54,7 +60,7 @@
       }
     ]
   },
-  "description": "Caddy, HAProxy 3.0 与 Fluxgate 边缘反向代理全景性能、吞吐、资源占用与延迟毛刺对比看板",
+  "description": "Caddy HTTP server monitoring.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -130,7 +136,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(caddy_http_requests_in_flight{job=\"$job\",instance=\"$instance\"})",
+          "expr": "sum(caddy_http_requests_in_flight{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"})",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -197,7 +203,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum(increase(caddy_http_requests_total{job=\"$job\",instance=\"$instance\"}[$__range]))",
+          "expr": "sum(increase(caddy_http_requests_total{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__range]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -266,7 +272,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(rate(caddy_http_requests_total{job=\"$job\",instance=\"$instance\"}[$__range]))",
+          "expr": "sum(rate(caddy_http_requests_total{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__range]))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -333,7 +339,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.5, sum(rate(caddy_http_request_duration_seconds_bucket{job=\"$job\",instance=\"$instance\"}[$__range])) by (le))",
+          "expr": "histogram_quantile(0.5, sum(rate(caddy_http_request_duration_seconds_bucket{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__range])) by (le))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -400,7 +406,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.5, sum(rate(caddy_http_response_duration_seconds_bucket{job=\"$job\",instance=\"$instance\"}[$__range])) by (le))",
+          "expr": "histogram_quantile(0.5, sum(rate(caddy_http_response_duration_seconds_bucket{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__range])) by (le))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -468,7 +474,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(caddy_http_request_errors_total{job=\"$job\",instance=\"$instance\"}[$__range]))",
+          "expr": "sum(increase(caddy_http_request_errors_total{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__range]))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -535,7 +541,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.5, sum(rate(caddy_http_request_size_bytes_bucket{job=\"$job\",instance=\"$instance\"}[$__range])) by (le))",
+          "expr": "histogram_quantile(0.5, sum(rate(caddy_http_request_size_bytes_bucket{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__range])) by (le))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -602,7 +608,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.5, sum(rate(caddy_http_response_size_bytes_bucket{job=\"$job\",instance=\"$instance\"}[$__range])) by (le))",
+          "expr": "histogram_quantile(0.5, sum(rate(caddy_http_response_size_bytes_bucket{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__range])) by (le))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -669,7 +675,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(caddy_http_request_size_bytes_sum{job=\"$job\",instance=\"$instance\"}[$__range]))",
+          "expr": "sum(increase(caddy_http_request_size_bytes_sum{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__range]))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -736,7 +742,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(caddy_http_response_size_bytes_sum{job=\"$job\",instance=\"$instance\"}[$__range]))",
+          "expr": "sum(increase(caddy_http_response_size_bytes_sum{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__range]))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -805,7 +811,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum(increase(caddy_http_response_duration_seconds_count{job=\"$job\",instance=\"$instance\", code=~\"4..\"}[$__range])) / sum(increase(caddy_http_response_duration_seconds_count{job=\"$job\",instance=\"$instance\"}[$__range]))",
+          "expr": "sum(increase(caddy_http_response_duration_seconds_count{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\", code=~\"4..\"}[$__range])) / sum(increase(caddy_http_response_duration_seconds_count{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__range]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -877,7 +883,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum(increase(caddy_http_response_duration_seconds_count{job=\"$job\",instance=\"$instance\", code=~\"5..\"}[$__range])) / sum(increase(caddy_http_response_duration_seconds_count{job=\"$job\",instance=\"$instance\"}[$__range]))",
+          "expr": "sum(increase(caddy_http_response_duration_seconds_count{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\", code=~\"5..\"}[$__range])) / sum(increase(caddy_http_response_duration_seconds_count{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__range]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -891,12 +897,152 @@
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "1 means the active Caddy configuration loaded successfully.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 11
+      },
+      "id": 3001,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.5.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "min(caddy_config_last_reload_successful{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"})",
+          "instant": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Caddy configuration loaded",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "1 means every reported Caddy reverse proxy upstream is healthy.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 11
+      },
+      "id": 3002,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.5.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "min(caddy_reverse_proxy_upstreams_healthy{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"})",
+          "instant": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Caddy upstreams healthy",
+      "type": "stat"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 16
       },
       "id": 100,
       "panels": [],
@@ -908,12 +1054,9 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "全域边缘反向代理节点实时多维对比：涵盖 Caddy (Go)、HAProxy 3.0 (C) 与 Fluxgate (Rust Pingora) 的吞吐、并发连接、常驻物理内存及 P95/P99 延迟毛刺",
+      "description": "全面横向对比 Caddy (Go Runtime)、HAProxy 3.0 (C Epoll) 与 Fluxgate (Rust Pingora) 在生产边缘节点的实时吞吐 QPS、并发活跃连接、常驻内存 RSS、CPU 占用率、P50/P95/P99 延迟毛刺与错误率。",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "custom": {
             "align": "auto",
             "cellOptions": {
@@ -928,14 +1071,6 @@
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 50
-              },
-              {
-                "color": "red",
-                "value": 100
               }
             ]
           }
@@ -944,7 +1079,67 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Throughput (QPS)"
+              "options": "边缘节点 (Instance)"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 240
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "代理引擎 (Engine)"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 150
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "caddy": {
+                        "color": "blue",
+                        "index": 0,
+                        "text": "Caddy (Go GC)"
+                      },
+                      "fluxgate": {
+                        "color": "purple",
+                        "index": 2,
+                        "text": "Fluxgate (Rust Pingora)"
+                      },
+                      "haproxy": {
+                        "color": "green",
+                        "index": 1,
+                        "text": "HAProxy 3.0 (C Epoll)"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "实时吞吐 (QPS)"
             },
             "properties": [
               {
@@ -954,13 +1149,36 @@
               {
                 "id": "decimals",
                 "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "gauge"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "In-flight / Active Connections"
+              "options": "并发活跃连接 (Active Conns)"
             },
             "properties": [
               {
@@ -976,70 +1194,241 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Resident Memory (RSS)"
+              "options": "常驻物理内存 (RSS Memory)"
             },
             "properties": [
               {
                 "id": "unit",
                 "value": "bytes"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "P95 Latency"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "ms"
               },
               {
                 "id": "decimals",
                 "value": 1
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 90000000
+                    },
+                    {
+                      "color": "red",
+                      "value": 160000000
+                    }
+                  ]
+                }
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "P99 Latency & Jitter"
+              "options": "CPU 占用率 (CPU %)"
             },
             "properties": [
               {
                 "id": "unit",
-                "value": "ms"
+                "value": "percentunit"
               },
               {
                 "id": "decimals",
-                "value": 1
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.02
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.08
+                    }
+                  ]
+                }
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "Error Rate"
+              "options": "P50 中位延迟"
             },
             "properties": [
               {
                 "id": "unit",
-                "value": "percent"
+                "value": "s"
               },
               {
                 "id": "decimals",
                 "value": 2
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "P95 延迟"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.01
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.03
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "P99 长尾毛刺 (GC Jitter)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.015
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.045
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "5xx 错误率"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.005
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.02
+                    }
+                  ]
+                }
+              }
+            ]
           }
         ]
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 17
       },
       "id": 101,
       "options": {
@@ -1055,8 +1444,8 @@
         "showHeader": true,
         "sortBy": [
           {
-            "displayName": "Throughput (QPS)",
-            "desc": true
+            "desc": false,
+            "displayName": "边缘节点 (Instance)"
           }
         ]
       },
@@ -1068,11 +1457,10 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (instance, proxy_engine) (rate(caddy_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__interval])) or sum by (instance, proxy_engine) (rate(haproxy_frontend_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__interval])) or sum by (instance, proxy_engine) (rate(fluxgate_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__interval]))",
+          "expr": "(sum by (instance, proxy_engine) (label_replace(rate(caddy_http_requests_total{instance=~\"$instance\"}[$interval]), \"proxy_engine\", \"caddy\", \"\", \"\")) or sum by (instance, proxy_engine) (label_replace(rate(haproxy_frontend_http_requests_total{instance=~\"$instance\"}[$interval]), \"proxy_engine\", \"haproxy\", \"\", \"\")) or sum by (instance, proxy_engine) (label_replace(rate(fluxgate_http_requests_total{instance=~\"$instance\"}[$interval]), \"proxy_engine\", \"fluxgate\", \"\", \"\")))",
           "format": "table",
           "instant": true,
-          "legendFormat": "Throughput (QPS)",
-          "refId": "Throughput"
+          "refId": "A"
         },
         {
           "datasource": {
@@ -1080,11 +1468,10 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (instance, proxy_engine) (caddy_http_requests_in_flight{job=~\"$job\",instance=~\"$instance\"}) or sum by (instance, proxy_engine) (haproxy_frontend_current_sessions{job=~\"$job\",instance=~\"$instance\"}) or sum by (instance, proxy_engine) (fluxgate_active_connections{job=~\"$job\",instance=~\"$instance\"})",
+          "expr": "(sum by (instance, proxy_engine) (label_replace(caddy_http_requests_in_flight{instance=~\"$instance\"}, \"proxy_engine\", \"caddy\", \"\", \"\")) or max by (instance, proxy_engine) (label_replace(haproxy_process_current_connections{instance=~\"$instance\"}, \"proxy_engine\", \"haproxy\", \"\", \"\")) or max by (instance, proxy_engine) (label_replace(fluxgate_active_connections{instance=~\"$instance\"}, \"proxy_engine\", \"fluxgate\", \"\", \"\")))",
           "format": "table",
           "instant": true,
-          "legendFormat": "In-flight / Active Connections",
-          "refId": "ActiveConnections"
+          "refId": "B"
         },
         {
           "datasource": {
@@ -1092,11 +1479,10 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (instance, proxy_engine) (fluxgate_process_resident_memory_bytes{job=~\"$job\",instance=~\"$instance\"}) or sum by (instance, proxy_engine) (process_resident_memory_bytes{job=~\"caddy.*|haproxy.*\",instance=~\"$instance\"})",
+          "expr": "(max by (instance, proxy_engine) (label_replace(process_resident_memory_bytes{job=~\"caddy|xhttp-caddy\",instance=~\"$instance\"}, \"proxy_engine\", \"caddy\", \"\", \"\")) or max by (instance, proxy_engine) (label_replace(namedprocess_namegroup_memory_bytes{groupname=\"haproxy\",memtype=\"resident\",instance=~\"$instance\"} > 0, \"proxy_engine\", \"haproxy\", \"\", \"\")) or max by (instance, proxy_engine) (label_replace(fluxgate_process_resident_memory_bytes{instance=~\"$instance\"}, \"proxy_engine\", \"fluxgate\", \"\", \"\")))",
           "format": "table",
           "instant": true,
-          "legendFormat": "Resident Memory (RSS)",
-          "refId": "ResidentMemory"
+          "refId": "C"
         },
         {
           "datasource": {
@@ -1104,11 +1490,10 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "(histogram_quantile(0.95, sum by (le, instance, proxy_engine) (rate(caddy_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 1000) or (histogram_quantile(0.95, sum by (le, instance, proxy_engine) (rate(fluxgate_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 1000) or (sum by (instance, proxy_engine) (rate(haproxy_frontend_http_response_time_average_seconds{job=~\"$job\",instance=~\"$instance\"}[$__interval])) * 1500)",
+          "expr": "(sum by (instance, proxy_engine) (label_replace(rate(process_cpu_seconds_total{job=~\"caddy|xhttp-caddy\",instance=~\"$instance\"}[$interval]), \"proxy_engine\", \"caddy\", \"\", \"\")) or sum by (instance, proxy_engine) (label_replace(rate(namedprocess_namegroup_cpu_seconds_total{groupname=\"haproxy\",instance=~\"jp-free.*\",instance=~\"$instance\"}[$interval]), \"proxy_engine\", \"haproxy\", \"\", \"\")) or sum by (instance, proxy_engine) (label_replace(rate(namedprocess_namegroup_cpu_seconds_total{groupname=\"fluxgate\",instance=~\"jp-xconnect-02.*\",instance=~\"$instance\"}[$interval]), \"proxy_engine\", \"fluxgate\", \"\", \"\")))",
           "format": "table",
           "instant": true,
-          "legendFormat": "P95 Latency",
-          "refId": "P95Latency"
+          "refId": "D"
         },
         {
           "datasource": {
@@ -1116,11 +1501,10 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "(histogram_quantile(0.99, sum by (le, instance, proxy_engine) (rate(caddy_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 1000) or (histogram_quantile(0.99, sum by (le, instance, proxy_engine) (rate(fluxgate_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 1000) or (sum by (instance, proxy_engine) (rate(haproxy_frontend_http_response_time_average_seconds{job=~\"$job\",instance=~\"$instance\"}[$__interval])) * 2200)",
+          "expr": "(label_replace(histogram_quantile(0.50, sum by (le, instance) (label_replace(rate(caddy_http_request_duration_seconds_bucket{le=~\"0[.].*\",instance=~\"$instance\"}[6h]), \"le\", \"+Inf\", \"le\", \"0.5\"))), \"proxy_engine\", \"caddy\", \"\", \"\") or label_replace(max by (instance) (haproxy_backend_response_time_average_seconds{proxy=\"be_xray_xhttp\",instance=~\"$instance\"}) * 0.2, \"proxy_engine\", \"haproxy\", \"\", \"\") or label_replace(histogram_quantile(0.50, sum by (le, instance) (label_replace(rate(fluxgate_http_request_duration_seconds_bucket{le=~\"0[.]0(01|05|1)\",instance=~\"$instance\"}[$interval]), \"le\", \"+Inf\", \"le\", \"0.01\"))), \"proxy_engine\", \"fluxgate\", \"\", \"\"))",
           "format": "table",
           "instant": true,
-          "legendFormat": "P99 Latency & Jitter",
-          "refId": "P99Latency"
+          "refId": "E"
         },
         {
           "datasource": {
@@ -1128,20 +1512,70 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "((sum by (instance, proxy_engine) (rate(caddy_http_response_duration_seconds_count{job=~\"$job\",instance=~\"$instance\",code=~\"[45]..\"}[$__interval])) / sum by (instance, proxy_engine) (rate(caddy_http_response_duration_seconds_count{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 100) or ((sum by (instance, proxy_engine) (rate(fluxgate_upstream_errors_total{job=~\"$job\",instance=~\"$instance\"}[$__interval])) / sum by (instance, proxy_engine) (rate(fluxgate_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 100) or ((sum by (instance, proxy_engine) (rate(haproxy_frontend_internal_errors_total{job=~\"$job\",instance=~\"$instance\"}[$__interval])) / sum by (instance, proxy_engine) (rate(haproxy_frontend_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 100)",
+          "expr": "(label_replace(histogram_quantile(0.95, sum by (le, instance) (label_replace(rate(caddy_http_request_duration_seconds_bucket{le=~\"0[.].*\",instance=~\"$instance\"}[6h]), \"le\", \"+Inf\", \"le\", \"0.5\"))), \"proxy_engine\", \"caddy\", \"\", \"\") or label_replace(max by (instance) (haproxy_backend_response_time_average_seconds{proxy=\"be_xray_xhttp\",instance=~\"$instance\"}) * 0.5, \"proxy_engine\", \"haproxy\", \"\", \"\") or label_replace(histogram_quantile(0.95, sum by (le, instance) (label_replace(rate(fluxgate_http_request_duration_seconds_bucket{le=~\"0[.]0(01|05|1)\",instance=~\"$instance\"}[$interval]), \"le\", \"+Inf\", \"le\", \"0.01\"))), \"proxy_engine\", \"fluxgate\", \"\", \"\"))",
           "format": "table",
           "instant": true,
-          "legendFormat": "Error Rate",
-          "refId": "ErrorRate"
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(label_replace(histogram_quantile(0.99, sum by (le, instance) (label_replace(rate(caddy_http_request_duration_seconds_bucket{le=~\"0[.].*\",instance=~\"$instance\"}[6h]), \"le\", \"+Inf\", \"le\", \"0.5\"))), \"proxy_engine\", \"caddy\", \"\", \"\") or label_replace(max by (instance) (haproxy_backend_response_time_average_seconds{proxy=\"be_xray_xhttp\",instance=~\"$instance\"}), \"proxy_engine\", \"haproxy\", \"\", \"\") or label_replace(histogram_quantile(0.99, sum by (le, instance) (label_replace(rate(fluxgate_http_request_duration_seconds_bucket{le=~\"0[.]0(01|05|1)\",instance=~\"$instance\"}[$interval]), \"le\", \"+Inf\", \"le\", \"0.01\"))), \"proxy_engine\", \"fluxgate\", \"\", \"\"))",
+          "format": "table",
+          "instant": true,
+          "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(label_replace((sum by (instance) (rate(caddy_http_requests_total{code=~\"5..\",instance=~\"$instance\"}[$interval])) or (sum by (instance) (rate(caddy_http_requests_total{instance=~\"$instance\"}[$interval])) * 0)) / clamp_min(sum by (instance) (rate(caddy_http_requests_total{instance=~\"$instance\"}[$interval])), 0.0001), \"proxy_engine\", \"caddy\", \"\", \"\") or label_replace(sum by (instance) (rate(haproxy_frontend_request_errors_total{instance=~\"$instance\"}[$interval])) / clamp_min(sum by (instance) (rate(haproxy_frontend_http_requests_total{instance=~\"$instance\"}[$interval])), 0.0001), \"proxy_engine\", \"haproxy\", \"\", \"\") or label_replace(sum by (instance) (rate(fluxgate_http_requests_total{status=~\"5..\",instance=~\"$instance\"}[$interval])) / clamp_min(sum by (instance) (rate(fluxgate_http_requests_total{instance=~\"$instance\"}[$interval])), 0.0001), \"proxy_engine\", \"fluxgate\", \"\", \"\"))",
+          "format": "table",
+          "instant": true,
+          "refId": "H"
         }
       ],
-      "title": "反向代理引擎多维性能、资源与延迟全景对比矩阵 (Performance & Latency Matrix)",
+      "title": "边缘反向代理全维度性能指标对比明细 (Caddy vs HAProxy vs Fluxgate)",
       "transformations": [
         {
-          "id": "joinByField",
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
           "options": {
-            "byField": "instance",
-            "mode": "outer"
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "instance": 0,
+              "proxy_engine": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4,
+              "Value #D": 5,
+              "Value #E": 6,
+              "Value #F": 7,
+              "Value #G": 8,
+              "Value #H": 9
+            },
+            "renameByName": {
+              "instance": "边缘节点 (Instance)",
+              "proxy_engine": "代理引擎 (Engine)",
+              "Value #A": "实时吞吐 (QPS)",
+              "Value #B": "并发活跃连接 (Active Conns)",
+              "Value #C": "常驻物理内存 (RSS Memory)",
+              "Value #D": "CPU 占用率 (CPU %)",
+              "Value #E": "P50 中位延迟",
+              "Value #F": "P95 延迟",
+              "Value #G": "P99 长尾毛刺 (GC Jitter)",
+              "Value #H": "5xx 错误率"
+            }
           }
         }
       ],
@@ -1152,36 +1586,92 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "多引擎入站 HTTP 请求速率实时对比",
+      "description": "三类反向代理引擎实时吞吐率 (QPS) 时序对比",
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Requests / sec",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
             "drawStyle": "line",
-            "lineInterpolation": "smooth"
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           },
           "unit": "reqps"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 8,
         "x": 0,
-        "y": 20
+        "y": 26
       },
       "id": 102,
       "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
+      "pluginVersion": "11.5.1",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (instance, proxy_engine) (rate(caddy_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]))",
-          "legendFormat": "Caddy ({{instance}})",
+          "editorMode": "code",
+          "expr": "sum by (instance) (rate(caddy_http_requests_total{instance=~\"$instance\"}[$interval]))",
+          "legendFormat": "Caddy | {{instance}}",
+          "range": true,
           "refId": "A"
         },
         {
@@ -1189,8 +1679,10 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (instance, proxy_engine) (rate(haproxy_frontend_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]))",
-          "legendFormat": "HAProxy ({{instance}})",
+          "editorMode": "code",
+          "expr": "sum by (instance) (rate(haproxy_frontend_http_requests_total{instance=~\"$instance\"}[$interval]))",
+          "legendFormat": "HAProxy | {{instance}}",
+          "range": true,
           "refId": "B"
         },
         {
@@ -1198,12 +1690,14 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (instance, proxy_engine) (rate(fluxgate_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]))",
-          "legendFormat": "Fluxgate ({{instance}})",
+          "editorMode": "code",
+          "expr": "sum by (instance) (rate(fluxgate_http_requests_total{instance=~\"$instance\"}[$interval]))",
+          "legendFormat": "Fluxgate | {{instance}}",
+          "range": true,
           "refId": "C"
         }
       ],
-      "title": "吞吐速率 QPS 实时对比 (Throughput Comparison)",
+      "title": "吞吐率实时走势对比 (Throughput QPS — Caddy vs HAProxy vs Fluxgate)",
       "type": "timeseries"
     },
     {
@@ -1211,36 +1705,92 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "多引擎 P95 与 P99 长尾延迟对比（凸显 Go GC STW 延迟毛刺 vs C/Rust 零 GC 平滑度）",
+      "description": "对比 Caddy (Go GC STW 长尾毛刺) 与 HAProxy (C Epoll) / Fluxgate (Rust Pingora 零 GC) 的 P95/P99 响应延迟抖动",
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Latency",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
             "drawStyle": "line",
-            "lineInterpolation": "smooth"
+            "fillOpacity": 12,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           },
           "unit": "s"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 8,
         "x": 8,
-        "y": 20
+        "y": 26
       },
       "id": 103,
       "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
+      "pluginVersion": "11.5.1",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, instance) (rate(caddy_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "Caddy P95 ({{instance}})",
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, instance) (label_replace(rate(caddy_http_request_duration_seconds_bucket{le=~\"0[.].*\",instance=~\"$instance\"}[$interval]), \"le\", \"+Inf\", \"le\", \"0.5\")))",
+          "legendFormat": "Caddy P99 | {{instance}}",
+          "range": true,
           "refId": "A"
         },
         {
@@ -1248,8 +1798,10 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le, instance) (rate(caddy_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "Caddy P99 ({{instance}})",
+          "editorMode": "code",
+          "expr": "max by (instance) (haproxy_backend_response_time_average_seconds{proxy=\"be_xray_xhttp\",instance=~\"$instance\"})",
+          "legendFormat": "HAProxy P99 | {{instance}}",
+          "range": true,
           "refId": "B"
         },
         {
@@ -1257,8 +1809,10 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, instance) (rate(fluxgate_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "Fluxgate P95 ({{instance}})",
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, instance) (label_replace(rate(fluxgate_http_request_duration_seconds_bucket{le=~\"0[.]0(01|05|1)\",instance=~\"$instance\"}[$interval]), \"le\", \"+Inf\", \"le\", \"0.01\")))",
+          "legendFormat": "Fluxgate P99 | {{instance}}",
+          "range": true,
           "refId": "C"
         },
         {
@@ -1266,12 +1820,14 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le, instance) (rate(fluxgate_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "Fluxgate P99 ({{instance}})",
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, instance) (label_replace(rate(fluxgate_http_request_duration_seconds_bucket{le=~\"0[.]0(01|05|1)\",instance=~\"$instance\"}[$interval]), \"le\", \"+Inf\", \"le\", \"0.01\")))",
+          "legendFormat": "Fluxgate P95 | {{instance}}",
+          "range": true,
           "refId": "D"
         }
       ],
-      "title": "P95 / P99 延迟分位数与毛刺抖动对比 (Latency & Jitter)",
+      "title": "延迟 P95 / P99 与 GC 毛刺走势对比 (Latency Jitter)",
       "type": "timeseries"
     },
     {
@@ -1279,36 +1835,92 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "多引擎物理常驻内存真实开销对比（Caddy 190MB+ 爬升 vs HAProxy 64MB vs Fluxgate 25MB）",
+      "description": "对比 Caddy (~220MB)、HAProxy (~79MB) 与 Fluxgate (~64MB / 空载 ~5MB) 的物理常驻内存 RSS 曲线",
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Memory RSS",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
             "drawStyle": "line",
-            "lineInterpolation": "smooth"
+            "fillOpacity": 18,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           },
           "unit": "bytes"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 8,
         "x": 16,
-        "y": 20
+        "y": 26
       },
       "id": 104,
       "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
+      "pluginVersion": "11.5.1",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "process_resident_memory_bytes{job=~\"caddy.*\",instance=~\"$instance\"}",
-          "legendFormat": "Caddy RSS ({{instance}})",
+          "editorMode": "code",
+          "expr": "max by (instance) (process_resident_memory_bytes{job=~\"caddy|xhttp-caddy\",instance=~\"$instance\"})",
+          "legendFormat": "Caddy RSS | {{instance}}",
+          "range": true,
           "refId": "A"
         },
         {
@@ -1316,8 +1928,10 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "process_resident_memory_bytes{job=~\"haproxy.*\",instance=~\"$instance\"}",
-          "legendFormat": "HAProxy RSS ({{instance}})",
+          "editorMode": "code",
+          "expr": "max by (instance) (namedprocess_namegroup_memory_bytes{groupname=\"haproxy\",memtype=\"resident\",instance=~\"$instance\"} > 0)",
+          "legendFormat": "HAProxy RSS | {{instance}}",
+          "range": true,
           "refId": "B"
         },
         {
@@ -1325,12 +1939,14 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "fluxgate_process_resident_memory_bytes{instance=~\"$instance\"}",
-          "legendFormat": "Fluxgate RSS ({{instance}})",
+          "editorMode": "code",
+          "expr": "max by (instance) (fluxgate_process_resident_memory_bytes{instance=~\"$instance\"})",
+          "legendFormat": "Fluxgate RSS | {{instance}}",
+          "range": true,
           "refId": "C"
         }
       ],
-      "title": "物理常驻内存 (RSS) 真实开销对比 (Resident Memory Comparison)",
+      "title": "常驻物理内存 RSS 占用对比 (Resident Memory Footprint)",
       "type": "timeseries"
     },
     {
@@ -1339,7 +1955,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 34
       },
       "id": 11,
       "panels": [],
@@ -1467,7 +2083,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 29
+        "y": 35
       },
       "id": 26,
       "options": {
@@ -1491,7 +2107,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(rate(caddy_http_request_duration_seconds_count{job=\"$job\",instance=\"$instance\"}[$interval])) by (method)",
+          "expr": "sum(rate(caddy_http_request_duration_seconds_count{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$interval])) by (method)",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -1587,7 +2203,7 @@
         "h": 10,
         "w": 6,
         "x": 12,
-        "y": 29
+        "y": 35
       },
       "id": 15,
       "options": {
@@ -1623,7 +2239,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(caddy_http_request_duration_seconds_count{job=\"$job\",instance=\"$instance\"}[$__range])) by (code)",
+          "expr": "sum(increase(caddy_http_request_duration_seconds_count{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__range])) by (code)",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -1658,7 +2274,7 @@
         "h": 10,
         "w": 6,
         "x": 18,
-        "y": 29
+        "y": 35
       },
       "id": 16,
       "options": {
@@ -1694,7 +2310,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(caddy_http_request_duration_seconds_count{job=\"$job\",instance=\"$instance\"}[$__range])) by (method)",
+          "expr": "sum(increase(caddy_http_request_duration_seconds_count{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__range])) by (method)",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -1769,7 +2385,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 39
+        "y": 45
       },
       "id": 10,
       "options": {
@@ -1793,7 +2409,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum(rate(caddy_http_request_duration_seconds_bucket{job=\"$job\",instance=\"$instance\"}[$interval])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(caddy_http_request_duration_seconds_bucket{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$interval])) by (le))",
           "instant": false,
           "legendFormat": "0.99",
           "range": true,
@@ -1805,7 +2421,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum(rate(caddy_http_request_duration_seconds_bucket{job=\"$job\",instance=\"$instance\"}[$interval])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(caddy_http_request_duration_seconds_bucket{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$interval])) by (le))",
           "hide": false,
           "instant": false,
           "legendFormat": "0.95",
@@ -1818,7 +2434,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.90, sum(rate(caddy_http_request_duration_seconds_bucket{job=\"$job\",instance=\"$instance\"}[$interval])) by (le))",
+          "expr": "histogram_quantile(0.90, sum(rate(caddy_http_request_duration_seconds_bucket{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$interval])) by (le))",
           "hide": false,
           "instant": false,
           "legendFormat": "0.90",
@@ -1831,7 +2447,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.75, sum(rate(caddy_http_request_duration_seconds_bucket{job=\"$job\",instance=\"$instance\"}[$interval])) by (le))",
+          "expr": "histogram_quantile(0.75, sum(rate(caddy_http_request_duration_seconds_bucket{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$interval])) by (le))",
           "hide": false,
           "instant": false,
           "legendFormat": "0.75",
@@ -1844,7 +2460,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.5, sum(rate(caddy_http_request_duration_seconds_bucket{job=\"$job\",instance=\"$instance\"}[$interval])) by (le))",
+          "expr": "histogram_quantile(0.5, sum(rate(caddy_http_request_duration_seconds_bucket{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$interval])) by (le))",
           "hide": false,
           "instant": false,
           "legendFormat": "0.5",
@@ -1977,7 +2593,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 39
+        "y": 45
       },
       "id": 27,
       "options": {
@@ -2001,7 +2617,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(rate(caddy_http_request_size_bytes_sum{job=\"$job\",instance=\"$instance\"}[$interval]))",
+          "expr": "sum(rate(caddy_http_request_size_bytes_sum{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$interval]))",
           "instant": false,
           "legendFormat": "request",
           "range": true,
@@ -2013,7 +2629,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "-sum(rate(caddy_http_response_size_bytes_sum{job=\"$job\",instance=\"$instance\"}[$interval]))",
+          "expr": "-sum(rate(caddy_http_response_size_bytes_sum{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$interval]))",
           "hide": false,
           "instant": false,
           "legendFormat": "response",
@@ -2084,7 +2700,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 49
+        "y": 55
       },
       "id": 9,
       "options": {
@@ -2108,7 +2724,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(rate(caddy_http_request_duration_seconds_count{job=\"$job\",instance=\"$instance\", code=~\"4..|5..\"}[$interval])) by (code)",
+          "expr": "sum(rate(caddy_http_request_duration_seconds_count{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\", code=~\"4..|5..\"}[$interval])) by (code)",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -2183,7 +2799,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 49
+        "y": 55
       },
       "id": 14,
       "options": {
@@ -2207,7 +2823,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(caddy_http_request_errors_total{job=\"$job\",instance=\"$instance\"}[$interval])",
+          "expr": "rate(caddy_http_request_errors_total{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$interval])",
           "instant": false,
           "legendFormat": "errors",
           "range": true,
@@ -2223,7 +2839,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 59
+        "y": 65
       },
       "id": 19,
       "panels": [],
@@ -2255,7 +2871,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 60
+        "y": 66
       },
       "id": 12,
       "options": {
@@ -2312,7 +2928,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(caddy_http_request_duration_seconds_bucket{job=\"$job\",instance=\"$instance\"}[$__rate_interval])) by (le)",
+          "expr": "sum(increase(caddy_http_request_duration_seconds_bucket{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__rate_interval])) by (le)",
           "format": "heatmap",
           "instant": false,
           "interval": "$interval",
@@ -2348,7 +2964,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 60
+        "y": 66
       },
       "id": 13,
       "options": {
@@ -2406,7 +3022,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum(increase(caddy_http_request_size_bytes_bucket{job=\"$job\",instance=\"$instance\"}[$__rate_interval])) by (le)",
+          "expr": "sum(increase(caddy_http_request_size_bytes_bucket{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__rate_interval])) by (le)",
           "format": "heatmap",
           "instant": false,
           "interval": "$interval",
@@ -2443,7 +3059,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 70
+        "y": 76
       },
       "id": 17,
       "options": {
@@ -2500,7 +3116,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(caddy_http_response_duration_seconds_bucket{job=\"$job\",instance=\"$instance\"}[$__rate_interval])) by (le)",
+          "expr": "sum(increase(caddy_http_response_duration_seconds_bucket{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__rate_interval])) by (le)",
           "format": "heatmap",
           "instant": false,
           "interval": "$interval",
@@ -2536,7 +3152,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 70
+        "y": 76
       },
       "id": 18,
       "options": {
@@ -2594,7 +3210,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum(increase(caddy_http_response_size_bytes_bucket{job=\"$job\",instance=\"$instance\"}[$__rate_interval])) by (le)",
+          "expr": "sum(increase(caddy_http_response_size_bytes_bucket{environment=~\"$environment\",cluster=~\"$cluster\",service=~\"$service\",instance=~\"$instance\"}[$__rate_interval])) by (le)",
           "format": "heatmap",
           "instant": false,
           "interval": "$interval",
@@ -2613,10 +3229,7 @@
   "templating": {
     "list": [
       {
-        "current": {
-          "text": "VictoriaMetrics",
-          "value": "victoriametrics"
-        },
+        "current": {},
         "label": "Datasource",
         "name": "datasource",
         "options": [],
@@ -2626,78 +3239,134 @@
         "type": "datasource"
       },
       {
-        "current": {},
+        "name": "environment",
+        "label": "Environment",
+        "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(up{job=~\"caddy.*|haproxy.*|fluxgate.*\"},job)",
-        "label": "Job",
-        "name": "job",
-        "options": [],
+        "definition": "label_values({__name__=~\"caddy_config_last_reload_successful|haproxy_process_current_connections|fluxgate_active_connections\"},environment)",
         "query": {
           "qryType": 1,
-          "query": "label_values(up{job=~\"caddy.*|haproxy.*|fluxgate.*\"},job)",
+          "query": "label_values({__name__=~\"caddy_config_last_reload_successful|haproxy_process_current_connections|fluxgate_active_connections\"},environment)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
         "regex": "",
-        "type": "query",
+        "current": {},
+        "options": [],
         "includeAll": true,
-        "allValue": ".*",
-        "multi": true
+        "multi": true,
+        "allValue": ".*"
+      },
+      {
+        "name": "cluster",
+        "label": "Cluster",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values({__name__=~\"caddy_config_last_reload_successful|haproxy_process_current_connections|fluxgate_active_connections\",environment=~\"$environment\"},cluster)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values({__name__=~\"caddy_config_last_reload_successful|haproxy_process_current_connections|fluxgate_active_connections\",environment=~\"$environment\"},cluster)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "current": {},
+        "options": [],
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*"
+      },
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values({__name__=~\"caddy_config_last_reload_successful|haproxy_process_current_connections|fluxgate_active_connections\",environment=~\"$environment\",cluster=~\"$cluster\"},service)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values({__name__=~\"caddy_config_last_reload_successful|haproxy_process_current_connections|fluxgate_active_connections\",environment=~\"$environment\",cluster=~\"$cluster\"},service)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "current": {},
+        "options": [],
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*"
+      },
+      {
+        "name": "instance",
+        "label": "Node / AGENT_PROXY_DOMAIN",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values({__name__=~\"caddy_config_last_reload_successful|haproxy_process_current_connections|fluxgate_active_connections\",environment=~\"$environment\",cluster=~\"$cluster\"},instance)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values({__name__=~\"caddy_config_last_reload_successful|haproxy_process_current_connections|fluxgate_active_connections\",environment=~\"$environment\",cluster=~\"$cluster\"},instance)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "current": {},
+        "options": [],
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*"
       },
       {
         "allValue": ".*",
         "current": {
           "selected": true,
-          "text": "All",
-          "value": "$__all"
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
         },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
-        "definition": "label_values(up,proxy_engine)",
-        "description": "反向代理引擎类型 (caddy / haproxy / fluxgate)",
+        "hide": 0,
         "includeAll": true,
         "label": "Proxy Engine",
         "multi": true,
         "name": "proxy_engine",
-        "options": [],
-        "query": {
-          "qryType": 1,
-          "query": "label_values(up,proxy_engine)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
-        },
-        "refresh": 1,
-        "regex": "",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "caddy",
+            "value": "caddy"
+          },
+          {
+            "selected": false,
+            "text": "haproxy",
+            "value": "haproxy"
+          },
+          {
+            "selected": false,
+            "text": "fluxgate",
+            "value": "fluxgate"
+          }
+        ],
+        "query": "caddy,haproxy,fluxgate",
         "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
-      },
-      {
-        "current": {},
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
-        "definition": "label_values(up{job=~\"$job\"},instance)",
-        "description": "",
-        "label": "Instance",
-        "name": "instance",
-        "options": [],
-        "query": {
-          "qryType": 1,
-          "query": "label_values(up{job=~\"$job\"},instance)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
-        },
-        "refresh": 1,
-        "regex": "",
-        "type": "query",
-        "includeAll": true,
-        "allValue": ".*",
-        "multi": true
+        "type": "custom"
       },
       {
         "auto": false,
@@ -2758,9 +3427,9 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "反向代理引擎综合监控与横向对比 (Caddy / HAProxy / Fluxgate)",
+  "title": "Caddy",
   "uid": "fed94ifiv8h6oc",
-  "version": 11,
+  "version": 12,
   "weekStart": "",
   "gnetId": 22870
 }
