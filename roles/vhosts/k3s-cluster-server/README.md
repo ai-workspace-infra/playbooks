@@ -23,6 +23,8 @@ When `k3s_platform_require_data_mount=true`, the data-volume role must supply
 | `k3s_platform_tls_sans`, `k3s_platform_disable_components` | Declared API names and built-in component selection |
 | `k3s_platform_write_kubeconfig_mode` | Must be `0600`; no business/audit access to admin credentials |
 | `k3s_platform_require_data_mount`, `k3s_platform_local_storage_path` | Independent filesystem dependency |
+| `k3s_platform_enable_mem_tuning`, `k3s_platform_gomemlimit`, `k3s_platform_gogc` | Go runtime memory tuning in `/etc/systemd/system/k3s.service.env` (`1200MiB` / `75`) |
+| `k3s_platform_safe_restart_script_path` | Path to safe memory restart script (`/usr/local/bin/safe-k3s-mem-restart`) |
 
 Full defaults: [defaults/main.yml](defaults/main.yml). Inputs are non-secret
 configuration from GitOps; node facts come from CMDB. The role installs no
@@ -78,3 +80,15 @@ The K3s data path has two declared modes (k3s_platform_data_mode):
   The bootstrap creates it, K3s still uses /data/k3s/storage, and the mount
   assertion is skipped by design. Capacity and root-disk growth must be
   reviewed by the change that selects this mode.
+
+## Memory tuning and safe memory restart
+
+The role renders `/etc/systemd/system/k3s.service.env` (when `k3s_platform_enable_mem_tuning=true`) with `GOMEMLIMIT` (`k3s_platform_gomemlimit`, default `1200MiB`) and `GOGC` (`k3s_platform_gogc`, default `75`) to bound the K3s Go runtime heap on memory-constrained control-plane nodes.
+
+It also installs `/usr/local/bin/safe-k3s-mem-restart` (`k3s_platform_safe_restart_script_path`), which implements the 5-step safe memory restart workflow without terminating running workload containers (`KillMode=process`):
+
+1. **Pre-restart snapshot & baseline capture**: Saves an on-demand `k3s etcd-snapshot` and records baseline node, `Kustomization`, and `HelmRelease` health.
+2. **Validate & reload systemd environment**: Ensures `/etc/systemd/system/k3s.service.env` contains `GOMEMLIMIT` and `GOGC`, then runs `systemctl daemon-reload`.
+3. **Restart `k3s.service`**: Restarts only the `k3s server` process while keeping `containerd-shim` workload pods running.
+4. **Wait for API readiness**: Polls `kubectl get --raw=/readyz` until the control plane is ready.
+5. **Post-restart verification**: Verifies node readiness, pod states, Flux `Kustomization`/`HelmRelease` status, APIServer Go runtime metrics (`go_goroutines`), and net reclaimed physical RSS memory.
