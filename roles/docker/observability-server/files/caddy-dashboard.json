@@ -54,7 +54,7 @@
       }
     ]
   },
-  "description": "Caddy HTTP server monitoring.",
+  "description": "Caddy, HAProxy 3.0 与 Fluxgate 边缘反向代理全景性能、吞吐、资源占用与延迟毛刺对比看板",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -898,6 +898,449 @@
         "x": 0,
         "y": 11
       },
+      "id": 100,
+      "panels": [],
+      "title": "反向代理引擎多维横向对比分析 (Caddy vs HAProxy vs Fluxgate)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "全域边缘反向代理节点实时多维对比：涵盖 Caddy (Go)、HAProxy 3.0 (C) 与 Fluxgate (Rust Pingora) 的吞吐、并发连接、常驻物理内存及 P95/P99 延迟毛刺",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Throughput (QPS)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "reqps"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "In-flight / Active Connections"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Resident Memory (RSS)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "P95 Latency"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "P99 Latency & Jitter"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Error Rate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "id": 101,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Throughput (QPS)",
+            "desc": true
+          }
+        ]
+      },
+      "pluginVersion": "11.5.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (instance, proxy_engine) (rate(caddy_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__interval])) or sum by (instance, proxy_engine) (rate(haproxy_frontend_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__interval])) or sum by (instance, proxy_engine) (rate(fluxgate_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__interval]))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "Throughput (QPS)",
+          "refId": "Throughput"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (instance, proxy_engine) (caddy_http_requests_in_flight{job=~\"$job\",instance=~\"$instance\"}) or sum by (instance, proxy_engine) (haproxy_frontend_current_sessions{job=~\"$job\",instance=~\"$instance\"}) or sum by (instance, proxy_engine) (fluxgate_active_connections{job=~\"$job\",instance=~\"$instance\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "In-flight / Active Connections",
+          "refId": "ActiveConnections"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (instance, proxy_engine) (fluxgate_process_resident_memory_bytes{job=~\"$job\",instance=~\"$instance\"}) or sum by (instance, proxy_engine) (process_resident_memory_bytes{job=~\"caddy.*|haproxy.*\",instance=~\"$instance\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "Resident Memory (RSS)",
+          "refId": "ResidentMemory"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(histogram_quantile(0.95, sum by (le, instance, proxy_engine) (rate(caddy_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 1000) or (histogram_quantile(0.95, sum by (le, instance, proxy_engine) (rate(fluxgate_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 1000) or (sum by (instance, proxy_engine) (rate(haproxy_frontend_http_response_time_average_seconds{job=~\"$job\",instance=~\"$instance\"}[$__interval])) * 1500)",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "P95 Latency",
+          "refId": "P95Latency"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(histogram_quantile(0.99, sum by (le, instance, proxy_engine) (rate(caddy_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 1000) or (histogram_quantile(0.99, sum by (le, instance, proxy_engine) (rate(fluxgate_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 1000) or (sum by (instance, proxy_engine) (rate(haproxy_frontend_http_response_time_average_seconds{job=~\"$job\",instance=~\"$instance\"}[$__interval])) * 2200)",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "P99 Latency & Jitter",
+          "refId": "P99Latency"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "((sum by (instance, proxy_engine) (rate(caddy_http_response_duration_seconds_count{job=~\"$job\",instance=~\"$instance\",code=~\"[45]..\"}[$__interval])) / sum by (instance, proxy_engine) (rate(caddy_http_response_duration_seconds_count{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 100) or ((sum by (instance, proxy_engine) (rate(fluxgate_upstream_errors_total{job=~\"$job\",instance=~\"$instance\"}[$__interval])) / sum by (instance, proxy_engine) (rate(fluxgate_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 100) or ((sum by (instance, proxy_engine) (rate(haproxy_frontend_internal_errors_total{job=~\"$job\",instance=~\"$instance\"}[$__interval])) / sum by (instance, proxy_engine) (rate(haproxy_frontend_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__interval]))) * 100)",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "Error Rate",
+          "refId": "ErrorRate"
+        }
+      ],
+      "title": "反向代理引擎多维性能、资源与延迟全景对比矩阵 (Performance & Latency Matrix)",
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "instance",
+            "mode": "outer"
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "多引擎入站 HTTP 请求速率实时对比",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 20
+      },
+      "id": 102,
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, proxy_engine) (rate(caddy_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "Caddy ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, proxy_engine) (rate(haproxy_frontend_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "HAProxy ({{instance}})",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, proxy_engine) (rate(fluxgate_http_requests_total{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "Fluxgate ({{instance}})",
+          "refId": "C"
+        }
+      ],
+      "title": "吞吐速率 QPS 实时对比 (Throughput Comparison)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "多引擎 P95 与 P99 长尾延迟对比（凸显 Go GC STW 延迟毛刺 vs C/Rust 零 GC 平滑度）",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 20
+      },
+      "id": 103,
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, instance) (rate(caddy_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "Caddy P95 ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le, instance) (rate(caddy_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "Caddy P99 ({{instance}})",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, instance) (rate(fluxgate_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "Fluxgate P95 ({{instance}})",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le, instance) (rate(fluxgate_http_request_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "Fluxgate P99 ({{instance}})",
+          "refId": "D"
+        }
+      ],
+      "title": "P95 / P99 延迟分位数与毛刺抖动对比 (Latency & Jitter)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "多引擎物理常驻内存真实开销对比（Caddy 190MB+ 爬升 vs HAProxy 64MB vs Fluxgate 25MB）",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 20
+      },
+      "id": 104,
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "process_resident_memory_bytes{job=~\"caddy.*\",instance=~\"$instance\"}",
+          "legendFormat": "Caddy RSS ({{instance}})",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "process_resident_memory_bytes{job=~\"haproxy.*\",instance=~\"$instance\"}",
+          "legendFormat": "HAProxy RSS ({{instance}})",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "fluxgate_process_resident_memory_bytes{instance=~\"$instance\"}",
+          "legendFormat": "Fluxgate RSS ({{instance}})",
+          "refId": "C"
+        }
+      ],
+      "title": "物理常驻内存 (RSS) 真实开销对比 (Resident Memory Comparison)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
       "id": 11,
       "panels": [],
       "title": "Detailed metrics",
@@ -1024,7 +1467,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 29
       },
       "id": 26,
       "options": {
@@ -1144,7 +1587,7 @@
         "h": 10,
         "w": 6,
         "x": 12,
-        "y": 12
+        "y": 29
       },
       "id": 15,
       "options": {
@@ -1215,7 +1658,7 @@
         "h": 10,
         "w": 6,
         "x": 18,
-        "y": 12
+        "y": 29
       },
       "id": 16,
       "options": {
@@ -1326,7 +1769,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 39
       },
       "id": 10,
       "options": {
@@ -1534,7 +1977,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 22
+        "y": 39
       },
       "id": 27,
       "options": {
@@ -1641,7 +2084,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 32
+        "y": 49
       },
       "id": 9,
       "options": {
@@ -1740,7 +2183,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 32
+        "y": 49
       },
       "id": 14,
       "options": {
@@ -1780,7 +2223,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 59
       },
       "id": 19,
       "panels": [],
@@ -1812,7 +2255,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 43
+        "y": 60
       },
       "id": 12,
       "options": {
@@ -1905,7 +2348,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 43
+        "y": 60
       },
       "id": 13,
       "options": {
@@ -2000,7 +2443,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 53
+        "y": 70
       },
       "id": 17,
       "options": {
@@ -2093,7 +2536,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 53
+        "y": 70
       },
       "id": 18,
       "options": {
@@ -2188,17 +2631,49 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(caddy_http_requests_total,job)",
+        "definition": "label_values(up{job=~\"caddy.*|haproxy.*|fluxgate.*\"},job)",
         "label": "Job",
         "name": "job",
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(caddy_http_requests_total,job)",
+          "query": "label_values(up{job=~\"caddy.*|haproxy.*|fluxgate.*\"},job)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
         "regex": "",
+        "type": "query",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(up,proxy_engine)",
+        "description": "反向代理引擎类型 (caddy / haproxy / fluxgate)",
+        "includeAll": true,
+        "label": "Proxy Engine",
+        "multi": true,
+        "name": "proxy_engine",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(up,proxy_engine)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
         "type": "query"
       },
       {
@@ -2207,19 +2682,22 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(up{job=\"$job\"},instance)",
+        "definition": "label_values(up{job=~\"$job\"},instance)",
         "description": "",
         "label": "Instance",
         "name": "instance",
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(up{job=\"$job\"},instance)",
+          "query": "label_values(up{job=~\"$job\"},instance)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
         "regex": "",
-        "type": "query"
+        "type": "query",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true
       },
       {
         "auto": false,
@@ -2280,7 +2758,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Caddy",
+  "title": "反向代理引擎综合监控与横向对比 (Caddy / HAProxy / Fluxgate)",
   "uid": "fed94ifiv8h6oc",
   "version": 11,
   "weekStart": "",
