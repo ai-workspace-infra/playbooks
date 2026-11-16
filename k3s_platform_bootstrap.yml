@@ -59,7 +59,8 @@
         web_saas_data_allow_generation_host: true
         web_saas_data_expected_volume_id: '{{ data_volume.volume_id | default("") }}'
         web_saas_data_device_path: '{{ data_volume.filesystem_path | default("") }}'
-        web_saas_data_filesystem_label: '{{ bootstrap_node_candidates[0].volume.filesystem_label }}'
+        web_saas_data_filesystem_label: '{{ bootstrap_node_candidates[0].volume.filesystem_label | default("") }}'
+        common_os_identity_remove_legacy_system_accounts: '{{ k3s_platform_remove_legacy_os_accounts | default(false) }}'
     - name: Require identity configuration before node changes
       ansible.builtin.assert:
         that:

@@ -64,7 +64,7 @@ class CommonNodeTests(unittest.TestCase):
         self.assertIn('data_volume.label == bootstrap_node_candidates[0].volume.label', rules)
         self.assertTrue(any('volume.filesystem_label' in rule and '{1,16}' in rule for rule in rules))
         bind=next(t for t in play['pre_tasks'] if t.get('name')=='Bind runtime sources and data device without generating cloud facts')
-        self.assertEqual(bind['ansible.builtin.set_fact']['web_saas_data_filesystem_label'], '{{ bootstrap_node_candidates[0].volume.filesystem_label }}')
+        self.assertEqual(bind['ansible.builtin.set_fact']['web_saas_data_filesystem_label'], '{{ bootstrap_node_candidates[0].volume.filesystem_label | default("") }}')
 
     def test_guard_executes_before_hostname_and_does_not_rebind_volumes(self):
         tasks=yaml.safe_load((ROOT/'roles/vhosts/common/tasks/node_bootstrap.yml').read_text())

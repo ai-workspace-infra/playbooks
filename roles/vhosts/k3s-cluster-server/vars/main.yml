@@ -22,3 +22,12 @@ k3s_platform_bootstrap_packages:
     - ca-certificates
     - python3-pip
     - tar
+
+# Container networking userspace. RHEL 10 minimal images omit it entirely, which
+# leaves kube-proxy unable to program rules; Debian images include it already.
+k3s_platform_networking_packages:
+  Debian: []
+  RedHat:
+    - iptables-nft
+    - nftables
+    - conntrack-tools
