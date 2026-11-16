@@ -3,7 +3,8 @@
     that:
       - inventory_hostname == common_node_name
       - cmdb_name == common_node_name
-      - cmdb_instance_id | string is match('^[1-9][0-9]*$')
+      - cmdb_instance_id | string | length > 0
+      - cmdb_instance_id | string is match(common_node_instance_id_patterns.get(cmdb_cloud_provider | default(''), common_node_instance_id_pattern_default))
       - common_node_name | length <= 253
       - common_node_name is match('^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$')
     fail_msg: Common bootstrap must use the IaC logical node identity, never a business DNS alias

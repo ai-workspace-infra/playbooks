@@ -122,6 +122,12 @@ common_readonly_ssh_user_postgresql_default_privilege_owners:
 common_node_name: '{{ k3s_platform_node_name | default(inventory_hostname, true) }}'
 common_node_require_data_volume: false
 
+# Instance identity format is provider-owned. Akamai/Linode ids are numeric;
+# most providers (UCloud UHost/ULightHost included) use prefixed string ids.
+common_node_instance_id_patterns:
+  akamai-cloud: '^[1-9][0-9]*$'
+common_node_instance_id_pattern_default: '^[A-Za-z][A-Za-z0-9._-]{2,63}$'
+
 # OPS-role operator K3s sudo (operator_k3s_sudo.yml, included by os_identity.yml).
 # Host/group vars only toggle it; the command list below is the single definition.
 common_operator_k3s_sudo_enabled: false
@@ -151,3 +157,8 @@ common_os_identity_preserve_password: []
 # shadow access denial, sshd -T policy probes and runuser login checks all exist
 # on Debian and RedHat family hosts. Review any other family before adding it.
 common_os_identity_supported_families: [Debian, RedHat]
+
+# Remove a conflicting legacy system account (uid < 1000, no ownership marker)
+# before creating the reviewed role account. Off by default: deleting a system
+# account is a host decision and must be declared per host.
+common_os_identity_remove_legacy_system_accounts: false

@@ -130,6 +130,21 @@
       - not common_os_identity_sudoers.stat.exists or 'operator' in common_os_identity_adopted or (common_os_identity_markers.results[0].stat.exists and common_os_identity_markers.results[0].stat.isreg and common_os_identity_markers.results[0].stat.uid == 0 and common_os_identity_markers.results[0].stat.mode == '0600')
     fail_msg: Existing sudoers entry is not associated with a trusted common-managed operator.
 
+- name: OS identities | remove a conflicting legacy system account when declared
+  ansible.builtin.user:
+    name: '{{ item.0.item }}'
+    state: absent
+    remove: false
+  loop: '{{ common_os_identity_users.results | zip(common_os_identity_markers.results) | list }}'
+  loop_control:
+    label: '{{ item.0.item }}'
+  when:
+    - common_os_identity_remove_legacy_system_accounts | bool
+    - item.0.rc == 0
+    - item.1.stat.exists is not true
+    - (item.0.stdout.split(':')[2] | int) < 1000
+  become: true
+
 - name: OS identities | reject pre-existing unmanaged accounts
   ansible.builtin.assert:
     that:

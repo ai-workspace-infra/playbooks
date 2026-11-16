@@ -1,0 +1,75 @@
+- name: Install the container networking prerequisites for this OS family
+  ansible.builtin.package:
+    name: "{{ k3s_platform_networking_packages[ansible_os_family] }}"
+    state: present
+  when: k3s_platform_networking_packages[ansible_os_family] | length > 0
+
+# RHEL 10 minimal images ship neither the iptables/nft userspace nor a
+# kernel-modules package matching the running kernel; kube-proxy then cannot
+# program rules and br_netfilter is unavailable. Refuse the install with the
+# exact remedy instead of switching kernels (a reboot is not a fix and, on a
+# remote host, risks losing the machine).
+- name: Probe the kernel module package for the running kernel
+  ansible.builtin.command:
+    argv: [rpm, -q, "kernel-modules-{{ ansible_kernel }}"]
+  register: k3s_platform_kernel_modules
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == 'RedHat'
+
+- name: Require kernel modules that match the running kernel
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_kernel_modules.rc | default(1) == 0
+    fail_msg: >-
+      kernel-modules for the running kernel {{ ansible_kernel }} is not
+      installed, so br_netfilter cannot load and pod networking will fail.
+      Install kernel-modules-{{ ansible_kernel }} on the running kernel and
+      re-run; do not switch kernels or reboot a remote host to satisfy this.
+  when: ansible_os_family == 'RedHat'
+
+- name: Require br_netfilter to load
+  ansible.builtin.command: modprobe br_netfilter
+  register: k3s_platform_br_netfilter
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == 'RedHat'
+
+- name: Refuse K3s when bridge netfilter is unavailable
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_br_netfilter.rc | default(1) == 0
+    fail_msg: >-
+      modprobe br_netfilter failed ({{ k3s_platform_br_netfilter.stderr | default('') | trim }}).
+      Bridge netfilter is required for kube-proxy and pod traffic; resolve the
+      kernel-modules mismatch first.
+  when: ansible_os_family == 'RedHat'
+
+- name: Persist the required kernel modules
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/k3s.conf
+    mode: '0644'
+    owner: root
+    group: root
+    content: |
+      br_netfilter
+      overlay
+  when: ansible_os_family == 'RedHat'
+
+- name: Persist the bridge and forwarding sysctls
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/90-k3s.conf
+    mode: '0644'
+    owner: root
+    group: root
+    content: |
+      net.bridge.bridge-nf-call-iptables = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward = 1
+  when: ansible_os_family == 'RedHat'
+
+- name: Apply the declared sysctls
+  ansible.builtin.command: sysctl --system
+  register: k3s_platform_sysctl
+  changed_when: false
+  when: ansible_os_family == 'RedHat'

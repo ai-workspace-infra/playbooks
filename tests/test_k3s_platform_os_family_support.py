@@ -86,6 +86,23 @@ class K3sPlatformOsFamilySupportTest(unittest.TestCase):
         )
         self.assertNotIn("- cmdb_instance_id | string is match('^[1-9][0-9]*$')", self.playbook)
 
+    def test_rhel_networking_prerequisites_are_declared_and_enforced(self):
+        prereq = (ROLE / 'tasks' / 'os_prerequisites.yml').read_text()
+        self.assertIn('iptables-nft', self.vars['k3s_platform_networking_packages']['RedHat'])
+        self.assertEqual(self.vars['k3s_platform_networking_packages']['Debian'], [])
+        self.assertIn('modprobe br_netfilter', prereq)
+        self.assertIn('kernel-modules-{{ ansible_kernel }}', prereq)
+        self.assertIn('do not switch kernels', prereq)
+        # prerequisites must run before anything is installed
+        self.assertLess(self.bootstrap.index('os_prerequisites.yml'), self.bootstrap.index('Install bootstrap dependencies'))
+
+    def test_legacy_system_account_removal_is_declared_not_implicit(self):
+        self.assertFalse(self.defaults['common_os_identity_remove_legacy_system_accounts'])
+        os_identity = (ROOT / 'roles' / 'vhosts' / 'common' / 'tasks' / 'os_identity.yml').read_text()
+        self.assertIn('common_os_identity_remove_legacy_system_accounts | bool', os_identity)
+        self.assertIn('(item.0.stdout.split(\':\')[2] | int) < 1000', os_identity)
+        self.assertIn("common_os_identity_remove_legacy_system_accounts: '{{ k3s_platform_remove_legacy_os_accounts | default(false) }}'", self.playbook)
+
     def test_preflight_rejects_overlapping_cluster_networks(self):
         self.assertIn('Verify the declared cluster networks are distinct and internally consistent', self.preflight)
         self.assertIn('k3s_platform_cluster_dns', self.preflight)
