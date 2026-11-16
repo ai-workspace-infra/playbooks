@@ -7,7 +7,9 @@ data-dir: "{{ k3s_platform_install_dir }}"
 {% if k3s_platform_local_storage_path | length > 0 %}
 default-local-storage-path: "{{ k3s_platform_local_storage_path }}"
 {% endif %}
+{% if (k3s_platform_datastore | default('sqlite') == 'etcd') or (k3s_platform_cluster_init | default(false) | bool) %}
 cluster-init: true
+{% endif %}
 disable:
 {% for component in k3s_platform_disable_components %}
   - "{{ component }}"

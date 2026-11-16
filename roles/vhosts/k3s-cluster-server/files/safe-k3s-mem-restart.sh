@@ -116,11 +116,11 @@ fi
 # ------------------------------------------------------------------------------
 log "Step 2: Checking systemd environment file (${ENV_FILE})..."
 if [ ! -f "$ENV_FILE" ]; then
-  log "Creating default ${ENV_FILE} with GOMEMLIMIT=1200MiB and GOGC=75..."
+  log "Creating default ${ENV_FILE} with GOMEMLIMIT=768MiB and GOGC=50..."
   cat << 'EOF' > "$ENV_FILE"
 # Managed by safe-k3s-mem-restart / Ansible
-GOMEMLIMIT=1200MiB
-GOGC=75
+GOMEMLIMIT=768MiB
+GOGC=50
 EOF
 fi
 
