@@ -116,14 +116,27 @@
   args:
     executable: /bin/bash
 
-- name: Reload systemd after k3s install
+- name: Render K3s service environment file (Go runtime and memory tuning)
+  ansible.builtin.template:
+    src: k3s.service.env.j2
+    dest: "{{ k3s_platform_service_env_path }}"
+    mode: "0644"
+  register: k3s_platform_service_env_rendered
+
+- name: Install safe K3s memory restart script
+  ansible.builtin.copy:
+    src: safe-k3s-mem-restart.sh
+    dest: "{{ k3s_platform_safe_restart_script_path }}"
+    mode: "0755"
+
+- name: Reload systemd after k3s install or config update
   ansible.builtin.systemd:
     daemon_reload: true
 
 - name: Ensure k3s service is enabled and started
   ansible.builtin.systemd:
     name: k3s
-    state: "{{ 'restarted' if (k3s_platform_k3s_install_state.stdout | default('missing') == 'installed' and (k3s_platform_config_rendered.changed | default(false) | bool)) else 'started' }}"
+    state: "{{ 'restarted' if (k3s_platform_k3s_install_state.stdout | default('missing') == 'installed' and ((k3s_platform_config_rendered.changed | default(false) | bool) or (k3s_platform_service_env_rendered.changed | default(false) | bool))) else 'started' }}"
     enabled: true
 
 - name: Wait for Kubernetes API readiness

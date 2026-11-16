@@ -107,6 +107,18 @@ class K3sPlatformOsFamilySupportTest(unittest.TestCase):
         self.assertIn('Verify the declared cluster networks are distinct and internally consistent', self.preflight)
         self.assertIn('k3s_platform_cluster_dns', self.preflight)
 
+    def test_memory_tuning_and_safe_restart_script_are_declared(self):
+        role_defaults = yaml.safe_load((ROLE / 'defaults' / 'main.yml').read_text())
+        self.assertTrue(role_defaults['k3s_platform_enable_mem_tuning'])
+        self.assertEqual(role_defaults['k3s_platform_gomemlimit'], '1200MiB')
+        self.assertEqual(role_defaults['k3s_platform_gogc'], '75')
+        self.assertEqual(
+            role_defaults['k3s_platform_safe_restart_script_path'],
+            '/usr/local/bin/safe-k3s-mem-restart',
+        )
+        self.assertTrue((ROLE / 'files' / 'safe-k3s-mem-restart.sh').is_file())
+        self.assertTrue((ROLE / 'templates' / 'k3s.service.env.j2').is_file())
+
 
 if __name__ == '__main__':
     unittest.main()
