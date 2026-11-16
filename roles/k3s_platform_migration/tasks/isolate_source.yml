@@ -1,0 +1,27 @@
+---
+- name: Suspend Flux and isolate source cluster workloads (or dry-run inspect)
+  ansible.builtin.command:
+    argv: >-
+      {{
+        [
+          ansible_playbook_python,
+          role_path + '/files/isolate_source_cluster.py',
+          '--source-manifest', k3s_platform_migration_source_manifest,
+          '--target-manifest', k3s_platform_migration_target_manifest,
+          '--namespaces', (k3s_platform_migration_source_namespaces | join(',')),
+          '--json'
+        ]
+        + (['--confirm'] if (k3s_platform_migration_confirm_source_scale_down | bool) else [])
+        + (['--skip-preflight-probe'] if (k3s_platform_migration_skip_preflight_probe | bool) else [])
+      }}
+  environment: "{{ k3s_platform_migration_env }}"
+  register: k3s_platform_migration_isolate_cmd
+  changed_when: k3s_platform_migration_confirm_source_scale_down | bool
+
+- name: Record source isolation output
+  ansible.builtin.set_fact:
+    k3s_platform_migration_isolate_result: "{{ k3s_platform_migration_isolate_cmd.stdout | from_json }}"
+
+- name: Display source isolation summary
+  ansible.builtin.debug:
+    var: k3s_platform_migration_isolate_result

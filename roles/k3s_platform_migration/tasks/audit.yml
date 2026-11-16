@@ -1,0 +1,32 @@
+---
+- name: Run 42-table business parity audit via GitOps + Vault KV
+  ansible.builtin.command:
+    argv: >-
+      {{
+        [
+          ansible_playbook_python,
+          role_path + '/files/audit_business_tables.py',
+          '--source-manifest', k3s_platform_migration_source_manifest,
+          '--target-manifest', k3s_platform_migration_target_manifest,
+          '--tables-manifest', k3s_platform_migration_tables_manifest,
+          '--json'
+        ]
+        + (['--target-only'] if (k3s_platform_migration_audit_target_only | bool) else [])
+        + (['--allow-drift', (k3s_platform_migration_allow_drift_tables | join(','))]
+           if (k3s_platform_migration_allow_drift_tables | length > 0) else [])
+      }}
+  environment: "{{ k3s_platform_migration_env }}"
+  register: k3s_platform_migration_audit_cmd
+  changed_when: false
+
+- name: Record structured audit result
+  ansible.builtin.set_fact:
+    k3s_platform_migration_audit_result: "{{ k3s_platform_migration_audit_cmd.stdout | from_json }}"
+
+- name: Display audit summary
+  ansible.builtin.debug:
+    msg: >-
+      Status={{ k3s_platform_migration_audit_result.status }},
+      TargetTables={{ k3s_platform_migration_audit_result.target_table_count }}/{{ k3s_platform_migration_audit_result.expected_table_count }},
+      Mismatches={{ k3s_platform_migration_audit_result.mismatches }},
+      AllowedDrift={{ k3s_platform_migration_audit_result.drifted_allowed }}

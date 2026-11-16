@@ -1,0 +1,24 @@
+---
+- name: Execute second-level PostgreSQL incremental catchup sync
+  ansible.builtin.command:
+    argv: >-
+      {{
+        [
+          ansible_playbook_python,
+          role_path + '/files/catchup_sync.py',
+          '--source-manifest', k3s_platform_migration_source_manifest,
+          '--target-manifest', k3s_platform_migration_target_manifest,
+          '--tables-manifest', k3s_platform_migration_tables_manifest,
+          '--transfer-mode', k3s_platform_migration_transfer_mode
+        ]
+        + (['--allow-drift', (k3s_platform_migration_allow_drift_tables | join(','))]
+           if (k3s_platform_migration_allow_drift_tables | length > 0) else [])
+        + (['--dry-run'] if (k3s_platform_migration_catchup_dry_run | bool) else [])
+      }}
+  environment: "{{ k3s_platform_migration_env }}"
+  register: k3s_platform_migration_catchup_cmd
+  changed_when: not (k3s_platform_migration_catchup_dry_run | bool)
+
+- name: Display catchup sync output
+  ansible.builtin.debug:
+    var: k3s_platform_migration_catchup_cmd.stdout_lines

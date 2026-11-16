@@ -1,0 +1,54 @@
+---
+# Role defaults for k3s_platform_migration.
+# All cluster IPs, SSH credentials, domain aliases, and business tables are
+# resolved dynamically from GitOps manifests and Vault KV secrets.
+
+k3s_platform_migration_phase: audit
+
+k3s_platform_migration_source_manifest: >-
+  {{
+    lookup('ansible.builtin.env', 'SOURCE_GITOPS_MANIFEST')
+    | default(playbook_dir + '/../gitops-canary-samples/resources/svc.plus/prod/akamai/prod-k3s-v6.yaml', true)
+  }}
+k3s_platform_migration_target_manifest: >-
+  {{
+    lookup('ansible.builtin.env', 'TARGET_GITOPS_MANIFEST')
+    | default(playbook_dir + '/../gitops-canary-samples/resources/svc.plus/prod/ulighthost/prod-k3s-v6-ulhost.yaml', true)
+  }}
+k3s_platform_migration_tables_manifest: >-
+  {{
+    lookup('ansible.builtin.env', 'TABLES_GITOPS_MANIFEST')
+    | default(playbook_dir + '/../gitops-canary-samples/operations/accounts-migration/target-business.yaml', true)
+  }}
+
+k3s_platform_migration_vault_addr: >-
+  {{ lookup('ansible.builtin.env', 'VAULT_ADDR') | default('https://vault.svc.plus', true) }}
+k3s_platform_migration_vault_token_file: >-
+  {{ lookup('ansible.builtin.env', 'HOME') + '/.vault-token' }}
+
+# Audit options
+k3s_platform_migration_audit_target_only: false
+k3s_platform_migration_allow_drift_tables:
+  - billing_ledger
+  - traffic_minute_buckets
+
+# Catchup sync options
+k3s_platform_migration_transfer_mode: wireguard
+k3s_platform_migration_catchup_dry_run: false
+
+# Probe options: auto | pre-cutover | live
+k3s_platform_migration_probe_mode: auto
+k3s_platform_migration_dns_server: ""
+k3s_platform_migration_require_pg_dns: false
+
+# Source isolation options (requires explicit true to mutate source cluster)
+k3s_platform_migration_confirm_source_scale_down: false
+k3s_platform_migration_skip_preflight_probe: false
+k3s_platform_migration_source_namespaces:
+  - web-saas-prod
+  - vault-prod
+  - postgresql-prod
+  - accounts-migration
+  - ingress-prod
+  - external-secrets
+  - observability-prod

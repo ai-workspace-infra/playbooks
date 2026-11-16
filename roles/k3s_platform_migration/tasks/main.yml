@@ -1,0 +1,26 @@
+---
+- name: Validate k3s_platform_migration inputs and manifests
+  ansible.builtin.assert:
+    that:
+      - k3s_platform_migration_phase in ['audit', 'catchup', 'probe', 'isolate_source']
+      - k3s_platform_migration_source_manifest is file
+      - k3s_platform_migration_target_manifest is file
+      - k3s_platform_migration_tables_manifest is file
+    fail_msg: "Invalid phase or missing GitOps manifest path for k3s_platform_migration."
+
+- name: Resolve runtime Vault environment for k3s_platform_migration
+  ansible.builtin.set_fact:
+    k3s_platform_migration_env:
+      VAULT_ADDR: "{{ k3s_platform_migration_vault_addr }}"
+      VAULT_TOKEN: >-
+        {{
+          lookup('ansible.builtin.file', k3s_platform_migration_vault_token_file, errors='ignore')
+          | default(lookup('ansible.builtin.env', 'VAULT_TOKEN'), true)
+        }}
+      SOURCE_GITOPS_MANIFEST: "{{ k3s_platform_migration_source_manifest }}"
+      TARGET_GITOPS_MANIFEST: "{{ k3s_platform_migration_target_manifest }}"
+      TABLES_GITOPS_MANIFEST: "{{ k3s_platform_migration_tables_manifest }}"
+  no_log: true
+
+- name: Dispatch k3s_platform_migration phase
+  ansible.builtin.include_tasks: "{{ k3s_platform_migration_phase }}.yml"
