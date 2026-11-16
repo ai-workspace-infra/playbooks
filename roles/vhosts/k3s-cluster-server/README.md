@@ -23,7 +23,8 @@ When `k3s_platform_require_data_mount=true`, the data-volume role must supply
 | `k3s_platform_tls_sans`, `k3s_platform_disable_components` | Declared API names and built-in component selection |
 | `k3s_platform_write_kubeconfig_mode` | Must be `0600`; no business/audit access to admin credentials |
 | `k3s_platform_require_data_mount`, `k3s_platform_local_storage_path` | Independent filesystem dependency |
-| `k3s_platform_enable_mem_tuning`, `k3s_platform_gomemlimit`, `k3s_platform_gogc` | Go runtime memory tuning in `/etc/systemd/system/k3s.service.env` (`1200MiB` / `75`) |
+| `k3s_platform_datastore`, `k3s_platform_cluster_init` | Datastore backend (`sqlite` default for new single-node clusters; `etcd` optional) |
+| `k3s_platform_enable_mem_tuning`, `k3s_platform_gomemlimit`, `k3s_platform_gogc` | Go runtime memory tuning in `/etc/systemd/system/k3s.service.env` (`768MiB` / `50`) |
 | `k3s_platform_safe_restart_script_path` | Path to safe memory restart script (`/usr/local/bin/safe-k3s-mem-restart`) |
 
 Full defaults: [defaults/main.yml](defaults/main.yml). Inputs are non-secret
@@ -83,7 +84,7 @@ The K3s data path has two declared modes (k3s_platform_data_mode):
 
 ## Memory tuning and safe memory restart
 
-The role renders `/etc/systemd/system/k3s.service.env` (when `k3s_platform_enable_mem_tuning=true`) with `GOMEMLIMIT` (`k3s_platform_gomemlimit`, default `1200MiB`) and `GOGC` (`k3s_platform_gogc`, default `75`) to bound the K3s Go runtime heap on memory-constrained control-plane nodes.
+The role renders `/etc/systemd/system/k3s.service.env` (when `k3s_platform_enable_mem_tuning=true`) with `GOMEMLIMIT` (`k3s_platform_gomemlimit`, default `768MiB`) and `GOGC` (`k3s_platform_gogc`, default `50`) to bound the K3s Go runtime heap on memory-constrained control-plane nodes.
 
 It also installs `/usr/local/bin/safe-k3s-mem-restart` (`k3s_platform_safe_restart_script_path`), which implements the 5-step safe memory restart workflow without terminating running workload containers (`KillMode=process`):
 

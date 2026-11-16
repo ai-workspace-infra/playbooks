@@ -25,11 +25,28 @@
       - "--limits=cpu={{ item.value.limits.cpu }},memory={{ item.value.limits.memory }}"
   environment:
     KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
-  loop: "{{ k3s_platform_flux_controller_resources | dict2items }}"
+  loop: "{{ k3s_platform_flux_controller_resources | dict2items | selectattr('key', 'in', k3s_platform_flux_components) | list }}"
   loop_control:
     label: "{{ item.key }}"
   # kubectl re-applies the same requirements on every run; the read-back assert
   # below is the acceptance gate for the declared bounds.
+  changed_when: false
+  tags: [flux_limits, configure]
+
+- name: Apply concurrency bounds to flux controllers
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+    CURRENT_ARGS=$(kubectl -n "{{ k3s_platform_flux_namespace }}" get deployment "{{ item.key }}" -o jsonpath='{.spec.template.spec.containers[0].args}')
+    if ! echo "$CURRENT_ARGS" | grep -q -- "--concurrent="; then
+      kubectl -n "{{ k3s_platform_flux_namespace }}" patch deployment "{{ item.key }}" --type='json' \
+        -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--concurrent={{ item.value }}"}]'
+    fi
+  args:
+    executable: /bin/bash
+  loop: "{{ (k3s_platform_flux_concurrency | default({})) | dict2items | selectattr('key', 'in', k3s_platform_flux_components) | list }}"
+  loop_control:
+    label: "{{ item.key }}"
   changed_when: false
   tags: [flux_limits, configure]
 
@@ -44,7 +61,7 @@
       - "--output=jsonpath={.spec.template.spec.containers[0].resources.limits.memory}"
   environment:
     KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
-  loop: "{{ k3s_platform_flux_controller_resources | dict2items }}"
+  loop: "{{ k3s_platform_flux_controller_resources | dict2items | selectattr('key', 'in', k3s_platform_flux_components) | list }}"
   loop_control:
     label: "{{ item.key }}"
   register: k3s_flux_controller_limits_verify

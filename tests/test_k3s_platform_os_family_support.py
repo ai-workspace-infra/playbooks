@@ -110,8 +110,8 @@ class K3sPlatformOsFamilySupportTest(unittest.TestCase):
     def test_memory_tuning_and_safe_restart_script_are_declared(self):
         role_defaults = yaml.safe_load((ROLE / 'defaults' / 'main.yml').read_text())
         self.assertTrue(role_defaults['k3s_platform_enable_mem_tuning'])
-        self.assertEqual(role_defaults['k3s_platform_gomemlimit'], '1200MiB')
-        self.assertEqual(role_defaults['k3s_platform_gogc'], '75')
+        self.assertEqual(role_defaults['k3s_platform_gomemlimit'], '768MiB')
+        self.assertEqual(role_defaults['k3s_platform_gogc'], '50')
         self.assertEqual(
             role_defaults['k3s_platform_safe_restart_script_path'],
             '/usr/local/bin/safe-k3s-mem-restart',

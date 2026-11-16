@@ -21,7 +21,8 @@
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
-    flux install --namespace "{{ k3s_platform_flux_namespace }}"
+    flux install --namespace "{{ k3s_platform_flux_namespace }}" \
+      --components="{{ k3s_platform_flux_components | join(',') }}"
   args:
     executable: /bin/bash
 
@@ -29,10 +30,9 @@
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
-    kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/source-controller --timeout=300s
-    kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/kustomize-controller --timeout=300s
-    kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/helm-controller --timeout=300s
-    kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/notification-controller --timeout=300s
+{% for comp in k3s_platform_flux_components %}
+    kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/{{ comp }} --timeout=300s
+{% endfor %}
   args:
     executable: /bin/bash
 
