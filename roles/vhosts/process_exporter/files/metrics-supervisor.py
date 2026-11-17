@@ -14,6 +14,9 @@ parser.add_argument("--node-binary", required=True)
 parser.add_argument("--node-user", default="nobody")
 parser.add_argument("--node-listen", required=True)
 parser.add_argument("--textfile-dir", required=True)
+# 逗号分隔的 collector 名称, 渲染成 --no-collector.<name>。用单个参数而不是
+# 多行 argv, 避免 systemd 续行与模板换行互相干扰。
+parser.add_argument("--node-no-collectors", default="")
 parser.add_argument("--process-binary", required=True)
 parser.add_argument("--process-user", default="process_exporter")
 parser.add_argument("--process-config", required=True)
@@ -51,6 +54,11 @@ commands = [
     (
         [
             args.node_binary,
+            *[
+                "--no-collector." + name.strip()
+                for name in args.node_no_collectors.split(",")
+                if name.strip()
+            ],
             "--web.listen-address=" + args.node_listen,
             "--collector.textfile",
             "--collector.textfile.directory=" + args.textfile_dir,

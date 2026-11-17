@@ -1,0 +1,11 @@
+[Unit]
+Description=Scheduled ansible-pull convergence for {{ item.playbook }}
+
+[Timer]
+OnCalendar={{ item.schedule | default(ansible_pull_schedule) }}
+Persistent=true
+RandomizedDelaySec={{ item.randomized_delay_sec | default(ansible_pull_randomized_delay_sec) }}
+Unit={{ item.name }}.service
+
+[Install]
+WantedBy=timers.target

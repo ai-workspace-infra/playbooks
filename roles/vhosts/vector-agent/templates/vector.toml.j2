@@ -401,14 +401,25 @@ source = '''
 '''
 {% endif %}
 
+{# 全局 HTTPS 可用性/证书探活已收口到集群侧(prod-k3s-v6 / sit-k3s-v6 的
+   observability-agent blackboxExporter + vmagent), 边缘主机不再对全球 9 个域名
+   发探测。保留能力但默认关闭: 需要在本机排障时用
+   vector_blackbox_probe_enabled=true 打开, 周期为 blackbox_probe_interval_secs
+   (默认 3600s), 避免再次以 15s 频率打满外部请求。 #}
+{% set blackbox_probe_enabled = vector_blackbox_probe_enabled | default(false) | bool %}
+{% if blackbox_probe_enabled %}
 {% set ssl_targets = blackbox_ssl_targets | default(blackbox_exporter_role_defaults.blackbox_ssl_targets | default([])) %}
+{% else %}
+{% set ssl_targets = [] %}
+{% endif %}
+{% set blackbox_probe_interval = (blackbox_probe_interval_secs | default(3600, true)) | int %}
 {% for target in ssl_targets %}
 {% set target_id = target.name | regex_replace('[^A-Za-z0-9_]', '_') %}
 [sources.blackbox_{{ target_id }}_ssl]
 type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:9115/probe?module=https_ssl&target={{ target.url | urlencode }}"]
-scrape_interval_secs = 60
-scrape_timeout_secs = 20
+scrape_interval_secs = {{ blackbox_probe_interval }}
+scrape_timeout_secs = 10
 
 [transforms.blackbox_{{ target_id }}_labels]
 type = "remap"
@@ -567,6 +578,7 @@ ignore_older_secs = 86400
 type = "journald"
 current_boot_only = true
 include_units = {{ vector_system_journald_units | to_json }}
+exclude_units = ["vector.service"]
 {% endif %}
 
 [transforms.process_logs]

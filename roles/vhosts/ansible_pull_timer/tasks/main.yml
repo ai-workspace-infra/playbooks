@@ -94,6 +94,55 @@
     daemon_reload: true
   tags: [ansible_pull_timer, configure]
 
+- name: Validate the extra ansible-pull entrypoints
+  ansible.builtin.assert:
+    that:
+      - item.name | default('') | length > 0
+      - item.playbook | default('') | length > 0
+    fail_msg: >-
+      every ansible_pull_extra_entrypoints item needs a non-empty name and playbook
+  loop: "{{ ansible_pull_extra_entrypoints }}"
+  loop_control:
+    label: "{{ item.name | default('(unnamed)') }}"
+  tags: [ansible_pull_timer, validate]
+
+- name: Template the extra ansible-pull service units
+  ansible.builtin.template:
+    src: ansible-pull-extra.service.j2
+    dest: "/etc/systemd/system/{{ item.name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ ansible_pull_extra_entrypoints }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Reload systemd manager configuration
+  tags: [ansible_pull_timer, configure]
+
+- name: Template the extra ansible-pull timer units
+  ansible.builtin.template:
+    src: ansible-pull-extra.timer.j2
+    dest: "/etc/systemd/system/{{ item.name }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ ansible_pull_extra_entrypoints }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Reload systemd manager configuration
+  tags: [ansible_pull_timer, configure]
+
+- name: Enable and start the extra ansible-pull timers
+  ansible.builtin.systemd:
+    name: "{{ item.name }}.timer"
+    enabled: true
+    state: "{{ item.state | default(ansible_pull_timer_state) }}"
+    daemon_reload: true
+  loop: "{{ ansible_pull_extra_entrypoints }}"
+  loop_control:
+    label: "{{ item.name }}"
+  tags: [ansible_pull_timer, configure]
+
 - name: Read back the active timer schedule
   ansible.builtin.command:
     argv:
@@ -112,4 +161,28 @@
       - ansible_pull_timer_name ~ '.timer' in ansible_pull_timer_list.stdout
     fail_msg: >-
       the scheduled timer is not active: {{ ansible_pull_timer_list.stdout }}
+  tags: [ansible_pull_timer, validate]
+
+- name: Read back the extra timer schedules
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - list-timers
+      - --all
+      - --no-pager
+  register: ansible_pull_extra_timer_list
+  changed_when: false
+  when: ansible_pull_extra_entrypoints | length > 0
+  tags: [ansible_pull_timer, validate]
+
+- name: Assert every extra timer is scheduled
+  ansible.builtin.assert:
+    that:
+      - item.name ~ '.timer' in ansible_pull_extra_timer_list.stdout
+    fail_msg: >-
+      scheduled timer {{ item.name }}.timer is missing from systemctl list-timers
+  loop: "{{ ansible_pull_extra_entrypoints }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: ansible_pull_extra_entrypoints | length > 0
   tags: [ansible_pull_timer, validate]

@@ -1,0 +1,15 @@
+[Unit]
+Description=Vacuum systemd journal to the declared retention policy
+Documentation=man:journalctl(1)
+After=systemd-journald.service
+
+[Service]
+Type=oneshot
+# 双保险: 按大小和按时间各 vacuum 一次。journald 自身的 SystemMaxUse/MaxRetentionSec
+# 是软上限(只在写入时触发检查), 一台安静的机器可以很久都不触发; 定时器保证即使
+# 没有新日志, 过期数据也会被清掉。
+ExecStart=/usr/bin/journalctl --rotate
+ExecStart=/usr/bin/journalctl --vacuum-size={{ xconnect_node_journal_policy.system_max_use }}
+ExecStart=/usr/bin/journalctl --vacuum-time={{ xconnect_node_journal_policy.max_retention }}
+Nice=10
+IOSchedulingClass=idle

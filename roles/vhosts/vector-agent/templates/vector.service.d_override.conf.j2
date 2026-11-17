@@ -13,7 +13,12 @@ After=vault-agent-agent-proxy-vector-auth.service
 {% endif %}
 
 [Service]
-Environment=VECTOR_THREADS={{ ((xconnect_node_maintenance | default({})).get('vector', {})).get('threads', 2) }}
+Environment=VECTOR_THREADS={{ ((xconnect_node_maintenance | default({})).get('vector', {})).get('threads', 1) }}
+{# 回环抑制(发送端): Vector 自己的运行日志写进 journald, 又被 journald source
+   读回送往 VictoriaLogs。实测单机单次启动 2 万行、每天 1.7-8MiB, 绝大部分是
+   抓取本机并不存在的 2019/8404/9102 端口产生的告警。收敛到 warn, 读取端另有
+   exclude_units 兜底。可用 node_maintenance.vector.log_level 覆盖。 #}
+Environment=VECTOR_LOG={{ ((xconnect_node_maintenance | default({})).get('vector', {})).get('log_level', 'warn') }}
 {% if 'agent_proxy' in (group_names | default([])) %}
 # Derive the node identity locally from the Agent config. The helper emits only
 # AGENT_PROXY_DOMAIN (agent.id); API credentials never enter the process env.
@@ -24,6 +29,10 @@ User=root
 Group=root
 LimitNOFILE={{ vector_limit_nofile | default(524288) }}
 MemoryAccounting=yes
-MemoryHigh={{ ((xconnect_node_maintenance | default({})).get('vector', {})).get('memory_high', vector_memory_high | default('350M')) }}
-MemoryMax={{ ((xconnect_node_maintenance | default({})).get('vector', {})).get('memory_max', vector_memory_max | default('500M')) }}
+{# 默认值与 GitOps 治理策略 topology/{prod,uat}/selfhost/xconnect-regional-pool*.yaml
+   的 node_maintenance.vector 保持一致(150M/250M)。此前默认值是 350M/500M, 一旦
+   XCONNECT_GITOPS_CONFIG 没解析到, 927MiB 的边缘机就会把 Vector 的上限放到 500M,
+   实测已涨到 182MiB。默认值必须取治理值, 不能比治理值更宽松。 #}
+MemoryHigh={{ ((xconnect_node_maintenance | default({})).get('vector', {})).get('memory_high', vector_memory_high | default('150M')) }}
+MemoryMax={{ ((xconnect_node_maintenance | default({})).get('vector', {})).get('memory_max', vector_memory_max | default('250M')) }}
 CPUQuota={{ vector_cpu_quota | default('80%') }}

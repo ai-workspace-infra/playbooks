@@ -1,0 +1,93 @@
+---
+# ansible-pull 入口: 在节点本地拉取 GitOps 治理声明并落成可被采集侧消费的路径。
+#
+# 为什么需要单独一个入口: playbooks 仓库里的 pull_observability_agent.yml 需要读
+# topology/<env>/selfhost/xconnect-regional-pool*.yaml 才能拿到 node_maintenance
+# 治理值(Vector 内存上限/线程数、journald 保留策略)。而 ansible-pull 默认只克隆
+# playbooks 一个仓库, 声明文件并不在同一个检出里 —— 这正是实测中三台主机的
+# Vector 上限停留在 role 默认 350M/500M 的原因: XCONNECT_GITOPS_CONFIG 指向的
+# 路径根本不存在, 治理值被静默丢弃。
+#
+# 本入口把 gitops 仓库按固定 ref 拉到一个稳定的本地路径, 校验声明文件存在且
+# 结构可用, 并把最终绝对路径写到 /etc/ansible-pull/gitops-declaration.env,
+# 供 xconnect-node 的 ansible-pull service 以 EnvironmentFile 方式消费。
+#
+# 手动执行:
+#   sudo ansible-pull -U https://github.com/ai-workspace-infra/playbooks.git \
+#     -d /var/lib/ansible-pull/playbooks-gitops -i localhost, \
+#     pull_gitops_declaration.yml
+- name: Materialize the declared GitOps topology on the node
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+  vars:
+    gitops_declaration_repo: "{{ lookup('ansible.builtin.env', 'GITOPS_REPO_URL') | default('https://github.com/ai-workspace-infra/gitops.git', true) }}"
+    gitops_declaration_ref: "{{ lookup('ansible.builtin.env', 'GITOPS_REF') | default('main', true) }}"
+    gitops_declaration_dir: "{{ lookup('ansible.builtin.env', 'GITOPS_CHECKOUT_DIR') | default('/var/lib/ansible-pull/gitops', true) }}"
+    gitops_declaration_env_file: /etc/ansible-pull/gitops-declaration.env
+    gitops_declaration_environment: "{{ lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('prod', true) }}"
+  tasks:
+    - name: Ensure the declaration checkout parent exists
+      ansible.builtin.file:
+        path: "{{ gitops_declaration_dir | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Fetch the declared GitOps topology
+      ansible.builtin.git:
+        repo: "{{ gitops_declaration_repo }}"
+        dest: "{{ gitops_declaration_dir }}"
+        version: "{{ gitops_declaration_ref }}"
+        depth: 1
+        force: true
+        single_branch: true
+
+    - name: Resolve the node maintenance declaration for this environment
+      ansible.builtin.set_fact:
+        gitops_declaration_candidates: >-
+          {{ query('ansible.builtin.fileglob',
+                   gitops_declaration_dir ~ '/topology/' ~ gitops_declaration_environment ~ '/selfhost/xconnect-regional-pool*.yaml') }}
+
+    - name: Require exactly one declaration for the environment
+      ansible.builtin.assert:
+        that:
+          - gitops_declaration_candidates | length > 0
+        fail_msg: >-
+          no xconnect-regional-pool*.yaml found under
+          {{ gitops_declaration_dir }}/topology/{{ gitops_declaration_environment }}/selfhost
+          — the pull mode must not silently fall back to role defaults
+
+    - name: Bind the declaration path
+      ansible.builtin.set_fact:
+        gitops_declaration_file: "{{ gitops_declaration_candidates | first }}"
+
+    - name: Verify the declaration still declares node maintenance
+      ansible.builtin.slurp:
+        src: "{{ gitops_declaration_file }}"
+      register: gitops_declaration_content
+
+    - name: Fail when the declaration would be silently ignored
+      ansible.builtin.assert:
+        that:
+          - "'node_maintenance' in (gitops_declaration_content.content | b64decode)"
+        fail_msg: >-
+          {{ gitops_declaration_file }} no longer declares spec.node_maintenance;
+          the observability pull would fall back to role defaults instead of the
+          declared governance values
+
+    - name: Record the resolved declaration path for the pull timers
+      ansible.builtin.copy:
+        dest: "{{ gitops_declaration_env_file }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Rendered by pull_gitops_declaration.yml on every ansible-pull run.
+          # Consumed by the ansible-pull service EnvironmentFile so that
+          # pull_observability_agent.yml reads the declared governance values.
+          XCONNECT_GITOPS_CONFIG={{ gitops_declaration_file }}
+          DEPLOY_ENV={{ gitops_declaration_environment }}
+          GITOPS_REF={{ gitops_declaration_ref }}

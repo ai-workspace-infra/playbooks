@@ -11,6 +11,7 @@ ExecStart=/usr/local/bin/metrics-supervisor.py \
   --node-user nobody \
   --node-listen 127.0.0.1:9100 \
   --textfile-dir {{ process_exporter_textfile_dir_effective | default('/var/lib/node_exporter') }} \
+  --node-no-collectors {{ node_exporter_disabled_collectors | default(['bonding', 'conntrack', 'fibrechannel', 'infiniband', 'ipvs', 'mdadm', 'nfs', 'nfsd', 'tapestats', 'watchdog', 'zfs']) | join(',') }} \
   --process-binary /usr/local/bin/process-exporter \
   --process-user process_exporter \
   --process-config /etc/process-exporter.yml \

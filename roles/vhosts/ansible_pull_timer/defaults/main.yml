@@ -23,3 +23,13 @@ ansible_pull_timeout_sec: 900
 # systemd timer cadence
 ansible_pull_schedule: "*-*-* 00/6:17:00"
 ansible_pull_randomized_delay_sec: 300
+
+# 额外需要按同样的方式自我收敛的入口。每一项都是一个独立的 systemd timer,
+# 与上面的单份默认互不影响:
+#   - name:   unit 名前缀, 必填, 全局唯一
+#   - playbook: 要 pull 并执行的 playbook, 必填
+#   - checkout: 可选, 默认沿用 ansible_pull_checkout
+#   - schedule / randomized_delay_sec / description / state: 可选覆盖
+# 用列表而不是复用单份 role, 是为了让每个入口有独立的名字、周期与日志,
+# 任何一个入口失败都不会连带影响另一个。
+ansible_pull_extra_entrypoints: []

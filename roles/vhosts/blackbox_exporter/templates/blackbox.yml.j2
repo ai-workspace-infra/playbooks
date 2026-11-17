@@ -1,7 +1,9 @@
 modules:
   https_ssl:
     prober: http
-    timeout: 15s
+    # 探测超时必须明显小于抓取间隔。原先 15s 等于 15s 的抓取周期, 一次慢握手
+    # 就会与下一轮重叠, goroutine 与堆随轮次叠加(单机 heap_sys 曾到 380MiB)。
+    timeout: {{ blackbox_https_ssl_timeout | default('5s') }}
     http:
       method: GET
       # TLS handshake failures still cause probe_success to be 0. Redirects and
