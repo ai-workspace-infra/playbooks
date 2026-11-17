@@ -37,6 +37,28 @@ timer without an extra run. The standalone
 [ansible-pull-timer.yml](../../../ansible-pull-timer.yml) entrypoint applies it
 to existing hosts.
 
+## Extra entrypoints
+
+`ansible_pull_extra_entrypoints` schedules additional pull-mode convergences
+next to the single default one. Each item gets its own unit pair, its own
+checkout directory and its own schedule:
+
+```yaml
+ansible_pull_extra_entrypoints:
+  - name: ansible-pull-observability        # unit prefix, required
+    playbook: pull_observability_agent.yml  # required
+    schedule: "*-*-* 04:23:00"              # optional, defaults to ansible_pull_schedule
+    checkout: main                          # optional
+    state: started                          # optional
+```
+
+Every extra service also loads `/etc/ansible-pull/gitops-declaration.env` when
+it exists (`EnvironmentFile=-`, so a missing file is not a failure). That file
+is written by [pull_gitops_declaration.yml](../../../pull_gitops_declaration.yml)
+and carries the resolved `XCONNECT_GITOPS_CONFIG` path, which is how a pull-mode
+run consumes the GitOps governance values instead of silently falling back to
+role defaults.
+
 Completion requires `systemctl list-timers` to report the timer unit. Check runs
 with `journalctl -u <name>.service`. To pause the schedule set
 `ansible_pull_timer_state: stopped`; to remove it, stop and disable the timer and

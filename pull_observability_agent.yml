@@ -1,0 +1,96 @@
+---
+# ansible-pull 入口: 让每一台主机按周期自我收敛 observability 采集侧配置。
+#
+# 背景: 边缘/采集节点上的 Vector、blackbox_exporter、node_exporter、
+# process-exporter 与 journald 策略此前只能靠控制面推送(ansible-playbook)更新。
+# 控制面不可达、或只改了 GitOps 治理值时, 节点会长期停在旧配置上 —— 实测三台主机
+# 的 Vector 上限停留在 role 默认的 350M/500M, 而 GitOps 早已声明 150M/250M。
+#
+# 本入口由 roles/vhosts/ansible_pull_timer 调度, 每天在本机执行一次。它先跑
+# pull_gitops_declaration.yml 把治理声明拉到本地固定路径, 再据该文件收敛采集侧,
+# 因此治理值的唯一来源仍是 gitops 仓库, 不会出现第二份拓扑。
+#
+# 手动执行:
+#   sudo ansible-pull -U https://github.com/ai-workspace-infra/playbooks.git \
+#     -d /var/lib/ansible-pull/playbooks-observability -i localhost, \
+#     pull_observability_agent.yml
+#
+# 注意: 本入口只收敛"采集侧"配置, 不做任何云资源、DNS、身份或数据库动作。
+
+# 先把声明拉到 /var/lib/ansible-pull/gitops, 后面按固定路径解析。
+- import_playbook: pull_gitops_declaration.yml
+
+- name: Converge observability collection agent
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+  vars:
+    # 与 pull_gitops_declaration.yml 共用同一组默认, 避免两处路径漂移。
+    gitops_declaration_dir: "{{ lookup('ansible.builtin.env', 'GITOPS_CHECKOUT_DIR') | default('/var/lib/ansible-pull/gitops', true) }}"
+    gitops_declaration_environment: "{{ lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('prod', true) }}"
+  tasks:
+    - name: Resolve the declared node maintenance policy
+      ansible.builtin.set_fact:
+        pull_observability_policy_files: >-
+          {{ query('ansible.builtin.fileglob',
+                   gitops_declaration_dir ~ '/topology/' ~ gitops_declaration_environment ~ '/selfhost/xconnect-regional-pool*.yaml') }}
+
+    - name: Require a declaration before touching the collectors
+      ansible.builtin.assert:
+        that:
+          - pull_observability_policy_files | length > 0
+        fail_msg: >-
+          no xconnect-regional-pool*.yaml under {{ gitops_declaration_dir }}/topology/
+          {{ gitops_declaration_environment }}/selfhost — refusing to converge with
+          role defaults instead of the declared governance values
+
+    - name: Load the declared node maintenance policy
+      ansible.builtin.include_vars:
+        file: "{{ pull_observability_policy_files | first }}"
+        name: xconnect_policy
+
+    - name: Bind the declared node maintenance policy
+      ansible.builtin.set_fact:
+        xconnect_node_maintenance: "{{ xconnect_policy.spec.node_maintenance | default({}, true) }}"
+
+    # 采集侧的四个组件顺序与 deploy_observability_agent.yml 保持一致:
+    # 先 exporter, 再 blackbox, 最后 Vector(它消费前面几位的本地监听端口)。
+    - name: Converge node exporter
+      ansible.builtin.import_role:
+        name: vhosts/node_exporter
+
+    - name: Converge process exporter
+      ansible.builtin.import_role:
+        name: vhosts/process_exporter
+
+    - name: Converge blackbox exporter
+      ansible.builtin.import_role:
+        name: vhosts/blackbox_exporter
+
+    # Vector 的 xray 采集源依赖 exporter 的本地监听, 与主入口同样的探测方式。
+    - name: Check if xray process exists
+      ansible.builtin.command: pgrep -x xray
+      register: pull_observability_xray_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Resolve desired Xray exporter telemetry state
+      ansible.builtin.set_fact:
+        vector_xray_exporter_enabled: "{{ pull_observability_xray_check.rc == 0 }}"
+
+    - name: Converge vector agent
+      ansible.builtin.import_role:
+        name: vhosts/vector-agent
+      vars:
+        vector_xhttp_monitoring_enabled: "{{ vector_xray_exporter_enabled | bool }}"
+        # 无人值守的 pull 模式不能交互等待 Vault Agent, 也不持有代理凭据:
+        # 需要外部鉴权文件的主机由控制面主入口负责, 这里保持关闭。
+        vector_auth_external_file_enabled: false
+      tags:
+        - vector_agent
+
+    # journald 保留策略与定时 vacuum 同属采集侧足迹治理。
+    - name: Converge journald log policy
+      ansible.builtin.import_role:
+        name: host/xconnect_node_log_policy
