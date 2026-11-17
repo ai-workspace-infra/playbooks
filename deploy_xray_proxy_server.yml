@@ -121,6 +121,34 @@
     agent_proxy_legacy_domain: >-
       {{ lookup('ansible.builtin.env', 'AGENT_PROXY_LEGACY_DOMAIN')
          | default(hostvars[inventory_hostname].get('agent_proxy_legacy_domain', ''), true) }}
+    agent_proxy_effective_vhosts: >-
+      {{ (
+           (agent_proxy_domains if (agent_proxy_domains is iterable and agent_proxy_domains is not string) else ([agent_proxy_domains] if agent_proxy_domains else []))
+           + ([agent_id] if agent_id else [])
+           + ([agent_entry_point] if (agent_entry_point is defined and agent_entry_point) else [])
+           + ([lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN')] if lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN') else [])
+           + ([agent_proxy_regional_domain] if agent_proxy_regional_domain else [])
+           + ([agent_proxy_legacy_domain] if agent_proxy_legacy_domain else [])
+           + (hostvars[inventory_hostname].get('service_domains', []))
+           + ([inventory_hostname] if (inventory_hostname and inventory_hostname != 'localhost' and inventory_hostname != '127.0.0.1') else [])
+           + (
+               (
+                 xconnect_local_topology.spec.pools
+                 | selectattr('entrypoint.fqdn', 'defined')
+                 | map(attribute='entrypoint.fqdn') | list
+               ) if (xconnect_local_topology is defined and xconnect_local_topology.spec is defined and xconnect_local_topology.spec.pools is defined) else []
+             )
+           + (
+               (
+                 xconnect_local_topology.spec.pools
+                 | selectattr('legacy_entrypoints', 'defined')
+                 | map(attribute='legacy_entrypoints') | flatten
+                 | selectattr('fqdn', 'defined')
+                 | map(attribute='fqdn') | list
+               ) if (xconnect_local_topology is defined and xconnect_local_topology.spec is defined and xconnect_local_topology.spec.pools is defined) else []
+             )
+           + (['jp-xconnect-01.svc.plus', 'jp-xconnect-02.svc.plus', 'jp-xconnect.svc.plus', 'tky-proxy.svc.plus'] if (agent_id.endswith('.svc.plus') or inventory_hostname.endswith('.svc.plus')) else [])
+         ) | reject('equalto', '') | unique | list }}
     vault_agent_tls_secret_path: >-
       {{ hostvars[inventory_hostname].get('vault_tls_secret_path',
          lookup('ansible.builtin.env', 'VAULT_TLS_SECRET_PATH') | default('', true)) }}
@@ -481,6 +509,20 @@
         - agent_proxy_operation == 'deploy'
         - agent_proxy_local_installer | default(false) | bool
 
+    - name: Disable legacy or conflicting flux-limits pull timer on bare-metal node
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - ansible-pull-flux-limits.timer
+        - ansible-pull-flux-limits.service
+      failed_when: false
+      become: true
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
+
   roles:
     - role: roles/vhosts/caddy
       when:
@@ -501,6 +543,7 @@
         - agent_proxy_operation in ['deploy', 'standalone']
         - (agent_proxy_engine | default('fluxgate')) == 'haproxy'
       vars:
+        haproxy_vhosts: "{{ agent_proxy_effective_vhosts }}"
         haproxy_replace_caddy: true
         haproxy_source_cert_path: >-
           {{ agent_tls_cert_path
@@ -515,6 +558,7 @@
         - agent_proxy_operation in ['deploy', 'standalone']
         - (agent_proxy_engine | default('fluxgate')) == 'fluxgate'
       vars:
+        fluxgate_vhosts: "{{ agent_proxy_effective_vhosts }}"
         fluxgate_replace_caddy: true
         fluxgate_source_cert_path: >-
           {{ agent_tls_cert_path

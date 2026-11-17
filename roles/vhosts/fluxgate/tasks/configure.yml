@@ -61,6 +61,12 @@
   become: true
   notify: Restart fluxgate
 
+- name: Resolve effective Fluxgate vhosts list
+  ansible.builtin.set_fact:
+    fluxgate_resolved_vhosts: >-
+      {{ (fluxgate_vhosts if (fluxgate_vhosts is iterable and fluxgate_vhosts is not string) else (fluxgate_vhosts.split() if fluxgate_vhosts is string else []))
+         | reject('equalto', '') | unique | list }}
+
 - name: Render XConnect Fluxgate vhost config
   ansible.builtin.template:
     src: xconnect.conf.j2

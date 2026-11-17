@@ -2,82 +2,109 @@
 # Converge the Flux controller resource bounds declared in defaults/main.yml.
 # Kept as a separate task file so the ansible-pull entrypoint can apply the
 # bounds without re-running the controller installation.
-- name: Validate the declared flux controller resource bounds
-  ansible.builtin.assert:
-    that:
-      - k3s_platform_flux_controller_resources is mapping
-      - k3s_platform_flux_controller_resources | length > 0
-    fail_msg: >-
-      k3s_platform_flux_controller_resources must declare requests and limits
-      for every flux controller
-  tags: [flux_limits, validate]
-
-- name: Apply the declared resource bounds to the flux controllers
+- name: Check if kubectl command exists
   ansible.builtin.command:
-    argv:
-      - kubectl
-      - --namespace
-      - "{{ k3s_platform_flux_namespace }}"
-      - set
-      - resources
-      - "deployment/{{ item.key }}"
-      - "--requests=cpu={{ item.value.requests.cpu }},memory={{ item.value.requests.memory }}"
-      - "--limits=cpu={{ item.value.limits.cpu }},memory={{ item.value.limits.memory }}"
-  environment:
-    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
-  loop: "{{ k3s_platform_flux_controller_resources | dict2items | selectattr('key', 'in', k3s_platform_flux_components) | list }}"
-  loop_control:
-    label: "{{ item.key }}"
-  # kubectl re-applies the same requirements on every run; the read-back assert
-  # below is the acceptance gate for the declared bounds.
-  changed_when: false
-  tags: [flux_limits, configure]
-
-- name: Apply concurrency bounds to flux controllers
-  ansible.builtin.shell: |
-    set -euo pipefail
-    export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
-    CURRENT_ARGS=$(kubectl -n "{{ k3s_platform_flux_namespace }}" get deployment "{{ item.key }}" -o jsonpath='{.spec.template.spec.containers[0].args}')
-    if ! echo "$CURRENT_ARGS" | grep -q -- "--concurrent="; then
-      kubectl -n "{{ k3s_platform_flux_namespace }}" patch deployment "{{ item.key }}" --type='json' \
-        -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--concurrent={{ item.value }}"}]'
-    fi
-  args:
-    executable: /bin/bash
-  loop: "{{ (k3s_platform_flux_concurrency | default({})) | dict2items | selectattr('key', 'in', k3s_platform_flux_components) | list }}"
-  loop_control:
-    label: "{{ item.key }}"
-  changed_when: false
-  tags: [flux_limits, configure]
-
-- name: Read back the enforced memory limit of each flux controller
-  ansible.builtin.command:
-    argv:
-      - kubectl
-      - --namespace
-      - "{{ k3s_platform_flux_namespace }}"
-      - get
-      - "deployment/{{ item.key }}"
-      - "--output=jsonpath={.spec.template.spec.containers[0].resources.limits.memory}"
-  environment:
-    KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
-  loop: "{{ k3s_platform_flux_controller_resources | dict2items | selectattr('key', 'in', k3s_platform_flux_components) | list }}"
-  loop_control:
-    label: "{{ item.key }}"
-  register: k3s_flux_controller_limits_verify
+    argv: [which, kubectl]
+  register: flux_limits_kubectl_bin
+  failed_when: false
   changed_when: false
   tags: [flux_limits, validate]
 
-- name: Assert the declared memory bound is enforced on every flux controller
-  ansible.builtin.assert:
-    that:
-      - item.stdout == item.item.value.limits.memory
-    fail_msg: >-
-      {{ item.item.key }} reports memory limit {{ item.stdout | default('<unset>') }},
-      expected {{ item.item.value.limits.memory }}
-    success_msg: >-
-      {{ item.item.key }} memory limit enforced at {{ item.item.value.limits.memory }}
-  loop: "{{ k3s_flux_controller_limits_verify.results }}"
-  loop_control:
-    label: "{{ item.item.key }}"
+- name: Check if k3s kubeconfig exists
+  ansible.builtin.stat:
+    path: "{{ k3s_platform_kubeconfig_path }}"
+  register: flux_limits_kubeconfig_stat
   tags: [flux_limits, validate]
+
+- name: Notice when running on a non-Kubernetes host
+  ansible.builtin.debug:
+    msg: "Skipping Flux controller limits convergence: kubectl or kubeconfig not present on host"
+  when: >-
+    (flux_limits_kubectl_bin.rc != 0) or
+    (not (flux_limits_kubeconfig_stat.stat.exists | default(false)))
+  tags: [flux_limits, validate]
+
+- name: Converge Flux controller resource bounds on Kubernetes host
+  when:
+    - flux_limits_kubectl_bin.rc == 0
+    - flux_limits_kubeconfig_stat.stat.exists | default(false)
+  block:
+    - name: Validate the declared flux controller resource bounds
+      ansible.builtin.assert:
+        that:
+          - k3s_platform_flux_controller_resources is mapping
+          - k3s_platform_flux_controller_resources | length > 0
+        fail_msg: >-
+          k3s_platform_flux_controller_resources must declare requests and limits
+          for every flux controller
+      tags: [flux_limits, validate]
+
+    - name: Apply the declared resource bounds to the flux controllers
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --namespace
+          - "{{ k3s_platform_flux_namespace }}"
+          - set
+          - resources
+          - "deployment/{{ item.key }}"
+          - "--requests=cpu={{ item.value.requests.cpu }},memory={{ item.value.requests.memory }}"
+          - "--limits=cpu={{ item.value.limits.cpu }},memory={{ item.value.limits.memory }}"
+      environment:
+        KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+      loop: "{{ k3s_platform_flux_controller_resources | dict2items | selectattr('key', 'in', k3s_platform_flux_components) | list }}"
+      loop_control:
+        label: "{{ item.key }}"
+      # kubectl re-applies the same requirements on every run; the read-back assert
+      # below is the acceptance gate for the declared bounds.
+      changed_when: false
+      tags: [flux_limits, configure]
+
+    - name: Apply concurrency bounds to flux controllers
+      ansible.builtin.shell: |
+        set -euo pipefail
+        export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
+        CURRENT_ARGS=$(kubectl -n "{{ k3s_platform_flux_namespace }}" get deployment "{{ item.key }}" -o jsonpath='{.spec.template.spec.containers[0].args}')
+        if ! echo "$CURRENT_ARGS" | grep -q -- "--concurrent="; then
+          kubectl -n "{{ k3s_platform_flux_namespace }}" patch deployment "{{ item.key }}" --type='json' \
+            -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--concurrent={{ item.value }}"}]'
+        fi
+      args:
+        executable: /bin/bash
+      loop: "{{ (k3s_platform_flux_concurrency | default({})) | dict2items | selectattr('key', 'in', k3s_platform_flux_components) | list }}"
+      loop_control:
+        label: "{{ item.key }}"
+      changed_when: false
+      tags: [flux_limits, configure]
+
+    - name: Read back the enforced memory limit of each flux controller
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --namespace
+          - "{{ k3s_platform_flux_namespace }}"
+          - get
+          - "deployment/{{ item.key }}"
+          - "--output=jsonpath={.spec.template.spec.containers[0].resources.limits.memory}"
+      environment:
+        KUBECONFIG: "{{ k3s_platform_kubeconfig_path }}"
+      loop: "{{ k3s_platform_flux_controller_resources | dict2items | selectattr('key', 'in', k3s_platform_flux_components) | list }}"
+      loop_control:
+        label: "{{ item.key }}"
+      register: k3s_flux_controller_limits_verify
+      changed_when: false
+      tags: [flux_limits, validate]
+
+    - name: Assert the declared memory bound is enforced on every flux controller
+      ansible.builtin.assert:
+        that:
+          - item.stdout == item.item.value.limits.memory
+        fail_msg: >-
+          {{ item.item.key }} reports memory limit {{ item.stdout | default('<unset>') }},
+          expected {{ item.item.value.limits.memory }}
+        success_msg: >-
+          {{ item.item.key }} memory limit enforced at {{ item.item.value.limits.memory }}
+      loop: "{{ k3s_flux_controller_limits_verify.results }}"
+      loop_control:
+        label: "{{ item.item.key }}"
+      tags: [flux_limits, validate]

@@ -60,6 +60,12 @@
   become: true
   notify: Reload haproxy
 
+- name: Resolve effective HAProxy vhosts list
+  ansible.builtin.set_fact:
+    haproxy_resolved_vhosts: >-
+      {{ (haproxy_vhosts if (haproxy_vhosts is iterable and haproxy_vhosts is not string) else (haproxy_vhosts.split() if haproxy_vhosts is string else []))
+         | reject('equalto', '') | unique | list }}
+
 - name: Render HAProxy configuration
   ansible.builtin.template:
     src: haproxy.cfg.j2

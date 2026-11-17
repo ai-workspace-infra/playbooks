@@ -35,7 +35,7 @@ frontend http_in
 frontend https_in
     bind :::443 v4v6 ssl crt {{ haproxy_pem_path }} alpn h2,http/1.1
 
-    acl host_allowed hdr(host) -i {{ haproxy_vhosts | join(' ') }}
+    acl host_allowed hdr(host) -i {{ (haproxy_resolved_vhosts | default(haproxy_vhosts)) | join(' ') }}
 
     acl is_exp_xhttp path_beg /xray-exporter/xhttp/
     acl is_exp_tcp   path_beg /xray-exporter/tcp/

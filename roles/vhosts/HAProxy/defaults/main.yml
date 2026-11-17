@@ -13,11 +13,21 @@ haproxy_h2_initial_window_size: 1048576
 haproxy_bufsize: 32768
 haproxy_timeout_tunnel: "3600s"
 
-haproxy_vhosts:
+haproxy_legacy_vhosts:
   - jp-xconnect-01.svc.plus
   - jp-xconnect-02.svc.plus
   - jp-xconnect.svc.plus
   - tky-proxy.svc.plus
+
+haproxy_vhosts: >-
+  {{ (
+       (agent_proxy_domains if (agent_proxy_domains is defined and agent_proxy_domains is iterable and agent_proxy_domains is not string) else ([agent_proxy_domains] if (agent_proxy_domains is defined and agent_proxy_domains) else []))
+       + ([agent_id] if (agent_id is defined and agent_id) else [])
+       + ([agent_entry_point] if (agent_entry_point is defined and agent_entry_point) else [])
+       + (service_domains if (service_domains is defined and service_domains is iterable and service_domains is not string) else [])
+       + ([inventory_hostname] if (inventory_hostname is defined and inventory_hostname and inventory_hostname != 'localhost' and inventory_hostname != '127.0.0.1') else [])
+       + (haproxy_legacy_vhosts | default([]))
+     ) | reject('equalto', '') | unique | list }}
 
 haproxy_xhttp_unix_socket: "/dev/shm/xray.sock"
 haproxy_exporter_xhttp_upstream: "127.0.0.1:8080"

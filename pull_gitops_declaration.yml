@@ -78,6 +78,14 @@
           the observability pull would fall back to role defaults instead of the
           declared governance values
 
+    - name: Ensure the ansible-pull configuration directory exists
+      ansible.builtin.file:
+        path: "{{ gitops_declaration_env_file | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
     - name: Record the resolved declaration path for the pull timers
       ansible.builtin.copy:
         dest: "{{ gitops_declaration_env_file }}"

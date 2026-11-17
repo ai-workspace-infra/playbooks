@@ -1,4 +1,4 @@
-{{ fluxgate_vhosts | join(' ') }} {
+{{ (fluxgate_resolved_vhosts | default(fluxgate_vhosts)) | join(' ') }} {
     tls {{ fluxgate_tls_dir }}/agent-proxy.crt {{ fluxgate_tls_dir }}/agent-proxy.key
 
     handle_path /xray-exporter/xhttp/* {

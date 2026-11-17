@@ -33,14 +33,97 @@
     vector_observability_service_domain: "{{ vector_agent_config_identity.stdout }}"
   when: "'agent_proxy' in (group_names | default([]))"
 
+- name: Check existing xray-exporter configuration for billing snapshot integration
+  ansible.builtin.stat:
+    path: /etc/xray-exporter.env
+  register: existing_xray_exporter_env_stat
+
+- name: Read existing xray-exporter configuration
+  ansible.builtin.slurp:
+    path: /etc/xray-exporter.env
+  register: existing_xray_exporter_env_content
+  when: existing_xray_exporter_env_stat.stat.exists | default(false)
+
+- name: Check existing vector secrets configuration
+  ansible.builtin.stat:
+    path: /etc/vector/secrets.json
+  register: existing_vector_secrets_stat
+
+- name: Read existing vector secrets
+  ansible.builtin.slurp:
+    path: /etc/vector/secrets.json
+  register: existing_vector_secrets_content
+  when: existing_vector_secrets_stat.stat.exists | default(false)
+
+- name: Detect existing billing snapshot integration state
+  ansible.builtin.set_fact:
+    vector_billing_snapshot_configured: >-
+      {{ (existing_xray_exporter_env_stat.stat.exists | default(false)) and
+         ('VECTOR_SNAPSHOT_URL' in (existing_xray_exporter_env_content.content | b64decode | default(''))) }}
+    existing_xray_exporter_service_token: >-
+      {{ (existing_xray_exporter_env_content.content | b64decode
+          | regex_search('(?m)^INTERNAL_SERVICE_TOKEN=(.*)$', '\\1') | first | default('', true))
+         if (existing_xray_exporter_env_stat.stat.exists | default(false)) else '' }}
+    existing_vector_billing_token: >-
+      {{ ((existing_vector_secrets_content.content | b64decode | from_json | default({})).get('billing_token', ''))
+         if (existing_vector_secrets_stat.stat.exists | default(false)) else '' }}
+  no_log: true
+
+- name: Resolve effective vector billing ingest state
+  ansible.builtin.set_fact:
+    vector_billing_ingest_enabled: >-
+      {{ vector_billing_ingest_enabled | bool
+         if (vector_billing_ingest_enabled is defined and vector_billing_ingest_enabled is boolean)
+         else (
+           (lookup('ansible.builtin.env', 'VECTOR_BILLING_INGEST_ENABLED') | default(false, true) | bool)
+           or (vector_billing_snapshot_configured | default(false) | bool)
+         ) }}
+
 - name: Resolve canonical Vault credentials before any Vector changes
   ansible.builtin.include_tasks: '{{ playbook_dir }}/tasks/resolve-canonical-service-token.yml'
-  when: vector_billing_ingest_enabled | default(false) | bool
+  when:
+    - vector_billing_ingest_enabled | default(false) | bool
+    - lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | length == 0
+    - existing_xray_exporter_service_token | default('') | length == 0
+    - existing_vector_billing_token | default('') | length == 0
+    - canonical_internal_service_token | default('') | length == 0
 
 - name: Bind Vector billing to the canonical credential
   ansible.builtin.set_fact:
-    vector_billing_ingest_token: '{{ canonical_internal_service_token }}'
+    vector_billing_ingest_token: >-
+      {{ vector_billing_ingest_token
+         if (vector_billing_ingest_token | default('') | length > 0)
+         else (
+           canonical_internal_service_token
+           if (canonical_internal_service_token | default('') | length > 0)
+           else (
+             lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN')
+             if (lookup('ansible.builtin.env', 'INTERNAL_SERVICE_TOKEN') | default('') | length > 0)
+             else (
+               existing_xray_exporter_service_token
+               if (existing_xray_exporter_service_token | default('') | length > 0)
+               else (existing_vector_billing_token | default(''))
+             )
+           )
+         ) }}
   no_log: true
+  when: vector_billing_ingest_enabled | default(false) | bool
+
+- name: Resolve Vector billing ingest URL from environment or exporter configuration
+  ansible.builtin.set_fact:
+    vector_billing_ingest_url: >-
+      {{ vector_billing_ingest_url
+         if (vector_billing_ingest_url | default('') | length > 0)
+         else (
+           lookup('ansible.builtin.env', 'VECTOR_BILLING_INGEST_URL')
+           if (lookup('ansible.builtin.env', 'VECTOR_BILLING_INGEST_URL') | default('') | length > 0)
+           else (
+             ((lookup('ansible.builtin.env', 'BILLING_SERVICE_BASE_URL')
+               | default(lookup('ansible.builtin.env', 'BILLING_SERVICE_URL'), true)) | regex_replace('/+$', '') ~ '/v1/ingest/snapshots')
+             if ((lookup('ansible.builtin.env', 'BILLING_SERVICE_BASE_URL') | default(lookup('ansible.builtin.env', 'BILLING_SERVICE_URL'), true)) | length > 0)
+             else 'https://billing.svc.plus/v1/ingest/snapshots'
+           )
+         ) }}
   when: vector_billing_ingest_enabled | default(false) | bool
 
 - name: Gather service state for optional Vector sources
@@ -262,13 +345,17 @@
   ansible.builtin.file:
     path: /etc/vector/secrets.json
     state: absent
-  when: not (vector_billing_ingest_enabled | default(false) | bool)
+  when:
+    - not (vector_billing_ingest_enabled | default(false) | bool)
+    - not (vector_billing_snapshot_configured | default(false) | bool)
 
 - name: Remove unused Vector secret provider
   ansible.builtin.file:
     path: /usr/local/libexec/vector-secret-provider
     state: absent
-  when: not (vector_billing_ingest_enabled | default(false) | bool)
+  when:
+    - not (vector_billing_ingest_enabled | default(false) | bool)
+    - not (vector_billing_snapshot_configured | default(false) | bool)
 
 - name: Detect local PostgreSQL exporter metrics endpoint
   ansible.builtin.uri:
