@@ -1,0 +1,33 @@
+# /etc/rancher/k3s/config.yaml
+# Profile: k3s-minimal-1c1g 基线
+# 适用硬件: 1 vCPU, 1 GB RAM 极限边缘 VPS
+# 纯净架构: 外部流量 -> ServiceLB:80/443 -> LoadBalancer Service -> 1 Deployment
+# 核心约束: 绝不引入 Traefik、Flux CD、Ingress Controller、local-storage、metrics-server 等非必要组件
+
+write-kubeconfig-mode: "0600"
+node-name: "{{ k3s_platform_node_name }}"
+cluster-cidr: "{{ k3s_platform_cluster_cidr | default('10.42.0.0/16') }}"
+service-cidr: "{{ k3s_platform_service_cidr | default('10.43.0.0/16') }}"
+cluster-dns: "{{ k3s_platform_cluster_dns | default('10.43.0.10') }}"
+data-dir: "{{ k3s_platform_install_dir | default('/opt/rancher/k3s') }}"
+
+# 裁减非必要服务，省出 >200MB 内存
+disable:
+  - traefik
+  - metrics-server
+  - local-storage
+
+# 保留 ServiceLB (klipper-lb) 与 CoreDNS
+disable-helm-controller: true
+disable-network-policy: true
+
+# 保留 K3s 默认 Flannel
+flannel-backend: {{ k3s_platform_flannel_backend | default('vxlan') }}
+
+# 单节点默认 SQLite，避免 etcd 占用 400MB 内存
+{% if k3s_platform_tls_sans | default([]) | length > 0 %}
+tls-san:
+{% for san in k3s_platform_tls_sans %}
+  - "{{ san }}"
+{% endfor %}
+{% endif %}

@@ -1,0 +1,26 @@
+# /etc/rancher/k3s/config.yaml
+# Profile: k3s-normal-2c2g 基线
+# 适用硬件: 2 vCPU, 2 GB RAM 正常业务运行节点
+# 架构: K3s (SQLite) + local-storage + ServiceLB + CoreDNS
+
+write-kubeconfig-mode: "0600"
+node-name: "{{ k3s_platform_node_name }}"
+cluster-cidr: "{{ k3s_platform_cluster_cidr | default('10.42.0.0/16') }}"
+service-cidr: "{{ k3s_platform_service_cidr | default('10.43.0.0/16') }}"
+cluster-dns: "{{ k3s_platform_cluster_dns | default('10.43.0.10') }}"
+data-dir: "{{ k3s_platform_install_dir | default('/opt/rancher/k3s') }}"
+
+disable:
+  - traefik
+
+disable-helm-controller: false
+disable-network-policy: false
+
+flannel-backend: {{ k3s_platform_flannel_backend | default('vxlan') }}
+
+{% if k3s_platform_tls_sans | default([]) | length > 0 %}
+tls-san:
+{% for san in k3s_platform_tls_sans %}
+  - "{{ san }}"
+{% endfor %}
+{% endif %}

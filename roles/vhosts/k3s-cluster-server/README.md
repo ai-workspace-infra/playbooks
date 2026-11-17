@@ -25,7 +25,33 @@ When `k3s_platform_require_data_mount=true`, the data-volume role must supply
 | `k3s_platform_require_data_mount`, `k3s_platform_local_storage_path` | Independent filesystem dependency |
 | `k3s_platform_datastore`, `k3s_platform_cluster_init` | Datastore backend (`sqlite` default for new single-node clusters; `etcd` optional) |
 | `k3s_platform_enable_mem_tuning`, `k3s_platform_gomemlimit`, `k3s_platform_gogc` | Go runtime memory tuning in `/etc/systemd/system/k3s.service.env` (`768MiB` / `50`) |
+| `k3s_platform_profile` | Predefined baseline profile: `k3s-minimal-1c1g`, `k3s-normal-2c2g`, `k3s-GitOPS-2c4g` |
 | `k3s_platform_safe_restart_script_path` | Path to safe memory restart script (`/usr/local/bin/safe-k3s-mem-restart`) |
+
+## Baseline Configuration Profiles
+
+This role provides 3 standard baseline profiles tailored for different VPS hardware constraints and architectural responsibilities:
+
+### 1. `k3s-minimal-1c1g` (Extreme Edge VPS Profile)
+- **Target Hardware**: 1 vCPU, 1 GB RAM (e.g. ultra-budget edge VPS).
+- **Architecture**: Host -> ServiceLB (:80/:443) -> LoadBalancer Service -> 1 Pod Deployment.
+- **Constraints**: **Does NOT introduce Traefik, Flux CD, Ingress Controller, local-storage, or metrics-server**.
+- **Datastore & Memory**: Single-node SQLite; Go memory strictly capped at `GOMEMLIMIT=384MiB`, `GOGC=40`.
+- **Template**: [templates/k3s-minimal-1c1g.yaml.j2](templates/k3s-minimal-1c1g.yaml.j2) / [vars/k3s-minimal-1c1g.yml](vars/k3s-minimal-1c1g.yml).
+
+### 2. `k3s-normal-2c2g` (Standard Standalone Business Profile)
+- **Target Hardware**: 2 vCPU, 2 GB RAM.
+- **Architecture**: Standard edge compute node with local storage & metrics.
+- **Components**: Disables Traefik (traffic handled by application-level reverse proxy e.g. Fluxgate/HAProxy); keeps ServiceLB, local-storage, metrics-server, and CoreDNS.
+- **Memory**: `GOMEMLIMIT=768MiB`, `GOGC=50`.
+- **Template**: [templates/k3s-normal-2c2g.yaml.j2](templates/k3s-normal-2c2g.yaml.j2) / [vars/k3s-normal-2c2g.yml](vars/k3s-normal-2c2g.yml).
+
+### 3. `k3s-GitOPS-2c4g` (Full GitOps Platform Profile - 参考 `prod-k3s-v6`)
+- **Target Hardware**: 2 vCPU, 4 GB RAM (e.g. Akamai Linode `g6-standard-2`).
+- **Architecture**: Comprehensive production service foundation: **GitOps + FluxCD + Flagger + Traefik + ServiceLB**.
+- **Storage**: Independent data volume mounted at `/data/k3s/storage`.
+- **Memory**: `GOMEMLIMIT=1536MiB`, `GOGC=60`.
+- **Template**: [templates/k3s-GitOPS-2c4g.yaml.j2](templates/k3s-GitOPS-2c4g.yaml.j2) / [vars/k3s-GitOPS-2c4g.yml](vars/k3s-GitOPS-2c4g.yml).
 
 Full defaults: [defaults/main.yml](defaults/main.yml). Inputs are non-secret
 configuration from GitOps; node facts come from CMDB. The role installs no

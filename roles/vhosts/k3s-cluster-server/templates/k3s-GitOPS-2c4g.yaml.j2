@@ -1,0 +1,36 @@
+# /etc/rancher/k3s/config.yaml
+# Profile: k3s-GitOPS-2c4g 基线 (参考 prod-k3s-v6)
+# 适用硬件: 2 vCPU, 4 GB RAM 生产集群
+# 架构: GitOps + FluxCD + Flagger + Traefik + ServiceLB + 独立数据盘
+
+write-kubeconfig-mode: "0600"
+node-name: "{{ k3s_platform_node_name }}"
+cluster-cidr: "{{ k3s_platform_cluster_cidr | default('10.52.0.0/16') }}"
+service-cidr: "{{ k3s_platform_service_cidr | default('10.53.0.0/16') }}"
+cluster-dns: "{{ k3s_platform_cluster_dns | default('10.53.0.10') }}"
+data-dir: "{{ k3s_platform_install_dir | default('/opt/rancher/k3s') }}"
+default-local-storage-path: "{{ k3s_platform_local_storage_path | default('/data/k3s/storage') }}"
+
+# 承载全面的业务服务支撑，保留 Traefik 与 ServiceLB
+{% if k3s_platform_disable_components | default([]) | length > 0 %}
+disable:
+{% for component in k3s_platform_disable_components %}
+  - "{{ component }}"
+{% endfor %}
+{% endif %}
+
+disable-helm-controller: false
+disable-network-policy: false
+
+flannel-backend: {{ k3s_platform_flannel_backend | default('vxlan') }}
+
+{% if (k3s_platform_datastore | default('sqlite') == 'etcd') or (k3s_platform_cluster_init | default(false) | bool) %}
+cluster-init: true
+{% endif %}
+
+{% if k3s_platform_tls_sans | default([]) | length > 0 %}
+tls-san:
+{% for san in k3s_platform_tls_sans %}
+  - "{{ san }}"
+{% endfor %}
+{% endif %}

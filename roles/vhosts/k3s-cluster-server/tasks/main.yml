@@ -1,3 +1,9 @@
+---
+- name: Load k3s profile baseline configuration if requested
+  ansible.builtin.include_vars:
+    file: "{{ k3s_platform_profile }}.yml"
+  when: k3s_platform_profile | default('') | length > 0
+
 - name: Validate control-plane prerequisites without changing the host
   ansible.builtin.import_tasks: preflight.yml
 

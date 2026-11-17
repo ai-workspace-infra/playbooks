@@ -1,0 +1,19 @@
+# k3s-minimal-1c1g Profile Vars
+# 极限边缘单机/VPS 基线 (1 vCPU, 1 GB RAM)
+# 目标：不引入 Traefik、Flux CD、Ingress Controller 或其他非必要组件，零 OOM 风险
+
+k3s_platform_profile_name: "k3s-minimal-1c1g"
+k3s_platform_disable_components:
+  - traefik
+  - metrics-server
+  - local-storage
+
+k3s_platform_disable_helm_controller: true
+k3s_platform_disable_network_policy: true
+k3s_platform_flannel_backend: "vxlan"
+k3s_platform_datastore: "sqlite"
+k3s_platform_require_data_mount: false
+
+# 严格限制 Go 运行时内存，避免 K3s 本身膨胀
+k3s_platform_gomemlimit: "384MiB"
+k3s_platform_gogc: "40"

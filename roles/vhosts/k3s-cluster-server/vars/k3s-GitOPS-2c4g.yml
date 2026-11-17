@@ -1,0 +1,21 @@
+# k3s-GitOPS-2c4g Profile Vars (参考 prod-k3s-v6 生产基线)
+# 承载全面的业务服务支撑基线 (2 vCPU, 4 GB RAM)
+# 目标：GitOps + FluxCD + Flagger + Traefik + ServiceLB
+
+k3s_platform_profile_name: "k3s-GitOPS-2c4g"
+k3s_platform_disable_components: [] # 不禁用 Traefik，Traefik 与 ServiceLB 协同
+
+k3s_platform_disable_helm_controller: false
+k3s_platform_disable_network_policy: false
+k3s_platform_flannel_backend: "vxlan"
+k3s_platform_local_storage_path: "/data/k3s/storage"
+k3s_platform_require_data_mount: true
+
+# 生产级 GitOps 控制面
+k3s_platform_flux_bootstrap_mode: "declarative_active"
+k3s_platform_flux_version: "2.9.6"
+k3s_platform_helm_version: "v3.22.1"
+k3s_platform_flagger_enabled: true
+
+k3s_platform_gomemlimit: "1536MiB"
+k3s_platform_gogc: "60"

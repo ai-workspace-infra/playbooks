@@ -1,26 +1,48 @@
-write-kubeconfig-mode: "{{ k3s_platform_write_kubeconfig_mode }}"
+# /etc/rancher/k3s/config.yaml
+# Rendered dynamically via k3s-cluster-server (Profile: {{ k3s_platform_profile | default('custom') }})
+
+write-kubeconfig-mode: "{{ k3s_platform_write_kubeconfig_mode | default('0600') }}"
 node-name: "{{ k3s_platform_node_name }}"
-cluster-cidr: "{{ k3s_platform_cluster_cidr }}"
-service-cidr: "{{ k3s_platform_service_cidr }}"
-cluster-dns: "{{ k3s_platform_cluster_dns }}"
-data-dir: "{{ k3s_platform_install_dir }}"
-{% if k3s_platform_local_storage_path | length > 0 %}
+cluster-cidr: "{{ k3s_platform_cluster_cidr | default('10.42.0.0/16') }}"
+service-cidr: "{{ k3s_platform_service_cidr | default('10.43.0.0/16') }}"
+cluster-dns: "{{ k3s_platform_cluster_dns | default('10.43.0.10') }}"
+data-dir: "{{ k3s_platform_install_dir | default('/opt/rancher/k3s') }}"
+
+{% if k3s_platform_local_storage_path | default('') | length > 0 %}
 default-local-storage-path: "{{ k3s_platform_local_storage_path }}"
 {% endif %}
+
 {% if (k3s_platform_datastore | default('sqlite') == 'etcd') or (k3s_platform_cluster_init | default(false) | bool) %}
 cluster-init: true
 {% endif %}
+
+{% if k3s_platform_disable_components | default([]) | length > 0 %}
 disable:
 {% for component in k3s_platform_disable_components %}
   - "{{ component }}"
 {% endfor %}
+{% endif %}
+
+{% if k3s_platform_disable_helm_controller | default(false) | bool %}
+disable-helm-controller: true
+{% endif %}
+
+{% if k3s_platform_disable_network_policy | default(false) | bool %}
+disable-network-policy: true
+{% endif %}
+
+{% if k3s_platform_flannel_backend | default('') | length > 0 %}
+flannel-backend: {{ k3s_platform_flannel_backend }}
+{% endif %}
+
 {% if k3s_platform_kube_apiserver_args | default([]) | length > 0 %}
 kube-apiserver-arg:
 {% for arg in k3s_platform_kube_apiserver_args %}
   - "{{ arg }}"
 {% endfor %}
 {% endif %}
-{% if k3s_platform_tls_sans | length > 0 %}
+
+{% if k3s_platform_tls_sans | default([]) | length > 0 %}
 tls-san:
 {% for san in k3s_platform_tls_sans %}
   - "{{ san }}"
