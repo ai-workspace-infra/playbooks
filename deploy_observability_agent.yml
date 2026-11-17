@@ -236,6 +236,23 @@
       tags:
         - vector_agent
 
+    # 采集侧自我收敛: 把本次用到的入口登记成 OS 级 ansible-pull timer。
+    # 主机此后每天自己拉取 playbooks 与 GitOps 声明, 不再依赖控制面推送 ——
+    # 这正是实测中 Vector 上限长期停在 role 默认值的原因。
+    # 由 vhosts/common 统一实现, 因为它属于 OS 基线而非采集业务。
+    - name: Include the OS-level scheduled convergence role
+      ansible.builtin.import_role:
+        name: vhosts/common
+        tasks_from: ansible_pull.yml
+      vars:
+        common_ansible_pull_enabled: true
+        common_ansible_pull_entrypoints:
+          - name: ansible-pull-observability
+            playbook: pull_observability_agent.yml
+            schedule: "*-*-* 04:23:00"
+            randomized_delay_sec: 1800
+            environment_file: /etc/ansible-pull/gitops-declaration.env
+
     - name: Validate Vector Billing fan-out contract
       ansible.builtin.assert:
         that:

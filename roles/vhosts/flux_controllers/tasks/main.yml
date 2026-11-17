@@ -30,9 +30,11 @@
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k3s_platform_kubeconfig_path }}"
-{% for comp in k3s_platform_flux_components %}
+    # Jinja 控制行必须与块标量同缩进, 否则 {% %} 落在第 0 列会破坏 YAML 结构,
+    # 整个文件无法解析(CI 的 ansible --list-tasks 直接报 Syntax Error)。
+    {% for comp in k3s_platform_flux_components %}
     kubectl -n "{{ k3s_platform_flux_namespace }}" rollout status deployment/{{ comp }} --timeout=300s
-{% endfor %}
+    {% endfor %}
   args:
     executable: /bin/bash
 

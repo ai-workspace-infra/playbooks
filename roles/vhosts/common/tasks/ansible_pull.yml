@@ -1,0 +1,122 @@
+---
+# OS 通用能力: 让主机按周期自己拉取 playbooks 并收敛。
+#
+# 放在 common 而不是业务 role: 自我收敛是主机生命周期的一部分(与 SSH 基线、
+# 时区、日志轮转同级)。任何主机都应当能从"控制面推送"退化为"自己 pull",
+# 不因为它是 k3s 还是边缘 VPS、是代理节点还是采集节点而不同。
+#
+# 入口由 common_ansible_pull_entrypoints 声明, 每个入口一对独立 unit,
+# 各自 checkout 目录与周期, 任一个失败不影响其他入口。
+
+- name: Base | validate the ansible-pull entrypoint declarations
+  ansible.builtin.assert:
+    that:
+      - common_ansible_pull_repo_url | length > 0
+      - common_ansible_pull_checkout_dir is match('^/.+')
+      - item.name | default('') | length > 0
+      - item.playbook | default('') | length > 0
+    fail_msg: >-
+      every common_ansible_pull_entrypoints item needs a non-empty name and
+      playbook, and the repository/checkout directory must be absolute paths
+  loop: "{{ common_ansible_pull_entrypoints }}"
+  loop_control:
+    label: "{{ item.name | default('(unnamed)') }}"
+  tags: [common, ansible_pull]
+
+- name: Base | ensure git and ansible-core for scheduled pulls
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - git
+    - ansible-core
+  when: common_ansible_pull_manage_prerequisites | bool
+  tags: [common, ansible_pull]
+
+- name: Base | resolve the ansible-pull executable
+  ansible.builtin.command:
+    argv: [bash, -lc, "command -v ansible-pull"]
+  register: common_ansible_pull_bin
+  changed_when: false
+  failed_when: false
+  tags: [common, ansible_pull]
+
+- name: Base | require a usable ansible-pull executable
+  ansible.builtin.assert:
+    that:
+      - common_ansible_pull_bin.rc == 0
+      - common_ansible_pull_bin.stdout | trim | length > 0
+    fail_msg: >-
+      ansible-pull is unavailable; set common_ansible_pull_manage_prerequisites
+      to true or install ansible-core before enabling scheduled convergence
+  tags: [common, ansible_pull]
+
+- name: Base | ensure the pull checkout root exists
+  ansible.builtin.file:
+    path: "{{ common_ansible_pull_checkout_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  tags: [common, ansible_pull]
+
+- name: Base | render scheduled ansible-pull services
+  ansible.builtin.template:
+    src: ansible-pull.service.j2
+    dest: "/etc/systemd/system/{{ item.name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ common_ansible_pull_entrypoints }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Reload systemd manager configuration
+  tags: [common, ansible_pull]
+
+- name: Base | render scheduled ansible-pull timers
+  ansible.builtin.template:
+    src: ansible-pull.timer.j2
+    dest: "/etc/systemd/system/{{ item.name }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ common_ansible_pull_entrypoints }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Reload systemd manager configuration
+  tags: [common, ansible_pull]
+
+# 必须先 daemon-reload 再 enable/start: 新写的 unit 在 reload 前对 systemd
+# 不可见, 直接 start 会报 "Unit not found"。handler 顺序不可依赖, 这里显式做。
+- name: Base | reload systemd before scheduling the new timers
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  tags: [common, ansible_pull]
+
+- name: Base | enable and start the scheduled ansible-pull timers
+  ansible.builtin.systemd_service:
+    name: "{{ item.name }}.timer"
+    enabled: true
+    state: "{{ item.state | default('started') }}"
+  loop: "{{ common_ansible_pull_entrypoints }}"
+  loop_control:
+    label: "{{ item.name }}"
+  tags: [common, ansible_pull]
+
+- name: Base | read back the scheduled timers
+  ansible.builtin.command:
+    argv: [systemctl, list-timers, --all, --no-pager]
+  register: common_ansible_pull_timers
+  changed_when: false
+  tags: [common, ansible_pull]
+
+- name: Base | assert every declared pull timer is scheduled
+  ansible.builtin.assert:
+    that:
+      - item.name ~ '.timer' in common_ansible_pull_timers.stdout
+    fail_msg: >-
+      {{ item.name }}.timer is missing from systemctl list-timers
+  loop: "{{ common_ansible_pull_entrypoints }}"
+  loop_control:
+    label: "{{ item.name }}"
+  tags: [common, ansible_pull]

@@ -1,3 +1,28 @@
+# ---------------------------------------------------------------------------
+# OS 通用: ansible-pull 自我收敛定时器
+# ---------------------------------------------------------------------------
+# 主机自己按周期拉取 playbooks 仓库并收敛。这属于 OS 基线能力(与 SSH、时区、
+# 日志轮转同级), 因此放在 common, 而不是某个业务 role 或 k3s bootstrap: 任何
+# 主机——不论是否 k3s、是否承载代理——都应该能自我收敛, 不该等控制面推送。
+common_ansible_pull_enabled: false
+common_ansible_pull_repo_url: https://github.com/ai-workspace-infra/playbooks.git
+common_ansible_pull_checkout: main
+common_ansible_pull_checkout_dir: /var/lib/ansible-pull
+common_ansible_pull_path: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+common_ansible_pull_timeout_sec: 1800
+common_ansible_pull_kubeconfig: /etc/rancher/k3s/k3s.yaml
+common_ansible_pull_manage_prerequisites: true
+
+# 每个入口一对独立的 service/timer, 各自 checkout 目录、周期与日志。
+# 空列表表示该主机不需要任何 pull 入口。
+common_ansible_pull_entrypoints: []
+# 例:
+#   - name: ansible-pull-observability
+#     playbook: pull_observability_agent.yml
+#     schedule: "*-*-* 04:23:00"
+#     randomized_delay_sec: 1800
+#     environment_file: /etc/ansible-pull/gitops-declaration.env
+
 enable_set_timezone: true       # 默认启用 Set timezone
 enable_set_hostname: true       # 默认启用 Set hostname
 enable_all_hosts_update: false  # 默认不更新所有主机的条目

@@ -1,0 +1,20 @@
+[Unit]
+Description={{ item.description | default('Scheduled ansible-pull convergence for ' ~ item.playbook) }}
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=PATH={{ common_ansible_pull_path }}
+Environment=KUBECONFIG={{ common_ansible_pull_kubeconfig }}
+Environment=ANSIBLE_HOST_KEY_CHECKING=False
+{# 可选环境文件: 目前用于把 pull_gitops_declaration.yml 解析出的
+   XCONNECT_GITOPS_CONFIG 传给后续入口。前缀 "-" 允许文件缺失时启动。 #}
+EnvironmentFile=-{{ item.environment_file | default('/etc/ansible-pull/gitops-declaration.env') }}
+# 每个入口独立 checkout 目录: 两个 timer 同时 git pull 同一工作树会因 git
+# 锁文件互相失败。
+ExecStart={{ common_ansible_pull_bin.stdout | trim }} -U {{ common_ansible_pull_repo_url }} -C {{ item.checkout | default(common_ansible_pull_checkout) }} -d {{ item.checkout_dir | default(common_ansible_pull_checkout_dir ~ '/' ~ item.name) }} -i {{ item.inventory | default('localhost,') }} {{ item.playbook }}
+TimeoutStartSec={{ item.timeout_sec | default(common_ansible_pull_timeout_sec) }}
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
