@@ -270,6 +270,12 @@
     group: root
     mode: "0750"
 
+- name: Stat the Vault Agent rendered remote-write auth file
+  ansible.builtin.stat:
+    path: "{{ vector_auth_external_file }}"
+  register: vector_auth_external_stat
+  when: vector_auth_external_file_enabled | bool
+
 # pull 模式没有任何环境变量。首次由控制面推送时把凭据落盘, 之后 pull 直接复用;
 # 已经落盘的情况下脚本是幂等的, 不会改写既有值, 也不会轮换秘密。
 - name: Bootstrap the persistent remote-write credential when none is supplied
@@ -286,12 +292,6 @@
     - inventory_hostname != 'install.svc.plus'
     - (vector_auth_user | default('') | trim | length == 0)
     - not (vector_auth_external_file_enabled | bool and (vector_auth_external_stat.stat.exists | default(false)))
-
-- name: Stat the Vault Agent rendered remote-write auth file
-  ansible.builtin.stat:
-    path: "{{ vector_auth_external_file }}"
-  register: vector_auth_external_stat
-  when: vector_auth_external_file_enabled | bool
 
 - name: Stat the persistent static remote-write auth file
   ansible.builtin.stat:
@@ -338,7 +338,18 @@
 - name: Validate rendered Vector configuration before service start
   ansible.builtin.shell: |
     set -o pipefail
-    /usr/bin/vector validate --no-environment --config-toml "{{ vector_config_dir }}/vector.toml" 2>&1 |
+    cmd=(/usr/bin/vector validate)
+    if [[ -r "{{ vector_auth_static_file }}" ]]; then
+      while IFS='=' read -r k v; do
+        if [[ -n "$k" && ! "$k" =~ ^[[:space:]]*# ]]; then
+          export "$k=$v"
+        fi
+      done < "{{ vector_auth_static_file }}"
+    elif [[ "{{ vector_auth_mode }}" != "static-file" ]]; then
+      cmd+=(--no-environment)
+    fi
+    cmd+=(--config-toml "{{ vector_config_dir }}/vector.toml")
+    "${cmd[@]}" 2>&1 |
       sed -E \
         -e 's/(Authorization[[:space:]]*=[[:space:]]*")[^"]*"/\1<redacted>"/Ig' \
         -e 's/(Bearer[[:space:]]+)[^[:space:]]+/\1<redacted>/Ig' \
