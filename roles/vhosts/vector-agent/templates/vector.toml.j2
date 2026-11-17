@@ -562,19 +562,16 @@ max_events = {{ vector_buffer_max_events | default('1000') }}
 # ==========================================
 # 2. Logs Collection (VictoriaLogs)
 # ==========================================
-{# 原先无条件渲染一个 file source 指向 /var/log/syslog 与 /var/log/auth.log。
-   这些路径在整条 fleet 上都不存在(rsyslog 未安装, 日志只进 journald), 于是它
-   是一个永远读不到文件的死 source, 却仍挂在 process_logs 的 inputs 里。只在
-   确实有文件的节点上渲染, 其他节点不再出现空 source。 #}
-{% set vector_host_log_files = (vector_host_log_globs if vector_host_log_globs is defined else (
-    ['/var/log/**/*.log', '/var/log/syslog', '/var/log/auth.log'] if inventory_hostname == 'install.svc.plus'
-    else (['/var/log/xray/error.log'] if inventory_hostname == 'tky-proxy.svc.plus' else []))) %}
-{% if vector_host_log_files | length > 0 %}
 [sources.system_logs]
 type = "file"
-include = {{ vector_host_log_files | to_json }}
-ignore_older_secs = 86400
+{% if inventory_hostname == 'install.svc.plus' %}
+include = ["/var/log/**/*.log", "/var/log/syslog", "/var/log/auth.log"]
+{% elif inventory_hostname == 'tky-proxy.svc.plus' %}
+include = ["/var/log/xray/error.log"]
+{% else %}
+include = ["/var/log/syslog", "/var/log/auth.log"]
 {% endif %}
+ignore_older_secs = 86400
 
 {% if vector_system_journald_enabled | default(false) | bool and not (vector_xhttp_monitoring_enabled | default(false) | bool) %}
 [sources.system_journal]
@@ -584,20 +581,16 @@ include_units = {{ vector_system_journald_units | to_json }}
 exclude_units = ["vector.service"]
 {% endif %}
 
-{% set process_log_inputs = [] %}
-{% if vector_host_log_files | length > 0 %}
-{% set _ = process_log_inputs.append("system_logs") %}
-{% endif %}
-{% if vector_xhttp_monitoring_enabled | default(false) | bool %}
-{% set _ = process_log_inputs.append("xhttp_journal") %}
-{% elif vector_system_journald_enabled | default(false) | bool %}
-{% set _ = process_log_inputs.append("system_journal") %}
-{% endif %}
-{% if process_log_inputs | length > 0 %}
 [transforms.process_logs]
 type = "remap"
 drop_on_abort = true
-inputs = {{ process_log_inputs | to_json }}
+{% if vector_xhttp_monitoring_enabled | default(false) | bool %}
+inputs = ["system_logs", "xhttp_journal"]
+{% elif vector_system_journald_enabled | default(false) | bool %}
+inputs = ["system_logs", "system_journal"]
+{% else %}
+inputs = ["system_logs"]
+{% endif %}
 source = '''
 if is_string(.message) {
   if contains(string!(.message), "{{ xconnect_vector_policy.get('reverse_proxy_drop_substring', 'http.handlers.reverse_proxy') }}") { abort }
@@ -618,7 +611,6 @@ if is_string(.message) {
 .service_domain = "{{ vector_observability_node_identity }}"
 .source_type = "system_logs"
 '''
-{% endif %}
 
 # Docker containers are the primary runtime for the platform services. Keep
 # their stdout/stderr as structured events so Victoria Logs can filter the
@@ -672,17 +664,9 @@ if !exists(.environment) {
 '''
 {% endif %}
 
-{% set victorialogs_inputs = [] %}
-{% if process_log_inputs | length > 0 %}
-{% set _ = victorialogs_inputs.append("process_logs") %}
-{% endif %}
-{% if obs_docker_logs_enabled %}
-{% set _ = victorialogs_inputs.append("process_docker_logs") %}
-{% endif %}
-{% if victorialogs_inputs | length > 0 %}
 [sinks.victorialogs]
 type = "http"
-inputs = {{ victorialogs_inputs | to_json }}
+inputs = ["process_logs"{% if obs_docker_logs_enabled %}, "process_docker_logs"{% endif %}]
 {% if vector_local_observability_enabled | default(false) | bool or inventory_hostname == 'install.svc.plus' %}
 uri = "http://127.0.0.1:9428/insert/jsonline?_msg_field=message&_stream_fields=instance,file"
 {% else %}
@@ -715,7 +699,6 @@ verify_hostname = {{ 'true' if xconnect_vector_policy.get('tls_verify', vector_t
 
 [sinks.victorialogs.healthcheck]
 enabled = false
-{% endif %}
 
 # ==========================================
 # 3. Traces Collection (VictoriaTraces)
