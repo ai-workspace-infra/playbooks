@@ -31,6 +31,9 @@ source = '''
 .tags.job = "xray"
 .tags.service = "xray"
 .tags.transport = "xhttp"
+{% if vector_proxy_engine_effective | default('') | length > 0 and vector_proxy_engine_effective != 'none' %}
+.tags.proxy_engine = {{ vector_proxy_engine_effective | to_json }}
+{% endif %}
 '''
 
 [transforms.add_xray_tcp_labels]
@@ -51,4 +54,7 @@ source = '''
 .tags.job = "xray"
 .tags.service = "xray"
 .tags.transport = "tcp"
+{% if vector_proxy_engine_effective | default('') | length > 0 and vector_proxy_engine_effective != 'none' %}
+.tags.proxy_engine = {{ vector_proxy_engine_effective | to_json }}
+{% endif %}
 '''

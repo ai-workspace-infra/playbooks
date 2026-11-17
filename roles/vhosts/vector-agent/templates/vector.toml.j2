@@ -241,6 +241,9 @@ source = '''
 .tags.service_domain = "{{ vector_observability_node_identity }}"
 .tags.job = "vector"
 .tags.service = "vector"
+{% if vector_proxy_engine_effective | default('') | length > 0 and vector_proxy_engine_effective != 'none' %}
+.tags.proxy_engine = {{ vector_proxy_engine_effective | to_json }}
+{% endif %}
 if exists(.name) && starts_with(string!(.name), "node_") {
   .tags.job = "node-exporter"
   .tags.service = "node-exporter"
@@ -248,6 +251,9 @@ if exists(.name) && starts_with(string!(.name), "node_") {
 if exists(.name) && starts_with(string!(.name), "namedprocess_") {
   .tags.job = "process-exporter"
   .tags.service = "process-exporter"
+  if exists(.tags.groupname) && (.tags.groupname == "caddy" || .tags.groupname == "haproxy" || .tags.groupname == "fluxgate") {
+    .tags.proxy_engine = string!(.tags.groupname)
+  }
 }
 '''
 
@@ -506,7 +512,10 @@ type = "prometheus_remote_write"
 {% set _ = remote_inputs.append("fluxgate_up_labels") %}
 {% endif %}
 {% if vector_xhttp_monitoring_enabled | default(false) | bool %}
-{% set _ = remote_inputs.extend(["xhttp_caddy_labels", "xhttp_event_metrics"]) %}
+{% if vector_caddy_metrics_enabled | default(vector_proxy_engine_effective | default('caddy') == 'caddy') | bool %}
+{% set _ = remote_inputs.append("xhttp_caddy_labels") %}
+{% endif %}
+{% set _ = remote_inputs.append("xhttp_event_metrics") %}
 {% endif %}
 {% for source_name in ai_aggregator_remote_inputs %}
   {% set _ = remote_inputs.append(source_name) %}

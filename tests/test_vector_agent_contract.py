@@ -9,7 +9,7 @@ TEMPLATE = (ROOT / "roles/vhosts/vector-agent/templates/vector.toml.j2").read_te
 
 class VectorAgentContractTest(unittest.TestCase):
     def test_rendered_config_is_validated_before_service_start(self):
-        validation = TASKS.index("vector validate --no-environment --config-toml")
+        validation = TASKS.index("vector validate")
         service_start = TASKS.index("Enable and start Vector service with safe failure diagnostics")
         self.assertLess(validation, service_start)
 

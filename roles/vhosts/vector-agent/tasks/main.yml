@@ -46,6 +46,37 @@
 - name: Gather service state for optional Vector sources
   ansible.builtin.service_facts:
 
+- name: Auto-detect active proxy engine on host
+  ansible.builtin.set_fact:
+    vector_proxy_engine_effective: >-
+      {{ agent_proxy_engine
+         if (agent_proxy_engine is defined and agent_proxy_engine | trim | length > 0)
+         else (lookup('ansible.builtin.env', 'AGENT_PROXY_ENGINE')
+               if (lookup('ansible.builtin.env', 'AGENT_PROXY_ENGINE') | default('') | trim | length > 0)
+               else ('fluxgate'
+                     if ((ansible_facts.services | default({})).get('fluxgate.service', {}).get('state', 'stopped') == 'running')
+                     else ('haproxy'
+                           if ((ansible_facts.services | default({})).get('haproxy.service', {}).get('state', 'stopped') == 'running')
+                           else ('caddy'
+                                 if ((ansible_facts.services | default({})).get('caddy.service', {}).get('state', 'stopped') == 'running')
+                                 else ('fluxgate'
+                                       if ('agent_proxy' in (group_names | default([])))
+                                       else 'none'))))) }}
+
+- name: Resolve effective proxy engine metrics collection states
+  ansible.builtin.set_fact:
+    vector_fluxgate_metrics_enabled: >-
+      {{ true if (vector_proxy_engine_effective == 'fluxgate')
+         else (vector_fluxgate_metrics_enabled | bool) }}
+    vector_caddy_metrics_enabled: >-
+      {{ true if (vector_proxy_engine_effective == 'caddy')
+         else (false if vector_proxy_engine_effective in ['fluxgate', 'haproxy']
+               else (vector_caddy_metrics_enabled | bool)) }}
+    vector_haproxy_metrics_enabled: >-
+      {{ true if (vector_proxy_engine_effective == 'haproxy')
+         else (false if vector_proxy_engine_effective in ['fluxgate', 'caddy']
+               else (vector_haproxy_metrics_enabled | bool)) }}
+
 - name: Resolve K3s and Docker runtime state
   ansible.builtin.set_fact:
     vector_k3s_node_effective: >-

@@ -1479,7 +1479,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "(max by (instance, proxy_engine) (label_replace(process_resident_memory_bytes{job=~\"caddy|xhttp-caddy\",instance=~\"$instance\"}, \"proxy_engine\", \"caddy\", \"\", \"\")) or max by (instance, proxy_engine) (label_replace(namedprocess_namegroup_memory_bytes{groupname=\"haproxy\",memtype=\"resident\",instance=~\"$instance\"} > 0, \"proxy_engine\", \"haproxy\", \"\", \"\")) or max by (instance, proxy_engine) (label_replace(fluxgate_process_resident_memory_bytes{instance=~\"$instance\"}, \"proxy_engine\", \"fluxgate\", \"\", \"\")))",
+          "expr": "(max by (instance, proxy_engine) (label_replace(process_resident_memory_bytes{job=~\"caddy|xhttp-caddy\",instance=~\"$instance\"}, \"proxy_engine\", \"caddy\", \"\", \"\")) or max by (instance, proxy_engine) (label_replace(fluxgate_process_resident_memory_bytes{instance=~\"$instance\"}, \"proxy_engine\", \"fluxgate\", \"\", \"\")) or max by (instance, proxy_engine) (label_replace(namedprocess_namegroup_memory_bytes{groupname=~\"caddy|haproxy|fluxgate\",memtype=\"resident\",instance=~\"$instance\"} > 0, \"proxy_engine\", \"$1\", \"groupname\", \"(.*)\")))",
           "format": "table",
           "instant": true,
           "refId": "C"
@@ -1490,7 +1490,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "(sum by (instance, proxy_engine) (label_replace(rate(process_cpu_seconds_total{job=~\"caddy|xhttp-caddy\",instance=~\"$instance\"}[$interval]), \"proxy_engine\", \"caddy\", \"\", \"\")) or sum by (instance, proxy_engine) (label_replace(rate(namedprocess_namegroup_cpu_seconds_total{groupname=\"haproxy\",instance=~\"jp-free.*\",instance=~\"$instance\"}[$interval]), \"proxy_engine\", \"haproxy\", \"\", \"\")) or sum by (instance, proxy_engine) (label_replace(rate(namedprocess_namegroup_cpu_seconds_total{groupname=\"fluxgate\",instance=~\"jp-xconnect-02.*\",instance=~\"$instance\"}[$interval]), \"proxy_engine\", \"fluxgate\", \"\", \"\")))",
+          "expr": "(sum by (instance, proxy_engine) (label_replace(rate(process_cpu_seconds_total{job=~\"caddy|xhttp-caddy\",instance=~\"$instance\"}[$interval]), \"proxy_engine\", \"caddy\", \"\", \"\")) or sum by (instance, proxy_engine) (label_replace(rate(namedprocess_namegroup_cpu_seconds_total{groupname=~\"caddy|haproxy|fluxgate\",instance=~\"$instance\"}[$interval]), \"proxy_engine\", \"$1\", \"groupname\", \"(.*)\")))",
           "format": "table",
           "instant": true,
           "refId": "D"
@@ -1501,7 +1501,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "(label_replace(histogram_quantile(0.50, sum by (le, instance) (label_replace(rate(caddy_http_request_duration_seconds_bucket{le=~\"0[.].*\",instance=~\"$instance\"}[6h]), \"le\", \"+Inf\", \"le\", \"0.5\"))), \"proxy_engine\", \"caddy\", \"\", \"\") or label_replace(max by (instance) (haproxy_backend_response_time_average_seconds{proxy=\"be_xray_xhttp\",instance=~\"$instance\"}) * 0.2, \"proxy_engine\", \"haproxy\", \"\", \"\") or label_replace(histogram_quantile(0.50, sum by (le, instance) (label_replace(rate(fluxgate_http_request_duration_seconds_bucket{le=~\"0[.]0(01|05|1)\",instance=~\"$instance\"}[$interval]), \"le\", \"+Inf\", \"le\", \"0.01\"))), \"proxy_engine\", \"fluxgate\", \"\", \"\"))",
+          "expr": "(label_replace(histogram_quantile(0.50, sum by (le, instance) (rate(caddy_http_request_duration_seconds_bucket{instance=~\"$instance\"}[$interval]))), \"proxy_engine\", \"caddy\", \"\", \"\") or label_replace(max by (instance) (haproxy_backend_response_time_average_seconds{proxy=\"be_xray_xhttp\",instance=~\"$instance\"}) * 0.2, \"proxy_engine\", \"haproxy\", \"\", \"\") or label_replace(histogram_quantile(0.50, sum by (le, instance) (rate(fluxgate_http_request_duration_seconds_bucket{instance=~\"$instance\"}[$interval]))), \"proxy_engine\", \"fluxgate\", \"\", \"\"))",
           "format": "table",
           "instant": true,
           "refId": "E"
@@ -1512,7 +1512,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "(label_replace(histogram_quantile(0.95, sum by (le, instance) (label_replace(rate(caddy_http_request_duration_seconds_bucket{le=~\"0[.].*\",instance=~\"$instance\"}[6h]), \"le\", \"+Inf\", \"le\", \"0.5\"))), \"proxy_engine\", \"caddy\", \"\", \"\") or label_replace(max by (instance) (haproxy_backend_response_time_average_seconds{proxy=\"be_xray_xhttp\",instance=~\"$instance\"}) * 0.5, \"proxy_engine\", \"haproxy\", \"\", \"\") or label_replace(histogram_quantile(0.95, sum by (le, instance) (label_replace(rate(fluxgate_http_request_duration_seconds_bucket{le=~\"0[.]0(01|05|1)\",instance=~\"$instance\"}[$interval]), \"le\", \"+Inf\", \"le\", \"0.01\"))), \"proxy_engine\", \"fluxgate\", \"\", \"\"))",
+          "expr": "(label_replace(histogram_quantile(0.95, sum by (le, instance) (rate(caddy_http_request_duration_seconds_bucket{instance=~\"$instance\"}[$interval]))), \"proxy_engine\", \"caddy\", \"\", \"\") or label_replace(max by (instance) (haproxy_backend_response_time_average_seconds{proxy=\"be_xray_xhttp\",instance=~\"$instance\"}) * 0.5, \"proxy_engine\", \"haproxy\", \"\", \"\") or label_replace(histogram_quantile(0.95, sum by (le, instance) (rate(fluxgate_http_request_duration_seconds_bucket{instance=~\"$instance\"}[$interval]))), \"proxy_engine\", \"fluxgate\", \"\", \"\"))",
           "format": "table",
           "instant": true,
           "refId": "F"
@@ -1523,7 +1523,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "(label_replace(histogram_quantile(0.99, sum by (le, instance) (label_replace(rate(caddy_http_request_duration_seconds_bucket{le=~\"0[.].*\",instance=~\"$instance\"}[6h]), \"le\", \"+Inf\", \"le\", \"0.5\"))), \"proxy_engine\", \"caddy\", \"\", \"\") or label_replace(max by (instance) (haproxy_backend_response_time_average_seconds{proxy=\"be_xray_xhttp\",instance=~\"$instance\"}), \"proxy_engine\", \"haproxy\", \"\", \"\") or label_replace(histogram_quantile(0.99, sum by (le, instance) (label_replace(rate(fluxgate_http_request_duration_seconds_bucket{le=~\"0[.]0(01|05|1)\",instance=~\"$instance\"}[$interval]), \"le\", \"+Inf\", \"le\", \"0.01\"))), \"proxy_engine\", \"fluxgate\", \"\", \"\"))",
+          "expr": "(label_replace(histogram_quantile(0.99, sum by (le, instance) (rate(caddy_http_request_duration_seconds_bucket{instance=~\"$instance\"}[$interval]))), \"proxy_engine\", \"caddy\", \"\", \"\") or label_replace(max by (instance) (haproxy_backend_response_time_average_seconds{proxy=\"be_xray_xhttp\",instance=~\"$instance\"}), \"proxy_engine\", \"haproxy\", \"\", \"\") or label_replace(histogram_quantile(0.99, sum by (le, instance) (rate(fluxgate_http_request_duration_seconds_bucket{instance=~\"$instance\"}[$interval]))), \"proxy_engine\", \"fluxgate\", \"\", \"\"))",
           "format": "table",
           "instant": true,
           "refId": "G"
@@ -1545,6 +1545,24 @@
         {
           "id": "merge",
           "options": {}
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "regex",
+                  "options": {
+                    "value": "$proxy_engine"
+                  }
+                },
+                "fieldName": "proxy_engine"
+              }
+            ],
+            "match": "all",
+            "type": "include"
+          }
         },
         {
           "id": "organize",
@@ -3337,6 +3355,7 @@
             "$__all"
           ]
         },
+        "allValue": ".*",
         "hide": 0,
         "includeAll": true,
         "label": "Proxy Engine",
