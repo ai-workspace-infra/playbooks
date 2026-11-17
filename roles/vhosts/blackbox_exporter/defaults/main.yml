@@ -20,6 +20,18 @@ blackbox_download_fallback_base_url: >-
 blackbox_tmp_dir: "/tmp"
 dl_business_host: "dl.svc.plus"
 
+# 资源上限。边缘机内存 1GiB 左右, blackbox 的稳态驻留只有 20-35MiB, 峰值 68MiB;
+# 这里给 96M 硬上限 + GOMEMLIMIT 软上限, 只压住异常膨胀, 不影响正常探测。
+blackbox_memory_high: "64M"
+blackbox_memory_max: "96M"
+blackbox_cpu_quota: "50%"
+blackbox_gogc: "50"
+blackbox_https_ssl_timeout: "5s"
+
+# 对外 HTTPS 可用性与证书探测的抓取周期(秒)。证书过期是天级信号, 60s 甚至小时级
+# 都足够; 全局探活已经从边缘主机上收, 边缘默认不再自带探测源。
+blackbox_probe_interval_secs: 3600
+
 # 被探测的域名后缀。生产是 svc.plus; uat/sit 由流水线经 TARGET_DOMAIN_BASE
 # 传入(onwalk.net), 从而只探测本环境自己的站点。
 #

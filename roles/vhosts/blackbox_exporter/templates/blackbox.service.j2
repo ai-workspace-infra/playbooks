@@ -6,11 +6,22 @@ Wants=network-online.target
 [Service]
 User={{ blackbox_user }}
 Group={{ blackbox_user }}
+# blackbox 是短生命周期的探针进程: 每次探测新建 goroutine 与 TLS 握手缓冲。
+# 之前没有任何上限, Go 运行时按 GOGC=100 随意扩张, 实测 VmSize 到 1.2-1.6GiB、
+# heap_sys 到 380MiB(其中大部分是可回收的 idle heap), 在 1GiB 内存的边缘机上
+# 会触发 swap。GOMEMLIMIT 让 GC 在软上限附近持续回收, 比单纯 cgroup 限额更早生效。
+Environment=GOMEMLIMIT={{ blackbox_memory_max | default('96M') }}
+Environment=GOGC={{ blackbox_gogc | default('50') }}
 ExecStart={{ blackbox_bin }} \
   --config.file={{ blackbox_conf_file }} \
   --web.listen-address={{ blackbox_listen }}
 Restart=always
 RestartSec=3
+MemoryAccounting=yes
+MemoryHigh={{ blackbox_memory_high | default('64M') }}
+MemoryMax={{ blackbox_memory_max | default('96M') }}
+CPUQuota={{ blackbox_cpu_quota | default('50%') }}
+TasksMax=256
 
 [Install]
 WantedBy=multi-user.target

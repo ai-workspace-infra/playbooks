@@ -3,7 +3,15 @@ Compress={{ 'yes' if xconnect_node_journal_policy.compress | bool else 'no' }}
 SystemMaxUse={{ xconnect_node_journal_policy.system_max_use }}
 SystemKeepFree={{ xconnect_node_journal_policy.system_keep_free }}
 SystemMaxFileSize={{ xconnect_node_journal_policy.system_max_file_size }}
+{# MaxFileSec 才是"定期截断": 没有它, journal 只在写满 SystemMaxFileSize 时才切文件,
+   一台安静的机器会把同一批旧文件长期留着; 有了上限时间, 每个文件到点就封盘,
+   MaxRetentionSec 才能按时间真正回收。 #}
+MaxFileSec={{ xconnect_node_journal_policy.max_file_sec }}
 MaxRetentionSec={{ xconnect_node_journal_policy.max_retention }}
 RuntimeMaxUse={{ xconnect_node_journal_policy.runtime_max_use }}
+RuntimeMaxFileSize={{ xconnect_node_journal_policy.runtime_max_file_size }}
 RateLimitIntervalSec={{ xconnect_node_journal_policy.rate_limit_interval }}
 RateLimitBurst={{ xconnect_node_journal_policy.rate_limit_burst }}
+{# 落盘节流: 默认 5 分钟同步一次, 突发写盘会集中成一次 IO。保留默认值但显式声明,
+   避免宿主机 /etc/systemd/journald.conf 的反向修改悄悄生效。 #}
+SyncIntervalSec={{ xconnect_node_journal_policy.sync_interval }}

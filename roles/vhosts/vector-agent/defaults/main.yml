@@ -10,6 +10,22 @@ vector_batch_timeout: 5
 vector_batch_max_events: 500
 vector_buffer_max_events: 1000
 
+# systemd 内存上限(由 vector.service.d/override.conf 消费)。必须与 GitOps 治理值
+# topology/{prod,uat}/selfhost/xconnect-regional-pool*.yaml 的
+# node_maintenance.vector 对齐; 治理值优先, 这里只是未解析到治理配置时的安全默认。
+vector_memory_high: "150M"
+vector_memory_max: "250M"
+vector_cpu_quota: "80%"
+
+# 边缘主机是否自带对外 HTTPS 探活。全局可用性与证书探活已收口到集群侧
+# (observability-agent blackboxExporter + vmagent), 边缘默认关闭, 避免每台机器
+# 每 15 秒对全球 9 个域名各发一次请求。需要本机排障时按主机打开。
+vector_blackbox_probe_enabled: false
+blackbox_probe_interval_secs: 3600
+# 主机文件日志采集的显式覆盖(路径列表)。未定义时沿用模板里按主机名决定的历史
+# 清单; 定义为空列表表示该节点确定没有可 tail 的文件, 完全不渲染 file source。
+# 整条 fleet 未安装 rsyslog, 日志只进 journald, 所以普通边缘节点实际没有文件日志。
+
 # Stable labels on every metric and log let shared backends separate UAT and
 # PROD without relying on host IPs.
 vector_observability_endpoint: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ENDPOINT') | default('https://observability.svc.plus', true) }}"

@@ -15,7 +15,10 @@
       - xconnect_node_journal_policy.system_keep_free is match('^[1-9][0-9]*[KMG]$')
       - xconnect_node_journal_policy.system_max_file_size is match('^[1-9][0-9]*[KMG]$')
       - xconnect_node_journal_policy.max_retention is match('^[1-9][0-9]*(day|days|week|weeks|month|months|year|years)$')
+      - xconnect_node_journal_policy.max_file_sec is match('^[1-9][0-9]*(s|sec|min|h|hour|day|week)$')
       - xconnect_node_journal_policy.runtime_max_use is match('^[1-9][0-9]*[KMG]$')
+      - xconnect_node_journal_policy.runtime_max_file_size is match('^[1-9][0-9]*[KMG]$')
+      - xconnect_node_journal_policy.sync_interval is match('^[1-9][0-9]*(s|sec|min|m|h)$')
       - xconnect_node_journal_policy.rate_limit_interval is match('^[1-9][0-9]*(s|sec|min|h)$')
       - xconnect_node_journal_policy.rate_limit_burst | int > 0
       - xconnect_node_rotated_log_policy.keep_days | int > 0
@@ -56,6 +59,31 @@
     backup: true
   notify: Restart systemd-journald
 
+- name: Install periodic journal vacuum service
+  ansible.builtin.template:
+    src: journald-vacuum.service.j2
+    dest: /etc/systemd/system/xconnect-journal-vacuum.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Install periodic journal vacuum timer
+  ansible.builtin.template:
+    src: journald-vacuum.timer.j2
+    dest: /etc/systemd/system/xconnect-journal-vacuum.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable periodic journal vacuum timer
+  ansible.builtin.systemd:
+    name: xconnect-journal-vacuum.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
 - name: Apply journald limits before vacuuming
   ansible.builtin.meta: flush_handlers
 
@@ -69,7 +97,7 @@
     argv:
       - journalctl
       - "--vacuum-size={{ xconnect_node_journal_policy.system_max_use }}"
-      - "--vacuum-time={{ xconnect_node_rotated_log_policy.keep_days }}d"
+      - "--vacuum-time={{ xconnect_node_journal_policy.max_retention }}"
   register: xconnect_journal_vacuum
   changed_when: "'freed 0B' not in xconnect_journal_vacuum.stdout"
 

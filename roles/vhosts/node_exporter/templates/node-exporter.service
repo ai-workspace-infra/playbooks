@@ -5,7 +5,23 @@ After=network.target
 [Service]
 User=nobody
 Group=nogroup
+# 显式关闭在这套 fleet 上恒为 success=0 的 collector。它们每次抓取都要遍历
+# /proc 与 /sys, 白白消耗 CPU, 也白白占用集中时序库的序列。
+# 复现: curl -s 127.0.0.1:9100/metrics | grep 'node_scrape_collector_success.*} 0'
+# 只关实测确认为 0 的项, 其余保留默认, 避免丢失真实信号。
+# 需要重新启用某项时删掉对应 --no-collector 行即可。
 ExecStart=/opt/metrics-agent/node_exporter \
+  --no-collector.bonding \
+  --no-collector.conntrack \
+  --no-collector.fibrechannel \
+  --no-collector.infiniband \
+  --no-collector.ipvs \
+  --no-collector.mdadm \
+  --no-collector.nfs \
+  --no-collector.nfsd \
+  --no-collector.tapestats \
+  --no-collector.watchdog \
+  --no-collector.zfs \
   --web.listen-address=127.0.0.1:9100 \
   --collector.textfile \
   --collector.textfile.directory=/var/lib/node_exporter
