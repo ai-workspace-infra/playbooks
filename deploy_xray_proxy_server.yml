@@ -52,6 +52,9 @@
     agent_proxy_go_version: >-
       {{ lookup('ansible.builtin.env', 'AGENT_GO_VERSION')
          | default('1.25.1', true) }}
+    agent_proxy_engine: >-
+      {{ lookup('ansible.builtin.env', 'AGENT_PROXY_ENGINE')
+         | default(hostvars[inventory_hostname].get('agent_proxy_engine', 'fluxgate'), true) }}
     agent_id: >-
       {{ lookup('ansible.builtin.env', 'AGENT_ID')
          | default(hostvars[inventory_hostname].get('agent_id', inventory_hostname), true) }}
@@ -480,15 +483,35 @@
 
   roles:
     - role: roles/vhosts/caddy
-      when: agent_proxy_operation in ['deploy', 'standalone']
+      when:
+        - agent_proxy_operation in ['deploy', 'standalone']
+        - (agent_proxy_engine | default('fluxgate')) == 'caddy'
     - role: roles/vhosts/tky-proxy
-      when: agent_proxy_operation == 'deploy'
+      when:
+        - agent_proxy_operation == 'deploy'
+        - (agent_proxy_engine | default('fluxgate')) == 'caddy'
       vars:
         agent_tls_source_cert_path: "{{ agent_domain_tls_dir }}/current/fullchain.pem"
         agent_tls_source_key_path: "{{ agent_domain_tls_dir }}/current/key.pem"
         agent_tls_cert_path: /etc/caddy/tls/agent-proxy.crt
         agent_tls_key_path: /etc/caddy/tls/agent-proxy.key
         agent_proxy_tls_source_from_vault: true
+    - role: roles/vhosts/HAProxy
+      when:
+        - agent_proxy_operation in ['deploy', 'standalone']
+        - (agent_proxy_engine | default('fluxgate')) == 'haproxy'
+      vars:
+        haproxy_replace_caddy: true
+        haproxy_source_cert_path: "{{ agent_domain_tls_dir }}/current/fullchain.pem"
+        haproxy_source_key_path: "{{ agent_domain_tls_dir }}/current/key.pem"
+    - role: roles/vhosts/fluxgate
+      when:
+        - agent_proxy_operation in ['deploy', 'standalone']
+        - (agent_proxy_engine | default('fluxgate')) == 'fluxgate'
+      vars:
+        fluxgate_replace_caddy: true
+        fluxgate_source_cert_path: "{{ agent_domain_tls_dir }}/current/fullchain.pem"
+        fluxgate_source_key_path: "{{ agent_domain_tls_dir }}/current/key.pem"
     - roles/vhosts/agent-proxy
 
 - import_playbook: deploy_observability_agent.yml
