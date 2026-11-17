@@ -25,8 +25,15 @@ blackbox_probe_interval_secs: 3600
 # Stable labels on every metric and log let shared backends separate UAT and
 # PROD without relying on host IPs.
 vector_observability_endpoint: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ENDPOINT') | default('https://observability.svc.plus', true) }}"
-vector_auth_external_file_enabled: false
+# 远程写鉴权默认走 Vault Agent 渲染的运行时文件。控制面推送时由
+# vhosts/agent_proxy_vector_vault_auth 负责生成; pull 模式没有 Vault 身份时,
+# 该文件不存在, 模板会自动回退到静态凭据文件(见下面两个变量), 而不是渲染出
+# 没有鉴权的 sink。两种模式下都不会静默丢失鉴权。
+vector_auth_external_file_enabled: true
 vector_auth_external_file: /run/vector/remote-write-auth.json
+# pull 模式下的持久静态凭据(0600, 仅 root 可读)。控制面首次推送时写入,
+# 之后 ansible-pull 直接复用, 不再依赖环境变量。
+vector_auth_static_file: /etc/vector/remote-write-auth.json
 vector_observability_environment: "{{ environment | default(cmdb_environment | default(lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('unknown', true), true), true) }}"
 vector_observability_provider: "{{ provider | default(cloud_provider | default(cmdb_cloud_provider | default('unknown', true), true), true) }}"
 vector_observability_region: "{{ region | default(cmdb_region | default(cloud_region | default(provider_region | default(logical_region | default('unknown', true), true), true), true), true) }}"

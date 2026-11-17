@@ -242,6 +242,67 @@
   register: vector_default_template
   notify: Restart vector
 
+- name: Install the remote-write credential bootstrap helper
+  ansible.builtin.copy:
+    src: bootstrap-remote-write-auth
+    dest: /usr/local/libexec/bootstrap-vector-remote-write-auth
+    owner: root
+    group: root
+    mode: "0750"
+
+# pull 模式没有任何环境变量。首次由控制面推送时把凭据落盘, 之后 pull 直接复用;
+# 已经落盘的情况下脚本是幂等的, 不会改写既有值, 也不会轮换秘密。
+- name: Bootstrap the persistent remote-write credential when none is supplied
+  ansible.builtin.command:
+    argv: [/usr/local/libexec/bootstrap-vector-remote-write-auth]
+  environment:
+    VECTOR_AUTH_STATIC_FILE: "{{ vector_auth_static_file }}"
+    VECTOR_CONFIG_PATH: "{{ vector_config_dir }}/vector.toml"
+  register: vector_auth_bootstrap
+  changed_when: "'persisted remote-write credential' in vector_auth_bootstrap.stdout"
+  failed_when: false
+  when:
+    - not (vector_local_observability_enabled | default(false) | bool)
+    - inventory_hostname != 'install.svc.plus'
+    - (vector_auth_user | default('') | trim | length == 0)
+    - not (vector_auth_external_file_enabled | bool and (vector_auth_external_stat.stat.exists | default(false)))
+
+- name: Stat the Vault Agent rendered remote-write auth file
+  ansible.builtin.stat:
+    path: "{{ vector_auth_external_file }}"
+  register: vector_auth_external_stat
+  when: vector_auth_external_file_enabled | bool
+
+- name: Stat the persistent static remote-write auth file
+  ansible.builtin.stat:
+    path: "{{ vector_auth_static_file }}"
+  register: vector_auth_static_stat
+
+# 解析渲染时真正采用的鉴权来源。必须显式失败而不是渲染无鉴权 sink:
+# 静默降级会让节点"看起来正常", 实际所有指标与日志被摄取端 401 拒绝。
+- name: Resolve the effective remote-write auth mode
+  ansible.builtin.set_fact:
+    vector_auth_mode: >-
+      {{ 'vault'
+         if (vector_auth_external_file_enabled | bool and vector_auth_external_stat.stat.exists | default(false))
+         else ('static'
+               if (vector_auth_user | default('') | trim | length > 0 and vector_auth_password | default('') | trim | length > 0)
+               else ('static-file'
+                     if vector_auth_static_stat.stat.exists | default(false)
+                     else 'none')) }}
+
+- name: Require a usable remote-write credential on collector hosts
+  ansible.builtin.assert:
+    that:
+      - vector_auth_mode != 'none'
+    fail_msg: >-
+      no remote-write credential available: {{ vector_auth_external_file }} is absent,
+      no vector_auth_user/password was supplied, and {{ vector_auth_static_file }}
+      does not exist. Refusing to render sinks without authentication.
+  when:
+    - not (vector_local_observability_enabled | default(false) | bool)
+    - inventory_hostname != 'install.svc.plus'
+
 - name: Template Vector configuration
   ansible.builtin.template:
     src: vector.toml.j2

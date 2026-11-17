@@ -526,7 +526,12 @@ inputs = {{ remote_inputs | to_json }}
 endpoint = "http://127.0.0.1:9090/api/v1/write"
 {% else %}
 endpoint = "{{ vector_observability_endpoint | default('https://observability.svc.plus') }}/ingest/metrics/api/v1/write"
-{% if vector_auth_external_file_enabled | default(false) | bool %}
+{# 鉴权来源按 vector_auth_mode 三选一, 由 tasks 渲染前解析并断言。
+   vault:       Vault Agent 渲染的运行时文件(优先, 支持轮换)
+   static:      控制面经环境变量注入的凭据
+   static-file: pull 模式下从持久凭据文件读取 —— 用环境变量间接传值,
+                避免把明文凭据写进 vector.toml #}
+{% if vector_auth_mode | default('none') == 'vault' %}
 [secret.agent_proxy_vault]
 type = "exec"
 command = ["/usr/local/libexec/agent-proxy-vector-secret-provider", {{ vector_auth_external_file | to_json }}]
@@ -534,11 +539,16 @@ command = ["/usr/local/libexec/agent-proxy-vector-secret-provider", {{ vector_au
 strategy = "basic"
 user = "SECRET[agent_proxy_vault.user]"
 password = "SECRET[agent_proxy_vault.password]"
-{% elif vector_auth_user | default('') | trim | length > 0 and vector_auth_password | default('') | trim | length > 0 %}
+{% elif vector_auth_mode | default('none') == 'static' %}
 [sinks.prometheus_remote.auth]
 strategy = "basic"
 user = "{{ vector_auth_user }}"
 password = "{{ vector_auth_password }}"
+{% elif vector_auth_mode | default('none') == 'static-file' %}
+[sinks.prometheus_remote.auth]
+strategy = "basic"
+user = "${VECTOR_AUTH_USER}"
+password = "${VECTOR_AUTH_PASSWORD}"
 {% endif %}
 {% endif %}
 [sinks.prometheus_remote.tls]
@@ -686,11 +696,22 @@ rate_limit_num = 10
 type = "memory"
 max_events = {{ xconnect_vector_policy.get('sink_buffer_max_events', 500) | int }}
 {% if not (vector_local_observability_enabled | default(false) | bool or inventory_hostname == 'install.svc.plus') %}
-{% if vector_auth_user | default('') | trim | length > 0 and vector_auth_password | default('') | trim | length > 0 %}
+{% if vector_auth_mode | default('none') == 'vault' %}
+# 复用上面已声明的 [secret.agent_proxy_vault], 不重复定义同类 secret。
+[sinks.victorialogs.auth]
+strategy = "basic"
+user = "SECRET[agent_proxy_vault.user]"
+password = "SECRET[agent_proxy_vault.password]"
+{% elif vector_auth_mode | default('none') == 'static' %}
 [sinks.victorialogs.auth]
 strategy = "basic"
 user = "{{ vector_auth_user }}"
 password = "{{ vector_auth_password }}"
+{% elif vector_auth_mode | default('none') == 'static-file' %}
+[sinks.victorialogs.auth]
+strategy = "basic"
+user = "${VECTOR_AUTH_USER}"
+password = "${VECTOR_AUTH_PASSWORD}"
 {% endif %}
 {% endif %}
 [sinks.victorialogs.tls]

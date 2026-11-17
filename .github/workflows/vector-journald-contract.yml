@@ -6,9 +6,11 @@ on:
       - roles/vhosts/vector-agent/templates/vector.toml.j2
       - roles/vhosts/vector-agent/templates/vector.service.d_override.conf.j2
       - roles/vhosts/vector-agent/files/vector-agent-domain-env
+      - roles/vhosts/vector-agent/files/bootstrap-remote-write-auth
       - roles/vhosts/vector-agent/tasks/main.yml
       - tests/test_vector_journald_render.py
       - tests/test_vector_agent_domain_env.py
+      - tests/test_vector_remote_write_auth.py
       - .github/workflows/vector-journald-contract.yml
 permissions:
   contents: read
@@ -24,3 +26,8 @@ jobs:
       - run: |
           python3 -B -m unittest discover -s tests -p test_vector_journald_render.py -v
           python3 -B -m unittest discover -s tests -p test_vector_agent_domain_env.py -v
+          python3 -B -m unittest discover -s tests -p test_vector_remote_write_auth.py -v
+      - name: Verify the pull-mode credential bootstrap script
+        run: |
+          bash -n roles/vhosts/vector-agent/files/bootstrap-remote-write-auth
+          python3 -B -m unittest discover -s tests -p test_bootstrap_remote_write_auth.py -v
