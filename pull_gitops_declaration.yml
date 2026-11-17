@@ -36,6 +36,15 @@
         group: root
         mode: "0750"
 
+    # copy 不会创建目标父目录, 而 /etc/ansible-pull 在全新节点上并不存在。
+    - name: Ensure the environment file parent exists
+      ansible.builtin.file:
+        path: "{{ gitops_declaration_env_file | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
     - name: Fetch the declared GitOps topology
       ansible.builtin.git:
         repo: "{{ gitops_declaration_repo }}"
