@@ -25,6 +25,12 @@ Environment=VECTOR_LOG={{ ((xconnect_node_maintenance | default({})).get('vector
 ExecStartPre=/usr/local/libexec/vector-agent-domain-env /etc/agent/account-agent.yaml
 EnvironmentFile=/run/vector/agent-domain.env
 {% endif %}
+{# pull 模式下凭据来自 /etc/vector/remote-write-auth.json(0600), 通过
+   EnvironmentFile 注入; vector.toml 里只出现 ${VECTOR_AUTH_*}  占位符,
+   不落明文。前缀 "-" 允许文件缺失时启动, 由 tasks 断言兜底。 #}
+{% if vector_auth_mode | default('none') == 'static-file' %}
+EnvironmentFile=-{{ vector_auth_static_file }}
+{% endif %}
 User=root
 Group=root
 LimitNOFILE={{ vector_limit_nofile | default(524288) }}
