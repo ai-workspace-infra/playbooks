@@ -1,0 +1,70 @@
+---
+# ==============================================================================
+# XConnect Edge Agent Master Role Tasks
+# ==============================================================================
+
+- name: Assess host hardware specifications
+  ansible.builtin.set_fact:
+    host_is_low_spec_1c1g: >-
+      {{ ((ansible_memtotal_mb | default(1024)) <= 1536) or ((ansible_processor_vcpus | default(1)) <= 1) }}
+
+- name: Enforce process mode (systemd) baseline on 1C1G low-spec nodes
+  ansible.builtin.assert:
+    that:
+      - xconnect_edge_runtime == 'systemd'
+    fail_msg: >-
+      Host has {{ ansible_processor_vcpus | default('unknown') }} vCPU /
+      {{ ansible_memtotal_mb | default('unknown') }} MB RAM (1C1G class).
+      Container runtime is prohibited on low-spec edge nodes; must run in process mode (systemd).
+  when: host_is_low_spec_1c1g | bool
+
+- name: Verify supported runtime mode
+  ansible.builtin.assert:
+    that:
+      - xconnect_edge_runtime in ['systemd', 'container']
+    fail_msg: "xconnect_edge_runtime must be 'systemd' or 'container' (got '{{ xconnect_edge_runtime }}')"
+
+# If K3s was previously installed on a process-mode node, ensure it is stopped to free 80/443
+- name: Ensure K3s is stopped on process-mode edge nodes
+  ansible.builtin.systemd:
+    name: k3s
+    state: stopped
+    enabled: false
+  failed_when: false
+  become: true
+  when: xconnect_edge_runtime == 'systemd'
+
+# 1. Ingress Layer: Mutual Exclusivity (fluxgate | caddy | haproxy)
+- name: Apply mutually exclusive Ingress engine configuration
+  ansible.builtin.include_tasks: ingress_exclusivity.yml
+
+# 2. Protocol Engine & Management Agent: Xray + xconnect-edge-agent
+- name: Provision Xray core and xconnect-edge-agent service
+  ansible.builtin.include_role:
+    name: roles/vhosts/agent-proxy
+  vars:
+    agent_proxy_engine: "{{ xconnect_edge_proxy_engine }}"
+    agent_id: "{{ xconnect_edge_agent_id }}"
+    agent_controller_url: "{{ xconnect_edge_controller_url }}"
+    agent_billing_base_url: "{{ xconnect_edge_billing_url }}"
+    agent_tls_cert_path: "{{ xconnect_edge_tls_cert_path }}"
+    agent_tls_key_path: "{{ xconnect_edge_tls_key_path }}"
+  when: xconnect_edge_xray_enabled | bool
+
+# 3. Metrics Exporter: xray-exporter (:8080 xhttp, :8081 tcp)
+- name: Provision Xray Exporters for XHTTP and TCP telemetry
+  ansible.builtin.include_role:
+    name: roles/vhosts/xray-exporter
+  vars:
+    xray_exporter_snapshot_features_enabled: "{{ xconnect_edge_vector_billing_enabled | bool }}"
+    xray_exporter_vector_snapshot_url: "http://127.0.0.1:8686"
+  when: xconnect_edge_exporter_enabled | bool
+
+# 4. Observability & Billing Ingestion: Vector agent
+- name: Provision Vector for billing snapshot collection and telemetry ingest
+  ansible.builtin.include_role:
+    name: roles/vhosts/vector-agent
+  vars:
+    vector_billing_ingest_enabled: "{{ xconnect_edge_vector_billing_enabled | bool }}"
+    vector_xhttp_monitoring_enabled: "{{ xconnect_edge_exporter_enabled | bool }}"
+  when: xconnect_edge_observability_enabled | bool

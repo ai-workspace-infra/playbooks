@@ -1,0 +1,51 @@
+---
+# ==============================================================================
+# XConnect Edge Agent Role Defaults
+# ==============================================================================
+
+# Ingress engine selection: 'fluxgate' | 'caddy' | 'haproxy'
+# Strictly mutually exclusive - exactly one engine handles 80/443.
+xconnect_edge_proxy_engine: "{{ lookup('ansible.builtin.env', 'AGENT_PROXY_ENGINE') | default('fluxgate', true) }}"
+
+# Runtime mode: 'systemd' (process) | 'container' (Kubernetes Helm chart)
+# 1C1G low-spec nodes (<=1.5GB RAM or <=1 vCPU) strictly default to systemd process mode.
+xconnect_edge_runtime: >-
+  {{ lookup('ansible.builtin.env', 'AGENT_RUNTIME')
+     | default(
+         'systemd'
+         if ((ansible_memtotal_mb | default(1024)) <= 1536 or (ansible_processor_vcpus | default(1)) <= 1)
+         else 'systemd',
+         true
+       ) }}
+
+# Component enablement flags
+xconnect_edge_xray_enabled: true
+xconnect_edge_exporter_enabled: true
+xconnect_edge_vector_billing_enabled: true
+xconnect_edge_observability_enabled: "{{ lookup('ansible.builtin.env', 'AGENT_PROXY_OBSERVABILITY_ENABLED') | default(true, true) | bool }}"
+
+# Agent identity and endpoints
+xconnect_edge_agent_id: "{{ lookup('ansible.builtin.env', 'AGENT_ID') | default(inventory_hostname, true) }}"
+xconnect_edge_domain: "{{ lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN') | default(xconnect_edge_agent_id, true) }}"
+xconnect_edge_entry_point: "{{ lookup('ansible.builtin.env', 'AGENT_ENTRY_POINT') | default(xconnect_edge_domain, true) }}"
+xconnect_edge_region: "{{ lookup('ansible.builtin.env', 'AGENT_REGION') | default('', true) }}"
+xconnect_edge_pool: "{{ lookup('ansible.builtin.env', 'AGENT_POOL') | default('', true) }}"
+xconnect_edge_resource_class: "{{ lookup('ansible.builtin.env', 'AGENT_RESOURCE_CLASS') | default('shared', true) }}"
+xconnect_edge_team_id: "{{ lookup('ansible.builtin.env', 'AGENT_TEAM_ID') | default('', true) }}"
+
+# Controller & Billing URLs
+xconnect_edge_controller_url: "{{ lookup('ansible.builtin.env', 'AGENT_CONTROLLER_URL') | default('https://accounts.svc.plus', true) }}"
+xconnect_edge_billing_url: "{{ lookup('ansible.builtin.env', 'BILLING_SERVICE_BASE_URL') | default('https://billing.svc.plus', true) }}"
+
+# Ports & IPC
+xconnect_edge_xhttp_unix_socket: "/dev/shm/xray.sock"
+xconnect_edge_tcp_port: 1443
+xconnect_edge_xhttp_api_port: 10086
+xconnect_edge_tcp_api_port: 10087
+xconnect_edge_exporter_xhttp_port: 8080
+xconnect_edge_exporter_tcp_port: 8081
+xconnect_edge_fluxgate_metrics_port: 9102
+
+# TLS certificate paths
+xconnect_edge_tls_cert_path: "/etc/caddy/tls/agent-proxy.crt"
+xconnect_edge_tls_key_path: "/etc/caddy/tls/agent-proxy.key"
