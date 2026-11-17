@@ -100,6 +100,52 @@
         vector_billing_ingest_token: "{{ canonical_internal_service_token }}"
       no_log: true
       when: vector_billing_ingest_enabled | bool
+
+    - name: Check if persistent Vector static auth file exists on host
+      ansible.builtin.stat:
+        path: "{{ vector_auth_static_file | default('/etc/vector/remote-write-auth.json', true) }}"
+      register: deploy_obs_static_auth_stat
+
+    - name: Check if Vault Agent rendered Vector auth file exists on host
+      ansible.builtin.stat:
+        path: "{{ vector_auth_external_file | default('/run/vector/remote-write-auth.json', true) }}"
+      register: deploy_obs_external_auth_stat
+
+    - name: Resolve Vector remote-write credentials from Vault when not supplied and local auth files are absent
+      ansible.builtin.uri:
+        url: >-
+          {{ (lookup('ansible.builtin.env', 'VAULT_ADDR') | default(vault_addr | default('https://vault.svc.plus', true), true)) | regex_replace('/+$', '')
+             }}/v1/{{ lookup('ansible.builtin.env', 'AGENT_PROXY_VECTOR_VAULT_KV_PATH')
+                      | default(lookup('ansible.builtin.env', 'VAULT_OBSERVABILITY_SECRET_PATH')
+                      | default('kv/data/CICD/observability', true), true) | trim('/') }}
+        method: GET
+        headers:
+          X-Vault-Token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default(vault_token | default('', true), true) }}"
+        status_code: [200, 404]
+        return_content: true
+      register: deploy_obs_vault_vector_auth
+      delegate_to: localhost
+      run_once: true
+      no_log: true
+      when:
+        - (lookup('ansible.builtin.env', 'VECTOR_AUTH_USER') | default('', true) | trim | length == 0) or
+          (lookup('ansible.builtin.env', 'VECTOR_AUTH_PASSWORD') | default('', true) | trim | length == 0)
+        - not (deploy_obs_static_auth_stat.stat.exists | default(false))
+        - not (deploy_obs_external_auth_stat.stat.exists | default(false))
+        - (lookup('ansible.builtin.env', 'VAULT_TOKEN') | default(vault_token | default('', true), true) | length > 0)
+
+    - name: Bind Vault-resolved remote-write credentials
+      ansible.builtin.set_fact:
+        resolved_vector_auth_user: "{{ deploy_obs_vault_vector_auth.json.data.data.user }}"
+        resolved_vector_auth_password: "{{ deploy_obs_vault_vector_auth.json.data.data.password }}"
+      when:
+        - deploy_obs_vault_vector_auth is defined
+        - deploy_obs_vault_vector_auth.json is defined
+        - "'data' in deploy_obs_vault_vector_auth.json"
+        - "'data' in deploy_obs_vault_vector_auth.json.data"
+        - deploy_obs_vault_vector_auth.json.data.data.user is defined
+        - deploy_obs_vault_vector_auth.json.data.data.password is defined
+      no_log: true
   vars:
     group: all
     vector_observability_endpoint: >-
@@ -138,11 +184,13 @@
          | default(cmdb_runtime_form
          | default('', true), true) }}
     vector_auth_user: >-
-      {{ lookup('ansible.builtin.env', 'VECTOR_AUTH_USER')
-         | default('', true) }}
+      {{ resolved_vector_auth_user
+         | default(lookup('ansible.builtin.env', 'VECTOR_AUTH_USER')
+         | default('', true), true) }}
     vector_auth_password: >-
-      {{ lookup('ansible.builtin.env', 'VECTOR_AUTH_PASSWORD')
-         | default('', true) }}
+      {{ resolved_vector_auth_password
+         | default(lookup('ansible.builtin.env', 'VECTOR_AUTH_PASSWORD')
+         | default('', true), true) }}
     vector_local_observability_enabled: >-
       {{ lookup('ansible.builtin.env', 'VECTOR_LOCAL_OBSERVABILITY_ENABLED')
          | default('false', true) | bool }}
