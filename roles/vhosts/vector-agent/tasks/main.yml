@@ -76,6 +76,15 @@
       {{ true if (vector_proxy_engine_effective == 'haproxy')
          else (false if vector_proxy_engine_effective in ['fluxgate', 'caddy']
                else (vector_haproxy_metrics_enabled | bool)) }}
+    vector_fluxgate_health_probe_enabled: >-
+      {{ (vector_fluxgate_health_probe_enabled | default(true) | bool) and
+         ((ansible_facts.services | default({})).get('blackbox_exporter.service', {}).get('state', 'stopped') == 'running') }}
+    vector_caddy_health_probe_enabled: >-
+      {{ (vector_caddy_health_probe_enabled | default(true) | bool) and
+         ((ansible_facts.services | default({})).get('blackbox_exporter.service', {}).get('state', 'stopped') == 'running') }}
+    vector_haproxy_health_probe_enabled: >-
+      {{ (vector_haproxy_health_probe_enabled | default(true) | bool) and
+         ((ansible_facts.services | default({})).get('blackbox_exporter.service', {}).get('state', 'stopped') == 'running') }}
 
 - name: Resolve K3s and Docker runtime state
   ansible.builtin.set_fact:
