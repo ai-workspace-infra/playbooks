@@ -20,6 +20,10 @@ agent_proxy_release_base_url: "https://github.com/{{ agent_proxy_release_repo }}
 agent_proxy_go_version: "1.25.1"
 agent_proxy_go_root: "/usr/local/go"
 agent_proxy_go_bin: "{{ agent_proxy_go_root }}/bin/go"
+# 制品来源: 只从 GitHub Release 取已构建好的、带 sha256 的产物。
+# 构建是 CI 的职责(xconnect-edge-agent 的 build-release-artifacts.yml),
+# playbook 在目标主机上 git clone + go build 既慢又不可复现, 还要在每台边缘机
+# 装 Go 工具链。保留这个开关仅为历史兼容, 设为 true 会直接被下面的守卫拒绝。
 agent_proxy_build_on_target: false
 
 agent_proxy_binary_name: "agent-proxy"

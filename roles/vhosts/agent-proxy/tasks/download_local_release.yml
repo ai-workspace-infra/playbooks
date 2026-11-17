@@ -63,11 +63,59 @@
     group: root
     mode: "0700"
 
+# 校验源优先级: 发布时附带的 SHA256SUMS-linux-<arch> 优先, 其次用 GitHub API
+# 的 asset.digest。两者都是 sha256, 前者让制品在没有 API(或 API 被限流)时依然
+# 可校验, 也便于人工离线核对。
+- name: Look for a published SHA256SUMS manifest for this architecture
+  ansible.builtin.set_fact:
+    agent_proxy_local_release_sums_asset: >-
+      {{ (agent_proxy_local_release_response.json.assets
+          | selectattr('name', 'equalto', 'SHA256SUMS-linux-' ~ agent_proxy_release_arch)
+          | list | first) | default({}, true) }}
+  run_once: true
+
+- name: Fetch the published checksum manifest when present
+  ansible.builtin.uri:
+    url: "{{ agent_proxy_local_release_sums_asset.browser_download_url }}"
+    method: GET
+    return_content: true
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: agent_proxy_local_release_sums
+  when: agent_proxy_local_release_sums_asset | length > 0
+
+- name: Resolve the expected checksum for the selected asset
+  ansible.builtin.set_fact:
+    agent_proxy_local_release_expected_checksum: >-
+      {{ ('sha256:' ~ (
+            agent_proxy_local_release_sums.content
+            | default('')
+            | regex_findall(
+                '^([0-9a-f]{64})[ \t]+' ~ (agent_proxy_local_release_asset_name | regex_escape) ~ '[ \t]*$',
+                multiline=True
+              )
+            | first
+          ))
+         if (agent_proxy_local_release_sums.content | default('') | length > 0)
+         else agent_proxy_local_release_asset.digest }}
+  run_once: true
+
+- name: Require a checksum before downloading anything
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_local_release_expected_checksum is match('^sha256:[0-9a-f]{64}$')
+    fail_msg: >-
+      No verifiable sha256 was found for {{ agent_proxy_local_release_asset_name }}.
+      Refusing to install an unverified binary.
+  run_once: true
+
 - name: Download the verified XConnect Agent release binary
   ansible.builtin.get_url:
     url: "{{ agent_proxy_local_release_asset.browser_download_url }}"
     dest: "{{ agent_proxy_local_release_stage_path }}"
-    checksum: "{{ agent_proxy_local_release_asset.digest }}"
+    checksum: "{{ agent_proxy_local_release_expected_checksum }}"
     owner: root
     group: root
     mode: "0700"
