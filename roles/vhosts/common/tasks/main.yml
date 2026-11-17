@@ -77,6 +77,15 @@
     - ansible_os_family != 'Darwin'
   tags: [limits, baseline]
 
+# OS 通用: 主机自我收敛定时器。与 SSH/时区/日志同级的基础能力, 因此放在
+# common 而不是 k3s bootstrap 或某个业务 role。
+- name: Base | scheduled ansible-pull convergence
+  ansible.builtin.import_tasks: ansible_pull.yml
+  when:
+    - common_ansible_pull_enabled | default(false) | bool
+    - ansible_os_family != 'Darwin'
+  tags: [ansible_pull, baseline]
+
 - name: Base | allow HTTP/HTTPS ports
   ansible.builtin.import_tasks: firewall_ports.yml
   when:

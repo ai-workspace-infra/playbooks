@@ -242,6 +242,26 @@
   register: vector_default_template
   notify: Restart vector
 
+# 控制面推送时手上有 VECTOR_AUTH_* 环境变量, 这是唯一能拿到凭据的时刻。
+# 在这里落盘, pull 模式后续才能复用同一份凭据, 而不是渲染出无鉴权 sink。
+- name: Persist the control-plane supplied remote-write credential for pull mode
+  ansible.builtin.copy:
+    dest: "{{ vector_auth_static_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      # Written by the control-plane run from VECTOR_AUTH_USER/VECTOR_AUTH_PASSWORD.
+      # Consumed by ansible-pull runs, which have no environment variables.
+      VECTOR_AUTH_USER={{ vector_auth_user }}
+      VECTOR_AUTH_PASSWORD={{ vector_auth_password }}
+  no_log: true
+  when:
+    - vector_auth_user | default('') | trim | length > 0
+    - vector_auth_password | default('') | trim | length > 0
+    - not (vector_local_observability_enabled | default(false) | bool)
+    - inventory_hostname != 'install.svc.plus'
+
 - name: Install the remote-write credential bootstrap helper
   ansible.builtin.copy:
     src: bootstrap-remote-write-auth
