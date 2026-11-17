@@ -155,6 +155,20 @@
     - agent_proxy_manage_source_checkout | bool
     - agent_proxy_clone_res is failed
 
+# 源码构建不再是受支持路径。制品必须来自 CI 产出的 Release, 并在下载时校验
+# sha256; 在目标主机上 go build 会绕开这条校验链, 也无法复现(工具链/依赖漂移)。
+# 这里显式失败而不是静默跳过, 避免有人以为"设了开关就生效"。
+- name: Refuse in-place source builds; deploy the verified release artifact instead
+  ansible.builtin.assert:
+    that:
+      - not (agent_proxy_build_on_target | bool)
+    fail_msg: >-
+      agent_proxy_build_on_target is not supported. Builds belong to CI
+      (xconnect-edge-agent build-release-artifacts.yml); this role deploys the
+      sha256-verified Release asset instead. Unset the switch or use
+      agent_proxy_local_installer=true for release-based deployment.
+  when: agent_proxy_build_on_target | bool
+
 - name: Build agent.svc.plus binary
   ansible.builtin.command: >-
     {{ agent_proxy_go_bin }} build -o {{ agent_proxy_binary_path }} {{ agent_proxy_build_target }}
