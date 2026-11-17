@@ -7,9 +7,10 @@ echo "HEAD: $(git -C "$D" rev-parse --short HEAD)"
 cd "$D"
 ANSIBLE_ROLES_PATH="$D/roles" ANSIBLE_HOST_KEY_CHECKING=False \
 ansible-playbook -i 'localhost,' -c local pull_observability_agent.yml \
-  -e "xconnect_gitops_config=/var/lib/ansible-pull/gitops/topology/prod/selfhost/xconnect-regional-pools.yml" \
+  -e "xconnect_gitops_config=/var/lib/ansible-pull/gitops/topology/prod/selfhost/xconnect-regional-pools.yaml" \
   > /tmp/pull-run.log 2>&1
 echo "ansible rc=$?"
 sed -n '/PLAY RECAP/,/^$/p' /tmp/pull-run.log | head -4
-echo "=== 失败详情 ==="
-grep -E "fatal:|FAILED!" -A4 /tmp/pull-run.log | head -30
+echo "=== 结果 ==="
+grep -E "fatal:|FAILED!" -A4 /tmp/pull-run.log | head -25
+grep -E "^changed:" /tmp/pull-run.log | wc -l | awk '{print "changed 任务数: "$1}'

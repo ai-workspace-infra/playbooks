@@ -318,20 +318,26 @@
 # static-file 模式下 vector.toml 只含 ${VECTOR_AUTH_*} 占位符, 真值由 systemd
 # 从 EnvironmentFile 注入。校验必须用同一份环境, 否则会被 "Missing environment
 # variable" 误判 —— 那条错误只说明校验方式不对, 不代表配置有问题。
-# 用 systemd-run 复用同一个 EnvironmentFile, 让校验进程看到的 环境与
-# vector.service 启动时完全一致。不用 shell 的 source 解析该文件:
-# bash 的 source 会把 "Bearer xxx" 拆成两条命令, 而 systemd 的 EnvironmentFile
-# 把整行剩余部分当作值 —— 两者对含空格凭据的语义不同。
+# 校验时按 systemd 的语义重建环境: EnvironmentFile 把整行剩余部分当作值,
+# 因此这里用 IFS= read -r 逐行读取并只剥掉键名前缀。不用 "source": 它会在
+# "Bearer xxx" 的空格处断词, 把后半段当命令执行。
 - name: Validate rendered Vector configuration before service start
   ansible.builtin.shell: |
     set -o pipefail
+    # static-file 模式: 用 env 把凭据文件的键值按 systemd 语义注入(整行剩余
+    # 部分即值, 空格不当作分隔), 让校验看到的环境与 vector.service 一致。
+    # 不用 bash source: 它会在 "Bearer xxx" 的空格处断词。
     if [ "{{ vector_auth_mode | default('none') }}" = "static-file" ] && [ -r "{{ vector_auth_static_file }}" ]; then
-      /usr/bin/systemd-run --quiet --pipe --wait --collect \
-        --property=EnvironmentFile={{ vector_auth_static_file }} \
-        /usr/bin/vector validate --no-environment --config-toml "{{ vector_config_dir }}/vector.toml" 2>&1 |
-    else
-      /usr/bin/vector validate --no-environment --config-toml "{{ vector_config_dir }}/vector.toml" 2>&1 |
+      # IFS= read -r 保留整行, 只剥掉键名前缀, 值里的空格与等号原样保留。
+      while IFS= read -r line; do
+        case "$line" in
+          VECTOR_AUTH_USER=*)     VECTOR_AUTH_USER="${line#VECTOR_AUTH_USER=}" ;;
+          VECTOR_AUTH_PASSWORD=*) VECTOR_AUTH_PASSWORD="${line#VECTOR_AUTH_PASSWORD=}" ;;
+        esac
+      done < "{{ vector_auth_static_file }}"
+      export VECTOR_AUTH_USER VECTOR_AUTH_PASSWORD
     fi
+    /usr/bin/vector validate --no-environment --config-toml "{{ vector_config_dir }}/vector.toml" 2>&1 |
       sed -E \
         -e 's/(Authorization[[:space:]]*=[[:space:]]*")[^"]*"/\1<redacted>"/Ig' \
         -e 's/(Bearer[[:space:]]+)[^[:space:]]+/\1<redacted>/Ig' \
