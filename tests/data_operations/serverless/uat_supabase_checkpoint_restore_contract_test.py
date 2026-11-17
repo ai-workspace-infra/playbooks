@@ -6,8 +6,8 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[3]
-SCRIPT = ROOT / "roles/web_saas_supabase_checkpoint_restore/files/restore_supabase_sql_gzip_verify.sh"
-ROLE_TASKS = ROOT / "roles/web_saas_supabase_checkpoint_restore/tasks/main.yml"
+SCRIPT = ROOT / "archive/roles/web-saas/web_saas_supabase_checkpoint_restore/files/restore_supabase_sql_gzip_verify.sh"
+ROLE_TASKS = ROOT / "archive/roles/web-saas/web_saas_supabase_checkpoint_restore/tasks/main.yml"
 
 
 class SupabaseCheckpointRestoreContractTests(unittest.TestCase):

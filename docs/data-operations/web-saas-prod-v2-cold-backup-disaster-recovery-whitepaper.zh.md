@@ -163,7 +163,7 @@ Vault 加密快照 SHA-256：
 
 ## 5. 可重复的 Playbooks Role 设计
 
-新增：`roles/web_saas_cold_recovery`，顶层显式入口：`web-saas-cold-recovery.yml`。
+新增：`archive/roles/web-saas/web_saas_cold_recovery`，顶层显式入口：`archive/web-saas/web-saas-cold-recovery.yml`。
 
 它组合现有 `web_saas_data_backup` 和 `web_saas_data_restore_verify`，不复制 PostgreSQL dump/restore 逻辑，并将表名、迁移版本列、dirty 列、排序列、用户表和订阅表参数化，以兼容历史模型和当前 Accounts/Billing 模型。
 
@@ -208,7 +208,7 @@ web_saas_cold_recovery_subscription_table=subscription_records
 以下仅展示结构，路径、主机组和 passphrase 必须由受控执行环境提供：
 
 ```bash
-ansible-playbook web-saas-cold-recovery.yml \
+ansible-playbook archive/web-saas/web-saas-cold-recovery.yml \
   -i /path/to/iac-generated-cmdb-inventory.yml \
   -e web_saas_cold_recovery_environment=uat \
   -e web_saas_cold_recovery_service_variant=prod-v2 \

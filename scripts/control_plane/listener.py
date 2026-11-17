@@ -162,9 +162,9 @@ def main():
                             'migration_listener_arguments': arguments(document['listener'])})
     inventory, host = str(playbooks / 'inventory/terraform_cmdb.py'), contract['target']['host']
     for argv, data in [(['ansible-inventory', '-i', inventory, '--host', host], None),
-                       (['ansible-playbook', '-i', inventory, str(playbooks / 'selfhost-migration-listener.yml'), '--limit', host, '--syntax-check', '-e', '@/dev/stdin'], variables),
+                       (['ansible-playbook', '-i', inventory, str(playbooks / 'archive/selfhost/selfhost-migration-listener.yml'), '--limit', host, '--syntax-check', '-e', '@/dev/stdin'], variables),
                        (['ansible', '-i', inventory, host, '-m', 'ansible.builtin.ping'], None),
-                       (['ansible-playbook', '-i', inventory, str(playbooks / 'selfhost-migration-listener.yml'), '--limit', host, '-e', '@/dev/stdin'], variables)]:
+                       (['ansible-playbook', '-i', inventory, str(playbooks / 'archive/selfhost/selfhost-migration-listener.yml'), '--limit', host, '-e', '@/dev/stdin'], variables)]:
         result = subprocess.run(argv, cwd=playbooks, env=env, input=data, text=True, capture_output=True)
         owner.require(result.returncode == 0, 'Listener owner failed; private output withheld')
     owner.require('MIGRATION_LISTENER_VERIFIED' in result.stdout, 'Listener acceptance receipt absent')

@@ -8,8 +8,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 PLANNER_PATH = ROOT / 'scripts/prepare_generation_regression_batch.py'
-RUNNER_PATH = ROOT / 'roles/web_saas_generation_fresh/files/regression_cases.py'
-POSTGRES_RUNNER_PATH = ROOT / 'roles/web_saas_generation_fresh/files/postgres_cases.py'
+RUNNER_PATH = ROOT / 'archive/roles/web-saas/web_saas_generation_fresh/files/regression_cases.py'
+POSTGRES_RUNNER_PATH = ROOT / 'archive/roles/web-saas/web_saas_generation_fresh/files/postgres_cases.py'
 
 
 def load_module(name, path):

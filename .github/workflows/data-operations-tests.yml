@@ -1,10 +1,10 @@
 name: Data Operations Owner Contracts
 on:
   pull_request:
-    paths: [roles/web_saas_usage_reconciliation/**, web-saas-generation-usage-reconciliation.yml, .github/actions/prod-native-standby/**, .github/actions/prod-native-init/**, .github/actions/prod-native-billing-upgrade/**, .github/actions/prod-full-business/**, .github/actions/prod-managed-runtime/**, scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_cold_recovery/**, roles/web_saas_native_standby/**, roles/web_saas_native_init/**, roles/web_saas_managed_runtime_qualification/**, roles/web_saas_native_billing_upgrade/**, roles/web_saas_full_business_transfer/**, roles/web_saas_release_upgrade/**, setup-web-saas-native-standby.yml, initialize-web-saas-native.yml, qualify-web-saas-managed-runtime.yml, upgrade-web-saas-native-billing.yml, transfer-web-saas-full-business.yml, web-saas-release-upgrade.yml, web-saas-data-operations.yml, web-saas-cold-recovery.yml, docs/data-operations/web-saas-prod-v2-cold-backup-disaster-recovery-whitepaper.zh.md, tests/test_web_saas_*role*.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
+    paths: [archive/roles/web-saas/web_saas_usage_reconciliation/**, archive/web-saas/web-saas-generation-usage-reconciliation.yml, .github/actions/prod-native-standby/**, .github/actions/prod-native-init/**, .github/actions/prod-native-billing-upgrade/**, .github/actions/prod-full-business/**, .github/actions/prod-managed-runtime/**, scripts/data_operations/**, scripts/lib/**, archive/roles/legacy/uat_data_import/**, roles/web_saas_data_*/**, archive/roles/web-saas/web_saas_cold_recovery/**, archive/roles/web-saas/web_saas_native_standby/**, archive/roles/web-saas/web_saas_native_init/**, archive/roles/web-saas/web_saas_managed_runtime_qualification/**, archive/roles/web-saas/web_saas_native_billing_upgrade/**, archive/roles/web-saas/web_saas_full_business_transfer/**, archive/roles/web-saas/web_saas_release_upgrade/**, archive/web-saas/setup-web-saas-native-standby.yml, archive/web-saas/initialize-web-saas-native.yml, archive/web-saas/qualify-web-saas-managed-runtime.yml, archive/web-saas/upgrade-web-saas-native-billing.yml, archive/web-saas/transfer-web-saas-full-business.yml, archive/web-saas/web-saas-release-upgrade.yml, archive/web-saas/web-saas-data-operations.yml, archive/web-saas/web-saas-cold-recovery.yml, docs/data-operations/web-saas-prod-v2-cold-backup-disaster-recovery-whitepaper.zh.md, tests/test_web_saas_*role*.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
   push:
     branches: [main, feature/release-upgrade-role]
-    paths: [roles/web_saas_usage_reconciliation/**, web-saas-generation-usage-reconciliation.yml, .github/actions/prod-native-standby/**, .github/actions/prod-native-init/**, .github/actions/prod-native-billing-upgrade/**, .github/actions/prod-full-business/**, .github/actions/prod-managed-runtime/**, scripts/data_operations/**, scripts/lib/**, roles/uat_data_import/**, roles/web_saas_data_*/**, roles/web_saas_cold_recovery/**, roles/web_saas_native_standby/**, roles/web_saas_native_init/**, roles/web_saas_managed_runtime_qualification/**, roles/web_saas_native_billing_upgrade/**, roles/web_saas_full_business_transfer/**, roles/web_saas_release_upgrade/**, setup-web-saas-native-standby.yml, initialize-web-saas-native.yml, qualify-web-saas-managed-runtime.yml, upgrade-web-saas-native-billing.yml, transfer-web-saas-full-business.yml, web-saas-release-upgrade.yml, web-saas-data-operations.yml, web-saas-cold-recovery.yml, docs/data-operations/web-saas-prod-v2-cold-backup-disaster-recovery-whitepaper.zh.md, tests/test_web_saas_*role*.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
+    paths: [archive/roles/web-saas/web_saas_usage_reconciliation/**, archive/web-saas/web-saas-generation-usage-reconciliation.yml, .github/actions/prod-native-standby/**, .github/actions/prod-native-init/**, .github/actions/prod-native-billing-upgrade/**, .github/actions/prod-full-business/**, .github/actions/prod-managed-runtime/**, scripts/data_operations/**, scripts/lib/**, archive/roles/legacy/uat_data_import/**, roles/web_saas_data_*/**, archive/roles/web-saas/web_saas_cold_recovery/**, archive/roles/web-saas/web_saas_native_standby/**, archive/roles/web-saas/web_saas_native_init/**, archive/roles/web-saas/web_saas_managed_runtime_qualification/**, archive/roles/web-saas/web_saas_native_billing_upgrade/**, archive/roles/web-saas/web_saas_full_business_transfer/**, archive/roles/web-saas/web_saas_release_upgrade/**, archive/web-saas/setup-web-saas-native-standby.yml, archive/web-saas/initialize-web-saas-native.yml, archive/web-saas/qualify-web-saas-managed-runtime.yml, archive/web-saas/upgrade-web-saas-native-billing.yml, archive/web-saas/transfer-web-saas-full-business.yml, archive/web-saas/web-saas-release-upgrade.yml, archive/web-saas/web-saas-data-operations.yml, archive/web-saas/web-saas-cold-recovery.yml, docs/data-operations/web-saas-prod-v2-cold-backup-disaster-recovery-whitepaper.zh.md, tests/test_web_saas_*role*.py, tests/data_operations/**, scripts/tests/uat_data_import_guard_test.sh, .github/workflows/*data*.yml, .github/workflows/uat-data-import.yaml]
 permissions:
   contents: read
 jobs:
@@ -71,17 +71,17 @@ jobs:
           for file in roles/web_saas_data_*/files/*.sh; do bash -n "$file"; done
           python3 -m pip install ansible-core==2.18.12
           ansible-galaxy collection install community.general:12.5.0 ansible.posix:2.2.0
-          ansible-playbook web-saas-release-upgrade.yml --syntax-check
-          ansible-playbook web-saas-data-operations.yml --syntax-check
-          ansible-playbook web-saas-cold-recovery.yml --syntax-check
-          ansible-playbook web-saas-generation-usage-reconciliation.yml --syntax-check
-          bash -n roles/web_saas_usage_reconciliation/files/reconcile.sh
+          ansible-playbook archive/web-saas/web-saas-release-upgrade.yml --syntax-check
+          ansible-playbook archive/web-saas/web-saas-data-operations.yml --syntax-check
+          ansible-playbook archive/web-saas/web-saas-cold-recovery.yml --syntax-check
+          ansible-playbook archive/web-saas/web-saas-generation-usage-reconciliation.yml --syntax-check
+          bash -n archive/roles/web-saas/web_saas_usage_reconciliation/files/reconcile.sh
           ansible-playbook xconnect-lab-runtime.yml --syntax-check
-          ansible-playbook setup-web-saas-native-standby.yml --syntax-check
-          ansible-playbook initialize-web-saas-native.yml --syntax-check
-          ansible-playbook qualify-web-saas-managed-runtime.yml --syntax-check
-          ansible-playbook upgrade-web-saas-native-billing.yml --syntax-check
-          ansible-playbook transfer-web-saas-full-business.yml --syntax-check
+          ansible-playbook archive/web-saas/setup-web-saas-native-standby.yml --syntax-check
+          ansible-playbook archive/web-saas/initialize-web-saas-native.yml --syntax-check
+          ansible-playbook archive/web-saas/qualify-web-saas-managed-runtime.yml --syntax-check
+          ansible-playbook archive/web-saas/upgrade-web-saas-native-billing.yml --syntax-check
+          ansible-playbook archive/web-saas/transfer-web-saas-full-business.yml --syntax-check
           ansible-playbook tests/data_operations/selfhost/native_standby_credentials.yml -i localhost,
   selfhost-postgres17:
     runs-on: ubuntu-latest

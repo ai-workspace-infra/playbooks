@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class InspectionGatewayTest(unittest.TestCase):
     def invoke(self, args, data=''):
-        template = (ROOT / 'roles/inspection_access/templates/platform-inspect.py.j2').read_text()
+        template = (ROOT / 'roles/vhosts/inspection_access/templates/platform-inspect.py.j2').read_text()
         source = Environment(undefined=StrictUndefined).from_string(template).render(
             inspection_container='test-postgres', inspection_db_role='db_readonly', inspection_database='testdb')
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py') as f:

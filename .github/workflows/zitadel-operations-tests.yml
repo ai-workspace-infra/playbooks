@@ -3,7 +3,7 @@ name: ZITADEL Operations Tests
 on:
   pull_request:
     paths:
-      - zitadel_operations.yml
+      - archive/legacy/zitadel_operations.yml
       - roles/docker/zitadel_server_operations/**
       - roles/docker/zitadel/defaults/main.yml
       - roles/docker/zitadel/tasks/doco-cd.yml
@@ -12,7 +12,7 @@ on:
   push:
     branches: [main]
     paths:
-      - zitadel_operations.yml
+      - archive/legacy/zitadel_operations.yml
       - roles/docker/zitadel_server_operations/**
       - roles/docker/zitadel/defaults/main.yml
       - roles/docker/zitadel/tasks/doco-cd.yml
@@ -34,5 +34,5 @@ jobs:
       - name: Validate role shell and playbook syntax
         run: |
           for script in roles/docker/zitadel_server_operations/files/*.sh; do bash -n "$script"; done
-          ansible-playbook --syntax-check -i 'localhost,' -e zitadel_operations_target=localhost zitadel_operations.yml
+          ansible-playbook --syntax-check -i 'localhost,' -e zitadel_operations_target=localhost archive/legacy/zitadel_operations.yml
           git diff --check

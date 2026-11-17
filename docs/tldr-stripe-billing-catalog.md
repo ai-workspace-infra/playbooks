@@ -1,6 +1,6 @@
 # TL;DR: Stripe 套餐目录初始化
 
-`initialize-web-saas-schemas.yml` 现在会在**新建自托管 Accounts 数据库**中检查
+`archive/web-saas/initialize-web-saas-schemas.yml` 现在会在**新建自托管 Accounts 数据库**中检查
 `PRO-MONTHLY`：不存在时，从与 `ACCOUNTS_SCHEMA_REF` 相同的 Accounts 版本下载并执行
 `scripts/seed-billing-plans.sql`。已存在则跳过，因此日常部署不会覆盖运营人员的目录改动。
 

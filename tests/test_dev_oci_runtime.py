@@ -7,7 +7,7 @@ def load(name,path):
  spec=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
 O=load('oci',ROOT/'roles/vhosts/k3s_runtime_secret_sync/files/dev_oci.py')
 G=load('registry',ROOT/'roles/vhosts/k3s_runtime_secret_sync/files/dev_registry.py')
-R=load('runtime',ROOT/'roles/platform/dev_feature_flux/files/reconcile.py')
+R=load('runtime',ROOT/'archive/roles/legacy/dev_feature_flux/files/reconcile.py')
 sys.path.insert(0,str(ROOT/'scripts'))
 import run_dev_feature_flux as adapter
 

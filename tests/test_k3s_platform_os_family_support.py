@@ -15,7 +15,7 @@ class K3sPlatformOsFamilySupportTest(unittest.TestCase):
         self.vars = yaml.safe_load((ROLE / 'vars' / 'main.yml').read_text())
         self.bootstrap = (ROLE / 'tasks' / 'bootstrap.yml').read_text()
         self.preflight = (ROLE / 'tasks' / 'preflight.yml').read_text()
-        self.playbook = (ROOT / 'k3s_platform_bootstrap.yml').read_text()
+        self.playbook = (ROOT / 'archive/legacy/k3s_platform_bootstrap.yml').read_text()
         self.defaults = yaml.safe_load(
             (ROOT / 'roles' / 'vhosts' / 'common' / 'defaults' / 'main.yml').read_text()
         )

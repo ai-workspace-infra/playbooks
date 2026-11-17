@@ -165,9 +165,9 @@ class NativeInitHostTests(unittest.TestCase):
 
     def test_no_application_service_or_source_is_part_of_play(self):
         import yaml
-        play = yaml.safe_load((ROOT / 'initialize-web-saas-native.yml').read_text())[0]
+        play = yaml.safe_load((ROOT / 'archive/web-saas/initialize-web-saas-native.yml').read_text())[0]
         self.assertEqual(play['hosts'], 'web-saas-prod')
-        self.assertEqual(play['roles'], ['roles/web_saas_native_init'])
+        self.assertEqual(play['roles'], ['archive/roles/web-saas/web_saas_native_init'])
         action = yaml.safe_load((ROOT / '.github/actions/prod-native-init/action.yml').read_text())
         self.assertEqual(action['inputs']['dry_run']['default'], 'true')
         self.assertEqual(action['inputs']['data_gate_verified']['default'], 'false')

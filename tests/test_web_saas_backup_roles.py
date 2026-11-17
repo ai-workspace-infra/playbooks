@@ -8,11 +8,11 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BACKUP = ROOT / "roles/web_saas_data_backup/files/create_encrypted_backup.sh"
-RESTORE = ROOT / "roles/web_saas_data_restore_verify/files/restore_verify.sh"
-BACKUP_TASKS = ROOT / "roles/web_saas_data_backup/tasks/main.yml"
-RESTORE_TASKS = ROOT / "roles/web_saas_data_restore_verify/tasks/main.yml"
-PREFLIGHT = ROOT / "roles/web_saas_data_preflight/tasks/main.yml"
+BACKUP = ROOT / "archive/roles/web-saas/web_saas_data_backup/files/create_encrypted_backup.sh"
+RESTORE = ROOT / "archive/roles/web-saas/web_saas_data_restore_verify/files/restore_verify.sh"
+BACKUP_TASKS = ROOT / "archive/roles/web-saas/web_saas_data_backup/tasks/main.yml"
+RESTORE_TASKS = ROOT / "archive/roles/web-saas/web_saas_data_restore_verify/tasks/main.yml"
+PREFLIGHT = ROOT / "archive/roles/web-saas/web_saas_data_preflight/tasks/main.yml"
 
 
 class WebSaaSBackupRoleContractTests(unittest.TestCase):
@@ -70,8 +70,8 @@ class WebSaaSBackupRoleContractTests(unittest.TestCase):
         self.assertIn('[[ "$WEB_SAAS_RETAIN_RESTORE" =~ ^(true|false)$ ]]', source)
         self.assertIn('"$WEB_SAAS_RETAIN_RESTORE" == true && "$exit_status" == 0 && "$restore_verified" == 1', source)
         self.assertIn('"restore_retained": os.environ.get("WEB_SAAS_RETAIN_RESTORE", "false") == "true"', source)
-        self.assertIn("web_saas_data_restore_verify_retain_restore: false", (ROOT / "roles/web_saas_data_restore_verify/defaults/main.yml").read_text())
-        self.assertIn("web_saas_cold_recovery_retain_restore: false", (ROOT / "roles/web_saas_cold_recovery/defaults/main.yml").read_text())
+        self.assertIn("web_saas_data_restore_verify_retain_restore: false", (ROOT / "archive/roles/web-saas/web_saas_data_restore_verify/defaults/main.yml").read_text())
+        self.assertIn("web_saas_cold_recovery_retain_restore: false", (ROOT / "archive/roles/web-saas/web_saas_cold_recovery/defaults/main.yml").read_text())
 
     def test_restore_rejects_invalid_expected_subscription_count(self) -> None:
         env = {

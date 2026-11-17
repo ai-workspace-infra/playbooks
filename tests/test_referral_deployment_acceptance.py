@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('referral_acceptance', ROOT/'roles/referral_deployment_acceptance/files/accept.py')
+spec = importlib.util.spec_from_file_location('referral_acceptance', ROOT/'archive/roles/legacy/referral_deployment_acceptance/files/accept.py')
 m = importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 NOW = dt.datetime(2026, 10, 27, tzinfo=dt.timezone.utc)
 
@@ -82,7 +82,7 @@ if __name__=='__main__':unittest.main()
 
 # Offline transport contract tests; these never count as deployed business evidence.
 import sys
-sys.path.insert(0,str(ROOT/'roles/referral_deployment_acceptance/files'))
+sys.path.insert(0,str(ROOT/'archive/roles/legacy/referral_deployment_acceptance/files'))
 import live_registration as live
 
 class RegistrationContract(unittest.TestCase):

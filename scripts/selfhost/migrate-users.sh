@@ -14,7 +14,7 @@ valid_host "$SOURCE_ACCOUNTS_DOMAIN"; valid_host "$ACCOUNTS_DOMAIN"; require_com
 extra=(-e "prod_v2_source_accounts_domain=$SOURCE_ACCOUNTS_DOMAIN" -e "prod_v2_target_accounts_domain=$ACCOUNTS_DOMAIN" -e "prod_v2_migration_phase=$PHASE")
 case "$PHASE" in
   preflight) ansible-playbook --syntax-check -i "$INVENTORY" "$PLAYBOOK_ROOT/migrate-prod-v2-accounts.yml";;
-  *) run_playbook migrate-prod-v2-accounts.yml "${extra[@]}";;
+  *) run_playbook archive/prod-v2/migrate-prod-v2-accounts.yml "${extra[@]}";;
 esac
 receipt "migrate-users-$PHASE" applied
 

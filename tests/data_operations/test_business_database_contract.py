@@ -7,7 +7,7 @@ import tempfile
 import yaml
 
 ROOT=Path(__file__).resolve().parents[2]
-SPEC=importlib.util.spec_from_file_location('business_database', ROOT/'roles/web_saas_business_database/files/business_database.py')
+SPEC=importlib.util.spec_from_file_location('business_database', ROOT/'archive/roles/web-saas/web_saas_business_database/files/business_database.py')
 db=importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(db)
 
@@ -53,7 +53,7 @@ class BusinessDatabaseContractTests(unittest.TestCase):
                 self.assertNotIn('generation-auth.env',text,str(file))
 
     def test_secret_read_and_execution_are_suppressed_in_logs(self):
-        tasks=yaml.safe_load((ROOT/'roles/web_saas_business_database/tasks/main.yml').read_text())
+        tasks=yaml.safe_load((ROOT/'archive/roles/web-saas/web_saas_business_database/tasks/main.yml').read_text())
         for name in ('Read the existing business password from Vault only at execution',
                      'Prepare or retire only the declared application identity'):
             task=next(t for t in tasks if t['name']==name)

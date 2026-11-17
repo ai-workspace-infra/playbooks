@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 import pytest
 
 ROOT=Path(__file__).resolve().parents[1]
-spec=importlib.util.spec_from_file_location('report',ROOT/'roles/v5_readonly_acceptance/files/report.py')
+spec=importlib.util.spec_from_file_location('report',ROOT/'archive/roles/legacy/v5_readonly_acceptance/files/report.py')
 report=importlib.util.module_from_spec(spec);spec.loader.exec_module(report)
 META=dict(run_id='manual-1',owner_sha='a'*40,environment='prod',host_id='instance-1')
 

@@ -15,7 +15,7 @@ Optional variables:
 - `web_saas_container_ready_timeout_seconds` (default `120`)
 - `web_saas_container_ready_poll_seconds` (default `3`)
 
-Entrypoint: `verify_web_saas_post_deploy.yml`. Set
+Entrypoint: `archive/web-saas/verify_web_saas_post_deploy.yml`. Set
 `readiness_target_host` to exactly one inventory host and use `--limit` for the
 same host. The `console-assets` one-shot initializer is intentionally excluded
 from the list of containers required to remain running.

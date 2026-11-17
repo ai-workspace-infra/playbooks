@@ -14,7 +14,7 @@ import test_owner as fixtures
 import entrypoint as owner
 import listener
 
-target = fixtures.imported('listener_target', fixtures.ROOT / 'roles/selfhost_migration_listener/files/runtime.py')
+target = fixtures.imported('listener_target', fixtures.ROOT / 'archive/roles/selfhost/selfhost_migration_listener/files/runtime.py')
 
 
 class ListenerOwnerTests(unittest.TestCase):
@@ -161,7 +161,7 @@ class ListenerRuntimeTests(unittest.TestCase):
                 self.assertTrue(target.write(path, 'CURRENT=new-resolved\n'))
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         import yaml
-        document = yaml.safe_load((fixtures.ROOT / 'roles/selfhost_migration_listener/tasks/main.yml').read_text())
+        document = yaml.safe_load((fixtures.ROOT / 'archive/roles/selfhost/selfhost_migration_listener/tasks/main.yml').read_text())
         block = next(item['block'] for item in document if 'block' in item)
         restart = next(item for item in block if item.get('ansible.builtin.command', {}).get('argv') == ['docker', 'restart', 'doco-cd'])
         self.assertIn('migration_listener_prepared', restart['when'])

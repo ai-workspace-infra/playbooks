@@ -43,10 +43,10 @@ and checksums and the immutable PostgreSQL image are also required inputs.
 The generated manifest includes these candidate-only invocations:
 
 ```sh
-ansible-playbook -i <verified-v5-inventory> web-saas-generation-regression.yml \
+ansible-playbook -i <verified-v5-inventory> archive/web-saas/web-saas-generation-regression.yml \
   -e @<protected-v5-regression-vars.json>
 
-ansible-playbook -i <verified-v5-inventory> web-saas-generation-postgres-cases.yml \
+ansible-playbook -i <verified-v5-inventory> archive/web-saas/web-saas-generation-postgres-cases.yml \
   -e @<protected-v5-regression-vars.json>
 ```
 

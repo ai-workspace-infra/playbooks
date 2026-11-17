@@ -20,8 +20,8 @@ def module(name, path):
     return result
 
 
-stars = module('starsl_promql', 'roles/platform/grafana_starsl_dashboard/files/render_dashboard.py')
-host = module('host_promql', 'roles/platform/grafana_host_dashboard_scope/files/render_dashboards.py')
+stars = module('starsl_promql', 'roles/saas/grafana_starsl_dashboard/files/render_dashboard.py')
+host = module('host_promql', 'roles/saas/grafana_host_dashboard_scope/files/render_dashboards.py')
 
 
 @unittest.skipUnless(os.environ.get('OBS_DASHBOARD_PROMQL_TESTS') == '1', 'Explicit disposable Docker query-engine test')

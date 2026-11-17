@@ -9,7 +9,7 @@ import uuid
 
 
 ROOT = Path(__file__).resolve().parents[3]
-SCRIPT = ROOT / "roles/web_saas_supabase_checkpoint_restore/files/restore_supabase_sql_gzip_verify.sh"
+SCRIPT = ROOT / "archive/roles/web-saas/web_saas_supabase_checkpoint_restore/files/restore_supabase_sql_gzip_verify.sh"
 PG = {**os.environ, "PGHOST": "127.0.0.1", "PGPORT": os.environ.get("PGPORT", "5432"),
       "PGUSER": "postgres", "PGPASSWORD": "postgres", "PGDATABASE": "postgres",
       "PGSSLMODE": "disable", "PGCONNECT_TIMEOUT": "5"}

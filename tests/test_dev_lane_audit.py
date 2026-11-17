@@ -5,8 +5,8 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 def load(name,path):
  s=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
-A=load('audit',ROOT/'roles/platform/dev_feature_flux/files/audit.py')
-R=load('scope',ROOT/'roles/platform/dev_feature_flux/files/reconcile.py')
+A=load('audit',ROOT/'archive/roles/legacy/dev_feature_flux/files/audit.py')
+R=load('scope',ROOT/'archive/roles/legacy/dev_feature_flux/files/reconcile.py')
 
 class AuditPolicyTests(unittest.TestCase):
  def test_prepare_has_independent_readonly_identity_without_sensitive_resources(self):

@@ -46,7 +46,7 @@ class DiagnosticsWiringTests(unittest.TestCase):
         env = Environment(trim_blocks=True)
         env.filters['b64decode'] = lambda x: base64.b64decode(x).decode()
         env.filters['regex_search'] = lambda x, p: (m.group(0) if (m := re.search(p, x)) else None)
-        template = env.from_string((ROOT / 'templates/prod-v2/accounts-smtp.env.j2').read_text())
+        template = env.from_string((ROOT / 'archive/prod-v2/templates/prod-v2/accounts-smtp.env.j2').read_text())
         line = 'XCONNECT_OBSERVABILITY_SEARCH_TOKEN=' + 't' * 48
         existing = base64.b64encode(('SMTP_PASSWORD=old\n' + line + '\nUNRELATED=ignored\n').encode()).decode()
         rendered = template.render(prod_services_smtp_env={'SMTP_HOST': 'smtp.example.test'}, accounts_scoped_runtime_existing={'content': existing})
@@ -57,7 +57,7 @@ class DiagnosticsWiringTests(unittest.TestCase):
         self.assertNotIn('XCONNECT_OBSERVABILITY_SEARCH_TOKEN=', fresh)
 
     def test_accounts_recreation_does_not_upgrade_other_services(self):
-        text = (ROOT / 'roles/web_saas_prod_services/tasks/observability.yml').read_text()
+        text = (ROOT / 'archive/roles/web-saas/web_saas_prod_services/tasks/observability.yml').read_text()
         self.assertIn("'--no-deps', '--no-build', '--pull', 'never', 'accounts'", text)
         self.assertIn('services.accounts.image == diagnostics_accounts_runtime.Config.Image', text)
         self.assertIn('accounts-smtp.env', text)

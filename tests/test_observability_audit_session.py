@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ROOT / "roles/observability_audit_session/files"
+FILES = ROOT / "roles/vhosts/observability_audit_session/files"
 spec = importlib.util.spec_from_file_location("audit_session", FILES / "session.py")
 session = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(session)

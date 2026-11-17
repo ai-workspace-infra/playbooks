@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import unittest
 
-path = Path(__file__).resolve().parents[1] / 'roles/platform/dev_web_saas_seed/files/contracts.py'
+path = Path(__file__).resolve().parents[1] / 'archive/roles/legacy/dev_web_saas_seed/files/contracts.py'
 spec = importlib.util.spec_from_file_location('seed_contracts', path)
 contracts = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(contracts)

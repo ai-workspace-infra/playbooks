@@ -26,7 +26,7 @@ source "$script_dir/native_access_guard.sh"
 owner_root="$(cd "$script_dir/../../.." && pwd)"
 cd "$owner_root"
 "$RUNNER_TEMP/prod-native-ansible/bin/ansible-playbook" -i "$CMDB_DIR/inventory.ini" \
-  --limit web-saas-prod --private-key "$expected_dir/id_ed25519" upgrade-web-saas-native-billing.yml
+  --limit web-saas-prod --private-key "$expected_dir/id_ed25519" archive/web-saas/upgrade-web-saas-native-billing.yml
 test -s "$NATIVE_RECEIPT_FILE"
 jq -e --arg mode "$NATIVE_BILLING_DRY_RUN" --slurpfile spec "$NATIVE_BILLING_SPEC_FILE" '
   .environment == "prod" and .host == "web-saas-prod" and .database == "account" and

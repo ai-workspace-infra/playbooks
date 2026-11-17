@@ -39,7 +39,7 @@ Accounts 曾将 `resourceClass` 拼入 XHTTP 路径，产生 `/pool/plus/split`�
 2. GHCR manifest 拉取核验得到上述 digest。未将 image config digest 当作 manifest digest。
 3. 使用 IaC owner 的 inventory 生成器，从已保留 Terraform state 的 runtime 输出与
    已审核声明重建 CMDB，目标为 V3；通过已验证主机密钥的 SSH 执行
-   `select-doco-cd-release.yml`，固定 tag、repository、target。
+   `archive/prod-v2/select-doco-cd-release.yml`，固定 tag、repository、target。
 4. Doco-CD 日志已观察到 release tag 和 GitOps SHA，无 pull error；运行 Accounts
    的固定引用与上述 `service_image_ref` 一致。
 5. 公共 `accounts.svc.plus` 与 V3 别名的 `/api/ping` 均通过仓库

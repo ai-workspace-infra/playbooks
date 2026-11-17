@@ -15,7 +15,7 @@ import tempfile
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-OWNER_PATHS = ["gitops_source_promotion.yml", "roles/platform/gitops_source_promotion",
+OWNER_PATHS = ["archive/legacy/gitops_source_promotion.yml", "archive/roles/legacy/gitops_source_promotion",
                "scripts/run_gitops_source_promotion.py"]
 TAG_RE = re.compile(r"^v[0-9][A-Za-z0-9._-]*$")
 SHA_RE = re.compile(r"^[a-f0-9]{40}$")
@@ -191,7 +191,7 @@ def execute(plan, cmdb, gitops_root, output, apply=False, audit_report=False, ro
                    ANSIBLE_SSH_ARGS=ssh_args, ANSIBLE_NOCOLOR="1")
         env.pop("ANSIBLE_PRIVATE_KEY_FILE", None)
         result = subprocess.run(["ansible-playbook", "-i", str(temp / "inventory.json"),
-                                 str(ROOT / "gitops_source_promotion.yml"), "-e", "@" + str(temp / "vars.json")],
+                                 str(ROOT / "archive/legacy/gitops_source_promotion.yml"), "-e", "@" + str(temp / "vars.json")],
                                 env=env, capture_output=True, text=True, timeout=1100)
         (output / "playbook.log").write_text(result.stdout + result.stderr)
         if not (output / "observation.json").exists():

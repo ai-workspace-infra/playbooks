@@ -2,7 +2,7 @@
 
 The `prod-services` Doco-CD target reads `/etc/xcontrol/web-saas/services.env`,
 not the generic stack's `secrets.env`. Both the full application convergence
-and `repair-web-saas-prod-smtp.yml` read the SMTP references from the reviewed
+and `archive/web-saas/repair-web-saas-prod-smtp.yml` read the SMTP references from the reviewed
 GitOps runtime selection and fetch `username` and `password` from
 `kv/prod/platform/smtp/google` at execution time.
 
@@ -11,7 +11,7 @@ For SMTP-only recovery, use an immutable Playbooks `v*` checkout and set
 Use the reviewed inventory and strict SSH host-key checking, then run:
 
 ```bash
-ansible-playbook -i inventory/terraform_cmdb.py repair-web-saas-prod-smtp.yml
+ansible-playbook -i inventory/terraform_cmdb.py archive/web-saas/repair-web-saas-prod-smtp.yml
 ```
 
 This entrypoint updates only SMTP keys in the existing `services.env`, renders

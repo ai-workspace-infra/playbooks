@@ -1,0 +1,51 @@
+---
+# web-saas 域的主机装配。
+#
+# 部署职责在这里一分为二, 判据是"谁来管版本":
+#
+#   本 playbook  —— 机密、配置、证书、Doco-CD 自身。由 Vault 管版本。
+#   Doco-CD      —— compose 栈与镜像 tag。由 git 管版本(ai-workspace-infra/gitops
+#                   的 compose/web-saas/.env.<env>, git log 即部署历史)。
+#
+# 分开的理由: 混在一起就会变成"改个镜像 tag 要动证书", 或者反过来
+# "轮换一次证书触发一次业务发布"。
+- name: Configure web-saas host and hand deployment to Doco-CD
+  hosts: "{{ web_saas_hosts | default('web_saas') }}"
+  # 兜底用的短等待窗口。首次启动的收敛由 deploy_base 的
+  # common_wait_for_host_init.sh 统一负责(它在 bootstrap 前等 cloud-init 与
+  # unattended-upgrades 退出), 所以到这里锁通常已经放开; 这里只覆盖那之后
+  # 偶发的短暂占用, 不需要很长。单个任务仍可自行覆盖。
+  module_defaults:
+    ansible.builtin.apt:
+      lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
+  become: true
+  gather_facts: true
+  vars:
+    web_saas_deployment_environment: "{{ lookup('ansible.builtin.env', 'VAULT_ENV_PATH') | default(lookup('ansible.builtin.env', 'DEPLOY_ENV'), true) | default('uat', true) }}"
+    # Doco-CD 轮询 gitops 仓。60s 是在"改完 tag 多久能看到"和"对 GitHub
+    # API 的请求量"之间取的值 —— 一次 git ls-remote 很轻, 但 180s 的默认
+    # 值会让一次 UAT 验证多等三分钟。
+    doco_cd_poll_config:
+      - url: "{{ web_saas_doco_cd_repository | default('https://github.com/ai-workspace-infra/gitops.git') }}"
+        reference: "{{ web_saas_doco_cd_reference | default('main') }}"
+        interval: 60
+        target: "{{ web_saas_doco_cd_target | default('prod' if web_saas_deployment_environment == 'prod' else '') }}"
+    # webhook 需要一个共享 secret(第 ③ 层环境业务密钥)与 CD 侧的 HMAC
+    # 签名。轮询不需要任何新凭据, 所以先走轮询; 要压到秒级再开 webhook。
+    doco_cd_enable_webhook: false
+  pre_tasks:
+    - name: Refuse implicit Doco-CD defaults for generation deployments
+      ansible.builtin.assert:
+        that:
+          - doco_cd_image is match('^ghcr[.]io/.+@sha256:[a-f0-9]{64}$')
+          - web_saas_doco_cd_target | default('') | length > 0
+          - web_saas_doco_cd_reference | default('') is match('^[a-f0-9]{40}$')
+        fail_msg: Generation deployment requires its declared Doco-CD digest, target and immutable GitOps SHA.
+      when: web_saas_deployment_environment is match('^prod-v[0-9]+$')
+  roles:
+    - role: web_saas_prod_storage
+      when: web_saas_deployment_environment == 'prod'
+    - roles/vhosts/web_saas_host_config
+    - role: selfhost_postgresql_daily_dump
+      when: web_saas_deployment_environment == 'prod'
+    - vhosts/Doco-CD

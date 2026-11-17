@@ -8,7 +8,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / 'roles/web_saas_usage_reconciliation/files/reconcile.sh'
+SCRIPT = ROOT / 'archive/roles/web-saas/web_saas_usage_reconciliation/files/reconcile.sh'
 
 
 class UsageReconciliationTest(unittest.TestCase):
@@ -123,16 +123,16 @@ if 'reconcile-usage' in a:
         self.assertFalse(any('--apply' in call for call in calls))
 
     def test_entry_orders_preflight_backup_restore_then_merge(self):
-        text = (ROOT / 'web-saas-generation-usage-reconciliation.yml').read_text()
+        text = (ROOT / 'archive/web-saas/web-saas-generation-usage-reconciliation.yml').read_text()
         self.assertLess(text.index('tasks_from: preflight'), text.index('import_playbook:'))
         self.assertLess(text.index('import_playbook:'), text.index('Preview and optionally merge'))
-        gates = (ROOT / 'roles/web_saas_usage_reconciliation/tasks/main.yml').read_text()
+        gates = (ROOT / 'archive/roles/web-saas/web_saas_usage_reconciliation/tasks/main.yml').read_text()
         for required in ['isolated_restore_verified', 'restored_data_matches', 'archive_sha256',
                          'database_system_identifier', 'migration_dirty', 'restore_database']:
             self.assertIn(required, gates)
 
     def test_target_writer_and_binary_staging_boundaries(self):
-        tasks = ROOT / 'roles/web_saas_usage_reconciliation/tasks'
+        tasks = ROOT / 'archive/roles/web-saas/web_saas_usage_reconciliation/tasks'
         writer = (tasks / 'writer_state.yml').read_text()
         self.assertIn("inventory_hostname == 'web-saas-' ~ web_saas_generation_environment", writer)
         self.assertIn("in ['pause', 'resume']", writer)

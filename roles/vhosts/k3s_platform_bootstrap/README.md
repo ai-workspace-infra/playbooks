@@ -58,7 +58,7 @@ remain the shared caller contract, without environment-specific aliases.
 - [Three-role design](../k3s_identity/docs/three-role-design.md)
 - [Role inventory and migration scope](k3s-role-map.md)
 
-Use `k3s_platform_bootstrap.yml` with `inventory/terraform_cmdb.py` for normal
+Use `archive/legacy/k3s_platform_bootstrap.yml` with `inventory/terraform_cmdb.py` for normal
 IaC delivery. `scripts/pipeline/bootstrap-k3s.sh` receives `MATRIX_HOST`,
 `K3S_GITOPS_CHECKOUT`, resolved `K3S_GITOPS_SHA`, checkout-relative
 `K3S_RESOURCE_MANIFEST`, `K3S_CMDB_SHA256`, and `K3S_BOOTSTRAP_RECEIPT`.

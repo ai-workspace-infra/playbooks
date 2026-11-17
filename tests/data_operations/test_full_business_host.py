@@ -271,7 +271,7 @@ class FullBusinessOwnerTests(unittest.TestCase):
         with self.assertRaises(HOST.native.Refused):HOST.validate_receipt(r,self.spec,'copy',source_identity())
 
     def test_role_pipelining_stdin_and_single_owner(self):
-        role=(ROOT/'roles/web_saas_full_business_transfer/tasks/main.yml').read_text()
+        role=(ROOT/'archive/roles/web-saas/web_saas_full_business_transfer/tasks/main.yml').read_text()
         self.assertIn('stdin:',role);self.assertIn('no_log: true',role);self.assertIn('  always:',role)
         self.assertNotIn('PROD_SUPABASE_READONLY_DSN:',role)
         runner=(OWNER/'full_business_runner.sh').read_text()

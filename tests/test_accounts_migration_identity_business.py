@@ -16,7 +16,7 @@ from unittest.mock import patch
 import yaml
 
 
-PATH = Path(__file__).resolve().parents[1] / 'roles/accounts_migration_identity/files/bootstrap.py'
+PATH = Path(__file__).resolve().parents[1] / 'archive/roles/legacy/accounts_migration_identity/files/bootstrap.py'
 spec = importlib.util.spec_from_file_location('accounts_migration_identity', PATH)
 bootstrap = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bootstrap)

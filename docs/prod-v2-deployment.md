@@ -17,15 +17,15 @@ never share a wildcard enrollment credential.
 Run from this repository with an IaC-generated inventory and protected extra-vars:
 
 ```sh
-ansible-playbook deploy-prod-v2-control.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
+ansible-playbook archive/prod-v2/deploy-prod-v2-control.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
 # FIRST INITIALIZATION ONLY: refuses a non-empty or live application database.
-ansible-playbook migrate-prod-v2-accounts.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
-ansible-playbook complete-prod-v2-native-billing.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
-ansible-playbook configure-prod-v2-agent-auth.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
-ansible-playbook activate-prod-v2-control.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
-ansible-playbook configure-prod-v2-billing-ingress.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
-ansible-playbook deploy-prod-v2-edges.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
-ansible-playbook refresh-prod-v2-edge-config.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
+ansible-playbook archive/prod-v2/migrate-prod-v2-accounts.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
+ansible-playbook archive/prod-v2/complete-prod-v2-native-billing.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
+ansible-playbook archive/prod-v2/configure-prod-v2-agent-auth.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
+ansible-playbook archive/prod-v2/activate-prod-v2-control.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
+ansible-playbook archive/prod-v2/configure-prod-v2-billing-ingress.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
+ansible-playbook archive/prod-v2/deploy-prod-v2-edges.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
+ansible-playbook archive/prod-v2/refresh-prod-v2-edge-config.yml -i "$V2_INVENTORY" -e @"$V2_VARS"
 ```
 
 `prod_v2_accounts_dir` selects the reviewed Accounts source checkout;

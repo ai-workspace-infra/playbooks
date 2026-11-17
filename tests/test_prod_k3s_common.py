@@ -20,7 +20,7 @@ class CommonNodeTests(unittest.TestCase):
         active['spec']['suspend']=True
         self.assertEqual(1,m.verify([self.node(),active],'prod-k3s-v6')['paused_flux_checked'])
     def test_common_precedes_disk_and_cluster_roles(self):
-        play=yaml.safe_load((ROOT/'prod_k3s_generation_bootstrap.yml').read_text())[0]
+        play=yaml.safe_load((ROOT/'archive/legacy/prod_k3s_generation_bootstrap.yml').read_text())[0]
         tasks=play['pre_tasks']
         i=next(i for i,t in enumerate(tasks) if t.get('ansible.builtin.include_role',{}).get('name')=='vhosts/common')
         j=next(i for i,t in enumerate(tasks) if t.get('name')=='Install empty-disk and observation prerequisites')
@@ -39,7 +39,7 @@ class CommonNodeTests(unittest.TestCase):
         self.assertFalse((ROOT/'roles/vhosts/k3s_platform_bootstrap/tasks/audit_identity.yml').exists())
 
     def test_main_bootstrap_requires_volume_before_common_receipt(self):
-        play=yaml.safe_load((ROOT/'k3s_platform_bootstrap.yml').read_text())[0]
+        play=yaml.safe_load((ROOT/'archive/legacy/k3s_platform_bootstrap.yml').read_text())[0]
         common=next(t for t in play['pre_tasks'] if t.get('ansible.builtin.include_role',{}).get('name')=='vhosts/common')
         self.assertTrue(common['vars']['common_node_require_data_volume'])
         self.assertFalse(any(r['role']=='web_saas_data_volume' for r in play['roles']))
@@ -52,7 +52,7 @@ class CommonNodeTests(unittest.TestCase):
         self.assertIn('web_saas_data_evidence.mounted | default(false) | bool',tasks[check]['ansible.builtin.assert']['that'])
 
     def test_volume_cloud_and_filesystem_labels_are_distinct(self):
-        play=yaml.safe_load((ROOT/'k3s_platform_bootstrap.yml').read_text())[0]
+        play=yaml.safe_load((ROOT/'archive/legacy/k3s_platform_bootstrap.yml').read_text())[0]
         # Node identity is validated for every data mode; the volume label rules
         # belong to the volume-mode gate so directory mode does not need a volume.
         identity=next(t for t in play['pre_tasks'] if t.get('name')=='Require one matching node and matching cloud scope')

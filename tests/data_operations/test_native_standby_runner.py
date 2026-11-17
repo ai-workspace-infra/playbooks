@@ -58,7 +58,7 @@ Path(os.environ['NATIVE_RECEIPT_FILE']).write_text(json.dumps(r))
             args = json.loads((Path(d) / 'host-invocation.json').read_text())
             self.assertEqual(args, ['-i', env['CMDB_DIR'] + '/inventory.ini', '--limit', 'web-saas-prod',
                 '--private-key', str(Path(d) / 'prod-native-access-123-1/id_ed25519'),
-                'setup-web-saas-native-standby.yml'])
+                'archive/web-saas/setup-web-saas-native-standby.yml'])
             policy = json.loads((Path(d) / 'host-ssh-policy.json').read_text())
             self.assertEqual(policy['ANSIBLE_HOST_KEY_CHECKING'], 'true')
             self.assertEqual(policy['ANSIBLE_SSH_ARGS'], '-o ControlMaster=no -o ControlPersist=no')

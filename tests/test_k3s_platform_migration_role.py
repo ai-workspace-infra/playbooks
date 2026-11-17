@@ -7,7 +7,7 @@ import sys
 import unittest
 
 PLAYBOOKS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-ROLE_DIR = os.path.join(PLAYBOOKS_DIR, "roles", "k3s_platform_migration")
+ROLE_DIR = os.path.join(PLAYBOOKS_DIR, "roles", "vhosts", "k3s_platform_migration")
 ROLE_FILES = os.path.join(ROLE_DIR, "files")
 GITOPS_DIR = os.path.abspath(os.path.join(PLAYBOOKS_DIR, "..", "gitops-canary-samples"))
 

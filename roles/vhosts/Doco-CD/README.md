@@ -35,10 +35,10 @@ Compose tool, so there is no Helm chart for it (the former
 cd playbooks
 export VAULT_ADDR=https://vault.svc.plus
 export VAULT_JWT_TOKEN=...
-ansible-playbook -i inventory/terraform_cmdb.py setup-Doco-CD.yaml -e doco_cd_hosts=<host-or-group>
+ansible-playbook -i inventory/terraform_cmdb.py archive/prod-v2/setup-Doco-CD.yaml -e doco_cd_hosts=<host-or-group>
 ```
 
-`setup-Doco-CD.yaml` has no default hosts; `doco_cd_hosts` is required.
+`archive/prod-v2/setup-Doco-CD.yaml` has no default hosts; `doco_cd_hosts` is required.
 
 Public GitOps repositories need no Git access token. The role does not provide a
 placeholder credential or store Vault authentication values in the repository.

@@ -138,7 +138,7 @@ class BillingUpgradeTests(unittest.TestCase):
         with self.assertRaises(HOST.native.Refused):HOST.validate_spec(self.spec,self.migration)
 
     def test_contract_has_single_owner_and_cleanup(self):
-        role=(ROOT/'roles/web_saas_native_billing_upgrade/tasks/main.yml').read_text()
+        role=(ROOT/'archive/roles/web-saas/web_saas_native_billing_upgrade/tasks/main.yml').read_text()
         self.assertIn('  always:',role)
         self.assertIn('no_log: true',role)
         runner=(OWNER/'native_billing_upgrade_runner.sh').read_text()

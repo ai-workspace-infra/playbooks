@@ -5,13 +5,13 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ROLE = ROOT / "roles/web_saas_cold_recovery"
+ROLE = ROOT / "archive/roles/web-saas/web_saas_cold_recovery"
 DOC = ROOT / "docs/data-operations/web-saas-prod-v2-cold-backup-disaster-recovery-whitepaper.zh.md"
 
 
 class WebSaaSColdRecoveryRoleContractTests(unittest.TestCase):
     def test_entrypoint_exposes_backup_stage_and_isolated_restore(self) -> None:
-        source = (ROOT / "web-saas-cold-recovery.yml").read_text()
+        source = (ROOT / "archive/web-saas/web-saas-cold-recovery.yml").read_text()
         self.assertIn("web_saas_cold_recovery_source", source)
         self.assertIn("web_saas_cold_recovery_destination", source)
         self.assertIn("web_saas_cold_recovery_mode: backup", source)
@@ -55,7 +55,7 @@ class WebSaaSColdRecoveryRoleContractTests(unittest.TestCase):
         self.assertNotIn("web_saas_cold_recovery_passphrase", stage)
 
     def test_cross_machine_restore_does_not_require_source_connection(self) -> None:
-        source = (ROOT / "roles/web_saas_data_restore_verify/files/restore_verify.sh").read_text()
+        source = (ROOT / "archive/roles/web-saas/web_saas_data_restore_verify/files/restore_verify.sh").read_text()
         role = (ROLE / "tasks/restore_verify.yml").read_text()
         self.assertIn('WEB_SAAS_CROSS_MACHINE', source)
         self.assertIn("source_system_identity_comparison", source)

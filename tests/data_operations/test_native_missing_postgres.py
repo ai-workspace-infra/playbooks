@@ -35,7 +35,7 @@ class MissingPostgresTests(unittest.TestCase):
                 self.assertTrue(predicate(**{variable: {'rc': rc, 'stderr': message}}))
 
     def test_full_container_inspect_does_not_log_runtime_environment(self):
-        tasks = yaml.safe_load((ROOT / 'roles/web_saas_prod_storage/tasks/main.yml').read_text())
+        tasks = yaml.safe_load((ROOT / 'archive/roles/web-saas/web_saas_prod_storage/tasks/main.yml').read_text())
         task = next(task for task in tasks if task.get('register') == 'web_saas_prod_storage_postgres')
         self.assertTrue(task['no_log'])
 

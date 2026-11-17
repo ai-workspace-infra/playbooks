@@ -1,0 +1,42 @@
+# PROD Accounts/Billing convergence
+
+`archive/web-saas/converge-web-saas-prod-services.yml` consumes the IaC CMDB (`CMDB_FILE`),
+GitOps `topology/prod/runtime-selection.yaml` (`GITOPS_CHECKOUT`), and an
+immutable GitOps ref (`GITOPS_REF`). Use the existing reviewed SSH identity
+and known_hosts with `ANSIBLE_HOST_KEY_CHECKING=True` and explicit
+`ANSIBLE_SSH_ARGS` overriding the legacy repository defaults.
+
+Vault authentication is runtime-only (`VAULT_TOKEN`); never commit credentials.
+The role restores service/TLS material, grants a missing application role access
+to existing business tables, installs Doco-CD's `prod-services` target, and
+activates Accounts and restricted Billing through the existing system Caddy.
+
+The Doco-CD target excludes PostgreSQL and Console. An additive GitOps Console
+connection override is applied by the retained Console owner with `--no-deps`
+and `--pull never`, preserving its image/static volume/ports and Caddy sites.
+The Console API connects to `http://accounts:8080` on the existing shared
+network; its browser-facing Accounts endpoint uses the selfhost domain.
+Existing database container ID,
+start time and mounts must stay unchanged. No initialization, schema migration,
+snapshot import, user reset, public database port, or formal traffic cutover is
+performed. `runtime_role: primary` means serving the existing LOCAL account
+database, not promotion of that database to global authority.
+
+The existing imported database retains RLS on ten business tables. The native
+Accounts runtime verifies complete table visibility; a bare table grant is not
+sufficient for a non-owner role. GitOps explicitly authorizes `account_user` as
+a trusted backend with `BYPASSRLS`. The role rejects administrative capabilities
+(superuser/create database/create role/replication), preserves RLS policies and
+table ownership, and grants access only to existing account database tables.
+This is a backend-only identity; never distribute its credential to clients.
+
+The formal traffic declaration remains serverless. Selfhost background writers
+remain disabled until the data-authority gate is independently verified;
+`jobs.active_runtime: selfhost` is desired ownership, not proof of activation.
+Both topologies can remain enabled without switching production DNS/Worker
+bindings. Switching requires separate authority and full-chain acceptance.
+
+Acceptance: local `/readyz` on 8080/8081, public Accounts TLS/readiness, Billing
+denial from untrusted clients, unchanged database identity/schema/data counts,
+and Doco-CD receipt matching the pinned GitOps ref. Health/readiness alone does
+not prove authenticated Console login or authoritative billing jobs.

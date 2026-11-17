@@ -4,7 +4,7 @@ import hashlib,importlib.util,json,re,subprocess
 from pathlib import Path
 import yaml
 ROOT=Path(__file__).resolve().parents[1]
-spec=importlib.util.spec_from_file_location('lane_scope',ROOT/'roles/platform/dev_feature_flux/files/reconcile.py')
+spec=importlib.util.spec_from_file_location('lane_scope',ROOT/'archive/roles/legacy/dev_feature_flux/files/reconcile.py')
 SCOPE=importlib.util.module_from_spec(spec);spec.loader.exec_module(SCOPE)
 CM={'web-saas-fullstack-values','web-saas-fullstack-release','web-saas-accounts-template','web-saas-console-nginx'}
 IMAGE=re.compile(r'^ghcr\.io/[a-z0-9_./-]+@sha256:[0-9a-f]{64}$')
@@ -97,7 +97,7 @@ def candidate_scope(stage,candidate):
  return ns,path,hosts,chart
 
 def validate_sit_mail_sink(documents):
- expected=list(yaml.safe_load_all((ROOT/'roles/platform/dev_feature_flux/files/sit-mail-sink.yaml').read_text()))
+ expected=list(yaml.safe_load_all((ROOT/'archive/roles/legacy/dev_feature_flux/files/sit-mail-sink.yaml').read_text()))
  actual=[doc for doc in documents if (doc.get('kind'),doc.get('metadata',{}).get('name')) in {('Deployment','web-saas-sit-mail-sink'),('Service','web-saas-sit-mail-sink'),('NetworkPolicy','sit-mail-sink-isolation')}]
  require(len(actual)==3 and all(doc in actual for doc in expected),'SIT mail sink differs from reviewed non-forwarding contract')
 
@@ -147,7 +147,7 @@ def validate_documents(documents,stage,tls=False,candidate=None):
    validate_tagged_endpoints(release,ns,candidate['tagged_lane']['feature_tag'])
    account_doc=next(d for d in by_kind['ConfigMap'] if d['metadata']['name']=='web-saas-accounts-template')
    nginx_doc=next(d for d in by_kind['ConfigMap'] if d['metadata']['name']=='web-saas-console-nginx')
-   trusted_nginx=(ROOT/'roles/platform/dev_feature_flux/files/tagged-console-nginx.conf').read_text()
+   trusted_nginx=(ROOT/'archive/roles/legacy/dev_feature_flux/files/tagged-console-nginx.conf').read_text()
    require(nginx_doc.get('data')=={'nginx.conf':trusted_nginx},'tagged console Nginx configuration differs from reviewed owner')
    account=yaml.safe_load(account_doc.get('data',{}).get('account.yaml',''))
    if mail_sink:

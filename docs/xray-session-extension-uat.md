@@ -1,6 +1,6 @@
 # UAT session extension upgrade
 
-`deploy_xray_session_extension.yml` runs the `xray_session_extension` Role on an
+`archive/legacy/deploy_xray_session_extension.yml` runs the `xray_session_extension` Role on an
 explicit existing target. Pipeline must select that target from validated IaC
 CMDB/GitOps and provide immutable artifact URLs, full source SHA, SHA-256 checksums,
 release tag, run ID, and the declared UAT controller origin. UAT is the only accepted

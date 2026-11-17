@@ -122,7 +122,7 @@ def execute(env):
     listed = subprocess.run(["ansible-inventory", *inventory, "--list"], cwd=ROOT, env=child_env,
                             capture_output=True, text=True, check=True)
     require(set(json.loads(listed.stdout).get("_meta", {}).get("hostvars", {})) == {config["target_host"]}, "Inventory target set is not exact")
-    playbook = ["ansible-playbook", *inventory, "web-saas-data-operations.yml", "--limit", config["target_host"],
+    playbook = ["ansible-playbook", *inventory, "archive/web-saas/web-saas-data-operations.yml", "--limit", config["target_host"],
                 "--extra-vars", "@" + str(directory / "vars.json")]
     evidence = {"schema": 1, "phase": env["REQUESTED_OPERATION"], "environment": "uat",
                 "status": "blocked", "business_acceptance": False, "reason_code": "ROLE_EXECUTION_FAILED"}

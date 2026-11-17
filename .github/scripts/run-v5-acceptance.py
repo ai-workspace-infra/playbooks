@@ -17,7 +17,7 @@ def execute(plan, cmdb, output):
     if plan.get('schema_version')!='v5-owner-plan/v1':raise ValueError()
     sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     if not re.fullmatch('[a-f0-9]{40}',plan['playbooks_sha']) or sha!=plan['playbooks_sha']:raise ValueError()
-    subprocess.run(['git','diff','--quiet','HEAD','--','roles/v5_readonly_acceptance','.github/scripts/run-v5-acceptance.py'],cwd=ROOT,check=True)
+    subprocess.run(['git','diff','--quiet','HEAD','--','archive/roles/legacy/v5_readonly_acceptance','.github/scripts/run-v5-acceptance.py'],cwd=ROOT,check=True)
     spec=importlib.util.spec_from_file_location('cmdb',ROOT/'inventory/terraform_cmdb.py')
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     hosts=module.build_inventory(cmdb)['_meta']['hostvars']
@@ -58,7 +58,7 @@ def execute(plan, cmdb, output):
             env.update(agent)
             key=base64.b64decode(os.environ['V5_SSH_KEY_B64'],validate=True)
             subprocess.run(['ssh-add','-'],input=key,env=env,capture_output=True,check=True)
-            result=subprocess.run(['ansible-playbook','-i',str(temp/'inventory.json'),str(ROOT/'v5-readonly-acceptance.yml'),'-e','@'+str(temp/'vars.json')],env=env,capture_output=True,text=True,timeout=300)
+            result=subprocess.run(['ansible-playbook','-i',str(temp/'inventory.json'),str(ROOT/'archive/legacy/v5-readonly-acceptance.yml'),'-e','@'+str(temp/'vars.json')],env=env,capture_output=True,text=True,timeout=300)
             (output/'playbook.log').write_text(result.stdout+result.stderr)
             return result.returncode
         finally:

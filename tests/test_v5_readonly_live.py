@@ -39,7 +39,7 @@ def test_real_role_fails_closed(live_inputs, case):
     var_path = evidence / (case + '-vars.json')
     var_path.write_text(json.dumps(variables)); var_path.chmod(0o600)
     env = dict(os.environ, ANSIBLE_CONFIG=str(config), ANSIBLE_NOCOLOR='1')
-    result = subprocess.run(['ansible-playbook', '-i', str(inventory), str(ROOT/'v5-readonly-acceptance.yml'),
+    result = subprocess.run(['ansible-playbook', '-i', str(inventory), str(ROOT/'archive/legacy/v5-readonly-acceptance.yml'),
                              '-e', '@'+str(var_path)], env=env, capture_output=True, text=True, timeout=150)
     (evidence/(case+'.log')).write_text(result.stdout + result.stderr)
     assert result.returncode == 2, 'expected explicit gate failure, not transport/tool failure or false success'

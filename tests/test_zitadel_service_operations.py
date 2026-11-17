@@ -165,7 +165,7 @@ class Diagnostics(Base):
 
 class Playbook(Base):
     def playbook(self, *extra, operation="verify_host", target="localhost"):
-        args = ["ansible-playbook", "-i", "localhost,", "-c", "local", "zitadel_operations.yml",
+        args = ["ansible-playbook", "-i", "localhost,", "-c", "local", "archive/legacy/zitadel_operations.yml",
                 "-e", "ansible_become=false", "-e", f"zitadel_operation={operation}",
                 "-e", f"zitadel_operations_domain={DOMAIN}",
                 "-e", f"zitadel_operations_workspace={self.workspace}",

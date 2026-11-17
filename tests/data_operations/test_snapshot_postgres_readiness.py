@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @unittest.skipUnless(os.environ.get('GENERATION_READY_TEST_IMAGE'), 'requires an isolated Docker init fixture')
 class SnapshotReadinessTests(unittest.TestCase):
     def test_temporary_socket_server_is_not_restore_ready(self):
-        source = ROOT / 'roles/web_saas_full_snapshot/files/capture.py'
+        source = ROOT / 'archive/roles/web-saas/web_saas_full_snapshot/files/capture.py'
         node = next(n for n in ast.parse(source.read_text()).body
                     if isinstance(n, ast.FunctionDef) and n.name == 'wait_for_isolated_postgres')
         namespace = {'subprocess': subprocess}

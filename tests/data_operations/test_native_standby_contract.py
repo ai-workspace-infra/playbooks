@@ -11,10 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class NativeStandbyTests(unittest.TestCase):
     def test_only_postgres_is_started_from_fixed_gitops_projection(self):
-        plays = yaml.safe_load((ROOT / 'setup-web-saas-native-standby.yml').read_text())
+        plays = yaml.safe_load((ROOT / 'archive/web-saas/setup-web-saas-native-standby.yml').read_text())
         self.assertEqual(plays[0]['hosts'], 'web-saas-prod')
-        self.assertEqual(plays[0]['roles'], ['roles/vhosts/docker', 'roles/web_saas_prod_storage', 'roles/web_saas_native_standby'])
-        tasks = yaml.safe_load((ROOT / 'roles/web_saas_native_standby/tasks/main.yml').read_text())
+        self.assertEqual(plays[0]['roles'], ['roles/vhosts/docker', 'archive/roles/web-saas/web_saas_prod_storage', 'archive/roles/web-saas/web_saas_native_standby'])
+        tasks = yaml.safe_load((ROOT / 'archive/roles/web-saas/web_saas_native_standby/tasks/main.yml').read_text())
         starts = [task['ansible.builtin.command']['argv'] for task in tasks
                   if 'ansible.builtin.command' in task and 'up' in task['ansible.builtin.command'].get('argv', [])]
         self.assertEqual(len(starts), 2)
@@ -22,7 +22,7 @@ class NativeStandbyTests(unittest.TestCase):
         self.assertEqual(starts[1][-6:], ['postgres-only.json', 'up', '-d', '--no-deps', '--force-recreate', 'postgres'])
         recreate = next(task for task in tasks if 'Recreate only a managed' in task['name'])
         self.assertEqual(recreate['when'], 'native_repair_missing_password | bool')
-        text = (ROOT / 'roles/web_saas_native_standby/tasks/main.yml').read_text()
+        text = (ROOT / 'archive/roles/web-saas/web_saas_native_standby/tasks/main.yml').read_text()
         for item in ('--no-env-resolution', 'native_gitops_head.stdout', 'server_version_num',
                      '127.0.0.1', 'schema_initialized: false', 'database_cutover_approved: false',
                      'Existing PostgreSQL image differs', 'ownership.json'):
@@ -40,7 +40,7 @@ class NativeStandbyTests(unittest.TestCase):
         self.assertIn('not (native_startup_diagnostic.stdout | from_json).pg_version_present', text)
 
     def test_target_is_checked_before_disk_or_host_mutation(self):
-        text = (ROOT / 'setup-web-saas-native-standby.yml').read_text()
+        text = (ROOT / 'archive/web-saas/setup-web-saas-native-standby.yml').read_text()
         for item in ('open-platform-prod', 'native_authoritative_cmdb', 'ansible_user',
                      'GITOPS_COMMIT', 'POSTGRES_PASSWORD'):
             self.assertIn(item, text)

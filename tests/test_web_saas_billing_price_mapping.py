@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import unittest
 
-path = Path(__file__).resolve().parents[1] / 'roles/web_saas_billing_price_mapping/files/apply.py'
+path = Path(__file__).resolve().parents[1] / 'archive/roles/web-saas/web_saas_billing_price_mapping/files/apply.py'
 spec = importlib.util.spec_from_file_location('price_mapping', path)
 mapping = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mapping)

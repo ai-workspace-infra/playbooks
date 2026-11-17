@@ -19,13 +19,13 @@ LIFECYCLE_TEST_SOURCE_REFERENCE = {
     'path_sha256': 'b207652b8ea6dce6be3559a749b9fc9a3de3d1f9f402dc09d052f309068c07ca',
 }
 HISTORICAL_RUNNER_SHA256 = {
-    'roles/web_saas_generation_fresh/files/regression_cases.py':
+    'archive/roles/web-saas/web_saas_generation_fresh/files/regression_cases.py':
         '37888cd5fcdc14178ad626cbca95aac284fb335a3fc6e8ad56294787e905c763',
-    'roles/web_saas_generation_fresh/files/postgres_cases.py':
+    'archive/roles/web-saas/web_saas_generation_fresh/files/postgres_cases.py':
         'a93ab85155f6e4f6ee83f9f4b81274a42b2bf73ccbbc1bf9a6363fe2a03eab3d',
 }
-HOST_RUNNER = 'roles/web_saas_generation_fresh/files/regression_cases.py'
-POSTGRES_RUNNER = 'roles/web_saas_generation_fresh/files/postgres_cases.py'
+HOST_RUNNER = 'archive/roles/web-saas/web_saas_generation_fresh/files/regression_cases.py'
+POSTGRES_RUNNER = 'archive/roles/web-saas/web_saas_generation_fresh/files/postgres_cases.py'
 PUBLIC_HOSTS = ['console.svc.plus', 'accounts.svc.plus', 'billing.svc.plus',
                 'xworktech.com', 'www.xworktech.com']
 HISTORICAL_KNOWLEDGE_CASE_DIRECTORY = (
@@ -295,11 +295,11 @@ def build_batch(args):
             'The stage-8 writer-ownership gate has no executable case path or immutable runner pin in the identified source records; it is deferred and does not gate stages 0-7.',
         ],
         'invocations': [
-            {'entrypoint': 'web-saas-generation-regression.yml',
-             'command': 'ansible-playbook -i <verified-v5-inventory> web-saas-generation-regression.yml -e @<protected-v5-regression-vars.json>',
+            {'entrypoint': 'archive/web-saas/web-saas-generation-regression.yml',
+             'command': 'ansible-playbook -i <verified-v5-inventory> archive/web-saas/web-saas-generation-regression.yml -e @<protected-v5-regression-vars.json>',
              'case_ids': [row[0] for row in HOST_CASES], 'execution_now': False},
-            {'entrypoint': 'web-saas-generation-postgres-cases.yml',
-             'command': 'ansible-playbook -i <verified-v5-inventory> web-saas-generation-postgres-cases.yml -e @<protected-v5-regression-vars.json>',
+            {'entrypoint': 'archive/web-saas/web-saas-generation-postgres-cases.yml',
+             'command': 'ansible-playbook -i <verified-v5-inventory> archive/web-saas/web-saas-generation-postgres-cases.yml -e @<protected-v5-regression-vars.json>',
              'case_ids': [row[0] for row in POSTGRES_CASES], 'execution_now': False},
             {'entrypoint': 'tests/data_operations/selfhost/v4_business_role_acceptance.sh',
              'command': 'candidate-only read-only acceptance; exact pinned command and variables must be supplied by the runner owner',

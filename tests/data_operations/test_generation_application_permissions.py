@@ -7,7 +7,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-MODULE = ROOT / 'roles/web_saas_business_database/files/business_database.py'
+MODULE = ROOT / 'archive/roles/web-saas/web_saas_business_database/files/business_database.py'
 spec = importlib.util.spec_from_file_location('application_permissions', MODULE)
 permissions = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(permissions)

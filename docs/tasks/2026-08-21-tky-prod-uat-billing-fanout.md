@@ -32,7 +32,7 @@ or placing it in inventory files, then run from the playbooks repository:
 export INTERNAL_SERVICE_TOKEN='…Vault value…'
 ansible-playbook \
   -i inventory/terraform_cmdb.py \
-  deploy_tky_prod_uat_billing_fanout.yml
+  archive/prod-v2/deploy_tky_prod_uat_billing_fanout.yml
 unset INTERNAL_SERVICE_TOKEN
 ```
 

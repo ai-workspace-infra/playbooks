@@ -224,7 +224,7 @@ def execute(a):
    context.update(instance_id=a.instance_id,images=observation['images'],sources=observation['sources'],source={'repository':os.environ.get('GITHUB_REPOSITORY'),'workflow_ref':os.environ.get('GITHUB_WORKFLOW_REF'),'workflow_sha':os.environ.get('GITHUB_SHA'),'owner_sha':owner_sha,'run_id':os.environ.get('GITHUB_RUN_ID'),'run_attempt':os.environ.get('GITHUB_RUN_ATTEMPT')})
    env.update(DEV_SYNC_VAULT_TOKEN=transport.token,DEV_REGISTRY_HOST=transport.host,DEV_REGISTRY_KNOWN_HOSTS=str(transport.known),DEV_REGISTRY_PUBLIC_IDENTITY=str(transport.public),DEV_REGISTRY_CONTEXT=json.dumps(context))
   inventory=str(ROOT/'inventory/terraform_cmdb.py')
-  play=['ansible-playbook','-i',inventory,str(ROOT/'dev_feature_flux.yml'),'--limit','dev-k3s-v5','-e','@'+str(variables)]
+  play=['ansible-playbook','-i',inventory,str(ROOT/'archive/legacy/dev_feature_flux.yml'),'--limit','dev-k3s-v5','-e','@'+str(variables)]
   run([*play,'--syntax-check'],env)
   p=subprocess.run(play,env=env,text=True,capture_output=True,timeout=1200)
   require(report.is_file(),'no runtime owner receipt')

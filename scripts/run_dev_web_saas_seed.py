@@ -85,7 +85,7 @@ def execute(a):
         variables.chmod(0o600)
         env = {**transport.env,'ANSIBLE_ROLES_PATH':str(ROOT/'roles')}
         command = ['ansible-playbook','-i',str(ROOT/'inventory/terraform_cmdb.py'),
-            str(ROOT/'dev_web_saas_seed.yml'),'--limit','dev-k3s-v5','-e','@'+str(variables)]
+            str(ROOT/'archive/web-saas/dev_web_saas_seed.yml'),'--limit','dev-k3s-v5','-e','@'+str(variables)]
         run([*command,'--syntax-check'],env)
         run(command,env)
         require(report.is_file(), 'no actual seed owner receipt')

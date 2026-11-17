@@ -18,7 +18,7 @@ def load(name, path):
     return module
 
 
-owner = load("source_owner", ROOT / "roles/platform/gitops_source_promotion/files/promote.py")
+owner = load("source_owner", ROOT / "archive/roles/legacy/gitops_source_promotion/files/promote.py")
 runner = load("source_runner", ROOT / "scripts/run_gitops_source_promotion.py")
 
 
