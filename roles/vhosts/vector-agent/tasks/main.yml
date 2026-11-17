@@ -315,9 +315,18 @@
   no_log: "{{ vector_billing_ingest_enabled | bool or (vector_auth_password | default('') | length > 0) }}"
   notify: Restart vector
 
+# static-file 模式下 vector.toml 只含 ${VECTOR_AUTH_*} 占位符, 真值来自
+# systemd 注入的 EnvironmentFile。校验进程必须拿到同一份环境, 否则会被
+# "Missing environment variable" 判为失败 —— 那条错误只说明校验方式不对,
+# 不代表配置有问题。这里用 set -a 读取同一个文件, 保证校验条件与运行条件一致。
 - name: Validate rendered Vector configuration before service start
   ansible.builtin.shell: |
     set -o pipefail
+    if [ "{{ vector_auth_mode | default('none') }}" = "static-file" ] && [ -r "{{ vector_auth_static_file }}" ]; then
+      set -a
+      . "{{ vector_auth_static_file }}"
+      set +a
+    fi
     /usr/bin/vector validate --no-environment --config-toml "{{ vector_config_dir }}/vector.toml" 2>&1 |
       sed -E \
         -e 's/(Authorization[[:space:]]*=[[:space:]]*")[^"]*"/\1<redacted>"/Ig' \
