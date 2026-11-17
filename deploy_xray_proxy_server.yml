@@ -502,16 +502,28 @@
         - (agent_proxy_engine | default('fluxgate')) == 'haproxy'
       vars:
         haproxy_replace_caddy: true
-        haproxy_source_cert_path: "{{ agent_domain_tls_dir }}/current/fullchain.pem"
-        haproxy_source_key_path: "{{ agent_domain_tls_dir }}/current/key.pem"
+        haproxy_source_cert_path: >-
+          {{ agent_tls_cert_path
+             if ((vault_agent_tls_secret_path | default('') | length > 0) or (agent_proxy_vault_tls_enabled | default(false) | bool))
+             else (agent_domain_tls_dir ~ '/current/fullchain.pem') }}
+        haproxy_source_key_path: >-
+          {{ agent_tls_key_path
+             if ((vault_agent_tls_secret_path | default('') | length > 0) or (agent_proxy_vault_tls_enabled | default(false) | bool))
+             else (agent_domain_tls_dir ~ '/current/key.pem') }}
     - role: roles/vhosts/fluxgate
       when:
         - agent_proxy_operation in ['deploy', 'standalone']
         - (agent_proxy_engine | default('fluxgate')) == 'fluxgate'
       vars:
         fluxgate_replace_caddy: true
-        fluxgate_source_cert_path: "{{ agent_domain_tls_dir }}/current/fullchain.pem"
-        fluxgate_source_key_path: "{{ agent_domain_tls_dir }}/current/key.pem"
+        fluxgate_source_cert_path: >-
+          {{ agent_tls_cert_path
+             if ((vault_agent_tls_secret_path | default('') | length > 0) or (agent_proxy_vault_tls_enabled | default(false) | bool))
+             else (agent_domain_tls_dir ~ '/current/fullchain.pem') }}
+        fluxgate_source_key_path: >-
+          {{ agent_tls_key_path
+             if ((vault_agent_tls_secret_path | default('') | length > 0) or (agent_proxy_vault_tls_enabled | default(false) | bool))
+             else (agent_domain_tls_dir ~ '/current/key.pem') }}
     - roles/vhosts/agent-proxy
 
 - import_playbook: deploy_observability_agent.yml

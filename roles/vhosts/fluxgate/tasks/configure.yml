@@ -12,6 +12,31 @@
     - "{{ fluxgate_tls_dir }}"
   become: true
 
+- name: Determine candidate TLS certificate sources for Fluxgate
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ fluxgate_source_cert_path }}"
+    - "{{ agent_tls_cert_path | default('/etc/caddy/tls/agent-proxy.crt') }}"
+  register: fluxgate_cert_source_stats
+
+- name: Determine candidate TLS key sources for Fluxgate
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ fluxgate_source_key_path }}"
+    - "{{ agent_tls_key_path | default('/etc/caddy/tls/agent-proxy.key') }}"
+  register: fluxgate_key_source_stats
+
+- name: Select resolved Fluxgate TLS paths
+  ansible.builtin.set_fact:
+    resolved_fluxgate_source_cert: >-
+      {{ (fluxgate_cert_source_stats.results | selectattr('stat.exists') | map(attribute='stat.path') | list | first)
+         | default(fluxgate_source_cert_path) }}
+    resolved_fluxgate_source_key: >-
+      {{ (fluxgate_key_source_stats.results | selectattr('stat.exists') | map(attribute='stat.path') | list | first)
+         | default(fluxgate_source_key_path) }}
+
 - name: Copy TLS cert and key into Fluxgate TLS directory
   ansible.builtin.copy:
     src: "{{ item.src }}"
@@ -21,8 +46,8 @@
     group: root
     mode: "{{ item.mode }}"
   loop:
-    - { src: "{{ fluxgate_source_cert_path }}", dest: "agent-proxy.crt", mode: "0644" }
-    - { src: "{{ fluxgate_source_key_path }}", dest: "agent-proxy.key", mode: "0600" }
+    - { src: "{{ resolved_fluxgate_source_cert }}", dest: "agent-proxy.crt", mode: "0644" }
+    - { src: "{{ resolved_fluxgate_source_key }}", dest: "agent-proxy.key", mode: "0600" }
   become: true
   notify: Restart fluxgate
 

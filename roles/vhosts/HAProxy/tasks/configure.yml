@@ -8,12 +8,37 @@
     mode: "0750"
   become: true
 
-- name: Check source TLS cert and key existence
+- name: Determine candidate TLS certificate sources for HAProxy
   ansible.builtin.stat:
     path: "{{ item }}"
   loop:
     - "{{ haproxy_source_cert_path }}"
+    - "{{ agent_tls_cert_path | default('/etc/caddy/tls/agent-proxy.crt') }}"
+  register: haproxy_cert_source_stats
+
+- name: Determine candidate TLS key sources for HAProxy
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
     - "{{ haproxy_source_key_path }}"
+    - "{{ agent_tls_key_path | default('/etc/caddy/tls/agent-proxy.key') }}"
+  register: haproxy_key_source_stats
+
+- name: Select resolved HAProxy TLS paths
+  ansible.builtin.set_fact:
+    resolved_haproxy_source_cert: >-
+      {{ (haproxy_cert_source_stats.results | selectattr('stat.exists') | map(attribute='stat.path') | list | first)
+         | default(haproxy_source_cert_path) }}
+    resolved_haproxy_source_key: >-
+      {{ (haproxy_key_source_stats.results | selectattr('stat.exists') | map(attribute='stat.path') | list | first)
+         | default(haproxy_source_key_path) }}
+
+- name: Check source TLS cert and key existence
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ resolved_haproxy_source_cert }}"
+    - "{{ resolved_haproxy_source_key }}"
   register: haproxy_tls_sources
 
 - name: Require TLS source cert and key
@@ -26,7 +51,7 @@
   ansible.builtin.shell: |
     set -euo pipefail
     tmp="$(mktemp)"
-    cat "{{ haproxy_source_cert_path }}" "{{ haproxy_source_key_path }}" > "$tmp"
+    cat "{{ resolved_haproxy_source_cert }}" "{{ resolved_haproxy_source_key }}" > "$tmp"
     chmod 0640 "$tmp"
     chown root:haproxy "$tmp"
     mv "$tmp" "{{ haproxy_pem_path }}"
