@@ -315,19 +315,23 @@
   no_log: "{{ vector_billing_ingest_enabled | bool or (vector_auth_password | default('') | length > 0) }}"
   notify: Restart vector
 
-# static-file 模式下 vector.toml 只含 ${VECTOR_AUTH_*} 占位符, 真值来自
-# systemd 注入的 EnvironmentFile。校验进程必须拿到同一份环境, 否则会被
-# "Missing environment variable" 判为失败 —— 那条错误只说明校验方式不对,
-# 不代表配置有问题。这里用 set -a 读取同一个文件, 保证校验条件与运行条件一致。
+# static-file 模式下 vector.toml 只含 ${VECTOR_AUTH_*} 占位符, 真值由 systemd
+# 从 EnvironmentFile 注入。校验必须用同一份环境, 否则会被 "Missing environment
+# variable" 误判 —— 那条错误只说明校验方式不对, 不代表配置有问题。
+# 用 systemd-run 复用同一个 EnvironmentFile, 让校验进程看到的 环境与
+# vector.service 启动时完全一致。不用 shell 的 source 解析该文件:
+# bash 的 source 会把 "Bearer xxx" 拆成两条命令, 而 systemd 的 EnvironmentFile
+# 把整行剩余部分当作值 —— 两者对含空格凭据的语义不同。
 - name: Validate rendered Vector configuration before service start
   ansible.builtin.shell: |
     set -o pipefail
     if [ "{{ vector_auth_mode | default('none') }}" = "static-file" ] && [ -r "{{ vector_auth_static_file }}" ]; then
-      set -a
-      . "{{ vector_auth_static_file }}"
-      set +a
+      /usr/bin/systemd-run --quiet --pipe --wait --collect \
+        --property=EnvironmentFile={{ vector_auth_static_file }} \
+        /usr/bin/vector validate --no-environment --config-toml "{{ vector_config_dir }}/vector.toml" 2>&1 |
+    else
+      /usr/bin/vector validate --no-environment --config-toml "{{ vector_config_dir }}/vector.toml" 2>&1 |
     fi
-    /usr/bin/vector validate --no-environment --config-toml "{{ vector_config_dir }}/vector.toml" 2>&1 |
       sed -E \
         -e 's/(Authorization[[:space:]]*=[[:space:]]*")[^"]*"/\1<redacted>"/Ig' \
         -e 's/(Bearer[[:space:]]+)[^[:space:]]+/\1<redacted>/Ig' \
