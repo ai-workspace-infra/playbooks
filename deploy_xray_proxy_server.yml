@@ -509,7 +509,7 @@
         - agent_proxy_operation == 'deploy'
         - agent_proxy_local_installer | default(false) | bool
 
-    - name: Disable legacy or conflicting flux-limits pull timer on bare-metal node
+    - name: Disable legacy or conflicting separate pull timers on bare-metal node
       ansible.builtin.systemd:
         name: "{{ item }}"
         state: stopped
@@ -517,6 +517,8 @@
       loop:
         - ansible-pull-flux-limits.timer
         - ansible-pull-flux-limits.service
+        - ansible-pull-observability.timer
+        - ansible-pull-observability.service
       failed_when: false
       become: true
       when:

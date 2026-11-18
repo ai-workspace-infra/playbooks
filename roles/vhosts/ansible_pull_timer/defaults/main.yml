@@ -1,11 +1,10 @@
 ---
-# Schedule a recurring `ansible-pull` convergence on a host.
+# Schedule a recurring unified `ansible-pull` convergence on a host.
 #
-# Defaults target the Flux controller resource-limit convergence introduced by
-# `pull_flux_controller_limits.yml`; override the playbook/repo inputs to reuse
-# the timer for another pull-mode convergence entrypoint.
-ansible_pull_timer_name: ansible-pull-flux-limits
-ansible_pull_timer_description: Converge Flux controller resource limits (ansible-pull)
+# Defaults converge both GitOps declarations, Kubernetes resource bounds (when present),
+# and observability collection via `pull_convergence.yml`.
+ansible_pull_timer_name: ansible-pull
+ansible_pull_timer_description: Unified systemd ansible-pull configuration convergence
 ansible_pull_timer_state: started
 # Install git/ansible-core when the host cannot run ansible-pull yet.
 ansible_pull_timer_manage_prerequisites: true
@@ -13,23 +12,17 @@ ansible_pull_timer_manage_prerequisites: true
 # ansible-pull invocation
 ansible_pull_repo_url: https://github.com/ai-workspace-infra/playbooks.git
 ansible_pull_checkout: main
-ansible_pull_playbook: pull_flux_controller_limits.yml
+ansible_pull_playbook: pull_convergence.yml
 ansible_pull_checkout_dir: /var/lib/ansible-pull/playbooks
 ansible_pull_inventory: "localhost,"
 ansible_pull_kubeconfig: /etc/rancher/k3s/k3s.yaml
 ansible_pull_path: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ansible_pull_timeout_sec: 900
+ansible_pull_timeout_sec: 1800
+ansible_pull_environment_file: /etc/ansible-pull/gitops-declaration.env
 
 # systemd timer cadence
-ansible_pull_schedule: "*-*-* 00/6:17:00"
-ansible_pull_randomized_delay_sec: 300
+ansible_pull_schedule: "*-*-* 04:23:00"
+ansible_pull_randomized_delay_sec: 1800
 
-# 额外需要按同样的方式自我收敛的入口。每一项都是一个独立的 systemd timer,
-# 与上面的单份默认互不影响:
-#   - name:   unit 名前缀, 必填, 全局唯一
-#   - playbook: 要 pull 并执行的 playbook, 必填
-#   - checkout: 可选, 默认沿用 ansible_pull_checkout
-#   - schedule / randomized_delay_sec / description / state: 可选覆盖
-# 用列表而不是复用单份 role, 是为了让每个入口有独立的名字、周期与日志,
-# 任何一个入口失败都不会连带影响另一个。
+# 额外需要按同样的方式自我收敛的入口。每一项都是一个独立的 systemd timer
 ansible_pull_extra_entrypoints: []

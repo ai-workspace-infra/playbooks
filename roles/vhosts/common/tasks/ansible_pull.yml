@@ -60,6 +60,32 @@
     mode: "0750"
   tags: [common, ansible_pull]
 
+- name: Base | stop, disable, and clean up legacy separate pull units
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - ansible-pull-flux-limits.timer
+    - ansible-pull-flux-limits.service
+    - ansible-pull-observability.timer
+    - ansible-pull-observability.service
+  failed_when: false
+  tags: [common, ansible_pull]
+
+- name: Base | remove legacy separate pull unit files
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}"
+    state: absent
+  loop:
+    - ansible-pull-flux-limits.timer
+    - ansible-pull-flux-limits.service
+    - ansible-pull-observability.timer
+    - ansible-pull-observability.service
+  failed_when: false
+  notify: Reload systemd manager configuration
+  tags: [common, ansible_pull]
+
 - name: Base | render scheduled ansible-pull services
   ansible.builtin.template:
     src: ansible-pull.service.j2

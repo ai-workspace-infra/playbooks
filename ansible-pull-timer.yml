@@ -1,28 +1,15 @@
 ---
-# Install the systemd timers that keep pull-mode convergence entrypoints applied.
-# Defaults converge the Flux controller resource bounds on k3s hosts.
-- name: Schedule the ansible-pull flux limits convergence
-  hosts: k3s
-  become: true
-  roles:
-    - vhosts/ansible_pull_timer
-
-# 采集节点(含非 k3s 的边缘 VPS)同样需要自我收敛: 它们承载 Vector、
-# blackbox/node/process exporter 与 journald 策略, 却长期没有 pull 通道,
-# 只能等控制面推送。这里给它们单独装一个 timer, 与 Flux 那个互不影响。
-- name: Schedule the ansible-pull observability convergence
-  hosts: "{{ ansible_pull_observability_hosts | default('all') }}"
+# Install the unified systemd timer that keeps pull-mode convergence applied across all hosts
+# (both Kubernetes control plane nodes and edge agent proxy nodes).
+- name: Schedule the unified ansible-pull configuration convergence
+  hosts: "{{ ansible_pull_hosts | default('all') }}"
   become: true
   vars:
-    ansible_pull_timer_name: ansible-pull-observability
-    ansible_pull_timer_description: Converge observability collection agent (ansible-pull)
-    ansible_pull_playbook: pull_observability_agent.yml
-    ansible_pull_checkout_dir: /var/lib/ansible-pull/playbooks-observability
+    ansible_pull_timer_name: ansible-pull
+    ansible_pull_timer_description: Unified systemd ansible-pull configuration convergence
+    ansible_pull_playbook: pull_convergence.yml
+    ansible_pull_checkout_dir: /var/lib/ansible-pull/playbooks
     ansible_pull_kubeconfig: /etc/rancher/k3s/k3s.yaml
-    # 采集侧一天一次足够: 这些配置变更频率远低于 6 小时, 而且每次 pull 会重启
-    # Vector/exporter, 过密的周期会把重启成本放大成噪声。
-    # 每天一次。pull_observability_agent.yml 顶部会先跑 gitops 声明拉取,
-    # 因此单一 timer 就能同时完成"同步 playbook"和"同步 GitOps 治理配置"。
     ansible_pull_schedule: "*-*-* 04:23:00"
     ansible_pull_randomized_delay_sec: 1800
     ansible_pull_timer_state: started

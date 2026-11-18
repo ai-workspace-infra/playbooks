@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Contract and regression tests for Fluxgate vhosts auto-merge and robust pull convergence."""
+"""Contract and regression tests for Fluxgate vhosts auto-merge, unified ansible-pull, and robust pull convergence."""
 
 from pathlib import Path
 import unittest
@@ -21,6 +21,7 @@ class FluxgateVhostsContractTest(unittest.TestCase):
         tasks = (ROOT / "roles/vhosts/fluxgate/tasks/configure.yml").read_text()
         template = (ROOT / "roles/vhosts/fluxgate/templates/xconnect.conf.j2").read_text()
         self.assertIn("fluxgate_resolved_vhosts", tasks)
+        self.assertIn("Ensure target Fluxgate config is not immutable", tasks)
         self.assertIn("fluxgate_resolved_vhosts", template)
 
     def test_haproxy_defaults_merge_domains_and_agent_id(self) -> None:
@@ -36,7 +37,7 @@ class FluxgateVhostsContractTest(unittest.TestCase):
         self.assertIn("agent_proxy_effective_vhosts:", content)
         self.assertIn("fluxgate_vhosts: \"{{ agent_proxy_effective_vhosts }}\"", content)
         self.assertIn("haproxy_vhosts: \"{{ agent_proxy_effective_vhosts }}\"", content)
-        self.assertIn("Disable legacy or conflicting flux-limits pull timer on bare-metal node", content)
+        self.assertIn("Disable legacy or conflicting separate pull timers on bare-metal node", content)
 
     def test_pull_gitops_declaration_ensures_directory_exists(self) -> None:
         content = (ROOT / "pull_gitops_declaration.yml").read_text()
@@ -55,6 +56,21 @@ class FluxgateVhostsContractTest(unittest.TestCase):
         self.assertIn("vector_billing_snapshot_configured", content)
         self.assertIn("existing_xray_exporter_service_token", content)
         self.assertIn("vector_billing_ingest_enabled", content)
+
+    def test_unified_ansible_pull_convergence_entrypoint(self) -> None:
+        pull_conv = (ROOT / "pull_convergence.yml").read_text()
+        self.assertIn("pull_gitops_declaration.yml", pull_conv)
+        self.assertIn("pull_flux_controller_limits.yml", pull_conv)
+        self.assertIn("pull_observability_agent.yml", pull_conv)
+
+        timer_defaults = (ROOT / "roles/vhosts/ansible_pull_timer/defaults/main.yml").read_text()
+        self.assertIn("ansible_pull_timer_name: ansible-pull", timer_defaults)
+        self.assertIn("ansible_pull_playbook: pull_convergence.yml", timer_defaults)
+
+        timer_tasks = (ROOT / "roles/vhosts/ansible_pull_timer/tasks/main.yml").read_text()
+        self.assertIn("Stop, disable, and clean up legacy separate ansible-pull units", timer_tasks)
+        self.assertIn("ansible-pull-flux-limits.timer", timer_tasks)
+        self.assertIn("ansible-pull-observability.timer", timer_tasks)
 
 
 if __name__ == "__main__":

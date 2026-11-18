@@ -66,6 +66,32 @@
     mode: "0750"
   tags: [ansible_pull_timer, install]
 
+- name: Stop, disable, and clean up legacy separate ansible-pull units
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - ansible-pull-flux-limits.timer
+    - ansible-pull-flux-limits.service
+    - ansible-pull-observability.timer
+    - ansible-pull-observability.service
+  failed_when: false
+  tags: [ansible_pull_timer, configure]
+
+- name: Remove legacy separate ansible-pull unit files
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}"
+    state: absent
+  loop:
+    - ansible-pull-flux-limits.timer
+    - ansible-pull-flux-limits.service
+    - ansible-pull-observability.timer
+    - ansible-pull-observability.service
+  failed_when: false
+  notify: Reload systemd manager configuration
+  tags: [ansible_pull_timer, configure]
+
 - name: Template the scheduled ansible-pull service unit
   ansible.builtin.template:
     src: ansible-pull.service.j2

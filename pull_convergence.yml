@@ -1,0 +1,16 @@
+---
+# Unified daily ansible-pull convergence entrypoint for all managed hosts
+# (both Kubernetes/k3s control plane nodes and standalone edge proxy nodes).
+#
+# Execution flow:
+# 1. pull_gitops_declaration.yml: Fetches GitOps topology to local cache and outputs /etc/ansible-pull/gitops-declaration.env.
+# 2. pull_flux_controller_limits.yml: Enforces Flux controller resource bounds (automatically skipped on non-k3s bare metal).
+# 3. pull_observability_agent.yml: Converges monitoring exporters (node, process, blackbox) and Vector agent,
+#    automatically retaining billing snapshot ingest (port 8686) and fan-out credentials.
+#
+# Invocation via systemd:
+#   ansible-pull -U https://github.com/ai-workspace-infra/playbooks.git -C main \
+#     -d /var/lib/ansible-pull/playbooks -i localhost, pull_convergence.yml
+- import_playbook: pull_gitops_declaration.yml
+- import_playbook: pull_flux_controller_limits.yml
+- import_playbook: pull_observability_agent.yml
