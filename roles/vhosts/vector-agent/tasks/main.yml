@@ -73,12 +73,9 @@
 - name: Resolve effective vector billing ingest state
   ansible.builtin.set_fact:
     vector_billing_ingest_enabled: >-
-      {{ vector_billing_ingest_enabled | bool
-         if (vector_billing_ingest_enabled is defined and vector_billing_ingest_enabled is boolean)
-         else (
-           (lookup('ansible.builtin.env', 'VECTOR_BILLING_INGEST_ENABLED') | default(false, true) | bool)
-           or (vector_billing_snapshot_configured | default(false) | bool)
-         ) }}
+      {{ (vector_billing_ingest_enabled | default(false) | bool)
+         or (lookup('ansible.builtin.env', 'VECTOR_BILLING_INGEST_ENABLED') | default(false, true) | bool)
+         or (vector_billing_snapshot_configured | default(false) | bool) }}
 
 - name: Resolve canonical Vault credentials before any Vector changes
   ansible.builtin.include_tasks: '{{ playbook_dir }}/tasks/resolve-canonical-service-token.yml'
