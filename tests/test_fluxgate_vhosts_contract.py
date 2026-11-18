@@ -45,10 +45,14 @@ class FluxgateVhostsContractTest(unittest.TestCase):
         self.assertIn("path: \"{{ gitops_declaration_env_file | dirname }}\"", content)
 
     def test_flux_controller_limits_guards_kubectl(self) -> None:
-        content = (ROOT / "roles/vhosts/flux_controllers/tasks/limits.yml").read_text()
-        self.assertIn("Check if kubectl command exists", content)
-        self.assertIn("Check if k3s kubeconfig exists", content)
-        self.assertIn("Skipping Flux controller limits convergence", content)
+        limits_task = (ROOT / "roles/vhosts/flux_controllers/tasks/limits.yml").read_text()
+        self.assertIn("Check if kubectl command exists", limits_task)
+        self.assertIn("Check if k3s kubeconfig exists", limits_task)
+        self.assertIn("Skipping Flux controller limits convergence", limits_task)
+
+        limits_playbook = (ROOT / "pull_flux_controller_limits.yml").read_text()
+        self.assertIn("container_mode", limits_playbook)
+        self.assertIn("Skipping Flux controller limits convergence: container_mode is set to false via -e", limits_playbook)
 
     def test_vector_agent_adapts_to_local_snapshot_and_secrets(self) -> None:
         content = (ROOT / "roles/vhosts/vector-agent/tasks/main.yml").read_text()

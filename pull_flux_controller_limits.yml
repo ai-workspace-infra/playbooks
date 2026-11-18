@@ -2,21 +2,22 @@
 # ansible-pull entrypoint: converge the Flux controller resource bounds declared
 # in roles/vhosts/flux_controllers without re-running the cluster bootstrap.
 #
-# Run on the target k3s host as the system administrator:
-#
-#   sudo ansible-pull -U https://github.com/ai-workspace-infra/playbooks.git \
-#     -d /var/lib/ansible-pull/playbooks -i localhost, \
-#     pull_flux_controller_limits.yml
-#
-# The role reads the admin kubeconfig from `k3s_platform_kubeconfig_path`
-# (default: /etc/rancher/k3s/k3s.yaml), so the pull must run as the user that
-# can read it.
+# 支持 OS 层面 -e 参数控制（统一 playbook 传参）：
+#   ansible-pull ... pull_convergence.yml -e "container_mode=false"  # 显式非容器裸机模式
+#   ansible-pull ... pull_convergence.yml -e "container_mode=true"   # 显式容器K8s模式
+#   默认自适应：未传参时自动探测 kubectl/kubeconfig，轻量裸机自动跳过，无 rc=2 崩溃。
 - name: Converge Flux controller resource limits
   hosts: localhost
   connection: local
   gather_facts: false
   tasks:
+    - name: Notice when container mode is explicitly disabled via -e
+      ansible.builtin.debug:
+        msg: "Skipping Flux controller limits convergence: container_mode is set to false via -e"
+      when: not (container_mode | default(true) | bool)
+
     - name: Apply the declared Flux controller resource bounds
       ansible.builtin.import_role:
         name: vhosts/flux_controllers
         tasks_from: limits.yml
+      when: container_mode | default(true) | bool
