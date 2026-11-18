@@ -86,6 +86,16 @@
   notify: Reload systemd manager configuration
   tags: [common, ansible_pull]
 
+- name: Base | reset failed state for legacy separate ansible-pull units
+  ansible.builtin.command:
+    cmd: "systemctl reset-failed {{ item }}"
+  loop:
+    - ansible-pull-flux-limits.service
+    - ansible-pull-observability.service
+  failed_when: false
+  changed_when: false
+  tags: [common, ansible_pull]
+
 - name: Base | render scheduled ansible-pull services
   ansible.builtin.template:
     src: ansible-pull.service.j2

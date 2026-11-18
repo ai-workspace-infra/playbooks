@@ -28,6 +28,14 @@
     gitops_declaration_env_file: /etc/ansible-pull/gitops-declaration.env
     gitops_declaration_environment: "{{ lookup('ansible.builtin.env', 'DEPLOY_ENV') | default('prod', true) }}"
   tasks:
+    - name: Ensure the ansible-pull configuration directory exists
+      ansible.builtin.file:
+        path: "{{ gitops_declaration_env_file | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
     - name: Ensure the declaration checkout parent exists
       ansible.builtin.file:
         path: "{{ gitops_declaration_dir | dirname }}"
@@ -77,14 +85,6 @@
           {{ gitops_declaration_file }} no longer declares spec.node_maintenance;
           the observability pull would fall back to role defaults instead of the
           declared governance values
-
-    - name: Ensure the ansible-pull configuration directory exists
-      ansible.builtin.file:
-        path: "{{ gitops_declaration_env_file | dirname }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
 
     - name: Record the resolved declaration path for the pull timers
       ansible.builtin.copy:

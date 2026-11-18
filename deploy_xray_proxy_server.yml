@@ -525,6 +525,34 @@
         - agent_proxy_operation == 'deploy'
         - agent_proxy_local_installer | default(false) | bool
 
+    - name: Remove legacy separate ansible-pull unit files on bare-metal node
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ item }}"
+        state: absent
+      loop:
+        - ansible-pull-flux-limits.timer
+        - ansible-pull-flux-limits.service
+        - ansible-pull-observability.timer
+        - ansible-pull-observability.service
+      failed_when: false
+      become: true
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
+
+    - name: Reset failed state for legacy separate ansible-pull units on bare-metal node
+      ansible.builtin.command:
+        cmd: "systemctl reset-failed {{ item }}"
+      loop:
+        - ansible-pull-flux-limits.service
+        - ansible-pull-observability.service
+      failed_when: false
+      changed_when: false
+      become: true
+      when:
+        - agent_proxy_operation == 'deploy'
+        - agent_proxy_local_installer | default(false) | bool
+
   roles:
     - role: roles/vhosts/caddy
       when:
