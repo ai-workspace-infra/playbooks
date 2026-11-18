@@ -1,0 +1,23 @@
+---
+# Default variables for gitea_mirror role
+
+gitea_mirror_api_base: "https://gitea.com/api/v1"
+gitea_mirror_gitea_token: "{{ lookup('ansible.builtin.env', 'GITEA_TOKEN') | default('', true) }}"
+gitea_mirror_github_token: "{{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') | default('', true) }}"
+
+gitea_mirror_targets:
+  - haitaopanhq
+  - ai-workspace-lab
+  - ai-workspace-services
+  - ai-workspace-infra
+  - ai-workspace-xstream
+  - ai-desktop-lab
+
+gitea_mirror_interval: "8h"
+gitea_mirror_service: "github"
+gitea_mirror_dry_run: false
+gitea_mirror_recurring: true
+gitea_mirror_auto_create_orgs: true
+gitea_mirror_rate_limit_delay_seconds: 1.0
+
+gitea_mirror_script_path: "{{ role_path }}/files/mirror_github_to_gitea.py"

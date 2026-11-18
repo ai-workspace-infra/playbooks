@@ -1,0 +1,33 @@
+---
+- name: Validate Gitea token is provided
+  ansible.builtin.assert:
+    that:
+      - gitea_mirror_gitea_token | length > 0
+    fail_msg: "gitea_mirror_gitea_token must be defined or exported via GITEA_TOKEN"
+
+- name: Preview Gitea mirror execution
+  ansible.builtin.debug:
+    msg:
+      - "Gitea API Base: {{ gitea_mirror_api_base }}"
+      - "Targets: {{ gitea_mirror_targets }}"
+      - "Dry Run: {{ gitea_mirror_dry_run or ansible_check_mode }}"
+      - "Sync Interval: {{ gitea_mirror_interval }}"
+
+- name: Execute GitHub to Gitea mirroring script
+  ansible.builtin.command: >-
+    python3 {{ gitea_mirror_script_path }}
+    --gitea-api {{ gitea_mirror_api_base }}
+    --gitea-token {{ gitea_mirror_gitea_token }}
+    {% if gitea_mirror_github_token | length > 0 %}--gh-token {{ gitea_mirror_github_token }}{% endif %}
+    {% for target in gitea_mirror_targets %}--target {{ target }} {% endfor %}
+    --interval {{ gitea_mirror_interval }}
+    --delay {{ gitea_mirror_rate_limit_delay_seconds }}
+    {% if gitea_mirror_dry_run or ansible_check_mode %}--dry-run{% endif %}
+    {% if not gitea_mirror_recurring %}--no-mirror{% endif %}
+  register: gitea_mirror_result
+  changed_when: "'Created: 0' not in gitea_mirror_result.stdout"
+  no_log: true
+
+- name: Display Gitea mirror execution summary
+  ansible.builtin.debug:
+    msg: "{{ gitea_mirror_result.stdout_lines }}"
