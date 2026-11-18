@@ -1,0 +1,38 @@
+---
+- name: Ensure Caddy config directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ caddy_config_dir | default('/etc/caddy', true) }}"
+    - "{{ caddy_config_dir | default('/etc/caddy', true) }}/conf.d"
+  become: true
+
+- name: Ensure Caddy TLS directory exists
+  ansible.builtin.file:
+    path: "{{ caddy_config_dir | default('/etc/caddy', true) }}/tls"
+    state: directory
+    owner: caddy
+    group: caddy
+    mode: '0750'
+  failed_when: false
+  become: true
+
+- name: Deploy root Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ caddy_config_dir | default('/etc/caddy', true) }}/Caddyfile"
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify: Reload caddy
+
+- name: Export Caddy ingress contract facts
+  ansible.builtin.set_fact:
+    xconnect_ingress_engine: "caddy"
+    xconnect_ingress_conf_d_dir: "{{ caddy_config_dir | default('/etc/caddy', true) }}/conf.d"
+    xconnect_ingress_tls_dir: "{{ caddy_config_dir | default('/etc/caddy', true) }}/tls"

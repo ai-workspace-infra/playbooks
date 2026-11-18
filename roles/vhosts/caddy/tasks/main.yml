@@ -1,120 +1,20 @@
-# The whole Caddy role is skipped when caddy_enabled is false (default on macOS
-# single-host deploys), so /etc/caddy is never touched and no caddy service is
-# expected. Override with -e caddy_enabled=true.
-- name: Check if Caddy is already installed
-  ansible.builtin.command: caddy version
-  register: caddy_bin_check
-  failed_when: false
-  changed_when: false
+---
+# Pure Caddy reverse proxy engine role.
+# Can be freely composed with vhost providers (e.g. xconnect_gateway, gitea, etc.)
+- name: Check and install Caddy package
+  ansible.builtin.include_tasks: install.yml
   when: caddy_enabled | default(true) | bool
 
-- name: Drop the Caddy apt source while its signing key is expired
-  ansible.builtin.include_tasks: "{{ role_path }}/../common/tasks/caddy_apt_source.yml"
+- name: Configure Caddy directories and root Caddyfile
+  ansible.builtin.include_tasks: configure.yml
+  when: caddy_enabled | default(true) | bool
+
+- name: Ensure Caddy systemd service is active
+  ansible.builtin.include_tasks: service.yml
+  when: caddy_enabled | default(true) | bool
+
+- name: Configure Caddy Prometheus metrics
+  ansible.builtin.include_tasks: metrics.yml
   when:
     - caddy_enabled | default(true) | bool
-    - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
-
-- name: Configure Caddy reverse proxy
-  when: caddy_enabled | default(true) | bool
-  block:
-    - name: Require a supported operating system for a fresh Caddy installation
-      ansible.builtin.assert:
-        that:
-          - caddy_bin_check.rc == 0 or ansible_facts['distribution'] in ['Debian', 'Ubuntu']
-        fail_msg: >-
-          Fresh Caddy installation is currently supported only on Debian and
-          Ubuntu; refusing an unverified package source.
-
-    - name: Remove the stale Caddy stable apt source before refreshing apt
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /etc/apt/sources.list.d/caddy-stable.list
-        - /etc/apt/sources.list.d/caddy-stable.sources
-      become: true
-      when:
-        - caddy_bin_check.rc != 0
-        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
-
-    - name: Ensure Caddy package prerequisites
-      ansible.builtin.apt:
-        name: ca-certificates
-        state: present
-        update_cache: true
-      become: true
-      when:
-        - caddy_bin_check.rc != 0
-        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
-
-    - name: Select the pinned Caddy release package architecture
-      ansible.builtin.set_fact:
-        caddy_package_arch: "{{ caddy_package_arch_map[ansible_facts['architecture']] | default('') }}"
-      when:
-        - caddy_bin_check.rc != 0
-        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
-
-    - name: Require a pinned Caddy package checksum for this architecture
-      ansible.builtin.assert:
-        that:
-          - caddy_package_arch | length > 0
-          - caddy_package_arch in caddy_package_sha512
-        fail_msg: >-
-          No checksum-pinned Caddy package is configured for architecture
-          {{ ansible_facts['architecture'] }}; refusing an unverified install.
-      when:
-        - caddy_bin_check.rc != 0
-        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
-
-    - name: Download checksum-pinned official Caddy release package
-      ansible.builtin.get_url:
-        url: >-
-          https://github.com/caddyserver/caddy/releases/download/v{{ caddy_package_version
-          }}/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb
-        dest: >-
-          /tmp/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb
-        checksum: "sha512:{{ caddy_package_sha512[caddy_package_arch] }}"
-        mode: '0644'
-      become: true
-      when:
-        - caddy_bin_check.rc != 0
-        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
-
-    - name: Install the verified Caddy release package
-      ansible.builtin.apt:
-        deb: >-
-          /tmp/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb
-        state: present
-      become: true
-      when:
-        - caddy_bin_check.rc != 0
-        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
-
-    - name: Remove the downloaded Caddy package after installation
-      ansible.builtin.file:
-        path: >-
-          /tmp/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb
-        state: absent
-      become: true
-      when:
-        - caddy_bin_check.rc != 0
-        - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
-
-    - name: Ensure Caddy config directory exists
-      ansible.builtin.file:
-        path: "{{ caddy_config_dir | default('/etc/caddy', true) }}"
-        state: directory
-        mode: '0755'
-
-    - name: Deploy Caddyfile
-      ansible.builtin.template:
-        src: Caddyfile.j2
-        dest: "{{ caddy_config_dir | default('/etc/caddy', true) }}/Caddyfile"
-        mode: '0644'
-      notify: Reload caddy
-
-    - name: Ensure Caddy is running
-      ansible.builtin.service:
-        name: caddy
-        state: started
-        enabled: true
+    - caddy_metrics_enabled | default(false) | bool

@@ -43,7 +43,7 @@ JP 最近 48 小时的 Caddy 记录中，`/split` POST 请求声明体约 0.5–
 
 ## SSH Playbook 应用
 
-- Owner：现有 `roles/vhosts/agent-proxy`，新增 `tasks/upload_timeout.yml` 和针对现有 JSON 的窄范围修改工具。
+- Owner：现有 `roles/vhosts/xconnect_proxy`，新增 `tasks/upload_timeout.yml` 和针对现有 JSON 的窄范围修改工具。
 - Caller：`tune_xray_upload_timeout.yml`；操作人通过临时 inventory 的 `xconnect_upload_targets` 仅选择用户授权的三个节点。临时清单不作为第二份 CMDB/GitOps 拓扑。
 - 副作用：只修改现有模板的 `policy.levels.0.connIdle`，保留其他字段和权限，变更前保存 root 私有备份；模板或运行配置漂移时重载既有 Agent。不会重装 Core/Agent、覆盖用户或更改 Caddy。运行配置由 Agent 生成。
 - 幂等：模板、运行配置已一致时不重启；运行配置漂移时即使模板内容未变也触发 Agent 重载。

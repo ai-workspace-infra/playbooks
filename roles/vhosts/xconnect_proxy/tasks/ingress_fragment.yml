@@ -1,0 +1,72 @@
+---
+# Render only the XConnect Proxy ingress fragment (/split -> /dev/shm/xray.sock)
+# into the active ingress engine's conf.d directory.
+- name: Resolve XConnect Proxy ingress target paths
+  ansible.builtin.set_fact:
+    xconnect_proxy_resolved_conf_d_dir: >-
+      {{ xconnect_ingress_conf_d_dir | default(agent_proxy_caddy_conf_dir | default('/etc/caddy/conf.d', true), true) }}
+
+- name: Ensure ingress conf.d directory exists for XConnect Proxy
+  ansible.builtin.file:
+    path: "{{ xconnect_proxy_resolved_conf_d_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Require canonical domain for XConnect Proxy ingress fragment
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_domains | default([]) | length >= 1
+      - (agent_proxy_domains | first) | length > 0
+    fail_msg: "XConnect Proxy requires at least one domain in agent_proxy_domains / xconnect_proxy_domain."
+
+- name: Render XConnect Proxy ingress fragment into conf.d
+  ansible.builtin.template:
+    src: agent-proxy.conf.j2
+    dest: >-
+      {{ xconnect_proxy_resolved_conf_d_dir }}/{{
+         (agent_proxy_domains | first) ~ ('.caddy' if (xconnect_ingress_engine | default('fluxgate')) == 'caddy' else '.conf') }}
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload ingress
+    - Reload Caddy configuration
+
+- name: Reconcile legacy Caddy root and stale fragments when running Caddy vhosts mode
+  when: (xconnect_ingress_engine | default(agent_proxy_engine | default('fluxgate'))) == 'caddy'
+  block:
+    - name: Configure Agent Proxy root Caddyfile
+      ansible.builtin.template:
+        src: agent-proxy.Caddyfile.j2
+        dest: "{{ agent_proxy_caddy_config_dir }}/Caddyfile"
+        mode: "0644"
+      notify: Reload Caddy configuration
+
+    - name: Remove legacy Agent Proxy Caddy fragments
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ xconnect_proxy_resolved_conf_d_dir }}/agent-proxy.caddy"
+        - "{{ xconnect_proxy_resolved_conf_d_dir }}/tky-proxy.caddy"
+        - "{{ xconnect_proxy_resolved_conf_d_dir }}/tky-proxy.conf"
+        - "{{ xconnect_proxy_resolved_conf_d_dir }}/tky-proxy-svc-plus.caddy"
+        - "{{ xconnect_proxy_resolved_conf_d_dir }}/00-logging.caddy"
+      notify: Reload Caddy configuration
+
+    - name: Remove canonical fragments for domains no longer assigned to this node
+      ansible.builtin.find:
+        paths: "{{ xconnect_proxy_resolved_conf_d_dir }}"
+        patterns: "*.caddy"
+        excludes:
+          - "{{ agent_proxy_domains | first }}.caddy"
+      register: agent_proxy_stale_domain_fragments
+
+    - name: Delete stale canonical domain fragments
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ agent_proxy_stale_domain_fragments.files }}"
+      notify: Reload Caddy configuration

@@ -1,0 +1,120 @@
+---
+- name: Check installed Xray version
+  ansible.builtin.command: "{{ xray_core_binary_path }} version"
+  register: xray_core_version_check
+  changed_when: false
+  failed_when: false
+  when: xray_core_enabled | bool
+
+- name: Explain unsupported Xray executable before replacement
+  ansible.builtin.debug:
+    msg: >-
+      Installed Xray cannot execute on {{ ansible_architecture }}; it will be
+      replaced with Xray-linux-{{ xray_core_release_asset_arch }}.zip.
+  when:
+    - xray_core_enabled | bool
+    - xray_core_version_check.rc != 0
+    - xray_core_version_check.stderr | default('') | length > 0
+
+- name: Ensure Xray cache directory exists
+  ansible.builtin.file:
+    path: "{{ xray_core_release_archive_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - xray_core_enabled | bool
+    - xray_core_version not in (xray_core_version_check.stdout | default(''))
+
+- name: Ensure Xray archive extraction prerequisites are installed
+  ansible.builtin.apt:
+    name: unzip
+    state: present
+    update_cache: true
+  when:
+    - xray_core_enabled | bool
+    - xray_core_version not in (xray_core_version_check.stdout | default(''))
+
+- name: Download pinned Xray release
+  ansible.builtin.get_url:
+    url: "{{ xray_core_release_url }}"
+    dest: "{{ xray_core_release_archive_path }}"
+    checksum: "sha256:{{ xray_core_release_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+    timeout: 120
+  register: xray_core_release_download
+  until: xray_core_release_download is succeeded
+  retries: 3
+  delay: 5
+  when:
+    - xray_core_enabled | bool
+    - xray_core_version not in (xray_core_version_check.stdout | default(''))
+
+- name: Create temporary Xray extraction directory
+  ansible.builtin.file:
+    path: "{{ xray_core_cache_dir }}/xray-{{ xray_core_version }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - xray_core_enabled | bool
+    - xray_core_version not in (xray_core_version_check.stdout | default(''))
+
+- name: Extract pinned Xray release
+  ansible.builtin.unarchive:
+    src: "{{ xray_core_release_archive_path }}"
+    dest: "{{ xray_core_cache_dir }}/xray-{{ xray_core_version }}"
+    remote_src: true
+  when:
+    - xray_core_enabled | bool
+    - xray_core_version not in (xray_core_version_check.stdout | default(''))
+
+- name: Install pinned Xray binary atomically
+  ansible.builtin.copy:
+    src: "{{ xray_core_cache_dir }}/xray-{{ xray_core_version }}/xray"
+    dest: "{{ xray_core_binary_path }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Notify xray-core binary changed
+  when:
+    - xray_core_enabled | bool
+    - xray_core_version not in (xray_core_version_check.stdout | default(''))
+
+- name: Validate installed Xray executable for the target architecture
+  ansible.builtin.command: "{{ xray_core_binary_path }} version"
+  register: xray_core_installed_version_check
+  changed_when: false
+  failed_when:
+    - xray_core_installed_version_check.rc != 0
+    - xray_core_version not in (xray_core_installed_version_check.stdout | default(''))
+  when: xray_core_enabled | bool
+
+- name: Ensure Xray asset directory exists
+  ansible.builtin.file:
+    path: "{{ xray_core_asset_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: xray_core_enabled | bool
+
+- name: Install pinned Xray routing assets
+  ansible.builtin.copy:
+    src: "{{ xray_core_cache_dir }}/xray-{{ xray_core_version }}/{{ item }}"
+    dest: "{{ xray_core_asset_dir }}/{{ item }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - geoip.dat
+    - geosite.dat
+  when:
+    - xray_core_enabled | bool
+    - xray_core_version not in (xray_core_version_check.stdout | default(''))

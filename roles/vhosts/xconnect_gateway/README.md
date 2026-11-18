@@ -70,7 +70,7 @@ xconnect_gateway_socket_group: caddy
 The Gateway Xray then uses its own runtime configuration and Unix socket. It
 does not bind TCP `443` and does not reuse Agent Proxy's
 `/usr/local/etc/xray/config.json` or `/dev/shm/xray.sock`. Configure the
-`vhosts/tky-proxy` role with `xconnect_gateway_caddy_enabled: true` to add the
+`vhosts/xconnect_gateway` role with `xconnect_gateway_caddy_enabled: true` to add the
 `/xconnect` route beside Agent Proxy's existing `/split` route. Caddy remains
 the only TLS listener on TCP `443`.
 

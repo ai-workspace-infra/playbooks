@@ -4,8 +4,19 @@
     daemon_reload: true
   become: true
 
+- name: Validate Fluxgate configuration before reload
+  ansible.builtin.command:
+    argv:
+      - "{{ fluxgate_binary_dest }}"
+      - validate
+      - --config
+      - "{{ fluxgate_config_dir }}/Fluxgatefile"
+  changed_when: false
+  listen: reload ingress
+
 - name: Restart fluxgate
   ansible.builtin.systemd:
     name: fluxgate
     state: restarted
   become: true
+  listen: reload ingress

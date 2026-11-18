@@ -1,0 +1,26 @@
+---
+- name: Ensure target Fluxgate config is not immutable
+  ansible.builtin.command:
+    argv:
+      - chattr
+      - -i
+      - "{{ fluxgate_config_dir }}/conf.d/{{ fluxgate_vhost_name | default('jp-xconnect') }}.conf"
+  failed_when: false
+  changed_when: false
+  become: true
+
+- name: Resolve effective Fluxgate vhosts list
+  ansible.builtin.set_fact:
+    fluxgate_resolved_vhosts: >-
+      {{ (fluxgate_vhosts if (fluxgate_vhosts is iterable and fluxgate_vhosts is not string) else (fluxgate_vhosts.split() if fluxgate_vhosts is string else []))
+         | reject('equalto', '') | unique | list }}
+
+- name: Render Fluxgate vhost configuration fragment
+  ansible.builtin.template:
+    src: "{{ fluxgate_vhost_template | default('xconnect.conf.j2') }}"
+    dest: "{{ fluxgate_config_dir }}/conf.d/{{ fluxgate_vhost_name | default('jp-xconnect') }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart fluxgate

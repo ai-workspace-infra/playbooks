@@ -558,17 +558,7 @@
       when:
         - agent_proxy_operation in ['deploy', 'standalone']
         - (agent_proxy_engine | default('fluxgate')) == 'caddy'
-    - role: roles/vhosts/tky-proxy
-      when:
-        - agent_proxy_operation == 'deploy'
-        - (agent_proxy_engine | default('fluxgate')) == 'caddy'
-      vars:
-        agent_tls_source_cert_path: "{{ agent_domain_tls_dir }}/current/fullchain.pem"
-        agent_tls_source_key_path: "{{ agent_domain_tls_dir }}/current/key.pem"
-        agent_tls_cert_path: /etc/caddy/tls/agent-proxy.crt
-        agent_tls_key_path: /etc/caddy/tls/agent-proxy.key
-        agent_proxy_tls_source_from_vault: true
-    - role: roles/vhosts/HAProxy
+    - role: roles/vhosts/haproxy
       when:
         - agent_proxy_operation in ['deploy', 'standalone']
         - (agent_proxy_engine | default('fluxgate')) == 'haproxy'
@@ -588,6 +578,7 @@
         - agent_proxy_operation in ['deploy', 'standalone']
         - (agent_proxy_engine | default('fluxgate')) == 'fluxgate'
       vars:
+        fluxgate_vhost_enabled: true
         fluxgate_vhosts: "{{ agent_proxy_effective_vhosts }}"
         fluxgate_replace_caddy: true
         fluxgate_source_cert_path: >-
@@ -598,7 +589,21 @@
           {{ agent_tls_key_path
              if ((vault_agent_tls_secret_path | default('') | length > 0) or (agent_proxy_vault_tls_enabled | default(false) | bool))
              else (agent_domain_tls_dir ~ '/current/key.pem') }}
-    - roles/vhosts/agent-proxy
+    - role: roles/vhosts/xray-core
+      when:
+        - agent_proxy_operation in ['deploy', 'standalone', 'upgrade']
+    - role: roles/vhosts/xconnect_proxy
+      when:
+        - agent_proxy_operation in ['deploy', 'standalone', 'upgrade']
+      vars:
+        xconnect_proxy_ingress_fragment_enabled: "{{ agent_proxy_operation == 'deploy' and (agent_proxy_engine | default('fluxgate')) == 'caddy' }}"
+        agent_tls_source_cert_path: "{{ agent_domain_tls_dir }}/current/fullchain.pem"
+        agent_tls_source_key_path: "{{ agent_domain_tls_dir }}/current/key.pem"
+        agent_tls_cert_path: /etc/caddy/tls/agent-proxy.crt
+        agent_tls_key_path: /etc/caddy/tls/agent-proxy.key
+    - role: roles/vhosts/xconnect-edge-agent
+      when:
+        - agent_proxy_operation in ['deploy', 'upgrade', 'print-arch']
 
 - import_playbook: deploy_observability_agent.yml
   when:

@@ -1,0 +1,19 @@
+---
+- name: Stop and disable competing ingress services when taking over 80/443
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - caddy
+    - fluxgate
+  failed_when: false
+  become: true
+  when: haproxy_replace_caddy | default(false) | bool
+
+- name: Enable and start HAProxy service
+  ansible.builtin.systemd:
+    name: haproxy
+    state: started
+    enabled: true
+  become: true

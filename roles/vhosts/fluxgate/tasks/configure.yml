@@ -61,61 +61,8 @@
   become: true
   notify: Restart fluxgate
 
-- name: Resolve effective Fluxgate vhosts list
+- name: Export Fluxgate ingress contract facts
   ansible.builtin.set_fact:
-    fluxgate_resolved_vhosts: >-
-      {{ (fluxgate_vhosts if (fluxgate_vhosts is iterable and fluxgate_vhosts is not string) else (fluxgate_vhosts.split() if fluxgate_vhosts is string else []))
-         | reject('equalto', '') | unique | list }}
-
-- name: Ensure target Fluxgate config is not immutable
-  ansible.builtin.command:
-    argv:
-      - chattr
-      - -i
-      - "{{ fluxgate_config_dir }}/conf.d/jp-xconnect.conf"
-  failed_when: false
-  changed_when: false
-  become: true
-
-- name: Render XConnect Fluxgate vhost config
-  ansible.builtin.template:
-    src: xconnect.conf.j2
-    dest: "{{ fluxgate_config_dir }}/conf.d/jp-xconnect.conf"
-    owner: root
-    group: root
-    mode: "0644"
-  become: true
-  notify: Restart fluxgate
-
-- name: Validate Fluxgate configuration before switching
-  ansible.builtin.command:
-    argv:
-      - "{{ fluxgate_binary_dest }}"
-      - validate
-      - --config
-      - "{{ fluxgate_config_dir }}/Fluxgatefile"
-  changed_when: false
-
-- name: Stop and disable competing ingress services when taking over 80/443
-  ansible.builtin.systemd:
-    name: "{{ item }}"
-    state: stopped
-    enabled: false
-  loop:
-    - caddy
-    - haproxy
-  failed_when: false
-  become: true
-  when: fluxgate_replace_caddy | default(false) | bool
-
-- name: Reload systemd daemon
-  ansible.builtin.systemd:
-    daemon_reload: true
-  become: true
-
-- name: Enable and start Fluxgate service
-  ansible.builtin.systemd:
-    name: fluxgate
-    state: started
-    enabled: true
-  become: true
+    xconnect_ingress_engine: "fluxgate"
+    xconnect_ingress_conf_d_dir: "{{ fluxgate_config_dir }}/conf.d"
+    xconnect_ingress_tls_dir: "{{ fluxgate_tls_dir }}"

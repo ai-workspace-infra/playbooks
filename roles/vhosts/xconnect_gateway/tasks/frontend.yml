@@ -1,0 +1,37 @@
+---
+# Render only the XConnect Gateway ingress fragment (/xconnect -> Unix socket)
+# into the active ingress engine's conf.d directory.
+- name: Resolve Gateway ingress target paths
+  ansible.builtin.set_fact:
+    xconnect_gateway_resolved_conf_d_dir: >-
+      {{ xconnect_ingress_conf_d_dir | default(agent_proxy_caddy_conf_dir | default('/etc/caddy/conf.d', true), true) }}
+    xconnect_gateway_resolved_domain: >-
+      {{ (xconnect_gateway_domain | default(xconnect_gateway_vhost_domain, true) | trim) }}
+
+- name: Validate Gateway ingress fragment target domain
+  ansible.builtin.assert:
+    that:
+      - xconnect_gateway_resolved_domain | length > 0
+    fail_msg: "xconnect_gateway_domain / xconnect_gateway_vhost_domain is required when xconnect_gateway_frontend_enabled is true."
+  when: xconnect_gateway_vhost_enabled | default(true) | bool
+
+- name: Ensure Gateway ingress conf.d directory exists
+  ansible.builtin.file:
+    path: "{{ xconnect_gateway_resolved_conf_d_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: xconnect_gateway_vhost_enabled | default(true) | bool
+
+- name: Render XConnect Gateway vhost fragment
+  ansible.builtin.template:
+    src: xconnect-gateway-vhost.conf.j2
+    dest: "{{ xconnect_gateway_resolved_conf_d_dir }}/{{ xconnect_gateway_vhost_name }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - xconnect_gateway_vhost_enabled | default(true) | bool
+    - xconnect_gateway_resolved_domain | length > 0
+  notify: reload ingress

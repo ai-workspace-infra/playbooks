@@ -7,9 +7,17 @@ xconnect_gateway_binary_source: ""
 xconnect_gateway_binary_path: /usr/local/bin/xconnect-gateway
 xconnect_gateway_xray_binary_source: ""
 xconnect_gateway_xray_binary_path: /usr/local/lib/xconnect-gateway/xray
+xconnect_gateway_use_system_xray_core: false
 xconnect_gateway_state_dir: "/var/lib/xconnect-gateway/{{ xconnect_gateway_environment }}"
 xconnect_gateway_controller: ""
 xconnect_gateway_id: ""
+xconnect_gateway_domain: ""
+xconnect_gateway_network_id: ""
+xconnect_gateway_listen_port: 51820
+xconnect_gateway_loopback_only_firewall: true
+xconnect_gateway_exporter_enabled: false
+xconnect_gateway_stats_api_addr: "127.0.0.1:10088"
+xconnect_gateway_exporter_listen_addr: "127.0.0.1:8082"
 xconnect_gateway_invite_file_source: ""
 xconnect_gateway_invite_path: "/run/xconnect-gateway/{{ xconnect_gateway_environment }}.invite"
 xconnect_gateway_tls_cert_source: ""
@@ -47,3 +55,15 @@ xconnect_gateway_dns_config_path: /etc/dnsmasq.d/xconnect-gateway.conf
 xconnect_gateway_dns_hosts_path: /run/xconnect-gateway-dns/hosts
 xconnect_gateway_dns_aliases_path: /etc/xconnect-gateway/dns-aliases.json
 xconnect_gateway_dns_sync_script_path: /usr/local/libexec/xconnect-gateway-dns-sync.py
+
+# ---------------------------------------------------------------------------
+# Gateway ingress fragment (/xconnect -> Unix socket) written into the active
+# ingress engine's conf.d directory when xconnect_gateway_frontend_enabled=true.
+# ---------------------------------------------------------------------------
+xconnect_gateway_frontend_enabled: false
+xconnect_gateway_caddy_enabled: false
+xconnect_gateway_caddy_path: /xconnect
+xconnect_gateway_caddy_socket: "{{ xconnect_gateway_listen_socket }}"
+xconnect_gateway_vhost_enabled: true
+xconnect_gateway_vhost_name: "{{ xconnect_gateway_id | default('xconnect-gateway', true) }}"
+xconnect_gateway_vhost_domain: "{{ xconnect_gateway_domain | default('', true) }}"

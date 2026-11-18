@@ -13,8 +13,18 @@ Type=simple
 User={{ xray_exporter_user }}
 Group={{ xray_exporter_group }}
 EnvironmentFile=-{{ xray_exporter_env_file }}
+{% set instance_log_path = xray_exporter_instance.log_path | default(xray_exporter_log_path, true) %}
 {% set snapshot_args = (' --node-id ' ~ xray_exporter_instance.node_id ~ ' --snapshot-store-path ' ~ xray_exporter_instance.snapshot_store_path) if ((xray_exporter_snapshot_features_enabled | bool) or (xray_exporter_vector_snapshot_url | trim | length > 0)) else '' %}
-ExecStart={{ xray_exporter_binary_path }} -l {{ xray_exporter_instance.listen_addr }} -e {{ xray_exporter_instance.xray_api_addr }}{% if xray_exporter_user_traffic_metrics | bool %} -u{% endif %}{% if xray_exporter_log_path | trim | length > 0 %} -p {{ xray_exporter_log_path }}{% endif %}{{ snapshot_args }}
+{% set merged_labels = (xray_exporter_common_labels | default({})) | combine(xray_exporter_instance.labels | default({})) %}
+{% set ns = namespace(label_flags='') %}
+{% if xray_exporter_const_labels_enabled | default(false) | bool %}
+{% for k, v in merged_labels | dictsort %}
+{% if v | string | length > 0 %}
+{% set ns.label_flags = ns.label_flags ~ ' --const-label ' ~ k ~ '=' ~ (v | string) %}
+{% endif %}
+{% endfor %}
+{% endif %}
+ExecStart={{ xray_exporter_binary_path }} -l {{ xray_exporter_instance.listen_addr }} -e {{ xray_exporter_instance.xray_api_addr }}{% if xray_exporter_user_traffic_metrics | bool %} -u{% endif %}{% if instance_log_path | trim | length > 0 %} -p {{ instance_log_path }}{% endif %}{{ snapshot_args }}{{ ns.label_flags }}
 Restart=always
 RestartSec=10
 

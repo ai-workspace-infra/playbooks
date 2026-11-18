@@ -330,6 +330,47 @@
   failed_when: false
   when: not (xconnect_gateway_dns_enabled | bool)
 
+- name: Enforce loopback-only nftables policy for encapsulated WireGuard UDP port
+  ansible.builtin.shell: |
+    set -euo pipefail
+    nft add table inet xconnect_gateway
+    nft "add chain inet xconnect_gateway input { type filter hook input priority filter ; policy accept ; }"
+    nft flush chain inet xconnect_gateway input
+    nft add rule inet xconnect_gateway input iifname "lo" udp dport {{ xconnect_gateway_listen_port | default(51820) | int }} accept
+    nft add rule inet xconnect_gateway input udp dport {{ xconnect_gateway_listen_port | default(51820) | int }} drop
+  args:
+    executable: /bin/bash
+  when: xconnect_gateway_loopback_only_firewall | default(true) | bool
+  changed_when: false
+
+- name: Export XConnect Gateway facts and optional xray-exporter instance metadata
+  ansible.builtin.set_fact:
+    xray_exporter_instances: >-
+      {{ (xray_exporter_instances | default([])) + ([{
+           'name': 'xray-exporter-gateway',
+           'description': 'Xray Exporter (XConnect Gateway)',
+           'listen_addr': xconnect_gateway_exporter_listen_addr,
+           'xray_api_addr': xconnect_gateway_stats_api_addr,
+           'log_path': '/var/log/xray/gateway-access.log',
+           'node_id': inventory_hostname ~ ':xconnect-gateway:' ~ xconnect_gateway_id,
+           'snapshot_store_path': '/var/lib/xray-exporter/gateway-snapshots.json',
+           'labels': {
+             'service': 'xconnect-gateway',
+             'billing_scope': 'zero',
+             'transport': 'gateway-xhttp',
+             'instance': 'gateway',
+             'inbound_tag': 'xconnect-vless-in',
+             'gateway_id': xconnect_gateway_id,
+             'network_id': xconnect_gateway_network_id | default('', true)
+           }
+         }] if (xconnect_gateway_exporter_enabled | default(false) | bool) else []) }}
+
+- name: Configure Gateway ingress fragment in active ingress conf.d
+  ansible.builtin.include_tasks: frontend.yml
+  when:
+    - xconnect_gateway_frontend_enabled | default(false) | bool
+    - xconnect_gateway_frontend == 'caddy-unix-h2c'
+
 # state.json already exists after identity.yml; only a stored device
 # credential proves the Gateway actually enrolled.
 - name: Verify the Gateway holds an enrollment credential

@@ -9,7 +9,7 @@
       - xconnect_gateway_enabled | bool
       - xconnect_gateway_environment in ['uat', 'prod', 'shared']
       - xconnect_gateway_binary_source | trim | length > 0
-      - xconnect_gateway_xray_binary_source | trim | length > 0
+      - (xconnect_gateway_use_system_xray_core | default(false) | bool) or (xconnect_gateway_xray_binary_source | trim | length > 0)
       - (xconnect_gateway_controller | trim) is match('^https://')
       - (xconnect_gateway_id | trim) is match('^[a-z0-9][a-z0-9._-]{0,127}$')
       - xconnect_gateway_frontend in ['direct-tls', 'caddy-unix-h2c']
@@ -77,6 +77,7 @@
     owner: root
     group: root
     mode: '0755'
+  when: not (xconnect_gateway_use_system_xray_core | default(false) | bool)
 
 - name: Initialize XConnect Gateway local state
   ansible.builtin.command:

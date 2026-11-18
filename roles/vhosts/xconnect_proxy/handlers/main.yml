@@ -1,0 +1,42 @@
+---
+- name: Restart agent-proxy
+  ansible.builtin.systemd:
+    name: "{{ agent_proxy_service_name | default('xconnect-edge-agent') }}"
+    state: restarted
+    daemon_reload: true
+  failed_when: false
+  listen: reload agent
+
+- name: Restart Xray services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: restarted
+    daemon_reload: true
+  loop:
+    - xray.service
+    - xray-tcp.service
+  listen: xray-core binary changed
+  failed_when: false
+
+- name: Restart systemd-journald
+  ansible.builtin.systemd:
+    name: systemd-journald
+    state: restarted
+
+- name: Reload Caddy configuration
+  ansible.builtin.systemd:
+    name: caddy
+    state: reloaded
+    daemon_reload: true
+
+- name: Reload UFW
+  ansible.builtin.command:
+    cmd: ufw reload
+  changed_when: false
+
+- name: Restart fq qdisc helper
+  ansible.builtin.systemd:
+    name: apply-fq-qdisc.service
+    state: restarted
+    enabled: true
+    daemon_reload: true

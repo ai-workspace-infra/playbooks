@@ -1,0 +1,14 @@
+---
+# Pure HAProxy reverse proxy engine role.
+# Can be freely composed with backend providers.
+- name: Provision HAProxy reverse proxy engine
+  when: haproxy_enabled | default(true) | bool
+  block:
+    - name: Install HAProxy package
+      ansible.builtin.include_tasks: install.yml
+
+    - name: Configure HAProxy certificates and configuration
+      ansible.builtin.include_tasks: configure.yml
+
+    - name: Manage HAProxy systemd service
+      ansible.builtin.include_tasks: service.yml

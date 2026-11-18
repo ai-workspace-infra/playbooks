@@ -1,0 +1,67 @@
+---
+# XConnect Proxy Runtime Role Defaults (L2 Proxy Runtime)
+# Depends on roles/vhosts/xray-core for binary & geo assets.
+# Control-plane /etc/agent lifecycle lives in roles/vhosts/xconnect-edge-agent.
+
+agent_proxy_operation: deploy
+agent_proxy_standalone: false
+agent_proxy_open_stunnel_5443: "{{ lookup('ansible.builtin.env', 'AGENT_PROXY_OPEN_STUNNEL_5443') | default(false, true) | bool }}"
+agent_proxy_user: "root"
+agent_proxy_group: "root"
+agent_proxy_service_name: "xconnect-edge-agent"
+
+# Ingress fragment integration (Fragment-based Pluggability)
+xconnect_proxy_domain: "{{ xconnect_fqdn | default(agent_entry_point | default(inventory_hostname, true), true) }}"
+xconnect_proxy_ingress_fragment_enabled: false
+xconnect_proxy_ingress_fragment_mode: "{{ 'caddy-vhosts' if (agent_proxy_engine | default('fluxgate')) == 'caddy' else 'conf-d' }}"
+xconnect_proxy_ingress_vhost_name: "{{ xconnect_proxy_domain }}"
+xconnect_proxy_network_baseline_enabled: true
+xconnect_proxy_exporter_enabled: true
+
+agent_proxy_domains: "{{ [xconnect_proxy_domain] if xconnect_proxy_domain else [] }}"
+agent_proxy_caddy_config_dir: "{{ caddy_config_dir | default('/etc/caddy', true) }}"
+agent_proxy_caddy_conf_dir: "{{ xconnect_ingress_conf_d_dir | default(agent_proxy_caddy_config_dir ~ '/conf.d', true) }}"
+agent_tls_cert_path: "{{ xconnect_proxy_ingress_tls_cert_path | default((xconnect_ingress_tls_dir | default('/etc/caddy/tls', true)) ~ '/agent-proxy.crt', true) }}"
+agent_tls_key_path: "{{ xconnect_proxy_ingress_tls_key_path | default((xconnect_ingress_tls_dir | default('/etc/caddy/tls', true)) ~ '/agent-proxy.key', true) }}"
+agent_proxy_caddy_metrics_enabled: true
+tky_proxy_disable_legacy_xconnect_gateway: false
+xconnect_gateway_caddy_enabled: false
+xconnect_gateway_caddy_path: /xconnect
+xconnect_gateway_caddy_socket: /run/xconnect-gateway/xray.sock
+
+xray_enabled: true
+xray_binary_path: "{{ xray_core_binary_path | default('/usr/local/bin/xray') }}"
+xray_uuid: "00000000-0000-0000-0000-000000000000"
+xray_config_path: "/usr/local/etc/xray/config.json"
+xray_tcp_config_path: "/usr/local/etc/xray/tcp-config.json"
+xray_standalone_uuid_path: "/usr/local/etc/xray/standalone.uuid"
+xray_template_dir: "/usr/local/etc/xray/templates"
+xray_access_log_path: "/var/log/xray/access.log"
+xconnect_proxy_tcp_access_log_path: "{{ xray_tcp_access_log_path | default(xray_access_log_path) }}"
+xray_access_log_group: "xray-access"
+xray_access_logrotate_enabled: true
+xray_access_logrotate_size: "50M"
+xray_access_logrotate_retention: 7
+xray_journald_retention_enabled: true
+xray_journald_system_max_use: "300M"
+xray_journald_system_keep_free: "1G"
+xray_journald_system_max_file_size: "50M"
+xray_journald_max_retention: "14day"
+xray_journald_runtime_max_use: "64M"
+xray_journald_compress: true
+xray_journald_rate_limit_interval: "30s"
+xray_journald_rate_limit_burst: 2000
+xray_xhttp_api_port: 10086
+xray_tcp_api_port: 10087
+xray_xhttp_service_user: xray
+xray_xhttp_service_group: xray
+xray_xhttp_service_account_managed: true
+xray_legacy_service_user: ""
+xray_tcp_service_user: caddy
+xray_handshake_timeout_seconds: 30
+# Allow up to one hour without payload activity on an authenticated proxy
+# session. This accommodates very slow/paused large uploads; it is an idle
+# timeout, not a maximum request duration or file-size limit.
+xray_connection_idle_timeout_seconds: 3600
+xray_uplink_only_timeout_seconds: 600
+xray_downlink_only_timeout_seconds: 600

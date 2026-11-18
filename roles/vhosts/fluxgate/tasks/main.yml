@@ -1,9 +1,18 @@
 ---
-- name: Provision Fluxgate Pingora reverse proxy vhosts
+# Pure Fluxgate reverse proxy engine role.
+# Can be freely composed with vhost providers (e.g. xconnect_gateway).
+- name: Provision Fluxgate Pingora reverse proxy engine
   when: fluxgate_enabled | default(true) | bool
   block:
     - name: Install Fluxgate release binary and systemd unit
       ansible.builtin.include_tasks: install.yml
 
-    - name: Configure Fluxgate vhosts and metrics
+    - name: Configure Fluxgate directories, TLS, and base Fluxgatefile
       ansible.builtin.include_tasks: configure.yml
+
+    - name: Render default Fluxgate vhost configuration
+      ansible.builtin.include_tasks: vhost.yml
+      when: fluxgate_vhost_enabled | default(false) | bool
+
+    - name: Manage Fluxgate systemd service
+      ansible.builtin.include_tasks: service.yml

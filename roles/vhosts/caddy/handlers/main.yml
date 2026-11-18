@@ -1,7 +1,16 @@
+- name: Validate Caddy configuration before reload
+  ansible.builtin.command:
+    cmd: >-
+      caddy validate --config {{ caddy_config_dir | default('/etc/caddy', true) }}/Caddyfile
+      --adapter caddyfile
+  changed_when: false
+  listen: reload ingress
+
 - name: Reload caddy
   ansible.builtin.service:
     name: caddy
     state: reloaded
+  listen: reload ingress
 
 - name: Restart caddy after binary upgrade
   ansible.builtin.service:

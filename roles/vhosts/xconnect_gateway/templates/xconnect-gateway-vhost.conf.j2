@@ -1,0 +1,32 @@
+{{ xconnect_gateway_domain | default(xconnect_gateway_vhost_domain, true) }} {
+    tls {{ xconnect_gateway_ingress_tls_cert_path | default((xconnect_ingress_tls_dir | default('/etc/caddy/tls', true)) ~ '/agent-proxy.crt', true) }} {{ xconnect_gateway_ingress_tls_key_path | default((xconnect_ingress_tls_dir | default('/etc/caddy/tls', true)) ~ '/agent-proxy.key', true) }}
+
+    handle_path /xray-exporter/xhttp/* {
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    handle_path /xray-exporter/tcp/* {
+        reverse_proxy 127.0.0.1:8081
+    }
+
+    @xconnect_gateway_xhttp {
+        path {{ xconnect_gateway_caddy_path }} {{ xconnect_gateway_caddy_path }}/*
+    }
+
+    @xconnect_gateway_root path {{ xconnect_gateway_caddy_path }}
+    rewrite @xconnect_gateway_root {{ xconnect_gateway_caddy_path }}/
+
+    handle @xconnect_gateway_xhttp {
+        uri query -x_padding
+
+        reverse_proxy unix/{{ xconnect_gateway_listen_socket | default(xconnect_gateway_caddy_socket, true) }} {
+            flush_interval -1
+
+            transport http {
+                versions h2c 2
+            }
+        }
+    }
+
+    respond "XConnect Gateway Node"
+}

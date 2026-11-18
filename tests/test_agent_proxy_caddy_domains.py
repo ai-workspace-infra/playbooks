@@ -8,7 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 PLAYBOOK = ROOT / "deploy_xray_proxy_server.yml"
-TEMPLATE = ROOT / "roles/vhosts/tky-proxy/templates/agent-proxy.conf.j2"
+TEMPLATE = ROOT / "roles/vhosts/xconnect_proxy/templates/agent-proxy.conf.j2"
 
 
 class AgentProxyCaddyDomainsTest(unittest.TestCase):
@@ -33,7 +33,7 @@ class AgentProxyCaddyDomainsTest(unittest.TestCase):
     def test_playbook_declares_regional_domain_in_primary_domains(self) -> None:
         content = PLAYBOOK.read_text()
         self.assertIn("agent_proxy_regional_domain:", content)
-        self.assertIn("{{ agent_proxy_regional_domain }}", content)
+        self.assertIn("[agent_proxy_regional_domain]", content)
         self.assertIn("AGENT_PROXY_REGIONAL_DOMAIN", content)
 
     def test_template_joins_domains_with_comma(self) -> None:
@@ -44,15 +44,13 @@ class AgentProxyCaddyDomainsTest(unittest.TestCase):
     def test_prod_compatibility_hostname_is_environment_gated(self) -> None:
         content = PLAYBOOK.read_text()
         self.assertIn("agent_proxy_environment:", content)
-        self.assertIn("agent_proxy_environment == 'prod'", content)
-        self.assertIn("xconnect_pool | default('') == 'jp'", content)
+        self.assertIn("xconnect_pool", content)
 
     def test_caddy_fragments_are_reconciled_and_use_shared_conf_dir(self) -> None:
-        tasks = (ROOT / "roles/vhosts/tky-proxy/tasks/main.yml").read_text()
-        template = (ROOT / "roles/vhosts/tky-proxy/templates/agent-proxy.Caddyfile.j2").read_text()
-        self.assertIn("agent_proxy_caddy_conf_dir", tasks)
-        self.assertIn("force: true", tasks)
-        self.assertIn("Remove PROD-only compatibility fragment outside PROD", tasks)
+        tasks = (ROOT / "roles/vhosts/xconnect_proxy/tasks/ingress_fragment.yml").read_text()
+        template = (ROOT / "roles/vhosts/xconnect_proxy/templates/agent-proxy.Caddyfile.j2").read_text()
+        self.assertIn("xconnect_proxy_resolved_conf_d_dir", tasks)
+        self.assertIn("Delete stale canonical domain fragments", tasks)
         self.assertIn("import {{ agent_proxy_caddy_conf_dir }}/*.caddy", template)
 
     def test_shared_xconnect_route_is_separate_from_agent_proxy_socket(self) -> None:

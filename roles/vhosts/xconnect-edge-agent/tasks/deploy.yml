@@ -1,0 +1,296 @@
+---
+- name: Map release artifact architecture
+  ansible.builtin.set_fact:
+    agent_proxy_release_arch: >-
+      {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else
+         'amd64' if ansible_architecture in ['x86_64', 'amd64'] else '' }}
+
+- name: Create Edge Agent directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0755"
+  loop:
+    - "{{ agent_proxy_app_dir }}"
+    - "{{ agent_proxy_config_dir }}"
+    - "{{ agent_proxy_data_dir }}"
+
+- name: Clone agent.svc.plus repository
+  ansible.builtin.git:
+    repo: "{{ agent_proxy_repo_url }}"
+    dest: "{{ agent_proxy_app_dir }}"
+    version: "{{ agent_proxy_repo_version }}"
+    update: true
+    force: true
+  notify: Restart agent-proxy
+  when: agent_proxy_manage_source_checkout | bool
+  register: agent_proxy_clone_res
+  ignore_errors: true
+
+- name: Fallback to main branch if specified version is not found
+  ansible.builtin.git:
+    repo: "{{ agent_proxy_repo_url }}"
+    dest: "{{ agent_proxy_app_dir }}"
+    version: main
+    update: true
+    force: true
+  notify: Restart agent-proxy
+  when:
+    - agent_proxy_manage_source_checkout | bool
+    - agent_proxy_clone_res is failed
+
+- name: Refuse in-place source builds; deploy the verified release artifact instead
+  ansible.builtin.assert:
+    that:
+      - not (agent_proxy_build_on_target | bool)
+    fail_msg: >-
+      agent_proxy_build_on_target is not supported. Builds belong to CI
+      (xconnect-edge-agent build-release-artifacts.yml); this role deploys the
+      sha256-verified Release asset instead.
+  when: agent_proxy_build_on_target | bool
+
+- name: Deploy prebuilt agent binary from control machine
+  ansible.builtin.copy:
+    src: "{{ agent_proxy_binary_src }}"
+    dest: "{{ agent_proxy_binary_path }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0755"
+  notify: Restart agent-proxy
+  when:
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_binary_src | length > 0
+
+- name: Download the verified Agent release for local installer deployment
+  ansible.builtin.import_tasks: download_local_release.yml
+  when:
+    - agent_proxy_local_installer | default(false) | bool
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_binary_src | length == 0
+
+- name: Download prebuilt agent binary from GitHub Release
+  ansible.builtin.get_url:
+    url: "{{ agent_proxy_release_asset_url }}"
+    dest: "{{ agent_proxy_binary_path }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0755"
+  notify: Restart agent-proxy
+  when:
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_binary_src | length == 0
+    - not (agent_proxy_local_installer | default(false) | bool)
+    - agent_proxy_release_tag | length > 0
+
+- name: Check Agent Proxy binary before rename migration
+  ansible.builtin.stat:
+    path: "{{ agent_proxy_binary_path }}"
+  register: agent_proxy_binary_stat
+  when: not (agent_proxy_build_on_target | bool)
+
+- name: Check legacy agent binary for rename migration
+  ansible.builtin.stat:
+    path: "{{ agent_proxy_legacy_binary_path }}"
+  register: agent_proxy_legacy_binary_stat
+  when:
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_legacy_binary_path != agent_proxy_binary_path
+
+- name: Migrate legacy agent binary to the Agent Proxy path
+  ansible.builtin.copy:
+    src: "{{ agent_proxy_legacy_binary_path }}"
+    dest: "{{ agent_proxy_binary_path }}"
+    remote_src: true
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0755"
+  notify: Restart agent-proxy
+  when:
+    - not (agent_proxy_build_on_target | bool)
+    - agent_proxy_binary_src | length == 0
+    - not agent_proxy_binary_stat.stat.exists
+    - agent_proxy_legacy_binary_stat.stat.exists
+    - not agent_proxy_legacy_binary_stat.stat.isdir
+
+- name: Check existing agent binary on target host
+  ansible.builtin.stat:
+    path: "{{ agent_proxy_binary_path }}"
+  register: agent_proxy_binary_stat
+
+- name: Assert target host already has agent binary when build is disabled
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_binary_stat.stat.exists
+      - not agent_proxy_binary_stat.stat.isdir
+    fail_msg: >-
+      {{ agent_proxy_binary_path }} does not exist on the target host. Provide
+      agent_proxy_binary_src, agent_proxy_release_tag, or agent_proxy_local_installer=true.
+  when: not (agent_proxy_build_on_target | bool)
+
+- name: Ensure agent binary permissions
+  ansible.builtin.file:
+    path: "{{ agent_proxy_binary_path }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0755"
+
+- name: Ensure agent conf.d directory exists when split profiles are enabled
+  ansible.builtin.file:
+    path: "{{ agent_proxy_conf_d_dir }}"
+    state: directory
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0700"
+  when: agent_proxy_conf_d_enabled | bool
+
+- name: Deploy shared base agent configuration when conf.d is enabled
+  ansible.builtin.template:
+    src: agent-base-config.yaml.j2
+    dest: "{{ agent_proxy_config_path }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0600"
+  when: agent_proxy_conf_d_enabled | bool
+  notify: Restart agent-proxy
+
+- name: Deploy declarative Edge Agent profiles into conf.d
+  ansible.builtin.copy:
+    content: "{{ item.content | to_nice_yaml(indent=2) }}"
+    dest: "{{ agent_proxy_conf_d_dir }}/{{ item.filename }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0600"
+  loop: "{{ xconnect_edge_agent_profiles }}"
+  when:
+    - agent_proxy_conf_d_enabled | bool
+    - xconnect_edge_agent_profiles | default([]) | length > 0
+  notify: Restart agent-proxy
+
+- name: Deploy agent-proxy profile into conf.d
+  ansible.builtin.template:
+    src: agent-proxy-profile.yaml.j2
+    dest: "{{ agent_proxy_conf_d_dir }}/01-agent-proxy.yaml"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0600"
+  when:
+    - agent_proxy_conf_d_enabled | bool
+    - xconnect_edge_agent_profiles | default([]) | length == 0
+  notify: Restart agent-proxy
+
+- name: Deploy xconnect-gateway profile into conf.d
+  ansible.builtin.template:
+    src: xconnect-gateway-profile.yaml.j2
+    dest: "{{ agent_proxy_conf_d_dir }}/02-xconnect-gateway.yaml"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0600"
+  when:
+    - agent_proxy_conf_d_enabled | bool
+    - xconnect_edge_agent_profiles | default([]) | length == 0
+    - xconnect_gateway_agent_enabled | bool
+  notify: Restart agent-proxy
+
+- name: Deploy legacy single-file agent configuration
+  ansible.builtin.template:
+    src: agent-config.yaml.j2
+    dest: "{{ agent_proxy_config_path }}"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0600"
+  when: not (agent_proxy_conf_d_enabled | bool)
+  notify: Restart agent-proxy
+
+- name: Install agent systemd service
+  ansible.builtin.template:
+    src: agent-proxy.service.j2
+    dest: "/etc/systemd/system/{{ agent_proxy_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart agent-proxy
+
+- name: Stop legacy agent systemd services after rename
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  loop: "{{ agent_proxy_legacy_service_names | default([agent_proxy_legacy_service_name]) }}"
+  when:
+    - item | length > 0
+    - item != agent_proxy_service_name
+  failed_when: false
+
+- name: Enable and start xconnect-edge-agent
+  ansible.builtin.systemd:
+    name: "{{ agent_proxy_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Register edge-agent with Accounts controller
+  ansible.builtin.uri:
+    url: "{{ agent_controller_url | regex_replace('/+$', '') }}/api/agent-server/v1/status"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ agent_api_token }}"
+      X-Agent-ID: "{{ agent_id }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      agentId: "{{ agent_id }}"
+      healthy: true
+      message: "agent-proxy deployment registration"
+      xray:
+        running: true
+        nodeId: "{{ agent_id }}"
+        statsEnabled: true
+    status_code: 204
+    timeout: "{{ agent_http_timeout | regex_replace('[^0-9]', '') | int }}"
+  register: agent_registration_probe
+  until: agent_registration_probe.status | default(0) == 204
+  retries: 5
+  delay: 5
+  no_log: true
+  when:
+    - (agent_controller_url | trim | length > 0)
+    - (agent_api_token | trim | length > 0)
+
+- name: Wait for agent-generated Xray runtime configuration
+  ansible.builtin.wait_for:
+    path: "{{ item }}"
+    timeout: 60
+  loop:
+    - "{{ xray_config_path }}"
+    - "{{ xray_tcp_config_path }}"
+  when:
+    - xray_enabled | bool
+    - agent_proxy_wait_for_runtime_config | bool
+
+- name: Validate Xray configuration before starting services
+  ansible.builtin.command: "{{ xray_binary_path }} run -test -config {{ item }}"
+  environment:
+    XRAY_LOCATION_ASSET: "/usr/local/share/xray/"
+  changed_when: false
+  loop:
+    - "{{ xray_config_path }}"
+    - "{{ xray_tcp_config_path }}"
+  when:
+    - xray_enabled | bool
+    - agent_proxy_wait_for_runtime_config | bool
+
+- name: Enable and start Xray services after runtime sync
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - xray.service
+    - xray-tcp.service
+  when:
+    - xray_enabled | bool
+    - agent_proxy_wait_for_runtime_config | bool

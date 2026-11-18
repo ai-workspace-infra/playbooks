@@ -183,3 +183,21 @@
   loop_control:
     loop_var: xray_exporter_instance
     label: "{{ xray_exporter_instance.name }}"
+
+- name: Reset xray-exporter scrape target label map
+  ansible.builtin.set_fact:
+    xray_exporter_scrape_targets: []
+
+- name: Build xray-exporter scrape target label map
+  ansible.builtin.set_fact:
+    xray_exporter_scrape_targets: >-
+      {{ (xray_exporter_scrape_targets | default([])) + [{
+           'name': xray_exporter_instance.name,
+           'listen_addr': xray_exporter_instance.listen_addr,
+           'node_id': xray_exporter_instance.node_id,
+           'labels': (xray_exporter_common_labels | default({})) | combine(xray_exporter_instance.labels | default({}))
+         }] }}
+  loop: "{{ xray_exporter_instances }}"
+  loop_control:
+    loop_var: xray_exporter_instance
+    label: "{{ xray_exporter_instance.name }}"

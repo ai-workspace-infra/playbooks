@@ -1,0 +1,75 @@
+---
+- name: Check if Caddy is already installed
+  ansible.builtin.command: caddy version
+  register: caddy_bin_check
+  failed_when: false
+  changed_when: false
+
+- name: Drop the Caddy apt source while its signing key is expired
+  ansible.builtin.include_tasks: "{{ role_path }}/../common/tasks/caddy_apt_source.yml"
+  when: ansible_facts['distribution'] in ['Debian', 'Ubuntu']
+
+- name: Install Caddy release binary package
+  when: caddy_bin_check.rc != 0
+  block:
+    - name: Require a supported operating system for a fresh Caddy installation
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
+        fail_msg: >-
+          Fresh Caddy installation is currently supported only on Debian and
+          Ubuntu; refusing an unverified package source.
+
+    - name: Remove the stale Caddy stable apt source before refreshing apt
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/caddy-stable.list
+        - /etc/apt/sources.list.d/caddy-stable.sources
+      become: true
+
+    - name: Ensure Caddy package prerequisites
+      ansible.builtin.apt:
+        name: ca-certificates
+        state: present
+        update_cache: true
+      become: true
+
+    - name: Select the pinned Caddy release package architecture
+      ansible.builtin.set_fact:
+        caddy_package_arch: "{{ caddy_package_arch_map[ansible_facts['architecture']] | default('') }}"
+
+    - name: Require a pinned Caddy package checksum for this architecture
+      ansible.builtin.assert:
+        that:
+          - caddy_package_arch | length > 0
+          - caddy_package_arch in caddy_package_sha512
+        fail_msg: >-
+          No checksum-pinned Caddy package is configured for architecture
+          {{ ansible_facts['architecture'] }}; refusing an unverified install.
+
+    - name: Download checksum-pinned official Caddy release package
+      ansible.builtin.get_url:
+        url: >-
+          https://github.com/caddyserver/caddy/releases/download/v{{ caddy_package_version
+          }}/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb
+        dest: >-
+          /tmp/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb
+        checksum: "sha512:{{ caddy_package_sha512[caddy_package_arch] }}"
+        mode: '0644'
+      become: true
+
+    - name: Install the verified Caddy release package
+      ansible.builtin.apt:
+        deb: >-
+          /tmp/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb
+        state: present
+      become: true
+
+    - name: Remove the downloaded Caddy package after installation
+      ansible.builtin.file:
+        path: >-
+          /tmp/caddy_{{ caddy_package_version }}_linux_{{ caddy_package_arch }}.deb
+        state: absent
+      become: true

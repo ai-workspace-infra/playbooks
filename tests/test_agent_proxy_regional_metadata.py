@@ -25,8 +25,8 @@ class AgentRegionalMetadataTest(unittest.TestCase):
                          'agent_controller_url': 'https://uat-accounts-example.run.app',
                          'agent_api_token': 'test-placeholder'},
                 'tasks': [
-                    {'ansible.builtin.include_vars': str(ROOT / 'roles/vhosts/agent-proxy/defaults/main.yml')},
-                    {'ansible.builtin.template': {'src': str(ROOT / 'roles/vhosts/agent-proxy/templates/agent-config.yaml.j2'), 'dest': str(output)}},
+                    {'ansible.builtin.include_vars': str(ROOT / 'roles/vhosts/xconnect-edge-agent/defaults/main.yml')},
+                    {'ansible.builtin.template': {'src': str(ROOT / 'roles/vhosts/xconnect-edge-agent/templates/agent-config.yaml.j2'), 'dest': str(output)}},
                 ],
             }]))
             subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(playbook), '-e', json.dumps(overrides)], check=True, capture_output=True, text=True)

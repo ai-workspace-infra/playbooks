@@ -18,14 +18,14 @@ class FluxgateVhostsContractTest(unittest.TestCase):
         self.assertIn("unique | list", content)
 
     def test_fluxgate_configure_resolves_vhosts_list(self) -> None:
-        tasks = (ROOT / "roles/vhosts/fluxgate/tasks/configure.yml").read_text()
+        tasks = (ROOT / "roles/vhosts/fluxgate/tasks/vhost.yml").read_text()
         template = (ROOT / "roles/vhosts/fluxgate/templates/xconnect.conf.j2").read_text()
         self.assertIn("fluxgate_resolved_vhosts", tasks)
         self.assertIn("Ensure target Fluxgate config is not immutable", tasks)
         self.assertIn("fluxgate_resolved_vhosts", template)
 
     def test_haproxy_defaults_merge_domains_and_agent_id(self) -> None:
-        content = (ROOT / "roles/vhosts/HAProxy/defaults/main.yml").read_text()
+        content = (ROOT / "roles/vhosts/haproxy/defaults/main.yml").read_text()
         self.assertIn("haproxy_legacy_vhosts:", content)
         self.assertIn("agent_proxy_domains", content)
         self.assertIn("agent_id", content)

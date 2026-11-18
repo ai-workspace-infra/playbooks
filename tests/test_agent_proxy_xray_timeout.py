@@ -15,7 +15,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-ROLE = ROOT / "roles/vhosts/agent-proxy"
+ROLE = ROOT / "roles/vhosts/xconnect_proxy"
 
 
 class AgentProxyXrayTimeoutTest(unittest.TestCase):
@@ -42,7 +42,7 @@ class AgentProxyXrayTimeoutTest(unittest.TestCase):
             self.assertEqual(len(list(root.glob("upload-timeout-backup-*"))), 1)
 
     def test_template_changes_reload_the_agent_once_and_unchanged_runs_do_not(self):
-        source_tasks = yaml.safe_load((ROLE / "tasks/main.yml").read_text())
+        source_tasks = yaml.safe_load((ROLE / "tasks/deploy.yml").read_text())
         template_tasks = [copy.deepcopy(task) for task in source_tasks
                           if task.get("name") in ("Deploy XHTTP template", "Deploy TCP template")]
         self.assertEqual(len(template_tasks), 2)

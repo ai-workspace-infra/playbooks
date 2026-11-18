@@ -1,0 +1,33 @@
+---
+- name: Validate Fluxgate configuration
+  ansible.builtin.command:
+    argv:
+      - "{{ fluxgate_binary_dest }}"
+      - validate
+      - --config
+      - "{{ fluxgate_config_dir }}/Fluxgatefile"
+  changed_when: false
+
+- name: Stop and disable competing ingress services when taking over 80/443
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - caddy
+    - haproxy
+  failed_when: false
+  become: true
+  when: fluxgate_replace_caddy | default(false) | bool
+
+- name: Reload systemd daemon for Fluxgate
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+
+- name: Enable and start Fluxgate service
+  ansible.builtin.systemd:
+    name: fluxgate
+    state: started
+    enabled: true
+  become: true

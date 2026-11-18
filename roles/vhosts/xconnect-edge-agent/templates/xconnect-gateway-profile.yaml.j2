@@ -1,0 +1,26 @@
+agent:
+  id: {{ xconnect_gateway_agent_id | to_json }}
+  role: "gateway"
+  entryPoint: {{ xconnect_gateway_agent_entry_point | to_json }}
+  networkId: {{ xconnect_gateway_agent_network_id | to_json }}
+  overlayStatusPath: {{ xconnect_gateway_agent_overlay_status_path | to_json }}
+  gatewayTelemetryPath: {{ xconnect_gateway_agent_telemetry_path | to_json }}
+  gateway:
+    enabled: true
+    stateDir: {{ xconnect_gateway_agent_state_dir | to_json }}
+    applyCommand:
+      - "/usr/local/bin/xconnect-gateway"
+      - "apply"
+      - "--state-dir"
+      - {{ xconnect_gateway_agent_state_dir | to_json }}
+      - "--frontend"
+      - {{ xconnect_gateway_agent_frontend | to_json }}
+      - "--listen-socket"
+      - {{ xconnect_gateway_agent_listen_socket | to_json }}
+
+billing:
+  enabled: false
+
+xray:
+  sync:
+    enabled: false

@@ -1,0 +1,13 @@
+---
+- name: Upgrade Caddy binary when it is older and has no Layer 4 module
+  ansible.builtin.include_role:
+    name: roles/vhosts/caddy
+    tasks_from: upgrade_binary.yml
+  when: (agent_proxy_engine | default('fluxgate')) == 'caddy'
+
+- name: Apply agent-proxy and Xray binary upgrades
+  ansible.builtin.meta: flush_handlers
+
+- name: Apply installer network baseline
+  ansible.builtin.import_tasks: network_baseline.yml
+  when: xconnect_proxy_network_baseline_enabled | default(true) | bool

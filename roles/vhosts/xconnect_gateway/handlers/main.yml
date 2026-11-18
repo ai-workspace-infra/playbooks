@@ -5,3 +5,16 @@
     state: restarted
     daemon_reload: true
   when: xconnect_gateway_dns_enabled | bool
+
+- name: Restart caddy
+  ansible.builtin.systemd:
+    name: caddy
+    state: restarted
+  listen: reload ingress
+
+- name: Restart xconnect-gateway-xray on xray-core upgrade
+  ansible.builtin.systemd:
+    name: xconnect-gateway-xray.service
+    state: restarted
+  listen: xray-core binary changed
+  failed_when: false

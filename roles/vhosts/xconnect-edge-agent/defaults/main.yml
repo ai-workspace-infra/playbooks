@@ -1,51 +1,95 @@
 ---
 # ==============================================================================
-# XConnect Edge Agent Role Defaults
+# XConnect Edge Agent Role Defaults (L3 Control Plane)
+# Owns /usr/local/bin/agent-proxy, /etc/agent/account-agent.yaml,
+# /etc/agent/conf.d/*.yaml, and xconnect-edge-agent.service.
 # ==============================================================================
 
-# Ingress engine selection: 'fluxgate' | 'caddy' | 'haproxy'
-# Strictly mutually exclusive - exactly one engine handles 80/443.
-xconnect_edge_proxy_engine: "{{ lookup('ansible.builtin.env', 'AGENT_PROXY_ENGINE') | default('fluxgate', true) }}"
+xconnect_edge_agent_enabled: true
+agent_proxy_operation: deploy
 
-# Runtime mode: 'systemd' (process) | 'container' (Kubernetes Helm chart)
-# 1C1G low-spec nodes (<=1.5GB RAM or <=1 vCPU) strictly default to systemd process mode.
-xconnect_edge_runtime: >-
-  {{ lookup('ansible.builtin.env', 'AGENT_RUNTIME')
-     | default(
-         'systemd'
-         if ((ansible_memtotal_mb | default(1024)) <= 1536 or (ansible_processor_vcpus | default(1)) <= 1)
-         else 'systemd',
-         true
-       ) }}
+agent_proxy_repo_url: "https://github.com/x-evor/agent.svc.plus.git"
+agent_proxy_repo_version: "main"
+agent_proxy_app_dir: "/opt/agent-proxy"
+agent_proxy_manage_source_checkout: false
+agent_proxy_binary_src: ""
+agent_proxy_local_release_repo: "ai-workspace-xstream/xconnect-edge-agent"
+agent_proxy_local_release_requested_tag: "{{ lookup('ansible.builtin.env', 'AGENT_RELEASE_TAG') | default('latest', true) }}"
+agent_proxy_local_release_stage_path: "/var/cache/agent-proxy/xconnect-edge-agent"
+agent_proxy_release_repo: "x-evor/agent.svc.plus"
+agent_proxy_release_tag: ""
+agent_proxy_release_base_url: "https://github.com/{{ agent_proxy_release_repo }}/releases/download"
 
-# Component enablement flags
-xconnect_edge_xray_enabled: true
-xconnect_edge_exporter_enabled: true
-xconnect_edge_vector_billing_enabled: true
-xconnect_edge_observability_enabled: "{{ lookup('ansible.builtin.env', 'AGENT_PROXY_OBSERVABILITY_ENABLED') | default(true, true) | bool }}"
+agent_proxy_go_version: "1.25.1"
+agent_proxy_go_root: "/usr/local/go"
+agent_proxy_go_bin: "{{ agent_proxy_go_root }}/bin/go"
+# CI owns source builds (xconnect-edge-agent build-release-artifacts.yml).
+agent_proxy_build_on_target: false
 
-# Agent identity and endpoints
-xconnect_edge_agent_id: "{{ lookup('ansible.builtin.env', 'AGENT_ID') | default(inventory_hostname, true) }}"
-xconnect_edge_domain: "{{ lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN') | default(xconnect_edge_agent_id, true) }}"
-xconnect_edge_entry_point: "{{ lookup('ansible.builtin.env', 'AGENT_ENTRY_POINT') | default(xconnect_edge_domain, true) }}"
-xconnect_edge_region: "{{ lookup('ansible.builtin.env', 'AGENT_REGION') | default('', true) }}"
-xconnect_edge_pool: "{{ lookup('ansible.builtin.env', 'AGENT_POOL') | default('', true) }}"
-xconnect_edge_resource_class: "{{ lookup('ansible.builtin.env', 'AGENT_RESOURCE_CLASS') | default('shared', true) }}"
-xconnect_edge_team_id: "{{ lookup('ansible.builtin.env', 'AGENT_TEAM_ID') | default('', true) }}"
+agent_proxy_binary_name: "agent-proxy"
+agent_proxy_binary_path: "/usr/local/bin/{{ agent_proxy_binary_name }}"
+agent_proxy_build_target: "./cmd/agent"
+agent_proxy_release_asset_name: "agent-svc-plus-linux-{{ agent_proxy_release_arch }}"
+agent_proxy_release_asset_url: "{{ agent_proxy_release_base_url }}/{{ agent_proxy_release_tag }}/{{ agent_proxy_release_asset_name }}"
 
-# Controller & Billing URLs
-xconnect_edge_controller_url: "{{ lookup('ansible.builtin.env', 'AGENT_CONTROLLER_URL') | default('https://accounts.svc.plus', true) }}"
-xconnect_edge_billing_url: "{{ lookup('ansible.builtin.env', 'BILLING_SERVICE_BASE_URL') | default('https://billing.svc.plus', true) }}"
+agent_proxy_service_name: "xconnect-edge-agent"
+agent_proxy_service_description: "agent proxy service"
+agent_proxy_legacy_service_name: "agent-svc-plus"
+agent_proxy_legacy_service_names:
+  - agent-proxy
+  - agent-svc-plus
+agent_proxy_legacy_binary_path: "/usr/local/bin/agent-svc-plus"
+agent_proxy_user: "root"
+agent_proxy_group: "root"
 
-# Ports & IPC
-xconnect_edge_xhttp_unix_socket: "/dev/shm/xray.sock"
-xconnect_edge_tcp_port: 1443
-xconnect_edge_xhttp_api_port: 10086
-xconnect_edge_tcp_api_port: 10087
-xconnect_edge_exporter_xhttp_port: 8080
-xconnect_edge_exporter_tcp_port: 8081
-xconnect_edge_fluxgate_metrics_port: 9102
+agent_proxy_config_dir: "/etc/agent"
+agent_proxy_config_file: "account-agent.yaml"
+agent_proxy_config_path: "{{ agent_proxy_config_dir }}/{{ agent_proxy_config_file }}"
+agent_proxy_conf_d_enabled: "{{ (xconnect_edge_agent_profiles | default([]) | length > 0) or (xconnect_gateway_agent_enabled | bool) }}"
+agent_proxy_conf_d_dir: "{{ agent_proxy_config_dir }}/conf.d"
+agent_proxy_data_dir: "/var/lib/agent-proxy"
 
-# TLS certificate paths
-xconnect_edge_tls_cert_path: "/etc/caddy/tls/agent-proxy.crt"
-xconnect_edge_tls_key_path: "/etc/caddy/tls/agent-proxy.key"
+# Optional declarative profile list for /etc/agent/conf.d/*.yaml.
+# Each entry: { filename: "01-agent-proxy.yaml", content: { ... } }
+xconnect_edge_agent_profiles: []
+
+xconnect_gateway_agent_enabled: false
+xconnect_gateway_agent_id: "{{ xconnect_gateway_id | default(inventory_hostname ~ '-gateway-01', true) }}"
+xconnect_gateway_agent_entry_point: "{{ xconnect_gateway_domain | default('', true) }}"
+xconnect_gateway_agent_network_id: "{{ xconnect_gateway_network_id | default('', true) }}"
+xconnect_gateway_agent_state_dir: "{{ xconnect_gateway_state_dir | default('/var/lib/xconnect-gateway', true) }}"
+xconnect_gateway_agent_frontend: "caddy-unix-h2c"
+xconnect_gateway_agent_listen_socket: "/run/xconnect-gateway/xray.sock"
+xconnect_gateway_agent_overlay_status_path: "{{ xconnect_gateway_agent_state_dir }}/runtime/overlay-status.json"
+xconnect_gateway_agent_telemetry_path: "{{ xconnect_gateway_agent_state_dir }}/runtime/gateway-telemetry.json"
+
+agent_id: "{{ lookup('ansible.builtin.env', 'AGENT_ID') | default(inventory_hostname, true) }}"
+agent_region: "{{ xconnect_region | default(lookup('ansible.builtin.env', 'AGENT_REGION') | default('', true), true) }}"
+agent_pool: "{{ xconnect_pool | default(lookup('ansible.builtin.env', 'AGENT_POOL') | default('', true), true) }}"
+agent_resource_class: "{{ xconnect_resource_class | default(lookup('ansible.builtin.env', 'AGENT_RESOURCE_CLASS') | default('', true), true) }}"
+agent_team_id: "{{ xconnect_team_id | default(lookup('ansible.builtin.env', 'AGENT_TEAM_ID') | default('', true), true) }}"
+agent_entry_point: "{{ xconnect_proxy_domain | default(xconnect_fqdn | default(agent_proxy_regional_domain | default(lookup('ansible.builtin.env', 'AGENT_ENTRY_POINT') | default('', true), true), true), true) }}"
+agent_open_to_users: "{{ xconnect_open_to_users | default(true) | bool }}"
+agent_controller_url: "{{ xconnect_controller_url | default(lookup('ansible.builtin.env', 'AGENT_CONTROLLER_URL') | default('', true), true) }}"
+agent_api_token: ""
+agent_http_timeout: "15s"
+agent_status_interval: "1m"
+agent_sync_interval: "5m"
+agent_tls_insecure_skip_verify: false
+agent_log_level: "info"
+
+agent_proxy_wait_for_runtime_config: true
+
+agent_billing_enabled: false
+agent_billing_base_url: "http://127.0.0.1:8081"
+agent_billing_http_timeout: "15s"
+agent_billing_collect_interval: "1m"
+agent_billing_reconcile_interval: "5m"
+
+# Runtime paths consumed by agent xray sync target config
+xray_enabled: true
+xray_sync_interval: "5m"
+xray_binary_path: "{{ xray_core_binary_path | default('/usr/local/bin/xray') }}"
+xray_config_path: "/usr/local/etc/xray/config.json"
+xray_tcp_config_path: "/usr/local/etc/xray/tcp-config.json"
+xray_template_dir: "/usr/local/etc/xray/templates"

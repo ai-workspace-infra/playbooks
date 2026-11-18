@@ -7,7 +7,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TASKS = ROOT / "roles/vhosts/agent-proxy/tasks/main.yml"
+TASKS = ROOT / "roles/vhosts/xconnect-edge-agent/tasks/deploy.yml"
 
 
 class AgentProxySourceCheckoutTest(unittest.TestCase):

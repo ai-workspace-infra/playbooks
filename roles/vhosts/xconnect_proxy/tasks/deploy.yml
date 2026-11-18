@@ -1,0 +1,274 @@
+---
+- name: Ensure Agent Proxy monitoring prerequisites are installed
+  ansible.builtin.package:
+    name:
+      - jq
+      - logrotate
+    state: present
+  become: true
+  when:
+    - ansible_os_family != 'Darwin'
+    - xray_enabled | bool
+
+- name: Configure Xray access log rotation
+  ansible.builtin.template:
+    src: xray-access.logrotate.j2
+    dest: /etc/logrotate.d/xray-access
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - ansible_os_family != 'Darwin'
+    - xray_enabled | bool
+    - xray_access_logrotate_enabled | bool
+
+- name: Ensure logrotate timer is enabled and running
+  ansible.builtin.systemd:
+    name: logrotate.timer
+    enabled: true
+    state: started
+  when:
+    - ansible_os_family != 'Darwin'
+    - xray_enabled | bool
+    - xray_access_logrotate_enabled | bool
+
+- name: Ensure journald drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - ansible_os_family != 'Darwin'
+    - xray_enabled | bool
+    - xray_journald_retention_enabled | bool
+
+- name: Configure bounded journald retention for Agent Proxy hosts
+  ansible.builtin.template:
+    src: xray-journald-retention.conf.j2
+    dest: /etc/systemd/journald.conf.d/90-xconnect-log-limits.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart systemd-journald
+  when:
+    - ansible_os_family != 'Darwin'
+    - xray_enabled | bool
+    - xray_journald_retention_enabled | bool
+
+- name: Create Xray runtime directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ xray_config_path | dirname }}"
+    - "{{ xray_template_dir }}"
+    - "{{ xray_access_log_path | dirname }}"
+    - "{{ xconnect_proxy_tcp_access_log_path | dirname }}"
+  when: xray_enabled | bool
+
+- name: Ensure shared Xray access log group exists
+  ansible.builtin.group:
+    name: "{{ xray_access_log_group }}"
+    state: present
+  when: xray_enabled | bool
+
+- name: Create dedicated XHTTP Xray system group
+  ansible.builtin.group:
+    name: "{{ xray_xhttp_service_group }}"
+    system: true
+  when:
+    - xray_enabled | bool
+    - xray_xhttp_service_account_managed | bool
+
+- name: Create dedicated XHTTP Xray system account
+  ansible.builtin.user:
+    name: "{{ xray_xhttp_service_user }}"
+    group: "{{ xray_xhttp_service_group }}"
+    system: true
+    create_home: false
+    shell: "/usr/sbin/nologin"
+  notify: Restart Xray services
+  when:
+    - xray_enabled | bool
+    - xray_xhttp_service_account_managed | bool
+
+- name: Grant XHTTP Xray service access to the shared log group
+  ansible.builtin.user:
+    name: "{{ xray_xhttp_service_user }}"
+    groups:
+      - "{{ xray_access_log_group }}"
+    append: true
+  notify: Restart Xray services
+  when: xray_enabled | bool
+
+- name: Require existing unmanaged XHTTP service account
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ xray_xhttp_service_user }}"
+  when:
+    - xray_enabled | bool
+    - not (xray_xhttp_service_account_managed | bool)
+
+- name: Require existing unmanaged XHTTP service group
+  ansible.builtin.getent:
+    database: group
+    key: "{{ xray_xhttp_service_group }}"
+  when:
+    - xray_enabled | bool
+    - not (xray_xhttp_service_account_managed | bool)
+
+- name: Grant TCP Xray service access to the shared log group
+  ansible.builtin.user:
+    name: "{{ xray_tcp_service_user }}"
+    groups:
+      - "{{ xray_access_log_group }}"
+      - "{{ xray_tcp_service_user }}"
+    append: true
+  notify: Restart Xray services
+  when: xray_enabled | bool
+
+- name: Ensure Xray access logs are writable by Xray services
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    owner: root
+    group: "{{ xray_access_log_group }}"
+    mode: "0660"
+    access_time: preserve
+    modification_time: preserve
+  loop: "{{ [xray_access_log_path, xconnect_proxy_tcp_access_log_path] | unique }}"
+  when: xray_enabled | bool
+
+# The agent snapshots templates at startup. Reload it when either template
+# changes so the next controller sync cannot restore an older in-memory policy.
+- name: Deploy XHTTP template
+  ansible.builtin.template:
+    src: xray.xhttp.template.json.j2
+    dest: "{{ xray_template_dir }}/xray.xhttp.template.json"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0644"
+  notify: Restart agent-proxy
+  when: xray_enabled | bool
+  tags:
+    - xray-runtime-config
+
+- name: Deploy TCP template
+  ansible.builtin.template:
+    src: xray.tcp.template.json.j2
+    dest: "{{ xray_template_dir }}/xray.tcp.template.json"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0644"
+  notify: Restart agent-proxy
+  when: xray_enabled | bool
+  tags:
+    - xray-runtime-config
+
+- name: Deploy Xray systemd services
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/etc/systemd/system/{{ item.unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { src: xray.service.j2, unit: xray.service }
+    - { src: xray-tcp.service.j2, unit: xray-tcp.service }
+  when: xray_enabled | bool
+  notify: Restart Xray services
+  tags:
+    - xray-runtime-config
+
+- name: Render XConnect Proxy ingress fragment into active ingress conf.d
+  ansible.builtin.include_tasks: ingress_fragment.yml
+  when: xconnect_proxy_ingress_fragment_enabled | default(false) | bool
+
+- name: Check whether agent-generated Xray runtime configurations already exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ xray_config_path }}"
+    - "{{ xray_tcp_config_path }}"
+  register: xconnect_proxy_runtime_configs
+  when: xray_enabled | bool
+
+- name: Validate existing Xray configurations
+  ansible.builtin.command: "{{ xray_binary_path }} run -test -config {{ item }}"
+  environment:
+    XRAY_LOCATION_ASSET: "/usr/local/share/xray/"
+  changed_when: false
+  loop:
+    - "{{ xray_config_path }}"
+    - "{{ xray_tcp_config_path }}"
+  when:
+    - xray_enabled | bool
+    - (xconnect_proxy_runtime_configs.results | map(attribute='stat.exists') | min | default(false))
+
+- name: Enable and start Xray services when runtime configs are present
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - xray.service
+    - xray-tcp.service
+  when:
+    - xray_enabled | bool
+    - (xconnect_proxy_runtime_configs.results | map(attribute='stat.exists') | min | default(false))
+
+- name: Flush service handlers before retiring the legacy Xray account
+  ansible.builtin.meta: flush_handlers
+  when: xray_legacy_service_user | length > 0
+
+- name: Retire the legacy Xray service account after successful cutover
+  ansible.builtin.import_tasks: retire_legacy_xray_account.yml
+  when: xray_legacy_service_user | length > 0
+
+- name: Export XConnect Proxy xray-exporter instance descriptors
+  ansible.builtin.set_fact:
+    xray_exporter_instances: >-
+      {{ (xray_exporter_instances | default([])) + ([
+           {
+             'name': 'xray-exporter-xhttp',
+             'description': 'Xray Exporter (XHTTP)',
+             'listen_addr': '127.0.0.1:8080',
+             'xray_api_addr': '127.0.0.1:' ~ (xray_xhttp_api_port | string),
+             'log_path': xray_access_log_path,
+             'node_id': inventory_hostname ~ '-xhttp',
+             'snapshot_store_path': '/var/lib/xray-exporter/xhttp-snapshots.json',
+             'labels': {
+               'service': 'xconnect-proxy',
+               'billing_scope': 'proxy',
+               'transport': 'xhttp',
+               'instance': 'xhttp',
+               'inbound_tag': 'proxy-xhttp-in'
+             }
+           },
+           {
+             'name': 'xray-exporter-tcp',
+             'description': 'Xray Exporter (TCP)',
+             'listen_addr': '127.0.0.1:8081',
+             'xray_api_addr': '127.0.0.1:' ~ (xray_tcp_api_port | string),
+             'log_path': xconnect_proxy_tcp_access_log_path,
+             'node_id': inventory_hostname ~ '-tcp',
+             'snapshot_store_path': '/var/lib/xray-exporter/tcp-snapshots.json',
+             'labels': {
+               'service': 'xconnect-proxy',
+               'billing_scope': 'proxy',
+               'transport': 'tcp',
+               'instance': 'tcp',
+               'inbound_tag': 'proxy-tcp-in'
+             }
+           }
+         ] if (xconnect_proxy_exporter_enabled | default(true) | bool) else []) }}
+
+- name: Apply installer network baseline
+  ansible.builtin.import_tasks: network_baseline.yml
+  when: xconnect_proxy_network_baseline_enabled | default(true) | bool

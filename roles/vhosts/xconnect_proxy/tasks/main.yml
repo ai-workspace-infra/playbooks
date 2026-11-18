@@ -1,0 +1,21 @@
+---
+- name: Validate requested XConnect Proxy runtime operation
+  ansible.builtin.assert:
+    that:
+      - agent_proxy_operation in ['deploy', 'standalone', 'upgrade', 'print-arch']
+    fail_msg: "agent_proxy_operation must be deploy, standalone, upgrade, or print-arch."
+
+- name: Deploy XConnect Proxy Xray runtime
+  ansible.builtin.import_tasks: deploy.yml
+  when: agent_proxy_operation == 'deploy'
+  tags: [install, configure, validate]
+
+- name: Deploy standalone Caddy and Xray services
+  ansible.builtin.import_tasks: standalone.yml
+  when: agent_proxy_operation == 'standalone'
+  tags: [install, configure, validate]
+
+- name: Upgrade XConnect Proxy runtime dependencies
+  ansible.builtin.import_tasks: upgrade.yml
+  when: agent_proxy_operation == 'upgrade'
+  tags: [install, validate]
