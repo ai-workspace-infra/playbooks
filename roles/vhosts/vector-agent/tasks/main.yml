@@ -61,8 +61,9 @@
       {{ (existing_xray_exporter_env_stat.stat.exists | default(false)) and
          ('VECTOR_SNAPSHOT_URL' in (existing_xray_exporter_env_content.content | b64decode | default(''))) }}
     existing_xray_exporter_service_token: >-
-      {{ (existing_xray_exporter_env_content.content | b64decode
-          | regex_search('(?m)^INTERNAL_SERVICE_TOKEN=(.*)$', '\\1') | first | default('', true))
+      {{ (((existing_xray_exporter_env_content.content | b64decode | default('')).splitlines()
+           | select('match', '^INTERNAL_SERVICE_TOKEN=')
+           | map('regex_replace', '^INTERNAL_SERVICE_TOKEN=', '') | list | first) | default('', true))
          if (existing_xray_exporter_env_stat.stat.exists | default(false)) else '' }}
     existing_vector_billing_token: >-
       {{ ((existing_vector_secrets_content.content | b64decode | from_json | default({})).get('billing_token', ''))
