@@ -12,6 +12,14 @@
   become: true
   when: ansible_os_family != 'Darwin'
 
+- name: Base | resolve canonical hostname (never overwrite with localhost)
+  ansible.builtin.set_fact:
+    common_resolved_hostname: >-
+      {{ (common_target_hostname | default('', true) | trim)
+         if (common_target_hostname | default('', true) | trim | length > 0)
+         else (inventory_hostname if (inventory_hostname not in ['localhost', 'localhost.localdomain', '127.0.0.1', '::1']) else '') }}
+  when: ansible_os_family != 'Darwin'
+
 - name: Base | render /etc/hostname
   ansible.builtin.template:
     src: templates/hostname.j2
@@ -20,13 +28,21 @@
     group: root
     mode: "0644"
   become: true
-  when: ansible_os_family != 'Darwin'
+  when:
+    - ansible_os_family != 'Darwin'
+    - enable_set_hostname | default(true) | bool
+    - common_resolved_hostname | default('') | trim | length > 0
+    - common_resolved_hostname not in ['localhost', 'localhost.localdomain', '127.0.0.1', '::1']
 
 - name: Base | set hostname
   ansible.builtin.hostname:
-    name: "{{ inventory_hostname }}"
+    name: "{{ common_resolved_hostname }}"
   become: true
-  when: ansible_os_family != 'Darwin'
+  when:
+    - ansible_os_family != 'Darwin'
+    - enable_set_hostname | default(true) | bool
+    - common_resolved_hostname | default('') | trim | length > 0
+    - common_resolved_hostname not in ['localhost', 'localhost.localdomain', '127.0.0.1', '::1']
 
 - name: Base | update /etc/hosts
   ansible.builtin.template:
@@ -36,7 +52,11 @@
     group: root
     mode: "0644"
   become: true
-  when: ansible_os_family != 'Darwin'
+  when:
+    - ansible_os_family != 'Darwin'
+    - enable_set_hostname | default(true) | bool
+    - common_resolved_hostname | default('') | trim | length > 0
+    - common_resolved_hostname not in ['localhost', 'localhost.localdomain', '127.0.0.1', '::1']
 
 - name: Base | inspect root SSH directory and authorized keys
   tags: [common_ssh_permissions]

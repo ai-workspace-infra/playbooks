@@ -52,6 +52,73 @@
       ansible.builtin.set_fact:
         xconnect_node_maintenance: "{{ xconnect_policy.spec.node_maintenance | default({}, true) }}"
 
+    - name: Resolve real node hostname for local ansible-pull convergence
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for candidate in \
+          "${XCONNECT_NODE_HOSTNAME:-}" \
+          "${AGENT_ID:-}" \
+          "${AGENT_PROXY_DOMAIN:-}"; do
+          if [[ -n "$candidate" && "$candidate" != "localhost" && "$candidate" != "localhost.localdomain" ]]; then
+            printf '%s\n' "$candidate"
+            exit 0
+          fi
+        done
+        if [[ -d /etc/agent/conf.d || -f /etc/agent/account-agent.yaml ]]; then
+          python3 - <<'PY' || true
+        import glob, os, re
+        files = sorted(glob.glob('/etc/agent/conf.d/*.yaml')) + ['/etc/agent/account-agent.yaml']
+        fallback = ''
+        for path in files:
+            if not os.path.isfile(path):
+                continue
+            text = open(path, encoding='utf-8', errors='ignore').read()
+            m_id = re.search(r'(?m)^  id:\s*["\']?([^"\'\s#]+)', text)
+            if not m_id:
+                continue
+            cid = m_id.group(1)
+            if cid in ('', 'localhost', 'localhost.localdomain'):
+                continue
+            m_role = re.search(r'(?m)^  role:\s*["\']?([^"\'\s#]+)', text)
+            if m_role and m_role.group(1) == 'agent-proxy':
+                print(cid)
+                raise SystemExit(0)
+            if not fallback:
+                fallback = cid
+        if fallback:
+            print(fallback)
+        PY
+        fi
+        if [[ -f /etc/machine-info ]]; then
+          pretty=$(grep -E '^PRETTY_HOSTNAME=' /etc/machine-info | head -1 | cut -d= -f2- | tr -d "\"'" | xargs || true)
+          if [[ -n "$pretty" && "$pretty" != "localhost" && "$pretty" != "localhost.localdomain" ]]; then
+            printf '%s\n' "$pretty"
+            exit 0
+          fi
+        fi
+        for current in "$(hostname -f 2>/dev/null || true)" "$(cat /etc/hostname 2>/dev/null || true)"; do
+          current=$(printf '%s' "$current" | xargs || true)
+          if [[ -n "$current" && "$current" != "localhost" && "$current" != "localhost.localdomain" ]]; then
+            printf '%s\n' "$current"
+            exit 0
+          fi
+        done
+      args:
+        executable: /bin/bash
+      register: pull_resolved_hostname_cmd
+      changed_when: false
+
+    - name: Bind resolved node hostname to common and Vector variables
+      ansible.builtin.set_fact:
+        common_target_hostname: "{{ pull_resolved_hostname_cmd.stdout_lines[0] | trim }}"
+        vector_observability_node_identity: "{{ pull_resolved_hostname_cmd.stdout_lines[0] | trim }}"
+        vector_observability_service_domain: "{{ pull_resolved_hostname_cmd.stdout_lines[0] | trim }}"
+        vector_observability_resource_id: "{{ pull_resolved_hostname_cmd.stdout_lines[0] | trim }}"
+        vector_observability_host: "{{ pull_resolved_hostname_cmd.stdout_lines[0] | trim }}"
+      when:
+        - pull_resolved_hostname_cmd.stdout_lines | default([]) | length > 0
+        - (pull_resolved_hostname_cmd.stdout_lines[0] | trim) not in ['', 'localhost', 'localhost.localdomain']
+
     # 采集侧的四个组件顺序与 deploy_observability_agent.yml 保持一致:
     # 先 exporter, 再 blackbox, 最后 Vector(它消费前面几位的本地监听端口)。
     - name: Converge node exporter

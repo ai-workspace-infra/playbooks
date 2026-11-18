@@ -17,26 +17,44 @@ def main() -> int:
     args = parser.parse_args()
     config_path = args.config
 
-    try:
-        text = Path(config_path).read_text(encoding="utf-8")
-    except OSError as exc:
-        print(f"cannot read Agent config: {exc}", file=sys.stderr)
-        return 1
+    candidates = [Path(config_path)]
+    conf_d = Path(config_path).parent / "conf.d"
+    if conf_d.is_dir():
+        candidates = sorted(conf_d.glob("*.yaml")) + candidates
 
-    in_agent = False
     identity = ""
-    for line in text.splitlines():
-        if not line.strip() or line.lstrip().startswith("#"):
+    for candidate in candidates:
+        try:
+            text = candidate.read_text(encoding="utf-8")
+        except OSError:
             continue
-        if re.match(r"^agent:\s*(?:#.*)?$", line):
-            in_agent = True
-            continue
-        if in_agent and re.match(r"^[^\s#][^:]*:", line):
-            break
-        match = re.match(r"^  id:\s*(.*?)\s*(?:#.*)?$", line)
-        if in_agent and match:
-            identity = match.group(1).strip().strip("\"'")
-            break
+        in_agent = False
+        found_id = ""
+        role = ""
+        for line in text.splitlines():
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            if re.match(r"^agent:\s*(?:#.*)?$", line):
+                in_agent = True
+                continue
+            if in_agent and re.match(r"^[^\s#][^:]*:", line):
+                break
+            m_id = re.match(r"^  id:\s*(.*?)\s*(?:#.*)?$", line)
+            if in_agent and m_id:
+                found_id = m_id.group(1).strip().strip("\"'")
+            m_role = re.match(r"^  role:\s*(.*?)\s*(?:#.*)?$", line)
+            if in_agent and m_role:
+                role = m_role.group(1).strip().strip("\"'")
+        if found_id:
+            if role == "agent-proxy":
+                identity = found_id
+                break
+            if not identity:
+                identity = found_id
+
+    if not identity and not Path(config_path).exists():
+        print(f"cannot read Agent config: {config_path}", file=sys.stderr)
+        return 1
 
     if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?", identity):
         print("Agent config must contain a valid agent.id", file=sys.stderr)
