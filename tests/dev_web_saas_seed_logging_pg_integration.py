@@ -25,7 +25,7 @@ try:
     run([B/'psql','-XAtq','-d','postgres','-v','ON_ERROR_STOP=1'], env=env,
         input='CREATE ROLE lane_admin LOGIN SUPERUSER; CREATE DATABASE account; CREATE ROLE conflict_probe;')
     # Import the actual execution owner; test only its management SQL connection.
-    sys.path.insert(0,str(ROOT/'roles/platform/dev_web_saas_seed/files'))
+    sys.path.insert(0,str(ROOT/'archive/roles/legacy/dev_web_saas_seed/files'))
     sys.modules['platform_scope']=types.SimpleNamespace(preflight=lambda *args: None, failure_code=lambda operation,error:'owner_internal_error')
     import seed
     owner=seed.Owner.__new__(seed.Owner); owner.ns='feature-xconnect-referral-sit'

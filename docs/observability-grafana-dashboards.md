@@ -33,7 +33,7 @@ The AI Aggregator collection and dashboard contract is documented in
 [`ai-aggregator-observability.md`](ai-aggregator-observability.md).
 
 The StarsL K8s source is pinned and adapted by the controller-side
-[`grafana_starsl_dashboard` role](../roles/platform/grafana_starsl_dashboard/README.md).
+[`grafana_starsl_dashboard` role](../roles/saas/grafana_starsl_dashboard/README.md).
 Run `import_starsl_k8s_dashboard.yml` to plan/replay its file-provisioning source
 and optional GitOps ConfigMap. The role documents kube-state-metrics/kubelet
 requirements, cluster/environment isolation and deliberately omitted sensitive

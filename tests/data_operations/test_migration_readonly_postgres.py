@@ -33,7 +33,7 @@ class MigrationReaderPostgresTest(unittest.TestCase):
             'INSERT INTO public.audit_fixture VALUES(1); '
             'ALTER TABLE public.audit_fixture ENABLE ROW LEVEL SECURITY;')
         business_before = sql("SELECT md5(rolpassword) FROM pg_authid WHERE rolname='app_fixture';").stdout
-        template = (ROOT / 'roles/readonly_ssh_user/templates/postgresql-passwordless.sql.j2').read_text()
+        template = (ROOT / 'roles/vhosts/readonly_ssh_user/templates/postgresql-passwordless.sql.j2').read_text()
         rendered = template.replace('{{ readonly_database_name }}', 'account')
         self.assertNotIn('{{', rendered)
         self.assertIn('changed', sql(rendered).stdout.splitlines())
@@ -65,7 +65,7 @@ class MigrationReaderPostgresTest(unittest.TestCase):
         if restore_container:
             self.assertTrue(restore_container.startswith('migration-reader-restore-fixture-'))
             spec = importlib.util.spec_from_file_location(
-                'snapshot_policy_roles', ROOT / 'roles/web_saas_full_snapshot/files/policy_roles.py')
+                'snapshot_policy_roles', ROOT / 'archive/roles/web-saas/web_saas_full_snapshot/files/policy_roles.py')
             helper = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(helper)
 

@@ -14,7 +14,7 @@ try:
  env=dict(os.environ,NATIVE_TEST_DSN=f'postgresql://xc_schema_owner@/account?host={root}&port={port}')
  args=[MIGRATECTL,'init','--environment','sit','--dsn-env','NATIVE_TEST_DSN','--writers-paused','--dry-run=false','--schema-sha256','e223518d156308c1cb2ea6919cfdccf1c0cacc03b55f9b41824ef29e4f632b13']
  first=run(args,env=env)
- spec=importlib.util.spec_from_file_location('contracts',str(pathlib.Path.cwd()/'roles/platform/dev_web_saas_seed/files/contracts.py')); c=importlib.util.module_from_spec(spec); spec.loader.exec_module(c)
+ spec=importlib.util.spec_from_file_location('contracts',str(pathlib.Path.cwd()/'archive/roles/legacy/dev_web_saas_seed/files/contracts.py')); c=importlib.util.module_from_spec(spec); spec.loader.exec_module(c)
  source=SOURCE/'sql/init'
  billing=run(['gh','api','repos/ai-workspace-services/billing-service/contents/sql/billing-service-schema.sql?ref='+c.BILLING_SHA,'--jq','.content']).stdout
  import base64, secrets

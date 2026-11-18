@@ -1,6 +1,6 @@
 # XConnect diagnostics on the existing monitoring stack
 
-Use `deploy_observability_diagnostics.yml` with `observability_accounts_hosts`
+Use `archive/legacy/deploy_observability_diagnostics.yml` with `observability_accounts_hosts`
 and the existing `observability_hosts` inventory. It calls the existing
 Accounts runtime role and observability server role, not a second server or
 collector. Accounts must already run the identity resolver API. No application
@@ -55,7 +55,7 @@ rotate shared ingest credentials as rollback.
 Playbooks 提供独立、无副作用的控制器端只读验收探针：
 
 - **独立脚本入口**：`scripts/verify_observability_closure.py`
-- **Ansible Playbook / Role 入口**：`observability_closure_acceptance.yml`（调用 `roles/observability_acceptance`）
+- **Ansible Playbook / Role 入口**：`observability_closure_acceptance.yml`（调用 `roles/vhosts/observability_acceptance`）
 - **自动化单元与集成测试**：`tests/test_observability_closure_acceptance.py`
 
 ### 1.1 固定新鲜度门槛（Freshness Thresholds）

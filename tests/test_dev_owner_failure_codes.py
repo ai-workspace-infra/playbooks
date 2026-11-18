@@ -4,7 +4,7 @@ import subprocess
 import unittest
 
 
-PATH = Path(__file__).resolve().parents[1] / 'roles/platform/dev_feature_flux/files/reconcile.py'
+PATH = Path(__file__).resolve().parents[1] / 'archive/roles/legacy/dev_feature_flux/files/reconcile.py'
 SPEC = importlib.util.spec_from_file_location('dev_feature_failure_codes', PATH)
 OWNER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(OWNER)

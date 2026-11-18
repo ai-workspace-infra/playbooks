@@ -6,7 +6,7 @@ from unittest import mock
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location("restore", ROOT / "roles/web_saas_generation_recovery/files/restore_new_generation.py")
+spec = importlib.util.spec_from_file_location("restore", ROOT / "archive/roles/web-saas/web_saas_generation_recovery/files/restore_new_generation.py")
 restore = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(restore)
 
@@ -41,23 +41,23 @@ class GenerationRecoveryTests(unittest.TestCase):
         self.assertTrue(restore.archive_creates_public("5; 2615 2200 SCHEMA - public postgres\n"))
 
     def test_restore_cannot_generate_a_business_identity_or_reassign_ownership(self):
-        text = (ROOT / 'roles/web_saas_generation_recovery/files/restore_new_generation.py').read_text()
+        text = (ROOT / 'archive/roles/web-saas/web_saas_generation_recovery/files/restore_new_generation.py').read_text()
         self.assertNotIn('CREATE ROLE', text)
         self.assertNotIn('OWNER TO', text)
         self.assertNotIn('RECOVERY_APP_PASSWORD', text)
 
     def test_no_implicit_cleanup_or_production_secret_copy(self):
-        text = (ROOT / "roles/web_saas_generation_recovery/files/restore_new_generation.py").read_text()
+        text = (ROOT / "archive/roles/web-saas/web_saas_generation_recovery/files/restore_new_generation.py").read_text()
         self.assertNotIn("DROP DATABASE", text)
         self.assertNotIn("--clean", text)
         self.assertNotIn("CASCADE", text)
         self.assertIn("account already exists without a completed checkpoint", text)
-        template = (ROOT / "roles/web_saas_generation_recovery/templates/secrets.env.j2").read_text()
+        template = (ROOT / "archive/roles/web-saas/web_saas_generation_recovery/templates/secrets.env.j2").read_text()
         self.assertIn("STRIPE_SECRET_KEY=\n", template)
         self.assertIn("DATABASE_BACKGROUND_WRITERS=false", template)
 
     def test_role_defends_cmdb_disk_and_mutation_contract(self):
-        tasks = yaml.safe_load((ROOT / "roles/web_saas_generation_recovery/tasks/main.yml").read_text())
+        tasks = yaml.safe_load((ROOT / "archive/roles/web-saas/web_saas_generation_recovery/tasks/main.yml").read_text())
         guard = next(t for t in tasks if t.get("name") == "Require an exact isolated generation from the IaC inventory")
         assertions = " ".join(guard["ansible.builtin.assert"]["that"])
         for check in ("cmdb_name", "web_saas_recovery", "source.generation", "public_dns_cutover",

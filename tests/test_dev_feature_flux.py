@@ -239,7 +239,7 @@ class Contracts(unittest.TestCase):
   ingress_patch=[{'op':'replace','path':'/spec/ingress','value':[{'from':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'platform-ingress'}},'podSelector':{'matchLabels':{'app.kubernetes.io/name':'caddy-ingress-controller'}}},{'podSelector':{}}],'ports':[{'protocol':'TCP','port':8080}]}]}]
   tagged_values={name:{'enabled':True} for name in ('caddy','postgresql','console','accounts','billing','content')};tagged_values['caddy']['httpOnly']=True;tagged_values['content']['workload']={'env':{'KNOWLEDGE_REPO_URL':'https://github.com/ai-workspace-services/knowledge.git','KNOWLEDGE_REPO_REF':'a'*40}}
   tagged_values['accounts']['workload']={'env':{'DB_HOST':'web-saas-postgresql.'+ns+'.svc.cluster.local','DB_PORT':'5432','DB_NAME':'account','POSTGRES_USER':'xc_accounts_rw','DATABASE_BACKGROUND_WRITERS':'false','STRIPE_MODE':'test'}}
-  next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-console-nginx')['data']={'nginx.conf':(ROOT/'roles/platform/dev_feature_flux/files/tagged-console-nginx.conf').read_text()}
+  next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-console-nginx')['data']={'nginx.conf':(ROOT/'archive/roles/legacy/dev_feature_flux/files/tagged-console-nginx.conf').read_text()}
   hostname=lane['feature_tag']+'-sit.onwalk.net';account={'store':{'driver':'postgres','dsn':'postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable'},'server':{'publicUrl':'https://accounts-'+hostname,'allowedOrigins':['https://'+hostname,'https://accounts-'+hostname,'https://billing-'+hostname]},'auth':{'oauth':{'frontendUrl':'https://'+hostname,**{provider:{'redirectUrl':'https://accounts-'+hostname+'/api/auth/'+provider+'/callback'} for provider in ('github','google')}}},'agent':{'controllerUrl':'http://web-saas-accounts.'+ns+'.svc.cluster.local'}}
   next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-accounts-template')['data']['account.yaml']=yaml.safe_dump(account)
   next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='web-saas-fullstack-values')['data']['values.yaml']=yaml.safe_dump(tagged_values)
@@ -538,7 +538,7 @@ class RefreezeHandoffTests(unittest.TestCase):
 
 class IsolatedMailSinkTests(unittest.TestCase):
  def test_reviewed_sink_only_accepts_exact_image_scope_and_egress(self):
-  docs=list(yaml.safe_load_all((ROOT/'roles/platform/dev_feature_flux/files/sit-mail-sink.yaml').read_text()))
+  docs=list(yaml.safe_load_all((ROOT/'archive/roles/legacy/dev_feature_flux/files/sit-mail-sink.yaml').read_text()))
   C.validate_sit_mail_sink(docs)
   for index,mutate in ((0,lambda x:x['spec']['template']['spec']['containers'][0].update(image='ghcr.io/other:latest')),
                        (0,lambda x:x['spec']['template']['spec'].update(hostNetwork=True)),
@@ -558,7 +558,7 @@ class MailSinkRuntimeTests(unittest.TestCase):
   child='sha256:938ce54b7b946ef3f45a03e119952cf7e67a7969d61f45a3ed055442a77e00f4'
   c={'namespace':'feature-sit-test-1483-sit'}
   pod={'metadata':{'name':'sink-1','uid':'1'*8+'-'+'1'*4+'-'+'1'*4+'-'+'1'*4+'-'+'1'*12,'namespace':c['namespace'],'labels':{'websaas.io/workload':'sit-mail-sink'}},'spec':{'nodeName':'dev-k3s-v5','automountServiceAccountToken':False,'containers':[{'name':'mail-sink','image':image}]},'status':{'phase':'Running','conditions':[{'type':'Ready','status':'True'}],'containerStatuses':[{'name':'mail-sink','ready':True,'imageID':'containerd://'+child,'state':{'running':{}}}]}}
-  policy=list(yaml.safe_load_all((ROOT/'roles/platform/dev_feature_flux/files/sit-mail-sink.yaml').read_text()))[2]
+  policy=list(yaml.safe_load_all((ROOT/'archive/roles/legacy/dev_feature_flux/files/sit-mail-sink.yaml').read_text()))[2]
   client=Mock();client.get.side_effect=lambda kind,*args,**kwargs: {'items':[policy]} if kind=='networkpolicies' else pod
   self.assertTrue(R.verify_sit_mail_sink(c,{'items':[pod]},client)['smtp_test_accepted'])
   self.assertIn('test@invalid.example',client.call.call_args.args[0])

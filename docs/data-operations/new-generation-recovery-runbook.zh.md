@@ -39,7 +39,7 @@
 
 ## 执行方式
 
-常规方式使用 web-saas-generation-recovery.yml 与原始 IaC artifact 的动态 inventory。目标变量由受控运行文件提供，敏感值不得进入命令行。
+常规方式使用 archive/web-saas/web-saas-generation-recovery.yml 与原始 IaC artifact 的动态 inventory。目标变量由受控运行文件提供，敏感值不得进入命令行。
 
 跨境逐任务 SSH 延迟较大时，可在目标已经完成 Vault 凭据准备后，使用 scripts/pipeline/run-generation-recovery-local.sh，通过一次 SSH 在目标本机执行同一固定 Playbooks commit。输入仍为原 IaC inventory、固定 GitOps tag/SHA 与 runtime.yaml；ansible_connection=local 只改变执行位置，主机和磁盘检查保持有效。该助手不得用于生产源主机。
 

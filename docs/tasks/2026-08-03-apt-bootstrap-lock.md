@@ -25,7 +25,7 @@ UAT `console-uat.onwalk.net` 的 Bootstrap 在安装 Docker 依赖期间耗时�
 
 ## 验证
 
-- `ansible-playbook --syntax-check setup-web-saas-domain.yml`：通过。
+- `ansible-playbook --syntax-check archive/web-saas/setup-web-saas-domain.yml`：通过。
 - `git diff --check`：通过。
 - 未直接停止 UAT 主机上的进程，未修改数据库，未触碰生产节点。
 

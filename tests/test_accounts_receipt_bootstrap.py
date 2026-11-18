@@ -21,7 +21,7 @@ class ReceiptBootstrapTest(unittest.TestCase):
         self.assertEqual(run('postgres', "SELECT count(*) FROM pg_roles WHERE rolname='accounts_migration';").stdout.strip(), '0')
         self.assertEqual(run('postgres', 'CREATE DATABASE "' + name + '"; CREATE ROLE accounts_migration LOGIN NOINHERIT;').returncode, 0)
         try:
-            script = (Path(__file__).resolve().parents[1] / 'roles/accounts_migration_identity/files/business_receipt_bootstrap.sql').read_text()
+            script = (Path(__file__).resolve().parents[1] / 'archive/roles/legacy/accounts_migration_identity/files/business_receipt_bootstrap.sql').read_text()
             refused = run(name, script)
             self.assertNotEqual(refused.returncode, 0)
             self.assertEqual(run(name, "SELECT to_regnamespace('accounts_migration_api') IS NULL;").stdout.strip(), 't')

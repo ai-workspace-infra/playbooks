@@ -2,12 +2,12 @@ import importlib.util
 from pathlib import Path
 import pytest
 
-SCOPE_PATH = Path(__file__).resolve().parents[1] / 'roles/platform/dev_feature_flux/files/reconcile.py'
+SCOPE_PATH = Path(__file__).resolve().parents[1] / 'archive/roles/legacy/dev_feature_flux/files/reconcile.py'
 scope_spec = importlib.util.spec_from_file_location('failure_code_scope', SCOPE_PATH)
 scope = importlib.util.module_from_spec(scope_spec)
 scope_spec.loader.exec_module(scope)
 
-P = Path(__file__).resolve().parents[1] / 'roles/platform/dev_web_saas_seed/files/contracts.py'
+P = Path(__file__).resolve().parents[1] / 'archive/roles/legacy/dev_web_saas_seed/files/contracts.py'
 spec = importlib.util.spec_from_file_location('seed_contracts', P)
 c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)

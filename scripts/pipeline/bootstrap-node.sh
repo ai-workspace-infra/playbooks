@@ -18,7 +18,7 @@ playbook=""
 for group in "${node_groups[@]}"; do
   case "${group}" in
     web_saas)
-      playbook=setup-web-saas-domain.yml
+      playbook=archive/web-saas/setup-web-saas-domain.yml
       break
       ;;
     ai_workspace)

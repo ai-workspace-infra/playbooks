@@ -12,6 +12,6 @@ Optional variables:
 - `agent_proxy_post_dns_ready_poll_seconds` (default `5`)
 - `agent_proxy_runtime_config_files` (default: the two Xray JSON configs)
 
-Entrypoint: `verify_agent_proxy_post_dns.yml`. Set `readiness_target_host` to
+Entrypoint: `archive/legacy/verify_agent_proxy_post_dns.yml`. Set `readiness_target_host` to
 exactly one inventory host and use `--limit` for that host. Starting Xray after
 DNS is a deliberate convergence action inherited from the Toolkit workflow.

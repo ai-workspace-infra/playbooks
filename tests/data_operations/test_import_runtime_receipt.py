@@ -58,7 +58,7 @@ class ImportReceiptTests(unittest.TestCase):
             env = dict(os.environ, RUNNER_TEMP=directory, CONFIG_JSON='{"accounts_target_host":"web-saas-uat","caller_run_id":"42"}',
                        CORRELATION_ID='test', REQUESTED_ENVIRONMENT='uat', GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='1',
                        ACCOUNTS_REF='a'*40, ACCOUNTS_SOURCE_SHA='a'*40, IMPORT_OWNER_SHA='b'*40)
-            result = subprocess.run(['python3', str(ROOT / 'roles/uat_data_import/files/write_receipt.py')],
+            result = subprocess.run(['python3', str(ROOT / 'archive/roles/legacy/uat_data_import/files/write_receipt.py')],
                                     env=env, cwd=directory, text=True, capture_output=True, check=True)
             self.assertNotIn('synthetic-secret', result.stdout)
             receipt = json.loads(result.stdout)

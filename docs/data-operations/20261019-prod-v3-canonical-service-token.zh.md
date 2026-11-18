@@ -38,7 +38,7 @@ SQL checksum、迁移前后版本、DB 备份/恢复结果、数据指纹：本�
 
 ## 已执行验收
 
-1. 新增/使用 `web-saas-service-token.yml`，限定一个 IaC CMDB V3 主机，验证真实
+1. 新增/使用 `archive/web-saas/web-saas-service-token.yml`，限定一个 IaC CMDB V3 主机，验证真实
    hostname、既有私有配置及精确干净 GitOps checkout，再从 Vault 读取令牌。
 2. 准备仅新增专用凭据文件；随后由现有 release selection Role 选择不可变 tag。
 3. Doco-CD 日志已观察到上述 tag 和 GitOps SHA；三个应用容器重建，镜像不变。

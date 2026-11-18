@@ -50,7 +50,7 @@ PostgreSQL 别名保持预留隧道 TLS 用途，无新增数据库公网监听�
 ## 后续代际复用与回退
 
 每代从 GitOps `compose/web-saas/ingress/prod.yaml` 读取共享公共域名与证书引用。
-通过 `web-saas-public-ingress.yml` 传入目标代际、单个 IaC inventory 目标、受保护
+通过 `archive/web-saas/web-saas-public-ingress.yml` 传入目标代际、单个 IaC inventory 目标、受保护
 证书运行时变量，完成恢复及配置校验；随后选择挂载证书目录的不可变 GitOps tag，
 最后执行公共 SNI 和内部别名验收。Caddy Cloudflare 模块可选，公共站点直接使用 Vault PEM。
 

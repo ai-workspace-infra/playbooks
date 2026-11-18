@@ -19,10 +19,10 @@ prove matching or valid credentials.
 Before and after a release, run the independent, non-delivery gate:
 
 ```sh
-ansible-playbook -i inventory/terraform_cmdb.py check-prod-v2-smtp.yml
+ansible-playbook -i inventory/terraform_cmdb.py archive/prod-v2/check-prod-v2-smtp.yml
 ```
 
-The normal `pin-prod-v2-doco-release.yml` release path now resolves and persists
+The normal `archive/prod-v2/pin-prod-v2-doco-release.yml` release path now resolves and persists
 SMTP before switching Doco-CD, waits for Accounts to load it, and requires SMTP
 authentication before completing. Pass `prod_v2_gitops_checkout` and the exact
 `prod_v2_gitops_release`; tracked profile files must match that release commit.
@@ -35,7 +35,7 @@ and password secret references; `latest` is rejected. Existing local `gcloud`
 authorization reads them on the deployment controller, under `no_log`, and only
 SMTP keys in the isolated Accounts SMTP environment file change. Cloud Run is untouched.
 
-`repair-prod-v2-smtp.yml` exposes the same persistence step independently. An
+`archive/prod-v2/repair-prod-v2-smtp.yml` exposes the same persistence step independently. An
 image tag alone cannot refresh environment credentials: reconcile the immutable
 Accounts release with Doco-CD afterwards and run the authentication gate.
 

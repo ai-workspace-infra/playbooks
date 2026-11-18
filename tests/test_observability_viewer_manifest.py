@@ -11,7 +11,7 @@ import urllib.parse
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('viewer_manifest', ROOT / 'roles/observability_audit_session/files/verify_manifest.py')
+spec = importlib.util.spec_from_file_location('viewer_manifest', ROOT / 'roles/vhosts/observability_audit_session/files/verify_manifest.py')
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 

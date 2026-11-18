@@ -1,0 +1,63 @@
+# Controlled usage reconciliation
+
+Owner: Playbooks. Caller: `archive/web-saas/web-saas-generation-usage-reconciliation.yml`.
+The lane is an explicitly selected adjacent `prod-vN` source → `prod-vN+1`
+target. Only the target runs the reconciliation executor. Source access is read-only.
+The reconciliation task does not stop/start services, change DNS or run DDL.
+
+Supply IaC-generated inventory with only the exact target selected; force SSH
+host-key checking in the maintenance invocation (the legacy repository-wide
+Ansible defaults are not safe defaults for this run). Supply Vault-resolved
+secrets at runtime with `no_log`, never in argv or committed vars.
+
+Before invoking, quiesce all target writers and Doco-CD through the reviewed
+maintenance procedure. Supply the complete `web_saas_usage_reconciliation_writers`
+container-name list; stopped state is checked before backup and before execution.
+The operator must account for external writers; this role cannot discover them.
+
+Use the existing generation data-operation inputs for backup/baseline/restore.
+Set operation request container to `web-saas-accounts` (backup-restore contract).
+Also supply a target-host Linux static `migratectl` path, its SHA-256, compiled
+schema/Billing checksums and the read-only source DSN through role inputs.
+Build/stage the binary off-host using its reviewed source SHA; no host compilation.
+
+For an isolated PostgreSQL container, opt in to
+`web_saas_usage_reconciliation_execution_mode: host-loopback`. The same pinned
+binary runs on the target host; the source URL must use `127.0.0.1` and database
+`account` through an already authenticated SSH reverse forward. The role does not
+create tunnels or change source networking. It resolves target IP and existing
+PostgreSQL credentials in memory from the single running local container and
+requires the `/data/postgresql` bind mount. No password is placed in argv, files
+or evidence. Default container execution is unchanged. Both modes retain the
+same backup/restore and transaction/conflict gates.
+
+`archive/web-saas/web-saas-generation-reconciliation-prepare.yml` stages a controller-built binary
+under its SHA-256 filename, verifies root ownership/checksum and checks the
+existing loopback tunnel. It does not pause writers or modify database data.
+`archive/web-saas/web-saas-generation-writers.yml` is only for a separately approved final
+target-write handoff, never for snapshot creation or isolated restore. It
+requires `web_saas_usage_reconciliation_operation_context: explicit_target_write_handoff`
+or `isolated_target_reconciliation`,
+an explicit `pause` or `resume`, and exactly the Accounts, Billing and Doco-CD
+containers. Pause stops the reconciler first; explicit resume starts it last.
+PostgreSQL, Console and Caddy are never stopped by this writer gate. Snapshot
+creation uses an online PostgreSQL exported snapshot and keeps the source fully
+serving. Resume is a separate operator step after inspecting the result, not an
+automatic failure fallback.
+
+Default is preview only. `web_saas_usage_reconciliation_apply=true` explicitly
+enables the transaction after this invocation's encrypted backup and isolated
+restore. The executor recomputes the preview and binds apply to its exact hash;
+source movement or conflicts stop execution, without automatic retries.
+Quota cannot overwrite target-only financial activity; schema and protected
+tables remain unchanged. Missing users or incompatible profile facts fail closed.
+
+Each run uses a fresh numeric run ID and immutable evidence paths. Backup files
+stay under `/data/backups/web-saas/<environment>/<release>/<run>/`, private.
+Aggregate result is `web_saas_usage_reconciliation_evidence`; no row data or DSNs
+are printed. Any failure leaves writers paused for operator inspection; never
+automatically restore over the target or resume before runtime acceptance.
+
+Local synthetic tests are not V3 acceptance. No live merge has been executed by
+adding this role. Source writes continue, so acceptance is snapshot-bound, not
+a promise of indefinitely real-time equality.

@@ -6,14 +6,14 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ROLE = ROOT / "roles/selfhost_postgresql_daily_dump"
+ROLE = ROOT / "archive/roles/selfhost/selfhost_postgresql_daily_dump"
 
 
 class DailyPostgreSQLDumpTests(unittest.TestCase):
     def test_prod_caller_enables_only_for_prod(self) -> None:
-        caller = (ROOT / "setup-web-saas-domain.yml").read_text()
+        caller = (ROOT / "archive/web-saas/setup-web-saas-domain.yml").read_text()
         host_vars = (ROOT / "host_vars/web-saas-prod/web_saas.yml").read_text()
-        self.assertIn("roles/selfhost_postgresql_daily_dump", caller)
+        self.assertIn("archive/roles/selfhost/selfhost_postgresql_daily_dump", caller)
         self.assertIn("when: web_saas_deployment_environment == 'prod'", caller)
         self.assertIn("selfhost_pg_daily_dump_enabled: true", host_vars)
 

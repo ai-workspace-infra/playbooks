@@ -23,7 +23,7 @@
 
 兼容入口 `web_saas_release_upgrade` 已成为组合角色，顺序调用 preflight → backup → restore_verify；没有隐藏的初始化、复制、down migration 或应用发布。
 
-统一 owner playbook 是 `web-saas-data-operations.yml`，按显式 operation 调用角色。缺少环境／精确 host 时不匹配任何主机。baseline 和 migration 可作本地契约验证；migration 在合法输入下仍失败，不能当作已实现的迁移执行器。
+统一 owner playbook 是 `archive/web-saas/web-saas-data-operations.yml`，按显式 operation 调用角色。缺少环境／精确 host 时不匹配任何主机。baseline 和 migration 可作本地契约验证；migration 在合法输入下仍失败，不能当作已实现的迁移执行器。
 
 ## 从控制面调用
 

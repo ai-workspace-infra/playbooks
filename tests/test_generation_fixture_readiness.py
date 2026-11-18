@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class FixtureReadinessTests(unittest.TestCase):
     def test_all_postgres_probes_use_tcp_not_the_init_socket(self):
         for script in ['postgres_cases.py', 'restore_runtime.py']:
-            tree = ast.parse((ROOT / 'roles/web_saas_generation_fresh/files' / script).read_text())
+            tree = ast.parse((ROOT / 'archive/roles/web-saas/web_saas_generation_fresh/files' / script).read_text())
             probes = []
             for node in ast.walk(tree):
                 if isinstance(node, ast.List):

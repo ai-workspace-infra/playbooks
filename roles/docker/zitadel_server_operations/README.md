@@ -7,7 +7,7 @@ workflow selects the target from GitOps, holds the Vault/OIDC identity, obtains
 host access from IaC Modules and judges the result; it no longer carries its
 own copy of these checks.
 
-Entrypoint: `zitadel_operations.yml`.
+Entrypoint: `archive/legacy/zitadel_operations.yml`.
 
 ## Operations
 
@@ -36,12 +36,12 @@ Optional (defaults mirror `roles/docker/zitadel`):
 
 ```bash
 # After deploy_iam_domain.yml, against the same single host:
-ansible-playbook -i inventory.json zitadel_operations.yml \
+ansible-playbook -i inventory.json archive/legacy/zitadel_operations.yml \
   -e zitadel_operation=verify_host -e zitadel_operations_target=iam-shared-0 \
   -e zitadel_operations_domain=iam.svc.plus
 
 # Verify only, without host access:
-ansible-playbook -i localhost, -c local zitadel_operations.yml \
+ansible-playbook -i localhost, -c local archive/legacy/zitadel_operations.yml \
   -e zitadel_operation=verify_public -e zitadel_operations_target=localhost \
   -e zitadel_operations_domain=iam.svc.plus
 ```

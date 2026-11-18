@@ -143,9 +143,9 @@ class ManagedRuntimeTests(unittest.TestCase):
     def test_action_and_role_canonical_access_without_database_secret(self):
         root=OWNER.parents[2]
         action=(root/'.github/actions/prod-managed-runtime/action.yml').read_text()
-        role=(root/'roles/web_saas_managed_runtime_qualification/tasks/main.yml').read_text()
+        role=(root/'archive/roles/web-saas/web_saas_managed_runtime_qualification/tasks/main.yml').read_text()
         runner=(OWNER/'managed_runtime_runner.sh').read_text()
-        playbook=(root/'qualify-web-saas-managed-runtime.yml').read_text()
+        playbook=(root/'archive/web-saas/qualify-web-saas-managed-runtime.yml').read_text()
         for content in (action,role,runner,playbook):
             self.assertNotIn('POSTGRES_PASSWORD',content)
             self.assertNotIn('SUPABASE_CONNECT',content)

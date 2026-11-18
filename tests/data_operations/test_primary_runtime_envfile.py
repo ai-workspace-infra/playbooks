@@ -20,7 +20,7 @@ class PrimaryRuntimeEnvfileTests(unittest.TestCase):
         env=jinja2.Environment(undefined=jinja2.StrictUndefined)
         env.filters['bool']=bool
         env.filters['to_json']=lambda value,**kwargs:json.dumps(value,**kwargs)
-        template=env.from_string((ROOT/'roles/web_saas_generation_fresh/templates/primary-runtime.env.j2').read_text())
+        template=env.from_string((ROOT/'archive/roles/web-saas/web_saas_generation_fresh/templates/primary-runtime.env.j2').read_text())
         password='fixture $UNDEFINED ${POISON} \\ "quote" \'single\' # trailing $'
         rendered=template.render(
             generation_primary_smtp=dict(username='fixture@example.invalid',password=password),

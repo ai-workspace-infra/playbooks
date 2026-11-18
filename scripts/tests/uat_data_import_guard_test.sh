@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VALIDATOR="${ROOT}/roles/uat_data_import/files/validate_config.py"
+VALIDATOR="${ROOT}/archive/roles/legacy/uat_data_import/files/validate_config.py"
 export CORRELATION_ID=uat-data-import-guard-test
 
 expect_reject() {

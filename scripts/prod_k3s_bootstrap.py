@@ -121,7 +121,7 @@ def main():
             # Inventory output contains only reviewed non-secret metadata.
             execute(['ansible-inventory', *inv, '--host', name], env)
             execute(['ansible-inventory', *inv, '--graph'], env)
-            playbook = str(ROOT / 'prod_k3s_generation_bootstrap.yml')
+            playbook = str(ROOT / 'archive/legacy/prod_k3s_generation_bootstrap.yml')
             execute(['ansible-playbook', *inv, playbook, '--syntax-check'], env)
             execute(['ansible', *inv, name, '-m', 'ping'], env)
             execute(['ansible-playbook', *inv, playbook, '--limit', name], env)

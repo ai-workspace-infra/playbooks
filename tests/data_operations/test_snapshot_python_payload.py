@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class SnapshotPayloadTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which('ansible-playbook'), 'requires the Ansible rendering runtime')
     def test_actual_template_renders_compilable_python(self):
-        role = ROOT / 'roles/web_saas_full_snapshot'
+        role = ROOT / 'archive/roles/web-saas/web_saas_full_snapshot'
         tasks = yaml.safe_load((role / 'tasks/main.yml').read_text())
         capture = next(t for t in tasks if t['name'].startswith('Capture encrypted'))
         payload = capture['ansible.builtin.command']['argv'][2]

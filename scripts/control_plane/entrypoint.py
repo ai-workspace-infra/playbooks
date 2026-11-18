@@ -413,7 +413,7 @@ def run_owner(owner, contract, runtime):
     host = contract["target"]["host"]
     variables = json.dumps({"control_plane_contract": contract, "control_plane_runtime": runtime,
                             "control_plane_billing_artifact": billing})
-    playbook = str(owner / "selfhost-control-plane.yml")
+    playbook = str(owner / "archive/selfhost/selfhost-control-plane.yml")
     commands = [
         ("controller_dependencies", "ansible-playbook --syntax-check controller dependencies",
          ["ansible-playbook", "-i", "localhost,", str(owner / "scripts/control_plane/ansible_dependency_preflight.yml"), "--syntax-check"], None),

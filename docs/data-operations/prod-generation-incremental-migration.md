@@ -1,6 +1,6 @@
 # Versioned Selfhost PROD generation: additive migration
 
-Use `web-saas-generation-data-operations.yml` only against one exact
+Use `archive/web-saas/web-saas-generation-data-operations.yml` only against one exact
 `web-saas-prod-vN` inventory target. It is designed for SSH/Ansible operation;
 it does not dispatch CI, alter public DNS, access a prior generation, or target
 the stable `web-saas-prod` host.

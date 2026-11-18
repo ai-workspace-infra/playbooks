@@ -19,7 +19,7 @@ from unittest import mock
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-ROLE = ROOT / 'roles/web_saas_stripe_sandbox'
+ROLE = ROOT / 'archive/roles/web-saas/web_saas_stripe_sandbox'
 spec = importlib.util.spec_from_file_location('sandbox', ROLE / 'files/prepare.py')
 s = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(s)
@@ -76,7 +76,7 @@ def business_env():
 
 def account():
     import jinja2
-    template = (ROOT / 'roles/web_saas_generation_recovery/templates/account.yaml.j2').read_text()
+    template = (ROOT / 'archive/roles/web-saas/web_saas_generation_recovery/templates/account.yaml.j2').read_text()
     return jinja2.Template(template, undefined=jinja2.StrictUndefined).render(recovery={
         'target': {'generation': 'prod-v3', 'domain_base': 'svc.plus',
                    'inventory_host': 'console-selfhost-prod-v3.svc.plus'}}).encode()
@@ -410,7 +410,7 @@ class InventoryGuardTests(unittest.TestCase):
             play = [{'hosts': host, 'gather_facts': False, 'vars': defaults, 'tasks': guards}]
             entry.write_text(yaml.safe_dump(play))
             result = subprocess.run(['ansible-playbook', '-i', 'inventory/terraform_cmdb.py',
-                                     str(entry) if guards_only else 'web-saas-stripe-sandbox.yml', '-e', json.dumps(defaults)],
+                                     str(entry) if guards_only else 'archive/web-saas/web-saas-stripe-sandbox.yml', '-e', json.dumps(defaults)],
                                     cwd=ROOT, capture_output=True, text=True, timeout=30,
                                     env=dict(os.environ, AI_WORKSPACE_CMDB_JSON=str(source), ANSIBLE_NOCOLOR='1'))
             return result

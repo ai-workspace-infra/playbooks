@@ -5,7 +5,7 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('observe', ROOT/'roles/v5_readonly_acceptance/files/observe.py')
+spec = importlib.util.spec_from_file_location('observe', ROOT/'archive/roles/legacy/v5_readonly_acceptance/files/observe.py')
 observe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(observe)
 
@@ -52,7 +52,7 @@ def test_wrong_machine_prevents_any_command():
 
 
 def test_role_saves_evidence_before_blocking():
-    tasks = yaml.safe_load((ROOT/'roles/v5_readonly_acceptance/tasks/main.yml').read_text())
+    tasks = yaml.safe_load((ROOT/'archive/roles/legacy/v5_readonly_acceptance/tasks/main.yml').read_text())
     assert 'ansible.builtin.copy' in tasks[1]['always'][0]
     assert tasks[1]['always'][0]['delegate_to'] == 'localhost'
     assert 'ansible.builtin.assert' in tasks[-1]
@@ -66,6 +66,6 @@ def test_eso_ready_uses_refresh_evidence_without_claiming_drift():
 
 
 def test_environment_must_match_inventory_before_remote_execution():
-    tasks = yaml.safe_load((ROOT/'roles/v5_readonly_acceptance/tasks/main.yml').read_text())
+    tasks = yaml.safe_load((ROOT/'archive/roles/legacy/v5_readonly_acceptance/tasks/main.yml').read_text())
     rules = tasks[1]['block'][0]['ansible.builtin.assert']['that']
     assert any('cmdb_environment' in rule and 'v5_acceptance_environment' in rule for rule in rules)

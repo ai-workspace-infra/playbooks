@@ -1,0 +1,36 @@
+name: Repository layout contract
+on:
+  pull_request:
+    paths:
+      - 'roles/**'
+      - 'roles/*'
+      - '*.yml'
+      - '*.yaml'
+      - 'docs/**'
+      - 'docs/repository-layout-spec.md'
+      - 'ansible.cfg'
+      - 'tests/test_repository_layout.py'
+      - '.github/workflows/repository-layout-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'roles/**'
+      - 'roles/*'
+      - '*.yml'
+      - '*.yaml'
+      - 'docs/**'
+      - 'docs/repository-layout-spec.md'
+      - 'ansible.cfg'
+      - 'tests/test_repository_layout.py'
+      - '.github/workflows/repository-layout-contract.yml'
+permissions:
+  contents: read
+jobs:
+  layout:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify roles namespacing, root docs and roles_path
+        run: python3 -m unittest tests.test_repository_layout -v

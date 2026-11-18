@@ -15,10 +15,10 @@ valid_host "$CONSOLE_DOMAIN"; valid_host "$ACCOUNTS_DOMAIN"; valid_host "$BILLIN
 extra=(-e "prod_v2_console_domain=$CONSOLE_DOMAIN" -e "prod_v2_accounts_domain=$ACCOUNTS_DOMAIN" -e "prod_v2_billing_domain=$BILLING_DOMAIN" -e "prod_v2_postgres_domain=$POSTGRES_DOMAIN")
 case "$PHASE" in
   preflight) ansible-playbook --syntax-check -i "$INVENTORY" "$PLAYBOOK_ROOT/deploy-prod-v2-control.yml";;
-  bootstrap) run_playbook deploy-prod-v2-control.yml "${extra[@]}";;
-  initialize) run_playbook initialize-web-saas-native.yml "${extra[@]}";;
-  activate|converge) run_playbook activate-prod-v2-control.yml "${extra[@]}";;
-  verify) run_playbook activate-prod-v2-control.yml "${extra[@]}" --check;;
+  bootstrap) run_playbook archive/prod-v2/deploy-prod-v2-control.yml "${extra[@]}";;
+  initialize) run_playbook archive/web-saas/initialize-web-saas-native.yml "${extra[@]}";;
+  activate|converge) run_playbook archive/prod-v2/activate-prod-v2-control.yml "${extra[@]}";;
+  verify) run_playbook archive/prod-v2/activate-prod-v2-control.yml "${extra[@]}" --check;;
 esac
 receipt "control-$PHASE" applied
 

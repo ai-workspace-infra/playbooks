@@ -9,7 +9,7 @@ import unittest
 import jinja2
 
 ROOT = Path(__file__).resolve().parents[1]
-TASKS = ROOT / 'roles/web_saas_generation_recovery/tasks/service-token.yml'
+TASKS = ROOT / 'archive/roles/web-saas/web_saas_generation_recovery/tasks/service-token.yml'
 
 
 class SharedTokenTests(unittest.TestCase):
@@ -53,7 +53,7 @@ class SharedTokenTests(unittest.TestCase):
         environment = jinja2.Environment(undefined=jinja2.StrictUndefined)
         environment.filters['hash'] = lambda value, algorithm: 'independent-secret'
         template = environment.from_string(
-            (ROOT / 'roles/web_saas_generation_recovery/templates/secrets.env.j2').read_text())
+            (ROOT / 'archive/roles/web-saas/web_saas_generation_recovery/templates/secrets.env.j2').read_text())
         for seed in ['seed-one', 'seed-two']:
             rendered = template.render(recovery_seed=seed,
                 recovery_internal_service_token='canonical-test-token',

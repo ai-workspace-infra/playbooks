@@ -14,7 +14,7 @@ python3 "$script_dir/native_init_host.py" --validate-only --spec "$NATIVE_INIT_S
 owner_root="$(cd "$script_dir/../../.." && pwd)"
 cd "$owner_root"
 "$RUNNER_TEMP/prod-native-ansible/bin/ansible-playbook" -i "$CMDB_DIR/inventory.ini" \
-  --limit web-saas-prod --private-key "$expected_dir/id_ed25519" initialize-web-saas-native.yml
+  --limit web-saas-prod --private-key "$expected_dir/id_ed25519" archive/web-saas/initialize-web-saas-native.yml
 test -s "$NATIVE_RECEIPT_FILE"
 jq -e --arg mode "$NATIVE_INIT_DRY_RUN" --slurpfile spec "$NATIVE_INIT_SPEC_FILE" '
   .environment == "prod" and .host == "web-saas-prod" and .database == "account" and

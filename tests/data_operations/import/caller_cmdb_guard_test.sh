@@ -2,9 +2,9 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-config_guard="${repo_root}/roles/uat_data_import/files/validate_config.py"
-run_guard="${repo_root}/roles/uat_data_import/files/validate_caller_run.py"
-cmdb_guard="${repo_root}/roles/uat_data_import/files/validate_cmdb.py"
+config_guard="${repo_root}/archive/roles/legacy/uat_data_import/files/validate_config.py"
+run_guard="${repo_root}/archive/roles/legacy/uat_data_import/files/validate_caller_run.py"
+cmdb_guard="${repo_root}/archive/roles/legacy/uat_data_import/files/validate_cmdb.py"
 test_dir="$(mktemp -d)"
 trap 'rm -rf "${test_dir}"' EXIT
 

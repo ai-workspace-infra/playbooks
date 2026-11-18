@@ -36,11 +36,11 @@ def imported(name, path):
 
 native = imported('native_init_host', ROOT / 'scripts/data_operations/selfhost/native_init_host.py')
 sys.modules['native_init_host'] = native
-business = imported('business_database', ROOT / 'roles/web_saas_business_database/files/business_database.py')
+business = imported('business_database', ROOT / 'archive/roles/web-saas/web_saas_business_database/files/business_database.py')
 sys.modules['business_database'] = business
-native_runtime = imported('native_runtime', ROOT / 'roles/selfhost_control_plane/files/native_runtime.py')
-readiness = imported('candidate_readiness', ROOT / 'roles/selfhost_control_plane/files/candidate_readiness.py')
-adapter = imported('api_backup_receipt', ROOT / 'roles/selfhost_core_data_backup/files/api_backup_receipt.py')
+native_runtime = imported('native_runtime', ROOT / 'archive/roles/selfhost/selfhost_control_plane/files/native_runtime.py')
+readiness = imported('candidate_readiness', ROOT / 'archive/roles/selfhost/selfhost_control_plane/files/candidate_readiness.py')
+adapter = imported('api_backup_receipt', ROOT / 'archive/roles/selfhost/selfhost_core_data_backup/files/api_backup_receipt.py')
 owner_callback = imported('control_plane_receipt_fixture', ROOT / 'scripts/control_plane/callback_plugins/control_plane_receipt.py')
 
 
@@ -657,7 +657,7 @@ class NativeRoleTests(unittest.TestCase):
         self.assertEqual(args[args.index('--backup-receipt-file') + 1], cfg['receipt_file'])
 
     def test_postgres_final_probe_rejects_temporary_server_before_readiness(self):
-        probe = (ROOT / 'roles/selfhost_control_plane/files/postgres_final_ready.sh').read_text()
+        probe = (ROOT / 'archive/roles/selfhost/selfhost_control_plane/files/postgres_final_ready.sh').read_text()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             marker = root / 'calls'
@@ -889,11 +889,11 @@ class NativeRoleTests(unittest.TestCase):
                     native_runtime.verify_storage(contract['resolved']['data_disk'])
 
     def test_native_helpers_and_changed_roles_parse_and_entrypoints_pass_syntax(self):
-        for path in [ROOT / 'roles/selfhost_control_plane/tasks/main.yml', ROOT / 'roles/selfhost_core_data_backup/tasks/main.yml',
-                     ROOT / 'roles/selfhost_core_data_migration/tasks/main.yml', ROOT / 'roles/vhosts/Doco-CD/tasks/main.yml']:
+        for path in [ROOT / 'archive/roles/selfhost/selfhost_control_plane/tasks/main.yml', ROOT / 'archive/roles/selfhost/selfhost_core_data_backup/tasks/main.yml',
+                     ROOT / 'archive/roles/selfhost/selfhost_core_data_migration/tasks/main.yml', ROOT / 'roles/vhosts/Doco-CD/tasks/main.yml']:
             self.assertIsInstance(yaml.safe_load(path.read_text()), list)
-        for entry in ('scripts/control_plane/ansible_dependency_preflight.yml', 'selfhost-control-plane.yml',
-                      'selfhost-core-data-backup.yml', 'selfhost-core-data-migration.yml', 'selfhost-migration-listener.yml'):
+        for entry in ('scripts/control_plane/ansible_dependency_preflight.yml', 'archive/selfhost/selfhost-control-plane.yml',
+                      'archive/selfhost/selfhost-core-data-backup.yml', 'archive/selfhost/selfhost-core-data-migration.yml', 'archive/selfhost/selfhost-migration-listener.yml'):
             result = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(ROOT / entry), '--syntax-check', '-e',
                 '{"control_plane_contract":{"target":{"host":"localhost"}},"selfhost_core_data_backup_target":"localhost"}'],
                 cwd=ROOT, env={**os.environ, 'ANSIBLE_CONFIG': str(ROOT / 'scripts/control_plane/ansible.cfg'),

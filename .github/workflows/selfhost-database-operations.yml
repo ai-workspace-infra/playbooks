@@ -241,7 +241,7 @@ jobs:
         run: |
           test -n "$TARGET_HOST"
           ansible-playbook -i "$GITHUB_WORKSPACE/cmdb/inventory.ini" create_databases_and_users.yml --limit "$TARGET_HOST" --extra-vars @scripts/data_operations/selfhost/account-database-config.json
-          ansible-playbook -i "$GITHUB_WORKSPACE/cmdb/inventory.ini" initialize-web-saas-schemas.yml --limit "$TARGET_HOST"
+          ansible-playbook -i "$GITHUB_WORKSPACE/cmdb/inventory.ini" archive/web-saas/initialize-web-saas-schemas.yml --limit "$TARGET_HOST"
 
       - name: Resume application services after explicit initialization
         if: ${{ always() && inputs.operation == 'selfhost_init' && steps.pause.outcome == 'success' }}

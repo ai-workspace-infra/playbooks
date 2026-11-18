@@ -31,7 +31,7 @@ class DomainCdProviderManagedTest(unittest.TestCase):
         self.assertIn("OpenClaw Gateway", result.stdout)
 
     def test_other_domains_still_require_image_contract(self):
-        self.run_gate("web-saas", "setup-web-saas-domain.yml", False)
+        self.run_gate("web-saas", "archive/web-saas/setup-web-saas-domain.yml", False)
 
     def test_wrong_ai_workspace_playbook_does_not_bypass_gate(self):
         self.run_gate("ai-workspace", "setup-ai-workspace-runtime.yml", False)

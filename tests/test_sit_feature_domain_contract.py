@@ -38,7 +38,7 @@ class FeatureDomainContract(unittest.TestCase):
                 domains_for(feature_id)
 
     def test_live_owner_remains_fixed_to_declared_referral_lane(self):
-        scope = (ROOT / "roles/platform/dev_feature_flux/files/reconcile.py").read_text()
+        scope = (ROOT / "archive/roles/legacy/dev_feature_flux/files/reconcile.py").read_text()
         candidate = (ROOT / "scripts/dev_feature_candidate.py").read_text()
         self.assertIn("feature-xconnect-referral-sit", scope)
         self.assertIn("public hostname not in trusted onwalk.net lane allowlist", candidate)

@@ -3,16 +3,16 @@ name: GitOps Source promotion owner tests
 on:
   pull_request:
     paths:
-      - gitops_source_promotion.yml
-      - roles/platform/gitops_source_promotion/**
+      - archive/legacy/gitops_source_promotion.yml
+      - archive/roles/legacy/gitops_source_promotion/**
       - scripts/run_gitops_source_promotion.py
       - tests/test_gitops_source_promotion.py
       - .github/workflows/gitops-source-promotion-tests.yml
   push:
     branches: [main]
     paths:
-      - gitops_source_promotion.yml
-      - roles/platform/gitops_source_promotion/**
+      - archive/legacy/gitops_source_promotion.yml
+      - archive/roles/legacy/gitops_source_promotion/**
       - scripts/run_gitops_source_promotion.py
       - tests/test_gitops_source_promotion.py
       - .github/workflows/gitops-source-promotion-tests.yml
@@ -33,6 +33,6 @@ jobs:
       - name: Verify scoped forward and recovery contracts without remote operations
         run: python3 -m unittest discover -s tests -p test_gitops_source_promotion.py
       - name: Validate owner playbook syntax
-        run: ansible-playbook --syntax-check -i 'localhost,' gitops_source_promotion.yml -e gitops_promotion_target=localhost
+        run: ansible-playbook --syntax-check -i 'localhost,' archive/legacy/gitops_source_promotion.yml -e gitops_promotion_target=localhost
       - name: Check committed diff formatting
         run: git diff --check HEAD^ HEAD

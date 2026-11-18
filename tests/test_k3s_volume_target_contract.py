@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class K3sTarget(unittest.TestCase):
     def run_assertion(self, env, volume_id=22, group=None, instance_id=11):
-        task = yaml.safe_load((ROOT / 'roles/web_saas_data_volume/tasks/main.yml').read_text())[0]
+        task = yaml.safe_load((ROOT / 'archive/roles/web-saas/web_saas_data_volume/tasks/main.yml').read_text())[0]
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             inventory = tmp / 'inventory.yml'

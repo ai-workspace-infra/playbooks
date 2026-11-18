@@ -18,8 +18,8 @@ valid_class "$RESOURCE_CLASS"; valid_env "$ENVIRONMENT"; valid_id "$DEPLOYMENT_I
 extra=(-e "resource_class=$RESOURCE_CLASS" -e "prod_v2_region=$REGION" -e "prod_v2_node_id=$NODE_ID" -e "prod_v2_node_domain=$NODE_DOMAIN" -e "prod_v2_accounts_domain=$ACCOUNTS_DOMAIN" -e "prod_v2_billing_domain=$BILLING_DOMAIN")
 case "$PHASE" in
   preflight) ansible-playbook --syntax-check -i "$INVENTORY" "$PLAYBOOK_ROOT/deploy-prod-v2-edges.yml";;
-  deploy|converge) run_playbook deploy-prod-v2-edges.yml "${extra[@]}" --limit "$NODE_ID";;
-  verify) run_playbook refresh-prod-v2-edge-config.yml "${extra[@]}" --limit "$NODE_ID";;
+  deploy|converge) run_playbook archive/prod-v2/deploy-prod-v2-edges.yml "${extra[@]}" --limit "$NODE_ID";;
+  verify) run_playbook archive/prod-v2/refresh-prod-v2-edge-config.yml "${extra[@]}" --limit "$NODE_ID";;
 esac
 receipt "edge-$RESOURCE_CLASS-$NODE_ID-$PHASE" applied
 

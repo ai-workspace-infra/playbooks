@@ -8,7 +8,7 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('host_scope', ROOT / 'roles/platform/grafana_host_dashboard_scope/files/render_dashboards.py')
+spec = importlib.util.spec_from_file_location('host_scope', ROOT / 'roles/saas/grafana_host_dashboard_scope/files/render_dashboards.py')
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 

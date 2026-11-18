@@ -5,7 +5,7 @@ from pathlib import Path
 
 SCRIPT = (
     Path(__file__).resolve().parents[1]
-    / "roles/host/xconnect_node_log_policy/files/apply_caddy_log_policy.py"
+    / "roles/vhosts/xconnect_node_log_policy/files/apply_caddy_log_policy.py"
 )
 SPEC = importlib.util.spec_from_file_location("caddy_log_policy", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)

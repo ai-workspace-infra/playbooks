@@ -30,7 +30,7 @@ ROOT="$root" FIXTURE="$fixture" DEVICE_LINK="$link" python3 - <<'PY'
 import json,os
 from pathlib import Path
 p=Path(os.environ['FIXTURE'])
-role=os.environ['ROOT']+'/roles/web_saas_data_volume'
+role=os.environ['ROOT']+'/archive/roles/web-saas/web_saas_data_volume'
 (p/'play.yml').write_text(json.dumps([{'hosts':'web-saas-prod','gather_facts':False,'roles':[role]}]))
 (p/'vars.json').write_text(json.dumps(dict(web_saas_data_target_host='web-saas-prod',
  web_saas_data_environment='prod',web_saas_data_action='prepare_empty',

@@ -1,6 +1,6 @@
 # Canonical sandbox webhook refresh
 
-Owner: `web_saas_stripe_sandbox` configuration Role. Caller: `configure-stripe-sandbox-webhook.yml`. GitOps owns the canonical URL, event list and Vault field references; this Role executes the configuration change for one explicitly selected existing host.
+Owner: `web_saas_stripe_sandbox` configuration Role. Caller: `archive/web-saas/configure-stripe-sandbox-webhook.yml`. GitOps owns the canonical URL, event list and Vault field references; this Role executes the configuration change for one explicitly selected existing host.
 
 Use a cloud-control-plane-verified one-use inventory and a clean GitOps checkout pinned to its exact commit. Required variables are `web_saas_stripe_host`, `web_saas_stripe_gitops_checkout`, `web_saas_stripe_gitops_sha` and `web_saas_stripe_runtime_env`. The runtime file must be an existing root-owned 0600 credential file from the reviewed allowlist.
 

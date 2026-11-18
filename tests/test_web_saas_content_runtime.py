@@ -6,7 +6,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "roles/web_saas_content_runtime/files/verify_runtime.py"
+SCRIPT = ROOT / "archive/roles/web-saas/web_saas_content_runtime/files/verify_runtime.py"
 IMAGE = "ghcr.io/ai-workspace-services/docs:content-test@sha256:" + "a" * 64
 TOKEN = "sample-secret-that-must-not-be-printed"
 

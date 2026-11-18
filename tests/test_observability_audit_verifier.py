@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("audit_verify", ROOT / "roles/observability_audit_session/files/verify_readonly.py")
+spec = importlib.util.spec_from_file_location("audit_verify", ROOT / "roles/vhosts/observability_audit_session/files/verify_readonly.py")
 verifier = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(verifier)
 

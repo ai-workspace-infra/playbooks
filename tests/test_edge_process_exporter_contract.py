@@ -77,7 +77,7 @@ class EdgeProcessExporterContractTest(unittest.TestCase):
         self.assertIn("vhosts/process_exporter", node_process_playbook)
         self.assertIn("vhosts/vector-agent", node_process_playbook)
 
-        prod_v2_playbook = (ROOT / "deploy-prod-v2-edges.yml").read_text()
+        prod_v2_playbook = (ROOT / "archive/prod-v2/deploy-prod-v2-edges.yml").read_text()
         self.assertIn("vhosts/node_exporter", prod_v2_playbook)
         self.assertIn("vhosts/process_exporter", prod_v2_playbook)
         self.assertIn("vhosts/vector-agent", prod_v2_playbook)

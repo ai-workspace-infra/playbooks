@@ -33,7 +33,7 @@
 ### [Component: site_migration (Extract)]
 提取阶段不再落地任何大文件（Tar/Gzip不写本地盘），全部管道化流式上云，支持断点续传。
 
-* **[MODIFY]** `playbooks/roles/site_migration/tasks/extract.yml`
+* **[MODIFY]** `playbooks/roles/vhosts/site_migration/tasks/extract.yml`
 将迁移以下 6 大核心模块：
 
 1. **pg_dump (PostgreSQL)**: 
@@ -55,7 +55,7 @@
 ### [Component: site_migration (Load)]
 恢复阶段也是全量流式下载，边下边解。
 
-* **[MODIFY]** `playbooks/roles/site_migration/tasks/load.yml`
+* **[MODIFY]** `playbooks/roles/vhosts/site_migration/tasks/load.yml`
 1. **pg_dump 恢复**: 
    `aws s3 cp s3://<prefix>/db/<name>.sql.gz - | gunzip -c | psql ...`
 2. **Gitea / QMD / Openclaw 恢复**: 

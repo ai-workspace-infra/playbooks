@@ -25,8 +25,8 @@ jq -n --arg manifest "$manifest" --arg checkout "$checkout" --arg sha "$K3S_GITO
   '{bootstrap_manifest:$manifest,bootstrap_gitops_checkout:$checkout,bootstrap_gitops_sha:$sha,bootstrap_receipt:$receipt}' > "$params"
 chmod 600 "$params"
 ansible-inventory -i inventory/terraform_cmdb.py --host "$MATRIX_HOST" >/dev/null
-ansible-playbook -i inventory/terraform_cmdb.py k3s_platform_bootstrap.yml --limit "$MATRIX_HOST" --extra-vars "@$params" --syntax-check
+ansible-playbook -i inventory/terraform_cmdb.py archive/legacy/k3s_platform_bootstrap.yml --limit "$MATRIX_HOST" --extra-vars "@$params" --syntax-check
 ansible -i inventory/terraform_cmdb.py "$MATRIX_HOST" -m ansible.builtin.ping
-ansible-playbook -i inventory/terraform_cmdb.py k3s_platform_bootstrap.yml --limit "$MATRIX_HOST" --extra-vars "@$params"
+ansible-playbook -i inventory/terraform_cmdb.py archive/legacy/k3s_platform_bootstrap.yml --limit "$MATRIX_HOST" --extra-vars "@$params"
 jq -e --arg sha "$K3S_GITOPS_SHA" '.result == "FLUX_HANDOVER_VERIFIED" and .gitops_sha == $sha and .common.result == "COMMON_NODE_VERIFIED"' "$K3S_BOOTSTRAP_RECEIPT" >/dev/null
 jq -e --arg sha "$K3S_GITOPS_SHA" '.result == "K3S_IDENTITIES_VERIFIED" and .rbac_revision == $sha and .principals == ["root", "operator", "auditor"]' "$K3S_BOOTSTRAP_RECEIPT.identities.json" >/dev/null

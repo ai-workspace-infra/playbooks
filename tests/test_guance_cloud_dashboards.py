@@ -6,7 +6,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 DASHBOARDS_DIR = ROOT / "dashboards" / "guance-cloud"
-ROLES_DIR = ROOT / "roles" / "guance-dashboard"
+ROLES_DIR = ROOT / "roles" / "saas" / "guance-dashboard"
 
 FILES = [
     ("caddy-dashboard.json", 25, ["environment", "cluster", "service", "instance", "interval"]),

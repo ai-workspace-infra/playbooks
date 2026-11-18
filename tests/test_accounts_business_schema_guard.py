@@ -8,7 +8,7 @@ import unittest
 import urllib.parse
 import uuid
 
-path = Path(__file__).resolve().parents[1] / 'roles/accounts_migration_identity/files/business_schema_guard.py'
+path = Path(__file__).resolve().parents[1] / 'archive/roles/legacy/accounts_migration_identity/files/business_schema_guard.py'
 spec = importlib.util.spec_from_file_location('schema_guard', path)
 guard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guard)

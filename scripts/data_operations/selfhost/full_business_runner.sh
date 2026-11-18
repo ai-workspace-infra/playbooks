@@ -18,7 +18,7 @@ export ANSIBLE_PIPELINING=true
 owner_root="$(cd "$script_dir/../../.." && pwd)"
 cd "$owner_root"
 "$RUNNER_TEMP/prod-native-ansible/bin/ansible-playbook" -i "$CMDB_DIR/inventory.ini" \
-  --limit web-saas-prod --private-key "$expected_dir/id_ed25519" transfer-web-saas-full-business.yml
+  --limit web-saas-prod --private-key "$expected_dir/id_ed25519" archive/web-saas/transfer-web-saas-full-business.yml
 test -s "$NATIVE_RECEIPT_FILE"
 # Reuse the owner's exact validator; never accept Ansible's empty-host exit 0.
 python3 - "$NATIVE_RECEIPT_FILE" "$FULL_BUSINESS_SPEC_FILE" "$FULL_BUSINESS_MODE" "$script_dir" <<'PY'

@@ -70,7 +70,7 @@ class APIRestoreIntegration(unittest.TestCase):
                          'production_providers': False, 'cases': [], 'exit_codes': self.codes}
         self.addCleanup(self.report)
         self.evidence['harness_sha256'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-        self.adapter = ROOT / 'roles/selfhost_core_data_backup/files/api_backup_receipt.py'
+        self.adapter = ROOT / 'archive/roles/selfhost/selfhost_core_data_backup/files/api_backup_receipt.py'
         self.evidence['adapter_sha256'] = hashlib.sha256(self.adapter.read_bytes()).hexdigest()
         self.playbooks_sha = self.run_command('playbooks_head', ['git', 'rev-parse', 'HEAD'], cwd=ROOT).stdout.strip()
         expected_playbooks = os.environ.get('CONTROL_PLANE_PLAYBOOKS_SHA', self.playbooks_sha)
@@ -230,7 +230,7 @@ class APIRestoreIntegration(unittest.TestCase):
             '-p', '127.0.0.1::5432', '-e', 'POSTGRES_PASSWORD', self.image],
             env={**self.docker_env, 'POSTGRES_PASSWORD': password})
         self.addCleanup(lambda: self.run_command(name + '_cluster_cleanup', [self.docker, 'rm', '-f', container], env=self.docker_env))
-        probe = (ROOT / 'roles/selfhost_control_plane/files/postgres_final_ready.sh').read_text()
+        probe = (ROOT / 'archive/roles/selfhost/selfhost_control_plane/files/postgres_final_ready.sh').read_text()
         for _ in range(150):
             ready = self.run_command(name + '_ready', [self.docker, 'exec', '-i', container, 'sh'],
                                      data=probe, env=self.docker_env, check=False)

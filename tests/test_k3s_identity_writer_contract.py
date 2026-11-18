@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class WriterContract(unittest.TestCase):
     def test_dedicated_writer_is_required_before_common_and_used_for_generation(self):
-        play = yaml.safe_load((ROOT / 'k3s_platform_bootstrap.yml').read_text())[0]
+        play = yaml.safe_load((ROOT / 'archive/legacy/k3s_platform_bootstrap.yml').read_text())[0]
         tasks = play['pre_tasks']
         contract = next(i for i, t in enumerate(tasks) if t['name'] == 'Require identity configuration before node changes')
         common = next(i for i, t in enumerate(tasks) if t.get('ansible.builtin.include_role', {}).get('name') == 'vhosts/common')

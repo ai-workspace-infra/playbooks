@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 metadata="${repo_root}/scripts/data_operations/supabase_metadata_migration.sh"
 merge="${repo_root}/scripts/data_operations/supabase_accounts_merge_migration.sh"
-validator="${repo_root}/roles/uat_data_import/files/validate_config.py"
+validator="${repo_root}/archive/roles/legacy/uat_data_import/files/validate_config.py"
 
 grep -Fq 'SOURCE_DB_USER="${SUPABASE_SOURCE_DB_USER:-readonly}"' "${metadata}"
 grep -Fq 'SOURCE_SSH_KEY_PATH="${SUPABASE_SOURCE_SSH_KEY_PATH:-${HOME}/.ssh/id_deploy}"' "${metadata}"

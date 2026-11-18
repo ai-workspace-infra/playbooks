@@ -9,7 +9,7 @@ import urllib.parse
 import uuid
 from unittest.mock import patch
 
-directory = Path(__file__).resolve().parents[1] / 'roles/accounts_migration_identity/files'
+directory = Path(__file__).resolve().parents[1] / 'archive/roles/legacy/accounts_migration_identity/files'
 sys.path.insert(0, str(directory))
 spec = importlib.util.spec_from_file_location('schema_preflight', directory / 'business_schema_preflight.py')
 preflight = importlib.util.module_from_spec(spec)

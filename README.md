@@ -141,8 +141,8 @@ fact 缓存落 `/tmp/ansible_facts`（1h）、开启 `pipelining` 与 `profile_t
 | `roles/vhosts/` | **宿主机原生交付**：systemd 服务、on-host 配置渲染、内核/网络调优 |
 | `roles/docker/` | **Docker Compose 交付**：渲染 `docker-compose.yaml.j2` 并拉起单机服务栈 |
 | `roles/k8s_helm/` | **Kubernetes / Helm 交付**：以 Helm release 形式投放到集群 |
-| `roles/host/` | 宿主机级共享物料（目前仅 `stunnel-certs`） |
-| `roles/grafana-dashboard/` | Grafana 面板 JSON 资产（非可执行 role） |
+| `roles/saas/` | 云平台/API 接口类角色（Cloudflare DNS、GitHub ruleset、Grafana/Guance 面板） |
+| `roles/saas/grafana-dashboard/` | Grafana 面板 JSON 资产（非可执行 role） |
 | `roles/README.md` | 角色分层规划：Ansible role vs. Helm chart 的边界约定 |
 | `group_vars/` `host_vars/` | 全局与主机变量；`group_vars/all/vault_s3.yml` 承载 S3/Vault 凭据 |
 | `inventory/` | 动态清单：`terraform_cmdb.py`（IaC 导出的 CMDB）；仓库不保存静态主机清单 |
@@ -241,7 +241,7 @@ roles/k8s_helm/postgresql    → K8s 集群内 Helm release
 | Role | 说明 |
 | --- | --- |
 | `prometheus` / `charts/prometheus` | 指标采集 |
-| `grafana` / `docker/grafana` | 可视化；面板 JSON 在 `roles/grafana-dashboard/` |
+| `grafana` / `docker/grafana` | 可视化；面板 JSON 在 `roles/saas/grafana-dashboard/` |
 | `openobserve` | OpenObserve 日志/指标后端 |
 | `otel-collector` | OpenTelemetry Collector |
 | `alloy` / `vector-agent` / `promtail-agent` / `telegraf` | 采集侧 agent |
@@ -362,8 +362,8 @@ Stripe 新环境套餐初始化：[`docs/tldr-stripe-billing-catalog.md`](docs/t
 
 | Playbook | 场景 |
 | --- | --- |
-| `bootstrap_cloud_dev_desktop.yml` | 单入口完成 create → bootstrap → verify |
-| `destroy_cloud_dev_desktop.yml` | 销毁桌面基础设施 |
+| `archive/legacy/bootstrap_cloud_dev_desktop.yml` | 单入口完成 create → bootstrap → verify |
+| `archive/legacy/destroy_cloud_dev_desktop.yml` | 销毁桌面基础设施 |
 | `deploy_ai_desktop.yml` | 极简 AI 桌面（IceWM / XFCE + XRDP / WebRTC，供 CPA/CodeAgent 调试） |
 | `gnome_xrdp_minimal.yaml` / `plasma_xrdp_minimal.yaml` / `setup-xfce-xrdp.yaml` | 最小桌面 + XRDP |
 
@@ -457,7 +457,7 @@ ansible-playbook -i inventory/terraform_cmdb.py deploy_console_svc_plus.yml \
 | `vpn-wireguard-hub.yaml` / `vpn-wireguard-site.yaml` | WireGuard hub / site |
 | `vpn-overlay-vxlan-hub.yaml` / `vpn-overlay-vxlan-site.yaml` / `vpn-overlay-dnat.yaml` | VXLAN overlay 与 DNAT |
 | `vpn-xray-hub.yaml` / `vpn-xray-client.yaml` / `vpn-xray-tproxy.yaml` | Xray hub / client / 透明代理 |
-| `init_vpn_gateway.yml` | VPN 网关初始化 |
+| `archive/legacy/init_vpn_gateway.yml` | VPN 网关初始化 |
 | `deploy_stunnel-server.yml` / `deploy_stunnel-client.yml` | PostgreSQL TLS 隧道两端 |
 
 ### 数据库
@@ -465,7 +465,7 @@ ansible-playbook -i inventory/terraform_cmdb.py deploy_console_svc_plus.yml \
 | Playbook | 场景 |
 | --- | --- |
 | `create_databases_and_users.yml` | 按需创建独立库与账号 |
-| `initialize-web-saas-schemas.yml` | web-saas 基线 schema |
+| `archive/web-saas/initialize-web-saas-schemas.yml` | web-saas 基线 schema |
 | `write_passwords_to_vault.yml` | 数据库口令写入 Vault |
 | `setup-postgres-standalone.yaml` / `deploy_postgre_vhosts.yml` | 单机 PostgreSQL |
 | `deploy_redis_vhosts.yml` | Redis |
@@ -476,8 +476,8 @@ ansible-playbook -i inventory/terraform_cmdb.py deploy_console_svc_plus.yml \
 | --- | --- |
 | `setup-caddy.yml` / `deploy_nginx_vhosts.yml` / `deploy_openresty_vhosts.yml` / `deploy_apisix.yml` | 网关 |
 | `update_cloudflare_dns.yml` / `update_site_dns.yml` | Cloudflare DNS 对账 |
-| `alicloud_dns_record.yml` / `alicloud_dns_sync.yml` | 阿里云 DNS |
-| `setup-web-saas-domain.yml` / `setup-agent-proxy-domain.yml` / `setup-open-platform-domain.yml` | 域名接入（对应 `.github/workflows/*-domain-cd.yaml`） |
+| `archive/legacy/alicloud_dns_record.yml` / `alicloud_dns_sync.yml` | 阿里云 DNS |
+| `archive/web-saas/setup-web-saas-domain.yml` / `setup-agent-proxy-domain.yml` / `setup-open-platform-domain.yml` | 域名接入（对应 `.github/workflows/*-domain-cd.yaml`） |
 
 ### 备份 / 迁移 / 容灾
 
@@ -488,7 +488,7 @@ ansible-playbook -i inventory/terraform_cmdb.py deploy_console_svc_plus.yml \
 | 通用站点 | `backup_site.yml` | `migrate_site.yml` | `restore_site.yml` |
 | AI Workspace | `ai-workspace-backup.yml` | `ai-workspace-migrate.yml` | `ai-workspace-restore.yml` |
 | Agent Proxy | `agent-proxy-backup.yml` | `agent-proxy-migrate.yml` | `agent-proxy-restore.yml` |
-| Web SaaS | `web-saas-backup.yml` | `web-saas-migrate.yml` | `web-saas-restore.yml` |
+| Web SaaS | `archive/web-saas/web-saas-backup.yml` | `archive/web-saas/web-saas-migrate.yml` | `archive/web-saas/web-saas-restore.yml` |
 | 基础平台 | `infra-platform-backup.yml` | `infra-platform-migrate.yml` | `infra-platform-restore.yml` |
 | macOS 开发机 | `setup-macos-migration-backup.yml` | `setup-macos-migration-migrate.yml` | `setup-macos-migration-restore.yml` |
 
@@ -507,13 +507,13 @@ ansible-playbook -i inventory/terraform_cmdb.py deploy_console_svc_plus.yml \
 | `setup-ai-agent-skills.yml` | Agent skills 下发 |
 | `deploy_agent_hermes.yml` / `deploy_acp_codex_vhosts.yml` / `deploy_acp_gemini_vhosts.yml` / `deploy_acp_opencode_vhosts.yml` | 各家 ACP agent 适配端 |
 | `deploy_QMD.yml` / `deploy_x_memory_hub.yml` | 扩展记忆组件 |
-| `setup-xworkspace-console.yaml` / `xworkspace_console_macos.yml` | XWorkspace 控制台（含 macOS launchd plist） |
+| `setup-xworkspace-console.yaml` / `archive/legacy/xworkspace_console_macos.yml` | XWorkspace 控制台（含 macOS launchd plist） |
 
 参考：[`docs/ai-workspace-runtime-delivery-plan.md`](docs/ai-workspace-runtime-delivery-plan.md)、[`docs/ai-aggregator-observability.md`](docs/ai-aggregator-observability.md)、[`docs/setup-ai-workspace-all-in-one.md`](docs/setup-ai-workspace-all-in-one.md)
 
 ### 平台组件与其他
 
-`setup-vault.yaml`（Vault KMS）、`setup-Doco-CD.yaml`、`setup-litellm.yaml`（[文档](docs/litellm-gateway-deployment.md)）、
+`setup-vault.yaml`（Vault KMS）、`archive/prod-v2/setup-Doco-CD.yaml`、`setup-litellm.yaml`（[文档](docs/litellm-gateway-deployment.md)）、
 `deploy_zitadel_docker.yaml`、`deploy-docker-keycloak.yml`、`deploy-docker-harbor.yml`、
 `deploy_action_runner.yml`、`apply-branch-protection.yml`、
 `deploy_xcontrol_server._vhosts.yml`、`deploy_xcontrol_dashboard.yml`、

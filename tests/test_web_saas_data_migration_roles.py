@@ -283,8 +283,8 @@ class IncrementalMigrationContractTests(unittest.TestCase):
                 self.validate(request={**self.request, field: value})
 
     def test_role_uses_only_bounded_container_interface_and_no_secret_inputs(self):
-        tasks = (ROOT / "roles/web_saas_data_migration/tasks/main.yml").read_text()
-        validator = (ROOT / "roles/web_saas_data_migration/files/validate_contract.py").read_text()
+        tasks = (ROOT / "archive/roles/web-saas/web_saas_data_migration/tasks/main.yml").read_text()
+        validator = (ROOT / "archive/roles/web-saas/web_saas_data_migration/files/validate_contract.py").read_text()
         self.assertIn("BOUNDED_SELFHOST_EXECUTION_READY", validator)
         self.assertIn('"canonicalAccount" if environment == "uat"', validator)
         self.assertIn("--dsn-env", tasks)
@@ -297,7 +297,7 @@ class IncrementalMigrationContractTests(unittest.TestCase):
         self.assertNotIn("force", tasks)
 
     def test_generation_entrypoint_is_exact_host_and_orders_restore_before_migration(self):
-        playbook = (ROOT / "web-saas-generation-data-operations.yml").read_text()
+        playbook = (ROOT / "archive/web-saas/web-saas-generation-data-operations.yml").read_text()
         self.assertIn("^prod-v[1-9][0-9]*$", playbook)
         self.assertIn("'web-saas-' ~ web_saas_generation_environment", playbook)
         self.assertIn("web_saas_generation_migration_request.container == ('web-saas-postgresql'", playbook)
