@@ -50,8 +50,8 @@ frontend https_in
     acl is_xconnect  path -m reg ^{{ gw_path }}(/.*)?$
 {% endif %}
 
-    use_backend be_exporter_xhttp   if host_allowed is_exp_xhttp{% if gateway_vhosts | length > 0 %} or host_gw is_exp_xhttp{% endif %}
-    use_backend be_exporter_tcp     if host_allowed is_exp_tcp{% if gateway_vhosts | length > 0 %} or host_gw is_exp_tcp{% endif %}
+    use_backend be_exporter_xhttp   if host_allowed is_exp_xhttp{{ ' or host_gw is_exp_xhttp' if gateway_vhosts | length > 0 else '' }}
+    use_backend be_exporter_tcp     if host_allowed is_exp_tcp{{ ' or host_gw is_exp_tcp' if gateway_vhosts | length > 0 else '' }}
     use_backend be_xray_xhttp       if host_allowed is_xhttp
 {% if gateway_vhosts | length > 0 %}
     use_backend be_xconnect_gateway if host_gw is_xconnect
