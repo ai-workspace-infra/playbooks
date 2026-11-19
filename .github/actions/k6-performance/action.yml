@@ -2,10 +2,12 @@ name: Observability k6 execution owner
 description: Bounded service load test using the owner-local k6 profile.
 inputs:
   environment: {required: true, description: "sit, uat or prod"}
-  profile: {required: true, description: "smoke or capacity"}
+  profile: {required: true, description: "smoke, capacity or proxy_capacity"}
   duration: {required: true, description: "profile, 60s, 5m, 10m or 30m"}
-  max_vus: {required: true, description: "profile, 1, 5, 20, 100 or 500"}
+  max_vus: {required: true, description: "profile or integer 1..1000 (e.g. 1, 5, 20, 100, 200, 500, 1000)"}
   target_url: {required: false, default: '', description: "Explicit controlled HTTPS target or the profile default"}
+  p95_threshold_ms: {required: false, default: '500', description: "P95 request duration threshold in milliseconds (e.g. 500 or 1500)"}
+  proxy_url: {required: false, default: '', description: "Optional HTTP/HTTPS proxy URL for k6 client traffic (e.g. http://host.docker.internal:10809)"}
 runs:
   using: composite
   steps:
@@ -16,11 +18,14 @@ runs:
         LOAD_DURATION: ${{ inputs.duration }}
         LOAD_MAX_VUS: ${{ inputs.max_vus }}
         TARGET_BASE_URL: ${{ inputs.target_url }}
+        K6_P95_THRESHOLD_MS: ${{ inputs.p95_threshold_ms }}
+        K6_PROXY_URL: ${{ inputs.proxy_url }}
       run: |
         set -euo pipefail
         case "$TARGET_ENV" in sit|uat|prod) ;; *) exit 2 ;; esac
-        case "$K6_TEST_PROFILE" in smoke|capacity) ;; *) exit 2 ;; esac
+        case "$K6_TEST_PROFILE" in smoke|capacity|proxy_capacity) ;; *) exit 2 ;; esac
         case "$LOAD_DURATION" in profile|60s|5m|10m|30m) ;; *) exit 2 ;; esac
-        case "$LOAD_MAX_VUS" in profile|1|5|20|100|500) ;; *) exit 2 ;; esac
+        [[ "$LOAD_MAX_VUS" == "profile" || ( "$LOAD_MAX_VUS" =~ ^[0-9]+$ && LOAD_MAX_VUS -ge 1 && LOAD_MAX_VUS -le 1000 ) ]] || exit 2
+        [[ "$K6_P95_THRESHOLD_MS" =~ ^[0-9]+$ ]] && (( K6_P95_THRESHOLD_MS >= 100 && K6_P95_THRESHOLD_MS <= 60000 )) || exit 2
         [[ -z "$TARGET_BASE_URL" || "$TARGET_BASE_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[^[:space:]]*)?$ ]] || exit 2
         bash "$GITHUB_ACTION_PATH/../../../scripts/pipeline/run-k6-performance.sh"
