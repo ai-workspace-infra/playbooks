@@ -165,6 +165,7 @@ class XConnectRoleDecompositionContractTest(unittest.TestCase):
                             "vars": {
                                 "agent_id": "jp-xconnect-02.svc.plus",
                                 "agent_entry_point": "jp-xconnect-02.svc.plus",
+                                "xconnect_proxy_domain": "jp-xconnect-02.svc.plus",
                                 "agent_pool": "jp-main",
                                 "agent_resource_class": "pro",
                                 "agent_team_id": "",
@@ -287,6 +288,14 @@ class XConnectRoleDecompositionContractTest(unittest.TestCase):
             self.assertIn("listen: reload ingress", handlers)
             defaults_text = (VHOSTS / f"{engine}/defaults/main.yml").read_text()
             self.assertIn("xconnect_proxy_domain", defaults_text)
+            self.assertNotIn("tky-proxy.svc.plus", defaults_text)
+            self.assertNotIn("jp-xconnect-01.svc.plus", defaults_text)
+
+        haproxy_cfg_tpl = (VHOSTS / "haproxy/templates/haproxy.cfg.j2").read_text()
+        self.assertIn("proxy-hosts.lst", haproxy_cfg_tpl)
+        self.assertIn("gateway-hosts.lst", haproxy_cfg_tpl)
+        self.assertIn("proxy-hosts.lst", (VHOSTS / "xconnect_proxy/tasks/ingress_fragment.yml").read_text())
+        self.assertIn("gateway-hosts.lst", (VHOSTS / "xconnect_gateway/tasks/frontend.yml").read_text())
 
 
 if __name__ == "__main__":

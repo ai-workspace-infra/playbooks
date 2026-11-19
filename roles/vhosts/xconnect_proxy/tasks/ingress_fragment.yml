@@ -21,6 +21,17 @@
       - (agent_proxy_domains | first) | length > 0
     fail_msg: "XConnect Proxy requires at least one domain in agent_proxy_domains / xconnect_proxy_domain."
 
+- name: Render XConnect Proxy HAProxy conf.d host list
+  ansible.builtin.copy:
+    content: "{{ (agent_proxy_domains | reject('equalto', '') | unique | list | join('\n')) ~ '\n' }}"
+    dest: "{{ xconnect_proxy_resolved_conf_d_dir }}/proxy-hosts.lst"
+    owner: root
+    group: root
+    mode: "0644"
+  when: (xconnect_ingress_engine | default('fluxgate')) == 'haproxy'
+  notify:
+    - reload ingress
+
 - name: Render XConnect Proxy ingress fragment into conf.d
   ansible.builtin.template:
     src: agent-proxy.conf.j2
@@ -30,6 +41,7 @@
     owner: root
     group: root
     mode: "0644"
+  when: (xconnect_ingress_engine | default('fluxgate')) != 'haproxy'
   notify:
     - reload ingress
     - Reload Caddy configuration

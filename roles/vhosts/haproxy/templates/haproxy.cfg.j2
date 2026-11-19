@@ -38,9 +38,16 @@ frontend https_in
 {% set gateway_vhosts = (haproxy_resolved_gateway_vhosts | default(haproxy_gateway_vhosts | default([]))) %}
 {% set gateway_enabled = (haproxy_gateway_enabled | default(false) | bool) or (gateway_vhosts | length > 0) %}
 {% set gw_path = (haproxy_gateway_path | default('/xconnect', true)) | regex_replace('/+$', '') %}
+{% if haproxy_use_conf_d_acl | default(false) | bool %}
+    acl host_allowed hdr_beg(host) -i -f {{ haproxy_conf_d_dir }}/proxy-hosts.lst
+{% if gateway_vhosts | length > 0 %}
+    acl host_gw      hdr_beg(host) -i -f {{ haproxy_conf_d_dir }}/gateway-hosts.lst
+{% endif %}
+{% else %}
     acl host_allowed hdr_beg(host) -i {{ (haproxy_resolved_vhosts | default(haproxy_vhosts)) | join(' ') }}
 {% if gateway_vhosts | length > 0 %}
     acl host_gw      hdr_beg(host) -i {{ gateway_vhosts | join(' ') }}
+{% endif %}
 {% endif %}
 
     acl is_exp_xhttp path_beg /xray-exporter/xhttp/
