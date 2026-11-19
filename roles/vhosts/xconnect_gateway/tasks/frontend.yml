@@ -24,6 +24,29 @@
     mode: "0755"
   when: xconnect_gateway_vhost_enabled | default(true) | bool
 
+- name: Resolve Gateway ingress domain list
+  ansible.builtin.set_fact:
+    xconnect_gateway_resolved_domains: >-
+      {{ (
+           (xconnect_gateway_domains if (xconnect_gateway_domains is defined and xconnect_gateway_domains is iterable and xconnect_gateway_domains is not string) else ([xconnect_gateway_domains] if (xconnect_gateway_domains is defined and xconnect_gateway_domains) else []))
+           + ([xconnect_gateway_domain] if (xconnect_gateway_domain is defined and xconnect_gateway_domain) else [])
+           + ([xconnect_gateway_vhost_domain] if (xconnect_gateway_vhost_domain is defined and xconnect_gateway_vhost_domain) else [])
+         ) | reject('equalto', '') | unique | list }}
+  when: xconnect_gateway_vhost_enabled | default(true) | bool
+
+- name: Render XConnect Gateway HAProxy conf.d host list
+  ansible.builtin.copy:
+    content: "{{ (xconnect_gateway_resolved_domains | join('\n')) ~ '\n' }}"
+    dest: "{{ xconnect_gateway_resolved_conf_d_dir }}/gateway-hosts.lst"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - xconnect_gateway_vhost_enabled | default(true) | bool
+    - xconnect_gateway_resolved_domains | default([]) | length > 0
+    - (xconnect_ingress_engine | default('fluxgate')) == 'haproxy'
+  notify: reload ingress
+
 - name: Render XConnect Gateway vhost fragment
   ansible.builtin.template:
     src: xconnect-gateway-vhost.conf.j2
@@ -34,4 +57,5 @@
   when:
     - xconnect_gateway_vhost_enabled | default(true) | bool
     - xconnect_gateway_resolved_domain | length > 0
+    - (xconnect_ingress_engine | default('fluxgate')) != 'haproxy'
   notify: reload ingress

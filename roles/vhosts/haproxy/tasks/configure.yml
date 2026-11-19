@@ -72,6 +72,27 @@
       {{ (haproxy_gateway_vhosts if (haproxy_gateway_vhosts is defined and haproxy_gateway_vhosts is iterable and haproxy_gateway_vhosts is not string) else (haproxy_gateway_vhosts.split() if (haproxy_gateway_vhosts is defined and haproxy_gateway_vhosts is string) else []))
          | reject('equalto', '') | unique | list }}
 
+- name: Render HAProxy conf.d host lists
+  ansible.builtin.template:
+    src: hosts.lst.j2
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    haproxy_hosts_list: "{{ item.hosts }}"
+  loop:
+    - dest: "{{ haproxy_conf_d_dir }}/proxy-hosts.lst"
+      hosts: "{{ haproxy_resolved_vhosts }}"
+    - dest: "{{ haproxy_conf_d_dir }}/gateway-hosts.lst"
+      hosts: "{{ haproxy_resolved_gateway_vhosts }}"
+  become: true
+  notify: Reload haproxy
+
+- name: Enable HAProxy conf.d ACL host lists
+  ansible.builtin.set_fact:
+    haproxy_use_conf_d_acl: true
+
 - name: Render HAProxy configuration
   ansible.builtin.template:
     src: haproxy.cfg.j2
