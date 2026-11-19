@@ -13,13 +13,47 @@
 
 - name: Ensure Caddy TLS directory exists
   ansible.builtin.file:
-    path: "{{ caddy_config_dir | default('/etc/caddy', true) }}/tls"
+    path: "{{ caddy_tls_dir | default('/etc/caddy/tls', true) }}"
     state: directory
     owner: caddy
     group: caddy
     mode: '0750'
   failed_when: false
   become: true
+
+- name: Check external Caddy TLS certificate source
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ caddy_source_cert_path | default('/etc/caddy/tls/agent-proxy.crt', true) }}"
+    - "{{ caddy_source_key_path | default('/etc/caddy/tls/agent-proxy.key', true) }}"
+  register: caddy_source_tls_stats
+  when:
+    - (caddy_source_cert_path | default('', true)) != ((caddy_tls_dir | default('/etc/caddy/tls', true)) ~ '/agent-proxy.crt')
+    - (caddy_source_key_path | default('', true)) != ((caddy_tls_dir | default('/etc/caddy/tls', true)) ~ '/agent-proxy.key')
+
+- name: Copy Caddy TLS certificate and key into Caddy TLS directory
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    owner: caddy
+    group: caddy
+    mode: "{{ item.mode }}"
+  loop:
+    - src: "{{ caddy_source_cert_path | default('/etc/caddy/tls/agent-proxy.crt', true) }}"
+      dest: "{{ caddy_tls_dir | default('/etc/caddy/tls', true) }}/agent-proxy.crt"
+      mode: "0644"
+    - src: "{{ caddy_source_key_path | default('/etc/caddy/tls/agent-proxy.key', true) }}"
+      dest: "{{ caddy_tls_dir | default('/etc/caddy/tls', true) }}/agent-proxy.key"
+      mode: "0600"
+  become: true
+  when:
+    - (caddy_source_cert_path | default('', true)) != ((caddy_tls_dir | default('/etc/caddy/tls', true)) ~ '/agent-proxy.crt')
+    - (caddy_source_key_path | default('', true)) != ((caddy_tls_dir | default('/etc/caddy/tls', true)) ~ '/agent-proxy.key')
+    - caddy_source_tls_stats.results | default([]) | length == 2
+    - caddy_source_tls_stats.results | map(attribute='stat.exists') | min
+  notify: Reload caddy
 
 - name: Deploy root Caddyfile
   ansible.builtin.template:

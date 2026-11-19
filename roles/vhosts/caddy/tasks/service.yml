@@ -1,4 +1,24 @@
 ---
+- name: Validate Caddy configuration
+  ansible.builtin.command:
+    cmd: >-
+      caddy validate --config {{ caddy_config_dir | default('/etc/caddy', true) }}/Caddyfile
+      --adapter caddyfile
+  changed_when: false
+  become: true
+
+- name: Stop and disable competing ingress services when taking over 80/443
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - fluxgate
+    - haproxy
+  failed_when: false
+  become: true
+  when: caddy_replace_competing | default(false) | bool
+
 - name: Ensure Caddy systemd service is active and enabled
   ansible.builtin.service:
     name: caddy

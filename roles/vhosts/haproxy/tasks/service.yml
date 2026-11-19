@@ -1,4 +1,14 @@
 ---
+- name: Validate HAProxy configuration
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/haproxy
+      - -c
+      - -f
+      - "{{ haproxy_config_path }}"
+  changed_when: false
+  become: true
+
 - name: Stop and disable competing ingress services when taking over 80/443
   ansible.builtin.systemd:
     name: "{{ item }}"

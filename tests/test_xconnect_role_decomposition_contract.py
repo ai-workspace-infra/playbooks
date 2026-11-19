@@ -262,6 +262,28 @@ class XConnectRoleDecompositionContractTest(unittest.TestCase):
             self.assertEqual(legacy_yaml["xray"]["sync"]["targets"][0]["dynamicUsers"]["server"], "127.0.0.1:10086")
             self.assertEqual(legacy_yaml["xray"]["sync"]["targets"][1]["dynamicUsers"]["server"], "127.0.0.1:10087")
 
+    def test_ingress_engine_switching_contract(self) -> None:
+        exclusivity = yaml.safe_load((ROOT / "tasks/ingress_exclusivity.yml").read_text())
+        exclusivity_text = (ROOT / "tasks/ingress_exclusivity.yml").read_text()
+        self.assertIn("['fluxgate', 'caddy', 'haproxy']", exclusivity_text)
+        self.assertIn("caddy_replace_competing: true", exclusivity_text)
+        self.assertIn("fluxgate_replace_caddy: true", exclusivity_text)
+        self.assertIn("haproxy_replace_caddy: true", exclusivity_text)
+        self.assertGreaterEqual(len(exclusivity), 6)
+
+        for engine, competing in (
+            ("caddy", ("fluxgate", "haproxy")),
+            ("fluxgate", ("caddy", "haproxy")),
+            ("haproxy", ("caddy", "fluxgate")),
+        ):
+            service_tasks = (VHOSTS / f"{engine}/tasks/service.yml").read_text()
+            for other in competing:
+                self.assertIn(other, service_tasks)
+            handlers = (VHOSTS / f"{engine}/handlers/main.yml").read_text()
+            self.assertIn("listen: reload ingress", handlers)
+            defaults_text = (VHOSTS / f"{engine}/defaults/main.yml").read_text()
+            self.assertIn("xconnect_proxy_domain", defaults_text)
+
 
 if __name__ == "__main__":
     unittest.main()
