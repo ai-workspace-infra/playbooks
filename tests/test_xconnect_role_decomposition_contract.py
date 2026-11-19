@@ -244,7 +244,9 @@ class XConnectRoleDecompositionContractTest(unittest.TestCase):
             self.assertIn("reverse_proxy unix//run/xconnect-gateway/xray.sock", fluxgate_vhost)
 
             haproxy_cfg = (out / "haproxy.cfg").read_text()
-            self.assertIn("acl host_gw      hdr(host) -i jp-xconnect-gateway-02.svc.plus", haproxy_cfg)
+            self.assertIn("acl host_gw      hdr(host) -i jp-xconnect-gateway-02.svc.plus\n", haproxy_cfg)
+            self.assertIn("use_backend be_exporter_xhttp   if host_allowed is_exp_xhttp or host_gw is_exp_xhttp\n", haproxy_cfg)
+            self.assertIn("use_backend be_exporter_tcp     if host_allowed is_exp_tcp or host_gw is_exp_tcp\n", haproxy_cfg)
             self.assertIn("server xray /dev/shm/xray.sock proto h2\n", haproxy_cfg)
             self.assertNotIn("send-proxy-v2", haproxy_cfg)
             self.assertIn("backend be_xconnect_gateway", haproxy_cfg)
