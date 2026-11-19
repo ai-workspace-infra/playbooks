@@ -21,7 +21,7 @@
         uri query -x_padding
 {% endif %}
 
-        reverse_proxy unix/{{ fluxgate_xhttp_unix_socket }} {
+        reverse_proxy unix//{{ fluxgate_xhttp_unix_socket | regex_replace('^/', '') }} {
             flush_interval -1
 
             transport http {
@@ -29,6 +29,30 @@
             }
         }
     }
+
+{% if fluxgate_gateway_enabled | default(xconnect_gateway_caddy_enabled | default(false)) | bool %}
+{% set gw_path = (fluxgate_gateway_path | default(xconnect_gateway_caddy_path | default('/xconnect', true), true)) | regex_replace('/+$', '') %}
+    @xconnect_gateway_xhttp {
+        path {{ gw_path }} {{ gw_path }}/*
+    }
+
+    @xconnect_gateway_root path {{ gw_path }}
+    rewrite @xconnect_gateway_root {{ gw_path }}/
+
+    handle @xconnect_gateway_xhttp {
+{% if fluxgate_strip_x_padding | default(true) | bool %}
+        uri query -x_padding
+{% endif %}
+
+        reverse_proxy unix//{{ (fluxgate_gateway_unix_socket | default(xconnect_gateway_listen_socket | default('/run/xconnect-gateway/xray.sock', true), true)) | regex_replace('^/', '') }} {
+            flush_interval -1
+
+            transport http {
+                versions h2c 2
+            }
+        }
+    }
+{% endif %}
 
     respond "{{ fluxgate_default_response }}"
 }

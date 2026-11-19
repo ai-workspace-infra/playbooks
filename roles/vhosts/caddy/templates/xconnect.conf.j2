@@ -1,0 +1,58 @@
+{{ (caddy_resolved_vhosts | default(caddy_vhosts)) | join(', ') }} {
+    tls {{ caddy_tls_dir }}/agent-proxy.crt {{ caddy_tls_dir }}/agent-proxy.key
+
+    handle_path /xray-exporter/xhttp/* {
+        reverse_proxy {{ caddy_exporter_xhttp_upstream }}
+    }
+
+    handle_path /xray-exporter/tcp/* {
+        reverse_proxy {{ caddy_exporter_tcp_upstream }}
+    }
+
+    @xhttp {
+        path /split /split/*
+    }
+
+    @xhttp_root path /split
+    rewrite @xhttp_root /split/
+
+    handle @xhttp {
+{% if caddy_strip_x_padding | default(true) | bool %}
+        uri query -x_padding
+{% endif %}
+
+        reverse_proxy unix//{{ caddy_xhttp_unix_socket | regex_replace('^/', '') }} {
+            flush_interval -1
+
+            transport http {
+                versions h2c 2
+            }
+        }
+    }
+
+{% if caddy_gateway_enabled | default(false) | bool %}
+{% set gw_path = (caddy_gateway_path | default('/xconnect', true)) | regex_replace('/+$', '') %}
+    @xconnect_gateway_xhttp {
+        path {{ gw_path }} {{ gw_path }}/*
+    }
+
+    @xconnect_gateway_root path {{ gw_path }}
+    rewrite @xconnect_gateway_root {{ gw_path }}/
+
+    handle @xconnect_gateway_xhttp {
+{% if caddy_strip_x_padding | default(true) | bool %}
+        uri query -x_padding
+{% endif %}
+
+        reverse_proxy unix//{{ caddy_gateway_unix_socket | regex_replace('^/', '') }} {
+            flush_interval -1
+
+            transport http {
+                versions h2c 2
+            }
+        }
+    }
+{% endif %}
+
+    respond "{{ caddy_default_response }}"
+}

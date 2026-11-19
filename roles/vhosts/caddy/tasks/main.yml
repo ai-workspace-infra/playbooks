@@ -9,6 +9,12 @@
   ansible.builtin.include_tasks: configure.yml
   when: caddy_enabled | default(true) | bool
 
+- name: Render default Caddy vhost configuration
+  ansible.builtin.include_tasks: vhost.yml
+  when:
+    - caddy_enabled | default(true) | bool
+    - caddy_vhost_enabled | default(false) | bool
+
 - name: Ensure Caddy systemd service is active
   ansible.builtin.include_tasks: service.yml
   when: caddy_enabled | default(true) | bool

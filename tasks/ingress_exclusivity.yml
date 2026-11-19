@@ -33,6 +33,10 @@
 - name: Provision Caddy reverse proxy engine
   ansible.builtin.include_role:
     name: roles/vhosts/caddy
+  vars:
+    caddy_replace_competing: true
+    caddy_source_cert_path: "{{ xconnect_edge_tls_cert_path }}"
+    caddy_source_key_path: "{{ xconnect_edge_tls_key_path }}"
   when: xconnect_edge_proxy_engine == 'caddy'
 
 - name: Provision HAProxy reverse proxy engine

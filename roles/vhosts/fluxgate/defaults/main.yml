@@ -29,6 +29,7 @@ fluxgate_vhosts: >-
        (agent_proxy_domains if (agent_proxy_domains is defined and agent_proxy_domains is iterable and agent_proxy_domains is not string) else ([agent_proxy_domains] if (agent_proxy_domains is defined and agent_proxy_domains) else []))
        + ([agent_id] if (agent_id is defined and agent_id) else [])
        + ([agent_entry_point] if (agent_entry_point is defined and agent_entry_point) else [])
+       + ([xconnect_proxy_domain] if (xconnect_proxy_domain is defined and xconnect_proxy_domain) else [])
        + (service_domains if (service_domains is defined and service_domains is iterable and service_domains is not string) else [])
        + ([inventory_hostname] if (inventory_hostname is defined and inventory_hostname and inventory_hostname != 'localhost' and inventory_hostname != '127.0.0.1') else [])
        + (fluxgate_legacy_vhosts | default([]))
@@ -39,3 +40,6 @@ fluxgate_exporter_xhttp_upstream: "127.0.0.1:8080"
 fluxgate_exporter_tcp_upstream: "127.0.0.1:8081"
 fluxgate_default_response: "XConnect Edge Agent"
 fluxgate_strip_x_padding: true
+fluxgate_gateway_enabled: "{{ xconnect_gateway_caddy_enabled | default(false) | bool }}"
+fluxgate_gateway_path: "{{ xconnect_gateway_caddy_path | default('/xconnect', true) }}"
+fluxgate_gateway_unix_socket: "{{ xconnect_gateway_listen_socket | default(xconnect_gateway_caddy_socket | default('/run/xconnect-gateway/xray.sock', true), true) }}"

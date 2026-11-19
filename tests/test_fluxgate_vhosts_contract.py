@@ -31,10 +31,28 @@ class FluxgateVhostsContractTest(unittest.TestCase):
         self.assertIn("agent_id", content)
         self.assertIn("agent_entry_point", content)
         self.assertIn("unique | list", content)
+        self.assertIn("haproxy_xhttp_send_proxy_v2: false", content)
+        self.assertIn("haproxy_gateway_enabled:", content)
+
+    def test_caddy_defaults_and_vhost_align_with_fluxgate(self) -> None:
+        defaults = (ROOT / "roles/vhosts/caddy/defaults/main.yml").read_text()
+        self.assertIn("caddy_vhost_enabled: false", defaults)
+        self.assertIn("caddy_legacy_vhosts:", defaults)
+        self.assertIn("agent_proxy_domains", defaults)
+        self.assertIn("agent_id", defaults)
+        self.assertIn("agent_entry_point", defaults)
+        self.assertIn("unique | list", defaults)
+
+        vhost_tasks = (ROOT / "roles/vhosts/caddy/tasks/vhost.yml").read_text()
+        vhost_tpl = (ROOT / "roles/vhosts/caddy/templates/xconnect.conf.j2").read_text()
+        self.assertIn("caddy_resolved_vhosts", vhost_tasks)
+        self.assertIn("Ensure target Caddy vhost config is not immutable", vhost_tasks)
+        self.assertIn("caddy_resolved_vhosts", vhost_tpl)
 
     def test_deploy_playbook_passes_effective_vhosts(self) -> None:
         content = (ROOT / "deploy_xray_proxy_server.yml").read_text()
         self.assertIn("agent_proxy_effective_vhosts:", content)
+        self.assertIn("caddy_vhosts: \"{{ agent_proxy_effective_vhosts }}\"", content)
         self.assertIn("fluxgate_vhosts: \"{{ agent_proxy_effective_vhosts }}\"", content)
         self.assertIn("haproxy_vhosts: \"{{ agent_proxy_effective_vhosts }}\"", content)
         self.assertIn("Disable legacy or conflicting separate pull timers on bare-metal node", content)

@@ -25,6 +25,7 @@ haproxy_vhosts: >-
        (agent_proxy_domains if (agent_proxy_domains is defined and agent_proxy_domains is iterable and agent_proxy_domains is not string) else ([agent_proxy_domains] if (agent_proxy_domains is defined and agent_proxy_domains) else []))
        + ([agent_id] if (agent_id is defined and agent_id) else [])
        + ([agent_entry_point] if (agent_entry_point is defined and agent_entry_point) else [])
+       + ([xconnect_proxy_domain] if (xconnect_proxy_domain is defined and xconnect_proxy_domain) else [])
        + (service_domains if (service_domains is defined and service_domains is iterable and service_domains is not string) else [])
        + ([inventory_hostname] if (inventory_hostname is defined and inventory_hostname and inventory_hostname != 'localhost' and inventory_hostname != '127.0.0.1') else [])
        + (haproxy_legacy_vhosts | default([]))
@@ -34,3 +35,14 @@ haproxy_xhttp_unix_socket: "/dev/shm/xray.sock"
 haproxy_exporter_xhttp_upstream: "127.0.0.1:8080"
 haproxy_exporter_tcp_upstream: "127.0.0.1:8081"
 haproxy_default_response: "Agent Service Plus Node"
+haproxy_strip_x_padding: true
+haproxy_xhttp_send_proxy_v2: false
+haproxy_gateway_enabled: "{{ (xconnect_gateway_frontend_enabled | default(false) | bool) or (xconnect_gateway_caddy_enabled | default(false) | bool) or (haproxy_gateway_vhosts | default([]) | length > 0) }}"
+haproxy_gateway_vhosts: >-
+  {{ (
+       ([xconnect_gateway_domain] if (xconnect_gateway_domain is defined and xconnect_gateway_domain) else [])
+       + ([xconnect_gateway_vhost_domain] if (xconnect_gateway_vhost_domain is defined and xconnect_gateway_vhost_domain) else [])
+     ) | reject('equalto', '') | unique | list }}
+haproxy_gateway_path: "{{ xconnect_gateway_caddy_path | default('/xconnect', true) }}"
+haproxy_gateway_unix_socket: "{{ xconnect_gateway_listen_socket | default(xconnect_gateway_caddy_socket | default('/run/xconnect-gateway/xray.sock', true), true) }}"
+haproxy_gateway_default_response: "XConnect Gateway Node"

@@ -1,4 +1,44 @@
 ---
+caddy_enabled: true
+caddy_replace_competing: false
+caddy_vhost_enabled: false
+caddy_vhost_name: "jp-xconnect"
+caddy_vhost_template: "xconnect.conf.j2"
+caddy_config_dir: "/etc/caddy"
+caddy_tls_dir: "/etc/caddy/tls"
+caddy_source_cert_path: "/etc/caddy/tls/agent-proxy.crt"
+caddy_source_key_path: "/etc/caddy/tls/agent-proxy.key"
+caddy_grace_period: "15s"
+caddy_metrics_enabled: true
+caddy_metrics_per_host: true
+caddy_reverse_proxy_log_policy_enabled: true
+
+caddy_legacy_vhosts:
+  - jp-xconnect-01.svc.plus
+  - jp-xconnect-02.svc.plus
+  - jp-xconnect.svc.plus
+  - tky-proxy.svc.plus
+
+caddy_vhosts: >-
+  {{ (
+       (agent_proxy_domains if (agent_proxy_domains is defined and agent_proxy_domains is iterable and agent_proxy_domains is not string) else ([agent_proxy_domains] if (agent_proxy_domains is defined and agent_proxy_domains) else []))
+       + ([agent_id] if (agent_id is defined and agent_id) else [])
+       + ([agent_entry_point] if (agent_entry_point is defined and agent_entry_point) else [])
+       + ([xconnect_proxy_domain] if (xconnect_proxy_domain is defined and xconnect_proxy_domain) else [])
+       + (service_domains if (service_domains is defined and service_domains is iterable and service_domains is not string) else [])
+       + ([inventory_hostname] if (inventory_hostname is defined and inventory_hostname and inventory_hostname != 'localhost' and inventory_hostname != '127.0.0.1') else [])
+       + (caddy_legacy_vhosts | default([]))
+     ) | reject('equalto', '') | unique | list }}
+
+caddy_xhttp_unix_socket: "/dev/shm/xray.sock"
+caddy_exporter_xhttp_upstream: "127.0.0.1:8080"
+caddy_exporter_tcp_upstream: "127.0.0.1:8081"
+caddy_default_response: "XConnect Edge Agent"
+caddy_strip_x_padding: true
+caddy_gateway_enabled: "{{ xconnect_gateway_caddy_enabled | default(false) | bool }}"
+caddy_gateway_path: "{{ xconnect_gateway_caddy_path | default('/xconnect', true) }}"
+caddy_gateway_unix_socket: "{{ xconnect_gateway_listen_socket | default(xconnect_gateway_caddy_socket | default('/run/xconnect-gateway/xray.sock', true), true) }}"
+
 caddy_package_version: "2.11.4"
 # These SHA-512 values come from the Caddy v2.11.4 checksums file. That file's
 # Sigstore signature was verified against the official Caddy release workflow
