@@ -68,6 +68,9 @@
     haproxy_resolved_vhosts: >-
       {{ (haproxy_vhosts if (haproxy_vhosts is iterable and haproxy_vhosts is not string) else (haproxy_vhosts.split() if haproxy_vhosts is string else []))
          | reject('equalto', '') | unique | list }}
+    haproxy_resolved_gateway_vhosts: >-
+      {{ (haproxy_gateway_vhosts if (haproxy_gateway_vhosts is defined and haproxy_gateway_vhosts is iterable and haproxy_gateway_vhosts is not string) else (haproxy_gateway_vhosts.split() if (haproxy_gateway_vhosts is defined and haproxy_gateway_vhosts is string) else []))
+         | reject('equalto', '') | unique | list }}
 
 - name: Render HAProxy configuration
   ansible.builtin.template:

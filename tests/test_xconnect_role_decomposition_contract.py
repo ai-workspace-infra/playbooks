@@ -152,6 +152,116 @@ class XConnectRoleDecompositionContractTest(unittest.TestCase):
             self.assertIn("--const-label inbound_tag=proxy-xhttp-in", service_unit)
             self.assertIn("--const-label region=PH", service_unit)
 
+    def test_render_caddy_haproxy_and_edge_agent_templates_for_proxy_and_gateway(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            playbook = out / "render_ingress.yml"
+            playbook.write_text(
+                yaml.safe_dump(
+                    [
+                        {
+                            "hosts": "localhost",
+                            "gather_facts": False,
+                            "vars": {
+                                "agent_id": "jp-xconnect-02.svc.plus",
+                                "agent_entry_point": "jp-xconnect-02.svc.plus",
+                                "agent_pool": "jp-main",
+                                "agent_resource_class": "pro",
+                                "agent_team_id": "",
+                                "agent_custom_allow_free": True,
+                                "agent_allowed_emails": ["admin@svc.plus"],
+                                "agent_controller_url": "https://accounts.svc.plus",
+                                "agent_api_token": "test-token",
+                                "xconnect_gateway_domain": "jp-xconnect-gateway-02.svc.plus",
+                                "xconnect_gateway_caddy_enabled": True,
+                            },
+                            "tasks": [
+                                {"ansible.builtin.include_vars": str(VHOSTS / "caddy/defaults/main.yml")},
+                                {"ansible.builtin.include_vars": str(VHOSTS / "haproxy/defaults/main.yml")},
+                                {"ansible.builtin.include_vars": str(VHOSTS / "fluxgate/defaults/main.yml")},
+                                {"ansible.builtin.include_vars": str(VHOSTS / "xconnect-edge-agent/defaults/main.yml")},
+                                {
+                                    "ansible.builtin.template": {
+                                        "src": str(VHOSTS / "caddy/templates/Caddyfile.j2"),
+                                        "dest": str(out / "Caddyfile"),
+                                    }
+                                },
+                                {
+                                    "ansible.builtin.template": {
+                                        "src": str(VHOSTS / "caddy/templates/xconnect.conf.j2"),
+                                        "dest": str(out / "caddy-xconnect.caddy"),
+                                    }
+                                },
+                                {
+                                    "ansible.builtin.template": {
+                                        "src": str(VHOSTS / "fluxgate/templates/xconnect.conf.j2"),
+                                        "dest": str(out / "fluxgate-xconnect.conf"),
+                                    }
+                                },
+                                {
+                                    "ansible.builtin.template": {
+                                        "src": str(VHOSTS / "haproxy/templates/haproxy.cfg.j2"),
+                                        "dest": str(out / "haproxy.cfg"),
+                                    }
+                                },
+                                {
+                                    "ansible.builtin.template": {
+                                        "src": str(VHOSTS / "xconnect-edge-agent/templates/agent-proxy-profile.yaml.j2"),
+                                        "dest": str(out / "01-agent-proxy.yaml"),
+                                    }
+                                },
+                                {
+                                    "ansible.builtin.template": {
+                                        "src": str(VHOSTS / "xconnect-edge-agent/templates/agent-config.yaml.j2"),
+                                        "dest": str(out / "account-agent.yaml"),
+                                    }
+                                },
+                            ],
+                        }
+                    ]
+                )
+            )
+            subprocess.run(
+                ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            caddyfile = (out / "Caddyfile").read_text()
+            self.assertIn("grace_period 15s", caddyfile)
+            self.assertIn("exclude http.handlers.reverse_proxy", caddyfile)
+            self.assertIn("import /etc/caddy/conf.d/*.caddy", caddyfile)
+            self.assertIn("import /etc/caddy/conf.d/*.conf", caddyfile)
+
+            caddy_vhost = (out / "caddy-xconnect.caddy").read_text()
+            self.assertIn("jp-xconnect-02.svc.plus", caddy_vhost)
+            self.assertIn("reverse_proxy unix//dev/shm/xray.sock", caddy_vhost)
+            self.assertIn("reverse_proxy unix//run/xconnect-gateway/xray.sock", caddy_vhost)
+
+            fluxgate_vhost = (out / "fluxgate-xconnect.conf").read_text()
+            self.assertIn("reverse_proxy unix//dev/shm/xray.sock", fluxgate_vhost)
+            self.assertIn("reverse_proxy unix//run/xconnect-gateway/xray.sock", fluxgate_vhost)
+
+            haproxy_cfg = (out / "haproxy.cfg").read_text()
+            self.assertIn("acl host_gw      hdr(host) -i jp-xconnect-gateway-02.svc.plus", haproxy_cfg)
+            self.assertIn("server xray /dev/shm/xray.sock proto h2\n", haproxy_cfg)
+            self.assertNotIn("send-proxy-v2", haproxy_cfg)
+            self.assertIn("backend be_xconnect_gateway", haproxy_cfg)
+            self.assertIn("server xconnect_gw /run/xconnect-gateway/xray.sock proto h2", haproxy_cfg)
+
+            profile_yaml = yaml.safe_load((out / "01-agent-proxy.yaml").read_text())
+            self.assertTrue(profile_yaml["agent"]["customAllowFree"])
+            xhttp_target = profile_yaml["xray"]["sync"]["targets"][0]
+            tcp_target = profile_yaml["xray"]["sync"]["targets"][1]
+            self.assertEqual(xhttp_target["dynamicUsers"]["server"], "127.0.0.1:10086")
+            self.assertEqual(tcp_target["dynamicUsers"]["server"], "127.0.0.1:10087")
+
+            legacy_yaml = yaml.safe_load((out / "account-agent.yaml").read_text())
+            self.assertTrue(legacy_yaml["agent"]["customAllowFree"])
+            self.assertEqual(legacy_yaml["xray"]["sync"]["targets"][0]["dynamicUsers"]["server"], "127.0.0.1:10086")
+            self.assertEqual(legacy_yaml["xray"]["sync"]["targets"][1]["dynamicUsers"]["server"], "127.0.0.1:10087")
+
 
 if __name__ == "__main__":
     unittest.main()

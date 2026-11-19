@@ -8,6 +8,9 @@ agent:
   region: {{ agent_region | to_json }}
   pool: {{ agent_pool | to_json }}
   resourceClass: {{ agent_resource_class | to_json }}
+{% if agent_custom_allow_free is defined %}
+  customAllowFree: {{ agent_custom_allow_free | bool | lower }}
+{% endif %}
 {% if agent_allowed_emails is defined %}
   allowedEmails: {{ agent_allowed_emails | to_json }}
 {% endif %}
@@ -43,6 +46,12 @@ xray:
           - "systemctl"
           - "restart"
           - "xray.service"
+{% if xray_dynamic_users_enabled | default(true) | bool %}
+        dynamicUsers:
+          enabled: true
+          executable: "{{ xray_binary_path }}"
+          server: "{{ xray_xhttp_api_server | default('127.0.0.1:' ~ (xray_xhttp_api_port | default(10086) | string)) }}"
+{% endif %}
       - name: "tcp"
         outputPath: "{{ xray_tcp_config_path }}"
         templatePath: "{{ xray_template_dir }}/xray.tcp.template.json"
@@ -51,4 +60,10 @@ xray:
           - "systemctl"
           - "restart"
           - "xray-tcp.service"
+{% if xray_dynamic_users_enabled | default(true) | bool %}
+        dynamicUsers:
+          enabled: true
+          executable: "{{ xray_binary_path }}"
+          server: "{{ xray_tcp_api_server | default('127.0.0.1:' ~ (xray_tcp_api_port | default(10087) | string)) }}"
+{% endif %}
 {% endif %}

@@ -35,22 +35,56 @@ frontend http_in
 frontend https_in
     bind :::443 v4v6 ssl crt {{ haproxy_pem_path }} alpn h2,http/1.1
 
+{% set gateway_vhosts = (haproxy_resolved_gateway_vhosts | default(haproxy_gateway_vhosts | default([]))) %}
+{% set gateway_enabled = (haproxy_gateway_enabled | default(false) | bool) or (gateway_vhosts | length > 0) %}
+{% set gw_path = (haproxy_gateway_path | default('/xconnect', true)) | regex_replace('/+$', '') %}
     acl host_allowed hdr(host) -i {{ (haproxy_resolved_vhosts | default(haproxy_vhosts)) | join(' ') }}
+{% if gateway_vhosts | length > 0 %}
+    acl host_gw      hdr(host) -i {{ gateway_vhosts | join(' ') }}
+{% endif %}
 
     acl is_exp_xhttp path_beg /xray-exporter/xhttp/
     acl is_exp_tcp   path_beg /xray-exporter/tcp/
     acl is_xhttp     path -m reg ^/split(/.*)?$
+{% if gateway_enabled %}
+    acl is_xconnect  path -m reg ^{{ gw_path }}(/.*)?$
+{% endif %}
 
-    use_backend be_exporter_xhttp if host_allowed is_exp_xhttp
-    use_backend be_exporter_tcp   if host_allowed is_exp_tcp
-    use_backend be_xray_xhttp     if host_allowed is_xhttp
+    use_backend be_exporter_xhttp   if host_allowed is_exp_xhttp{% if gateway_vhosts | length > 0 %} or host_gw is_exp_xhttp{% endif %}
+    use_backend be_exporter_tcp     if host_allowed is_exp_tcp{% if gateway_vhosts | length > 0 %} or host_gw is_exp_tcp{% endif %}
+    use_backend be_xray_xhttp       if host_allowed is_xhttp
+{% if gateway_vhosts | length > 0 %}
+    use_backend be_xconnect_gateway if host_gw is_xconnect
+    use_backend be_gateway_default  if host_gw
+{% elif gateway_enabled %}
+    use_backend be_xconnect_gateway if host_allowed is_xconnect
+{% endif %}
     default_backend be_default
 
 backend be_xray_xhttp
     mode http
     http-request set-path /split/ if { path /split }
+{% if haproxy_strip_x_padding | default(true) | bool %}
     http-request set-query "%[query,regsub('(^|&)x_padding=[^&]*','',g),regsub('^&','')]" if { query -m sub x_padding= }
-    server xray {{ haproxy_xhttp_unix_socket }} proto h2
+{% endif %}
+    server xray {{ haproxy_xhttp_unix_socket }} proto h2{% if haproxy_xhttp_send_proxy_v2 | default(false) | bool %} send-proxy-v2{% endif %}
+
+{% if gateway_enabled %}
+
+backend be_xconnect_gateway
+    mode http
+    http-request set-path {{ gw_path }}/ if { path {{ gw_path }} }
+{% if haproxy_strip_x_padding | default(true) | bool %}
+    http-request set-query "%[query,regsub('(^|&)x_padding=[^&]*','',g),regsub('^&','')]" if { query -m sub x_padding= }
+{% endif %}
+    server xconnect_gw {{ haproxy_gateway_unix_socket }} proto h2
+{% endif %}
+{% if gateway_vhosts | length > 0 %}
+
+backend be_gateway_default
+    mode http
+    http-request return status 200 content-type "text/plain; charset=utf-8" string "{{ haproxy_gateway_default_response }}"
+{% endif %}
 
 backend be_exporter_xhttp
     mode http

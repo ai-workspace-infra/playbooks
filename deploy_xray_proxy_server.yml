@@ -558,6 +558,8 @@
       when:
         - agent_proxy_operation in ['deploy', 'standalone']
         - (agent_proxy_engine | default('fluxgate')) == 'caddy'
+      vars:
+        caddy_vhosts: "{{ agent_proxy_effective_vhosts }}"
     - role: roles/vhosts/haproxy
       when:
         - agent_proxy_operation in ['deploy', 'standalone']

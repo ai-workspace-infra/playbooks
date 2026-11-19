@@ -1,4 +1,14 @@
 ---
+- name: Validate HAProxy configuration before reload
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/haproxy
+      - -c
+      - -f
+      - "{{ haproxy_config_path }}"
+  changed_when: false
+  listen: reload ingress
+
 - name: Reload haproxy
   ansible.builtin.systemd:
     name: haproxy

@@ -1,5 +1,23 @@
 {
-	# debug
+	grace_period {{ caddy_grace_period | default('15s', true) }}
+{% if caddy_metrics_enabled | default(true) | bool %}
+{% if caddy_metrics_per_host | default(true) | bool %}
+	metrics {
+		per_host
+	}
+{% else %}
+	metrics
+{% endif %}
+{% endif %}
+{% if caddy_reverse_proxy_log_policy_enabled | default(true) | bool %}
+	log default {
+		exclude http.handlers.reverse_proxy
+	}
+	log reverseproxy_errors {
+		level ERROR
+		include http.handlers.reverse_proxy
+	}
+{% endif %}
 }
 
 import {{ caddy_config_dir | default('/etc/caddy', true) }}/conf.d/*.caddy
