@@ -31,6 +31,8 @@ source = '''
 .tags.job = "xray"
 .tags.service = "xray"
 .tags.transport = "xhttp"
+.tags.routing_pool = {{ (vector_observability_routing_pool | default('unknown', true)) | to_json }}
+.tags.pricing_group = {{ (vector_observability_pricing_group | default('unknown', true)) | to_json }}
 {% if vector_proxy_engine_effective | default('') | length > 0 and vector_proxy_engine_effective != 'none' %}
 .tags.proxy_engine = {{ vector_proxy_engine_effective | to_json }}
 {% endif %}
@@ -54,6 +56,8 @@ source = '''
 .tags.job = "xray"
 .tags.service = "xray"
 .tags.transport = "tcp"
+.tags.routing_pool = {{ (vector_observability_routing_pool | default('unknown', true)) | to_json }}
+.tags.pricing_group = {{ (vector_observability_pricing_group | default('unknown', true)) | to_json }}
 {% if vector_proxy_engine_effective | default('') | length > 0 and vector_proxy_engine_effective != 'none' %}
 .tags.proxy_engine = {{ vector_proxy_engine_effective | to_json }}
 {% endif %}

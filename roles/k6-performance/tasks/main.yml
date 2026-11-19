@@ -1,0 +1,94 @@
+---
+- name: Ensure local k6 proxy performance work directory exists
+  ansible.builtin.file:
+    path: "{{ k6_perf_work_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Verify docker and xray binaries are available on runner
+  ansible.builtin.shell: |
+    set -euo pipefail
+    command -v docker >/dev/null 2>&1
+    docker info >/dev/null 2>&1
+    command -v "{{ k6_perf_xray_bin }}" >/dev/null 2>&1
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Render temporary Xray client configuration for proxy load test
+  ansible.builtin.template:
+    src: xray-client.json.j2
+    dest: "{{ k6_perf_work_dir }}/xray-client.json"
+    mode: "0600"
+
+- name: Execute proxy capacity load test with temporary Xray client
+  block:
+    - name: Start temporary Xray client in background
+      ansible.builtin.shell: |
+        set -euo pipefail
+        nohup "{{ k6_perf_xray_bin }}" run -config "{{ k6_perf_work_dir }}/xray-client.json" \
+          > "{{ k6_perf_work_dir }}/xray-client.log" 2>&1 &
+        echo $! > "{{ k6_perf_work_dir }}/xray-client.pid"
+        for _ in $(seq 1 15); do
+          if curl -s -o /dev/null -x "http://127.0.0.1:{{ k6_perf_local_http_proxy_port }}" "{{ k6_perf_proxy_target_url }}"; then
+            exit 0
+          fi
+          sleep 1
+        done
+        cat "{{ k6_perf_work_dir }}/xray-client.log" >&2
+        exit 1
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Run k6 performance container against temporary Xray proxy
+      ansible.builtin.command:
+        argv:
+          - bash
+          - "{{ playbook_dir }}/scripts/pipeline/run-k6-performance.sh"
+      environment:
+        TARGET_ENV: "{{ k6_perf_env }}"
+        K6_TEST_PROFILE: "{{ k6_perf_profile }}"
+        LOAD_DURATION: "{{ k6_perf_duration }}"
+        LOAD_MAX_VUS: "{{ k6_perf_max_vus }}"
+        TARGET_BASE_URL: "https://{{ k6_perf_target_host }}"
+        K6_TEST_ID: "{{ k6_perf_test_id }}"
+        K6_P95_THRESHOLD_MS: "{{ k6_perf_p95_threshold_ms | string }}"
+        K6_PROXY_TARGET_URL: "{{ k6_perf_proxy_target_url }}"
+        K6_PROXY_URL: "http://host.docker.internal:{{ k6_perf_local_http_proxy_port }}"
+        K6_SUMMARY_EXPORT_PATH: "{{ k6_perf_summary_json }}"
+        K6_PROMETHEUS_RW_SERVER_URL: "{{ k6_perf_prometheus_rw_url }}"
+        K6_PROMETHEUS_RW_USERNAME: "{{ k6_perf_prometheus_rw_username }}"
+        K6_PROMETHEUS_RW_PASSWORD: "{{ k6_perf_prometheus_rw_password }}"
+        K6_DISABLE_PROMETHEUS_RW: "{{ k6_perf_disable_prometheus_rw | bool | ternary('true', 'false') }}"
+      register: k6_perf_run_result
+      failed_when: k6_perf_run_result.rc not in [0, 99]
+      changed_when: true
+
+  always:
+    - name: Stop temporary Xray client process
+      ansible.builtin.shell: |
+        if [[ -f "{{ k6_perf_work_dir }}/xray-client.pid" ]]; then
+          kill "$(cat "{{ k6_perf_work_dir }}/xray-client.pid")" 2>/dev/null || true
+          rm -f "{{ k6_perf_work_dir }}/xray-client.pid"
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+- name: Generate Markdown capacity test report from k6 summary
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ role_path }}/files/generate_report.py"
+      - "{{ k6_perf_summary_json }}"
+      - "{{ k6_perf_report_path }}"
+      - "{{ k6_perf_target_host }}"
+      - "{{ k6_perf_p95_threshold_ms | string }}"
+      - "{{ k6_perf_test_id }}"
+  register: k6_report_output
+  changed_when: true
+
+- name: Display generated k6 capacity report
+  ansible.builtin.debug:
+    msg: "{{ k6_report_output.stdout_lines }}"

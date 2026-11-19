@@ -1,0 +1,46 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "listen": "0.0.0.0",
+      "port": {{ k6_perf_local_http_proxy_port | int }},
+      "protocol": "http",
+      "settings": {
+        "allowTransparent": false
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "{{ k6_perf_target_host }}",
+            "port": {{ k6_perf_target_port | int }},
+            "users": [
+              {
+                "id": "{{ k6_perf_xray_uuid }}",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "{{ k6_perf_target_host }}",
+          "alpn": ["h2", "http/1.1"]
+        },
+        "xhttpSettings": {
+          "path": "{{ k6_perf_xray_path }}",
+          "mode": "{{ k6_perf_xray_mode }}"
+        }
+      }
+    }
+  ]
+}

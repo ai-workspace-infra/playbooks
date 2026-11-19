@@ -1,0 +1,25 @@
+---
+k6_perf_target_host: "jp-xconnect-01.svc.plus"
+k6_perf_target_port: 443
+k6_perf_xray_uuid: "01a11a7c-f469-75e9-86f1-77a3c7317151"
+k6_perf_xray_path: "/split"
+k6_perf_xray_mode: "auto"
+k6_perf_local_http_proxy_port: 10809
+k6_perf_xray_bin: "xray"
+
+k6_perf_env: "prod"
+k6_perf_profile: "proxy_capacity"
+k6_perf_duration: "profile"
+k6_perf_max_vus: "profile"
+k6_perf_p95_threshold_ms: 1500
+k6_perf_proxy_target_url: "https://cp.cloudflare.com/generate_204"
+k6_perf_test_id: "k6-{{ k6_perf_env }}-{{ k6_perf_target_host | regex_replace('\\.', '-') }}-{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+
+k6_perf_prometheus_rw_url: "{{ lookup('ansible.builtin.env', 'K6_PROMETHEUS_RW_SERVER_URL') | default('https://observability.svc.plus/ingest/metrics/api/v1/write', true) }}"
+k6_perf_prometheus_rw_username: "{{ lookup('ansible.builtin.env', 'K6_PROMETHEUS_RW_USERNAME') | default('', true) }}"
+k6_perf_prometheus_rw_password: "{{ lookup('ansible.builtin.env', 'K6_PROMETHEUS_RW_PASSWORD') | default('', true) }}"
+k6_perf_disable_prometheus_rw: "{{ (k6_perf_prometheus_rw_username | length == 0) or (k6_perf_prometheus_rw_password | length == 0) }}"
+
+k6_perf_work_dir: "/tmp/k6-proxy-perf"
+k6_perf_summary_json: "{{ k6_perf_work_dir }}/k6-summary.json"
+k6_perf_report_path: "{{ k6_perf_work_dir }}/k6-proxy-capacity-report.md"

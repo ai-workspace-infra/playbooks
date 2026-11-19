@@ -20,8 +20,14 @@ const MAX_VUS_SELECTION = __ENV.LOAD_MAX_VUS || 'profile';
 if (!['sit', 'uat', 'prod'].includes(TARGET_ENV)) {
   throw new Error(`Unsupported TARGET_ENV: ${TARGET_ENV}`);
 }
-if (!['smoke', 'capacity'].includes(TEST_PROFILE)) {
+if (!['smoke', 'capacity', 'proxy_capacity'].includes(TEST_PROFILE)) {
   throw new Error(`Unsupported K6_TEST_PROFILE: ${TEST_PROFILE}`);
+}
+
+const DEFAULT_P95_MS = TEST_PROFILE === 'proxy_capacity' ? 1500 : 500;
+const P95_THRESHOLD_MS = Number(__ENV.K6_P95_THRESHOLD_MS || DEFAULT_P95_MS);
+if (!Number.isFinite(P95_THRESHOLD_MS) || P95_THRESHOLD_MS < 100) {
+  throw new Error(`Invalid K6_P95_THRESHOLD_MS: ${__ENV.K6_P95_THRESHOLD_MS}`);
 }
 
 // Custom metrics for capacity, availability, and API latency tracking.
@@ -42,6 +48,13 @@ const profileStages = {
     { duration: '1m', target: 500 },
     { duration: '30s', target: 0 },
   ],
+  proxy_capacity: [
+    { duration: '30s', target: 50 },
+    { duration: '1m', target: 150 },
+    { duration: '1m', target: 300 },
+    { duration: '1m', target: 500 },
+    { duration: '30s', target: 0 },
+  ],
 };
 
 function parseDurationSeconds(value) {
@@ -59,16 +72,16 @@ function resolveStages() {
     return profileStages[TEST_PROFILE];
   }
 
-  const defaultDurationSeconds = TEST_PROFILE === 'capacity' ? 300 : 60;
+  const defaultDurationSeconds = (TEST_PROFILE === 'capacity' || TEST_PROFILE === 'proxy_capacity') ? 300 : 60;
   const totalSeconds = DURATION_SELECTION === 'profile'
     ? defaultDurationSeconds
     : parseDurationSeconds(DURATION_SELECTION);
   const maxVus = MAX_VUS_SELECTION === 'profile'
-    ? (TEST_PROFILE === 'capacity' ? 500 : 5)
+    ? ((TEST_PROFILE === 'capacity' || TEST_PROFILE === 'proxy_capacity') ? 500 : 5)
     : Number(MAX_VUS_SELECTION);
 
-  if (!Number.isInteger(maxVus) || maxVus < 1 || maxVus > 500) {
-    throw new Error(`K6_MAX_VUS must be profile or an integer between 1 and 500; got ${MAX_VUS_SELECTION}`);
+  if (!Number.isInteger(maxVus) || maxVus < 1 || maxVus > 1000) {
+    throw new Error(`K6_MAX_VUS must be profile or an integer between 1 and 1000; got ${MAX_VUS_SELECTION}`);
   }
   if (TEST_PROFILE === 'smoke' && maxVus > 20) {
     throw new Error(`smoke profile is limited to 20 VUs; select capacity for ${maxVus} VUs`);
@@ -102,10 +115,10 @@ export const options = {
     testid: TEST_ID,
   },
   thresholds: {
-    http_req_failed: ['rate<0.01'],        // Error rate must be under 1%
-    http_req_duration: ['p(95)<500'],      // 95% of requests must finish within 500ms
+    http_req_failed: ['rate<0.01'],                     // Error rate must be under 1%
+    http_req_duration: [`p(95)<${P95_THRESHOLD_MS}`],   // 95% of requests must finish within threshold
     k6_custom_error_rate: ['rate<0.05'],
-    k6_custom_api_latency: ['p(95)<500'],
+    k6_custom_api_latency: [`p(95)<${P95_THRESHOLD_MS}`],
   },
 };
 
@@ -117,6 +130,7 @@ const BASE_URLS = {
 };
 
 const baseUrl = (__ENV.TARGET_BASE_URL || BASE_URLS[TARGET_ENV] || BASE_URLS.uat).replace(/\/+$/, '');
+const proxyTargetUrl = __ENV.K6_PROXY_TARGET_URL || 'https://cp.cloudflare.com/generate_204';
 const apiToken = __ENV.K6_API_TOKEN || '';
 
 function requestParams(endpoint) {
@@ -141,6 +155,20 @@ function requestParams(endpoint) {
 }
 
 export default function () {
+  if (TEST_PROFILE === 'proxy_capacity') {
+    const proxyRes = http.get(proxyTargetUrl, requestParams('proxy_edge'));
+    const proxySuccess = check(proxyRes, {
+      'proxy status is 204 or 200': (r) => r.status === 204 || r.status === 200,
+      [`proxy duration < ${P95_THRESHOLD_MS}ms`]: (r) => r.timings.duration < P95_THRESHOLD_MS,
+    });
+    errorRate.add(!proxySuccess, { endpoint: 'proxy_edge' });
+    apiLatency.add(proxyRes.timings.duration, { endpoint: 'proxy_edge' });
+    if (proxySuccess) successfulRequests.add(1, { endpoint: 'proxy_edge' });
+
+    sleep(1);
+    return;
+  }
+
   // 1. Console runtime health & overview endpoint
   const pingRes = http.get(`${baseUrl}/api/ping`, requestParams('ping'));
   const pingSuccess = check(pingRes, {
@@ -156,7 +184,7 @@ export default function () {
   const plansRes = http.get(`${baseUrl}/api/billing/plans`, requestParams('billing_plans'));
   const plansSuccess = check(plansRes, {
     'plans status is 200': (r) => r.status === 200,
-    'plans duration < 500ms': (r) => r.timings.duration < 500,
+    [`plans duration < ${P95_THRESHOLD_MS}ms`]: (r) => r.timings.duration < P95_THRESHOLD_MS,
   });
   errorRate.add(!plansSuccess, { endpoint: 'billing_plans' });
   apiLatency.add(plansRes.timings.duration, { endpoint: 'billing_plans' });

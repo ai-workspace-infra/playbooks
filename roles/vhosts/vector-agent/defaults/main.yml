@@ -40,6 +40,8 @@ vector_observability_region: "{{ region | default(cmdb_region | default(cloud_re
 vector_observability_project_id: "{{ project_id | default(cmdb_project_id | default(account | default('', true), true), true) }}"
 vector_observability_resource_id: "{{ resource_id | default(cmdb_resource_id | default(instance_id | default(cmdb_instance_id | default(inventory_hostname, true), true), true), true) }}"
 vector_observability_runtime_form: "{{ runtime_form | default(cmdb_runtime_form | default('', true), true) }}"
+vector_observability_pricing_group: "{{ pricing_group | default(cmdb_pricing_group | default(resource_class | default('unknown', true), true), true) }}"
+vector_observability_routing_pool: "{{ routing_pool | default(cmdb_routing_pool | default('Pro-EC2-Pool' if (vector_observability_pricing_group | lower == 'pro') else ('Custom-Dedicated' if (vector_observability_pricing_group | lower in ['custom', 'team']) else ('Media-Pool' if (vector_observability_pricing_group | lower in ['free', 'shared', 'plus']) else 'unknown')), true), true) }}"
 # AGENT_PROXY_DOMAIN is passed by the installer from account-agent.yaml's
 # agent.id. It is required on Agent Proxy nodes; hostname remains origin only.
 vector_observability_node_identity: "{{ agent_proxy_domain | default(lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN') | default(observability_service_domain | default(inventory_hostname, true), true), true) }}"

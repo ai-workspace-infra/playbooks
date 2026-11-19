@@ -240,6 +240,8 @@ source = '''
 .tags.logical_project = {{ vector_observability_logical_project | to_json }}
 {% endif %}
 .tags.service_domain = "{{ vector_observability_node_identity }}"
+.tags.routing_pool = {{ (vector_observability_routing_pool | default('unknown', true)) | to_json }}
+.tags.pricing_group = {{ (vector_observability_pricing_group | default('unknown', true)) | to_json }}
 .tags.job = "vector"
 .tags.service = "vector"
 {% if vector_proxy_engine_effective | default('') | length > 0 and vector_proxy_engine_effective != 'none' %}

@@ -1,0 +1,301 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "XConnect Three-Tier Traffic Split (DIRECT -> Media-Pool Priority & Fallback -> Pro-EC2-Pool Whitelist & Blackhole) & 5+1 Pool Scheduling Dashboard",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 85 },
+              { "color": "green", "value": 95 }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "expr": "sum(rate(xray_traffic_downlink_bytes_total{dimension=\"outbound\", target=\"pool-media-stream\", routing_pool=\"Media-Pool\", environment=~\"$environment\"}[5m])) / clamp_min(sum(rate(xray_traffic_downlink_bytes_total{dimension=\"outbound\", target=~\"pool-media-stream|blocked-media-on-pro\", environment=~\"$environment\"}[5m])), 1) * 100",
+          "legendFormat": "Media-Pool Offload Ratio",
+          "refId": "A"
+        }
+      ],
+      "title": "Media-Pool (优先) 流媒体卸载比例 (%)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "green", "value": 90 }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "expr": "sum(rate(xray_traffic_downlink_bytes_total{dimension=\"outbound\", routing_pool=\"Pro-EC2-Pool\", target=\"pool-pro-ai-dev\", environment=~\"$environment\"}[5m])) / clamp_min(sum(rate(xray_traffic_downlink_bytes_total{dimension=\"outbound\", routing_pool=\"Pro-EC2-Pool\", environment=~\"$environment\"}[5m])), 1) * 100",
+          "legendFormat": "Pro-EC2 Purity",
+          "refId": "A"
+        }
+      ],
+      "title": "Pro-EC2-Pool AI/开发白名单纯净度 (%)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "decgbytes"
+        }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "expr": "sum by (routing_pool) (increase(xray_traffic_downlink_bytes_total{dimension=\"outbound\", environment=~\"$environment\"}[24h]) + increase(xray_traffic_uplink_bytes_total{dimension=\"outbound\", environment=~\"$environment\"}[24h])) / 1000000000",
+          "legendFormat": "{{routing_pool}}",
+          "refId": "A"
+        }
+      ],
+      "title": "各路由池 24h 总流量 (GB)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1000000 },
+              { "color": "red", "value": 5000000 }
+            ]
+          },
+          "unit": "bps"
+        }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "expr": "sum(rate(xray_traffic_uplink_bytes_total{dimension=\"outbound\", routing_pool=\"Pro-EC2-Pool\", target=\"blocked-media-on-pro\", environment=~\"$environment\"}[5m])) * 8",
+          "legendFormat": "Blocked Media Attempts",
+          "refId": "A"
+        }
+      ],
+      "title": "Pro-EC2-Pool Blackhole 拦截流媒体尝试速率",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 25,
+            "lineWidth": 2,
+            "stacking": { "group": "A", "mode": "normal" }
+          },
+          "unit": "bps"
+        }
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 6 },
+      "id": 5,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "expr": "sum by (target) (rate(xray_traffic_downlink_bytes_total{dimension=\"outbound\", environment=~\"$environment\", routing_pool=~\"$routing_pool\", pricing_group=~\"$pricing_group\", instance=~\"$instance\"}[5m]) + rate(xray_traffic_uplink_bytes_total{dimension=\"outbound\", environment=~\"$environment\", routing_pool=~\"$routing_pool\", pricing_group=~\"$pricing_group\", instance=~\"$instance\"}[5m])) * 8",
+          "legendFormat": "{{target}}",
+          "refId": "A"
+        }
+      ],
+      "title": "三层分流实时带宽分布 (按 target / outboundTag)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 6 },
+      "id": 6,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "expr": "100 - (avg by (instance, routing_pool) (rate(node_cpu_seconds_total{mode=\"idle\", environment=~\"$environment\", routing_pool=~\"$routing_pool\", instance=~\"$instance\"}[5m])) * 100)",
+          "legendFormat": "{{instance}} [{{routing_pool}}]",
+          "refId": "A"
+        }
+      ],
+      "title": "各路由池节点 CPU 利用率 (t4g.small 积分安全线 <=25%)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 15 },
+      "id": 7,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+          "expr": "namedprocess_namegroup_memory_bytes{memtype=\"resident\", environment=~\"$environment\", routing_pool=~\"$routing_pool\", instance=~\"$instance\", groupname=~\"fluxgate|haproxy|caddy|xray|xconnect-edge-agent\"}",
+          "legendFormat": "{{instance}} - {{groupname}}",
+          "refId": "A"
+        }
+      ],
+      "title": "边缘代理引擎与 Xray 常驻内存 (RSS)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["xconnect", "routing", "traffic-split", "observability"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+        "definition": "label_values(xray_traffic_downlink_bytes_total, environment)",
+        "includeAll": true,
+        "name": "environment",
+        "query": { "qryType": 1, "query": "label_values(xray_traffic_downlink_bytes_total, environment)" },
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+        "definition": "label_values(xray_traffic_downlink_bytes_total{environment=~\"$environment\"}, routing_pool)",
+        "includeAll": true,
+        "name": "routing_pool",
+        "query": { "qryType": 1, "query": "label_values(xray_traffic_downlink_bytes_total{environment=~\"$environment\"}, routing_pool)" },
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+        "definition": "label_values(xray_traffic_downlink_bytes_total{environment=~\"$environment\", routing_pool=~\"$routing_pool\"}, pricing_group)",
+        "includeAll": true,
+        "name": "pricing_group",
+        "query": { "qryType": 1, "query": "label_values(xray_traffic_downlink_bytes_total{environment=~\"$environment\", routing_pool=~\"$routing_pool\"}, pricing_group)" },
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+        "definition": "label_values(xray_traffic_downlink_bytes_total{environment=~\"$environment\", routing_pool=~\"$routing_pool\", pricing_group=~\"$pricing_group\"}, instance)",
+        "includeAll": true,
+        "name": "instance",
+        "query": { "qryType": 1, "query": "label_values(xray_traffic_downlink_bytes_total{environment=~\"$environment\", routing_pool=~\"$routing_pool\", pricing_group=~\"$pricing_group\"}, instance)" },
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "XConnect Three-Tier Traffic Split & Pool Scheduling",
+  "uid": "xconnect-traffic-split-scheduling"
+}
