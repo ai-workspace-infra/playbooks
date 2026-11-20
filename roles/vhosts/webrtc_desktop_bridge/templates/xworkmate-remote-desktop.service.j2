@@ -1,6 +1,9 @@
 [Unit]
 Description=XWorkmate WebRTC Remote Desktop Server
-After=network.target xrdp.service
+After=network.target {{ webrtc_desktop_bridge_session_units | join(" ") }}
+{% if webrtc_desktop_bridge_required_session_units | length > 0 %}
+Requires={{ webrtc_desktop_bridge_required_session_units | join(" ") }}
+{% endif %}
 
 [Service]
 Type=simple
@@ -10,6 +13,10 @@ Environment="XRD_LISTEN={{ webrtc_desktop_bridge_listen }}"
 {% if webrtc_desktop_bridge_display | length > 0 %}
 Environment="XRD_DISPLAY={{ webrtc_desktop_bridge_display }}"
 Environment="DISPLAY={{ webrtc_desktop_bridge_display }}"
+{% endif %}
+{% if webrtc_desktop_bridge_udp_port_min | string | length > 0 %}
+Environment="XRD_UDP_PORT_MIN={{ webrtc_desktop_bridge_udp_port_min }}"
+Environment="XRD_UDP_PORT_MAX={{ webrtc_desktop_bridge_udp_port_max }}"
 {% endif %}
 {% if webrtc_desktop_bridge_token_file | length > 0 %}
 Environment="XRD_TOKEN_FILE={{ webrtc_desktop_bridge_token_file }}"

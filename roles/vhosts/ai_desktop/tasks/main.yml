@@ -104,6 +104,7 @@
     icewm_desktop_user: "{{ ai_desktop_user }}"
     icewm_desktop_user_password: "{{ ai_desktop_user_password }}"
     icewm_desktop_manage_user: "{{ ai_desktop_manage_user }}"
+    icewm_desktop_manage_user_config: "{{ ai_desktop_manage_user_config }}"
     icewm_desktop_user_groups: "{{ ai_desktop_user_groups }}"
     icewm_desktop_remote_enabled: "{{ ai_desktop_remote_enabled | bool and ai_desktop_remote_type == 'xrdp' }}"
     icewm_desktop_browser: "{{ ai_desktop_icewm_browser }}"
@@ -113,6 +114,34 @@
     - ai_desktop_enabled | bool
     - ai_desktop_desktop_type == 'icewm'
     - ansible_os_family != 'Darwin'
+
+- name: Validate headless desktop display configuration
+  ansible.builtin.assert:
+    that:
+      - ai_desktop_desktop_type == 'icewm'
+      - not (ai_desktop_webrtc_enabled | bool) or ai_desktop_webrtc_display == (':' ~ (ai_desktop_headless_display | string))
+    fail_msg: "Headless WebRTC requires IceWM and matching display settings."
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_headless_enabled | bool
+
+- name: Install headless IceWM session
+  ansible.builtin.include_role:
+    name: roles/vhosts/icewm_headless_session
+  vars:
+    icewm_headless_session_user: "{{ ai_desktop_user }}"
+    icewm_headless_session_display: "{{ ai_desktop_headless_display }}"
+    icewm_headless_session_screen: "{{ ai_desktop_headless_screen }}"
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_headless_enabled | bool
+    - ai_desktop_desktop_type == 'icewm'
+
+- name: Apply headless session changes before starting its consumers
+  ansible.builtin.meta: flush_handlers
+  when:
+    - ai_desktop_enabled | bool
+    - ai_desktop_headless_enabled | bool
 
 - name: Install XRDP remote desktop access
   ansible.builtin.include_role:
@@ -157,8 +186,12 @@
   loop: "{{ ai_desktop_webrtc_roles }}"
   vars:
     webrtc_desktop_bridge_user: "{{ ai_desktop_user }}"
+    webrtc_desktop_bridge_session_units: "{{ ['xworkmate-xvfb.service', 'xworkmate-icewm.service'] if ai_desktop_headless_enabled | bool else ['xrdp.service'] }}"
+    webrtc_desktop_bridge_required_session_units: "{{ ['xworkmate-xvfb.service', 'xworkmate-icewm.service'] if ai_desktop_headless_enabled | bool else [] }}"
     webrtc_desktop_bridge_listen: "{{ ai_desktop_webrtc_listen }}"
     webrtc_desktop_bridge_display: "{{ ai_desktop_webrtc_display }}"
+    webrtc_desktop_bridge_udp_port_min: "{{ ai_desktop_webrtc_udp_port_min }}"
+    webrtc_desktop_bridge_udp_port_max: "{{ ai_desktop_webrtc_udp_port_max }}"
     webrtc_desktop_bridge_service_enabled: "{{ ai_desktop_webrtc_service_enabled }}"
   when:
     - ai_desktop_enabled | bool

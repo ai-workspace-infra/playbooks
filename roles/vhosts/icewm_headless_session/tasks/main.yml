@@ -1,0 +1,62 @@
+---
+- name: Validate headless IceWM session inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == 'Debian'
+      - icewm_headless_session_user | length > 0
+      - icewm_headless_session_user != 'root'
+      - icewm_headless_session_display | string is match('^[0-9]+$')
+      - icewm_headless_session_screen is match('^[0-9]+x[0-9]+x[0-9]+$')
+
+- name: Inspect desktop account
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ icewm_headless_session_user }}"
+
+- name: Install headless X server
+  ansible.builtin.apt:
+    name: xvfb
+    state: present
+  become: true
+
+- name: Ensure local helper directory exists
+  ansible.builtin.file:
+    path: /usr/local/libexec
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+- name: Install X11 readiness helper
+  ansible.builtin.copy:
+    src: wait-for-x11
+    dest: /usr/local/libexec/xworkmate-wait-for-x11
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+- name: Install headless desktop units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - xworkmate-xvfb.service
+    - xworkmate-icewm.service
+  notify: Restart headless desktop
+  become: true
+
+- name: Enable and start headless desktop units
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - xworkmate-xvfb.service
+    - xworkmate-icewm.service
+  become: true

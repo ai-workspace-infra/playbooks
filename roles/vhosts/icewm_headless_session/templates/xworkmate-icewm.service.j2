@@ -1,0 +1,17 @@
+[Unit]
+Description=XWorkmate IceWM session
+After=xworkmate-xvfb.service
+Requires=xworkmate-xvfb.service
+Before=xworkmate-remote-desktop.service
+
+[Service]
+User={{ icewm_headless_session_user }}
+Environment="DISPLAY=:{{ icewm_headless_session_display }}"
+Environment="HOME={{ getent_passwd[icewm_headless_session_user][4] }}"
+ExecStartPre=/usr/local/libexec/xworkmate-wait-for-x11 {{ icewm_headless_session_display }}
+ExecStart=/usr/bin/dbus-run-session -- /usr/bin/icewm-session
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
