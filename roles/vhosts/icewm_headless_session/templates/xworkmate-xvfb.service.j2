@@ -3,7 +3,11 @@ Description=XWorkmate virtual framebuffer
 
 [Service]
 User={{ icewm_headless_session_user }}
-ExecStart=/usr/bin/Xvfb :{{ icewm_headless_session_display }} -screen 0 {{ icewm_headless_session_screen }} -ac -nolisten tcp
+RuntimeDirectory=xworkmate-x11
+RuntimeDirectoryMode=0700
+Environment="XAUTHORITY=/run/xworkmate-x11/Xauthority"
+ExecStartPre=/usr/local/libexec/xworkmate-create-xauthority {{ icewm_headless_session_display }}
+ExecStart=/usr/bin/Xvfb :{{ icewm_headless_session_display }} -screen 0 {{ icewm_headless_session_screen }} -auth /run/xworkmate-x11/Xauthority -nolisten tcp
 Restart=always
 RestartSec=2
 

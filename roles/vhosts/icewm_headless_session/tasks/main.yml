@@ -15,7 +15,9 @@
 
 - name: Install headless X server
   ansible.builtin.apt:
-    name: xvfb
+    name:
+      - xvfb
+      - xauth
     state: present
   become: true
 
@@ -23,6 +25,15 @@
   ansible.builtin.file:
     path: /usr/local/libexec
     state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+- name: Install X11 authorization helper
+  ansible.builtin.copy:
+    src: create-xauthority
+    dest: /usr/local/libexec/xworkmate-create-xauthority
     owner: root
     group: root
     mode: '0755'
