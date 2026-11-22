@@ -16,6 +16,20 @@ class FluxgateVhostsContractTest(unittest.TestCase):
         self.assertIn("agent_id", content)
         self.assertIn("agent_entry_point", content)
         self.assertIn("unique | list", content)
+        self.assertIn('fluxgate_version: "0.2.0"', content)
+        self.assertIn('fluxgate_release_repo: "ai-workspace-xstream/fluxgate"', content)
+        self.assertIn("fluxgate_release_checksums:", content)
+        self.assertIn("fluxgate_download_url:", content)
+
+    def test_fluxgate_install_and_service_are_idempotent(self) -> None:
+        install_tasks = (ROOT / "roles/vhosts/fluxgate/tasks/install.yml").read_text()
+        self.assertIn("fluxgate_needs_download", install_tasks)
+        self.assertIn("fluxgate_resolved_checksum", install_tasks)
+        self.assertIn("--version", install_tasks)
+
+        service_tasks = (ROOT / "roles/vhosts/fluxgate/tasks/service.yml").read_text()
+        self.assertIn("ansible.builtin.service_facts", service_tasks)
+        self.assertIn("ansible_facts.services", service_tasks)
 
     def test_fluxgate_configure_resolves_vhosts_list(self) -> None:
         tasks = (ROOT / "roles/vhosts/fluxgate/tasks/vhost.yml").read_text()

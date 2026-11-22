@@ -8,6 +8,12 @@
       - "{{ fluxgate_config_dir }}/Fluxgatefile"
   changed_when: false
 
+- name: Gather systemd service facts before stopping competing ingress engines
+  ansible.builtin.service_facts:
+  when:
+    - fluxgate_replace_caddy | default(false) | bool
+    - ansible_facts.services is not defined
+
 - name: Stop and disable competing ingress services when taking over 80/443
   ansible.builtin.systemd:
     name: "{{ item }}"
@@ -16,9 +22,10 @@
   loop:
     - caddy
     - haproxy
-  failed_when: false
   become: true
-  when: fluxgate_replace_caddy | default(false) | bool
+  when:
+    - fluxgate_replace_caddy | default(false) | bool
+    - (item ~ '.service') in (ansible_facts.services | default({})) or item in (ansible_facts.services | default({}))
 
 - name: Reload systemd daemon for Fluxgate
   ansible.builtin.systemd:

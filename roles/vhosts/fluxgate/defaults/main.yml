@@ -4,9 +4,21 @@ fluxgate_replace_caddy: false
 fluxgate_vhost_enabled: false
 fluxgate_vhost_name: "jp-xconnect"
 fluxgate_vhost_template: "xconnect.conf.j2"
-fluxgate_version: "0.1.0"
+fluxgate_version: "0.2.0"
+fluxgate_release_repo: "ai-workspace-xstream/fluxgate"
+fluxgate_release_tag: "{{ fluxgate_version if (fluxgate_version is match('^v')) else ('v' ~ fluxgate_version) }}"
+fluxgate_release_arch: "{{ 'arm64' if (ansible_architecture | default('x86_64')) in ['aarch64', 'arm64'] else 'amd64' }}"
+fluxgate_release_asset_name: "fluxgate-linux-{{ fluxgate_release_arch }}"
+fluxgate_default_download_url: "https://github.com/{{ fluxgate_release_repo }}/releases/download/{{ fluxgate_release_tag }}/{{ fluxgate_release_asset_name }}"
 fluxgate_binary_src: ""
-fluxgate_download_url: ""
+fluxgate_download_url: "{{ fluxgate_default_download_url }}"
+fluxgate_checksum_url: "https://github.com/{{ fluxgate_release_repo }}/releases/download/{{ fluxgate_release_tag }}/SHA256SUMS"
+fluxgate_checksum: ""
+fluxgate_download_timeout: 120
+fluxgate_release_checksums:
+  "0.2.0":
+    amd64: "sha256:d3a539bdf4a51f3448653d98e8d32c7465ee8f84918af4def8927372145e7d73"
+    arm64: "sha256:b28e60d77df6b2228589594673dec21450c765b2e33029683292fc6755f281d5"
 fluxgate_binary_dest: "/usr/local/bin/fluxgate"
 fluxgate_config_dir: "/etc/fluxgate"
 fluxgate_tls_dir: "/etc/fluxgate/tls"

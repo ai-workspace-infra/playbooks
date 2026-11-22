@@ -2,7 +2,19 @@
 - name: Check existing Fluxgate binary
   ansible.builtin.stat:
     path: "{{ fluxgate_binary_dest }}"
+    checksum_algorithm: sha256
+    get_checksum: true
   register: fluxgate_bin_stat
+
+- name: Check installed Fluxgate version
+  ansible.builtin.command:
+    argv:
+      - "{{ fluxgate_binary_dest }}"
+      - --version
+  register: fluxgate_installed_version_check
+  changed_when: false
+  failed_when: false
+  when: fluxgate_bin_stat.stat.exists | default(false)
 
 - name: Install Fluxgate binary from local CI artifact path
   ansible.builtin.copy:
@@ -15,17 +27,84 @@
   when: fluxgate_binary_src | default('', true) | length > 0
   notify: Restart fluxgate
 
+- name: Resolve Fluxgate target version and pinned checksum
+  ansible.builtin.set_fact:
+    fluxgate_clean_version: "{{ fluxgate_version | regex_replace('^v', '') }}"
+    fluxgate_pinned_checksum: >-
+      {{ fluxgate_checksum
+         if (fluxgate_checksum | default('', true) | length > 0)
+         else (((fluxgate_release_checksums | default({})).get(fluxgate_version | regex_replace('^v', ''), {}).get(fluxgate_release_arch, ''))
+               if (fluxgate_download_url == fluxgate_default_download_url)
+               else '') }}
+  when:
+    - fluxgate_binary_src | default('', true) | length == 0
+    - fluxgate_download_url | default('', true) | length > 0
+
+- name: Determine whether Fluxgate release binary needs download
+  ansible.builtin.set_fact:
+    fluxgate_needs_download: >-
+      {{ not (fluxgate_bin_stat.stat.exists | default(false))
+         or ((fluxgate_installed_version_check.rc | default(1)) != 0)
+         or (fluxgate_clean_version not in (fluxgate_installed_version_check.stdout | default('')))
+         or ((fluxgate_pinned_checksum | length > 0) and (('sha256:' ~ (fluxgate_bin_stat.stat.checksum | default(''))) != fluxgate_pinned_checksum)) }}
+  when:
+    - fluxgate_binary_src | default('', true) | length == 0
+    - fluxgate_download_url | default('', true) | length > 0
+
+- name: Fetch Fluxgate release SHA256SUMS manifest when unpinned
+  ansible.builtin.uri:
+    url: "{{ fluxgate_checksum_url }}"
+    method: GET
+    return_content: true
+    status_code: 200
+  register: fluxgate_sums_response
+  retries: 3
+  delay: 2
+  until: fluxgate_sums_response.status | default(0) == 200
+  when:
+    - fluxgate_binary_src | default('', true) | length == 0
+    - fluxgate_download_url == fluxgate_default_download_url
+    - fluxgate_checksum_url | default('', true) | length > 0
+    - fluxgate_pinned_checksum | default('') | length == 0
+    - fluxgate_needs_download | default(false) | bool
+
+- name: Resolve expected Fluxgate SHA-256 checksum
+  ansible.builtin.set_fact:
+    fluxgate_resolved_checksum: >-
+      {{ fluxgate_pinned_checksum
+         if (fluxgate_pinned_checksum | default('') | length > 0)
+         else (('sha256:' ~ (
+                fluxgate_sums_response.content
+                | default('')
+                | regex_findall('^([0-9a-f]{64})[ \t]+(?:[.][\\/])?' ~ (fluxgate_release_asset_name | regex_escape) ~ '[ \t]*$', multiline=True)
+                | first
+              ))
+              if ((fluxgate_sums_response.content | default('') | regex_findall('^([0-9a-f]{64})[ \t]+(?:[.][\\/])?' ~ (fluxgate_release_asset_name | regex_escape) ~ '[ \t]*$', multiline=True) | length) > 0)
+              else '') }}
+  when:
+    - fluxgate_binary_src | default('', true) | length == 0
+    - fluxgate_download_url | default('', true) | length > 0
+    - fluxgate_needs_download | default(false) | bool
+
 - name: Download pre-built Fluxgate release binary
   ansible.builtin.get_url:
     url: "{{ fluxgate_download_url }}"
     dest: "{{ fluxgate_binary_dest }}"
+    checksum: "{{ fluxgate_resolved_checksum if (fluxgate_resolved_checksum | default('') | length > 0) else omit }}"
+    force: "{{ fluxgate_bin_stat.stat.exists | default(false) | bool }}"
+    timeout: "{{ fluxgate_download_timeout | default(120) }}"
     owner: root
     group: root
     mode: "0755"
+  register: fluxgate_download_result
+  retries: 3
+  delay: 5
+  until: fluxgate_download_result is succeeded
   become: true
   when:
     - fluxgate_binary_src | default('', true) | length == 0
     - fluxgate_download_url | default('', true) | length > 0
+    - fluxgate_needs_download | default(false) | bool
   notify: Restart fluxgate
 
 - name: Require Fluxgate binary to be present on target host
@@ -33,6 +112,15 @@
     path: "{{ fluxgate_binary_dest }}"
   register: fluxgate_bin_after
   failed_when: not fluxgate_bin_after.stat.exists
+
+- name: Verify installed Fluxgate executable on target architecture
+  ansible.builtin.command:
+    argv:
+      - "{{ fluxgate_binary_dest }}"
+      - --version
+  register: fluxgate_bin_verify
+  changed_when: false
+  failed_when: fluxgate_bin_verify.rc != 0
 
 - name: Install Fluxgate systemd service unit
   ansible.builtin.template:
