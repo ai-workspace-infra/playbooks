@@ -55,14 +55,6 @@
     fail_msg: "The XConnect Agent release asset metadata is incomplete or unverifiable."
   run_once: true
 
-- name: Ensure verified Agent release staging directory exists
-  ansible.builtin.file:
-    path: "{{ agent_proxy_local_release_stage_path | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0700"
-
 # 校验源优先级: 发布时附带的 SHA256SUMS-linux-<arch> 优先, 其次用 GitHub API
 # 的 asset.digest。两者都是 sha256, 前者让制品在没有 API(或 API 被限流)时依然
 # 可校验, 也便于人工离线核对。
@@ -111,6 +103,28 @@
       Refusing to install an unverified binary.
   run_once: true
 
+- name: Check existing XConnect Agent binary checksum
+  ansible.builtin.stat:
+    path: "{{ agent_proxy_binary_path }}"
+    checksum_algorithm: sha256
+    get_checksum: true
+  register: agent_proxy_existing_binary_stat
+
+- name: Determine whether XConnect Agent release binary needs install
+  ansible.builtin.set_fact:
+    agent_proxy_local_release_needs_install: >-
+      {{ not (agent_proxy_existing_binary_stat.stat.exists | default(false))
+         or (('sha256:' ~ (agent_proxy_existing_binary_stat.stat.checksum | default(''))) != agent_proxy_local_release_expected_checksum) }}
+
+- name: Ensure verified Agent release staging directory exists
+  ansible.builtin.file:
+    path: "{{ agent_proxy_local_release_stage_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when: agent_proxy_local_release_needs_install | bool
+
 - name: Download the verified XConnect Agent release binary
   ansible.builtin.get_url:
     url: "{{ agent_proxy_local_release_asset.browser_download_url }}"
@@ -120,6 +134,7 @@
     group: root
     mode: "0700"
     timeout: 300
+  when: agent_proxy_local_release_needs_install | bool
 
 - name: Install the verified XConnect Agent release binary
   ansible.builtin.copy:
@@ -129,9 +144,11 @@
     owner: root
     group: root
     mode: "0755"
+  when: agent_proxy_local_release_needs_install | bool
   notify: Restart agent-proxy
 
 - name: Remove staged XConnect Agent binary
   ansible.builtin.file:
     path: "{{ agent_proxy_local_release_stage_path }}"
     state: absent
+  when: agent_proxy_local_release_needs_install | bool
