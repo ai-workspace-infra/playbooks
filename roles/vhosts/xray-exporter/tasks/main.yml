@@ -113,6 +113,18 @@
     (xray_exporter_snapshot_features_enabled | bool) or
     (xray_exporter_vector_snapshot_url | trim | length > 0)
 
+- name: Require unique node_id aligned with AGENT_PROXY_DOMAIN before rendering exporter environment
+  ansible.builtin.assert:
+    that:
+      - xray_exporter_node_id | trim | length > 0
+      - xray_exporter_node_id | trim not in ['localhost', 'localhost.localdomain', '127.0.0.1']
+      - >-
+        (agent_proxy_domain | default(lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN'), true) | trim | length == 0)
+        or (xray_exporter_node_id | trim == (agent_proxy_domain | default(lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN'), true) | trim))
+    fail_msg: >-
+      EXPORTER_NODE_ID ({{ xray_exporter_node_id }}) must be non-empty, unique,
+      and strictly equal to AGENT_PROXY_DOMAIN ({{ agent_proxy_domain | default(lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN'), true) }}).
+
 - name: Render xray-exporter runtime environment
   ansible.builtin.template:
     src: xray-exporter.env.j2

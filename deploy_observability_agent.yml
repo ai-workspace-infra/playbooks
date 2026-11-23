@@ -15,6 +15,12 @@
     xray_exporter_accounts_base_url: >-
       {{ lookup('ansible.builtin.env', 'ACCOUNTS_BASE_URL')
          | default('https://accounts.svc.plus', true) }}
+    xray_exporter_node_id: >-
+      {{ agent_proxy_domain
+         | default(lookup('ansible.builtin.env', 'AGENT_PROXY_DOMAIN')
+         | default(lookup('ansible.builtin.env', 'EXPORTER_NODE_ID')
+         | default(vector_observability_service_domain
+         | default(inventory_hostname, true), true), true), true) }}
     xray_exporter_internal_service_token: >-
       {{ canonical_internal_service_token | default('') }}
     xray_exporter_vector_snapshot_url: >-
