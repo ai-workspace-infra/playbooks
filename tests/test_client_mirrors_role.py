@@ -244,6 +244,11 @@ class ClientMirrorsRoleTest(unittest.TestCase):
         del_idx = calls.index(("DELETE", "https://svc-plus-releases-cn-hk.oss-cn-hongkong.aliyuncs.com/?publicAccessBlock"))
         acl_idx = calls.index(("PUT", "https://svc-plus-releases-cn-hk.oss-cn-hongkong.aliyuncs.com/?acl"))
         self.assertLess(del_idx, acl_idx)
+        create_policy_urls = [url for _, url in calls if "Action=CreatePolicy&" in url]
+        self.assertEqual(len(create_policy_urls), 1)
+        decoded_policy = rec.urllib.parse.unquote(create_policy_urls[0])
+        self.assertIn("oss:GetObjectAcl", decoded_policy)
+        self.assertIn("oss:GetBucketLocation", decoded_policy)
 
         # Verify idempotent second run preserves minted keys without re-issuing tokens/AKs.
         second_calls = []
@@ -462,6 +467,128 @@ Path({str(capture)!r}).write_text(" ".join(sys.argv[1:]) + "\\n" + sys.stdin.rea
             )
         self.assertIn("prod/platform/storage/cloudflare-r2", vault_writes)
         self.assertEqual(vault_writes["prod/platform/storage/cloudflare-r2"]["access_key_id"], "r2-tok-id")
+
+    def test_cdn_tls_vault_path_uploads_cert_via_post_and_enables_https_force(self):
+        tls_manifest = self.tmp / "mirrors-tls.yaml"
+        tls_manifest.write_text(
+            SAMPLE_MANIFEST.replace(
+                '    cdn_cas_cert_id: ""',
+                '    cdn_cas_cert_id: ""\n    cdn_tls_vault_path: kv/CICD/domains/svc.plus',
+            ),
+            encoding="utf-8",
+        )
+        fake_pub = "-----BEGIN CERTIFICATE-----\nMOCKCERT\n-----END CERTIFICATE-----\n"
+        fake_pri = "-----BEGIN PRIVATE KEY-----\nMOCK-PRIVATE-KEY-SECRET\n-----END PRIVATE KEY-----\n"
+        captured_posts = []
+        batch_urls = []
+
+        def tls_opener(req, timeout=25):
+            method = req.get_method()
+            url = req.full_url
+            if "/v1/kv/data/prod/serverless/cloudflare" in url:
+                return _FakeResponse(body=json.dumps({"data": {"data": {"CLOUDFLARE_API_TOKEN": "cf-adm", "CLOUDFLARE_ACCOUNT_ID": "acct-1"}}}).encode())
+            if "/v1/kv/data/prod/platform/alicloud" in url:
+                return _FakeResponse(body=json.dumps({"data": {"data": {"access_key_id": "ali-adm-ak", "access_key_secret": "ali-adm-sk"}}}).encode())
+            if "/v1/kv/data/CICD/domains/svc.plus" in url:
+                return _FakeResponse(
+                    body=json.dumps(
+                        {
+                            "data": {
+                                "data": {
+                                    "tls_fullchain_pem_b64": base64.b64encode(fake_pub.encode()).decode(),
+                                    "tls_key_pem_b64": base64.b64encode(fake_pri.encode()).decode(),
+                                }
+                            }
+                        }
+                    ).encode()
+                )
+            if "/v1/kv/data/prod/platform/storage/" in url:
+                if method == "POST":
+                    return _FakeResponse(body=b"{}")
+                raise rec.urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+            if "/zones?name=svc.plus" in url:
+                return _FakeResponse(body=json.dumps({"success": True, "result": [{"id": "zone-1"}]}).encode())
+            if url.endswith("/r2/buckets/svc-plus-releases-global"):
+                return _FakeResponse(body=json.dumps({"success": True, "result": {"name": "svc-plus-releases-global"}}).encode())
+            if "/domains/custom" in url:
+                return _FakeResponse(body=json.dumps({"success": True, "result": {"domains": [{"domain": "dl.svc.plus", "enabled": True, "minTLS": "1.2"}]}}).encode())
+            if "/cors" in url:
+                return _FakeResponse(
+                    body=json.dumps(
+                        {
+                            "success": True,
+                            "result": {
+                                "rules": [
+                                    {
+                                        "id": "client-mirrors-cors",
+                                        "allowed": {
+                                            "methods": ["GET", "HEAD"],
+                                            "origins": ["https://console.svc.plus", "https://xworktech.com"],
+                                            "headers": ["*"],
+                                        },
+                                        "exposeHeaders": ["ETag", "Content-Length", "Content-Type"],
+                                        "maxAgeSeconds": 3600,
+                                    }
+                                ]
+                            },
+                        }
+                    ).encode()
+                )
+            if "/tokens/permission_groups" in url:
+                return _FakeResponse(body=json.dumps({"success": True, "result": [{"id": "pg-r2-w", "name": "Workers R2 Storage Bucket Item Write"}]}).encode())
+            if url.endswith("/tokens") and method == "POST":
+                return _FakeResponse(body=json.dumps({"success": True, "result": {"id": "r2-tok-id", "value": "r2-raw-tok"}}).encode())
+            if "oss-cn-hongkong" in url and method == "HEAD":
+                return _FakeResponse(status=200, body=b"")
+            if "oss-cn-hongkong" in url and method in ("DELETE", "PUT"):
+                return _FakeResponse(status=200, body=b"")
+            if "DescribeVerifyContent" in url:
+                return _FakeResponse(body=json.dumps({"Content": ""}).encode())
+            if "DescribeCdnDomainDetail" in url:
+                return _FakeResponse(body=json.dumps({"GetDomainDetailModel": {"Cname": "cn-dl.svc.plus.queniuaa.com", "ServerCertificateStatus": "off"}}).encode())
+            if url == "https://cdn.aliyuncs.com/" and method == "POST":
+                body_str = req.data.decode("utf-8")
+                captured_posts.append((dict(req.header_items()), rec.urllib.parse.parse_qs(body_str)))
+                return _FakeResponse(body=b'{"RequestId":"req-ssl"}')
+            if "BatchSetCdnDomainConfig" in url:
+                batch_urls.append(rec.urllib.parse.unquote(url))
+                return _FakeResponse(body=b"{}")
+            if "/dns_records" in url and method == "GET":
+                return _FakeResponse(body=json.dumps({"success": True, "result": [{"id": "rec-1", "content": "cn-dl.svc.plus.queniuaa.com", "proxied": False}]}).encode())
+            if "GetUser" in url or "GetPolicy" in url:
+                raise rec.urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+            if any(act in url for act in ("CreateUser", "CreatePolicy", "AttachPolicyToUser")):
+                return _FakeResponse(body=b"{}")
+            if "ListPoliciesForUser" in url:
+                return _FakeResponse(body=json.dumps({"Policies": {"Policy": []}}).encode())
+            if "CreateAccessKey" in url:
+                return _FakeResponse(body=json.dumps({"AccessKey": {"AccessKeyId": "ram-ak-1", "AccessKeySecret": "ram-sk-1"}}).encode())
+            raise AssertionError(f"Unexpected HTTP call: {method} {url}")
+
+        res = rec.reconcile(
+            {
+                "manifest_path": str(tls_manifest),
+                "mode": "apply",
+                "apply": True,
+                "verify": False,
+                "vault_addr": "https://vault.example",
+                "vault_token": "mock-vault-token",
+            },
+            opener=tls_opener,
+            wait_dns_seconds=0,
+        )
+        self.assertTrue(res["changed"])
+        self.assertIn("cdn_tls:configured", res["aliyun_oss_cdn"]["actions"])
+        self.assertEqual(len(captured_posts), 1)
+        _, form = captured_posts[0]
+        self.assertEqual(form["Action"], ["SetCdnDomainSSLCertificate"])
+        self.assertEqual(form["CertType"], ["upload"])
+        self.assertEqual(form["SSLProtocol"], ["on"])
+        self.assertEqual(form["SSLPub"], [fake_pub])
+        self.assertEqual(form["SSLPri"], [fake_pri])
+        self.assertEqual(len(batch_urls), 1)
+        self.assertIn("https_force", batch_urls[0])
+        self.assertNotIn("MOCK-PRIVATE-KEY-SECRET", json.dumps(res))
 
 
 if __name__ == "__main__":
