@@ -188,6 +188,8 @@ class ClientMirrorsRoleTest(unittest.TestCase):
                 return _FakeResponse(body=json.dumps({"success": True, "result": {"id": "r2-tok-id", "value": created_cf_secret}}).encode())
             if "oss-cn-hongkong" in url and method == "HEAD":
                 raise rec.urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+            if "oss-cn-hongkong" in url and method == "DELETE":
+                return _FakeResponse(status=204, body=b"")
             if "oss-cn-hongkong" in url and method == "PUT":
                 return _FakeResponse(status=200, body=b"")
             if "DescribeVerifyContent" in url:
@@ -239,6 +241,9 @@ class ClientMirrorsRoleTest(unittest.TestCase):
         )
         self.assertEqual(vault_writes["prod/platform/storage/aliyun-oss"]["access_key_secret"], created_ali_secret)
         self.assertTrue(all(p["ok"] for p in res["verification"]["https_probes"]))
+        del_idx = calls.index(("DELETE", "https://svc-plus-releases-cn-hk.oss-cn-hongkong.aliyuncs.com/?publicAccessBlock"))
+        acl_idx = calls.index(("PUT", "https://svc-plus-releases-cn-hk.oss-cn-hongkong.aliyuncs.com/?acl"))
+        self.assertLess(del_idx, acl_idx)
 
         # Verify idempotent second run preserves minted keys without re-issuing tokens/AKs.
         second_calls = []

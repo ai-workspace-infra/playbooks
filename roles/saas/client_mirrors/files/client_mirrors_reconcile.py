@@ -661,6 +661,11 @@ def _reconcile_aliyun_oss_cdn(
         actions.append("oss_bucket:ok")
 
     if apply:
+        if ali_cfg["oss_acl"] != "private":
+            oss_request(
+                bucket=bucket, oss_region=region, method="DELETE", resource_suffix="?publicAccessBlock",
+                ak=ali_ak, sk=ali_sk, allow_404=True, opener=opener,
+            )
         oss_request(
             bucket=bucket, oss_region=region, method="PUT", resource_suffix="?acl",
             oss_headers={"x-oss-acl": ali_cfg["oss_acl"]}, ak=ali_ak, sk=ali_sk, opener=opener,
