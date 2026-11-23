@@ -2,8 +2,10 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -279,6 +281,48 @@ class ClientMirrorsRoleTest(unittest.TestCase):
             check=False,
         )
         self.assertEqual(pb_res.returncode, 0, pb_res.stderr)
+
+    def test_bootstrap_script_non_interactive_alicloud(self):
+        script = ROLE_FILES / "bootstrap-admin-vault-kv.sh"
+        capture = self.tmp / "vault_capture.txt"
+        fake_vault = self.tmp / "fake-vault"
+        fake_vault.write_text(
+            f"""#!/usr/bin/env python3
+import sys
+from pathlib import Path
+Path({str(capture)!r}).write_text(" ".join(sys.argv[1:]) + "\\n" + sys.stdin.read())
+""",
+            encoding="utf-8",
+        )
+        fake_vault.chmod(fake_vault.stat().st_mode | stat.S_IXUSR)
+
+        env = dict(os.environ)
+        env.update(
+            {
+                "VAULT_ADDR": "https://vault.example",
+                "VAULT_BIN": str(fake_vault),
+                "ALICLOUD_ACCESS_KEY": "mock-ali-ak-id",
+                "ALICLOUD_SECRET_KEY": "mock-ali-secret-val\r",
+            }
+        )
+        proc = subprocess.run(
+            ["bash", str(script), "--provider", "alicloud", "--non-interactive"],
+            stdin=subprocess.DEVNULL,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn("mock-ali-secret-val", proc.stdout)
+        self.assertNotIn("mock-ali-secret-val", proc.stderr)
+        recorded = capture.read_text(encoding="utf-8")
+        cmd_line, body_line = recorded.splitlines()
+        self.assertEqual(cmd_line, "kv put -mount=kv -cas=0 prod/platform/alicloud -")
+        self.assertEqual(
+            json.loads(body_line),
+            {"access_key_id": "mock-ali-ak-id", "access_key_secret": "mock-ali-secret-val"},
+        )
 
 
 if __name__ == "__main__":
