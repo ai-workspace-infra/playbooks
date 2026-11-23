@@ -80,6 +80,11 @@ def _require_str(mapping, key, ctx):
     return val.strip()
 
 
+def _strip_kv_mount(path_value):
+    cleaned = str(path_value or "").strip()
+    return cleaned.removeprefix("kv/").lstrip("/") if cleaned else ""
+
+
 def _require_origins(origins, ctx):
     if not isinstance(origins, list) or not origins:
         raise ValueError(f"{ctx} must be a non-empty list")
@@ -177,6 +182,7 @@ def load_and_validate_manifest(manifest_path):
         "cdn_rate_limit": _require_str(ali_raw, "cdn_rate_limit", "spec.aliyun_oss_cdn"),
         "cdn_rate_limit_after": _require_str(ali_raw, "cdn_rate_limit_after", "spec.aliyun_oss_cdn"),
         "cdn_cas_cert_id": str(ali_raw.get("cdn_cas_cert_id", "") or "").strip(),
+        "cdn_tls_vault_path": _strip_kv_mount(ali_raw.get("cdn_tls_vault_path", "")),
         "cors_allowed_origins": _require_origins(
             ali_raw.get("cors_allowed_origins"), "spec.aliyun_oss_cdn.cors_allowed_origins"
         ),
@@ -300,6 +306,21 @@ def aliyun_rpc(endpoint, version, action, extra_params, ak, sk, *, method="GET",
     }
     params.update(extra_params)
     query = sign_aliyun_rpc(params, sk, method=method)
+    if method == "POST":
+        url = f"{endpoint.rstrip('/')}/"
+        req = urllib.request.Request(
+            url,
+            data=query.encode("utf-8"),
+            headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        try:
+            with opener(req, timeout=25) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+                return json.loads(raw) if raw.strip() else {}
+        except urllib.error.HTTPError as exc:
+            err_body = exc.read().decode("utf-8", errors="replace")
+            raise _APIError(exc.code, f"POST {url} HTTP {exc.code}: {err_body}") from exc
     url = f"{endpoint.rstrip('/')}/?{query}"
     _, parsed = _http_json(url, method=method, opener=opener)
     return parsed
@@ -631,6 +652,9 @@ def _reconcile_aliyun_oss_cdn(
     wait_dns_seconds,
     secret_bucket,
     opener,
+    vault_addr="",
+    vault_token="",
+    vault_mount="kv",
 ):
     bucket = ali_cfg["bucket_name"]
     region = ali_cfg["oss_region"]
@@ -710,11 +734,14 @@ def _reconcile_aliyun_oss_cdn(
                 actions.append("cdn_owner:verified")
 
     cdn_cname = ""
+    ssl_status = ""
     try:
         detail = aliyun_rpc(
             ALICLOUD_CDN_ENDPOINT, "2018-05-10", "DescribeCdnDomainDetail", {"DomainName": cdn_domain}, ali_ak, ali_sk, opener=opener
         )
-        cdn_cname = (detail.get("GetDomainDetailModel") or {}).get("Cname", "")
+        detail_model = detail.get("GetDomainDetailModel") or {}
+        cdn_cname = detail_model.get("Cname", "")
+        ssl_status = detail_model.get("ServerCertificateStatus", "")
         actions.append("cdn_domain:ok")
     except _APIError as exc:
         if exc.status not in (400, 404):
@@ -748,11 +775,58 @@ def _reconcile_aliyun_oss_cdn(
             detail = aliyun_rpc(
                 ALICLOUD_CDN_ENDPOINT, "2018-05-10", "DescribeCdnDomainDetail", {"DomainName": cdn_domain}, ali_ak, ali_sk, opener=opener
             )
-            cdn_cname = (detail.get("GetDomainDetailModel") or {}).get("Cname", "")
+            detail_model = detail.get("GetDomainDetailModel") or {}
+            cdn_cname = detail_model.get("Cname", "")
+            ssl_status = detail_model.get("ServerCertificateStatus", "")
             actions.append("cdn_domain:created")
             changed = True
         else:
             actions.append("cdn_domain:would-create")
+
+    if ali_cfg.get("cdn_tls_vault_path"):
+        if apply:
+            if not (vault_addr and vault_token):
+                raise RuntimeError("vault_addr and vault_token are required to read CDN TLS Vault source")
+            tls_kv = vault_kv_read(
+                vault_addr=vault_addr,
+                vault_token=vault_token,
+                vault_mount=vault_mount,
+                path=ali_cfg["cdn_tls_vault_path"],
+                opener=opener,
+            )
+            fullchain_b64 = str(tls_kv.get("tls_fullchain_pem_b64") or "").strip()
+            key_b64 = str(tls_kv.get("tls_key_pem_b64") or "").strip()
+            secret_bucket.append(key_b64)
+            if not (fullchain_b64 and key_b64):
+                raise RuntimeError(
+                    f"Missing tls_fullchain_pem_b64 or tls_key_pem_b64 in {vault_mount}/{ali_cfg['cdn_tls_vault_path']}"
+                )
+            ssl_pub = base64.b64decode(fullchain_b64).decode("utf-8")
+            ssl_pri = base64.b64decode(key_b64).decode("utf-8")
+            secret_bucket.append(ssl_pri)
+            cert_name = f"svc-plus-{hashlib.sha256(ssl_pub.encode('utf-8')).hexdigest()[:10]}"
+            aliyun_rpc(
+                ALICLOUD_CDN_ENDPOINT,
+                "2018-05-10",
+                "SetCdnDomainSSLCertificate",
+                {
+                    "DomainName": cdn_domain,
+                    "CertName": cert_name,
+                    "CertType": "upload",
+                    "SSLProtocol": "on",
+                    "SSLPub": ssl_pub,
+                    "SSLPri": ssl_pri,
+                },
+                ali_ak,
+                ali_sk,
+                method="POST",
+                opener=opener,
+            )
+            actions.append("cdn_tls:configured")
+            if ssl_status != "on":
+                changed = True
+        else:
+            actions.append("cdn_tls:ok" if ssl_status == "on" else "cdn_tls:would-configure")
 
     if apply:
         funcs = [
@@ -764,7 +838,7 @@ def _reconcile_aliyun_oss_cdn(
                 ],
             }
         ]
-        if ali_cfg["cdn_cas_cert_id"]:
+        if ali_cfg["cdn_cas_cert_id"] or ali_cfg.get("cdn_tls_vault_path"):
             funcs.append(
                 {
                     "functionName": "https_force",
@@ -806,6 +880,7 @@ def _reconcile_aliyun_oss_cdn(
                     "Action": [
                         "oss:PutObject",
                         "oss:GetObject",
+                        "oss:GetObjectAcl",
                         "oss:DeleteObject",
                         "oss:AbortMultipartUpload",
                         "oss:ListMultipartUploads",
@@ -818,7 +893,7 @@ def _reconcile_aliyun_oss_cdn(
                 },
                 {
                     "Effect": "Allow",
-                    "Action": ["oss:GetBucketInfo", "oss:ListObjects"],
+                    "Action": ["oss:GetBucketInfo", "oss:GetBucketLocation", "oss:ListObjects"],
                     "Resource": [f"acs:oss:*:*:{bucket}"],
                     "Condition": {"StringLike": {"oss:Prefix": ["releases/*", "offline-package/*"]}},
                 },
@@ -1105,6 +1180,9 @@ def reconcile(request, *, opener=urllib.request.urlopen, wait_dns_seconds=5):
                 wait_dns_seconds=wait_dns_seconds,
                 secret_bucket=secret_bucket,
                 opener=opener,
+                vault_addr=vault_addr,
+                vault_token=vault_token,
+                vault_mount=vault_mount,
             )
             ali_creds = ali_res["kv_payload"]
             if apply and ali_creds != existing_ali:
