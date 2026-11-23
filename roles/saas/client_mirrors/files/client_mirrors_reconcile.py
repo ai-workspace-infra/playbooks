@@ -1143,10 +1143,29 @@ def reconcile(request, *, opener=urllib.request.urlopen, wait_dns_seconds=5):
 
 
 def main(argv=None):
-    payload = json.load(sys.stdin)
-    result = reconcile(payload)
-    print(json.dumps(result, sort_keys=True))
-    return 0
+    payload_secrets = []
+    try:
+        payload = json.load(sys.stdin)
+        for key in ("vault_token", "cloudflare_api_token", "alicloud_access_key", "alicloud_secret_key"):
+            val = str(payload.get(key) or "").strip()
+            if val:
+                payload_secrets.append(val)
+        result = reconcile(payload)
+        result["ok"] = True
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "changed": False,
+                    "error": _scrub(str(exc), payload_secrets),
+                },
+                sort_keys=True,
+            )
+        )
+        return 1
 
 
 if __name__ == "__main__":

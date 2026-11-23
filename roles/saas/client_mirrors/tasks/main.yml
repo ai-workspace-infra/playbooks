@@ -54,10 +54,22 @@
   run_once: true
   check_mode: false
   no_log: true
-  failed_when: client_mirrors_result.rc != 0
-  changed_when: (client_mirrors_result.stdout | from_json).changed | default(false) | bool
+  failed_when: false
+  changed_when: (client_mirrors_result.rc == 0) and ((client_mirrors_result.stdout | default('{}', true) | from_json).changed | default(false) | bool)
+
+- name: Fail with sanitized client_mirrors error
+  ansible.builtin.fail:
+    msg: >-
+      {{
+        (client_mirrors_result.stdout | from_json).error
+        if (client_mirrors_result.stdout | default('') | trim).startswith('{')
+        else 'client_mirrors reconcile failed before producing JSON status (check Python/PyYAML dependencies on localhost).'
+      }}
+  when: client_mirrors_result.rc != 0
+  run_once: true
 
 - name: Report sanitized client_mirrors summary
   ansible.builtin.debug:
     msg: "{{ client_mirrors_result.stdout | from_json }}"
+  when: client_mirrors_result.rc == 0
   run_once: true

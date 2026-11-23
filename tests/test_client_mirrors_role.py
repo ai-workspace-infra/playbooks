@@ -324,6 +324,32 @@ Path({str(capture)!r}).write_text(" ".join(sys.argv[1:]) + "\\n" + sys.stdin.rea
             {"access_key_id": "mock-ali-ak-id", "access_key_secret": "mock-ali-secret-val"},
         )
 
+    def test_main_emits_sanitized_json_error_on_failure(self):
+        script = ROLE_FILES / "client_mirrors_reconcile.py"
+        secret_tok = "super-secret-cf-token-val"
+        payload = {
+            "manifest_path": str(self.tmp / "missing-mirrors.yaml"),
+            "mode": "plan",
+            "apply": False,
+            "verify": False,
+            "vault_addr": "https://vault.example",
+            "vault_token": secret_tok,
+        }
+        proc = subprocess.run(
+            [sys.executable, str(script)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 1)
+        out = json.loads(proc.stdout)
+        self.assertFalse(out["ok"])
+        self.assertFalse(out["changed"])
+        self.assertIn("missing-mirrors.yaml", out["error"])
+        self.assertNotIn(secret_tok, proc.stdout)
+        self.assertNotIn(secret_tok, proc.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
