@@ -14,4 +14,3 @@
 | 2026-07-31 | [console 域 `/api/auth/*` 被劫持到 accounts，MFA 绑定面板密钥/二维码空白](2026-07-31-console-api-auth-bff-hijack.md) | `roles/vhosts/web_saas_host_config` Caddyfile.j2 |
 | 2026-08-16 | [UAT agent-proxy Xray 因共享 access.log 权限错误未启动](2026-08-16-uat-xray-access-log-permission-denied.md) | `roles/vhosts/xray-exporter` tasks/main.yml |
 | 2026-10-21 | [V4 升级 P0 回归 case 集](2026-10-21-v4-p0-regression-cases.md) | Accounts DB 权限、Stripe egress/Webhook、Agent POST、Exporter Token、流量链、重复节点 ID、Portal 新鲜度 |
-| 2026-11-23 | [重复 EXPORTER_NODE_ID 引发 Checkpoint 乒乓循环与实时账单虚增（75.82 GiB / 482.84 GiB）](2026-11-23-duplicate-exporter-node-id-billing-pingpong.md) | `jp-xconnect-01` `/etc/xray-exporter.env`、`roles/vhosts/xray-exporter`、`setup-observability.sh` |
