@@ -856,7 +856,7 @@ def _reconcile_aliyun_oss_cdn(
                     "PolicyName": ram_policy,
                     "PolicyDocument": policy_doc,
                     "SetAsDefault": "true",
-                    "RotateStrategy": "DeleteOldestNonDefaultVersion",
+                    "RotateStrategy": "DeleteOldestNonDefaultVersionWhenLimitExceeded",
                 },
                 ali_ak,
                 ali_sk,

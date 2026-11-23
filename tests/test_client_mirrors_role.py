@@ -253,6 +253,8 @@ class ClientMirrorsRoleTest(unittest.TestCase):
             if "/v1/kv/data/prod/platform/storage/" in req.full_url and req.get_method() == "GET":
                 path = req.full_url.split("/v1/kv/data/", 1)[1]
                 return _FakeResponse(body=json.dumps({"data": {"data": vault_writes[path]}}).encode())
+            if any(act in req.full_url for act in ("GetUser", "GetPolicy", "CreatePolicyVersion")):
+                return _FakeResponse(body=b"{}")
             if "ListPoliciesForUser" in req.full_url:
                 return _FakeResponse(body=json.dumps({"Policies": {"Policy": [{"PolicyName": "ci-client-mirrors-oss-rw-policy"}]}}).encode())
             return fake_opener(req, timeout=timeout)
@@ -271,6 +273,10 @@ class ClientMirrorsRoleTest(unittest.TestCase):
         )
         self.assertIn("r2_token:preserved", res2["cloudflare_r2"]["actions"])
         self.assertIn("ram_ak:preserved", res2["aliyun_oss_cdn"]["actions"])
+        self.assertIn("ram_policy:updated", res2["aliyun_oss_cdn"]["actions"])
+        policy_ver_urls = [url for _, url in second_calls if "Action=CreatePolicyVersion" in url]
+        self.assertEqual(len(policy_ver_urls), 1)
+        self.assertIn("RotateStrategy=DeleteOldestNonDefaultVersionWhenLimitExceeded", policy_ver_urls[0])
         self.assertFalse(any("CreateAccessKey" in url or url.endswith("/tokens") for _, url in second_calls))
 
     def test_shell_and_ansible_playbook_syntax(self):
