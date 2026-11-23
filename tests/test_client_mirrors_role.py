@@ -1,6 +1,8 @@
 """Contract and offline API unit tests for roles/saas/client_mirrors."""
 
+import base64
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -349,6 +351,106 @@ Path({str(capture)!r}).write_text(" ".join(sys.argv[1:]) + "\\n" + sys.stdin.rea
         self.assertIn("missing-mirrors.yaml", out["error"])
         self.assertNotIn(secret_tok, proc.stdout)
         self.assertNotIn(secret_tok, proc.stderr)
+
+    def test_oss_empty_body_put_sets_explicit_content_type_matching_signature(self):
+        captured = {}
+
+        def fake_opener(req, timeout=25):
+            captured["headers"] = {k.lower(): v for k, v in req.header_items()}
+            captured["has_content_type"] = req.has_header("Content-type")
+            return _FakeResponse(status=200, body=b"")
+
+        status, _ = rec.oss_request(
+            bucket="svc-plus-releases-cn-hk",
+            oss_region="cn-hongkong",
+            method="PUT",
+            resource_suffix="?acl",
+            body=b"",
+            content_type="",
+            oss_headers={"x-oss-acl": "public-read"},
+            ak="test-ak",
+            sk="test-sk",
+            opener=fake_opener,
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(captured["has_content_type"])
+        self.assertEqual(captured["headers"]["content-type"], "application/octet-stream")
+        expected_sts = (
+            f"PUT\n\napplication/octet-stream\n{captured['headers']['date']}\n"
+            "x-oss-acl:public-read\n/svc-plus-releases-cn-hk/?acl"
+        )
+        expected_sig = base64.b64encode(
+            hmac.new(b"test-sk", expected_sts.encode("utf-8"), hashlib.sha1).digest()
+        ).decode("utf-8")
+        self.assertEqual(captured["headers"]["authorization"], f"OSS test-ak:{expected_sig}")
+
+    def test_apply_persists_r2_kv_before_aliyun_step(self):
+        vault_writes = {}
+
+        def failing_ali_opener(req, timeout=25):
+            method = req.get_method()
+            url = req.full_url
+            if "/v1/kv/data/prod/serverless/cloudflare" in url:
+                return _FakeResponse(body=json.dumps({"data": {"data": {"CLOUDFLARE_API_TOKEN": "cf-adm", "CLOUDFLARE_ACCOUNT_ID": "acct-1"}}}).encode())
+            if "/v1/kv/data/prod/platform/alicloud" in url:
+                return _FakeResponse(body=json.dumps({"data": {"data": {"access_key_id": "ali-adm-ak", "access_key_secret": "ali-adm-sk"}}}).encode())
+            if "/v1/kv/data/prod/platform/storage/" in url:
+                if method == "POST":
+                    path = url.split("/v1/kv/data/", 1)[1]
+                    vault_writes[path] = json.loads(req.data.decode("utf-8"))["data"]
+                    return _FakeResponse(body=b"{}")
+                raise rec.urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+            if "/zones?name=svc.plus" in url:
+                return _FakeResponse(body=json.dumps({"success": True, "result": [{"id": "zone-1"}]}).encode())
+            if url.endswith("/r2/buckets/svc-plus-releases-global") and method == "GET":
+                return _FakeResponse(body=json.dumps({"success": True, "result": {"name": "svc-plus-releases-global"}}).encode())
+            if "/domains/custom" in url and method == "GET":
+                return _FakeResponse(body=json.dumps({"success": True, "result": {"domains": [{"domain": "dl.svc.plus", "enabled": True, "minTLS": "1.2"}]}}).encode())
+            if "/cors" in url and method == "GET":
+                return _FakeResponse(
+                    body=json.dumps(
+                        {
+                            "success": True,
+                            "result": {
+                                "rules": [
+                                    {
+                                        "id": "client-mirrors-cors",
+                                        "allowed": {
+                                            "methods": ["GET", "HEAD"],
+                                            "origins": ["https://console.svc.plus", "https://xworktech.com"],
+                                            "headers": ["*"],
+                                        },
+                                        "exposeHeaders": ["ETag", "Content-Length", "Content-Type"],
+                                        "maxAgeSeconds": 3600,
+                                    }
+                                ]
+                            },
+                        }
+                    ).encode()
+                )
+            if "/tokens/permission_groups" in url:
+                return _FakeResponse(body=json.dumps({"success": True, "result": [{"id": "pg-r2-w", "name": "Workers R2 Storage Bucket Item Write"}]}).encode())
+            if url.endswith("/tokens") and method == "POST":
+                return _FakeResponse(body=json.dumps({"success": True, "result": {"id": "r2-tok-id", "value": "r2-raw-tok"}}).encode())
+            if "oss-cn-hongkong" in url:
+                raise rec.urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
+            raise AssertionError(f"Unexpected HTTP call: {method} {url}")
+
+        with self.assertRaises(RuntimeError):
+            rec.reconcile(
+                {
+                    "manifest_path": str(self.manifest),
+                    "mode": "apply",
+                    "apply": True,
+                    "verify": False,
+                    "vault_addr": "https://vault.example",
+                    "vault_token": "mock-vault-token",
+                },
+                opener=failing_ali_opener,
+                wait_dns_seconds=0,
+            )
+        self.assertIn("prod/platform/storage/cloudflare-r2", vault_writes)
+        self.assertEqual(vault_writes["prod/platform/storage/cloudflare-r2"]["access_key_id"], "r2-tok-id")
 
 
 if __name__ == "__main__":

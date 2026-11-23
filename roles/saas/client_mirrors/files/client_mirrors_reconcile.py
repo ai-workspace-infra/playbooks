@@ -339,11 +339,16 @@ def oss_request(
     opener=urllib.request.urlopen,
 ):
     url = f"https://{bucket}.oss-{oss_region}.aliyuncs.com/{resource_suffix}"
+    # urllib auto-fills Content-Type=application/x-www-form-urlencoded when data is non-None without a header;
+    # set an explicit Content-Type so OSS v1 StringToSign and the sent header always match.
+    effective_content_type = content_type
+    if method in ("PUT", "POST") and not effective_content_type:
+        effective_content_type = "application/octet-stream"
     headers = sign_oss_v1_headers(
         method=method,
         bucket=bucket,
         resource_suffix=resource_suffix,
-        content_type=content_type,
+        content_type=effective_content_type,
         ak=ak,
         sk=sk,
         oss_headers=oss_headers,
@@ -1046,6 +1051,8 @@ def reconcile(request, *, opener=urllib.request.urlopen, wait_dns_seconds=5):
                     "Missing Cloudflare or Aliyun admin credentials in env/Vault "
                     f"({manifest['admin_sources']['cloudflare']}, {manifest['admin_sources']['alicloud']})"
                 )
+            if apply and not (vault_addr and vault_token):
+                raise RuntimeError("vault_addr and vault_token are required to sync storage credentials")
 
             zones = cf_request(
                 f"/zones?name={urllib.parse.quote(manifest['zone_name'])}",
@@ -1067,6 +1074,18 @@ def reconcile(request, *, opener=urllib.request.urlopen, wait_dns_seconds=5):
                 secret_bucket=secret_bucket,
                 opener=opener,
             )
+            r2_creds = r2_res["kv_payload"]
+            if apply and r2_creds != existing_r2:
+                vault_kv_write(
+                    vault_addr=vault_addr,
+                    vault_token=vault_token,
+                    vault_mount=vault_mount,
+                    path=r2_kv_path,
+                    data=r2_creds,
+                    opener=opener,
+                )
+                summary["changed"] = True
+
             ali_res = _reconcile_aliyun_oss_cdn(
                 ali_cfg=manifest["ali"],
                 zone_name=manifest["zone_name"],
@@ -1082,9 +1101,19 @@ def reconcile(request, *, opener=urllib.request.urlopen, wait_dns_seconds=5):
                 secret_bucket=secret_bucket,
                 opener=opener,
             )
-            r2_creds = r2_res["kv_payload"]
             ali_creds = ali_res["kv_payload"]
-            summary["changed"] = r2_res["changed"] or ali_res["changed"]
+            if apply and ali_creds != existing_ali:
+                vault_kv_write(
+                    vault_addr=vault_addr,
+                    vault_token=vault_token,
+                    vault_mount=vault_mount,
+                    path=ali_kv_path,
+                    data=ali_creds,
+                    opener=opener,
+                )
+                summary["changed"] = True
+
+            summary["changed"] = summary["changed"] or r2_res["changed"] or ali_res["changed"]
             summary["cloudflare_r2"] = {
                 "bucket": manifest["r2"]["bucket_name"],
                 "custom_domain": manifest["r2"]["custom_domain"],
@@ -1100,30 +1129,6 @@ def reconcile(request, *, opener=urllib.request.urlopen, wait_dns_seconds=5):
                 "actions": ali_res["actions"],
                 "vault_kv_path": f"{vault_mount}/{ali_kv_path}",
             }
-
-            if apply:
-                if not (vault_addr and vault_token):
-                    raise RuntimeError("vault_addr and vault_token are required to sync storage credentials")
-                if r2_creds != existing_r2:
-                    vault_kv_write(
-                        vault_addr=vault_addr,
-                        vault_token=vault_token,
-                        vault_mount=vault_mount,
-                        path=r2_kv_path,
-                        data=r2_creds,
-                        opener=opener,
-                    )
-                    summary["changed"] = True
-                if ali_creds != existing_ali:
-                    vault_kv_write(
-                        vault_addr=vault_addr,
-                        vault_token=vault_token,
-                        vault_mount=vault_mount,
-                        path=ali_kv_path,
-                        data=ali_creds,
-                        opener=opener,
-                    )
-                    summary["changed"] = True
 
         if verify:
             probe_res = _probe_mirrors(
