@@ -1,0 +1,63 @@
+---
+- name: Validate client_mirrors role configuration
+  ansible.builtin.assert:
+    that:
+      - client_mirrors_mode in ['plan', 'apply', 'verify']
+      - client_mirrors_manifest_path | length > 0
+      - client_mirrors_probe_origin is match('^https://[^/@]+(?:/[^?]*)?$')
+    fail_msg: >-
+      Provide a valid client_mirrors_mode (plan/apply/verify), manifest path, and HTTPS probe origin.
+  run_once: true
+
+- name: Check client_mirrors GitOps manifest exists
+  ansible.builtin.stat:
+    path: "{{ client_mirrors_manifest_path }}"
+  register: client_mirrors_manifest_stat
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Require client_mirrors GitOps manifest file
+  ansible.builtin.assert:
+    that:
+      - client_mirrors_manifest_stat.stat.exists
+    fail_msg: "Client mirrors GitOps manifest not found at {{ client_mirrors_manifest_path }}."
+  run_once: true
+
+- name: Reconcile and verify dual client mirrors
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/files/client_mirrors_reconcile.py"
+    stdin: "{{ client_mirrors_payload | to_json }}"
+  vars:
+    client_mirrors_payload:
+      manifest_path: "{{ client_mirrors_manifest_path }}"
+      mode: "{{ client_mirrors_mode }}"
+      apply: "{{ (client_mirrors_apply | bool) and (not ansible_check_mode) }}"
+      verify: "{{ client_mirrors_verify | bool }}"
+      rotate_credentials: "{{ client_mirrors_rotate_credentials | bool }}"
+      run_cdn_verify_txt: "{{ client_mirrors_run_cdn_verify_txt | bool }}"
+      vault_addr: "{{ client_mirrors_vault_addr }}"
+      vault_token: "{{ client_mirrors_vault_token }}"
+      vault_mount: "{{ client_mirrors_vault_mount }}"
+      cloudflare_api_token: "{{ client_mirrors_cloudflare_api_token }}"
+      cloudflare_account_id: "{{ client_mirrors_cloudflare_account_id }}"
+      alicloud_access_key: "{{ client_mirrors_alicloud_access_key }}"
+      alicloud_secret_key: "{{ client_mirrors_alicloud_secret_key }}"
+      probe_path: "{{ client_mirrors_probe_path }}"
+      probe_origin: "{{ client_mirrors_probe_origin }}"
+  register: client_mirrors_result
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  no_log: true
+  failed_when: client_mirrors_result.rc != 0
+  changed_when: (client_mirrors_result.stdout | from_json).changed | default(false) | bool
+
+- name: Report sanitized client_mirrors summary
+  ansible.builtin.debug:
+    msg: "{{ client_mirrors_result.stdout | from_json }}"
+  run_once: true

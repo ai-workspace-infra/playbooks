@@ -1,0 +1,124 @@
+name: Client Mirrors Role & Reconcile
+
+on:
+  pull_request:
+    paths:
+      - "configure_client_mirrors.yml"
+      - "roles/saas/client_mirrors/**"
+      - "tests/test_client_mirrors_role.py"
+      - ".github/workflows/client-mirrors-reconcile.yml"
+  push:
+    branches: [main]
+    paths:
+      - "configure_client_mirrors.yml"
+      - "roles/saas/client_mirrors/**"
+      - "tests/test_client_mirrors_role.py"
+      - ".github/workflows/client-mirrors-reconcile.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Execution mode (plan, apply, or verify)
+        required: true
+        type: choice
+        default: plan
+        options:
+          - plan
+          - apply
+          - verify
+      gitops_ref:
+        description: GitOps ref containing resources/svc.plus/prod/client-mirrors/mirrors.yaml
+        required: true
+        type: string
+        default: main
+      run_cdn_verify_txt:
+        description: Ensure Cloudflare verification.<zone> TXT matches Aliyun CDN ownership
+        required: true
+        type: boolean
+        default: true
+      rotate_credentials:
+        description: Force creating new R2/RAM storage keys and updating Vault KV
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: client-mirrors-reconcile-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  role-contract:
+    name: Client Mirrors SaaS Role Contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Ansible runtime
+        run: python3 -m pip install --disable-pip-version-check ansible-core PyYAML
+      - name: Run unit tests and Ansible syntax check
+        run: |
+          python3 -m unittest tests/test_client_mirrors_role.py -v
+          bash -n roles/saas/client_mirrors/files/bootstrap-admin-vault-kv.sh
+          ansible-playbook --syntax-check -i 'localhost,' configure_client_mirrors.yml
+          git diff --check
+
+  reconcile:
+    name: Reconcile Dual Client Mirrors & Vault KV
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VAULT_ADDR: ${{ vars.VAULT_ADDR || 'https://vault.svc.plus' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: playbooks
+          persist-credentials: false
+      - name: Checkout GitOps declaration
+        uses: actions/checkout@v4
+        with:
+          repository: ai-workspace-infra/gitops
+          ref: ${{ inputs.gitops_ref }}
+          path: gitops
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Ansible runtime
+        run: python3 -m pip install --disable-pip-version-check ansible-core PyYAML
+      - name: Authenticate to Vault via GitHub OIDC
+        id: vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ vars.VAULT_ADDR || 'https://vault.svc.plus' }}
+          method: jwt
+          role: github-actions-playbooks-client-mirrors-prod
+          jwtGithubAudience: vault
+          exportToken: true
+          secrets: |
+            kv/data/prod/serverless/cloudflare CLOUDFLARE_ACCOUNT_ID | CLOUDFLARE_ACCOUNT_ID ;
+            kv/data/prod/serverless/cloudflare CLOUDFLARE_API_TOKEN | CLOUDFLARE_API_TOKEN ;
+            kv/data/prod/platform/alicloud access_key_id | ALICLOUD_ACCESS_KEY ;
+            kv/data/prod/platform/alicloud access_key_secret | ALICLOUD_SECRET_KEY
+      - name: Execute configure_client_mirrors.yml
+        working-directory: playbooks
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ steps.vault.outputs.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ steps.vault.outputs.CLOUDFLARE_API_TOKEN }}
+          ALICLOUD_ACCESS_KEY: ${{ steps.vault.outputs.ALICLOUD_ACCESS_KEY }}
+          ALICLOUD_SECRET_KEY: ${{ steps.vault.outputs.ALICLOUD_SECRET_KEY }}
+        run: |
+          ansible-playbook -i 'localhost,' configure_client_mirrors.yml \
+            -e client_mirrors_manifest_path="${{ github.workspace }}/gitops/resources/svc.plus/prod/client-mirrors/mirrors.yaml" \
+            -e client_mirrors_mode="${{ inputs.mode }}" \
+            -e client_mirrors_run_cdn_verify_txt="${{ inputs.run_cdn_verify_txt }}" \
+            -e client_mirrors_rotate_credentials="${{ inputs.rotate_credentials }}"
