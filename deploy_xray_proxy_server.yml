@@ -533,6 +533,9 @@
       ansible.builtin.include_role:
         name: vhosts/common
         tasks_from: agent_proxy_bootstrap.yml
+      vars:
+        common_os_identity_preserve_groups: >-
+          {{ hostvars[inventory_hostname].get('common_os_identity_preserve_groups', {'auditor': ['adm', 'systemd-journal']}) }}
       when:
         - agent_proxy_operation == 'deploy'
         - agent_proxy_local_installer | default(false) | bool
