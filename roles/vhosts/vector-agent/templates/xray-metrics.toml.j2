@@ -8,10 +8,12 @@ type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:8080/scrape"]
 scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
 
+{% if not (xray_merged_mode | default(false) | bool) %}
 [sources.xray_tcp_metrics]
 type = "prometheus_scrape"
 endpoints = ["http://127.0.0.1:8081/scrape"]
 scrape_interval_secs = {{ vector_scrape_interval | default('15') | replace('s', '') | int }}
+{% endif %}
 
 [transforms.add_xray_xhttp_labels]
 type = "remap"
@@ -30,7 +32,7 @@ source = '''
 .tags.service_domain = "{{ vector_observability_service_domain }}"
 .tags.job = "xray"
 .tags.service = "xray"
-.tags.transport = "xhttp"
+.tags.transport = "{{ 'proxy' if (xray_merged_mode | default(false) | bool) else 'xhttp' }}"
 .tags.routing_pool = {{ (vector_observability_routing_pool | default('unknown', true)) | to_json }}
 .tags.pricing_group = {{ (vector_observability_pricing_group | default('unknown', true)) | to_json }}
 {% if vector_proxy_engine_effective | default('') | length > 0 and vector_proxy_engine_effective != 'none' %}
@@ -38,6 +40,7 @@ source = '''
 {% endif %}
 '''
 
+{% if not (xray_merged_mode | default(false) | bool) %}
 [transforms.add_xray_tcp_labels]
 type = "remap"
 inputs = ["xray_tcp_metrics"]
@@ -62,3 +65,4 @@ source = '''
 .tags.proxy_engine = {{ vector_proxy_engine_effective | to_json }}
 {% endif %}
 '''
+{% endif %}

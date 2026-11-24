@@ -190,7 +190,7 @@
     group: root
     mode: "0644"
   loop:
-    - { src: xray.service.j2, unit: xray.service }
+    - { src: xray.service.j2, unit: "{{ (xray_proxy_service_name | default('xconnect-proxy-xray' if (xray_merged_mode | default(false) | bool) else 'xray')) ~ '.service' }}" }
     - { src: xray-tcp.service.j2, unit: xray-tcp.service }
   when:
     - xray_enabled | bool
@@ -199,12 +199,15 @@
   tags:
     - xray-runtime-config
 
-- name: Stop and disable standalone xray-tcp service in merged mode
+- name: Stop and disable legacy split Xray services in merged mode
   ansible.builtin.systemd:
-    name: xray-tcp.service
+    name: "{{ item }}"
     enabled: false
     state: stopped
     daemon_reload: true
+  loop:
+    - xray.service
+    - xray-tcp.service
   failed_when: false
   when:
     - xray_enabled | bool
@@ -239,7 +242,7 @@
     enabled: true
     state: started
     daemon_reload: true
-  loop: "{{ ['xray.service'] if (xray_merged_mode | default(false) | bool) else ['xray.service', 'xray-tcp.service'] }}"
+  loop: "{{ [(xray_proxy_service_name | default('xconnect-proxy-xray')) ~ '.service'] if (xray_merged_mode | default(false) | bool) else ['xray.service', 'xray-tcp.service'] }}"
   when:
     - xray_enabled | bool
     - (xconnect_proxy_runtime_configs.results | map(attribute='stat.exists') | min | default(false))

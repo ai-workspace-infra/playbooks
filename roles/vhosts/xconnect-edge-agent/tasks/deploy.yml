@@ -288,9 +288,7 @@
     enabled: true
     state: started
     daemon_reload: true
-  loop:
-    - xray.service
-    - xray-tcp.service
+  loop: "{{ [(xray_proxy_service_name | default('xconnect-proxy-xray')) ~ '.service'] if (xray_merged_mode | default(false) | bool) else ['xray.service', 'xray-tcp.service'] }}"
   when:
     - xray_enabled | bool
     - agent_proxy_wait_for_runtime_config | bool

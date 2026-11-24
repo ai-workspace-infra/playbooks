@@ -128,8 +128,18 @@ class FluxgateVhostsContractTest(unittest.TestCase):
         self.assertIn("SupplementaryGroups=caddy", xray_unit)
         self.assertIn("ExecReload=/bin/kill -HUP $MAINPID", xray_unit)
 
+        proxy_defaults = (ROOT / "roles/vhosts/xconnect_proxy/defaults/main.yml").read_text()
+        self.assertIn("xray_proxy_service_name:", proxy_defaults)
+        self.assertIn("xconnect-proxy-xray", proxy_defaults)
+
         agent_profile = (ROOT / "roles/vhosts/xconnect-edge-agent/templates/agent-proxy-profile.yaml.j2").read_text()
         self.assertIn("xray.proxy.template.json", agent_profile)
+        self.assertIn("xconnect-proxy-xray", agent_profile)
+
+        vector_override = (ROOT / "roles/vhosts/vector-agent/templates/vector.service.d_override.conf.j2").read_text()
+        self.assertIn("xconnect-proxy-xray", vector_override)
+        pull_obs = (ROOT / "pull_observability_agent.yml").read_text()
+        self.assertIn("xconnect-proxy-xray.service", pull_obs)
 
         haproxy_defaults = (ROOT / "roles/vhosts/haproxy/defaults/main.yml").read_text()
         self.assertIn("xconnect_node_maintenance", haproxy_defaults)
