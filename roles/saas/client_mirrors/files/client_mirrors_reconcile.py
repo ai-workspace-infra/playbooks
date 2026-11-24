@@ -774,6 +774,7 @@ def _reconcile_aliyun_oss_cdn(
 
     cdn_cname = ""
     ssl_status = ""
+    ssl_cert_name = ""
     try:
         detail = aliyun_rpc(
             ALICLOUD_CDN_ENDPOINT, "2018-05-10", "DescribeCdnDomainDetail", {"DomainName": cdn_domain}, ali_ak, ali_sk, opener=opener
@@ -781,6 +782,7 @@ def _reconcile_aliyun_oss_cdn(
         detail_model = detail.get("GetDomainDetailModel") or {}
         cdn_cname = detail_model.get("Cname", "")
         ssl_status = detail_model.get("ServerCertificateStatus", "")
+        ssl_cert_name = str(detail_model.get("CertName", "") or "").strip()
         actions.append("cdn_domain:ok")
     except _APIError as exc:
         if exc.status not in (400, 404):
@@ -854,26 +856,54 @@ def _reconcile_aliyun_oss_cdn(
             ssl_pub = base64.b64decode(fullchain_b64).decode("utf-8")
             ssl_pri = base64.b64decode(key_b64).decode("utf-8")
             secret_bucket.append(ssl_pri)
-            cert_name = f"svc-plus-{hashlib.sha256(ssl_pub.encode('utf-8')).hexdigest()[:10]}"
-            aliyun_rpc(
-                ALICLOUD_CDN_ENDPOINT,
-                "2018-05-10",
-                "SetCdnDomainSSLCertificate",
-                {
-                    "DomainName": cdn_domain,
-                    "CertName": cert_name,
-                    "CertType": "upload",
-                    "SSLProtocol": "on",
-                    "SSLPub": ssl_pub,
-                    "SSLPri": ssl_pri,
-                },
-                ali_ak,
-                ali_sk,
-                method="POST",
-                opener=opener,
-            )
-            actions.append("cdn_tls:configured")
-            if ssl_status != "on":
+            domain_slug = re.sub(r"[^a-z0-9-]+", "-", cdn_domain.lower()).strip("-") or "cdn"
+            cert_hash = hashlib.sha256(ssl_pub.encode("utf-8")).hexdigest()[:10]
+            cert_prefix = f"{domain_slug}-{cert_hash}"
+            if ssl_status == "on" and ssl_cert_name.startswith(cert_prefix):
+                actions.append("cdn_tls:ok")
+            else:
+                cert_name = cert_prefix
+                try:
+                    aliyun_rpc(
+                        ALICLOUD_CDN_ENDPOINT,
+                        "2018-05-10",
+                        "SetCdnDomainSSLCertificate",
+                        {
+                            "DomainName": cdn_domain,
+                            "CertName": cert_name,
+                            "CertType": "upload",
+                            "SSLProtocol": "on",
+                            "SSLPub": ssl_pub,
+                            "SSLPri": ssl_pri,
+                        },
+                        ali_ak,
+                        ali_sk,
+                        method="POST",
+                        opener=opener,
+                    )
+                except _APIError as exc:
+                    if exc.status == 400 and "CertNameAlreadyExists" in str(exc):
+                        cert_name = f"{cert_prefix}-{int(time.time())}"
+                        aliyun_rpc(
+                            ALICLOUD_CDN_ENDPOINT,
+                            "2018-05-10",
+                            "SetCdnDomainSSLCertificate",
+                            {
+                                "DomainName": cdn_domain,
+                                "CertName": cert_name,
+                                "CertType": "upload",
+                                "SSLProtocol": "on",
+                                "SSLPub": ssl_pub,
+                                "SSLPri": ssl_pri,
+                            },
+                            ali_ak,
+                            ali_sk,
+                            method="POST",
+                            opener=opener,
+                        )
+                    else:
+                        raise
+                actions.append("cdn_tls:configured")
                 changed = True
         else:
             actions.append("cdn_tls:ok" if ssl_status == "on" else "cdn_tls:would-configure")
