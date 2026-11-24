@@ -15,17 +15,20 @@ global
     tune.ssl.default-dh-param 2048
     tune.bufsize {{ haproxy_bufsize }}
     tune.h2.initial-window-size {{ haproxy_h2_initial_window_size }}
+    tune.pipesize {{ haproxy_pipesize | default(262144) }}
 
 defaults
     log     global
     mode    http
     option  dontlognull
     option  dontlog-normal
+    option  clitcpka
+    option  srvtcpka
     timeout connect 5s
     timeout client  {{ haproxy_timeout_tunnel }}
     timeout server  {{ haproxy_timeout_tunnel }}
     timeout tunnel  {{ haproxy_timeout_tunnel }}
-    timeout http-keep-alive 60s
+    timeout http-keep-alive {{ haproxy_timeout_http_keep_alive | default('120s') }}
     timeout http-request 15s
 
 frontend http_in
@@ -70,6 +73,7 @@ frontend https_in
 
 backend be_xray_xhttp
     mode http
+    option http-no-delay
     http-request set-path /split/ if { path /split }
 {% if haproxy_strip_x_padding | default(true) | bool %}
     http-request set-query "%[query,regsub('(^|&)x_padding=[^&]*','',g),regsub('^&','')]" if { query -m sub x_padding= }
@@ -80,6 +84,7 @@ backend be_xray_xhttp
 
 backend be_xconnect_gateway
     mode http
+    option http-no-delay
     http-request set-path {{ gw_path }}/ if { path {{ gw_path }} }
 {% if haproxy_strip_x_padding | default(true) | bool %}
     http-request set-query "%[query,regsub('(^|&)x_padding=[^&]*','',g),regsub('^&','')]" if { query -m sub x_padding= }

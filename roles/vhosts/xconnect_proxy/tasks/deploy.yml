@@ -256,7 +256,7 @@
              'description': 'Xray Exporter (TCP)',
              'listen_addr': '127.0.0.1:8081',
              'xray_api_addr': '127.0.0.1:' ~ (xray_tcp_api_port | string),
-             'log_path': xconnect_proxy_tcp_access_log_path,
+             'log_path': ('disabled' if (xconnect_proxy_tcp_access_log_path == xray_access_log_path) else xconnect_proxy_tcp_access_log_path),
              'node_id': inventory_hostname ~ '-tcp',
              'snapshot_store_path': '/var/lib/xray-exporter/tcp-snapshots.json',
              'labels': {
