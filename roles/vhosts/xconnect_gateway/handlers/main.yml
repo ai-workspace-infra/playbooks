@@ -6,11 +6,26 @@
     daemon_reload: true
   when: xconnect_gateway_dns_enabled | bool
 
-- name: Restart caddy
+- name: Reload caddy
   ansible.builtin.systemd:
     name: caddy
+    state: reloaded
+  listen: reload ingress
+  when: (xconnect_ingress_engine | default('caddy')) == 'caddy'
+
+- name: Restart fluxgate
+  ansible.builtin.systemd:
+    name: fluxgate
     state: restarted
   listen: reload ingress
+  when: (xconnect_ingress_engine | default('caddy')) == 'fluxgate'
+
+- name: Reload haproxy
+  ansible.builtin.systemd:
+    name: haproxy
+    state: reloaded
+  listen: reload ingress
+  when: (xconnect_ingress_engine | default('caddy')) == 'haproxy'
 
 - name: Restart xconnect-gateway-xray on xray-core upgrade
   ansible.builtin.systemd:

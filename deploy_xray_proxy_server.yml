@@ -187,6 +187,25 @@
       {{ lookup('ansible.builtin.env', 'TKY_PROXY_DISABLE_LEGACY_GATEWAY')
          | default(true, true) | bool }}
     xconnect_gitops_config: "{{ lookup('ansible.builtin.env', 'XCONNECT_GITOPS_CONFIG') | default('', true) }}"
+    xconnect_gateway_enabled: >-
+      {{ lookup('ansible.builtin.env', 'XCONNECT_GATEWAY_ENABLED')
+         | default(false, true) | bool }}
+    xconnect_gateway_domain: >-
+      {{ lookup('ansible.builtin.env', 'XCONNECT_GATEWAY_DOMAIN')
+         | default(hostvars[inventory_hostname].get('xconnect_gateway_domain', ''), true) }}
+    xconnect_gateway_listen_socket: >-
+      {{ lookup('ansible.builtin.env', 'XCONNECT_GATEWAY_LISTEN_SOCKET')
+         | default(lookup('ansible.builtin.env', 'XCONNECT_GATEWAY_SOCKET')
+         | default('/run/xconnect-gateway/xray.sock', true), true) }}
+    xconnect_gateway_id: >-
+      {{ lookup('ansible.builtin.env', 'XCONNECT_GATEWAY_ID')
+         | default((xconnect_gateway_domain.split('.')[0] if (xconnect_gateway_domain | length > 0) else ''), true) }}
+    xconnect_gateway_network_id: >-
+      {{ lookup('ansible.builtin.env', 'XCONNECT_GATEWAY_NETWORK_ID')
+         | default('', true) }}
+    xconnect_gateway_state_dir: >-
+      {{ lookup('ansible.builtin.env', 'XCONNECT_GATEWAY_STATE_DIR')
+         | default('/var/lib/xconnect-gateway', true) }}
   pre_tasks:
 
     - name: Load explicitly supplied local GitOps topology
@@ -244,6 +263,15 @@
           - agent_proxy_operation == 'deploy'
         fail_msg: "Observability installation is only supported with deploy."
       when: agent_proxy_observability_enabled | bool
+
+    - name: Validate XConnect Gateway inputs when enabled
+      ansible.builtin.assert:
+        that:
+          - xconnect_gateway_domain | length > 0
+          - xconnect_gateway_domain is match('^[A-Za-z0-9][A-Za-z0-9.-]*$')
+          - xconnect_gateway_listen_socket is match('^/')
+        fail_msg: "XCONNECT_GATEWAY_DOMAIN (valid hostname) and absolute XCONNECT_GATEWAY_LISTEN_SOCKET are required when xconnect_gateway_enabled is true."
+      when: xconnect_gateway_enabled | bool
 
     - name: Read the local installer inputs before deploying roles
       ansible.builtin.set_fact:
@@ -567,6 +595,9 @@
       vars:
         haproxy_vhosts: "{{ agent_proxy_effective_vhosts }}"
         haproxy_replace_caddy: true
+        haproxy_gateway_enabled: "{{ xconnect_gateway_enabled | bool }}"
+        haproxy_gateway_vhosts: "{{ [xconnect_gateway_domain] if (xconnect_gateway_enabled | bool and xconnect_gateway_domain | length > 0) else [] }}"
+        haproxy_gateway_unix_socket: "{{ xconnect_gateway_listen_socket }}"
         haproxy_source_cert_path: >-
           {{ agent_tls_cert_path
              if ((vault_agent_tls_secret_path | default('') | length > 0) or (agent_proxy_vault_tls_enabled | default(false) | bool))
@@ -606,6 +637,44 @@
     - role: roles/vhosts/xconnect-edge-agent
       when:
         - agent_proxy_operation in ['deploy', 'upgrade', 'print-arch']
+      vars:
+        xconnect_gateway_agent_enabled: "{{ xconnect_gateway_enabled | bool }}"
+        xconnect_gateway_agent_id: "{{ xconnect_gateway_id }}"
+        xconnect_gateway_agent_entry_point: "{{ xconnect_gateway_domain }}"
+        xconnect_gateway_agent_network_id: "{{ xconnect_gateway_network_id }}"
+        xconnect_gateway_agent_state_dir: "{{ xconnect_gateway_state_dir }}"
+        xconnect_gateway_agent_listen_socket: "{{ xconnect_gateway_listen_socket }}"
+
+  post_tasks:
+    - name: Ensure XConnect Gateway runtime directories exist when enabled
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - path: /run/xconnect-gateway
+          mode: "0755"
+        - path: "{{ xconnect_gateway_state_dir }}"
+          mode: "0700"
+      when:
+        - xconnect_gateway_enabled | bool
+        - agent_proxy_operation in ['deploy', 'standalone']
+
+    - name: Render XConnect Gateway ingress vhost fragment for Fluxgate or Caddy
+      ansible.builtin.include_role:
+        name: roles/vhosts/xconnect_gateway
+        tasks_from: frontend.yml
+      vars:
+        xconnect_gateway_frontend_enabled: true
+        xconnect_gateway_vhost_enabled: true
+        xconnect_gateway_vhost_domain: "{{ xconnect_gateway_domain }}"
+        xconnect_gateway_vhost_name: "{{ xconnect_gateway_id }}"
+      when:
+        - xconnect_gateway_enabled | bool
+        - agent_proxy_operation in ['deploy', 'standalone']
+        - (agent_proxy_engine | default('fluxgate')) in ['fluxgate', 'caddy']
 
 - import_playbook: deploy_observability_agent.yml
   when:
