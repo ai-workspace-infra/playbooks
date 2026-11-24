@@ -7,11 +7,13 @@ import json
 import os
 from pathlib import Path
 import shutil
+import ssl
 import stat
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -589,6 +591,254 @@ Path({str(capture)!r}).write_text(" ".join(sys.argv[1:]) + "\\n" + sys.stdin.rea
         self.assertEqual(len(batch_urls), 1)
         self.assertIn("https_force", batch_urls[0])
         self.assertNotIn("MOCK-PRIVATE-KEY-SECRET", json.dumps(res))
+
+    def test_custom_oss_policy_prefixes_probe_path_web_cdn_and_cname_polling(self):
+        repos_manifest_text = """---
+apiVersion: gitops.svc.plus/v1alpha1
+kind: ClientMirrorStack
+metadata:
+  name: svc-plus-client-repos
+  project: svc.plus
+  environment: prod
+spec:
+  global:
+    zone_name: svc.plus
+    probe_path: " _health/probe.json "
+    managed_by: playbooks-roles-saas-client_mirrors
+  products:
+    - slug: apt
+      prefixes: [apt/]
+  admin_vault_sources:
+    cloudflare: kv/prod/serverless/cloudflare
+    alicloud: kv/prod/platform/alicloud
+  cloudflare_r2:
+    bucket_name: svc-plus-repos-global
+    custom_domain: repo.svc.plus
+    location: apac
+    min_tls: "1.2"
+    cors_allowed_origins: [https://console.svc.plus]
+    cors_allowed_methods: [GET, HEAD]
+    cors_max_age_seconds: 3600
+    token_name: svc-plus-client-repos-r2-rw
+    vault_kv_path: prod/platform/storage/cloudflare-r2-repos
+  aliyun_oss_cdn:
+    bucket_name: svc-plus-repos-cn-hk
+    oss_region: cn-hongkong
+    oss_acl: public-read
+    cdn_domain: cn-repo.svc.plus
+    cdn_type: web
+    cdn_scope: overseas
+    cdn_rate_limit: 10m
+    cdn_rate_limit_after: 1m
+    cdn_cas_cert_id: ""
+    cors_allowed_origins: [https://console.svc.plus]
+    cors_allowed_methods: [GET, HEAD]
+    cors_max_age_seconds: 3600
+    ram_user_name: ci-client-repos-oss-rw
+    ram_policy_name: ci-client-repos-oss-rw-policy
+    oss_policy_prefixes:
+      - apt/*
+      - install.*
+      - index.html
+    vault_kv_path: prod/platform/storage/aliyun-oss-repos
+"""
+        repos_manifest = self.tmp / "repos.yaml"
+        repos_manifest.write_text(repos_manifest_text, encoding="utf-8")
+
+        parsed = rec.load_and_validate_manifest(repos_manifest)
+        self.assertEqual(parsed["probe_path"], "_health/probe.json")
+        self.assertEqual(parsed["ali"]["cdn_type"], "web")
+        self.assertEqual(parsed["ali"]["oss_policy_prefixes"], ["apt/*", "install.*", "index.html"])
+
+        for bad_prefixes in ("[]", '[""]', '["/apt/*"]', '["*"]', '["**"]', '["../secret"]'):
+            bad_manifest = self.tmp / "bad-prefixes.yaml"
+            bad_manifest.write_text(
+                repos_manifest_text.replace(
+                    "    oss_policy_prefixes:\n      - apt/*\n      - install.*\n      - index.html",
+                    f"    oss_policy_prefixes: {bad_prefixes}",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError, msg=f"Expected rejection for {bad_prefixes}"):
+                rec.load_and_validate_manifest(bad_manifest)
+
+        calls = []
+        detail_calls = 0
+        dns_creates = []
+
+        def repos_opener(req, timeout=25):
+            nonlocal detail_calls
+            method = req.get_method()
+            url = req.full_url
+            calls.append((method, url))
+            if "/v1/kv/data/prod/serverless/cloudflare" in url:
+                return _FakeResponse(body=json.dumps({"data": {"data": {"CLOUDFLARE_API_TOKEN": "cf-adm", "CLOUDFLARE_ACCOUNT_ID": "acct-1"}}}).encode())
+            if "/v1/kv/data/prod/platform/alicloud" in url:
+                return _FakeResponse(body=json.dumps({"data": {"data": {"access_key_id": "ali-adm-ak", "access_key_secret": "ali-adm-sk"}}}).encode())
+            if "/v1/kv/data/prod/platform/storage/" in url:
+                if method == "POST":
+                    return _FakeResponse(body=b"{}")
+                raise rec.urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+            if "/zones?name=svc.plus" in url:
+                return _FakeResponse(body=json.dumps({"success": True, "result": [{"id": "zone-1"}]}).encode())
+            if url.endswith("/r2/buckets/svc-plus-repos-global") and method == "GET":
+                return _FakeResponse(body=json.dumps({"success": True, "result": {"name": "svc-plus-repos-global"}}).encode())
+            if "/domains/custom" in url:
+                return _FakeResponse(body=json.dumps({"success": True, "result": {"domains": [{"domain": "repo.svc.plus", "enabled": True, "minTLS": "1.2"}]}}).encode())
+            if "/cors" in url:
+                return _FakeResponse(
+                    body=json.dumps(
+                        {
+                            "success": True,
+                            "result": {
+                                "rules": [
+                                    {
+                                        "id": "client-mirrors-cors",
+                                        "allowed": {
+                                            "methods": ["GET", "HEAD"],
+                                            "origins": ["https://console.svc.plus"],
+                                            "headers": ["*"],
+                                        },
+                                        "exposeHeaders": ["ETag", "Content-Length", "Content-Type"],
+                                        "maxAgeSeconds": 3600,
+                                    }
+                                ]
+                            },
+                        }
+                    ).encode()
+                )
+            if "/tokens/permission_groups" in url:
+                return _FakeResponse(body=json.dumps({"success": True, "result": [{"id": "pg-r2-w", "name": "Workers R2 Storage Bucket Item Write"}]}).encode())
+            if url.endswith("/tokens") and method == "POST":
+                return _FakeResponse(body=json.dumps({"success": True, "result": {"id": "r2-tok-id", "value": "r2-raw-tok"}}).encode())
+            if "oss-cn-hongkong" in url and method == "HEAD":
+                return _FakeResponse(status=200, body=b"")
+            if "oss-cn-hongkong" in url and method in ("DELETE", "PUT"):
+                return _FakeResponse(status=200, body=b"")
+            if "DescribeVerifyContent" in url:
+                return _FakeResponse(body=json.dumps({"Content": ""}).encode())
+            if "DescribeCdnDomainDetail" in url:
+                detail_calls += 1
+                if detail_calls == 1:
+                    raise rec.urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+                if detail_calls == 2:
+                    return _FakeResponse(body=json.dumps({"GetDomainDetailModel": {"Cname": ""}}).encode())
+                return _FakeResponse(body=json.dumps({"GetDomainDetailModel": {"Cname": "cn-repo.svc.plus.w.alikunlun.com"}}).encode())
+            if "AddCdnDomain" in url:
+                return _FakeResponse(body=json.dumps({"RequestId": "req-add"}).encode())
+            if "BatchSetCdnDomainConfig" in url:
+                return _FakeResponse(body=b"{}")
+            if "/dns_records" in url and method == "GET":
+                return _FakeResponse(body=json.dumps({"success": True, "result": []}).encode())
+            if "/dns_records" in url and method == "POST":
+                dns_creates.append(json.loads(req.data.decode("utf-8")))
+                return _FakeResponse(body=json.dumps({"success": True, "result": {"id": "rec-1"}}).encode())
+            if "GetUser" in url or "GetPolicy" in url:
+                raise rec.urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+            if any(act in url for act in ("CreateUser", "CreatePolicy", "AttachPolicyToUser")):
+                return _FakeResponse(body=b"{}")
+            if "ListPoliciesForUser" in url:
+                return _FakeResponse(body=json.dumps({"Policies": {"Policy": []}}).encode())
+            if "CreateAccessKey" in url:
+                return _FakeResponse(body=json.dumps({"AccessKey": {"AccessKeyId": "ram-ak-1", "AccessKeySecret": "ram-sk-1"}}).encode())
+            if "r2.cloudflarestorage.com" in url and method == "PUT":
+                return _FakeResponse(status=200, body=b"")
+            if url in ("https://repo.svc.plus/_health/probe.json", "https://cn-repo.svc.plus/_health/probe.json"):
+                return _FakeResponse(status=200, body=b'{"status":"ok"}', headers={"Access-Control-Allow-Origin": "https://console.svc.plus"})
+            raise AssertionError(f"Unexpected HTTP call: {method} {url}")
+
+        res = rec.reconcile(
+            {
+                "manifest_path": str(repos_manifest),
+                "mode": "apply",
+                "apply": True,
+                "verify": True,
+                "vault_addr": "https://vault.example",
+                "vault_token": "mock-vault-token",
+            },
+            opener=repos_opener,
+            wait_dns_seconds=0,
+        )
+        self.assertEqual(detail_calls, 3)
+        self.assertIn("cdn_domain:created", res["aliyun_oss_cdn"]["actions"])
+        self.assertIn("cdn_cname:created", res["aliyun_oss_cdn"]["actions"])
+        self.assertEqual(res["aliyun_oss_cdn"]["cdn_cname"], "cn-repo.svc.plus.w.alikunlun.com")
+        self.assertEqual(len(dns_creates), 1)
+        self.assertEqual(dns_creates[0]["content"], "cn-repo.svc.plus.w.alikunlun.com")
+        add_cdn_urls = [url for _, url in calls if "Action=AddCdnDomain&" in url]
+        self.assertEqual(len(add_cdn_urls), 1)
+        self.assertIn("CdnType=web", rec.urllib.parse.unquote(add_cdn_urls[0]))
+
+        create_policy_urls = [url for _, url in calls if "Action=CreatePolicy&" in url]
+        self.assertEqual(len(create_policy_urls), 1)
+        policy_qs = rec.urllib.parse.parse_qs(rec.urllib.parse.urlparse(create_policy_urls[0]).query)
+        policy_doc = json.loads(policy_qs["PolicyDocument"][0])
+        self.assertEqual(
+            policy_doc["Statement"][0]["Resource"],
+            [
+                "acs:oss:*:*:svc-plus-repos-cn-hk/apt/*",
+                "acs:oss:*:*:svc-plus-repos-cn-hk/install.*",
+                "acs:oss:*:*:svc-plus-repos-cn-hk/index.html",
+            ],
+        )
+        self.assertEqual(
+            policy_doc["Statement"][1]["Condition"],
+            {"StringLike": {"oss:Prefix": ["apt/*", "install.*", "index.html"]}},
+        )
+
+        self.assertEqual(
+            [p["url"] for p in res["verification"]["https_probes"]],
+            ["https://repo.svc.plus/_health/probe.json", "https://cn-repo.svc.plus/_health/probe.json"],
+        )
+        self.assertTrue(all(p["ok"] for p in res["verification"]["https_probes"]))
+
+    def test_probe_mirrors_retries_transient_errors_when_wait_dns_positive(self):
+        attempts = {"repo.svc.plus": 0, "cn-repo.svc.plus": 0}
+
+        def flaky_opener(req, timeout=25):
+            method = req.get_method()
+            url = req.full_url
+            if method == "PUT":
+                return _FakeResponse(status=200, body=b"")
+            if "https://repo.svc.plus/" in url:
+                attempts["repo.svc.plus"] += 1
+                if attempts["repo.svc.plus"] == 1:
+                    raise ssl.SSLError("handshake failure")
+                if attempts["repo.svc.plus"] == 2:
+                    raise rec.urllib.error.URLError("dns not ready")
+                return _FakeResponse(status=200, body=b"{}", headers={"Access-Control-Allow-Origin": "https://console.svc.plus"})
+            if "https://cn-repo.svc.plus/" in url:
+                attempts["cn-repo.svc.plus"] += 1
+                if attempts["cn-repo.svc.plus"] == 1:
+                    raise rec.urllib.error.HTTPError(url, 503, "Service Unavailable", {}, None)
+                return _FakeResponse(status=200, body=b"{}", headers={"Access-Control-Allow-Origin": "https://console.svc.plus"})
+            raise AssertionError(f"Unexpected call: {method} {url}")
+
+        with mock.patch.object(rec.time, "sleep") as sleep_mock:
+            probe_res = rec._probe_mirrors(
+                r2_creds={
+                    "endpoint": "https://acct-1.r2.cloudflarestorage.com",
+                    "bucket": "svc-plus-repos-global",
+                    "custom_domain": "repo.svc.plus",
+                    "access_key_id": "ak",
+                    "secret_access_key": "sk",
+                },
+                ali_creds={
+                    "bucket": "svc-plus-repos-cn-hk",
+                    "oss_region": "cn-hongkong",
+                    "cdn_domain": "cn-repo.svc.plus",
+                    "access_key_id": "ali-ak",
+                    "access_key_secret": "ali-sk",
+                },
+                probe_path="_health/probe.json",
+                probe_origin="https://console.svc.plus",
+                opener=flaky_opener,
+                wait_dns_seconds=15,
+            )
+        self.assertEqual(attempts, {"repo.svc.plus": 3, "cn-repo.svc.plus": 2})
+        self.assertEqual(sleep_mock.call_count, 3)
+        sleep_mock.assert_called_with(10)
+        self.assertTrue(all(p["ok"] for p in probe_res["https_probes"]))
 
 
 if __name__ == "__main__":
