@@ -1,5 +1,6 @@
 ---
-client_mirrors_manifest_path: "{{ playbook_dir }}/../gitops/resources/svc.plus/prod/client-mirrors/mirrors.yaml"
+client_mirrors_stack: "{{ lookup('env', 'CLIENT_MIRRORS_STACK') | default('mirrors', true) }}"
+client_mirrors_manifest_path: "{{ playbook_dir }}/../gitops/resources/svc.plus/prod/client-mirrors/{{ client_mirrors_stack }}.yaml"
 client_mirrors_mode: "{{ lookup('env', 'CLIENT_MIRRORS_MODE') | default('plan', true) }}"
 client_mirrors_apply: "{{ (lookup('env', 'CLIENT_MIRRORS_APPLY') | default('false', true) | bool) or (client_mirrors_mode == 'apply') }}"
 client_mirrors_verify: "{{ client_mirrors_mode in ['apply', 'verify'] }}"

@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import ssl
 import sys
 import time
 import urllib.error
@@ -33,6 +34,7 @@ ALLOWED_OSS_ACL = frozenset({"public-read", "private"})
 ALLOWED_CDN_TYPES = frozenset({"download", "web", "video"})
 ALLOWED_CDN_SCOPES = frozenset({"overseas", "domestic", "global"})
 ALLOWED_METHODS = frozenset({"GET", "HEAD", "PUT", "POST", "DELETE"})
+DEFAULT_OSS_POLICY_PREFIXES = ("releases/*", "offline-package/*")
 
 SENSITIVE_KEY_NAMES = frozenset(
     {
@@ -105,6 +107,28 @@ def _require_methods(methods, ctx):
     return cleaned
 
 
+def _require_oss_policy_prefixes(raw_prefixes, ctx):
+    if not isinstance(raw_prefixes, list) or not raw_prefixes:
+        raise ValueError(f"{ctx} must be a non-empty list")
+    cleaned = []
+    for item in raw_prefixes:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"{ctx} entries must be non-empty strings")
+        prefix = item.strip()
+        if (
+            prefix.startswith("/")
+            or prefix in ("*", "**", "?")
+            or prefix.startswith("*")
+            or prefix.startswith("?")
+            or ".." in prefix.split("/")
+        ):
+            raise ValueError(
+                f"{ctx} entries must be relative object prefixes (no leading '/' or bare wildcards), got {prefix!r}"
+            )
+        cleaned.append(prefix)
+    return cleaned
+
+
 def load_and_validate_manifest(manifest_path):
     path = Path(manifest_path)
     raw = path.read_text(encoding="utf-8")
@@ -125,6 +149,13 @@ def load_and_validate_manifest(manifest_path):
     spec = doc.get("spec") or {}
     glob = spec.get("global") or {}
     zone_name = _require_str(glob, "zone_name", "spec.global")
+    raw_probe_path = glob.get("probe_path")
+    if raw_probe_path is None:
+        probe_path = ""
+    elif not isinstance(raw_probe_path, str):
+        raise ValueError("spec.global.probe_path must be a string")
+    else:
+        probe_path = raw_probe_path.strip()
 
     products = spec.get("products") or []
     if not isinstance(products, list) or not products:
@@ -171,6 +202,12 @@ def load_and_validate_manifest(manifest_path):
     cdn_scope = _require_str(ali_raw, "cdn_scope", "spec.aliyun_oss_cdn")
     if cdn_scope not in ALLOWED_CDN_SCOPES:
         raise ValueError(f"aliyun_oss_cdn.cdn_scope must be one of {sorted(ALLOWED_CDN_SCOPES)}")
+    if "oss_policy_prefixes" in ali_raw:
+        oss_policy_prefixes = _require_oss_policy_prefixes(
+            ali_raw.get("oss_policy_prefixes"), "spec.aliyun_oss_cdn.oss_policy_prefixes"
+        )
+    else:
+        oss_policy_prefixes = list(DEFAULT_OSS_POLICY_PREFIXES)
 
     ali = {
         "bucket_name": _require_str(ali_raw, "bucket_name", "spec.aliyun_oss_cdn"),
@@ -192,11 +229,13 @@ def load_and_validate_manifest(manifest_path):
         "cors_max_age_seconds": int(ali_raw.get("cors_max_age_seconds", 3600)),
         "ram_user_name": _require_str(ali_raw, "ram_user_name", "spec.aliyun_oss_cdn"),
         "ram_policy_name": _require_str(ali_raw, "ram_policy_name", "spec.aliyun_oss_cdn"),
+        "oss_policy_prefixes": oss_policy_prefixes,
         "vault_kv_path": _require_str(ali_raw, "vault_kv_path", "spec.aliyun_oss_cdn").removeprefix("kv/").lstrip("/"),
     }
 
     return {
         "zone_name": zone_name,
+        "probe_path": probe_path,
         "products": [p["slug"] for p in products],
         "admin_sources": {"cloudflare": cf_admin_kv, "alicloud": ali_admin_kv},
         "r2": r2,
@@ -772,12 +811,23 @@ def _reconcile_aliyun_oss_cdn(
                 ali_sk,
                 opener=opener,
             )
-            detail = aliyun_rpc(
-                ALICLOUD_CDN_ENDPOINT, "2018-05-10", "DescribeCdnDomainDetail", {"DomainName": cdn_domain}, ali_ak, ali_sk, opener=opener
-            )
-            detail_model = detail.get("GetDomainDetailModel") or {}
-            cdn_cname = detail_model.get("Cname", "")
-            ssl_status = detail_model.get("ServerCertificateStatus", "")
+            for attempt in range(6):
+                detail = aliyun_rpc(
+                    ALICLOUD_CDN_ENDPOINT,
+                    "2018-05-10",
+                    "DescribeCdnDomainDetail",
+                    {"DomainName": cdn_domain},
+                    ali_ak,
+                    ali_sk,
+                    opener=opener,
+                )
+                detail_model = detail.get("GetDomainDetailModel") or {}
+                cdn_cname = str(detail_model.get("Cname", "") or "").strip()
+                ssl_status = detail_model.get("ServerCertificateStatus", "")
+                if cdn_cname:
+                    break
+                if attempt < 5 and wait_dns_seconds > 0:
+                    time.sleep(min(wait_dns_seconds, 5))
             actions.append("cdn_domain:created")
             changed = True
         else:
@@ -871,6 +921,7 @@ def _reconcile_aliyun_oss_cdn(
     # RAM user + least-privilege OSS policy + AccessKey (preserve existing Vault AK/SK unless rotating)
     ram_user = ali_cfg["ram_user_name"]
     ram_policy = ali_cfg["ram_policy_name"]
+    oss_prefixes = ali_cfg.get("oss_policy_prefixes") or list(DEFAULT_OSS_POLICY_PREFIXES)
     policy_doc = json.dumps(
         {
             "Version": "1",
@@ -886,16 +937,13 @@ def _reconcile_aliyun_oss_cdn(
                         "oss:ListMultipartUploads",
                         "oss:ListParts",
                     ],
-                    "Resource": [
-                        f"acs:oss:*:*:{bucket}/releases/*",
-                        f"acs:oss:*:*:{bucket}/offline-package/*",
-                    ],
+                    "Resource": [f"acs:oss:*:*:{bucket}/{prefix}" for prefix in oss_prefixes],
                 },
                 {
                     "Effect": "Allow",
                     "Action": ["oss:GetBucketInfo", "oss:GetBucketLocation", "oss:ListObjects"],
                     "Resource": [f"acs:oss:*:*:{bucket}"],
-                    "Condition": {"StringLike": {"oss:Prefix": ["releases/*", "offline-package/*"]}},
+                    "Condition": {"StringLike": {"oss:Prefix": list(oss_prefixes)}},
                 },
             ],
         }
@@ -1004,7 +1052,7 @@ def _reconcile_aliyun_oss_cdn(
     return {"actions": actions, "changed": changed, "kv_payload": ali_creds, "cdn_cname": cdn_cname}
 
 
-def _probe_mirrors(*, r2_creds, ali_creds, probe_path, probe_origin, opener):
+def _probe_mirrors(*, r2_creds, ali_creds, probe_path, probe_origin, opener, wait_dns_seconds=0):
     clean_key = probe_path.lstrip("/")
     payload_bytes = json.dumps(
         {
@@ -1038,25 +1086,33 @@ def _probe_mirrors(*, r2_creds, ali_creds, probe_path, probe_origin, opener):
         opener=opener,
     )
 
+    max_attempts = 4 if wait_dns_seconds > 0 else 1
     probes = []
     for host in (r2_creds["custom_domain"], ali_creds["cdn_domain"]):
         get_url = f"https://{host}/{clean_key}"
-        req = urllib.request.Request(
-            get_url,
-            headers={"Origin": probe_origin, "User-Agent": "playbooks-saas-client-mirrors/1"},
-            method="GET",
-        )
-        with opener(req, timeout=25) as resp:
-            headers_lower = {k.lower(): v for k, v in resp.headers.items()}
-            acao = headers_lower.get("access-control-allow-origin", "")
-            probes.append(
-                {
-                    "url": get_url,
-                    "status": resp.status,
-                    "acao": acao,
-                    "ok": resp.status == 200 and acao in (probe_origin, "*"),
-                }
+        for attempt in range(max_attempts):
+            req = urllib.request.Request(
+                get_url,
+                headers={"Origin": probe_origin, "User-Agent": "playbooks-saas-client-mirrors/1"},
+                method="GET",
             )
+            try:
+                with opener(req, timeout=25) as resp:
+                    headers_lower = {k.lower(): v for k, v in resp.headers.items()}
+                    acao = headers_lower.get("access-control-allow-origin", "")
+                    probes.append(
+                        {
+                            "url": get_url,
+                            "status": resp.status,
+                            "acao": acao,
+                            "ok": resp.status == 200 and acao in (probe_origin, "*"),
+                        }
+                    )
+                break
+            except (urllib.error.URLError, urllib.error.HTTPError, ssl.SSLError):
+                if attempt >= max_attempts - 1:
+                    raise
+                time.sleep(min(wait_dns_seconds, 10))
     return {"r2_put": r2_put_status, "oss_put": oss_put_status, "https_probes": probes}
 
 
@@ -1214,12 +1270,14 @@ def reconcile(request, *, opener=urllib.request.urlopen, wait_dns_seconds=5):
             }
 
         if verify:
+            probe_path = manifest.get("probe_path") or request.get("probe_path") or "releases/_health/probe.json"
             probe_res = _probe_mirrors(
                 r2_creds=r2_creds,
                 ali_creds=ali_creds,
-                probe_path=request.get("probe_path") or "releases/_health/probe.json",
+                probe_path=probe_path,
                 probe_origin=request.get("probe_origin") or "https://console.svc.plus",
                 opener=opener,
+                wait_dns_seconds=wait_dns_seconds,
             )
             summary["verification"] = probe_res
             if not all(item["ok"] for item in probe_res["https_probes"]):
