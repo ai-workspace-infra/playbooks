@@ -38,6 +38,23 @@ xray:
     enabled: true
     interval: {{ xray_sync_interval }}
     targets:
+{% if xray_merged_mode | default(false) | bool %}
+      - name: "proxy"
+        outputPath: "{{ xray_config_path }}"
+        templatePath: "{{ xray_template_dir }}/xray.proxy.template.json"
+        validateCommand:
+          - "{{ xray_binary_path }}"
+          - "run"
+          - "-test"
+          - "-config"
+          - "{config}"
+        restartCommand:
+          - "systemctl"
+          - "reload-or-restart"
+          - "xray.service"
+        dynamicUsers:
+          enabled: false
+{% else %}
       - name: "xhttp"
         outputPath: "{{ xray_config_path }}"
         templatePath: "{{ xray_template_dir }}/xray.xhttp.template.json"
@@ -65,5 +82,6 @@ xray:
           enabled: true
           executable: "{{ xray_binary_path }}"
           server: "{{ xray_tcp_api_server | default('127.0.0.1:' ~ (xray_tcp_api_port | default(10087) | string)) }}"
+{% endif %}
 {% endif %}
 {% endif %}

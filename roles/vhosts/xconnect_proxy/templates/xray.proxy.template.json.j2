@@ -1,0 +1,129 @@
+{
+    "log": {
+        "access": "{{ xray_access_log_path }}",
+        "loglevel": "warning"
+    },
+    "inbounds": [
+        {
+            "tag": "proxy-xhttp-in",
+            "listen": "/dev/shm/xray.sock,0666",
+            "protocol": "vless",
+            "settings": {
+                "clients": [
+                    {
+                        "id": "{% if agent_proxy_standalone | default(false) | bool %}{{ xray_uuid }}{% else %}{% raw %}{{ UUID }}{% endraw %}{% endif %}"
+                    }
+                ],
+                "decryption": "none"
+            },
+            "streamSettings": {
+                "network": "xhttp",
+                "xhttpSettings": {
+                    "mode": "auto",
+                    "path": "/split"
+                }
+            },
+            "sniffing": {
+                "enabled": true,
+                "destOverride": [
+                    "http",
+                    "tls",
+                    "quic"
+                ]
+            }
+        },
+        {
+            "tag": "proxy-tcp-in",
+            "listen": "0.0.0.0",
+            "port": 1443,
+            "protocol": "vless",
+            "settings": {
+                "clients": [
+                    {
+                        "id": "{% if agent_proxy_standalone | default(false) | bool %}{{ xray_uuid }}{% else %}{% raw %}{{ UUID }}{% endraw %}{% endif %}",
+                        "flow": "xtls-rprx-vision"
+                    }
+                ],
+                "decryption": "none",
+                "fallbacks": [
+                    {
+                        "dest": "8001",
+                        "xver": 1
+                    },
+                    {
+                        "alpn": "h2",
+                        "dest": "8002",
+                        "xver": 1
+                    }
+                ]
+            },
+            "streamSettings": {
+                "network": "tcp",
+                "security": "tls",
+                "tlsSettings": {
+                    "rejectUnknownSni": true,
+                    "minVersion": "1.2",
+                    "certificates": [
+                        {
+                            "ocspStapling": 3600,
+                            "certificateFile": "{{ agent_tls_cert_path }}",
+                            "keyFile": "{{ agent_tls_key_path }}"
+                        }
+                    ]
+                }
+            },
+            "sniffing": {
+                "enabled": true,
+                "destOverride": [
+                    "http",
+                    "tls",
+                    "quic"
+                ]
+            }
+        }
+    ],
+    "outbounds": [
+        {
+            "tag": "direct",
+            "protocol": "freedom",
+            "settings": {}
+        },
+        {
+            "tag": "blocked",
+            "protocol": "blackhole",
+            "settings": {}
+        }
+    ],
+    "routing": {
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+            {
+                "type": "field",
+                "ip": [
+                    "geoip:private"
+                ],
+                "outboundTag": "blocked"
+            }
+        ]
+    },
+    "stats": {},
+    "policy": {
+        "levels": {
+            "0": {
+                "bufferSize": {{ xray_buffer_size_kb }},
+                "handshake": {{ xray_handshake_timeout_seconds }},
+                "connIdle": {{ xray_connection_idle_timeout_seconds }},
+                "uplinkOnly": {{ xray_uplink_only_timeout_seconds }},
+                "downlinkOnly": {{ xray_downlink_only_timeout_seconds }},
+                "statsUserUplink": true,
+                "statsUserDownlink": true
+            }
+        },
+        "system": {
+            "statsInboundUplink": true,
+            "statsInboundDownlink": true,
+            "statsOutboundUplink": true,
+            "statsOutboundDownlink": true
+        }
+    }
+}

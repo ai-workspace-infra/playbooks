@@ -4,7 +4,7 @@ fluxgate_replace_caddy: false
 fluxgate_vhost_enabled: false
 fluxgate_vhost_name: "jp-xconnect"
 fluxgate_vhost_template: "xconnect.conf.j2"
-fluxgate_version: "0.2.0"
+fluxgate_version: "0.2.1"
 fluxgate_release_repo: "ai-workspace-xstream/fluxgate"
 fluxgate_release_tag: "{{ fluxgate_version if (fluxgate_version is match('^v')) else ('v' ~ fluxgate_version) }}"
 fluxgate_release_arch: "{{ 'arm64' if (ansible_architecture | default('x86_64')) in ['aarch64', 'arm64'] else 'amd64' }}"
@@ -44,6 +44,12 @@ fluxgate_vhosts: >-
      ) | reject('equalto', '') | unique | list }}
 
 fluxgate_xhttp_unix_socket: "/dev/shm/xray.sock"
+fluxgate_h2_stream_window_size: 4194304
+fluxgate_h2_connection_window_size: 16777216
+fluxgate_h2_ping_interval_secs: 15
+fluxgate_max_h2_streams: 256
+fluxgate_read_timeout_secs: 3600
+fluxgate_idle_timeout_secs: 3600
 fluxgate_exporter_xhttp_upstream: "127.0.0.1:8080"
 fluxgate_exporter_tcp_upstream: "127.0.0.1:8081"
 fluxgate_default_response: "XConnect Edge Agent"

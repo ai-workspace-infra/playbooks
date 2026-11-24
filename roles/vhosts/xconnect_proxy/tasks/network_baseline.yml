@@ -21,6 +21,26 @@
   when: ansible_os_family == 'Debian'
   tags: [configure]
 
+- name: Persist media low-latency TCP kernel settings
+  ansible.builtin.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/99-xconnect-media-lowlatency.conf
+    state: present
+    reload: true
+  loop:
+    - { name: net.ipv4.tcp_slow_start_after_idle, value: "{{ ((xconnect_node_maintenance | default({})).get('sysctl', {})).get('tcp_slow_start_after_idle', 0) }}" }
+    - { name: net.ipv4.tcp_notsent_lowat, value: "{{ ((xconnect_node_maintenance | default({})).get('sysctl', {})).get('tcp_notsent_lowat', 131072) }}" }
+    - { name: net.ipv4.tcp_keepalive_time, value: "{{ ((xconnect_node_maintenance | default({})).get('sysctl', {})).get('tcp_keepalive_time', 600) }}" }
+    - { name: net.ipv4.tcp_keepalive_intvl, value: "{{ ((xconnect_node_maintenance | default({})).get('sysctl', {})).get('tcp_keepalive_intvl', 30) }}" }
+    - { name: net.ipv4.tcp_keepalive_probes, value: "{{ ((xconnect_node_maintenance | default({})).get('sysctl', {})).get('tcp_keepalive_probes', 5) }}" }
+    - { name: net.core.rmem_max, value: "{{ ((xconnect_node_maintenance | default({})).get('sysctl', {})).get('rmem_max', 33554432) }}" }
+    - { name: net.core.wmem_max, value: "{{ ((xconnect_node_maintenance | default({})).get('sysctl', {})).get('wmem_max', 33554432) }}" }
+    - { name: net.ipv4.tcp_rmem, value: "{{ ((xconnect_node_maintenance | default({})).get('sysctl', {})).get('tcp_rmem', '4096 87380 33554432') }}" }
+    - { name: net.ipv4.tcp_wmem, value: "{{ ((xconnect_node_maintenance | default({})).get('sysctl', {})).get('tcp_wmem', '4096 65536 33554432') }}" }
+  when: ansible_os_family == 'Debian'
+  tags: [configure]
+
 - name: Check whether UFW is installed
   ansible.builtin.command: ufw status
   register: agent_proxy_ufw_status

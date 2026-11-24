@@ -10,9 +10,14 @@ haproxy_source_key_path: "/etc/caddy/tls/agent-proxy.key"
 haproxy_stats_listen: "127.0.0.1:8404"
 haproxy_legacy_metrics_listen: ""
 haproxy_nbthread: "{{ ansible_facts['processor_vcpus'] | default(1) }}"
-haproxy_h2_initial_window_size: 1048576
-haproxy_bufsize: 32768
-haproxy_timeout_tunnel: "3600s"
+haproxy_h2_initial_window_size: "{{ ((xconnect_node_maintenance | default({})).get('haproxy', {})).get('h2_initial_window_size', 4194304) }}"
+haproxy_bufsize: "{{ ((xconnect_node_maintenance | default({})).get('haproxy', {})).get('bufsize', 65536) }}"
+haproxy_pipesize: "{{ ((xconnect_node_maintenance | default({})).get('haproxy', {})).get('pipesize', 262144) }}"
+haproxy_timeout_tunnel: "{{ ((xconnect_node_maintenance | default({})).get('haproxy', {})).get('timeout_tunnel', '3600s') }}"
+haproxy_timeout_http_keep_alive: "{{ ((xconnect_node_maintenance | default({})).get('haproxy', {})).get('timeout_http_keep_alive', '120s') }}"
+haproxy_clitcpka: "{{ ((xconnect_node_maintenance | default({})).get('haproxy', {})).get('clitcpka', true) | bool }}"
+haproxy_srvtcpka: "{{ ((xconnect_node_maintenance | default({})).get('haproxy', {})).get('srvtcpka', true) | bool }}"
+haproxy_http_no_delay: "{{ ((xconnect_node_maintenance | default({})).get('haproxy', {})).get('http_no_delay', true) | bool }}"
 
 haproxy_legacy_vhosts: []
 haproxy_use_conf_d_acl: false

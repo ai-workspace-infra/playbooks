@@ -49,7 +49,9 @@ xray_exporter_instances:
     description: "Xray Exporter (TCP)"
     listen_addr: "{{ xray_exporter_tcp_listen_addr }}"
     xray_api_addr: "{{ xray_exporter_tcp_xray_api_addr }}"
-    log_path: "{{ xray_exporter_tcp_log_path | default(xray_exporter_log_path, true) }}"
+    # Use "disabled" by default so xray-exporter-tcp does not parse the shared
+    # /var/log/xray/access.log in duplicate alongside xray-exporter-xhttp.
+    log_path: "{{ xray_exporter_tcp_log_path | default('disabled', true) }}"
     node_id: "{{ xray_exporter_node_id }}-tcp"
     snapshot_store_path: "{{ xray_exporter_snapshot_store_dir }}/tcp-snapshots.json"
     labels:
