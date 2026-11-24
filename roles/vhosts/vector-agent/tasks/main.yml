@@ -146,11 +146,16 @@
 
 - name: Auto-detect active Xray exporter and monitoring on host
   ansible.builtin.set_fact:
+    xray_merged_mode: >-
+      {{ xray_merged_mode | bool
+         if xray_merged_mode is defined
+         else ((ansible_facts.services | default({})).get('xconnect-proxy-xray.service', {}).get('state', 'stopped') == 'running') }}
     vector_xray_exporter_enabled: >-
       {{ vector_xray_exporter_enabled | bool
          if vector_xray_exporter_enabled is defined
          else (
            ((ansible_facts.services | default({})).get('xray-exporter-xhttp.service', {}).get('state', 'stopped') == 'running') or
+           ((ansible_facts.services | default({})).get('xconnect-proxy-xray.service', {}).get('state', 'stopped') == 'running') or
            ((ansible_facts.services | default({})).get('xray.service', {}).get('state', 'stopped') == 'running') or
            (inventory_hostname in (groups.get('xray_exporter', [])))
          ) }}
@@ -158,6 +163,7 @@
       {{ vector_xhttp_monitoring_enabled | bool
          if vector_xhttp_monitoring_enabled is defined
          else (
+           ((ansible_facts.services | default({})).get('xconnect-proxy-xray.service', {}).get('state', 'stopped') == 'running') or
            ((ansible_facts.services | default({})).get('xray.service', {}).get('state', 'stopped') == 'running') or
            ((ansible_facts.services | default({})).get('fluxgate.service', {}).get('state', 'stopped') == 'running') or
            ((ansible_facts.services | default({})).get('caddy.service', {}).get('state', 'stopped') == 'running') or

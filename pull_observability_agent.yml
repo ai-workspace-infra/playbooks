@@ -140,9 +140,16 @@
       ignore_errors: true
       changed_when: false
 
+    - name: Check if unified xconnect-proxy-xray service is active
+      ansible.builtin.command: systemctl is-active --quiet xconnect-proxy-xray.service
+      register: pull_observability_merged_xray_check
+      ignore_errors: true
+      changed_when: false
+
     - name: Resolve desired Xray exporter telemetry state
       ansible.builtin.set_fact:
-        vector_xray_exporter_enabled: "{{ pull_observability_xray_check.rc == 0 }}"
+        xray_merged_mode: "{{ (xray_merged_mode | default(false) | bool) or (pull_observability_merged_xray_check.rc == 0) }}"
+        vector_xray_exporter_enabled: "{{ (pull_observability_xray_check.rc == 0) or (pull_observability_merged_xray_check.rc == 0) }}"
 
     - name: Converge vector agent
       ansible.builtin.import_role:

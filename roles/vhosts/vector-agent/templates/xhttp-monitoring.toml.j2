@@ -42,7 +42,7 @@ source = '''
 type = "journald"
 current_boot_only = true
 since_now = true
-include_units = {{ ((vector_system_journald_units | default([])) + ['caddy.service', 'haproxy.service', 'fluxgate.service', 'xray.service', 'xray-tcp.service', 'xconnect-edge-agent.service', 'init.scope']) | unique | list | to_json }}
+include_units = {{ ((vector_system_journald_units | default([])) + ['caddy.service', 'haproxy.service', 'fluxgate.service', 'xconnect-proxy-xray.service', 'xray.service', 'xray-tcp.service', 'xconnect-edge-agent.service', 'init.scope']) | unique | list | to_json }}
 
 [transforms.xhttp_events]
 type = "remap"
@@ -81,7 +81,7 @@ proxy_engine = "{% raw %}{{ proxy_engine }}{% endraw %}"
 {% if vector_xhttp_create_sink | default(false) | bool %}
 [sinks.prometheus_remote]
 type = "prometheus_remote_write"
-inputs = [{% if vector_caddy_metrics_enabled | default(false) | bool %}"xhttp_caddy_labels", {% endif %}"xhttp_event_metrics"{% if vector_xhttp_add_xray_scrape | default(false) | bool %}, "add_xray_xhttp_labels", "add_xray_tcp_labels"{% endif %}]
+inputs = [{% if vector_caddy_metrics_enabled | default(false) | bool %}"xhttp_caddy_labels", {% endif %}"xhttp_event_metrics"{% if vector_xhttp_add_xray_scrape | default(false) | bool %}, "add_xray_xhttp_labels"{% if not (xray_merged_mode | default(false) | bool) %}, "add_xray_tcp_labels"{% endif %}{% endif %}]
 endpoint = "{{ vector_observability_endpoint | default('https://observability.svc.plus') }}/ingest/metrics/api/v1/write"
 [sinks.prometheus_remote.auth]
 strategy = "basic"

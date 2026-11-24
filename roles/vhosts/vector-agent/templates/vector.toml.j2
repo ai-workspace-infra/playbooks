@@ -525,7 +525,9 @@ type = "prometheus_remote_write"
 {% endfor %}
 {% if xray_exporter_enabled %}
   {% set _ = remote_inputs.append("add_xray_xhttp_labels") %}
+{% if not (xray_merged_mode | default(false) | bool) %}
   {% set _ = remote_inputs.append("add_xray_tcp_labels") %}
+{% endif %}
 {% endif %}
 {% if postgres_exporter_enabled %}
   {% set _ = remote_inputs.append("add_postgres_labels") %}
