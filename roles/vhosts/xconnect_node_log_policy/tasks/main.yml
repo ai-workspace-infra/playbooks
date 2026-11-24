@@ -24,12 +24,18 @@
       - xconnect_node_rotated_log_policy.keep_days | int > 0
       - xconnect_node_rotated_log_policy.patterns | length > 0
 
+- name: Check whether /etc/caddy/Caddyfile exists
+  ansible.builtin.stat:
+    path: /etc/caddy/Caddyfile
+  register: xconnect_caddyfile_stat
+
 - name: Apply Caddy reverse_proxy ERROR-only logging policy
   ansible.builtin.script:
     cmd: "{{ role_path }}/files/apply_caddy_log_policy.py /etc/caddy/Caddyfile"
     executable: /usr/bin/python3
   register: xconnect_caddy_log_policy
   changed_when: "'changed:' in xconnect_caddy_log_policy.stdout"
+  when: xconnect_caddyfile_stat.stat.exists | default(false) | bool
 
 - name: Report usage before log maintenance
   ansible.builtin.command:
