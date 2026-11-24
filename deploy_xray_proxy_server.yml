@@ -215,6 +215,13 @@
         - agent_proxy_local_installer | default(false) | bool
         - xconnect_gitops_config | length > 0
 
+    - name: Propagate node_maintenance policy from local GitOps topology when provided
+      ansible.builtin.set_fact:
+        xconnect_node_maintenance: "{{ xconnect_local_topology.spec.node_maintenance | default({}, true) }}"
+      when:
+        - xconnect_local_topology is defined
+        - xconnect_node_maintenance is not defined
+
     - name: Resolve the local installer node identity from GitOps topology
       ansible.builtin.set_fact:
         xconnect_local_node_matches: >-

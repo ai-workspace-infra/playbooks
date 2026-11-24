@@ -30,6 +30,7 @@ xconnect_gateway_caddy_path: /xconnect
 xconnect_gateway_caddy_socket: /run/xconnect-gateway/xray.sock
 
 xray_enabled: true
+xray_merged_mode: false
 xray_binary_path: "/usr/local/bin/xray"
 xray_uuid: "00000000-0000-0000-0000-000000000000"
 xray_config_path: "/usr/local/etc/xray/config.json"
@@ -58,11 +59,11 @@ xray_xhttp_service_group: xray
 xray_xhttp_service_account_managed: true
 xray_legacy_service_user: ""
 xray_tcp_service_user: caddy
-xray_buffer_size_kb: 128
-xray_handshake_timeout_seconds: 30
+xray_buffer_size_kb: "{{ ((xconnect_node_maintenance | default({})).get('xray', {})).get('buffer_size_kb', 128) }}"
+xray_handshake_timeout_seconds: "{{ ((xconnect_node_maintenance | default({})).get('xray', {})).get('handshake_timeout_seconds', 30) }}"
 # Allow up to one hour without payload activity on an authenticated proxy
 # session. This accommodates very slow/paused large uploads; it is an idle
 # timeout, not a maximum request duration or file-size limit.
-xray_connection_idle_timeout_seconds: 3600
-xray_uplink_only_timeout_seconds: 15
-xray_downlink_only_timeout_seconds: 30
+xray_connection_idle_timeout_seconds: "{{ ((xconnect_node_maintenance | default({})).get('xray', {})).get('connection_idle_timeout_seconds', 3600) }}"
+xray_uplink_only_timeout_seconds: "{{ ((xconnect_node_maintenance | default({})).get('xray', {})).get('uplink_only_timeout_seconds', 15) }}"
+xray_downlink_only_timeout_seconds: "{{ ((xconnect_node_maintenance | default({})).get('xray', {})).get('downlink_only_timeout_seconds', 30) }}"

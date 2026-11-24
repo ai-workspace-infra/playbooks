@@ -170,6 +170,18 @@
   tags:
     - xray-runtime-config
 
+- name: Deploy unified proxy template
+  ansible.builtin.template:
+    src: xray.proxy.template.json.j2
+    dest: "{{ xray_template_dir }}/xray.proxy.template.json"
+    owner: "{{ agent_proxy_user }}"
+    group: "{{ agent_proxy_group }}"
+    mode: "0644"
+  notify: Restart agent-proxy
+  when: xray_enabled | bool
+  tags:
+    - xray-runtime-config
+
 - name: Deploy Xray systemd services
   ansible.builtin.template:
     src: "{{ item.src }}"
@@ -180,8 +192,23 @@
   loop:
     - { src: xray.service.j2, unit: xray.service }
     - { src: xray-tcp.service.j2, unit: xray-tcp.service }
-  when: xray_enabled | bool
+  when:
+    - xray_enabled | bool
+    - item.unit != 'xray-tcp.service' or not (xray_merged_mode | default(false) | bool)
   notify: Restart Xray services
+  tags:
+    - xray-runtime-config
+
+- name: Stop and disable standalone xray-tcp service in merged mode
+  ansible.builtin.systemd:
+    name: xray-tcp.service
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  failed_when: false
+  when:
+    - xray_enabled | bool
+    - xray_merged_mode | default(false) | bool
   tags:
     - xray-runtime-config
 
@@ -192,9 +219,7 @@
 - name: Check whether agent-generated Xray runtime configurations already exist
   ansible.builtin.stat:
     path: "{{ item }}"
-  loop:
-    - "{{ xray_config_path }}"
-    - "{{ xray_tcp_config_path }}"
+  loop: "{{ [xray_config_path] if (xray_merged_mode | default(false) | bool) else [xray_config_path, xray_tcp_config_path] }}"
   register: xconnect_proxy_runtime_configs
   when: xray_enabled | bool
 
@@ -203,9 +228,7 @@
   environment:
     XRAY_LOCATION_ASSET: "/usr/local/share/xray/"
   changed_when: false
-  loop:
-    - "{{ xray_config_path }}"
-    - "{{ xray_tcp_config_path }}"
+  loop: "{{ [xray_config_path] if (xray_merged_mode | default(false) | bool) else [xray_config_path, xray_tcp_config_path] }}"
   when:
     - xray_enabled | bool
     - (xconnect_proxy_runtime_configs.results | map(attribute='stat.exists') | min | default(false))
@@ -216,9 +239,7 @@
     enabled: true
     state: started
     daemon_reload: true
-  loop:
-    - xray.service
-    - xray-tcp.service
+  loop: "{{ ['xray.service'] if (xray_merged_mode | default(false) | bool) else ['xray.service', 'xray-tcp.service'] }}"
   when:
     - xray_enabled | bool
     - (xconnect_proxy_runtime_configs.results | map(attribute='stat.exists') | min | default(false))

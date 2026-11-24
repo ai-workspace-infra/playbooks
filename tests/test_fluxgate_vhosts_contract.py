@@ -114,6 +114,29 @@ class FluxgateVhostsContractTest(unittest.TestCase):
         self.assertIn("ansible-pull-flux-limits.timer", timer_tasks)
         self.assertIn("ansible-pull-observability.timer", timer_tasks)
 
+    def test_merged_xray_proxy_and_node_maintenance_contracts(self) -> None:
+        merged_tpl = (ROOT / "roles/vhosts/xconnect_proxy/templates/xray.proxy.template.json.j2").read_text()
+        self.assertIn('"tag": "proxy-xhttp-in"', merged_tpl)
+        self.assertIn('"tag": "proxy-tcp-in"', merged_tpl)
+        self.assertIn('"bufferSize": {{ xray_buffer_size_kb }}', merged_tpl)
+        self.assertIn('"uplinkOnly": {{ xray_uplink_only_timeout_seconds }}', merged_tpl)
+        self.assertIn('"downlinkOnly": {{ xray_downlink_only_timeout_seconds }}', merged_tpl)
+        self.assertNotIn("dokodemo-door", merged_tpl)
+
+        xray_unit = (ROOT / "roles/vhosts/xconnect_proxy/templates/xray.service.j2").read_text()
+        self.assertIn("xray_merged_mode", xray_unit)
+        self.assertIn("SupplementaryGroups=caddy", xray_unit)
+        self.assertIn("ExecReload=/bin/kill -HUP $MAINPID", xray_unit)
+
+        agent_profile = (ROOT / "roles/vhosts/xconnect-edge-agent/templates/agent-proxy-profile.yaml.j2").read_text()
+        self.assertIn("xray.proxy.template.json", agent_profile)
+
+        haproxy_defaults = (ROOT / "roles/vhosts/haproxy/defaults/main.yml").read_text()
+        self.assertIn("xconnect_node_maintenance", haproxy_defaults)
+        baseline = (ROOT / "roles/vhosts/xconnect_proxy/tasks/network_baseline.yml").read_text()
+        self.assertIn("99-xconnect-media-lowlatency.conf", baseline)
+        self.assertIn("xconnect_node_maintenance", baseline)
+
 
 if __name__ == "__main__":
     unittest.main()

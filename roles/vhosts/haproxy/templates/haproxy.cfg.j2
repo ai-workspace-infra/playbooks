@@ -22,8 +22,12 @@ defaults
     mode    http
     option  dontlognull
     option  dontlog-normal
+{% if haproxy_clitcpka | default(true) | bool %}
     option  clitcpka
+{% endif %}
+{% if haproxy_srvtcpka | default(true) | bool %}
     option  srvtcpka
+{% endif %}
     timeout connect 5s
     timeout client  {{ haproxy_timeout_tunnel }}
     timeout server  {{ haproxy_timeout_tunnel }}
@@ -106,7 +110,7 @@ backend be_exporter_xhttp
 backend be_exporter_tcp
     mode http
     http-request replace-path /xray-exporter/tcp/(.*) /\1
-    server exp_tcp {{ haproxy_exporter_tcp_upstream }}
+    server exp_tcp {{ haproxy_exporter_xhttp_upstream if (xray_merged_mode | default(false) | bool) else haproxy_exporter_tcp_upstream }}
 
 backend be_default
     mode http
