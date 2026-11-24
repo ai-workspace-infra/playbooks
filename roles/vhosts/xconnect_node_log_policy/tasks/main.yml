@@ -21,6 +21,8 @@
       - xconnect_node_journal_policy.sync_interval is match('^[1-9][0-9]*(s|sec|min|m|h)$')
       - xconnect_node_journal_policy.rate_limit_interval is match('^[1-9][0-9]*(s|sec|min|h)$')
       - xconnect_node_journal_policy.rate_limit_burst | int > 0
+      - xconnect_node_journal_policy.service_memory_high is match('^[1-9][0-9]*[KMG]$')
+      - xconnect_node_journal_policy.service_memory_max is match('^[1-9][0-9]*[KMG]$')
       - xconnect_node_rotated_log_policy.keep_days | int > 0
       - xconnect_node_rotated_log_policy.patterns | length > 0
 
@@ -64,6 +66,25 @@
     mode: "0644"
     backup: true
   notify: Restart systemd-journald
+
+- name: Ensure systemd-journald drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/systemd-journald.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install systemd-journald cgroup memory limits
+  ansible.builtin.template:
+    src: journald-service-limits.conf.j2
+    dest: /etc/systemd/system/systemd-journald.service.d/90-xconnect-memory-limits.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart systemd-journald
 
 - name: Install periodic journal vacuum service
   ansible.builtin.template:

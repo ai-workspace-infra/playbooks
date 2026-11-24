@@ -141,6 +141,10 @@ class FluxgateVhostsContractTest(unittest.TestCase):
         pull_obs = (ROOT / "pull_observability_agent.yml").read_text()
         self.assertIn("xconnect-proxy-xray.service", pull_obs)
 
+        log_tasks = (ROOT / "roles/vhosts/xconnect_node_log_policy/tasks/main.yml").read_text()
+        self.assertIn("90-xconnect-memory-limits.conf", log_tasks)
+        self.assertTrue((ROOT / "roles/vhosts/xconnect_node_log_policy/templates/journald-service-limits.conf.j2").exists())
+
         haproxy_defaults = (ROOT / "roles/vhosts/haproxy/defaults/main.yml").read_text()
         self.assertIn("xconnect_node_maintenance", haproxy_defaults)
         baseline = (ROOT / "roles/vhosts/xconnect_proxy/tasks/network_baseline.yml").read_text()
