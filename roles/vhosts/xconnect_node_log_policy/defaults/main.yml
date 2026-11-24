@@ -4,21 +4,23 @@ xconnect_node_journal_defaults:
   # 实测单机日志量 4.6-13.4 MiB/天(xray.service 与 xconnect-edge-agent.service
   # 占绝大部分), 300M/14 天等于允许保留 20 天以上的实际写入量。收到 150M + 7 天,
   # 在 7.7G 的 xconnect-02 上把 journal 从 298M(占盘 3.9%)压到 ~4%。
-  system_max_use: 150M
+  system_max_use: 64M
   system_keep_free: 1G
-  system_max_file_size: 32M
+  system_max_file_size: 8M
   # 单文件封盘时间。到点即换新文件, 旧文件按 MaxRetentionSec 回收。
   max_file_sec: 1day
-  max_retention: 7day
-  runtime_max_use: 32M
-  runtime_max_file_size: 8M
+  max_retention: 3day
+  runtime_max_use: 16M
+  runtime_max_file_size: 4M
   rate_limit_interval: 30s
-  rate_limit_burst: 2000
+  rate_limit_burst: 500
   sync_interval: 5m
+  service_memory_high: 24M
+  service_memory_max: 48M
   # 定时截断。journald 的 SystemMaxUse/MaxRetentionSec 只在写入时检查, 安静节点不会
-  # 触发; 用 systemd timer 每周固定收敛一次, 并加随机延迟避免整条 fleet 同时 IO。
-  vacuum_on_calendar: "weekly"
+  # 触发; 用 systemd timer 每天固定收敛一次, 并加随机延迟避免整条 fleet 同时 IO。
+  vacuum_on_calendar: "daily"
   vacuum_randomized_delay: "6h"
 xconnect_node_rotated_log_defaults:
-  keep_days: 7
+  keep_days: 3
   patterns: ["*.gz", "*.[0-9]", "*.old"]

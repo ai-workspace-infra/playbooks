@@ -45,14 +45,14 @@ xray_access_logrotate_enabled: true
 xray_access_logrotate_size: "50M"
 xray_access_logrotate_retention: 7
 xray_journald_retention_enabled: true
-xray_journald_system_max_use: "300M"
-xray_journald_system_keep_free: "1G"
-xray_journald_system_max_file_size: "50M"
-xray_journald_max_retention: "14day"
-xray_journald_runtime_max_use: "64M"
+xray_journald_system_max_use: "{{ ((xconnect_node_maintenance | default({})).get('journald', {})).get('system_max_use', '64M') }}"
+xray_journald_system_keep_free: "{{ ((xconnect_node_maintenance | default({})).get('journald', {})).get('system_keep_free', '1G') }}"
+xray_journald_system_max_file_size: "{{ ((xconnect_node_maintenance | default({})).get('journald', {})).get('system_max_file_size', '8M') }}"
+xray_journald_max_retention: "{{ ((xconnect_node_maintenance | default({})).get('journald', {})).get('max_retention', '3day') }}"
+xray_journald_runtime_max_use: "{{ ((xconnect_node_maintenance | default({})).get('journald', {})).get('runtime_max_use', '16M') }}"
 xray_journald_compress: true
-xray_journald_rate_limit_interval: "30s"
-xray_journald_rate_limit_burst: 2000
+xray_journald_rate_limit_interval: "{{ ((xconnect_node_maintenance | default({})).get('journald', {})).get('rate_limit_interval', '30s') }}"
+xray_journald_rate_limit_burst: "{{ ((xconnect_node_maintenance | default({})).get('journald', {})).get('rate_limit_burst', 500) }}"
 xray_xhttp_api_port: 10086
 xray_tcp_api_port: 10087
 xray_xhttp_service_user: xray
