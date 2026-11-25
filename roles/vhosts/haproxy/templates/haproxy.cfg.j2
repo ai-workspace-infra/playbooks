@@ -77,12 +77,18 @@ frontend https_in
 
 backend be_xray_xhttp
     mode http
+{% if haproxy_xhttp_spillover_servers | default([]) | length > 0 %}
+    balance roundrobin
+{% endif %}
     option http-no-delay
     http-request set-path /split/ if { path /split }
 {% if haproxy_strip_x_padding | default(true) | bool %}
     http-request set-query "%[query,regsub('(^|&)x_padding=[^&]*','',g),regsub('^&','')]" if { query -m sub x_padding= }
 {% endif %}
-    server xray {{ haproxy_xhttp_unix_socket }} proto h2{% if haproxy_xhttp_send_proxy_v2 | default(false) | bool %} send-proxy-v2{% endif %}
+    server xray {{ haproxy_xhttp_unix_socket }} proto h2{% if haproxy_xhttp_send_proxy_v2 | default(false) | bool %} send-proxy-v2{% endif %}{% if haproxy_xhttp_spillover_servers | default([]) | length > 0 %} weight {{ haproxy_xhttp_local_weight | default(100) }}{% endif %}
+{% for peer in haproxy_xhttp_spillover_servers | default([]) %}
+    server {{ peer.name }} {{ peer.address }}{% if peer.ssl | default(true) | bool %} ssl verify {{ peer.verify | default('none') }} alpn h2{% if peer.sni is defined and peer.sni %} sni str({{ peer.sni }}){% endif %}{% else %} proto h2{% endif %} check inter {{ peer.check_inter | default('5s') }} fall {{ peer.fall | default(3) }} rise {{ peer.rise | default(2) }} weight {{ peer.weight | default(0) }}
+{% endfor %}
 
 {% if gateway_enabled %}
 
