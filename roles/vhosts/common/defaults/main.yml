@@ -41,6 +41,19 @@ journald_log_rotation:          # 启用 journald 日志管理
   system_max_use: 1G            # 默认系统日志最大使用空间
   runtime_max_use: 500M         # 默认运行时日志最大使用空间
 
+# Non-core background daemons disabled on edge/proxy hosts to preserve RAM/CPU.
+# sshd already enforces key-only auth (PasswordAuthentication no), so fail2ban
+# is disabled by default alongside unattended-upgrades, apt timers, auditd, polkit.
+common_fail2ban_enabled: false
+common_disable_non_core_services_enabled: true
+common_non_core_services_disabled:
+  - unattended-upgrades.service
+  - apt-daily.timer
+  - apt-daily-upgrade.timer
+  - fail2ban.service
+  - auditd.service
+  - polkit.service
+
 # 总开关
 enable_common: true
 
@@ -104,13 +117,11 @@ packages:
       - ca-certificates
       - gnupg
     list:                       # 要安装的软件包
-      - auditd
       - uidmap
       - fuse-overlayfs
   yum:
     enabled: true
     list:
-      - audit
       - uidmap
       - fuse-overlayfs
 

@@ -1,0 +1,16 @@
+---
+- name: Gather installed systemd unit facts before disabling non-core services
+  ansible.builtin.service_facts:
+  when: ansible_os_family != 'Darwin'
+
+- name: Stop and disable non-core background services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: "{{ common_non_core_services_disabled | default([]) }}"
+  when:
+    - ansible_os_family != 'Darwin'
+    - item in (ansible_facts.services | default({}))
+  failed_when: false
+  become: true
