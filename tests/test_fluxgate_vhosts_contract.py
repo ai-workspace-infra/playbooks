@@ -145,6 +145,19 @@ class FluxgateVhostsContractTest(unittest.TestCase):
         self.assertIn("90-xconnect-memory-limits.conf", log_tasks)
         self.assertTrue((ROOT / "roles/vhosts/xconnect_node_log_policy/templates/journald-service-limits.conf.j2").exists())
 
+        common_defaults = (ROOT / "roles/vhosts/common/defaults/main.yml").read_text()
+        for unit in (
+            "unattended-upgrades.service",
+            "apt-daily.timer",
+            "apt-daily-upgrade.timer",
+            "fail2ban.service",
+            "auditd.service",
+            "polkit.service",
+        ):
+            self.assertIn(unit, common_defaults)
+        self.assertIn("common_fail2ban_enabled: false", common_defaults)
+        self.assertTrue((ROOT / "roles/vhosts/common/tasks/disable_non_core_services.yml").exists())
+
         haproxy_defaults = (ROOT / "roles/vhosts/haproxy/defaults/main.yml").read_text()
         self.assertIn("xconnect_node_maintenance", haproxy_defaults)
         baseline = (ROOT / "roles/vhosts/xconnect_proxy/tasks/network_baseline.yml").read_text()

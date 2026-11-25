@@ -88,7 +88,16 @@
 - name: Base | configure fail2ban
   ansible.builtin.import_tasks: fail2ban.yml
   tags: [fail2ban, security]
-  when: ansible_os_family != 'Darwin'
+  when:
+    - ansible_os_family != 'Darwin'
+    - common_fail2ban_enabled | default(false) | bool
+
+- name: Base | stop and disable non-core background services
+  ansible.builtin.import_tasks: disable_non_core_services.yml
+  tags: [baseline, cleanup]
+  when:
+    - ansible_os_family != 'Darwin'
+    - common_disable_non_core_services_enabled | default(true) | bool
 
 - name: Base | file limits
   ansible.builtin.import_tasks: limits.yml
