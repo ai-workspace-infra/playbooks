@@ -489,8 +489,8 @@ max_events = 1
 timeout_secs = 5
 [sinks.billing_snapshot_ingest.buffer]
 type = "disk"
-# Persistent 512 MiB disk buffer to absorb traffic and network spikes
-max_size = {{ vector_disk_buffer_max_bytes | default(536870912) }}
+# Persistent disk v2 buffer (256 MiB minimum) to absorb traffic and network spikes
+max_size = {{ xconnect_vector_policy.get('billing_disk_buffer_max_bytes', vector_disk_buffer_max_bytes | default(268435488)) | int }}
 {% endif %}
 
 [sinks.prometheus_remote]
@@ -571,7 +571,7 @@ verify_hostname = {{ 'true' if xconnect_vector_policy.get('tls_verify', vector_t
 [sinks.prometheus_remote.healthcheck]
 enabled = false
 [sinks.prometheus_remote.batch]
-max_events = {{ vector_batch_max_events | default('500') }}
+max_events = {{ xconnect_vector_policy.get('prometheus_batch_max_events', vector_batch_max_events | default('250')) | int }}
 timeout_secs = {{ vector_batch_timeout | default('5') }}
 [sinks.prometheus_remote.request]
 retry_initial_backoff_secs = 2
@@ -580,12 +580,15 @@ rate_limit_duration_secs = 1
 rate_limit_num = 10
 [sinks.prometheus_remote.buffer]
 type = "memory"
-max_events = {{ vector_buffer_max_events | default('1000') }}
+max_events = {{ xconnect_vector_policy.get('prometheus_buffer_max_events', vector_buffer_max_events | default('500')) | int }}
 
 
 # ==========================================
 # 2. Logs Collection (VictoriaLogs)
 # ==========================================
+{% set obs_journal_input = 'xhttp_journal' if (vector_xhttp_monitoring_enabled | default(false) | bool) else ('system_journal' if (vector_system_journald_enabled | default(false) | bool) else '') %}
+{% set obs_system_logs_enabled = (xconnect_vector_policy.get('system_logs_enabled', vector_system_logs_enabled | default(true)) | bool) or (obs_journal_input | length == 0) %}
+{% if obs_system_logs_enabled %}
 [sources.system_logs]
 type = "file"
 {% if inventory_hostname == 'install.svc.plus' %}
@@ -596,6 +599,7 @@ include = ["/var/log/xray/error.log"]
 include = ["/var/log/syslog", "/var/log/auth.log"]
 {% endif %}
 ignore_older_secs = 86400
+{% endif %}
 
 {% if vector_system_journald_enabled | default(false) | bool and not (vector_xhttp_monitoring_enabled | default(false) | bool) %}
 [sources.system_journal]
@@ -605,16 +609,17 @@ include_units = {{ vector_system_journald_units | to_json }}
 exclude_units = ["vector.service"]
 {% endif %}
 
+{% set obs_log_inputs = [] %}
+{% if obs_system_logs_enabled %}
+{% set _ = obs_log_inputs.append("system_logs") %}
+{% endif %}
+{% if obs_journal_input | length > 0 %}
+{% set _ = obs_log_inputs.append(obs_journal_input) %}
+{% endif %}
 [transforms.process_logs]
 type = "remap"
 drop_on_abort = true
-{% if vector_xhttp_monitoring_enabled | default(false) | bool %}
-inputs = ["system_logs", "xhttp_journal"]
-{% elif vector_system_journald_enabled | default(false) | bool %}
-inputs = ["system_logs", "system_journal"]
-{% else %}
-inputs = ["system_logs"]
-{% endif %}
+inputs = {{ obs_log_inputs | to_json }}
 source = '''
 if is_string(.message) {
   if contains(string!(.message), "{{ xconnect_vector_policy.get('reverse_proxy_drop_substring', 'http.handlers.reverse_proxy') }}") { abort }
