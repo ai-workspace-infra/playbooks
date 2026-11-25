@@ -1,0 +1,99 @@
+name: k6 Proxy Capacity & ROI Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment (sit, uat, prod)
+        required: true
+        type: choice
+        default: prod
+        options:
+          - sit
+          - uat
+          - prod
+      target_host:
+        description: Target XConnect edge hostname (used for Grafana $instance linkage)
+        required: true
+        type: string
+        default: jp-xconnect-02.svc.plus
+      profile:
+        description: k6 load test profile
+        required: true
+        type: choice
+        default: proxy_capacity
+        options:
+          - proxy_capacity
+          - capacity
+          - smoke
+      duration:
+        description: Total test duration (5m, 10m, 30m, 60s, or profile)
+        required: true
+        type: choice
+        default: 5m
+        options:
+          - 5m
+          - 10m
+          - 30m
+          - 60s
+          - profile
+      max_vus:
+        description: Peak Virtual Users (1..1000 or profile)
+        required: true
+        type: string
+        default: '120'
+      p95_threshold_ms:
+        description: P95 SLO threshold in milliseconds (e.g. 1500)
+        required: true
+        type: string
+        default: '1500'
+
+permissions:
+  contents: read
+
+jobs:
+  k6-benchmark:
+    runs-on: ubuntu-24.04
+    env:
+      TARGET_ENV: ${{ inputs.environment }}
+      TARGET_HOST: ${{ inputs.target_host }}
+      K6_TEST_ID: k6-${{ inputs.environment }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run k6 capacity benchmark & stream metrics to VictoriaMetrics
+        id: run_k6
+        continue-on-error: true
+        env:
+          K6_TEST_ID: ${{ env.K6_TEST_ID }}
+          K6_PROMETHEUS_RW_SERVER_URL: https://observability.svc.plus/ingest/metrics/api/v1/write
+          K6_PROMETHEUS_RW_USERNAME: ${{ secrets.OBSERVABILITY_INGEST_USERNAME }}
+          K6_PROMETHEUS_RW_PASSWORD: ${{ secrets.OBSERVABILITY_INGEST_PASSWORD }}
+          K6_DISABLE_PROMETHEUS_RW: ${{ (secrets.OBSERVABILITY_INGEST_USERNAME == '' || secrets.OBSERVABILITY_INGEST_PASSWORD == '') && 'true' || 'false' }}
+        uses: ./.github/actions/k6-performance
+        with:
+          environment: ${{ inputs.environment }}
+          profile: ${{ inputs.profile }}
+          duration: ${{ inputs.duration }}
+          max_vus: ${{ inputs.max_vus }}
+          target_url: https://${{ inputs.target_host }}
+          p95_threshold_ms: ${{ inputs.p95_threshold_ms }}
+
+      - name: Publish Grafana Dynamic ROI linkage summary
+        run: |
+          GRAFANA_URL="https://observability.svc.plus/d/xconnect-topology-dynamic-roi?var-environment=${TARGET_ENV}&var-instance=${TARGET_HOST}&var-test_profile=${{ inputs.profile }}&var-testid=${K6_TEST_ID}"
+          {
+            echo "## XConnect k6 Capacity & Dynamic ROI Benchmark"
+            echo ""
+            echo "- **Test ID (\`testid\`)**: \`${K6_TEST_ID}\`"
+            echo "- **Target Edge Node (\`var-instance\`)**: \`${TARGET_HOST}\`"
+            echo "- **Profile / Duration / Peak VUs**: \`${{ inputs.profile }}\` / \`${{ inputs.duration }}\` / \`${{ inputs.max_vus }} VU\`"
+            echo "- **P95 SLO Threshold**: \`${{ inputs.p95_threshold_ms }} ms\`"
+            echo "- **Live Grafana Dashboard**: [Open in Grafana Dynamic ROI Panel](${GRAFANA_URL})"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Propagate k6 benchmark outcome
+        if: steps.run_k6.outcome == 'failure'
+        run: exit 1
