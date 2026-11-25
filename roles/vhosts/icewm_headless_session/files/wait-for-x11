@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+socket="/tmp/.X11-unix/X$1"
+attempt=0
+while [ "$attempt" -lt 50 ]; do
+  [ -S "$socket" ] && exit 0
+  sleep 0.1
+  attempt=$((attempt + 1))
+done
+exit 1

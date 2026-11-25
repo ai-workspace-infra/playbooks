@@ -28,3 +28,5 @@ package from `icewm_desktop_chrome_download_url`; pin it with
 - Remote Desktop Server: [`roles/vhosts/remote_desktop_xrdp_server`](../remote_desktop_xrdp_server/README.md)
 - WebRTC Bridge Runtime: [`roles/vhosts/webrtc_desktop_bridge`](../webrtc_desktop_bridge/README.md)
 
+
+Set `icewm_desktop_manage_user_config: true` to install configuration in an existing desktop user’s home while leaving `icewm_desktop_manage_user: false`. The existing user and its home directory must be provisioned beforehand. The default preserves the account-management setting.

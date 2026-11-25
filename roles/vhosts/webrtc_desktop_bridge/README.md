@@ -28,3 +28,4 @@ adding X11 dependencies back to `xworkmate-bridge`.
 - IceWM Desktop Role: [`roles/vhosts/icewm_desktop_minimal`](../icewm_desktop_minimal/README.md)
 - Remote Desktop Extraction: [`docs/migrations/remote-desktop-client-extraction.md`](file:///Users/shenlan/workspaces/xworkmate-app-ppa-series/docs/migrations/remote-desktop-client-extraction.md)
 
+Set both `webrtc_desktop_bridge_udp_port_min` and `webrtc_desktop_bridge_udp_port_max` to restrict the WebRTC UDP port range. Leave both empty to use the server default. Ensure the host and cloud firewalls permit the selected range.

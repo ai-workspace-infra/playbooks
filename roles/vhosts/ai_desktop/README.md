@@ -68,3 +68,4 @@ desktop or an SSH session.
 | Upstream Aggregator | [`roles/vhosts/ai_aggregator_v1`](../ai_aggregator_v1/README.md) | AI Aggregator gateway consuming CPA instances |
 | Architecture Guide | [`docs/setup-ai-workspace-all-in-one.md`](../../docs/setup-ai-workspace-all-in-one.md) | Security networking and remote desktop isolation guide |
 
+For a headless IceWM session set `ai_desktop_headless_enabled: true`, choose `ai_desktop_headless_display` and `ai_desktop_headless_screen`, and set `ai_desktop_webrtc_display` to the corresponding X display. Set `ai_desktop_remote_enabled: false` to omit XRDP. `ai_desktop_webrtc_udp_port_min` and `ai_desktop_webrtc_udp_port_max` select the WebRTC UDP range. Set `ai_desktop_manage_user_config: true` to configure the home of an existing desktop user while `ai_desktop_manage_user: false`. The desktop user must already exist if user management is disabled. Review the desktop user groups before enabling user management.

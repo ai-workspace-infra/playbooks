@@ -5,6 +5,8 @@
       - ansible_os_family == 'Debian'
       - webrtc_desktop_bridge_backend in ['x11']
       - webrtc_desktop_bridge_capture_tool in ['gstreamer']
+      - >-
+        (webrtc_desktop_bridge_udp_port_min | string | length == 0 and webrtc_desktop_bridge_udp_port_max | string | length == 0) or (webrtc_desktop_bridge_udp_port_min | string is match('^[0-9]+$') and webrtc_desktop_bridge_udp_port_max | string is match('^[0-9]+$') and webrtc_desktop_bridge_udp_port_min | int > 0 and webrtc_desktop_bridge_udp_port_max | int <= 65535 and webrtc_desktop_bridge_udp_port_min | int <= webrtc_desktop_bridge_udp_port_max | int)
     fail_msg: >-
       The extracted WebRTC bridge currently supports only Debian X11 and
       GStreamer runtime.
