@@ -5,6 +5,9 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory={{ agent_proxy_config_dir }}
+Environment="DD_TRACE_ENABLED={{ agent_dd_trace_enabled | bool | ternary('true', 'false') }}"
+Environment="DD_AGENT_HOST={{ agent_dd_agent_host }}"
+Environment="DD_TRACE_AGENT_PORT={{ agent_dd_trace_agent_port }}"
 ExecStartPre=/usr/bin/test -r {{ agent_proxy_config_path }}
 ExecStart={{ agent_proxy_binary_path }} -config {{ agent_proxy_config_path }}
 Restart=always
