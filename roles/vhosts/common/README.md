@@ -1,5 +1,18 @@
 # Common vhost configuration
 
+## Supported operating systems
+
+The Linux baseline supports Debian-family and RedHat-family systems through
+Ansible facts. Fedora 44 is covered by the RedHat-family DNF path (including
+systems using the DNF5 backend); the default RPM package set contains only
+packages available from the Fedora repositories. `uidmap` remains in the APT
+package set and is not requested from Fedora's RPM repositories.
+
+The firewall integration is optional per host. Set
+`common_firewall.enabled: false` when firewall policy is managed outside this
+role or the host does not use UFW/firewalld. The role does not install or
+require firewalld when this switch is disabled.
+
 ## Explicit operator K3s sudo profile (OPS host)
 
 Included by `os_identity.yml` (run `common_os_identities.yml`) on hosts that set
