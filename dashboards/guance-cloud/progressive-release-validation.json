@@ -1,0 +1,1765 @@
+{
+  "title": "Progressive Release Validation",
+  "description": "Blackbox 10 核心发布 API 探活矩阵与 Flagger 金丝雀渐进发布验证看板。专属目录: dashboards/guance-cloud/progressive-release-validation.json (roles/saas/guance-dashboard)。",
+  "tags": [
+    "blackbox",
+    "flagger",
+    "release",
+    "saas",
+    "ci"
+  ],
+  "uid": "progressive-release-validation",
+  "dashboardExtend": {
+    "groupUnfoldStatus": {
+      "发布门禁总览": true,
+      "核心 API 探活矩阵": true,
+      "Flagger 渐进发布与金丝雀流量": true,
+      "端点明细与 SLA": true
+    }
+  },
+  "main": {
+    "vars": [
+      {
+        "name": "Environment",
+        "seq": 0,
+        "code": "environment",
+        "hide": 0,
+        "multiple": true,
+        "includeStar": true,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "query",
+          "starMeaning": ".*",
+          "refresh": 1
+        },
+        "datasource": "dataflux",
+        "type": "PROMQL_QUERY",
+        "definition": {
+          "tag": "",
+          "field": "",
+          "value": "label_values(probe_success{job=\"progressive-release-probes\"},environment)",
+          "metric": "probe_success{job=\"progressive-release-probes\"}",
+          "object": "",
+          "defaultVal": {
+            "label": "",
+            "value": ""
+          }
+        }
+      },
+      {
+        "name": "Cluster",
+        "seq": 1,
+        "code": "cluster",
+        "hide": 0,
+        "multiple": true,
+        "includeStar": true,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "query",
+          "starMeaning": ".*",
+          "refresh": 1
+        },
+        "datasource": "dataflux",
+        "type": "PROMQL_QUERY",
+        "definition": {
+          "tag": "",
+          "field": "",
+          "value": "label_values(probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\"},cluster)",
+          "metric": "probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\"}",
+          "object": "",
+          "defaultVal": {
+            "label": "",
+            "value": ""
+          }
+        }
+      },
+      {
+        "name": "Namespace",
+        "seq": 2,
+        "code": "namespace",
+        "hide": 0,
+        "multiple": true,
+        "includeStar": true,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "query",
+          "starMeaning": ".*",
+          "refresh": 1
+        },
+        "datasource": "dataflux",
+        "type": "PROMQL_QUERY",
+        "definition": {
+          "tag": "",
+          "field": "",
+          "value": "label_values(flagger_canary_weight,namespace)",
+          "metric": "flagger_canary_weight",
+          "object": "",
+          "defaultVal": {
+            "label": "",
+            "value": ""
+          }
+        }
+      },
+      {
+        "name": "Interval",
+        "seq": 3,
+        "code": "interval",
+        "hide": 0,
+        "multiple": false,
+        "includeStar": false,
+        "valueSort": "desc",
+        "extend": {
+          "originalType": "interval",
+          "options": [
+            {
+              "selected": false,
+              "text": "1m",
+              "value": "1m"
+            },
+            {
+              "selected": true,
+              "text": "5m",
+              "value": "5m"
+            },
+            {
+              "selected": false,
+              "text": "15m",
+              "value": "15m"
+            },
+            {
+              "selected": false,
+              "text": "30m",
+              "value": "30m"
+            },
+            {
+              "selected": false,
+              "text": "1h",
+              "value": "1h"
+            }
+          ],
+          "refresh": 2
+        },
+        "datasource": "custom",
+        "type": "CUSTOM_LIST",
+        "definition": {
+          "value": "1m,5m,15m,30m,1h",
+          "defaultVal": {
+            "label": "5m",
+            "value": "5m"
+          }
+        }
+      }
+    ],
+    "charts": [
+      {
+        "name": "Probe Gate · 全量 10 端点健康",
+        "type": "singlestat",
+        "group": {
+          "name": "发布门禁总览"
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "w": 8,
+          "h": 8
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "10 个渐进发布核心端点全部探活成功时为 1；缺序列或任一失败则告警。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#ffffff",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#ffffff",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "gate",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A"
+          }
+        },
+        "queries": [
+          {
+            "name": "gate",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "min(probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\"}) and (count(probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\"}) == 10)",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Failing Endpoint Checks",
+        "type": "singlestat",
+        "group": {
+          "name": "发布门禁总览"
+        },
+        "pos": {
+          "x": 8,
+          "y": 0,
+          "w": 8,
+          "h": 8
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "当前失败的发布探活数量；无数据说明采集器未运行。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  0
+                ],
+                "bgColor": "green",
+                "fontColor": "#ffffff",
+                "operation": "<="
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#ffffff",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "failing",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A"
+          }
+        },
+        "queries": [
+          {
+            "name": "failing",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum(1 - probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\"})",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Observed Probes",
+        "type": "singlestat",
+        "group": {
+          "name": "发布门禁总览"
+        },
+        "pos": {
+          "x": 16,
+          "y": 0,
+          "w": 8,
+          "h": 8
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "当前环境与集群实际观测到的探活端点数量（期望值为 10）。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  10
+                ],
+                "bgColor": "red",
+                "fontColor": "#ffffff",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  10
+                ],
+                "bgColor": "green",
+                "fontColor": "#ffffff",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "observed",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A"
+          }
+        },
+        "queries": [
+          {
+            "name": "observed",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "count(probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\"})",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Console · /healthz",
+        "type": "singlestat",
+        "group": {
+          "name": "核心 API 探活矩阵"
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 8
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "1 表示 HTTP 探活命中预期状态码；0 表示失败；无数据表示采集缺失或陈旧。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#ffffff",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#ffffff",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "console /healthz",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A"
+          }
+        },
+        "queries": [
+          {
+            "name": "console /healthz",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=\"console\",route=\"/healthz\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Console · /login",
+        "type": "singlestat",
+        "group": {
+          "name": "核心 API 探活矩阵"
+        },
+        "pos": {
+          "x": 4,
+          "y": 0,
+          "w": 4,
+          "h": 8
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "1 表示 HTTP 探活命中预期状态码；0 表示失败；无数据表示采集缺失或陈旧。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#ffffff",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#ffffff",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "console /login",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A"
+          }
+        },
+        "queries": [
+          {
+            "name": "console /login",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=\"console\",route=\"/login\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Console · /panel/agent",
+        "type": "singlestat",
+        "group": {
+          "name": "核心 API 探活矩阵"
+        },
+        "pos": {
+          "x": 8,
+          "y": 0,
+          "w": 4,
+          "h": 8
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "1 表示 HTTP 探活命中预期状态码；0 表示失败；无数据表示采集缺失或陈旧。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#ffffff",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#ffffff",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "console /panel/agent",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A"
+          }
+        },
+        "queries": [
+          {
+            "name": "console /panel/agent",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=\"console\",route=\"/panel/agent\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Accounts · /healthz",
+        "type": "singlestat",
+        "group": {
+          "name": "核心 API 探活矩阵"
+        },
+        "pos": {
+          "x": 12,
+          "y": 0,
+          "w": 4,
+          "h": 8
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "1 表示 HTTP 探活命中预期状态码；0 表示失败；无数据表示采集缺失或陈旧。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#ffffff",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#ffffff",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "accounts /healthz",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A"
+          }
+        },
+        "queries": [
+          {
+            "name": "accounts /healthz",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=\"accounts\",route=\"/healthz\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Accounts · /readyz",
+        "type": "singlestat",
+        "group": {
+          "name": "核心 API 探活矩阵"
+        },
+        "pos": {
+          "x": 16,
+          "y": 0,
+          "w": 8,
+          "h": 8
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "1 表示 HTTP 探活命中预期状态码；0 表示失败；无数据表示采集缺失或陈旧。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#ffffff",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#ffffff",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "accounts /readyz",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A"
+          }
+        },
+        "queries": [
+          {
+            "name": "accounts /readyz",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=\"accounts\",route=\"/readyz\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Accounts · /api/ping",
+        "type": "singlestat",
+        "group": {
+          "name": "核心 API 探活矩阵"
+        },
+        "pos": {
+          "x": 0,
+          "y": 8,
+          "w": 4,
+          "h": 8
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "1 表示 HTTP 探活命中预期状态码；0 表示失败；无数据表示采集缺失或陈旧。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#ffffff",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#ffffff",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "accounts /api/ping",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A"
+          }
+        },
+        "queries": [
+          {
+            "name": "accounts /api/ping",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=\"accounts\",route=\"/api/ping\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Accounts · /api/billing/plans",
+        "type": "singlestat",
+        "group": {
+          "name": "核心 API 探活矩阵"
+        },
+        "pos": {
+          "x": 4,
+          "y": 8,
+          "w": 4,
+          "h": 8
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "1 表示 HTTP 探活命中预期状态码；0 表示失败；无数据表示采集缺失或陈旧。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#ffffff",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#ffffff",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "accounts /api/billing/plans",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A"
+          }
+        },
+        "queries": [
+          {
+            "name": "accounts /api/billing/plans",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=\"accounts\",route=\"/api/billing/plans\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Billing · /healthz",
+        "type": "singlestat",
+        "group": {
+          "name": "核心 API 探活矩阵"
+        },
+        "pos": {
+          "x": 8,
+          "y": 8,
+          "w": 4,
+          "h": 8
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "1 表示 HTTP 探活命中预期状态码；0 表示失败；无数据表示采集缺失或陈旧。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#ffffff",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#ffffff",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "billing /healthz",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A"
+          }
+        },
+        "queries": [
+          {
+            "name": "billing /healthz",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=\"billing\",route=\"/healthz\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Billing · /readyz",
+        "type": "singlestat",
+        "group": {
+          "name": "核心 API 探活矩阵"
+        },
+        "pos": {
+          "x": 12,
+          "y": 8,
+          "w": 4,
+          "h": 8
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "1 表示 HTTP 探活命中预期状态码；0 表示失败；无数据表示采集缺失或陈旧。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#ffffff",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#ffffff",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "billing /readyz",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A"
+          }
+        },
+        "queries": [
+          {
+            "name": "billing /readyz",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=\"billing\",route=\"/readyz\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Billing · /api/ping",
+        "type": "singlestat",
+        "group": {
+          "name": "核心 API 探活矩阵"
+        },
+        "pos": {
+          "x": 16,
+          "y": 8,
+          "w": 8,
+          "h": 8
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "1 表示 HTTP 探活命中预期状态码；0 表示失败；无数据表示采集缺失或陈旧。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "0",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "stackType": "time",
+            "chartType": "line",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "levels": [
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "red",
+                "fontColor": "#ffffff",
+                "operation": "<"
+              },
+              {
+                "value": [
+                  1
+                ],
+                "bgColor": "green",
+                "fontColor": "#ffffff",
+                "operation": ">="
+              }
+            ],
+            "alias": [
+              {
+                "alias": "billing /api/ping",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A"
+          }
+        },
+        "queries": [
+          {
+            "name": "billing /api/ping",
+            "type": "singlestat",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\",service=\"billing\",route=\"/api/ping\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Flagger Candidate Weight",
+        "type": "sequence",
+        "group": {
+          "name": "Flagger 渐进发布与金丝雀流量"
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "w": 8,
+          "h": 14
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Flagger 金丝雀当前流量权重百分比。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "bottom",
+            "showLine": true,
+            "lineType": "smooth",
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "percent",
+              "percent"
+            ],
+            "alias": [
+              {
+                "alias": "{{name}}",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "fillOpacity": 10,
+                "drawStyle": "line"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{name}}",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "flagger_canary_weight{namespace=~\"#{namespace}\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Flagger Canary Status",
+        "type": "sequence",
+        "group": {
+          "name": "Flagger 渐进发布与金丝雀流量"
+        },
+        "pos": {
+          "x": 8,
+          "y": 0,
+          "w": 8,
+          "h": 14
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Flagger Canary 状态值（0=Initializing, 1=Initialized, 2=Waiting, 3=Progressing, 4=Promoting, 5=Finalising, 6=Succeeded, 7=Failed）。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "bottom",
+            "showLine": true,
+            "lineType": "smooth",
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "alias": [
+              {
+                "alias": "{{name}}",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "fillOpacity": 10,
+                "drawStyle": "line"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{name}}",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "flagger_canary_status{namespace=~\"#{namespace}\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Flagger Failed Checks",
+        "type": "sequence",
+        "group": {
+          "name": "Flagger 渐进发布与金丝雀流量"
+        },
+        "pos": {
+          "x": 16,
+          "y": 0,
+          "w": 8,
+          "h": 14
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Flagger 金丝雀累计失败检查次数。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "bottom",
+            "showLine": true,
+            "lineType": "smooth",
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "alias": [
+              {
+                "alias": "{{name}}",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "fillOpacity": 10,
+                "drawStyle": "line"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{name}}",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "flagger_canary_failed_checks{namespace=~\"#{namespace}\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Candidate Request Samples (Traefik)",
+        "type": "sequence",
+        "group": {
+          "name": "Flagger 渐进发布与金丝雀流量"
+        },
+        "pos": {
+          "x": 0,
+          "y": 14,
+          "w": 24,
+          "h": 14
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Traefik 转发到 canary Service 的请求增量样本。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "bottom",
+            "showLine": true,
+            "lineType": "smooth",
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "alias": [
+              {
+                "alias": "{{exported_service}}",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "fillOpacity": 10,
+                "drawStyle": "line"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{exported_service}}",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "sum by (exported_service) (increase(traefik_service_requests_total{exported_service=~\".*-canary-80(@kubernetescrd)?\",environment=~\"#{environment}\",cluster=~\"#{cluster}\"}[#{interval}]))",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Top 10 Endpoint Details · Probe Status",
+        "type": "table",
+        "group": {
+          "name": "端点明细与 SLA"
+        },
+        "pos": {
+          "x": 0,
+          "y": 0,
+          "w": 24,
+          "h": 14
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "10 个核心 API 端点的实时探活状态明细。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "chartType": "table",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "queryMode": "toGroupColumn",
+            "showTableHead": true,
+            "pageEnable": false,
+            "pageSize": 20,
+            "showColumns": [
+              "service",
+              "route",
+              "status"
+            ],
+            "mainMeasurementQueryCode": "A",
+            "mainMeasurementSort": "top",
+            "extend": {
+              "table": {
+                "align": "center"
+              },
+              "tableColumns": [
+                {
+                  "field": "service",
+                  "title": "service",
+                  "order": 0,
+                  "align": "center"
+                },
+                {
+                  "field": "route",
+                  "title": "route",
+                  "order": 1,
+                  "align": "center"
+                },
+                {
+                  "field": "Value #A",
+                  "title": "status",
+                  "order": 2,
+                  "align": "center"
+                }
+              ]
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "table",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Observed HTTP Status",
+        "type": "table",
+        "group": {
+          "name": "端点明细与 SLA"
+        },
+        "pos": {
+          "x": 0,
+          "y": 14,
+          "w": 12,
+          "h": 14
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "Blackbox 探活返回的实际 HTTP 状态码。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "chartType": "table",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "number",
+              "short_scale"
+            ],
+            "queryMode": "toGroupColumn",
+            "showTableHead": true,
+            "pageEnable": false,
+            "pageSize": 20,
+            "showColumns": [
+              "service",
+              "route",
+              "http_status"
+            ],
+            "mainMeasurementQueryCode": "A",
+            "mainMeasurementSort": "top",
+            "extend": {
+              "table": {
+                "align": "center"
+              },
+              "tableColumns": [
+                {
+                  "field": "service",
+                  "title": "service",
+                  "order": 0,
+                  "align": "center"
+                },
+                {
+                  "field": "route",
+                  "title": "route",
+                  "order": 1,
+                  "align": "center"
+                },
+                {
+                  "field": "Value #A",
+                  "title": "http_status",
+                  "order": 2,
+                  "align": "center"
+                }
+              ]
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "table",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "probe_http_status_code{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\"}",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Probe Duration · p95",
+        "type": "sequence",
+        "group": {
+          "name": "端点明细与 SLA"
+        },
+        "pos": {
+          "x": 12,
+          "y": 14,
+          "w": 12,
+          "h": 14
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "各 API 端点合成探活耗时 95 分位数（秒）。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "bottom",
+            "showLine": true,
+            "lineType": "smooth",
+            "stackType": "time",
+            "chartType": "areaLine",
+            "isTimeInterval": true,
+            "xAxisShowType": "time",
+            "unitType": "global",
+            "globalUnit": [
+              "time",
+              "s"
+            ],
+            "alias": [
+              {
+                "alias": "{{service}} {{route}}",
+                "key": "promql_1",
+                "name": "promql_1",
+                "queryCode": "A"
+              }
+            ],
+            "mainMeasurementQueryCode": "A",
+            "extend": {
+              "appearance": {
+                "fillOpacity": 10,
+                "drawStyle": "line"
+              }
+            }
+          }
+        },
+        "queries": [
+          {
+            "name": "{{service}} {{route}}",
+            "type": "sequence",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "quantile_over_time(0.95, probe_duration_seconds{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\"}[#{interval}])",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Probe Freshness · Seconds",
+        "type": "table",
+        "group": {
+          "name": "端点明细与 SLA"
+        },
+        "pos": {
+          "x": 0,
+          "y": 28,
+          "w": 24,
+          "h": 12
+        },
+        "extend": {
+          "settings": {
+            "showTitle": true,
+            "titleDesc": "最近一次探活样本距当前时间的秒数（陈旧数据将阻断发布晋级）。",
+            "isSampling": true,
+            "changeWorkspace": false,
+            "showFieldMapping": false,
+            "openThousandsSeparator": true,
+            "precision": "2",
+            "timeInterval": "auto",
+            "fixedTime": "",
+            "legendPostion": "none",
+            "lineType": "linear",
+            "chartType": "table",
+            "isTimeInterval": false,
+            "unitType": "global",
+            "globalUnit": [
+              "time",
+              "s"
+            ],
+            "queryMode": "toGroupColumn",
+            "showTableHead": true,
+            "pageEnable": false,
+            "pageSize": 20,
+            "showColumns": [
+              "service",
+              "route",
+              "age_seconds"
+            ],
+            "mainMeasurementQueryCode": "A",
+            "mainMeasurementSort": "top",
+            "extend": {
+              "table": {
+                "align": "center"
+              },
+              "tableColumns": [
+                {
+                  "field": "service",
+                  "title": "service",
+                  "order": 0,
+                  "align": "center"
+                },
+                {
+                  "field": "route",
+                  "title": "route",
+                  "order": 1,
+                  "align": "center"
+                },
+                {
+                  "field": "Value #A",
+                  "title": "age_seconds",
+                  "order": 2,
+                  "align": "center"
+                }
+              ]
+            }
+          }
+        },
+        "queries": [
+          {
+            "type": "table",
+            "qtype": "promql",
+            "datasource": "dataflux",
+            "disabled": false,
+            "query": {
+              "q": "time() - timestamp(probe_success{job=\"progressive-release-probes\",environment=~\"#{environment}\",cluster=~\"#{cluster}\"})",
+              "code": "A",
+              "type": "promql",
+              "promqlCode": 1
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

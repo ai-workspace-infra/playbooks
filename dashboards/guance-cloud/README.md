@@ -11,6 +11,7 @@
 | **Caddy 网关监控** | [`caddy-dashboard.json`](./caddy-dashboard.json) | 25 | `#{environment}`, `#{cluster}`, `#{service}`, `#{instance}`, `#{interval}` | 重载状态、HTTP 请求速率、请求/响应大小中位数、响应耗时分布、4xx/5xx 错误占比、Upstream 实例健康状态 |
 | **PostgreSQL 统一监控概览** | [`postgres-unified-overview.json`](./postgres-unified-overview.json) | 14 | `#{environment}`, `#{cluster}`, `#{service}`, `#{instance}`, `#{datname}` | `pg_up` 可用性、活跃连接数、事务提交与回滚率、缓存命中率、数据库存储容量、死锁与冲突数、BGWriter 刷盘性能 |
 | **K8S 集群监控 StarsL.cn** | [`starsl-k8s-dashboard.json`](./starsl-k8s-dashboard.json) | 33 | `#{cluster}`, `#{environment}`, `#{Node}`, `#{NameSpace}`, `#{Container}`, `#{Pod}` | 节点状态与资源水位（CPU/内存/磁盘）、Pod 状态与容器配额（Request/Limit）、命名空间限额、PVC 容量与 IO、网络吞吐 |
+| **渐进发布 API 验证 (CI Release)** | [`progressive-release-validation.json`](./progressive-release-validation.json) | 21 | `#{environment}`, `#{cluster}`, `#{namespace}`, `#{interval}` | 10 核心发布 API 探活门禁、Console/Accounts/Billing 探活矩阵、Flagger 金丝雀权重/状态/失败检查、Traefik 金丝雀流量、P95 耗时与样本新鲜度 |
 
 ---
 

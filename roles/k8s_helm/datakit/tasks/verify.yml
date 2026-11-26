@@ -26,4 +26,5 @@
   ansible.builtin.assert:
     that:
       - datakit_svc_status.resources | length > 0
-    fail_msg: "datakit-service 未能在命名空间 {{ datakit_namespace }} 中成功创建！"
+      - (datakit_svc_status.resources[0].spec.ports | map(attribute='port') | list) is contains(9529)
+    fail_msg: "datakit-service 未能在命名空间 {{ datakit_namespace }} 中成功创建或缺少 9529 端口！"

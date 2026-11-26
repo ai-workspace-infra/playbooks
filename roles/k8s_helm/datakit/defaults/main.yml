@@ -18,8 +18,8 @@ datakit_vault_token: "{{ lookup('ansible.builtin.env', 'VAULT_TOKEN') | default(
 # 观测云版本选择与 Vault 凭据分流: 'bj-free' (北京免费体验版) | 'hk-commercial' (香港商业生产版)
 # 领域类别标志：固定归属可观测性 (observability) 大类
 datakit_vault_category: "observability"
-# 默认按环境自动分流：prod 自动使用 hk-commercial，非 prod (dev/sit) 使用 bj-free
-datakit_edition: "{{ 'hk-commercial' if (target_env | default('dev')) == 'prod' else 'bj-free' }}"
+# 统一使用香港商业版 (cn6-openway.guance.com)
+datakit_edition: "hk-commercial"
 datakit_vault_path: "{{ datakit_vault_category }}/datakit/{{ datakit_edition }}"
 
 # DataWay 回退配置 (如果从 Vault 读取)
@@ -27,8 +27,44 @@ datakit_dataway_url: "{{ lookup('ansible.builtin.env', 'DATAKIT_DATAWAY_URL') | 
 
 # DataKit 默认配置
 datakit_global_tags: "cluster={{ k8s_cluster_name | default('default') }},env={{ target_env | default('') }}"
-datakit_default_inputs: "statsd,dk,cpu,disk,diskio,mem,swap,system,hostobject,net,container,kubernetesprometheus,opentelemetry,prom"
+datakit_default_inputs: "statsd,dk,cpu,disk,diskio,mem,swap,system,hostobject,net,host_processes,container,kubernetesprometheus,opentelemetry,prom,ddtrace"
 datakit_log_level: "info"
+
+# DDTrace 链路采集配置
+datakit_enable_ddtrace: true
+datakit_ddtrace_endpoints:
+  - "/v0.3/traces"
+  - "/v0.4/traces"
+  - "/v0.5/traces"
+
+# Host Processes 分钟级低频采集配置（控量防免费配额耗尽）
+datakit_enable_host_processes: true
+datakit_host_processes_metric_interval: "60s"
+datakit_host_processes_object_interval: "5m"
+datakit_host_processes_min_run_time: "10m"
+
+# 渐进发布 API 探活与 Flagger 指标独立采集配置（方案 A：解耦 vmagent）
+datakit_enable_progressive_release_probes: true
+datakit_blackbox_exporter_namespace: "observability-sit"
+datakit_blackbox_exporter_service: "observability-agent-blackbox"
+datakit_blackbox_exporter_port: 9115
+datakit_blackbox_exporter_url: "http://{{ datakit_blackbox_exporter_service }}.{{ datakit_blackbox_exporter_namespace }}:{{ datakit_blackbox_exporter_port }}/probe"
+datakit_progressive_release_targets:
+  - { target: "http://web-saas-console.web-saas-sit.svc/healthz", service: "console", route: "/healthz", probe_module: "release_http_ok", expected_status: "200" }
+  - { target: "http://web-saas-console.web-saas-sit.svc/login", service: "console", route: "/login", probe_module: "release_http_ok", expected_status: "200" }
+  - { target: "http://web-saas-console.web-saas-sit.svc/panel/agent", service: "console", route: "/panel/agent", probe_module: "release_login_redirect", expected_status: "307" }
+  - { target: "http://web-saas-accounts.web-saas-sit.svc/healthz", service: "accounts", route: "/healthz", probe_module: "release_http_ok", expected_status: "200" }
+  - { target: "http://web-saas-accounts.web-saas-sit.svc/readyz", service: "accounts", route: "/readyz", probe_module: "release_http_ok", expected_status: "200" }
+  - { target: "http://web-saas-accounts.web-saas-sit.svc/api/ping", service: "accounts", route: "/api/ping", probe_module: "release_http_ok", expected_status: "200" }
+  - { target: "http://web-saas-accounts.web-saas-sit.svc/api/billing/plans", service: "accounts", route: "/api/billing/plans", probe_module: "release_http_ok", expected_status: "200" }
+  - { target: "http://web-saas-billing.web-saas-sit.svc/healthz", service: "billing", route: "/healthz", probe_module: "release_http_ok", expected_status: "200" }
+  - { target: "http://web-saas-billing.web-saas-sit.svc/readyz", service: "billing", route: "/readyz", probe_module: "release_http_ok", expected_status: "200" }
+  - { target: "http://web-saas-billing.web-saas-sit.svc/api/ping", service: "billing", route: "/api/ping", probe_module: "release_http_ok", expected_status: "200" }
+
+datakit_flagger_metrics_namespace: "web-saas-sit"
+datakit_flagger_metrics_service: "web-saas-flagger-metrics"
+datakit_flagger_metrics_port: 8080
+datakit_flagger_metrics_url: "http://{{ datakit_flagger_metrics_service }}.{{ datakit_flagger_metrics_namespace }}:{{ datakit_flagger_metrics_port }}/metrics"
 
 # Restrict stdout/stderr collection to DEV/SIT business namespaces. Adjust only
 # through an explicit non-production inventory variable when the lane changes.

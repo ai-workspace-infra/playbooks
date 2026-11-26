@@ -141,6 +141,68 @@ dkconfig:
           job = "kubelet"
           node = "{{ inventory_hostname | default('sit-k3s-v6') }}"
           host = "{{ inventory_hostname | default('sit-k3s-v6') }}"
+{% if datakit_enable_host_processes %}
+  - name: "host-processes.conf"
+    path: "/usr/local/datakit/conf.d/host/host_processes.conf"
+    value: |
+      [[inputs.host_processes]]
+        min_run_time = "{{ datakit_host_processes_min_run_time }}"
+        open_metric = true
+        object_interval = "{{ datakit_host_processes_object_interval }}"
+        metric_interval = "{{ datakit_host_processes_metric_interval }}"
+        enable_listen_ports = false
+        enable_open_files = false
+        only_container_processes = false
+{% endif %}
+{% if datakit_enable_ddtrace %}
+  - name: "ddtrace.conf"
+    path: "/usr/local/datakit/conf.d/ddtrace/ddtrace.conf"
+    value: |
+      [[inputs.ddtrace]]
+        endpoints = {{ datakit_ddtrace_endpoints | to_json }}
+{% endif %}
+{% if datakit_enable_progressive_release_probes %}
+  - name: "progressive-release-probes.conf"
+    path: "/usr/local/datakit/conf.d/prom/progressive-release-probes.conf"
+    value: |
+{% for item in datakit_progressive_release_targets %}
+      [[inputs.prom]]
+        urls = ["{{ datakit_blackbox_exporter_url }}?target={{ item.target | urlencode }}&module={{ item.probe_module }}"]
+        source = "progressive-release-probes"
+        interval = "30s"
+        measurement_name = "progressive_release_probes"
+        keep_exist_metric_name = true
+        election = false
+        [inputs.prom.tags]
+          job = "progressive-release-probes"
+          cluster = "{{ k8s_cluster_name | default('sit-k3s-v6') }}"
+          environment = "{{ target_environment | default('sit') }}"
+          env = "{{ target_env | default('sit') }}"
+          service = "{{ item.service }}"
+          route = "{{ item.route }}"
+          probe_module = "{{ item.probe_module }}"
+          expected_status = "{{ item.expected_status }}"
+          instance = "{{ item.target }}"
+{% endfor %}
+  - name: "flagger-metrics.conf"
+    path: "/usr/local/datakit/conf.d/prom/flagger-metrics.conf"
+    value: |
+      [[inputs.prom]]
+        urls = ["{{ datakit_flagger_metrics_url }}"]
+        source = "flagger"
+        interval = "30s"
+        measurement_name = "flagger"
+        keep_exist_metric_name = true
+        election = false
+        [inputs.prom.tags]
+          cluster = "{{ k8s_cluster_name | default('sit-k3s-v6') }}"
+          environment = "{{ target_environment | default('sit') }}"
+          env = "{{ target_env | default('sit') }}"
+          namespace = "{{ datakit_flagger_metrics_namespace }}"
+          service = "flagger"
+          job = "flagger"
+          host = "{{ inventory_hostname | default('sit-k3s-v6') }}"
+{% endif %}
 
 resources:
   requests:

@@ -12,6 +12,7 @@ FILES = [
     ("caddy-dashboard.json", 25, ["environment", "cluster", "service", "instance", "interval"]),
     ("postgres-unified-overview.json", 14, ["environment", "cluster", "service", "instance", "datname"]),
     ("starsl-k8s-dashboard.json", 33, ["cluster", "environment", "Node", "NameSpace", "Container", "Pod"]),
+    ("progressive-release-validation.json", 21, ["environment", "cluster", "namespace", "interval"]),
 ]
 
 

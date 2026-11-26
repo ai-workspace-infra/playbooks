@@ -9,3 +9,4 @@
 1. `caddy-dashboard.json`: Caddy 网关监控（25 面板）
 2. `postgres-unified-overview.json`: PostgreSQL 统一监控概览（14 面板）
 3. `starsl-k8s-dashboard.json`: K8S 集群监控 StarsL.cn（33 面板）
+4. `progressive-release-validation.json`: 渐进发布 API 与 Flagger 验证看板（21 面板）
