@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+nft add table inet xconnect_one_pg_forward
+nft "add chain inet xconnect_one_pg_forward input { type filter hook input priority filter ; policy accept ; }"
+nft flush chain inet xconnect_one_pg_forward input
+nft add rule inet xconnect_one_pg_forward input iifname "{{ xconnect_one_pg_forward_interface }}" ip saddr {{ xconnect_one_pg_forward_allowed_source_cidr }} ip daddr {{ xconnect_one_pg_forward_bind_address }} tcp dport {{ xconnect_one_pg_forward_listen_port | int }} accept
+nft add rule inet xconnect_one_pg_forward input ip daddr {{ xconnect_one_pg_forward_bind_address }} tcp dport {{ xconnect_one_pg_forward_listen_port | int }} drop
+nft add rule inet xconnect_one_pg_forward input iifname "{{ xconnect_one_pg_forward_interface }}" tcp dport {{ xconnect_one_pg_forward_listen_port | int }} drop

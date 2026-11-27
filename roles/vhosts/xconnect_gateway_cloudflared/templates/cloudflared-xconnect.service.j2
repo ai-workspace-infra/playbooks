@@ -1,0 +1,20 @@
+[Unit]
+Description=Cloudflare Tunnel for XConnect Gateway ({{ xconnect_gateway_cloudflared_service_name }})
+After=network-online.target xconnect-gateway-xray.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile={{ xconnect_gateway_cloudflared_env_file }}
+ExecStart={{ xconnect_gateway_cloudflared_binary_path }} tunnel --no-autoupdate --protocol {{ xconnect_gateway_cloudflared_protocol }} --metrics {{ xconnect_gateway_cloudflared_metrics_listen_addr }}{% if xconnect_gateway_cloudflared_extra_args | trim | length > 0 %} {{ xconnect_gateway_cloudflared_extra_args | trim }}{% endif %} run
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

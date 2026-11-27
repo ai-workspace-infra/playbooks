@@ -12,3 +12,18 @@
   roles:
     - role: vhosts/xconnect_one
   tags: [xconnect-one]
+
+# Opt-in standalone play for private PostgreSQL TCP forwarding on prod-k3s-v6
+# (10.67.0.2:5432 -> 10.55.35.251:5432). Disabled by default via
+# xconnect_one_pg_forward_enabled: false and skipped unless explicitly tagged.
+- name: Configure XConnect One private PostgreSQL TCP forwarding
+  hosts: "{{ xconnect_one_hosts | default('xconnect_one') }}"
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Reconcile opt-in XConnect One private PostgreSQL TCP forwarding
+      ansible.builtin.include_role:
+        name: vhosts/xconnect_one
+        tasks_from: pg_forward
+      when: xconnect_one_pg_forward_enabled | default(false) | bool
+  tags: [never, xconnect-one-pg-forward]

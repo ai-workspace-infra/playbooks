@@ -1,0 +1,20 @@
+[Unit]
+Description=XConnect One private PostgreSQL TCP forwarder ({{ xconnect_one_pg_forward_bind_address }}:{{ xconnect_one_pg_forward_listen_port }} -> {{ xconnect_one_pg_forward_target_address }}:{{ xconnect_one_pg_forward_target_port }})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStartPre={{ xconnect_one_pg_forward_firewall_script_path }}
+ExecStart=/usr/bin/socat TCP-LISTEN:{{ xconnect_one_pg_forward_listen_port | int }},bind={{ xconnect_one_pg_forward_bind_address }},fork,reuseaddr,range={{ xconnect_one_pg_forward_allowed_source_cidr }} TCP:{{ xconnect_one_pg_forward_target_address }}:{{ xconnect_one_pg_forward_target_port | int }}
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

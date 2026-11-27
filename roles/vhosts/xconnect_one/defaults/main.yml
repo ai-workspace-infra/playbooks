@@ -35,3 +35,16 @@ xconnect_one_dns_server: ""
 xconnect_one_dns_domains: []
 xconnect_one_dns_manage_resolv_conf: true
 xconnect_one_dns_script_path: "/usr/local/lib/xconnect-one/configure-dns-{{ xconnect_one_environment }}.sh"
+
+# Optional private PostgreSQL TCP forwarding on the XConnect overlay
+# (e.g. prod-k3s-v6 10.67.0.2:5432 -> 10.55.35.251:5432 for jp-xconnect-gateway-01).
+# Strictly binds only on the WireGuard IP and restricts source peers to 10.67.0.1/32.
+xconnect_one_pg_forward_enabled: false
+xconnect_one_pg_forward_interface: xconzero0
+xconnect_one_pg_forward_bind_address: "10.67.0.2"
+xconnect_one_pg_forward_listen_port: 5432
+xconnect_one_pg_forward_target_address: "10.55.35.251"
+xconnect_one_pg_forward_target_port: 5432
+xconnect_one_pg_forward_allowed_source_cidr: "10.67.0.1/32"
+xconnect_one_pg_forward_service_name: xconnect-one-pg-forward
+xconnect_one_pg_forward_firewall_script_path: /usr/local/lib/xconnect-one/pg-forward-firewall.sh

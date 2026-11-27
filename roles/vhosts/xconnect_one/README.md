@@ -71,3 +71,18 @@ The Vault writer, OIDC role, ACL, record retention and cleanup workflow must
 be provisioned and verified separately before using this option. This role
 does not issue invitations or write to Vault. Existing invite URI and file
 inputs remain available, and must not be combined with a Vault path.
+
+## Opt-in Private PostgreSQL TCP Forwarding
+
+For service nodes that expose an internal PostgreSQL instance over the XConnect
+overlay to a designated Gateway (for example `prod-k3s-v6` exposing
+`10.67.0.2:5432 -> 10.55.35.251:5432` to `jp-xconnect-gateway-01` at
+`10.67.0.1`), set `xconnect_one_pg_forward_enabled: true`.
+
+- `xconnect_one_pg_forward_bind_address` (`10.67.0.2`) MUST be a specific
+  WireGuard IPv4 address on `xconnect_one_pg_forward_interface` (`xconzero0`),
+  never `0.0.0.0`.
+- `xconnect_one_pg_forward_allowed_source_cidr` (`10.67.0.1/32`) enforces a
+  strict `/32` peer restriction in both `nftables` (`inet xconnect_one_pg_forward`)
+  and `socat` (`range=10.67.0.1/32`).
+- Run standalone via `deploy_xconnect_one.yml --tags xconnect-one-pg-forward -e xconnect_one_pg_forward_enabled=true`.

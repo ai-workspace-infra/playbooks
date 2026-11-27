@@ -1,0 +1,7 @@
+---
+- name: Restart xconnect-one-pg-forward
+  ansible.builtin.systemd:
+    name: "{{ xconnect_one_pg_forward_service_name }}.service"
+    state: restarted
+    daemon_reload: true
+  when: xconnect_one_pg_forward_enabled | default(false) | bool
