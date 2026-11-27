@@ -1,0 +1,162 @@
+---
+- name: Provision opt-in cloudflared tunnel for XConnect Gateway
+  when: xconnect_gateway_cloudflared_enabled | default(false) | bool
+  block:
+    - name: Run anti-deadlock control-plane origin preflight
+      ansible.builtin.import_tasks: preflight.yml
+
+    - name: Validate cloudflared runtime configuration inputs
+      ansible.builtin.assert:
+        that:
+          - xconnect_gateway_cloudflared_service_name | trim | length > 0
+          - (xconnect_gateway_cloudflared_binary_path | trim) is match('^/')
+          - (xconnect_gateway_cloudflared_env_file | trim) is match('^/')
+          - xconnect_gateway_cloudflared_protocol in ['auto', 'quic', 'http2']
+        fail_msg: Invalid xconnect_gateway_cloudflared service or path configuration.
+
+    - name: Check installed cloudflared version
+      ansible.builtin.command:
+        argv:
+          - "{{ xconnect_gateway_cloudflared_binary_path }}"
+          - --version
+      register: xconnect_gateway_cloudflared_version_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install cloudflared binary from local controller artifact
+      ansible.builtin.copy:
+        src: "{{ xconnect_gateway_cloudflared_binary_source }}"
+        dest: "{{ xconnect_gateway_cloudflared_binary_path }}"
+        owner: root
+        group: root
+        mode: '0755'
+      when: xconnect_gateway_cloudflared_binary_source | trim | length > 0
+      notify: Restart cloudflared-xconnect
+
+    - name: Install cloudflared binary from official release
+      when:
+        - xconnect_gateway_cloudflared_binary_source | trim | length == 0
+        - >-
+          (xconnect_gateway_cloudflared_version_check.rc | default(1)) != 0 or
+          (xconnect_gateway_cloudflared_version not in (xconnect_gateway_cloudflared_version_check.stdout | default('')))
+      block:
+        - name: Resolve cloudflared release architecture
+          ansible.builtin.set_fact:
+            xconnect_gateway_cloudflared_arch: >-
+              {{ xconnect_gateway_cloudflared_arch_map[ansible_facts['architecture']] | default('') }}
+
+        - name: Require supported architecture for cloudflared release download
+          ansible.builtin.assert:
+            that:
+              - xconnect_gateway_cloudflared_arch | length > 0
+            fail_msg: >-
+              Unsupported architecture {{ ansible_facts['architecture'] }} for cloudflared binary download.
+
+        - name: Ensure cloudflared binary parent directory exists
+          ansible.builtin.file:
+            path: "{{ xconnect_gateway_cloudflared_binary_path | dirname }}"
+            state: directory
+            owner: root
+            group: root
+            mode: '0755'
+
+        - name: Download cloudflared release binary
+          ansible.builtin.get_url:
+            url: >-
+              {{ xconnect_gateway_cloudflared_download_base_url }}/{{
+              xconnect_gateway_cloudflared_version }}/cloudflared-linux-{{
+              xconnect_gateway_cloudflared_arch }}
+            dest: "{{ xconnect_gateway_cloudflared_binary_path }}"
+            checksum: >-
+              {{ ('sha256:' ~ xconnect_gateway_cloudflared_checksum)
+                 if (xconnect_gateway_cloudflared_checksum | trim | length > 0)
+                 else omit }}
+            force: true
+            owner: root
+            group: root
+            mode: '0755'
+            timeout: 120
+          register: xconnect_gateway_cloudflared_download
+          retries: 3
+          delay: 5
+          until: xconnect_gateway_cloudflared_download is succeeded
+          notify: Restart cloudflared-xconnect
+
+    - name: Verify installed cloudflared executable
+      ansible.builtin.command:
+        argv:
+          - "{{ xconnect_gateway_cloudflared_binary_path }}"
+          - --version
+      changed_when: false
+
+    - name: Validate Vault KV v2 source for Cloudflare Tunnel token
+      ansible.builtin.assert:
+        that:
+          - xconnect_gateway_cloudflared_vault_mount | trim | length > 0
+          - xconnect_gateway_cloudflared_vault_path | trim | length > 0
+          - xconnect_gateway_cloudflared_vault_token_field | trim | length > 0
+        fail_msg: >-
+          Either xconnect_gateway_cloudflared_tunnel_token or a valid Vault KV v2
+          mount/path (xconnect_gateway_cloudflared_vault_mount and
+          xconnect_gateway_cloudflared_vault_path) must be provided.
+      when: xconnect_gateway_cloudflared_tunnel_token | default('', true) | trim | length == 0
+      no_log: true
+
+    - name: Read Cloudflare Tunnel token from Vault KV v2
+      community.hashi_vault.vault_kv2_get:
+        engine_mount_point: "{{ xconnect_gateway_cloudflared_vault_mount }}"
+        path: "{{ xconnect_gateway_cloudflared_vault_path }}"
+      delegate_to: localhost
+      become: false
+      register: xconnect_gateway_cloudflared_vault_secret
+      no_log: true
+      when: xconnect_gateway_cloudflared_tunnel_token | default('', true) | trim | length == 0
+
+    - name: Resolve Cloudflare Tunnel token
+      ansible.builtin.set_fact:
+        xconnect_gateway_cloudflared_resolved_token: >-
+          {{ (xconnect_gateway_cloudflared_tunnel_token | trim)
+             if (xconnect_gateway_cloudflared_tunnel_token | default('', true) | trim | length > 0)
+             else ((xconnect_gateway_cloudflared_vault_secret.secret[xconnect_gateway_cloudflared_vault_token_field] | default('', true)) | trim) }}
+      no_log: true
+
+    - name: Require non-empty Cloudflare Tunnel token
+      ansible.builtin.assert:
+        that:
+          - xconnect_gateway_cloudflared_resolved_token | trim | length > 0
+        fail_msg: Cloudflare Tunnel token is empty after Vault/runtime resolution.
+      no_log: true
+
+    - name: Ensure cloudflared environment directory exists
+      ansible.builtin.file:
+        path: "{{ xconnect_gateway_cloudflared_env_file | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Write protected cloudflared tunnel token environment file
+      ansible.builtin.template:
+        src: cloudflared-xconnect.env.j2
+        dest: "{{ xconnect_gateway_cloudflared_env_file }}"
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+      notify: Restart cloudflared-xconnect
+
+    - name: Install cloudflared-xconnect systemd unit
+      ansible.builtin.template:
+        src: cloudflared-xconnect.service.j2
+        dest: "/etc/systemd/system/{{ xconnect_gateway_cloudflared_service_name }}.service"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart cloudflared-xconnect
+
+    - name: Enable and start cloudflared-xconnect systemd service
+      ansible.builtin.systemd:
+        name: "{{ xconnect_gateway_cloudflared_service_name }}.service"
+        enabled: true
+        state: started
+        daemon_reload: true

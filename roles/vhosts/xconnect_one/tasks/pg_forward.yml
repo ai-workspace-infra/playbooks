@@ -1,0 +1,86 @@
+---
+- name: Validate private PostgreSQL TCP forwarding inputs
+  ansible.builtin.assert:
+    that:
+      - xconnect_one_pg_forward_enabled | bool
+      - (xconnect_one_pg_forward_interface | trim) is match('^[a-zA-Z0-9_.-]{1,15}$')
+      - (xconnect_one_pg_forward_bind_address | trim) is match('^[0-9]+(\\.[0-9]+){3}$')
+      - (xconnect_one_pg_forward_bind_address | trim) != '0.0.0.0'
+      - (xconnect_one_pg_forward_target_address | trim) is match('^[0-9]+(\\.[0-9]+){3}$')
+      - (xconnect_one_pg_forward_target_address | trim) != '0.0.0.0'
+      - xconnect_one_pg_forward_listen_port | int > 0
+      - xconnect_one_pg_forward_listen_port | int < 65536
+      - xconnect_one_pg_forward_target_port | int > 0
+      - xconnect_one_pg_forward_target_port | int < 65536
+      - (xconnect_one_pg_forward_allowed_source_cidr | trim) is match('^[0-9]+(\\.[0-9]+){3}/32$')
+      - (xconnect_one_pg_forward_allowed_source_cidr | trim) != '0.0.0.0/0'
+    fail_msg: >-
+      xconnect_one_pg_forward must bind a non-wildcard WireGuard IPv4 address
+      (e.g. 10.67.0.2) and restrict peer access to a /32 source CIDR
+      (e.g. 10.67.0.1/32).
+
+- name: Install socat and nftables for private PostgreSQL TCP forwarding
+  ansible.builtin.apt:
+    name:
+      - socat
+      - nftables
+    state: present
+    update_cache: true
+    lock_timeout: "{{ ai_workspace_apt_lock_timeout | default(180) | int }}"
+
+- name: Ensure XConnect One helper directory exists for pg_forward
+  ansible.builtin.file:
+    path: "{{ xconnect_one_pg_forward_firewall_script_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Verify WireGuard interface holds the declared pg_forward bind address
+  ansible.builtin.command:
+    argv:
+      - ip
+      - -4
+      - addr
+      - show
+      - dev
+      - "{{ xconnect_one_pg_forward_interface }}"
+  register: xconnect_one_pg_forward_wg_addr
+  changed_when: false
+
+- name: Assert declared bind address is configured on the WireGuard interface
+  ansible.builtin.assert:
+    that:
+      - xconnect_one_pg_forward_bind_address in (xconnect_one_pg_forward_wg_addr.stdout | default(''))
+    fail_msg: >-
+      WireGuard interface {{ xconnect_one_pg_forward_interface }} does not hold
+      bind address {{ xconnect_one_pg_forward_bind_address }}.
+
+- name: Install nftables source-peer restriction script for pg_forward
+  ansible.builtin.template:
+    src: pg-forward-firewall.sh.j2
+    dest: "{{ xconnect_one_pg_forward_firewall_script_path }}"
+    owner: root
+    group: root
+    mode: '0700'
+  notify: Restart xconnect-one-pg-forward
+
+- name: Apply nftables source-peer restriction for private PostgreSQL forwarding
+  ansible.builtin.command: "{{ xconnect_one_pg_forward_firewall_script_path }}"
+  changed_when: false
+
+- name: Install private PostgreSQL TCP forwarder systemd service
+  ansible.builtin.template:
+    src: xconnect-one-pg-forward.service.j2
+    dest: "/etc/systemd/system/{{ xconnect_one_pg_forward_service_name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart xconnect-one-pg-forward
+
+- name: Enable and start private PostgreSQL TCP forwarder service
+  ansible.builtin.systemd:
+    name: "{{ xconnect_one_pg_forward_service_name }}.service"
+    enabled: true
+    state: started
+    daemon_reload: true

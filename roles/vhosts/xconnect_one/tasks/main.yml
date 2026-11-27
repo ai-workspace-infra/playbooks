@@ -366,3 +366,7 @@
     xconnect_observability_wireguard_interface: "{{ xconnect_one_expected_wireguard_interface }}"
     xconnect_observability_state_dir: "{{ xconnect_one_state_dir }}"
   when: xconnect_one_install_observability | bool
+
+- name: Configure private PostgreSQL TCP forwarding on XConnect overlay
+  ansible.builtin.include_tasks: pg_forward.yml
+  when: xconnect_one_pg_forward_enabled | default(false) | bool

@@ -1,0 +1,28 @@
+---
+- name: Resolve effective control-plane hosts for anti-deadlock preflight
+  ansible.builtin.set_fact:
+    xconnect_gateway_cloudflared_control_plane_host: >-
+      {{ (xconnect_gateway_control_plane_url | default('', true) | trim) | urlsplit('hostname') | default('', true) | lower }}
+    xconnect_gateway_cloudflared_gateway_controller_host: >-
+      {{ (xconnect_gateway_controller | default('', true) | trim) | urlsplit('hostname') | default('', true) | lower }}
+
+- name: Enforce anti-deadlock control-plane origin preflight
+  ansible.builtin.assert:
+    that:
+      - (xconnect_gateway_control_plane_url | default('', true) | trim) is match('^https://')
+      - xconnect_gateway_cloudflared_control_plane_host | length > 0
+      - xconnect_gateway_cloudflared_control_plane_host in xconnect_gateway_cloudflared_allowed_control_plane_hosts
+      - xconnect_gateway_cloudflared_control_plane_host not in xconnect_gateway_cloudflared_forbidden_control_plane_hosts
+      - not (xconnect_gateway_cloudflared_control_plane_host is match('.*\\.workers\\.dev$'))
+      - >-
+        (xconnect_gateway_controller | default('', true) | trim | length == 0) or
+        (
+          xconnect_gateway_cloudflared_gateway_controller_host in xconnect_gateway_cloudflared_allowed_control_plane_hosts
+          and xconnect_gateway_cloudflared_gateway_controller_host not in xconnect_gateway_cloudflared_forbidden_control_plane_hosts
+          and not (xconnect_gateway_cloudflared_gateway_controller_host is match('.*\\.workers\\.dev$'))
+        )
+    fail_msg: >-
+      Anti-deadlock guard triggered: xconnect_gateway_control_plane_url (and
+      xconnect_gateway_controller when set) must point directly to the Go origin
+      ({{ xconnect_gateway_cloudflared_allowed_control_plane_hosts | join(', ') }}),
+      never to a Cloudflare Worker route backed by this tunnel.

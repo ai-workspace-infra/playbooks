@@ -1,0 +1,41 @@
+---
+# Opt-in Cloudflare Tunnel daemon for jp-xconnect-gateway-01 (10.67.0.1).
+# Disabled by default so existing XConnect Gateways are unaffected unless
+# explicitly enabled.
+xconnect_gateway_cloudflared_enabled: false
+
+# Anti-deadlock invariant: the Gateway's control-plane URL MUST resolve
+# directly to the Go origin (never through a Cloudflare Worker route backed by
+# this tunnel).
+xconnect_gateway_control_plane_url: "https://accounts-selfhost-prod-v6.svc.plus"
+xconnect_gateway_cloudflared_allowed_control_plane_hosts:
+  - accounts-selfhost-prod-v6.svc.plus
+xconnect_gateway_cloudflared_forbidden_control_plane_hosts:
+  - accounts.svc.plus
+  - console.svc.plus
+  - api.svc.plus
+
+# Binary installation (local controller artifact or pinned GitHub release)
+xconnect_gateway_cloudflared_version: "2026.3.0"
+xconnect_gateway_cloudflared_binary_source: ""
+xconnect_gateway_cloudflared_binary_path: /usr/local/bin/cloudflared
+xconnect_gateway_cloudflared_checksum: ""
+xconnect_gateway_cloudflared_arch_map:
+  x86_64: amd64
+  amd64: amd64
+  aarch64: arm64
+  arm64: arm64
+xconnect_gateway_cloudflared_download_base_url: "https://github.com/cloudflare/cloudflared/releases/download"
+
+# Runtime systemd service & protected environment file (mode 0600)
+xconnect_gateway_cloudflared_service_name: cloudflared-xconnect
+xconnect_gateway_cloudflared_env_file: /etc/xconnect-gateway/cloudflared-xconnect.env
+xconnect_gateway_cloudflared_metrics_listen_addr: "127.0.0.1:20241"
+xconnect_gateway_cloudflared_protocol: "auto"
+xconnect_gateway_cloudflared_extra_args: ""
+
+# Vault KV v2 source for the Cloudflare Tunnel token (never committed to GitOps)
+xconnect_gateway_cloudflared_vault_mount: kv
+xconnect_gateway_cloudflared_vault_path: ""
+xconnect_gateway_cloudflared_vault_token_field: tunnel_token
+xconnect_gateway_cloudflared_tunnel_token: ""
