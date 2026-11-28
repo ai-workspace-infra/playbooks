@@ -46,3 +46,10 @@ an advisory lock, provision credentials through Vault-backed runtime identity,
 apply in a transaction, perform real identity allow/deny checks and emit a
 redacted receipt. Existing policies with a different definition must stop the
 operation. The candidate-only use is not an authorization for other databases.
+
+For check-mode inspection, set `RUNTIME_OBJECT_GRANTS_SPEC` to a non-secret
+JSON encoding of the mapping described in `plan_runtime_grants` and run
+`ansible-playbook -i localhost, runtime_object_grants_preview.yml --check`.
+This invokes only the offline planner, reports its digest and statement count,
+and exposes the non-secret plan as `runtime_object_grants_plan` for a caller.
+It never creates roles or executes its generated SQL in either Ansible mode.
