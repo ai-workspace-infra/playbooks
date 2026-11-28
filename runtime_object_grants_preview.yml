@@ -1,0 +1,38 @@
+---
+- name: Preview explicit database runtime object grants
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    runtime_object_grants_spec: "{{ lookup('ansible.builtin.env', 'RUNTIME_OBJECT_GRANTS_SPEC') | from_json }}"
+  tasks:
+    - name: Require a non-secret object grant mapping
+      ansible.builtin.assert:
+        that:
+          - runtime_object_grants_spec is mapping
+        fail_msg: Supply a non-secret explicit runtime grant specification.
+      no_log: true
+
+    - name: Compile the offline object grant plan
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/contracts/database-provision-v1/preview_runtime_grants.py"
+        stdin: "{{ runtime_object_grants_spec | to_json }}"
+        stdin_add_newline: false
+      check_mode: false
+      changed_when: false
+      register: runtime_object_grants_preview
+      no_log: true
+
+    - name: Expose non-secret plan for the caller
+      ansible.builtin.set_fact:
+        runtime_object_grants_plan: "{{ runtime_object_grants_preview.stdout | from_json }}"
+      no_log: true
+
+    - name: Report planning status
+      ansible.builtin.debug:
+        msg:
+          plan_sha256: "{{ runtime_object_grants_plan.sha256 }}"
+          statement_count: "{{ runtime_object_grants_plan.statements | length }}"
+          execution: "{{ runtime_object_grants_plan.execution }}"
