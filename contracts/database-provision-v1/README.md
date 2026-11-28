@@ -27,3 +27,22 @@ VaultAdapter仅fixture transport，auth_ref只引用短期OIDC；当前existing 
 兼容路由和保留的旧风险见COMPATIBILITY.md；本PR不切caller，不删除旧executor，不部署。优先临时身份/动态凭据、内存/stdin/受控tmpfs；Mac普通/tmp不是tmpfs。目标减少凭据落盘，不宣称绝对无落盘。
 
 测试：PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s contracts/database-provision-v1 -v（Supabase模块下对应路径）。fixture-only组件不用于生产验收。
+
+### Runtime object grant plan (draft)
+
+`runtime_object_grants.py` compiles a non-secret, deterministic SQL plan from an
+explicit database, schema, runtime roles, per-table privileges and role-scoped
+RLS policies. It never connects or executes. `public` may be the schema, but
+never a recipient. Wildcards, privileges outside SELECT/INSERT/UPDATE/DELETE,
+duplicate policies and policies for roles without the matching table grants are
+rejected. This contract does not create users, change passwords, establish object
+ownership, grant sequences/functions, or initialize schema.
+
+A production-capable caller is not implemented. The owner must first bind a
+verified target UID, immutable native schema/manifest, exact object list and
+separate service accounts to this input; independently inspect ownership, ACLs,
+existing policy definitions and RLS flags. It must check live plan drift under
+an advisory lock, provision credentials through Vault-backed runtime identity,
+apply in a transaction, perform real identity allow/deny checks and emit a
+redacted receipt. Existing policies with a different definition must stop the
+operation. The candidate-only use is not an authorization for other databases.
